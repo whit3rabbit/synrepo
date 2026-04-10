@@ -1,0 +1,39 @@
+schema: spec-driven
+
+context: |
+  Project: synrepo
+  Platform: Rust CLI and MCP server for AI coding agents
+  Source of truth for planning: ROADMAP.md
+  Existing reference docs: docs/FOUNDATION.md and docs/FOUNDATION-SPEC.md
+
+  Product rules:
+  - OpenSpec is the planning and change-management layer, not the runtime product.
+  - The graph stores only parser-observed, git-observed, and human-declared facts.
+  - The overlay stores machine-authored commentary, proposed links, and findings.
+  - Cards are the primary product surface.
+  - Prefer the smallest durable spec change that matches the roadmap.
+
+  Repository boundaries:
+  - openspec/specs/ holds enduring behavior and contracts.
+  - openspec/changes/ holds active proposals, designs, tasks, and delta specs.
+  - docs/ holds reference and exploratory material that may feed specs but is not canonical.
+  - .synrepo/ holds runtime state, caches, and operational data.
+
+rules:
+  proposal:
+    - Keep proposals concise and foundation-first.
+    - Name capabilities and changes with roadmap-aligned kebab-case identifiers.
+    - Describe planning and contract changes, not speculative runtime implementation detail.
+    - Avoid treating generated markdown as the runtime product.
+  design:
+    - Record repository conventions, ownership boundaries, and sequencing decisions.
+    - State what belongs in specs, changes, docs, and runtime storage when relevant.
+    - Call out risks where OpenSpec structure could drift from synrepo's trust model.
+  tasks:
+    - Break work into small verifiable steps.
+    - Include validation tasks with OpenSpec CLI commands where possible.
+    - Do not include feature implementation tasks when the change only establishes planning foundation.
+  specs:
+    - Keep requirements durable and behavior-focused.
+    - Use scenarios to capture trust boundaries, contracts, and observable outcomes.
+    - Do not embed runtime-only details that belong in implementation docs.

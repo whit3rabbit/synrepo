@@ -1,0 +1,25 @@
+# Rust
+/target
+**/*.rs.bk
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+__MACOSX
+
+# Hidden folders (ignore by default, whitelist needed ones)
+.*
+!.gitignore
+!.agent/
+!.agents/
+
+# syntext
+.syntext/
+
+# Repomix
+repomix-output.xml

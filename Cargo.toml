@@ -1,0 +1,85 @@
+[package]
+name = "synrepo"
+version = "0.0.1"
+edition = "2021"
+description = "A context compiler for AI coding agents"
+license = "MIT"
+
+[[bin]]
+name = "synrepo"
+path = "src/bin/cli.rs"
+
+[lib]
+name = "synrepo"
+path = "src/lib.rs"
+
+[dependencies]
+# --- Substrate ---
+# syntext is the deterministic lexical retrieval layer. Verify publication
+# status on crates.io; if not published, switch to a git dependency pinned to
+# a specific commit hash (never a branch).
+syntext = "1.0.3"
+
+# --- Tree-sitter via Rust crates (phase 1) ---
+# Per-language crates each ship a pre-generated C grammar and expose
+# LOCALS_QUERY, HIGHLIGHTS_QUERY, INJECTIONS_QUERY as &'static str constants.
+# We read those directly and add synrepo-specific extras on top.
+tree-sitter = "0.26.8"
+tree-sitter-rust = "0.24.2"
+tree-sitter-python = "0.25.0"
+tree-sitter-typescript = "0.23.2"
+
+# --- Storage ---
+# sqlite is the single source of truth for the graph and overlay stores.
+# No in-memory graph mirror in v1; add petgraph only if measured latency
+# on a specific query class demands it.
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+# --- Filesystem and walking ---
+walkdir = "2"
+ignore = "0.4"              # respects .gitignore / .git/info/exclude
+notify = "6"                # cross-platform file watcher for phase 2+
+notify-debouncer-full = "0.3"
+
+# --- Git integration ---
+gix = { version = "0.63", default-features = false, features = ["max-performance-safe", "revision", "blob-diff"] }
+
+# --- Hashing and encoding ---
+blake3 = "1"                # fast content hashing for file/symbol identity
+hex = "0.4"
+
+# --- Serialization ---
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+# --- Error handling and logging ---
+anyhow = "1"
+thiserror = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# --- CLI ---
+clap = { version = "4", features = ["derive"] }
+
+# --- Concurrency ---
+arc-swap = "1"              # for atomic snapshot publishing, matches syntext's model
+parking_lot = "0.12"
+crossbeam-channel = "0.5"
+
+# --- Time ---
+time = { version = "0.3", features = ["serde", "macros", "formatting"] }
+
+# --- Phase 4+ deps, commented out until needed ---
+# ort = "2"                 # ONNX runtime for all-MiniLM-L6-v2 embeddings (phase 5)
+# tokenizers = "0.20"       # hugging-face tokenizers for embedding preprocessing (phase 5)
+
+[dev-dependencies]
+tempfile = "3"
+proptest = "1"              # for the token-aligned coverage invariant tests
+insta = "1"                 # snapshot testing for card output
+criterion = "0.5"           # benchmarks
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
