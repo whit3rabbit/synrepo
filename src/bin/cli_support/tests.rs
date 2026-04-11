@@ -197,10 +197,23 @@ fn sample_provenance(pass: &str, path: &str) -> Provenance {
 fn reconcile_completes_on_initialized_repo() {
     let repo = tempdir().unwrap();
     std::fs::create_dir_all(repo.path().join("src")).unwrap();
-    std::fs::write(repo.path().join("src/lib.rs"), "pub fn greet() {}\n").unwrap();
+    std::fs::write(
+        repo.path().join("src/lib.rs"),
+        "pub fn greet() {}\n",
+    )
+    .unwrap();
     // bootstrap sets up .synrepo/ and runs the first compile.
     bootstrap(repo.path(), None).unwrap();
 
-    // reconcile must succeed and print outcome without re-running bootstrap.
+    // reconcile must succeed and persist state.
     super::commands::reconcile(repo.path()).unwrap();
+
+    let synrepo_dir = synrepo::config::Config::synrepo_dir(repo.path());
+    let state = synrepo::pipeline::watch::load_reconcile_state(&synrepo_dir)
+        .expect("reconcile state must be written after reconcile");
+    assert_eq!(state.last_outcome, "completed");
+    assert!(
+        state.files_discovered.unwrap_or(0) >= 1,
+        "reconcile must discover at least src/lib.rs"
+    );
 }

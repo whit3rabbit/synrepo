@@ -39,7 +39,11 @@ mod provenance;
 #[cfg(test)]
 mod tests;
 
-use std::{collections::BTreeSet, path::Path, time::Instant};
+use std::{
+    collections::{BTreeSet, HashMap, HashSet},
+    path::Path,
+    time::Instant,
+};
 
 use ids::{derive_edge_id, derive_file_id, derive_symbol_id};
 use provenance::{current_git_revision, make_provenance};
@@ -78,11 +82,27 @@ pub fn run_structural_compile(
     // compile cycle is atomic and inserts are batched rather than auto-committed.
     graph.begin()?;
 
-    for (path, file_id) in &graph.all_file_paths()? {
+    // Load all current file paths once; used for stale detection and rename matching.
+    let existing_file_paths = graph.all_file_paths()?;
+
+    // For each path that has disappeared, load the full node so we can match its
+    // content hash against new files that may be renames.
+    let mut disappeared_by_hash: HashMap<String, FileNode> = HashMap::new();
+    for (path, _) in &existing_file_paths {
         if !discovered_paths.contains(path) {
-            graph.delete_node(NodeId::File(*file_id))?;
+            if let Some(node) = graph.file_by_path(path)? {
+                // Keep first match per hash; duplicate content hashes are
+                // astronomically unlikely with blake3 but handled gracefully.
+                disappeared_by_hash
+                    .entry(node.content_hash.clone())
+                    .or_insert(node);
+            }
         }
     }
+
+    // Track which disappeared paths were matched as renames so we skip deleting them
+    // (the upsert in the parse loop moves the row to the new path in-place).
+    let mut rename_matched_old_paths: HashSet<String> = HashSet::new();
 
     let discovered_concept_paths: BTreeSet<String> = discovered
         .iter()
@@ -104,6 +124,7 @@ pub fn run_structural_compile(
     let mut symbols_extracted = 0usize;
     let mut edges_added = 0usize;
     let mut concept_nodes_emitted = 0usize;
+    let mut identities_resolved = 0usize;
 
     for file in &discovered {
         if matches!(file.class, FileClass::SupportedCode { .. }) {
@@ -122,9 +143,19 @@ pub fn run_structural_compile(
                 graph.delete_node(NodeId::File(file_node.id))?;
             }
 
-            let file_id = existing
-                .map(|file_node| file_node.id)
-                .unwrap_or_else(|| derive_file_id(&content_hash));
+            let file_id = if let Some(ref file_node) = existing {
+                // Same path, different content: reuse the stable ID (content change, not rename).
+                file_node.id
+            } else if let Some(old_node) = disappeared_by_hash.get(&content_hash) {
+                // Same content, different path: this is a rename. Preserve the old ID
+                // and record the old path so we skip deleting it at the end.
+                rename_matched_old_paths.insert(old_node.path.clone());
+                identities_resolved += 1;
+                old_node.id
+            } else {
+                // Genuinely new file.
+                derive_file_id(&content_hash)
+            };
 
             let language = match file.class {
                 FileClass::SupportedCode { language } => Some(language.to_string()),
@@ -134,7 +165,14 @@ pub fn run_structural_compile(
             graph.upsert_file(FileNode {
                 id: file_id,
                 path: file.relative_path.clone(),
-                path_history: vec![],
+                path_history: disappeared_by_hash
+                    .get(&content_hash)
+                    .map(|old| {
+                        let mut h = old.path_history.clone();
+                        h.insert(0, old.path.clone());
+                        h
+                    })
+                    .unwrap_or_default(),
                 content_hash: content_hash.clone(),
                 size_bytes: file.size_bytes,
                 language,
@@ -216,6 +254,13 @@ pub fn run_structural_compile(
         }
     }
 
+    // Delete file nodes that disappeared and were not matched as renames.
+    for (path, file_id) in &existing_file_paths {
+        if !discovered_paths.contains(path) && !rename_matched_old_paths.contains(path) {
+            graph.delete_node(NodeId::File(*file_id))?;
+        }
+    }
+
     graph.commit()?;
 
     Ok(CompileSummary {
@@ -224,7 +269,7 @@ pub fn run_structural_compile(
         symbols_extracted,
         edges_added,
         concept_nodes_emitted,
-        identities_resolved: 0,
+        identities_resolved,
         elapsed_ms: start.elapsed().as_millis() as u64,
     })
 }
