@@ -4,6 +4,7 @@ use std::path::Path;
 
 use crate::config::{Config, Mode};
 use crate::pipeline::structural::run_structural_compile;
+use crate::pipeline::writer::{acquire_writer_lock, LockError};
 use crate::store::compatibility::{self, CompatibilityReport};
 use crate::store::sqlite::SqliteGraphStore;
 
@@ -44,6 +45,22 @@ pub fn bootstrap(
             &compatibility_report,
         ));
     }
+
+    // Acquire the exclusive writer lock before any state mutation. Held until
+    // the end of `bootstrap()` via RAII drop. Fails fast if another live
+    // process already holds the lock.
+    let _lock = acquire_writer_lock(&synrepo_dir).map_err(|err| match err {
+        LockError::HeldByOther { pid, .. } => anyhow::anyhow!(
+            "Bootstrap blocked: writer lock held by pid {pid}. \
+             Wait for that process to finish, then rerun `synrepo init`."
+        ),
+        LockError::Io { path, source } => {
+            anyhow::anyhow!(
+                "Failed to acquire writer lock at {}: {source}",
+                path.display()
+            )
+        }
+    })?;
 
     let layout_changed = compatibility::ensure_runtime_layout(&synrepo_dir)?;
     let remediated = compatibility::apply_runtime_actions(&synrepo_dir, &compatibility_report)?;

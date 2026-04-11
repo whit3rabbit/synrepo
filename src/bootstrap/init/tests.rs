@@ -227,3 +227,20 @@ fn bootstrap_rerun_refreshes_graph_on_content_change() {
         "file node must survive refresh"
     );
 }
+
+#[test]
+fn bootstrap_blocked_when_writer_lock_held() {
+    let repo = tempdir().unwrap();
+    let synrepo_dir = Config::synrepo_dir(repo.path());
+    // Create state dir so the pre-held lock can be written before bootstrap
+    // tries to create .synrepo/ itself.
+    std::fs::create_dir_all(synrepo_dir.join("state")).unwrap();
+    let _lock = crate::pipeline::writer::acquire_writer_lock(&synrepo_dir).unwrap();
+
+    let err = bootstrap(repo.path(), None).unwrap_err().to_string();
+    assert!(
+        err.contains("writer lock"),
+        "expected 'writer lock' in error, got: {err}"
+    );
+    assert!(err.contains("pid"), "expected PID in error, got: {err}");
+}
