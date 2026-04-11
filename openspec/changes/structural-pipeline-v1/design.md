@@ -1,6 +1,6 @@
 ## Context
 
-The repo now has three important pieces in place: deterministic discovery and lexical indexing, a canonical sqlite-backed graph store, and a direct graph inspection CLI. What is still missing is the bridge between them. `src/pipeline/structural.rs` is still a stub, `src/structure/parse.rs` does not yet emit real symbols, and bootstrap only rebuilds the lexical substrate. That leaves the graph store real but mostly empty unless tests or manual code write into it.
+The repo now has three important pieces in place: deterministic discovery and lexical indexing, a canonical sqlite-backed graph store, and a direct graph inspection CLI. What is still missing is the bridge between them. `src/pipeline/structural/` is still the structural compile boundary, `src/structure/parse/` is where symbol extraction lives, and bootstrap is the place that ties substrate and graph refresh together. That leaves the graph store real but mostly empty unless tests or manual code write into it.
 
 This change is the smallest follow-on that makes the observed-facts core start behaving like a product layer. It should populate the graph automatically from repository state, but it should not absorb watch/reconcile behavior, Git-history mining, or the full identity cascade. Those remain separate slices so Milestone 2 does not turn into a junk drawer.
 
@@ -49,7 +49,7 @@ This change is the smallest follow-on that makes the observed-facts core start b
 
 ## Migration Plan
 
-1. Implement the initial structural producers and compile orchestration behind `src/pipeline/structural.rs`.
+1. Implement the initial structural producers and compile orchestration behind `src/pipeline/structural/`.
 2. Wire bootstrap to invoke the structural compile after substrate rebuild and surface graph-oriented status.
 3. Add or update tests so fresh init and rerun flows materialize the graph store automatically and converge on current repository truth.
 4. Leave watcher/reconcile and Git-derived stages for their own follow-on changes.

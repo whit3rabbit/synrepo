@@ -1,7 +1,10 @@
 //! Snapshot I/O for the `.synrepo/` compatibility state.
 
 use crate::config::Config;
-use std::{fs, path::{Path, PathBuf}};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use super::types::{ConfigFingerprints, RuntimeCompatibilitySnapshot, StoreId};
 
@@ -71,7 +74,8 @@ mod tests {
     fn write_runtime_snapshot_records_expected_versions() {
         let repo = tempdir().unwrap();
         let synrepo_dir = repo.path().join(".synrepo");
-        let snapshot = write_runtime_snapshot(&synrepo_dir, &crate::config::Config::default()).unwrap();
+        let snapshot =
+            write_runtime_snapshot(&synrepo_dir, &crate::config::Config::default()).unwrap();
 
         assert_eq!(snapshot.snapshot_version, super::super::SNAPSHOT_VERSION);
         assert_eq!(

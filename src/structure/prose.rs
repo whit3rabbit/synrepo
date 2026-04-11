@@ -244,7 +244,10 @@ mod tests {
             .unwrap();
 
         assert_eq!(node.title, "Graph Storage");
-        assert_eq!(node.summary.as_deref(), Some("Why the graph stays observed-only."));
+        assert_eq!(
+            node.summary.as_deref(),
+            Some("Why the graph stays observed-only.")
+        );
         assert_eq!(node.path, "docs/adr/0001-graph.md");
         assert!(node.aliases.is_empty());
     }

@@ -20,7 +20,7 @@ The repo now has a canonical graph store and direct inspection surface, but grap
 
 ## Impact
 
-- Affects `src/pipeline/structural.rs`, `src/structure/parse.rs`, and related structure modules that currently stop at scaffolding
+- Affects `src/pipeline/structural/`, `src/structure/parse/`, and related structure modules that currently stop at scaffolding
 - Affects bootstrap and init-triggered refresh behavior in `src/bootstrap/` and CLI dispatch paths
 - Adds tests around structural compile output, persisted graph materialization, and re-run behavior
 - Does not implement watch/daemon orchestration or Git-history mining, which remain separate follow-on work

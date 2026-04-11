@@ -1,6 +1,6 @@
 ## Context
 
-The current codebase already leaves clear placeholders for Git intelligence. `src/config.rs` carries `git_commit_depth`, `src/structure/graph.rs` models `git_observed` epistemic authority and `CoChangesWith` edges, `src/pipeline/structural.rs` reserves a Git-mining stage, and `src/surface/card.rs` already includes `last_change` and `co_changes` fields. That is enough to establish a precise change without guessing at a product that does not exist yet.
+The current codebase already leaves clear placeholders for Git intelligence. `src/config.rs` carries `git_commit_depth`, `src/structure/graph/` models `git_observed` epistemic authority and `CoChangesWith` edges, `src/pipeline/structural/` reserves a Git-mining stage, and `src/surface/card.rs` already includes `last_change` and `co_changes` fields. That is enough to establish a precise change without guessing at a product that does not exist yet.
 
 This is the right next planning step because Track I is a milestone-driving feature, and without a dedicated change the implementation would have to improvise where Git-derived facts belong, how they are ranked, and what happens when history is incomplete.
 

@@ -28,8 +28,6 @@ pub enum Budget {
     Deep,
 }
 
-
-
 impl Budget {
     /// Approximate per-card token budget for this tier.
     pub fn per_card_tokens(self) -> usize {

@@ -23,7 +23,7 @@ This change is opened early to lock the storage contract while the bootstrap and
 
 ## Impact
 
-- Affects `.synrepo/` layout ownership and config semantics in `src/bin/cli.rs` and `src/config.rs`
+- Affects `.synrepo/` layout ownership and config semantics in the CLI surface (`src/bin/cli.rs`, `src/bin/cli_support/`) and `src/config.rs`
 - Adds a shared compatibility policy surface under `src/store/` for bootstrap, substrate, and later store backends to reuse
 - Affects future store backends and maintenance commands under `src/store/` and operational flows
 - Provides contract guardrails for later `watch-reconcile-v1`, export work, and migration behavior

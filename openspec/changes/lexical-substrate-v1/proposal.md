@@ -20,7 +20,7 @@ The repo already has the Phase 0 substrate shape in code, but the actual behavio
 
 ## Impact
 
-- Affects the substrate and discovery implementation in `src/substrate/` and `src/structure/discover.rs`
-- Affects the initial compile/bootstrap path in `src/bin/cli.rs`
+- Affects the substrate and discovery implementation in `src/substrate/`
+- Affects the initial compile/bootstrap path in the CLI surface (`src/bin/cli.rs`, `src/bin/cli_support/`)
 - Adds or updates tests around discovery, file classification, and lexical search
 - Does not change graph, overlay, card, or MCP behavior directly

@@ -120,3 +120,83 @@ fn mode_flag(mode: Mode) -> &'static str {
         Mode::Curated => "curated",
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::tempdir;
+
+    #[test]
+    fn inspect_empty_repo_returns_auto() {
+        let dir = tempdir().unwrap();
+        let config = Config::default();
+
+        let inspection = inspect_repository_mode(dir.path(), &config).unwrap();
+        assert_eq!(inspection.recommended_mode, Mode::Auto);
+        assert!(inspection.rationale_dirs.is_empty());
+    }
+
+    #[test]
+    fn inspect_finds_markdown_in_configured_dirs() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config.concept_directories = vec!["docs".to_string()];
+
+        let docs_dir = dir.path().join("docs");
+        fs::create_dir_all(&docs_dir).unwrap();
+        fs::write(docs_dir.join("test.md"), "test").unwrap();
+        fs::write(docs_dir.join("test.mdx"), "test").unwrap();
+        fs::write(docs_dir.join("test.markdown"), "test").unwrap();
+
+        let inspection = inspect_repository_mode(dir.path(), &config).unwrap();
+        assert_eq!(inspection.recommended_mode, Mode::Curated);
+        assert_eq!(inspection.rationale_dirs, vec![PathBuf::from("docs")]);
+    }
+
+    #[test]
+    fn inspect_ignores_non_markdown_files() {
+        let dir = tempdir().unwrap();
+        let mut config = Config::default();
+        config.concept_directories = vec!["docs".to_string()];
+
+        let docs_dir = dir.path().join("docs");
+        fs::create_dir_all(&docs_dir).unwrap();
+        fs::write(docs_dir.join("test.txt"), "txt").unwrap();
+        fs::write(docs_dir.join("test.rs"), "rs").unwrap();
+
+        let inspection = inspect_repository_mode(dir.path(), &config).unwrap();
+        assert_eq!(inspection.recommended_mode, Mode::Auto);
+        assert!(inspection.rationale_dirs.is_empty());
+    }
+
+    #[test]
+    fn guidance_formatting_matrix() {
+        let inspection = ModeInspection {
+            recommended_mode: Mode::Curated,
+            rationale_dirs: vec![PathBuf::from("docs/concepts")],
+        };
+        let mut config = Config::default();
+        config.mode = Mode::Auto;
+
+        // Requested explicitly mismatches recommended
+        let guidance = inspection
+            .guidance_for(Some(Mode::Auto), None, Mode::Auto)
+            .unwrap();
+        assert!(guidance.contains("suggests Curated"));
+        assert!(guidance.contains("keeping explicit Auto"));
+
+        // Existing config mismatches recommended
+        let guidance = inspection
+            .guidance_for(None, Some(&config), Mode::Auto)
+            .unwrap();
+        assert!(guidance.contains("suggests Curated"));
+        assert!(guidance.contains("keeping configured Auto"));
+        // Since config.mode is Auto, `mode_flag(recommended)` will format `mode_flag(Curated) -> "curated"`
+        assert!(guidance.contains("--mode curated"));
+
+        // No config, defaults to recommended
+        let guidance = inspection.guidance_for(None, None, Mode::Curated).unwrap();
+        assert!(guidance.contains("selected Curated"));
+    }
+}

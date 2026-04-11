@@ -46,6 +46,12 @@ pub trait GraphStore: Send + Sync {
     /// All inbound edges to a node, optionally filtered by kind.
     fn inbound(&self, to: NodeId, kind: Option<EdgeKind>) -> crate::Result<Vec<Edge>>;
 
+    /// Begin a write batch. Called before the first graph interaction in each
+    /// structural compile cycle. No-op for in-memory or test stores.
+    fn begin(&mut self) -> crate::Result<()> {
+        Ok(())
+    }
+
     /// Commit any pending writes. Called at the end of each structural
     /// compile cycle to publish atomic snapshots.
     fn commit(&mut self) -> crate::Result<()>;

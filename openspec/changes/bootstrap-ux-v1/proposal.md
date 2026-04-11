@@ -20,7 +20,7 @@ The repo already has a working `synrepo init` skeleton, but the bootstrap UX is 
 
 ## Impact
 
-- Affects `src/bin/cli.rs` and config/bootstrap behavior in `src/config.rs`
+- Affects the CLI surface (`src/bin/cli.rs`, `src/bin/cli_support/`) and config/bootstrap behavior in `src/config.rs`
 - May add bootstrap helpers for repository inspection and health reporting
 - Adds tests around init behavior and CLI output
 - Does not introduce cards, MCP tools, or overlay generation

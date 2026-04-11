@@ -111,3 +111,54 @@ impl Config {
         repo_root.join(".synrepo")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::tempdir;
+
+    #[test]
+    fn load_missing_file_returns_defaults() {
+        let dir = tempdir().unwrap();
+        let config = Config::load(dir.path()).unwrap();
+
+        assert_eq!(config.mode, Mode::Auto);
+        assert_eq!(config.roots, vec![".".to_string()]);
+    }
+
+    #[test]
+    fn load_valid_file_overrides_defaults() {
+        let dir = tempdir().unwrap();
+        let synrepo_dir = Config::synrepo_dir(dir.path());
+        fs::create_dir_all(&synrepo_dir).unwrap();
+
+        let custom_toml = r#"
+        mode = "curated"
+        roots = ["src"]
+        git_commit_depth = 100
+        "#;
+        fs::write(synrepo_dir.join("config.toml"), custom_toml).unwrap();
+
+        let config = Config::load(dir.path()).unwrap();
+
+        assert_eq!(config.mode, Mode::Curated);
+        assert_eq!(config.roots, vec!["src".to_string()]);
+        assert_eq!(config.git_commit_depth, 100);
+
+        // Ensure defaults are kept for unmentioned fields
+        assert_eq!(config.max_file_size_bytes, 1024 * 1024);
+    }
+
+    #[test]
+    fn load_invalid_toml_returns_error() {
+        let dir = tempdir().unwrap();
+        let synrepo_dir = Config::synrepo_dir(dir.path());
+        fs::create_dir_all(&synrepo_dir).unwrap();
+
+        fs::write(synrepo_dir.join("config.toml"), "mode = [").unwrap();
+
+        let err = Config::load(dir.path()).unwrap_err();
+        assert!(err.to_string().starts_with("config error:"));
+    }
+}

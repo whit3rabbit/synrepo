@@ -1,6 +1,6 @@
 ## Context
 
-The current substrate path proves that synrepo can create `.synrepo/index/`, write config, and call `syntext`, but it does not yet define or implement the deterministic repository-walking and file-handling contract that the roadmap expects. `src/substrate/mod.rs` delegates almost everything to `syntext`, while `src/structure/discover.rs` and `src/pipeline/structural.rs` explicitly document the intended Phase 0 behavior as TODOs.
+The current substrate path proves that synrepo can create `.synrepo/index/`, write config, and call `syntext`, but it does not yet define or implement the deterministic repository-walking and file-handling contract that the roadmap expects. `src/substrate/` carries the lexical substrate entry points, while `src/substrate/discover.rs` and `src/pipeline/structural/` document the intended Phase 0 behavior as TODOs or staging seams.
 
 That is the right next planning step because the lexical substrate is the first real product layer after the planning foundation. If discovery, classification, and exact search are fuzzy, every later graph or bootstrap change inherits ambiguity.
 

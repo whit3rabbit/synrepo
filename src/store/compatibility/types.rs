@@ -2,10 +2,7 @@
 
 use crate::config::Config;
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::BTreeMap,
-    path::PathBuf,
-};
+use std::{collections::BTreeMap, path::PathBuf};
 
 /// A known runtime store under `.synrepo/`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
