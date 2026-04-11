@@ -2,6 +2,16 @@
 
 # synrepo roadmap using an OpenSpec-style planning system
 
+## 0. Current status
+
+- Milestone 0, Foundation setup: complete
+- Milestone 1, First-run value: in progress
+- Most recently completed implementation change: `bootstrap-ux-v1`
+- Completed in the current milestone: `lexical-substrate-v1`, `bootstrap-ux-v1`
+- Current Milestone 1 hardening focus: storage layout compatibility and runtime policy follow-through
+- Planned follow-on change: `storage-compatibility-v1`
+- Early contract-sharpening change already opened for a later milestone: `git-intelligence-v1`
+
 ## 1. Purpose
 
 This roadmap adapts synrepo to an OpenSpec-style workflow without turning specs into the runtime product.
@@ -465,6 +475,9 @@ Tracks:
 Primary outcome:
 - stable planning structure
 
+Status:
+- Complete through `foundation-bootstrap`
+
 ### Milestone 1 — First-run value
 
 Tracks:
@@ -473,6 +486,10 @@ Tracks:
 
 Primary outcome:
 - initialization plus deterministic search
+
+Status:
+- In progress, with `lexical-substrate-v1` and `bootstrap-ux-v1` complete
+- `storage-compatibility-v1` is the next planned follow-on
 
 ### Milestone 2 — Observed-facts core
 
@@ -914,10 +931,12 @@ Use this rule:
 
 ## 11. Suggested next move
 
-After tightening the foundation contracts, the next practical step is:
+`lexical-substrate-v1` and `bootstrap-ux-v1` are complete. The next practical steps are:
 
-1. implement `lexical-substrate-v1`
-2. implement `bootstrap-ux-v1`
-3. keep `git-intelligence-v1` and `storage-compatibility-v1` in planning-ready state while milestone execution proceeds through `structural-graph-v1` and `watch-reconcile-v1`
+1. implement `storage-compatibility-v1` to lock the storage contract before Milestone 2 begins writing to canonical and supplemental stores
+2. open `structural-graph-v1` to wire tree-sitter parsing, the SQLite graph store, and identity cascade into the structural pipeline
+3. follow immediately with `watch-reconcile-v1` to establish the watcher, reconcile pass, and single-writer locking model alongside the graph layer
 
-That keeps planning overhead bounded, preserves milestone order for execution, and still lets Track I and Track L contracts mature before they become implementation bottlenecks.
+Keep `git-intelligence-v1` in planning-ready state through Milestone 2. Its contract is stable; implementation depends on the graph layer being in place first.
+
+This order delivers Milestone 2 (observed-facts core) while keeping the storage contract locked before the underlying stores grow.

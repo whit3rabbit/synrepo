@@ -7,12 +7,17 @@ use std::path::{Path, PathBuf};
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Mode {
-    /// Vibe coder default. Synthesis runs automatically in the background
-    /// and writes to the overlay. Concept nodes are disabled unless human-
-    /// authored concept directories exist.
+    /// Bootstrap defaults here when repository inspection does not find
+    /// rationale markdown under the configured concept directories.
+    /// Synthesis runs automatically in the background and writes to the
+    /// overlay. Concept nodes are disabled unless human-authored concept
+    /// directories exist.
     Auto,
-    /// Disciplined team mode. Synthesis proposals go to a review queue.
-    /// Concept nodes are enabled when human-authored ADR directories exist.
+    /// Bootstrap recommends or selects this when repository inspection
+    /// finds rationale markdown under the configured concept directories,
+    /// unless an explicit or already-configured mode is kept instead.
+    /// Synthesis proposals go to a review queue. Concept nodes are
+    /// enabled when human-authored ADR directories exist.
     Curated,
 }
 
@@ -25,7 +30,9 @@ impl Default for Mode {
 /// Top-level config read from `.synrepo/config.toml`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
-    /// Operational mode.
+    /// Operational mode. Bootstrap prefers an explicit `--mode`, otherwise
+    /// it keeps an existing configured mode or falls back to repository
+    /// inspection before defaulting to `auto`.
     #[serde(default)]
     pub mode: Mode,
 

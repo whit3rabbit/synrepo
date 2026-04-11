@@ -10,6 +10,8 @@ cargo test                         # run all tests
 cargo test <test_name>             # run a single test (substring match)
 cargo test -p synrepo <test_name>  # run a single test by exact path
 cargo clippy -- -D warnings        # lint (CI-equivalent)
+cargo fmt                          # format
+make check                         # fmt-check + lint + test (CI equivalent)
 cargo run -- init                  # initialize .synrepo/ in cwd
 cargo run -- search <query>        # lexical search
 RUST_LOG=debug cargo run -- <cmd>  # enable tracing output
@@ -20,6 +22,10 @@ Dev dependencies: `proptest` (property tests for token budget invariants), `inst
 ## Architecture
 
 Four layers, bottom to top:
+
+**0. Core** (`src/core/`) — Shared types used across all layers.
+- `ids.rs` — stable identifier types: `FileNodeId`, `SymbolNodeId`, `ConceptNodeId`, `NodeId` (unified enum). These are the types named in the hard invariants below.
+- `provenance.rs` — `Provenance`, `CreatedBy`, `SourceRef`: every graph row and overlay entry carries one.
 
 **1. Substrate** (`src/substrate/mod.rs`) — Wraps `syntext` (external crate, `crates.io`) for deterministic n-gram lexical search. Builds and queries the index at `.synrepo/index/`. Phase 0 wired; no structural awareness.
 
@@ -34,9 +40,11 @@ Node types: `FileNode` (content-hash identity), `SymbolNode` (tree-sitter extrac
 
 **3. Overlay** (`src/overlay/mod.rs`) — LLM-authored content in a physically separate SQLite database from the graph. Defines `OverlayStore`, `OverlayLink`, `OverlayEpistemic` (`machine_authored_high_conf` | `machine_authored_low_conf`), `CitedSpan`. Phase 4+ only; the module exists to establish the architectural boundary from the start.
 
-**4. Surface** (`src/surface/`, `src/bin/cli.rs`) — CLI (phase 0/1), MCP server (phase 2+), skill bundle (`skill/SKILL.md`).
+**4. Surface** (`src/surface/`, `src/bin/cli.rs`) — CLI (phase 0/1), MCP server (phase 2+), skill bundle (`skill/SKILL.md`). `card.rs` defines card types returned by phase 2+ commands.
 
-**Pipeline** (`src/pipeline/`) — `structural.rs` defines the 8-stage compile cycle (discover → parse code → parse prose → resolve cross-file edges → git mine → identity → drift → commit). The skeleton exists; stages are TODO(phase-0/1).
+**Pipeline** (`src/pipeline/`) — `structural.rs` defines the 8-stage compile cycle (discover → parse code → parse prose → resolve cross-file edges → git mine → identity → drift → commit). `synthesis.rs` is the LLM-driven overlay pipeline (phase 4+). Both files exist as skeletons; stages are TODO(phase-0/1).
+
+**Store** (`src/store/`) — SQLite backend stubs for `GraphStore` and the overlay store. The sqlite implementation ships in phase 1; an in-memory test store will sit alongside it.
 
 **Storage layout:**
 - `.synrepo/graph/` — canonical SQLite graph store
@@ -60,7 +68,7 @@ These must hold across all changes:
 
 Most of the codebase is architectural scaffolding with `TODO(phase-0)` and `TODO(phase-1)` markers. What is actually wired end-to-end:
 
-- `synrepo init` — creates `.synrepo/` directory tree, writes config, runs `substrate::build_index`
+- `synrepo init` — idempotent bootstrap: creates on first run, refreshes on re-run, repairs if layout is partial. Auto-selects `auto` vs `curated` mode by scanning `concept_directories` for markdown; `--mode` overrides.
 - `synrepo search <query>` — calls `substrate::search` via syntext
 
 Not yet implemented (bail with error): `synrepo graph query`, `synrepo graph stats`, `synrepo node`.
@@ -74,4 +82,4 @@ Card-returning commands and MCP server are phase 2.
 
 ## OpenSpec workflow
 
-`openspec/specs/` holds enduring domain specs (stable intended behavior). `openspec/changes/<name>/` holds active work: `proposal.md`, `design.md`, `tasks.md`, and optional delta specs. The currently open change is `openspec/changes/foundation-bootstrap/`. Specs govern intent; the graph governs runtime truth.
+`openspec/specs/` holds enduring domain specs (stable intended behavior). `openspec/changes/<name>/` holds active work: `proposal.md`, `design.md`, `tasks.md`, and optional delta specs. Active changes: `foundation-bootstrap`, `bootstrap-ux-v1`, `lexical-substrate-v1`, `git-intelligence-v1`, `storage-compatibility-v1`. Specs govern intent; the graph governs runtime truth.
