@@ -2,6 +2,7 @@
 //!
 //! Phase 0/1 subcommands:
 //! - `synrepo init [--mode auto|curated]`, create `.synrepo/` in the current repo
+//! - `synrepo reconcile`, run a structural compile pass without full re-bootstrap
 //! - `synrepo search <query>`, lexical search against the persisted index
 //! - `synrepo graph query "<direction> <node_id> [edge_kind]"`, narrow graph traversal query
 //! - `synrepo node <id>`, dump a node's metadata
@@ -14,7 +15,7 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use tracing_subscriber::EnvFilter;
 
-use cli_support::commands::{graph_query, graph_stats, init, node, search};
+use cli_support::commands::{graph_query, graph_stats, init, node, reconcile, search};
 use synrepo::config::Mode;
 
 #[derive(Parser)]
@@ -38,6 +39,13 @@ enum Command {
         #[arg(long, value_enum)]
         mode: Option<ModeArg>,
     },
+
+    /// Run a structural compile pass against the current repository state.
+    ///
+    /// Requires `.synrepo/` to be initialized (`synrepo init`). Re-reads all
+    /// source files and refreshes the graph store without recreating the full
+    /// runtime layout or re-indexing the substrate.
+    Reconcile,
 
     /// Lexical search via the syntext index.
     Search {
@@ -97,6 +105,7 @@ fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Command::Init { mode } => init(&repo_root, mode.map(Into::into)),
+        Command::Reconcile => reconcile(&repo_root),
         Command::Search { query } => search(&repo_root, &query),
         Command::Graph(GraphCommand::Query { q }) => graph_query(&repo_root, &q),
         Command::Graph(GraphCommand::Stats) => graph_stats(&repo_root),
