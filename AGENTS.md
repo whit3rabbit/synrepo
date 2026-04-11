@@ -141,7 +141,7 @@ Stages 1–3 run on every `synrepo init`:
 
 Stages 4–8:
 4. Cross-file edge resolution (`calls`, `imports`, `inherits`, `references`) — **implemented** in `cards-and-mcp-v1`: name-based approximate resolution via tree-sitter call/import queries + post-parse name lookup pass in `src/pipeline/structural/stage4.rs`
-5. Git mining (co-change, ownership, blame) — planned for `git-intelligence-v1` using existing `GitIntelligenceContext`
+5. Git mining (co-change, ownership, hotspots, recent file history) — **implemented** in `git-intelligence-v1`: deterministic first-parent history sampling via `src/pipeline/git/` and `src/pipeline/git_intelligence/`, surfaced today through file-facing outputs and node inspection
 6. Identity cascade (rename detection) — **partially implemented**: content-hash based rename detection wired; split/merge detection still TODO
 7. Drift scoring — TODO stub
 8. ArcSwap commit — TODO stub
@@ -150,7 +150,7 @@ Stages 4–8:
 
 - `synrepo watch` CLI command (`run_watch_loop` in `pipeline/watch.rs` is implemented but not wired to a CLI subcommand; `synrepo reconcile` is the one-shot path)
 - `ModuleCard`, `EntryPointCard`, `CallPathCard` and specialist MCP tools (`synrepo_entrypoints`, `synrepo_call_path`, `synrepo_test_surface`, `synrepo_minimum_context`, `synrepo_explain`, `synrepo_findings`) — next phases
-- Stage 5 git mining (`CoChangesWith`, ownership, hotspots, last meaningful change) — next: `git-intelligence-v1`
+- Graph-level `CoChangesWith` edges and symbol-level Git summaries such as `SymbolCard.last_change` — follow-on work after the first `git-intelligence-v1` slice
 - Synthesis pipeline (phase 4+)
 
 ## Gotchas
@@ -161,7 +161,7 @@ Stages 4–8:
 - **`criterion` is present in `Cargo.toml`**, but the documented test workflow still centers on `proptest` and `insta`. Use `criterion` only for explicit benchmark work.
 - **`.synrepo/graph/nodes.db`** is the actual SQLite file. Code that opens the graph store uses `SqliteGraphStore::open(&graph_dir)` where `graph_dir` is `.synrepo/graph/`; the `nodes.db` name is internal to `src/store/sqlite/mod.rs`.
 - **Compatibility blocks on version mismatch**: if `.synrepo/` contains a graph store whose recorded format version is newer than the current binary understands, `synrepo init` and all graph commands will error. Resolve by removing `.synrepo/` and reinitializing.
-- **Git history mining uses `gix`** (not `git2`). The `gix` dep is included but git mining stages are TODO.
+- **Git history mining uses `gix`** (not `git2`). The current slice ships deterministic first-parent history sampling, degraded-history handling, hotspots, ownership hints, and file-scoped co-change summaries. Graph-level `CoChangesWith` edges and symbol-level last-change summaries are still future work.
 - **`notify` and `notify-debouncer-full` are in `Cargo.toml`** and are used by `run_watch_loop` in `pipeline/watch.rs`. The watcher is implemented; there is no `synrepo watch` CLI subcommand yet.
 - **`concept_directories` config defaults**: `docs/concepts`, `docs/adr`, `docs/decisions`. Adding a fourth directory (e.g. `architecture/decisions`) requires a config-sensitive compatibility check — changing this field triggers a graph advisory in the compat report.
 - **File rename detection is implemented (content-hash matching).** When a file is moved to a new path with the same content, the structural compile detects the rename, preserves the `FileNodeId`, and records the old path in `path_history`. Caveat: split/merge detection is still TODO — a single file split into two will still produce orphaned nodes until split detection is wired.
@@ -174,7 +174,7 @@ Stages 4–8:
 | `mode` | `auto` | `auto` or `curated` |
 | `roots` | `["."]` | Roots to index, relative to repo root |
 | `concept_directories` | `["docs/concepts", "docs/adr", "docs/decisions"]` | Concept/ADR dirs; changing triggers compat advisory |
-| `git_commit_depth` | `500` | History depth for git mining (stage 5, not yet active) |
+| `git_commit_depth` | `500` | History depth budget for deterministic Git-intelligence sampling and file-scoped summaries |
 | `max_file_size_bytes` | `1048576` (1 MB) | Files larger than this are skipped |
 | `redact_globs` | `["**/secrets/**", "**/*.env*", "**/*-private.md"]` | Files matching these are never indexed |
 
@@ -188,9 +188,8 @@ Stages 4–8:
 `openspec/specs/` holds enduring domain specs (stable intended behavior). `openspec/changes/<name>/` holds active work: `proposal.md`, `design.md`, `tasks.md`, and optional delta specs.
 
 Active changes:
-- `git-intelligence-v1` — stage 5 git mining, CoChangesWith edges, card enrichment (proposal/design/tasks exist; implement after cards-and-mcp-v1)
-- `storage-compatibility-v1`, `lexical-substrate-v1`, `bootstrap-ux-v1`, `foundation-bootstrap` — earlier change artifacts (partially or fully implemented)
+- No active implementation changes are open right now. Milestone 4 work should start with `pattern-surface-v1` and `repair-loop-v1`.
 
-Archived: `openspec/changes/archive/` — completed changes including `2026-04-10-structural-graph-v1` (structural compile pipeline), `2026-04-11-watch-reconcile-v1` (watcher, reconcile, single-writer lock), `2026-04-11-agent-integration-v1` (status command, agent-setup shims, skill/SKILL.md current-phase section), and `cards-and-mcp-v1` (stage 4 edges, CardCompiler, workspace conversion, MCP server with 5 core tools).
+Archived: `openspec/changes/archive/` — completed changes including `2026-04-10-structural-graph-v1` (structural compile pipeline), `2026-04-11-foundation-bootstrap`, `2026-04-11-lexical-substrate-v1`, `2026-04-11-bootstrap-ux-v1`, `2026-04-11-structural-pipeline-v1`, `2026-04-11-watch-reconcile-v1` (watcher, reconcile, single-writer lock), `2026-04-11-agent-integration-v1` (status command, agent-setup shims, skill/SKILL.md current-phase section), `2026-04-11-cards-and-mcp-v1` (stage 4 edges, CardCompiler, workspace conversion, MCP server with 5 core tools), `2026-04-11-storage-compatibility-v1`, and `2026-04-11-git-intelligence-v1`.
 
 Specs govern intent; the graph governs runtime truth.

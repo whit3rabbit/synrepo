@@ -27,7 +27,7 @@ It serves over stdio. After `synrepo init` populates the graph, the MCP server e
 
 **Phase 2 limitations:** Only `SymbolCard` and `FileCard` are compiled. `ModuleCard`, `EntryPointCard`, `CallPathCard`, and the specialist tools (`synrepo_entrypoints`, `synrepo_call_path`, `synrepo_test_surface`, `synrepo_minimum_context`, `synrepo_explain`, `synrepo_findings`) are planned for later phases.
 
-`SymbolCard.callers` and `.callees` are empty (file→symbol Calls edges exist; symbol→symbol resolution is phase 3+). `FileCard.git_intelligence` and `.co_changes` are empty until git mining ships.
+`SymbolCard.callers` and `.callees` are empty (file→symbol Calls edges exist; symbol→symbol resolution is phase 3+). `FileCard.git_intelligence` is now populated for file-facing Git history summaries, but `FileCard.co_changes` remains empty until graph-level `CoChangesWith` edges ship.
 
 **CLI is still the fallback** when the MCP server isn't running. See "Falling back when the MCP server isn't available" below.
 

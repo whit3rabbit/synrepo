@@ -7,10 +7,11 @@
 - Milestone 0, Foundation setup: complete
 - Milestone 1, First-run value: complete
 - Milestone 2, Observed-facts core: complete
-- Milestone 3, First real product release: in progress
-- Most recently completed implementation change: `agent-integration-v1`
+- Milestone 3, First real product release: complete
+- Most recently completed implementation change: `git-intelligence-v1`
 - Completed in Milestone 2: `structural-graph-v1`, `structural-pipeline-v1`, `watch-reconcile-v1`, `agent-integration-v1`
-- Current Milestone 3 focus: `cards-and-mcp-v1` (card compilers, MCP server, stage 4 cross-file edges, workspace conversion), followed by `git-intelligence-v1` (stage 5 git mining, card enrichment)
+- Completed in Milestone 3: `cards-and-mcp-v1`, `git-intelligence-v1`
+- Current Milestone 4 focus: `pattern-surface-v1` (patterns, rationale ingestion, DecisionCards, curated promotion rules), followed by `repair-loop-v1` (check, sync, drift classification, selective refresh)
 - MCP library chosen: `rmcp` (crates.io, modelcontextprotocol/rust-sdk); workspace strategy: add `[workspace]` to existing Cargo.toml, add `crates/synrepo-mcp/` as new member without moving existing files
 
 ## 1. Purpose
@@ -502,8 +503,7 @@ Primary outcome:
 - continuously updated graph with stable-enough identities
 
 Status:
-- In progress, with `structural-graph-v1`, `structural-pipeline-v1`, and `watch-reconcile-v1` complete
-- `agent-integration-v1` is the next implementation change: operational status surface and agent CLI shim generation
+- Complete through `structural-graph-v1`, `structural-pipeline-v1`, `watch-reconcile-v1`, and `agent-integration-v1`
 
 ### Milestone 3 — First real product release
 
@@ -513,6 +513,9 @@ Tracks:
 
 Primary outcome:
 - phase-2 ship target reached without LLM synthesis
+
+Status:
+- Complete through `cards-and-mcp-v1` and `git-intelligence-v1`
 
 ### Milestone 4 — Human-guidance enrichment
 
@@ -793,7 +796,7 @@ These should be the first concrete OpenSpec changes opened against the foundatio
 
 The list below is the default implementation sequence, not a ban on opening a later change early for contract-definition work. If a later-milestone change is opened early, its proposal and design should make clear that it exists to sharpen planning boundaries ahead of implementation and does not reorder milestone execution by itself.
 
-## 8.1 `openspec/changes/foundation-bootstrap/`
+## 8.1 `openspec/changes/archive/2026-04-11-foundation-bootstrap/`
 
 Use for:
 - creating project config, enduring specs, conventions, and contributor workflow
@@ -807,7 +810,7 @@ Artifacts:
 Roadmap tie:
 - Milestone 0
 
-## 8.2 `openspec/changes/lexical-substrate-v1/`
+## 8.2 `openspec/changes/archive/2026-04-11-lexical-substrate-v1/`
 
 Use for:
 - syntext integration, corpus discovery, file handling, indexing, search CLI, and language adapter support rules
@@ -815,7 +818,7 @@ Use for:
 Roadmap tie:
 - Milestone 1
 
-## 8.3 `openspec/changes/bootstrap-ux-v1/`
+## 8.3 `openspec/changes/archive/2026-04-11-bootstrap-ux-v1/`
 
 Use for:
 - init flow, mode selection, health checks, generated shims, first-run overview, and re-entry semantics
@@ -831,7 +834,7 @@ Use for:
 Roadmap tie:
 - Milestone 2
 
-## 8.5 `openspec/changes/structural-pipeline-v1/`
+## 8.5 `openspec/changes/archive/2026-04-11-structural-pipeline-v1/`
 
 Use for:
 - structural compile producers, automatic graph population, bootstrap-triggered graph refresh, and deterministic produced-slice replacement
@@ -839,7 +842,7 @@ Use for:
 Roadmap tie:
 - Milestone 2
 
-## 8.6 `openspec/changes/watch-reconcile-v1/`
+## 8.6 `openspec/changes/archive/2026-04-11-watch-reconcile-v1/`
 
 Use for:
 - watcher, reconcile pass, locking, runtime status, compaction basics, and store maintenance operations
@@ -850,7 +853,7 @@ Planning note:
 Roadmap tie:
 - Milestone 2
 
-## 8.7 `openspec/changes/cards-and-mcp-v1/`
+## 8.7 `openspec/changes/archive/2026-04-11-cards-and-mcp-v1/`
 
 Use for:
 - card compiler, budgets, MCP tools, and first product usability target
@@ -858,7 +861,7 @@ Use for:
 Roadmap tie:
 - Milestone 3
 
-## 8.8 `openspec/changes/git-intelligence-v1/`
+## 8.8 `openspec/changes/archive/2026-04-11-git-intelligence-v1/`
 
 Use for:
 - co-change, hotspots, ownership, and improved change impact ranking
@@ -909,7 +912,7 @@ Use for:
 Roadmap tie:
 - Milestone 6
 
-## 8.14 `openspec/changes/storage-compatibility-v1/`
+## 8.14 `openspec/changes/archive/2026-04-11-storage-compatibility-v1/`
 
 Use for:
 - `.synrepo/` store classes, compatibility-sensitive config, rebuild versus migration policy, thin runtime compatibility metadata, and maintenance semantics shared by storage and ops
@@ -948,20 +951,11 @@ Use this rule:
 
 ## 11. Suggested next move
 
-Milestone 2 is complete. All of `lexical-substrate-v1`, `bootstrap-ux-v1`, `storage-compatibility-v1`, `structural-graph-v1`, `structural-pipeline-v1`, `watch-reconcile-v1`, and `agent-integration-v1` are archived. Milestone 3 is the next target.
+Milestone 3 is complete. `cards-and-mcp-v1` and `git-intelligence-v1` are now implemented, validated, and ready to archive alongside the already archived Milestone 0–2 changes.
 
-The Milestone 3 implementation sequence:
+The next milestone target is Milestone 4:
 
-1. **`cards-and-mcp-v1`** — the primary Milestone 3 change. Covers:
-   - Stage 4: level-2 name-based cross-file edge resolution (Calls, Imports edges) via new tree-sitter queries per language (Rust, Python, TypeScript) plus a post-parse name-resolution pass
-   - `CardCompiler` implementation for `SymbolCard`, `FileCard`, and `ModuleCard`; `resolve_target()` for path, qualified name, and node ID inputs
-   - Workspace conversion: add `[workspace]` section to existing `Cargo.toml` and add `crates/synrepo-mcp/` as a new member; no file moves
-   - MCP server binary using `rmcp` (crates.io, modelcontextprotocol/rust-sdk) with five core tools: `synrepo_card`, `synrepo_search`, `synrepo_overview`, `synrepo_where_to_edit`, `synrepo_change_impact`
-   - Git-derived fields (`last_change`, `co_changes`) left as `None` in this change; populated by `git-intelligence-v1`
+1. **`pattern-surface-v1`** — add human-declared patterns, rationale ingestion, DecisionCards, and curated promotion rules without making prose the primary product surface.
+2. **`repair-loop-v1`** — add `check`, `sync`, drift classification, selective refresh, and resolution logging so the runtime stays truthful as repositories change.
 
-2. **`git-intelligence-v1`** — follows after `cards-and-mcp-v1`. Already has proposal, design, and tasks. Covers:
-   - Stage 5: history mining via the existing `GitIntelligenceContext` (co-change, ownership hints, hotspot scoring, last meaningful change)
-   - `CoChangesWith` edges in the graph
-   - Enrich `FileCard.co_changes` and `SymbolCard.last_change`
-
-Exit criterion for Milestone 3: an agent can use `synrepo_overview` + `synrepo_card` + `synrepo_where_to_edit` to orient on an unfamiliar repository and identify edit targets without reading any source files cold.
+Exit criterion for Milestone 4: human-declared guidance can enrich cards and targeted repair can correct drift cheaply without collapsing the graph versus overlay trust boundary.
