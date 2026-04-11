@@ -256,6 +256,30 @@ impl GraphStore for SqliteGraphStore {
         // The first graph store slice uses sqlite's default autocommit mode.
         Ok(())
     }
+
+    fn all_file_paths(&self) -> crate::Result<Vec<(String, FileNodeId)>> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare("SELECT path, id FROM files ORDER BY path")?;
+        let rows = stmt
+            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows
+            .into_iter()
+            .map(|(p, id)| (p, FileNodeId(id as u64)))
+            .collect())
+    }
+
+    fn all_concept_paths(&self) -> crate::Result<Vec<(String, ConceptNodeId)>> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare("SELECT path, id FROM concepts ORDER BY path")?;
+        let rows = stmt
+            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows
+            .into_iter()
+            .map(|(p, id)| (p, ConceptNodeId(id as u64)))
+            .collect())
+    }
 }
 
 fn init_schema(conn: &Connection) -> crate::Result<()> {
@@ -308,7 +332,7 @@ fn delete_node_inner(conn: &Connection, id: NodeId) -> crate::Result<()> {
             let mut stmt = conn.prepare("SELECT id FROM symbols WHERE file_id = ?1 ORDER BY id")?;
             let symbol_ids = stmt
                 .query_map(params![file_id.0 as i64], |row| {
-                    Ok(SymbolNodeId(row.get::<_, u64>(0)?))
+                    Ok(SymbolNodeId(row.get::<_, i64>(0)? as u64))
                 })?
                 .collect::<Result<Vec<_>, _>>()?;
 

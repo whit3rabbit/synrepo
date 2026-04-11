@@ -9,7 +9,7 @@
 - Milestone 2, Observed-facts core: in progress
 - Most recently completed implementation change: `structural-graph-v1`
 - Completed in the current milestone: `structural-graph-v1`
-- Current Milestone 2 follow-on focus: `watch-reconcile-v1`, watcher, reconcile pass, and single-writer runtime operations
+- Current Milestone 2 follow-on focus: `structural-pipeline-v1`, automatic graph population from repository state
 - Early contract-sharpening change already opened for a later milestone: `git-intelligence-v1`
 
 ## 1. Purpose
@@ -502,7 +502,8 @@ Primary outcome:
 
 Status:
 - In progress, with `structural-graph-v1` complete
-- `watch-reconcile-v1` is the next implementation change for runtime update and single-writer operations
+- `structural-pipeline-v1` is the next implementation change for automatic graph population
+- `watch-reconcile-v1` is planning-ready and follows after `structural-pipeline-v1`
 
 ### Milestone 3 — First real product release
 
@@ -830,15 +831,26 @@ Use for:
 Roadmap tie:
 - Milestone 2
 
-## 8.5 `openspec/changes/watch-reconcile-v1/`
+## 8.5 `openspec/changes/structural-pipeline-v1/`
 
 Use for:
-- watcher, reconcile pass, locking, runtime status, compaction basics, and store maintenance operations
+- structural compile producers, automatic graph population, bootstrap-triggered graph refresh, and deterministic produced-slice replacement
 
 Roadmap tie:
 - Milestone 2
 
-## 8.6 `openspec/changes/cards-and-mcp-v1/`
+## 8.6 `openspec/changes/watch-reconcile-v1/`
+
+Use for:
+- watcher, reconcile pass, locking, runtime status, compaction basics, and store maintenance operations
+
+Planning note:
+- sequence this after `structural-pipeline-v1`, so watch and reconcile rerun a real structural producer path instead of inventing a second source of graph truth
+
+Roadmap tie:
+- Milestone 2
+
+## 8.7 `openspec/changes/cards-and-mcp-v1/`
 
 Use for:
 - card compiler, budgets, MCP tools, and first product usability target
@@ -846,7 +858,7 @@ Use for:
 Roadmap tie:
 - Milestone 3
 
-## 8.7 `openspec/changes/git-intelligence-v1/`
+## 8.8 `openspec/changes/git-intelligence-v1/`
 
 Use for:
 - co-change, hotspots, ownership, and improved change impact ranking
@@ -857,7 +869,7 @@ Planning note:
 Roadmap tie:
 - Milestone 3
 
-## 8.8 `openspec/changes/pattern-surface-v1/`
+## 8.9 `openspec/changes/pattern-surface-v1/`
 
 Use for:
 - patterns, rationale ingestion, DecisionCards, and curated promotion rules
@@ -865,7 +877,7 @@ Use for:
 Roadmap tie:
 - Milestone 4
 
-## 8.9 `openspec/changes/repair-loop-v1/`
+## 8.10 `openspec/changes/repair-loop-v1/`
 
 Use for:
 - `check`, `sync`, drift classification, selective refresh, and resolution logging
@@ -873,7 +885,7 @@ Use for:
 Roadmap tie:
 - Milestone 4
 
-## 8.10 `openspec/changes/commentary-overlay-v1/`
+## 8.11 `openspec/changes/commentary-overlay-v1/`
 
 Use for:
 - commentary generation, freshness controls, cost accounting, cache behavior, and overlay provenance
@@ -881,7 +893,7 @@ Use for:
 Roadmap tie:
 - Milestone 5
 
-## 8.11 `openspec/changes/cross-link-overlay-v1/`
+## 8.12 `openspec/changes/cross-link-overlay-v1/`
 
 Use for:
 - candidate generation, verification, confidence scoring, findings, and review flows
@@ -889,7 +901,7 @@ Use for:
 Roadmap tie:
 - Milestone 5
 
-## 8.12 `openspec/changes/export-and-polish-v1/`
+## 8.13 `openspec/changes/export-and-polish-v1/`
 
 Use for:
 - generated docs and views, tool shims, update flows, extra file support, packaging polish, and export freshness/repair rules
@@ -897,7 +909,7 @@ Use for:
 Roadmap tie:
 - Milestone 6
 
-## 8.13 `openspec/changes/storage-compatibility-v1/`
+## 8.14 `openspec/changes/storage-compatibility-v1/`
 
 Use for:
 - `.synrepo/` store classes, compatibility-sensitive config, rebuild versus migration policy, thin runtime compatibility metadata, and maintenance semantics shared by storage and ops
@@ -938,8 +950,8 @@ Use this rule:
 
 `lexical-substrate-v1`, `bootstrap-ux-v1`, `storage-compatibility-v1`, and `structural-graph-v1` are complete. The next practical steps are:
 
-1. implement `watch-reconcile-v1` to establish the watcher, reconcile pass, and single-writer locking model alongside the graph layer
-2. continue Milestone 2 by wiring the structural pipeline producers that populate the graph store automatically
+1. implement `structural-pipeline-v1` to make graph population automatic from repository state
+2. implement `watch-reconcile-v1` after that producer path lands, so watcher and reconcile behavior drive a real structural refresh loop
 3. keep `git-intelligence-v1` planning-ready until the observed-facts update path is stable enough to support history-derived evidence
 
 Keep `git-intelligence-v1` in planning-ready state through Milestone 2. Its contract is stable; implementation depends on the graph layer being in place first.

@@ -3,7 +3,9 @@
 use std::path::Path;
 
 use crate::config::{Config, Mode};
+use crate::pipeline::structural::run_structural_compile;
 use crate::store::compatibility::{self, CompatibilityReport};
+use crate::store::sqlite::SqliteGraphStore;
 
 use super::mode_inspect::inspect_repository_mode;
 use super::report::{BootstrapAction, BootstrapHealth, BootstrapReport};
@@ -50,6 +52,13 @@ pub fn bootstrap(repo_root: &Path, requested_mode: Option<Mode>) -> anyhow::Resu
     };
 
     let build_report = crate::substrate::build_index(&config, repo_root)?;
+
+    // Run the structural compile after the substrate index so the graph
+    // is populated automatically on every init and refresh.
+    let graph_dir = synrepo_dir.join("graph");
+    let mut graph = SqliteGraphStore::open(&graph_dir)?;
+    let compile = run_structural_compile(repo_root, &config, &mut graph)?;
+
     compatibility::write_runtime_snapshot(&synrepo_dir, &config)?;
     let health = match action {
         BootstrapAction::Repaired => BootstrapHealth::Degraded,
@@ -69,6 +78,13 @@ pub fn bootstrap(repo_root: &Path, requested_mode: Option<Mode>) -> anyhow::Resu
             build_report.indexed_files
         ),
     };
+    let graph_verb = if action == BootstrapAction::Created { "populated" } else { "refreshed" };
+    let graph_status = format!(
+        "{graph_verb} graph: {} file nodes, {} symbols, {} concept nodes",
+        compile.files_discovered,
+        compile.symbols_extracted,
+        compile.concept_nodes_emitted,
+    );
     let next_step = match health {
         BootstrapHealth::Healthy => {
             "run `synrepo search <query>` to inspect the lexical index".to_string()
@@ -85,6 +101,7 @@ pub fn bootstrap(repo_root: &Path, requested_mode: Option<Mode>) -> anyhow::Resu
         compatibility_guidance: compatibility_report.guidance_lines(),
         synrepo_dir,
         substrate_status,
+        graph_status,
         next_step,
     })
 }
@@ -151,6 +168,8 @@ mod tests {
     use crate::bootstrap::BootstrapHealth;
     use crate::config::{Config, Mode};
     use crate::store::compatibility::{self, StoreId};
+    use crate::store::sqlite::SqliteGraphStore;
+    use crate::structure::graph::GraphStore;
     use tempfile::tempdir;
 
     #[test]
@@ -326,5 +345,49 @@ mod tests {
         assert!(error.contains("Bootstrap health: blocked"));
         assert!(error.contains("graph"));
         assert!(error.contains("block"));
+    }
+
+    #[test]
+    fn bootstrap_fresh_init_materializes_graph_with_code_symbols() {
+        let repo = tempdir().unwrap();
+        std::fs::create_dir_all(repo.path().join("src")).unwrap();
+        std::fs::write(
+            repo.path().join("src/lib.rs"),
+            "pub fn hello() {}\npub struct World;\n",
+        )
+        .unwrap();
+
+        let report = bootstrap(repo.path(), None).unwrap();
+
+        let graph_dir = Config::synrepo_dir(repo.path()).join("graph");
+        let store = SqliteGraphStore::open_existing(&graph_dir).unwrap();
+        let stats = store.persisted_stats().unwrap();
+
+        assert_eq!(report.health, BootstrapHealth::Healthy);
+        assert!(report.graph_status.contains("file nodes"));
+        assert!(stats.file_nodes >= 1, "at least one file node for src/lib.rs");
+        assert!(stats.symbol_nodes >= 2, "at least hello and World symbols");
+        assert!(stats.total_edges >= 2, "at least defines edges for each symbol");
+    }
+
+    #[test]
+    fn bootstrap_rerun_refreshes_graph_on_content_change() {
+        let repo = tempdir().unwrap();
+        std::fs::create_dir_all(repo.path().join("src")).unwrap();
+        std::fs::write(repo.path().join("src/lib.rs"), "pub fn before() {}\n").unwrap();
+        bootstrap(repo.path(), None).unwrap();
+
+        // Replace function to force content change.
+        std::fs::write(repo.path().join("src/lib.rs"), "pub fn after() {}\n").unwrap();
+        bootstrap(repo.path(), None).unwrap();
+
+        let graph_dir = Config::synrepo_dir(repo.path()).join("graph");
+        let store = SqliteGraphStore::open_existing(&graph_dir).unwrap();
+        let paths = store.all_file_paths().unwrap();
+
+        assert!(
+            paths.iter().any(|(p, _)| p == "src/lib.rs"),
+            "file node must survive refresh"
+        );
     }
 }

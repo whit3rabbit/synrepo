@@ -59,10 +59,13 @@ pub fn evaluate_runtime(
 
         if snapshot.config_fingerprints.graph_inputs != fingerprints.graph_inputs {
             if store_is_materialized(synrepo_dir, StoreId::Graph)? {
+                // The structural pipeline auto-refreshes the graph on every bootstrap run,
+                // so concept_directories changes are handled by clearing and repopulating
+                // rather than requiring manual migration.
                 set_action(
                     &mut entries,
                     StoreId::Graph,
-                    CompatAction::MigrateRequired,
+                    CompatAction::Rebuild,
                     "graph-sensitive config changed (`concept_directories`)".to_string(),
                 );
             } else {

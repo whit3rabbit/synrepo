@@ -30,6 +30,22 @@ pub enum SymbolKind {
     Export,
 }
 
+impl SymbolKind {
+    /// Stable snake_case label used for ID derivation and persistence.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SymbolKind::Function => "function",
+            SymbolKind::Method => "method",
+            SymbolKind::Class => "class",
+            SymbolKind::Trait => "trait",
+            SymbolKind::Type => "type",
+            SymbolKind::Module => "module",
+            SymbolKind::Constant => "constant",
+            SymbolKind::Export => "export",
+        }
+    }
+}
+
 /// A file node in the canonical graph.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FileNode {

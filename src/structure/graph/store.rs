@@ -49,4 +49,12 @@ pub trait GraphStore: Send + Sync {
     /// Commit any pending writes. Called at the end of each structural
     /// compile cycle to publish atomic snapshots.
     fn commit(&mut self) -> crate::Result<()>;
+
+    /// Return all file paths currently in the graph with their stable node IDs.
+    /// Used by the structural compile to detect stale file facts.
+    fn all_file_paths(&self) -> crate::Result<Vec<(String, FileNodeId)>>;
+
+    /// Return all concept paths currently in the graph with their stable node IDs.
+    /// Used by the structural compile to detect stale concept facts.
+    fn all_concept_paths(&self) -> crate::Result<Vec<(String, ConceptNodeId)>>;
 }

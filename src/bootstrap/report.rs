@@ -47,6 +47,8 @@ pub struct BootstrapReport {
     pub synrepo_dir: PathBuf,
     /// Human-readable description of what the substrate index did.
     pub substrate_status: String,
+    /// Human-readable description of what the structural compile produced.
+    pub graph_status: String,
     /// Suggested next action for the user.
     pub next_step: String,
 }
@@ -66,9 +68,10 @@ impl BootstrapReport {
             rendered.push_str(&format!("Compatibility: {}\n", guidance));
         }
         rendered.push_str(&format!(
-            "Runtime path: {}\nSubstrate: {}\nNext: {}\n",
+            "Runtime path: {}\nSubstrate: {}\nGraph: {}\nNext: {}\n",
             self.synrepo_dir.display(),
             self.substrate_status,
+            self.graph_status,
             self.next_step
         ));
         rendered
