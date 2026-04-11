@@ -7,9 +7,9 @@
 - Milestone 0, Foundation setup: complete
 - Milestone 1, First-run value: complete
 - Milestone 2, Observed-facts core: in progress
-- Most recently completed implementation change: `structural-graph-v1`
-- Completed in the current milestone: `structural-graph-v1`
-- Current Milestone 2 follow-on focus: `structural-pipeline-v1`, automatic graph population from repository state
+- Most recently completed implementation change: `structural-pipeline-v1`
+- Completed in the current milestone: `structural-graph-v1`, `structural-pipeline-v1`
+- Current Milestone 2 follow-on focus: `watch-reconcile-v1`, watcher, reconcile pass, and single-writer runtime operations
 - Early contract-sharpening change already opened for a later milestone: `git-intelligence-v1`
 
 ## 1. Purpose
@@ -501,9 +501,8 @@ Primary outcome:
 - continuously updated graph with stable-enough identities
 
 Status:
-- In progress, with `structural-graph-v1` complete
-- `structural-pipeline-v1` is the next implementation change for automatic graph population
-- `watch-reconcile-v1` is planning-ready and follows after `structural-pipeline-v1`
+- In progress, with `structural-graph-v1` and `structural-pipeline-v1` complete
+- `watch-reconcile-v1` is the next implementation change for runtime update and single-writer operations
 
 ### Milestone 3 — First real product release
 
@@ -948,10 +947,10 @@ Use this rule:
 
 ## 11. Suggested next move
 
-`lexical-substrate-v1`, `bootstrap-ux-v1`, `storage-compatibility-v1`, and `structural-graph-v1` are complete. The next practical steps are:
+`lexical-substrate-v1`, `bootstrap-ux-v1`, `storage-compatibility-v1`, `structural-graph-v1`, and `structural-pipeline-v1` are complete. The next practical steps are:
 
-1. implement `structural-pipeline-v1` to make graph population automatic from repository state
-2. implement `watch-reconcile-v1` after that producer path lands, so watcher and reconcile behavior drive a real structural refresh loop
+1. implement `watch-reconcile-v1` to establish the watcher, reconcile pass, and single-writer locking model on top of the now-working structural refresh loop
+2. archive or sync-complete `structural-pipeline-v1` cleanly if you want the OpenSpec state to match the shipped code more tightly
 3. keep `git-intelligence-v1` planning-ready until the observed-facts update path is stable enough to support history-derived evidence
 
 Keep `git-intelligence-v1` in planning-ready state through Milestone 2. Its contract is stable; implementation depends on the graph layer being in place first.

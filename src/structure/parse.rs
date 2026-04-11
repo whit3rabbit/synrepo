@@ -360,6 +360,7 @@ mod tests {
     #[test]
     fn parse_file_extracts_rust_top_level_definitions() {
         let source = b"
+/// Greets a user.
 pub fn greet(name: &str) -> String {
     format!(\"Hello, {name}!\")
 }
@@ -404,6 +405,7 @@ pub const MAX: usize = 100;
 pub struct Calculator {}
 
 impl Calculator {
+    /// Adds two numbers.
     pub fn add(&self, a: i32, b: i32) -> i32 {
         a + b
     }
