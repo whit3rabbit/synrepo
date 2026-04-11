@@ -21,30 +21,48 @@ Dev dependencies: `proptest` (property tests for token budget invariants), `inst
 
 ## Architecture
 
-Four layers, bottom to top:
+Four layers, bottom to top. No layer may import from a layer above it.
+Files must stay under 400 lines; split into sub-modules before they grow past that.
 
-**0. Core** (`src/core/`) — Shared types used across all layers.
+**0. Core** (`src/core/`) — Shared types with no heavy deps.
 - `ids.rs` — stable identifier types: `FileNodeId`, `SymbolNodeId`, `ConceptNodeId`, `NodeId` (unified enum). These are the types named in the hard invariants below.
 - `provenance.rs` — `Provenance`, `CreatedBy`, `SourceRef`: every graph row and overlay entry carries one.
+- Spec: `openspec/specs/foundation/spec.md`
 
-**1. Substrate** (`src/substrate/mod.rs`) — Wraps `syntext` (external crate, `crates.io`) for deterministic n-gram lexical search. Builds and queries the index at `.synrepo/index/`. Phase 0 wired; no structural awareness.
+**1. Substrate** (`src/substrate/`) — File discovery, classification, and lexical index. Must not import from structure.
+- `discover.rs` — filesystem walk via the `ignore` crate (respects `.gitignore`); produces `DiscoveredFile`
+- `classify.rs` — maps files to `FileClass` (SupportedCode, TextCode, Markdown, Jupyter, Skipped)
+- `index.rs` — wraps `syntext` for n-gram lexical indexing and search; builds/queries `.synrepo/index/`
+- Spec: `openspec/specs/substrate/spec.md`
 
-**2. Structure** (`src/structure/`) — The canonical graph of directly-observed facts.
-- `discover.rs` — walks filesystem via the `ignore` crate (respects `.gitignore`), classifies files into `FileClass` variants
+**2. Structure** (`src/structure/`) — The canonical graph of directly-observed facts only.
+- `graph/` — node types (`FileNode`, `SymbolNode`), `EdgeKind`, `Epistemic` (invariant comment in `epistemic.rs`), `GraphStore` trait
 - `parse.rs` — tree-sitter parsers for Rust, Python, TypeScript; markdown link parser
-- `graph.rs` — defines node types (`FileNode`, `SymbolNode`, `ConceptNode`), `EdgeKind`, `Epistemic`, and the `GraphStore` trait
 - `identity.rs` — rename detection: `FileNodeId` survives renames via AST-based cascade
 - `drift.rs` — per-edge drift scores recomputed on every commit
+- Spec: `openspec/specs/graph/spec.md`
 
 Node types: `FileNode` (content-hash identity), `SymbolNode` (tree-sitter extracted), `ConceptNode` (only from human-authored markdown in configured dirs such as `docs/concepts/`, `docs/adr/`; synthesis cannot create these).
 
-**3. Overlay** (`src/overlay/mod.rs`) — LLM-authored content in a physically separate SQLite database from the graph. Defines `OverlayStore`, `OverlayLink`, `OverlayEpistemic` (`machine_authored_high_conf` | `machine_authored_low_conf`), `CitedSpan`. Phase 4+ only; the module exists to establish the architectural boundary from the start.
+**3. Overlay** (`src/overlay/`) — LLM-authored content in a physically separate SQLite database from the graph. Defines `OverlayStore`, `OverlayLink`, `OverlayEpistemic` (`machine_authored_high_conf` | `machine_authored_low_conf`), `CitedSpan`. Phase 4+ only; the module exists to establish the architectural boundary from the start.
+- Spec: `openspec/specs/overlay/spec.md`
 
 **4. Surface** (`src/surface/`, `src/bin/cli.rs`) — CLI (phase 0/1), MCP server (phase 2+), skill bundle (`skill/SKILL.md`). `card.rs` defines card types returned by phase 2+ commands.
+- Spec: `openspec/specs/cards/spec.md`, `openspec/specs/mcp-surface/spec.md`
+
+**Bootstrap** (`src/bootstrap/`) — First-run UX, mode detection, health checks. `src/bin/cli.rs` is a thin dispatcher only; all logic lives here.
+- `init.rs` — `bootstrap()` orchestrator, config loading, gitignore setup
+- `report.rs` — `BootstrapReport`, `BootstrapHealth`, `BootstrapAction`
+- `mode_inspect.rs` — auto vs curated mode detection via `inspect_repository_mode()`
+- Spec: `openspec/specs/bootstrap/spec.md`
 
 **Pipeline** (`src/pipeline/`) — `structural.rs` defines the 8-stage compile cycle (discover → parse code → parse prose → resolve cross-file edges → git mine → identity → drift → commit). `synthesis.rs` is the LLM-driven overlay pipeline (phase 4+). Both files exist as skeletons; stages are TODO(phase-0/1).
+- Spec: `openspec/specs/foundation/spec.md`
 
-**Store** (`src/store/`) — SQLite backend stubs for `GraphStore` and the overlay store. The sqlite implementation ships in phase 1; an in-memory test store will sit alongside it.
+**Store** (`src/store/`) — SQLite backends implementing graph/overlay traits.
+- `compatibility/` — runtime layout checks, store versioning, migration/rebuild policy (`types.rs`, `evaluate.rs`, `snapshot.rs`)
+- Phase 1: `graph/` sqlite implementation of `GraphStore`; `overlay/` phase-4 stubs
+- Spec: `openspec/specs/storage-and-compatibility/spec.md`
 
 **Storage layout:**
 - `.synrepo/graph/` — canonical SQLite graph store
@@ -52,6 +70,29 @@ Node types: `FileNode` (content-hash identity), `SymbolNode` (tree-sitter extrac
 - `.synrepo/index/` — syntext lexical index
 - `.synrepo/config.toml` — runtime config (`Config` struct in `src/config.rs`)
 - `openspec/` — planning artifacts only, not runtime
+
+### Spec-to-module quick reference
+
+| Module | Governing spec |
+|--------|----------------|
+| `src/core/` | `openspec/specs/foundation/spec.md` |
+| `src/substrate/` | `openspec/specs/substrate/spec.md` |
+| `src/structure/` | `openspec/specs/graph/spec.md` |
+| `src/overlay/` | `openspec/specs/overlay/spec.md` |
+| `src/store/compatibility/` | `openspec/specs/storage-and-compatibility/spec.md` |
+| `src/surface/card/` | `openspec/specs/cards/spec.md` |
+| `src/surface/mcp/` | `openspec/specs/mcp-surface/spec.md` |
+| `src/bootstrap/` | `openspec/specs/bootstrap/spec.md` |
+| `src/pipeline/` | `openspec/specs/foundation/spec.md` |
+
+### Layer and size rules
+
+- No layer may import from a layer above it. Substrate must not import from structure.
+- Every `.rs` file must stay under 400 lines. Split into a sub-module directory before exceeding that limit.
+
+### Workspace conversion
+
+Stay single-crate through Milestone 2. Convert to workspace when the MCP server binary is wired (phase 2): the server has a different async dep profile that benefits from separate compilation.
 
 ## Hard invariants
 

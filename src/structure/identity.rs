@@ -3,8 +3,8 @@
 //! The AST-based rename detection cascade. See `synrepo-design-v4.md`
 //! section "Identity and stability" for the full algorithm. Phase 1 stub.
 
-use crate::structure::graph::{FileNode, GraphStore};
 use crate::core::ids::FileNodeId;
+use crate::structure::graph::{FileNode, GraphStore};
 
 /// Result of the rename detection cascade for one "disappeared" file.
 #[derive(Clone, Debug)]

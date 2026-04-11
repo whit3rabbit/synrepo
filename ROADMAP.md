@@ -8,8 +8,8 @@
 - Milestone 1, First-run value: in progress
 - Most recently completed implementation change: `bootstrap-ux-v1`
 - Completed in the current milestone: `lexical-substrate-v1`, `bootstrap-ux-v1`
-- Current Milestone 1 hardening focus: storage layout compatibility and runtime policy follow-through
-- Planned follow-on change: `storage-compatibility-v1`
+- Current Milestone 1 hardening focus: `storage-compatibility-v1`, contract-first runtime layout and versioning policy
+- Active hardening change: `storage-compatibility-v1`
 - Early contract-sharpening change already opened for a later milestone: `git-intelligence-v1`
 
 ## 1. Purpose
@@ -489,7 +489,7 @@ Primary outcome:
 
 Status:
 - In progress, with `lexical-substrate-v1` and `bootstrap-ux-v1` complete
-- `storage-compatibility-v1` is the next planned follow-on
+- `storage-compatibility-v1` is the active hardening change
 
 ### Milestone 2 — Observed-facts core
 
@@ -579,9 +579,10 @@ Purpose:
 
 Must cover:
 - canonical versus disposable stores
+- per-store compatibility actions (`continue`, `rebuild`, `invalidate`, `clear-and-recreate`, `migrate-required`, `block`)
 - retention and compaction boundaries
 - schema migration versus rebuild policy
-- compatibility-sensitive config fields
+- compatibility-sensitive config fields grouped by indexing, graph, history, and operational effects
 - upgrade and maintenance flows
 
 Ties to roadmap:
@@ -896,10 +897,11 @@ Roadmap tie:
 ## 8.13 `openspec/changes/storage-compatibility-v1/`
 
 Use for:
-- `.synrepo/` store classes, compatibility-sensitive config, rebuild versus migration policy, and maintenance semantics shared by storage and ops
+- `.synrepo/` store classes, compatibility-sensitive config, rebuild versus migration policy, thin runtime compatibility metadata, and maintenance semantics shared by storage and ops
 
 Planning note:
-- may be opened early for contract sharpening once the durable spec spine exists, but implementation should follow the milestone work that establishes the underlying stores and operational surfaces
+- this is the active Milestone 1 hardening slice because bootstrap already owns `.synrepo/` layout and substrate already persists index state
+- implement the contract-first runtime layer now, but keep the scope narrow: compatibility metadata, store checks, and clear CLI guidance, not full migration or daemon work
 
 Roadmap tie:
 - Track H

@@ -6,11 +6,11 @@ This change is opened early to lock the storage contract while the bootstrap and
 
 ## What Changes
 
-- Define the first real storage-and-compatibility policy for `.synrepo/` stores, including canonical stores, caches, and regenerable artifacts.
+- Tighten the durable storage and ops specs so they name current store classes, per-store compatibility actions, and compatibility-sensitive config groupings.
+- Add a thin shared runtime compatibility layer that owns store-format expectations, config fingerprints, and compatibility decisions outside bootstrap.
 - Lock rebuild versus migration behavior for index, graph, overlay, embeddings, cache, and state stores.
-- Define which config fields are compatibility-sensitive and what actions they trigger when changed.
 - Define retention and maintenance expectations that later operational commands can implement without inventing policy.
-- Add implementation tasks and validation expectations for storage metadata, compatibility checks, and maintenance flows.
+- Add implementation tasks and validation expectations for persisted compatibility metadata, compatibility checks, CLI guidance, and maintenance-facing semantics.
 
 ## Capabilities
 
@@ -24,6 +24,7 @@ This change is opened early to lock the storage contract while the bootstrap and
 ## Impact
 
 - Affects `.synrepo/` layout ownership and config semantics in `src/bin/cli.rs` and `src/config.rs`
+- Adds a shared compatibility policy surface under `src/store/` for bootstrap, substrate, and later store backends to reuse
 - Affects future store backends and maintenance commands under `src/store/` and operational flows
 - Provides contract guardrails for later `watch-reconcile-v1`, export work, and migration behavior
 - Does not itself implement full maintenance commands or daemon behavior

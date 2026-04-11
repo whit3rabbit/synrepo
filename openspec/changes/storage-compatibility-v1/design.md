@@ -11,6 +11,7 @@ This is an early contract-sharpening change, not a milestone reorder. Implementa
 **Goals:**
 - Define store ownership and compatibility rules for the current `.synrepo/` layout.
 - Specify which stores are canonical, supplemental, cached, or disposable.
+- Introduce a thin shared runtime compatibility layer instead of leaving the policy inside bootstrap.
 - Define rebuild versus migrate versus invalidate behavior at a policy level.
 - Define which config changes should trigger warnings, rebuilds, migrations, or refusal.
 - Give later maintenance commands and background operations a stable contract to implement.
@@ -40,8 +41,15 @@ This is an early contract-sharpening change, not a milestone reorder. Implementa
 5. The current runtime layout remains the baseline.
    This change should fit the directories and files the repo already creates or documents instead of inventing a second storage model.
 
+6. Persist minimal compatibility metadata now.
+   A single machine-written compatibility snapshot in `.synrepo/state/` is enough for this slice. It should record expected store-format versions, config-derived compatibility fingerprints, and the most recent compatibility decision inputs without turning into a generic ops database.
+
+7. Deterministic mixed actions are the default.
+   Rebuild disposable stores, preserve canonical stores, and block only when continuing would risk truth or silently discard non-disposable state.
+
 ## Risks / Trade-offs
 
 - Being too vague here guarantees churn later, but being too prescriptive on future store internals would fake certainty. The contract should focus on compatibility behavior and store classes, not accidental implementation detail.
 - If too many config fields become compatibility-sensitive, normal configuration will feel brittle. If too few do, rebuild and migration behavior will be surprising.
 - Touching both `storage-and-compatibility` and `watch-and-ops` in one change is justified because retention and maintenance operations cross the boundary, but the change still needs to avoid becoming a generic ops umbrella.
+- Writing compatibility metadata now creates a small new runtime artifact, but it is the smallest reusable hook for later graph, overlay, and ops work. Spreading these checks through bootstrap again would be worse.

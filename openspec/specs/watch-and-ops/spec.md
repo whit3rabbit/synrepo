@@ -20,11 +20,11 @@ synrepo SHALL define daemon optionality, locking, cache lifecycle, compact behav
 - **AND** both modes preserve consistent state and recovery expectations
 
 ### Requirement: Define store retention and compatibility operations
-synrepo SHALL define retention, cleanup, rebuild, and migration operations for runtime stores so maintenance behavior is predictable under upgrades and long-lived usage.
+synrepo SHALL define retention and maintenance behavior for runtime stores by consuming the storage-compatibility contract, so maintenance behavior is predictable under upgrades and long-lived usage.
 
 #### Scenario: Maintain runtime stores over time
 - **WHEN** a user upgrades synrepo or storage exceeds the declared lifecycle boundaries
-- **THEN** the ops contract defines which stores are compacted, migrated, rebuilt, retained, or garbage-collected
+- **THEN** the ops contract applies the storage-defined store classes and compatibility actions to determine which stores are compacted, migrated, rebuilt, retained, invalidated, or garbage-collected
 - **AND** maintenance behavior is observable instead of implicit
 
 ### Requirement: Expose operational diagnostics

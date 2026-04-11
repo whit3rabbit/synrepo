@@ -7,16 +7,17 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::structure::graph::Epistemic;
 use crate::core::ids::{FileNodeId, NodeId, SymbolNodeId};
+use crate::structure::graph::Epistemic;
 
 /// Context budget tier for a card request.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Budget {
     /// Roughly 200 tokens per card, ~1k tokens total.
     /// Card headers only: name, signature, location, top 3 callers/callees,
     /// drift flag. The default for orientation and routing.
+    #[default]
     Tiny,
     /// Roughly 500 tokens per card, ~3k tokens total.
     /// Full card including test surface and recent change context.
@@ -27,11 +28,7 @@ pub enum Budget {
     Deep,
 }
 
-impl Default for Budget {
-    fn default() -> Self {
-        Budget::Tiny
-    }
-}
+
 
 impl Budget {
     /// Approximate per-card token budget for this tier.

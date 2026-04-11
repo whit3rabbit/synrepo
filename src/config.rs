@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 /// Which operational mode synrepo runs in.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Mode {
     /// Bootstrap defaults here when repository inspection does not find
@@ -12,6 +12,7 @@ pub enum Mode {
     /// Synthesis runs automatically in the background and writes to the
     /// overlay. Concept nodes are disabled unless human-authored concept
     /// directories exist.
+    #[default]
     Auto,
     /// Bootstrap recommends or selects this when repository inspection
     /// finds rationale markdown under the configured concept directories,
@@ -19,12 +20,6 @@ pub enum Mode {
     /// Synthesis proposals go to a review queue. Concept nodes are
     /// enabled when human-authored ADR directories exist.
     Curated,
-}
-
-impl Default for Mode {
-    fn default() -> Self {
-        Mode::Auto
-    }
 }
 
 /// Top-level config read from `.synrepo/config.toml`.
@@ -75,7 +70,7 @@ fn default_git_commit_depth() -> u32 {
 }
 
 fn default_max_file_size() -> u64 {
-    1 * 1024 * 1024 // 1 MB
+    1024 * 1024 // 1 MB
 }
 
 fn default_redact_globs() -> Vec<String> {
