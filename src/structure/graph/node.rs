@@ -1,8 +1,9 @@
 //! Node types for the canonical graph.
 
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
-use crate::core::ids::{FileNodeId, SymbolNodeId};
+use crate::core::ids::{ConceptNodeId, FileNodeId, SymbolNodeId};
 use crate::core::provenance::Provenance;
 
 use super::epistemic::Epistemic;
@@ -75,4 +76,71 @@ pub struct SymbolNode {
     pub epistemic: Epistemic,
     /// Provenance metadata.
     pub provenance: Provenance,
+}
+
+/// A human-authored concept node in the canonical graph.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ConceptNode {
+    /// Stable identifier.
+    pub id: ConceptNodeId,
+    /// Source markdown path relative to the repo root.
+    pub path: String,
+    /// Human-authored title for the concept or decision.
+    pub title: String,
+    /// Alternate names or short handles that refer to the same concept.
+    pub aliases: Vec<String>,
+    /// Optional one-line summary extracted from the source document.
+    pub summary: Option<String>,
+    /// Epistemic origin (always `HumanDeclared` for concept nodes).
+    pub epistemic: Epistemic,
+    /// Provenance metadata.
+    pub provenance: Provenance,
+}
+
+/// Return true when a repo-relative path is eligible to produce a concept node.
+pub fn concept_source_path_allowed(path: &str, concept_directories: &[String]) -> bool {
+    let normalized = path.trim_start_matches("./");
+    let candidate = Path::new(normalized);
+    let Some(extension) = candidate.extension().and_then(|ext| ext.to_str()) else {
+        return false;
+    };
+
+    if !matches!(extension, "md" | "mdx" | "markdown") {
+        return false;
+    }
+
+    concept_directories.iter().any(|directory| {
+        let normalized_dir = directory.trim_matches('/');
+        normalized == normalized_dir
+            || (normalized.starts_with(normalized_dir)
+                && normalized.as_bytes().get(normalized_dir.len()) == Some(&b'/'))
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::concept_source_path_allowed;
+
+    #[test]
+    fn concept_source_paths_must_live_in_configured_markdown_dirs() {
+        let dirs = vec!["docs/adr".to_string(), "architecture/decisions".to_string()];
+
+        assert!(concept_source_path_allowed(
+            "docs/adr/0001-record.md",
+            &dirs
+        ));
+        assert!(concept_source_path_allowed(
+            "./architecture/decisions/why-this.mdx",
+            &dirs
+        ));
+        assert!(!concept_source_path_allowed(
+            "docs/notes/0001-record.md",
+            &dirs
+        ));
+        assert!(!concept_source_path_allowed(
+            "docs/adr/0001-record.txt",
+            &dirs
+        ));
+        assert!(!concept_source_path_allowed("docs/adr.md", &dirs));
+    }
 }

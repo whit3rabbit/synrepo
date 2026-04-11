@@ -41,5 +41,5 @@ pub mod structure;
 pub mod substrate;
 pub mod surface;
 
-pub use crate::core::ids::{EdgeId, FileNodeId, NodeId, SymbolNodeId};
+pub use crate::core::ids::{ConceptNodeId, EdgeId, FileNodeId, NodeId, SymbolNodeId};
 pub use error::{Error, Result};

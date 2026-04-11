@@ -5,11 +5,11 @@
 ## 0. Current status
 
 - Milestone 0, Foundation setup: complete
-- Milestone 1, First-run value: in progress
-- Most recently completed implementation change: `bootstrap-ux-v1`
-- Completed in the current milestone: `lexical-substrate-v1`, `bootstrap-ux-v1`
-- Current Milestone 1 hardening focus: `storage-compatibility-v1`, contract-first runtime layout and versioning policy
-- Active hardening change: `storage-compatibility-v1`
+- Milestone 1, First-run value: complete
+- Milestone 2, Observed-facts core: in progress
+- Most recently completed implementation change: `structural-graph-v1`
+- Completed in the current milestone: `structural-graph-v1`
+- Current Milestone 2 follow-on focus: `watch-reconcile-v1`, watcher, reconcile pass, and single-writer runtime operations
 - Early contract-sharpening change already opened for a later milestone: `git-intelligence-v1`
 
 ## 1. Purpose
@@ -488,8 +488,7 @@ Primary outcome:
 - initialization plus deterministic search
 
 Status:
-- In progress, with `lexical-substrate-v1` and `bootstrap-ux-v1` complete
-- `storage-compatibility-v1` is the active hardening change
+- Complete through `lexical-substrate-v1`, `bootstrap-ux-v1`, and `storage-compatibility-v1`
 
 ### Milestone 2 — Observed-facts core
 
@@ -500,6 +499,10 @@ Tracks:
 
 Primary outcome:
 - continuously updated graph with stable-enough identities
+
+Status:
+- In progress, with `structural-graph-v1` complete
+- `watch-reconcile-v1` is the next implementation change for runtime update and single-writer operations
 
 ### Milestone 3 — First real product release
 
@@ -819,7 +822,7 @@ Use for:
 Roadmap tie:
 - Milestone 1
 
-## 8.4 `openspec/changes/structural-graph-v1/`
+## 8.4 `openspec/changes/archive/2026-04-10-structural-graph-v1/`
 
 Use for:
 - parsers, graph schema, provenance, trust labels, drift, and identity handling
@@ -933,12 +936,12 @@ Use this rule:
 
 ## 11. Suggested next move
 
-`lexical-substrate-v1` and `bootstrap-ux-v1` are complete. The next practical steps are:
+`lexical-substrate-v1`, `bootstrap-ux-v1`, `storage-compatibility-v1`, and `structural-graph-v1` are complete. The next practical steps are:
 
-1. implement `storage-compatibility-v1` to lock the storage contract before Milestone 2 begins writing to canonical and supplemental stores
-2. open `structural-graph-v1` to wire tree-sitter parsing, the SQLite graph store, and identity cascade into the structural pipeline
-3. follow immediately with `watch-reconcile-v1` to establish the watcher, reconcile pass, and single-writer locking model alongside the graph layer
+1. implement `watch-reconcile-v1` to establish the watcher, reconcile pass, and single-writer locking model alongside the graph layer
+2. continue Milestone 2 by wiring the structural pipeline producers that populate the graph store automatically
+3. keep `git-intelligence-v1` planning-ready until the observed-facts update path is stable enough to support history-derived evidence
 
 Keep `git-intelligence-v1` in planning-ready state through Milestone 2. Its contract is stable; implementation depends on the graph layer being in place first.
 
-This order delivers Milestone 2 (observed-facts core) while keeping the storage contract locked before the underlying stores grow.
+This order continues Milestone 2 now that the storage contract and first direct graph inspection surface are in place.

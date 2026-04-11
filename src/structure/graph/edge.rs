@@ -1,6 +1,7 @@
 //! Edge types for the canonical graph.
 
 use serde::{Deserialize, Serialize};
+use std::{error::Error, fmt, str::FromStr};
 
 use crate::core::ids::{EdgeId, NodeId};
 use crate::core::provenance::Provenance;
@@ -36,6 +37,60 @@ pub enum EdgeKind {
     SplitFrom,
     /// Provenance: this file was merged from another during a refactor.
     MergedFrom,
+}
+
+impl EdgeKind {
+    /// Stable snake_case label used for persistence and CLI filtering.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            EdgeKind::Imports => "imports",
+            EdgeKind::Calls => "calls",
+            EdgeKind::Inherits => "inherits",
+            EdgeKind::Defines => "defines",
+            EdgeKind::References => "references",
+            EdgeKind::Mentions => "mentions",
+            EdgeKind::CoChangesWith => "co_changes_with",
+            EdgeKind::Governs => "governs",
+            EdgeKind::SplitFrom => "split_from",
+            EdgeKind::MergedFrom => "merged_from",
+        }
+    }
+}
+
+/// Parse failure for an edge-kind filter.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ParseEdgeKindError {
+    value: String,
+}
+
+impl fmt::Display for ParseEdgeKindError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "invalid edge kind: {}", self.value)
+    }
+}
+
+impl Error for ParseEdgeKindError {}
+
+impl FromStr for EdgeKind {
+    type Err = ParseEdgeKindError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "imports" => Ok(Self::Imports),
+            "calls" => Ok(Self::Calls),
+            "inherits" => Ok(Self::Inherits),
+            "defines" => Ok(Self::Defines),
+            "references" => Ok(Self::References),
+            "mentions" => Ok(Self::Mentions),
+            "co_changes_with" => Ok(Self::CoChangesWith),
+            "governs" => Ok(Self::Governs),
+            "split_from" => Ok(Self::SplitFrom),
+            "merged_from" => Ok(Self::MergedFrom),
+            _ => Err(ParseEdgeKindError {
+                value: value.to_string(),
+            }),
+        }
+    }
 }
 
 /// A graph edge.

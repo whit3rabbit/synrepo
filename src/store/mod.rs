@@ -5,5 +5,4 @@
 //! The overlay store backend ships in phase 4.
 
 pub mod compatibility;
-
-// pub mod sqlite;
+pub mod sqlite;

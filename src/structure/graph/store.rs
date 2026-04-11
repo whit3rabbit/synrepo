@@ -1,9 +1,9 @@
 //! The `GraphStore` trait: canonical graph persistence interface.
 
-use crate::core::ids::{FileNodeId, NodeId, SymbolNodeId};
+use crate::core::ids::{ConceptNodeId, FileNodeId, NodeId, SymbolNodeId};
 
 use super::edge::{Edge, EdgeKind};
-use super::node::{FileNode, SymbolNode};
+use super::node::{ConceptNode, FileNode, SymbolNode};
 
 /// Trait for the canonical graph store.
 ///
@@ -16,6 +16,9 @@ pub trait GraphStore: Send + Sync {
 
     /// Insert or update a symbol node.
     fn upsert_symbol(&mut self, node: SymbolNode) -> crate::Result<()>;
+
+    /// Insert or update a concept node.
+    fn upsert_concept(&mut self, node: ConceptNode) -> crate::Result<()>;
 
     /// Insert an edge. Edges are immutable once committed; to change an
     /// edge, delete it and insert a new one.
@@ -30,6 +33,9 @@ pub trait GraphStore: Send + Sync {
 
     /// Look up a symbol node by its stable ID.
     fn get_symbol(&self, id: SymbolNodeId) -> crate::Result<Option<SymbolNode>>;
+
+    /// Look up a concept node by its stable ID.
+    fn get_concept(&self, id: ConceptNodeId) -> crate::Result<Option<ConceptNode>>;
 
     /// Find the file node currently associated with a given path.
     fn file_by_path(&self, path: &str) -> crate::Result<Option<FileNode>>;
