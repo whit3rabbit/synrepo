@@ -6,6 +6,13 @@ A context compiler for AI coding agents.
 
 synrepo exists to reduce context pressure for AI coding agents.
 
+> **Implementation status (2026-04-11):** Stages 1–3 of the structural pipeline are
+> complete: file nodes, symbol nodes (tree-sitter), and concept nodes from markdown.
+> Cards, MCP tools, synthesis pipeline, and overlay are Phase 2+ and not yet shipped.
+> `signature` and `doc_comment` fields are always `None`. Only `Defines` edges exist.
+> Identity cascade (rename detection) is not yet implemented — file renames produce
+> duplicate nodes until Phase 1 is complete.
+
 It precomputes a small, deterministic, queryable working set about a repository and serves it through MCP in token-budgeted packets called **cards**. The goal is not to build a browsable ontology or a generated wiki. The goal is to help an agent answer questions like:
 
 * Where should I edit?
@@ -70,7 +77,7 @@ A **card** is a small, structured, deterministic record compiled from the live g
 
 Cards are not summaries. A summary is prose. A card is a structured fact packet with a token budget.
 
-### Core card types in v1
+### Core card types in v1 *(Phase 2 — card compilers not yet implemented)*
 
 * **SymbolCard**: what a symbol is, where it lives, who calls it, what it calls, which tests touch it
 * **FileCard**: what is in a file, what depends on it, recent meaningful changes
@@ -81,6 +88,9 @@ Cards are not summaries. A summary is prose. A card is a structured fact packet 
 * **PublicAPICard**: externally visible surface
 * **TestSurfaceCard**: tests and assertions constraining behavior
 * **DecisionCard**: optional rationale card when human-authored decision material exists
+
+> **Current state:** Card type structs are defined in `src/surface/card.rs`. The
+> `CardCompiler` trait has no implementations. No card can be compiled or served yet.
 
 ### Budget tiers
 
@@ -131,12 +141,16 @@ Store:
 * single source of truth
 * no in-memory graph mirror unless benchmarks prove it is needed
 
-### 7.3 Overlay layer
+### 7.3 Overlay layer *(Phase 4+ — not yet implemented)*
+
+> **Current state:** `src/overlay/mod.rs` defines the types to establish the
+> architectural boundary. No overlay data is written or read. The MCP queryability
+> described below requires Phase 2 (MCP server) and Phase 4 (synthesis) first.
 
 The overlay stores machine-authored outputs:
 
 * card commentary
-  n- proposed cross-links
+* proposed cross-links
 * findings and inconsistencies
 
 The overlay is queryable by MCP but never treated as canonical and never read by synthesis as input.
@@ -213,7 +227,10 @@ Runs on file changes and produces:
 
 This pipeline must remain fast, deterministic, and cheap.
 
-### 9.2 Synthesis pipeline
+### 9.2 Synthesis pipeline *(Phase 4+ — not yet implemented)*
+
+> **Current state:** `src/pipeline/synthesis.rs` is a 4-line stub. No LLM call
+> is made anywhere in the codebase today.
 
 Cold path. LLM-driven. Optional.
 
@@ -290,7 +307,11 @@ Highest to lowest:
 * Code can contradict intent documents; both may still matter for different questions.
 * Two human sources in direct conflict are surfaced as a finding, not silently resolved.
 
-## 12. MCP surface
+## 12. MCP surface *(Phase 2 — not yet implemented)*
+
+> **Current state:** No MCP server exists. The tools listed below are the planned
+> Phase 2 surface, not the current one. The only agent-accessible interface today
+> is the CLI (`synrepo init`, `search`, `graph query`, `graph stats`, `node`).
 
 The primary interface is task-first.
 
