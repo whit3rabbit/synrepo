@@ -6,11 +6,12 @@
 
 - Milestone 0, Foundation setup: complete
 - Milestone 1, First-run value: complete
-- Milestone 2, Observed-facts core: in progress
-- Most recently completed implementation change: `structural-pipeline-v1`
-- Completed in the current milestone: `structural-graph-v1`, `structural-pipeline-v1`
-- Current Milestone 2 follow-on focus: `watch-reconcile-v1`, watcher, reconcile pass, and single-writer runtime operations
-- Early contract-sharpening change already opened for a later milestone: `git-intelligence-v1`
+- Milestone 2, Observed-facts core: complete
+- Milestone 3, First real product release: in progress
+- Most recently completed implementation change: `agent-integration-v1`
+- Completed in Milestone 2: `structural-graph-v1`, `structural-pipeline-v1`, `watch-reconcile-v1`, `agent-integration-v1`
+- Current Milestone 3 focus: `cards-and-mcp-v1` (card compilers, MCP server, stage 4 cross-file edges, workspace conversion), followed by `git-intelligence-v1` (stage 5 git mining, card enrichment)
+- MCP library chosen: `rmcp` (crates.io, modelcontextprotocol/rust-sdk); workspace strategy: add `[workspace]` to existing Cargo.toml, add `crates/synrepo-mcp/` as new member without moving existing files
 
 ## 1. Purpose
 
@@ -501,8 +502,8 @@ Primary outcome:
 - continuously updated graph with stable-enough identities
 
 Status:
-- In progress, with `structural-graph-v1` and `structural-pipeline-v1` complete
-- `watch-reconcile-v1` is the next implementation change for runtime update and single-writer operations
+- In progress, with `structural-graph-v1`, `structural-pipeline-v1`, and `watch-reconcile-v1` complete
+- `agent-integration-v1` is the next implementation change: operational status surface and agent CLI shim generation
 
 ### Milestone 3 — First real product release
 
@@ -947,12 +948,20 @@ Use this rule:
 
 ## 11. Suggested next move
 
-`lexical-substrate-v1`, `bootstrap-ux-v1`, `storage-compatibility-v1`, `structural-graph-v1`, and `structural-pipeline-v1` are complete. The next practical steps are:
+Milestone 2 is complete. All of `lexical-substrate-v1`, `bootstrap-ux-v1`, `storage-compatibility-v1`, `structural-graph-v1`, `structural-pipeline-v1`, `watch-reconcile-v1`, and `agent-integration-v1` are archived. Milestone 3 is the next target.
 
-1. implement `watch-reconcile-v1` to establish the watcher, reconcile pass, and single-writer locking model on top of the now-working structural refresh loop
-2. archive or sync-complete `structural-pipeline-v1` cleanly if you want the OpenSpec state to match the shipped code more tightly
-3. keep `git-intelligence-v1` planning-ready until the observed-facts update path is stable enough to support history-derived evidence
+The Milestone 3 implementation sequence:
 
-Keep `git-intelligence-v1` in planning-ready state through Milestone 2. Its contract is stable; implementation depends on the graph layer being in place first.
+1. **`cards-and-mcp-v1`** — the primary Milestone 3 change. Covers:
+   - Stage 4: level-2 name-based cross-file edge resolution (Calls, Imports edges) via new tree-sitter queries per language (Rust, Python, TypeScript) plus a post-parse name-resolution pass
+   - `CardCompiler` implementation for `SymbolCard`, `FileCard`, and `ModuleCard`; `resolve_target()` for path, qualified name, and node ID inputs
+   - Workspace conversion: add `[workspace]` section to existing `Cargo.toml` and add `crates/synrepo-mcp/` as a new member; no file moves
+   - MCP server binary using `rmcp` (crates.io, modelcontextprotocol/rust-sdk) with five core tools: `synrepo_card`, `synrepo_search`, `synrepo_overview`, `synrepo_where_to_edit`, `synrepo_change_impact`
+   - Git-derived fields (`last_change`, `co_changes`) left as `None` in this change; populated by `git-intelligence-v1`
 
-This order continues Milestone 2 now that the storage contract and first direct graph inspection surface are in place.
+2. **`git-intelligence-v1`** — follows after `cards-and-mcp-v1`. Already has proposal, design, and tasks. Covers:
+   - Stage 5: history mining via the existing `GitIntelligenceContext` (co-change, ownership hints, hotspot scoring, last meaningful change)
+   - `CoChangesWith` edges in the graph
+   - Enrich `FileCard.co_changes` and `SymbolCard.last_change`
+
+Exit criterion for Milestone 3: an agent can use `synrepo_overview` + `synrepo_card` + `synrepo_where_to_edit` to orient on an unfamiliar repository and identify edit targets without reading any source files cold.

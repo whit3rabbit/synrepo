@@ -48,6 +48,27 @@ pub struct ExtractedEdge {
     pub kind: EdgeKind,
 }
 
+/// A call site reference extracted during parse for stage-4 resolution.
+///
+/// The callee name is the local name as it appears at the call site. Stage 4
+/// resolves it against the global symbol name index; unresolved names are
+/// silently skipped (approximate resolution is acceptable in phase 1).
+#[derive(Clone, Debug)]
+pub struct ExtractedCallRef {
+    /// Name of the called function or method (local, not fully qualified).
+    pub callee_name: String,
+}
+
+/// An import/use reference extracted during parse for stage-4 resolution.
+///
+/// The module_ref is the raw text captured from the import statement. Stage 4
+/// resolves it to a FileNodeId where possible; unresolved refs are skipped.
+#[derive(Clone, Debug)]
+pub struct ExtractedImportRef {
+    /// Raw module path or name as written in the source.
+    pub module_ref: String,
+}
+
 /// Result of parsing one source file.
 pub struct ParseOutput {
     /// Language identified.
@@ -56,4 +77,8 @@ pub struct ParseOutput {
     pub symbols: Vec<ExtractedSymbol>,
     /// Edges observed within this file.
     pub edges: Vec<ExtractedEdge>,
+    /// Call-site references for stage-4 cross-file Calls edge resolution.
+    pub call_refs: Vec<ExtractedCallRef>,
+    /// Import references for stage-4 cross-file Imports edge resolution.
+    pub import_refs: Vec<ExtractedImportRef>,
 }

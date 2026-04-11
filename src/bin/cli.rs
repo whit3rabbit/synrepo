@@ -2,6 +2,8 @@
 //!
 //! Phase 0/1 subcommands:
 //! - `synrepo init [--mode auto|curated]`, create `.synrepo/` in the current repo
+//! - `synrepo status`, print operational health: mode, graph counts, last reconcile, lock state
+//! - `synrepo agent-setup <tool>`, generate a thin integration shim for claude/cursor/copilot/generic
 //! - `synrepo reconcile`, run a structural compile pass without full re-bootstrap
 //! - `synrepo search <query>`, lexical search against the persisted index
 //! - `synrepo graph query "<direction> <node_id> [edge_kind]"`, narrow graph traversal query
@@ -15,7 +17,10 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use tracing_subscriber::EnvFilter;
 
-use cli_support::commands::{graph_query, graph_stats, init, node, reconcile, search};
+use cli_support::agent_shims::AgentTool;
+use cli_support::commands::{
+    agent_setup, graph_query, graph_stats, init, node, reconcile, search, status,
+};
 use synrepo::config::Mode;
 
 #[derive(Parser)]
@@ -38,6 +43,24 @@ enum Command {
         /// Operational mode.
         #[arg(long, value_enum)]
         mode: Option<ModeArg>,
+    },
+
+    /// Print operational health: mode, graph node counts, last reconcile outcome, and writer lock state.
+    ///
+    /// Reads only; never acquires the writer lock or mutates any store.
+    /// Safe to run at any time, including while a reconcile is in progress.
+    Status,
+
+    /// Generate a thin integration shim for the specified agent CLI.
+    ///
+    /// Writes a named fragment file and prints the one-line include instruction.
+    /// Never modifies existing configuration files. Use `--force` to overwrite.
+    AgentSetup {
+        /// Target agent CLI.
+        tool: AgentTool,
+        /// Overwrite an existing shim file if one already exists.
+        #[arg(long)]
+        force: bool,
     },
 
     /// Run a structural compile pass against the current repository state.
@@ -99,12 +122,16 @@ fn main() -> anyhow::Result<()> {
         .init();
 
     let cli = Cli::parse();
-    let repo_root = cli
-        .repo
-        .unwrap_or_else(|| std::env::current_dir().expect("cwd"));
+    let repo_root = match cli.repo {
+        Some(p) => p,
+        None => std::env::current_dir()
+            .map_err(|e| anyhow::anyhow!("cannot determine working directory: {e}"))?,
+    };
 
     match cli.command {
         Command::Init { mode } => init(&repo_root, mode.map(Into::into)),
+        Command::Status => status(&repo_root),
+        Command::AgentSetup { tool, force } => agent_setup(&repo_root, tool, force),
         Command::Reconcile => reconcile(&repo_root),
         Command::Search { query } => search(&repo_root, &query),
         Command::Graph(GraphCommand::Query { q }) => graph_query(&repo_root, &q),

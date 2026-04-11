@@ -5,13 +5,17 @@ use serde_json::json;
 use synrepo::{
     config::Config,
     core::provenance::Provenance,
+    pipeline::{git::GitIntelligenceContext, git_intelligence::analyze_path_history},
     store::{
         compatibility::{self, CompatAction, StoreId},
         sqlite::SqliteGraphStore,
     },
     structure::graph::{EdgeKind, Epistemic, GraphStore},
+    surface::card::FileGitIntelligence,
     NodeId,
 };
+
+const FILE_NODE_GIT_INSIGHT_LIMIT: usize = 5;
 
 pub(crate) fn graph_query_output(repo_root: &Path, query: &str) -> anyhow::Result<String> {
     let store = open_graph_store_for_read(repo_root)?;
@@ -35,20 +39,31 @@ pub(crate) fn graph_stats_output(repo_root: &Path) -> anyhow::Result<String> {
 }
 
 pub(crate) fn node_output(repo_root: &Path, id: &str) -> anyhow::Result<String> {
+    let config = Config::load(repo_root)?;
     let store = open_graph_store_for_read(repo_root)?;
     let node_id = id.parse::<NodeId>()?;
 
     let payload = match node_id {
-        NodeId::File(file_id) => store
-            .get_file(file_id)?
-            .map(|node| json!({ "node_id": id, "node_type": "file", "node": node })),
+        NodeId::File(file_id) => store.get_file(file_id)?.map(|node| {
+            let git_context = GitIntelligenceContext::inspect(repo_root, &config);
+            let git_intelligence = FileGitIntelligence::from(analyze_path_history(
+                &git_context,
+                &node.path,
+                config.git_commit_depth as usize,
+                FILE_NODE_GIT_INSIGHT_LIMIT,
+            )?);
+            Ok::<_, anyhow::Error>(
+                json!({ "node_id": id, "node_type": "file", "node": node, "git_intelligence": git_intelligence }),
+            )
+        }),
         NodeId::Symbol(symbol_id) => store
             .get_symbol(symbol_id)?
-            .map(|node| json!({ "node_id": id, "node_type": "symbol", "node": node })),
+            .map(|node| Ok(json!({ "node_id": id, "node_type": "symbol", "node": node }))),
         NodeId::Concept(concept_id) => store
             .get_concept(concept_id)?
-            .map(|node| json!({ "node_id": id, "node_type": "concept", "node": node })),
+            .map(|node| Ok(json!({ "node_id": id, "node_type": "concept", "node": node }))),
     }
+    .transpose()?
     .ok_or_else(|| anyhow::anyhow!("node not found: {id}"))?;
 
     render_json(&payload)

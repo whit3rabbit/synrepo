@@ -10,13 +10,19 @@
 //!   facts independently.
 //! - `writer` — single-writer lock contract for standalone CLI and future
 //!   daemon-assisted operation.
+//! - `git` — deterministic repository-state inspection shared by structural
+//!   provenance now and future git-intelligence work later.
 //! - `diagnostics` — operational diagnostics surface for reconcile health,
 //!   writer ownership, and stale runtime state.
 //! - `maintenance` — maintenance hooks that consume the storage-compatibility
 //!   contract for cleanup and compaction behavior.
+//! - `git_intelligence` — the deterministic entry point for future
+//!   history-derived routing and change-risk enrichment.
 //! - `synthesis` — LLM-driven overlay pipeline (phase 4+).
 
 pub mod diagnostics;
+pub mod git;
+pub mod git_intelligence;
 pub mod maintenance;
 pub mod structural;
 pub mod synthesis;

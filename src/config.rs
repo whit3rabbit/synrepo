@@ -81,6 +81,15 @@ fn default_redact_globs() -> Vec<String> {
     ]
 }
 
+impl std::fmt::Display for Mode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Mode::Auto => f.write_str("auto"),
+            Mode::Curated => f.write_str("curated"),
+        }
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {

@@ -11,9 +11,10 @@
 //! 3. **Parse prose** — markdown link parser for files in configured concept
 //!    directories, extract concept nodes.
 //!
-//! Stages 4–8 (cross-file edge resolution, git mining, identity cascade,
-//! drift scoring, ArcSwap commit) are NOT part of this change and remain
-//! TODO stubs.
+//! Stage 4 (cross-file edge resolution) is now wired: after stages 1–3
+//! commit, a name-resolution pass emits `Calls` and `Imports` edges.
+//! Stages 5–8 (git mining, identity cascade, drift scoring, ArcSwap commit)
+//! remain TODO stubs.
 //!
 //! ## Relationship to watch and reconcile
 //!
@@ -35,6 +36,7 @@
 
 mod ids;
 mod provenance;
+mod stage4;
 
 #[cfg(test)]
 mod tests;
@@ -46,11 +48,12 @@ use std::{
 };
 
 use ids::{derive_edge_id, derive_file_id, derive_symbol_id};
-use provenance::{current_git_revision, make_provenance};
+use provenance::make_provenance;
 
 use crate::{
     config::Config,
     core::ids::NodeId,
+    pipeline::git::GitRepositorySnapshot,
     structure::{
         graph::{
             concept_source_path_allowed, Edge, EdgeKind, Epistemic, FileNode, GraphStore,
@@ -58,8 +61,10 @@ use crate::{
         },
         parse, prose,
     },
-    substrate::{self, FileClass},
+    substrate::{self, DiscoveredFile, FileClass},
 };
+
+use stage4::CrossFilePending;
 
 /// Run one structural compile cycle.
 ///
@@ -80,8 +85,74 @@ pub fn run_structural_compile(
 
     // Wrap all graph reads and writes in a single transaction so that each
     // compile cycle is atomic and inserts are batched rather than auto-committed.
+    // On any error, rollback ensures the next reconcile starts with a clean slate.
     graph.begin()?;
+    let txn = match stages_1_to_3(repo_root, config, graph, &discovered, &discovered_paths) {
+        Ok(v) => v,
+        Err(e) => {
+            let _ = graph.rollback();
+            return Err(e);
+        }
+    };
+    graph.commit()?;
 
+    // Stage 4: cross-file edge resolution (Calls, Imports).
+    // Runs in its own transaction after stages 1–3 are committed so the
+    // name index query sees all nodes emitted this cycle.
+    let stage4_edges =
+        stage4::run_cross_file_resolution(graph, &txn.cross_file_pending, &txn.revision)?;
+
+    Ok(CompileSummary {
+        files_discovered,
+        files_parsed: txn.files_parsed,
+        symbols_extracted: txn.symbols_extracted,
+        edges_added: txn.edges_added + stage4_edges,
+        concept_nodes_emitted: txn.concept_nodes_emitted,
+        identities_resolved: txn.identities_resolved,
+        elapsed_ms: start.elapsed().as_millis() as u64,
+    })
+}
+
+// Output of the stages 1-3 transaction body.
+struct StagesTxnResult {
+    files_parsed: usize,
+    symbols_extracted: usize,
+    edges_added: usize,
+    concept_nodes_emitted: usize,
+    identities_resolved: usize,
+    cross_file_pending: Vec<CrossFilePending>,
+    revision: String,
+}
+
+// Transaction wrapper: begin, run body, commit on Ok or rollback on Err.
+// Used by this module and accessible to submodule stage4 via `super::`.
+fn with_transaction<T>(
+    graph: &mut dyn GraphStore,
+    body: impl FnOnce(&mut dyn GraphStore) -> crate::Result<T>,
+) -> crate::Result<T> {
+    graph.begin()?;
+    match body(graph) {
+        Ok(v) => {
+            graph.commit()?;
+            Ok(v)
+        }
+        Err(e) => {
+            let _ = graph.rollback();
+            Err(e)
+        }
+    }
+}
+
+/// Stages 1–3 transaction body: stale detection, symbol extraction, concept
+/// extraction. Runs inside an already-open transaction; does not call
+/// begin/commit itself.
+fn stages_1_to_3(
+    repo_root: &Path,
+    config: &Config,
+    graph: &mut dyn GraphStore,
+    discovered: &[DiscoveredFile],
+    discovered_paths: &BTreeSet<String>,
+) -> crate::Result<StagesTxnResult> {
     // Load all current file paths once; used for stale detection and rename matching.
     let existing_file_paths = graph.all_file_paths()?;
 
@@ -119,14 +190,17 @@ pub fn run_structural_compile(
         }
     }
 
-    let revision = current_git_revision(repo_root);
+    let git = GitRepositorySnapshot::inspect(repo_root);
+    let revision = git.source_revision().to_string();
     let mut files_parsed = 0usize;
     let mut symbols_extracted = 0usize;
     let mut edges_added = 0usize;
     let mut concept_nodes_emitted = 0usize;
     let mut identities_resolved = 0usize;
+    // Stage 4: collect cross-file refs from newly parsed files.
+    let mut cross_file_pending: Vec<CrossFilePending> = Vec::new();
 
-    for file in &discovered {
+    for file in discovered {
         if matches!(file.class, FileClass::SupportedCode { .. }) {
             let content = match std::fs::read(&file.absolute_path) {
                 Ok(content) => content,
@@ -185,8 +259,8 @@ pub fn run_structural_compile(
                 ),
             })?;
 
-            match parse::parse_file(file.absolute_path.as_path(), &content)? {
-                Some(parsed) if !parsed.symbols.is_empty() => {
+            if let Some(parsed) = parse::parse_file(file.absolute_path.as_path(), &content)? {
+                if !parsed.symbols.is_empty() {
                     files_parsed += 1;
                     for symbol in &parsed.symbols {
                         let symbol_id = derive_symbol_id(
@@ -234,7 +308,15 @@ pub fn run_structural_compile(
                         edges_added += 1;
                     }
                 }
-                _ => {}
+                // Collect cross-file refs for stage 4, regardless of symbol count.
+                if !parsed.call_refs.is_empty() || !parsed.import_refs.is_empty() {
+                    cross_file_pending.push(CrossFilePending {
+                        file_id,
+                        file_path: file.relative_path.clone(),
+                        call_refs: parsed.call_refs,
+                        import_refs: parsed.import_refs,
+                    });
+                }
             }
         }
 
@@ -246,7 +328,8 @@ pub fn run_structural_compile(
                 Err(_) => continue,
             };
 
-            if let Some(concept) = prose::extract_concept(&file.relative_path, &content, &revision)?
+            if let Some(concept) =
+                prose::extract_concept(&file.relative_path, &content, &revision)?
             {
                 graph.upsert_concept(concept)?;
                 concept_nodes_emitted += 1;
@@ -261,16 +344,14 @@ pub fn run_structural_compile(
         }
     }
 
-    graph.commit()?;
-
-    Ok(CompileSummary {
-        files_discovered,
+    Ok(StagesTxnResult {
         files_parsed,
         symbols_extracted,
         edges_added,
         concept_nodes_emitted,
         identities_resolved,
-        elapsed_ms: start.elapsed().as_millis() as u64,
+        cross_file_pending,
+        revision,
     })
 }
 

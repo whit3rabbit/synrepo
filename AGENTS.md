@@ -14,6 +14,9 @@ cargo fmt                          # format
 make check                         # fmt-check + lint + test (CI equivalent)
 cargo run -- init                  # initialize .synrepo/ in cwd
 cargo run -- [--repo <path>] init  # override repo root
+cargo run -- reconcile             # refresh graph store without full re-bootstrap
+cargo run -- status                # operational health: mode, counts, last reconcile, lock
+cargo run -- agent-setup <tool>    # write integration shim for claude/cursor/copilot/generic
 cargo run -- search <query>        # lexical search
 cargo run -- graph query "outbound <node_id> [edge_kind]"  # graph traversal
 cargo run -- graph stats           # node/edge counts
@@ -77,6 +80,8 @@ Node types: `FileNode` (content-hash identity), `SymbolNode` (tree-sitter extrac
 - `.synrepo/index/` — syntext lexical index
 - `.synrepo/config.toml` — runtime config (`Config` struct in `src/config.rs`)
 - `.synrepo/.gitignore` — gitignores everything in `.synrepo/` except `config.toml` and `.gitignore`
+- `.synrepo/state/writer.lock` — process-level write lock (PID + timestamp); held during `init` and `reconcile`
+- `.synrepo/state/reconcile-state.json` — last reconcile outcome, timestamp, and discovered/symbol counts
 - `openspec/` — planning artifacts only, not runtime
 
 ### Spec-to-module quick reference
@@ -100,7 +105,7 @@ Node types: `FileNode` (content-hash identity), `SymbolNode` (tree-sitter extrac
 
 ### Workspace conversion
 
-Stay single-crate through Milestone 2. Convert to workspace when the MCP server binary is wired (phase 2): the server has a different async dep profile that benefits from separate compilation.
+Milestone 2 is complete. The workspace conversion happens in `cards-and-mcp-v1` (Milestone 3): add a `[workspace]` section to the existing `Cargo.toml` and add `crates/synrepo-mcp/` as a new member. No files move. The library crate stays sync at the repo root; the MCP server binary lives in `crates/synrepo-mcp/` and adds `rmcp` (crates.io, modelcontextprotocol/rust-sdk) plus `tokio` as its own deps without infecting the library.
 
 ## Hard invariants
 
@@ -108,7 +113,7 @@ These must hold across all changes:
 
 1. `graph::Epistemic` has three variants: `ParserObserved`, `HumanDeclared`, `GitObserved`. Machine-authored content uses `overlay::OverlayEpistemic` instead. The type boundary is enforced by the type system — do not add machine variants to `Epistemic`.
 2. The synthesis pipeline queries the graph with `source_store = "graph"` filtered at the retrieval layer. It never reads overlay output as input. This is structural, not just labeled.
-3. `FileNodeId` is stable across renames. **This invariant is not yet enforced at runtime.** For new files it is derived from the content hash of the first-seen version (`derive_file_id` in `pipeline/structural/ids.rs`). For existing files the stored ID is always reused. Rename detection (stage 6) is not yet implemented: until it is, a rename will produce a new ID instead of preserving the old one. Do not derive `FileNodeId` from path.
+3. `FileNodeId` is stable across renames. For new files it is derived from the content hash of the first-seen version (`derive_file_id` in `pipeline/structural/ids.rs`). For existing files the stored ID is always reused. Content-hash rename detection (stage 6) is implemented: a file moved to a new path with identical content preserves its `FileNodeId` and records the old path in `path_history`. Do not derive `FileNodeId` from path.
 4. `ConceptNodeId` is path-derived (`derive_concept_id` in `structure/prose.rs`), making it stable across content edits but not renames. This differs from `FileNodeId` — do not confuse the two.
 5. `SymbolNodeId` is keyed on `(file_node_id, qualified_name, kind, body_hash)`. A body rewrite changes the hash but keeps the node's graph slot via upsert.
 6. `EdgeKind::Governs` is only created from human-authored frontmatter or inline `# DECISION:` markers, never inferred.
@@ -119,6 +124,9 @@ These must hold across all changes:
 ### Currently wired end-to-end
 
 - `synrepo init` — idempotent bootstrap: creates on first run, refreshes on re-run, repairs if layout is partial. Auto-selects `auto` vs `curated` mode by scanning `concept_directories` for markdown; `--mode` overrides. Runs structural compile (stages 1–3) automatically, populating the graph with file nodes, symbol nodes, and concept nodes.
+- `synrepo reconcile` — runs `run_reconcile_pass()` (same path as the watch loop): acquires writer lock, opens graph store, runs structural compile stages 1–3. Persists outcome to `.synrepo/state/reconcile-state.json`. Does not re-index the substrate or rewrite config.
+- `synrepo status` — read-only operational health: mode, graph node counts, last reconcile outcome, writer lock state. Never acquires the writer lock. Safe to run while a reconcile is in progress.
+- `synrepo agent-setup <tool>` — generates a thin integration shim for `claude`, `cursor`, `copilot`, or `generic`. Writes a named fragment file and prints the one-line include instruction. `--force` overwrites an existing file. Logic in `src/bin/cli_support/agent_shims.rs`.
 - `synrepo search <query>` — calls `substrate::search` via syntext
 - `synrepo graph query "<direction> <node_id> [edge_kind]"` — graph traversal; direction is `inbound` or `outbound`; edge_kind filter is optional
 - `synrepo graph stats` — node and edge counts as JSON
@@ -131,33 +139,33 @@ Stages 1–3 run on every `synrepo init`:
 2. **Parse code** — tree-sitter symbol extraction; emits `FileNode`, `SymbolNode`, `Defines` edges
 3. **Parse prose** — concept node extraction from configured markdown directories
 
-Stages 4–8 are TODO stubs:
-4. Cross-file edge resolution (`calls`, `imports`, `inherits`, `references`) — not yet populated
-5. Git mining (co-change, ownership, blame)
-6. Identity cascade (rename detection)
-7. Drift scoring
-8. ArcSwap commit
+Stages 4–8:
+4. Cross-file edge resolution (`calls`, `imports`, `inherits`, `references`) — **implemented** in `cards-and-mcp-v1`: name-based approximate resolution via tree-sitter call/import queries + post-parse name lookup pass in `src/pipeline/structural/stage4.rs`
+5. Git mining (co-change, ownership, blame) — planned for `git-intelligence-v1` using existing `GitIntelligenceContext`
+6. Identity cascade (rename detection) — **partially implemented**: content-hash based rename detection wired; split/merge detection still TODO
+7. Drift scoring — TODO stub
+8. ArcSwap commit — TODO stub
 
 ### Not yet implemented
 
-- Watcher / reconcile loop (next: `watch-reconcile-v1`)
-- Card compilers (`CardCompiler` trait defined in `surface/card.rs` but not implemented)
-- MCP server (phase 2)
+- `synrepo watch` CLI command (`run_watch_loop` in `pipeline/watch.rs` is implemented but not wired to a CLI subcommand; `synrepo reconcile` is the one-shot path)
+- `ModuleCard`, `EntryPointCard`, `CallPathCard` and specialist MCP tools (`synrepo_entrypoints`, `synrepo_call_path`, `synrepo_test_surface`, `synrepo_minimum_context`, `synrepo_explain`, `synrepo_findings`) — next phases
+- Stage 5 git mining (`CoChangesWith`, ownership, hotspots, last meaningful change) — next: `git-intelligence-v1`
 - Synthesis pipeline (phase 4+)
 
 ## Gotchas
 
 - **File size rule is currently satisfied**: no `src/**/*.rs` file should exceed 400 lines. Keep it that way by splitting modules before adding substantial new code.
 - **`signature` and `doc_comment` are always `None`** until the phase-1 TODO in `src/structure/parse/extract.rs` is resolved. Do not write code that assumes these fields are populated.
-- **Only `Defines` edges exist** in the graph currently. `Calls`, `Imports`, `Inherits`, `References`, `CoChangesWith`, `Mentions` edges are not emitted until stages 4–5 are implemented. `SplitFrom` and `MergedFrom` edge kinds are defined but not yet produced.
+- **Stage 4 cross-file edges are now emitted**: `Calls` (file→symbol, approximate name resolution) and `Imports` (file→file, relative path resolution) edges are produced by `run_structural_compile`. `Inherits`, `References`, `CoChangesWith`, `Mentions` are not yet emitted. `SplitFrom` and `MergedFrom` edge kinds are defined but not yet produced.
 - **`criterion` is present in `Cargo.toml`**, but the documented test workflow still centers on `proptest` and `insta`. Use `criterion` only for explicit benchmark work.
 - **`.synrepo/graph/nodes.db`** is the actual SQLite file. Code that opens the graph store uses `SqliteGraphStore::open(&graph_dir)` where `graph_dir` is `.synrepo/graph/`; the `nodes.db` name is internal to `src/store/sqlite/mod.rs`.
 - **Compatibility blocks on version mismatch**: if `.synrepo/` contains a graph store whose recorded format version is newer than the current binary understands, `synrepo init` and all graph commands will error. Resolve by removing `.synrepo/` and reinitializing.
 - **Git history mining uses `gix`** (not `git2`). The `gix` dep is included but git mining stages are TODO.
-- **`notify` and `notify-debouncer-full` are in `Cargo.toml`** but the watcher loop is not implemented. They are placeholders for `watch-reconcile-v1`.
+- **`notify` and `notify-debouncer-full` are in `Cargo.toml`** and are used by `run_watch_loop` in `pipeline/watch.rs`. The watcher is implemented; there is no `synrepo watch` CLI subcommand yet.
 - **`concept_directories` config defaults**: `docs/concepts`, `docs/adr`, `docs/decisions`. Adding a fourth directory (e.g. `architecture/decisions`) requires a config-sensitive compatibility check — changing this field triggers a graph advisory in the compat report.
-- **File renames are not yet detected.** Until the identity cascade (stage 6) is implemented, a file renamed from `src/old.rs` to `src/new.rs` creates a new `FileNodeId` for `src/new.rs` and leaves the old node orphaned until the next compile removes it. Any code that persists a `FileNodeId` across a rename will reference a stale node. Do not build external surfaces that cache node IDs until rename detection is wired.
-- **`path_history` is always empty** until stage 6 is implemented. The field is defined on `FileNode` and persists correctly, but no compile pass populates it yet. Do not read it expecting populated values.
+- **File rename detection is implemented (content-hash matching).** When a file is moved to a new path with the same content, the structural compile detects the rename, preserves the `FileNodeId`, and records the old path in `path_history`. Caveat: split/merge detection is still TODO — a single file split into two will still produce orphaned nodes until split detection is wired.
+- **Writer lock is enforced on all writes**: `synrepo init` and `synrepo reconcile` both acquire `.synrepo/state/writer.lock` before any state mutation. If a concurrent process holds the lock, both commands fail immediately with "writer lock held by pid N." Remove the lock file only if the recorded PID is confirmed dead (`kill -0 <pid>` returns non-zero). The canonical write path is `run_reconcile_pass()` in `pipeline/watch.rs` — any new code that needs to trigger a structural compile should go through it.
 
 ## Config fields (`src/config.rs`)
 
@@ -179,10 +187,10 @@ Stages 4–8 are TODO stubs:
 
 `openspec/specs/` holds enduring domain specs (stable intended behavior). `openspec/changes/<name>/` holds active work: `proposal.md`, `design.md`, `tasks.md`, and optional delta specs.
 
-Active changes (not yet started):
-- `watch-reconcile-v1` — single-writer watch and reconcile loop
-- `git-intelligence-v1`, `storage-compatibility-v1`, `lexical-substrate-v1`, `bootstrap-ux-v1`, `foundation-bootstrap` — earlier change artifacts (partially or fully implemented)
+Active changes:
+- `git-intelligence-v1` — stage 5 git mining, CoChangesWith edges, card enrichment (proposal/design/tasks exist; implement after cards-and-mcp-v1)
+- `storage-compatibility-v1`, `lexical-substrate-v1`, `bootstrap-ux-v1`, `foundation-bootstrap` — earlier change artifacts (partially or fully implemented)
 
-Archived: `openspec/changes/archive/` — completed changes including `2026-04-10-structural-graph-v1` (the structural compile pipeline, now done).
+Archived: `openspec/changes/archive/` — completed changes including `2026-04-10-structural-graph-v1` (structural compile pipeline), `2026-04-11-watch-reconcile-v1` (watcher, reconcile, single-writer lock), `2026-04-11-agent-integration-v1` (status command, agent-setup shims, skill/SKILL.md current-phase section), and `cards-and-mcp-v1` (stage 4 edges, CardCompiler, workspace conversion, MCP server with 5 core tools).
 
 Specs govern intent; the graph governs runtime truth.

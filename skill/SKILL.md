@@ -7,6 +7,30 @@ description: Use synrepo when working in a repository that contains a .synrepo/ 
 
 synrepo is a context compiler. It turns a repository into small, deterministic, task-shaped packets called **cards** that Claude can query through an MCP server instead of reading whole files. A card for a function is roughly 180 tokens; the file containing the function might be 4000. Over a coding session this matters: fewer tokens means more room for the actual task.
 
+## Current phase (Phase 2 — MCP server + core card compilers)
+
+**The MCP server (`synrepo-mcp`) is now available.** Start it with:
+
+```
+synrepo-mcp [--repo <path>]
+```
+
+It serves over stdio. After `synrepo init` populates the graph, the MCP server exposes five core tools:
+
+| Tool | What it does |
+| --- | --- |
+| `synrepo_overview` | Graph stats + mode; your first call per session |
+| `synrepo_card(target, budget?)` | SymbolCard or FileCard for a file path or symbol name |
+| `synrepo_search(query, limit?)` | Lexical n-gram search; returns `{path, line, content}` results |
+| `synrepo_where_to_edit(task, limit?)` | Search + ranked file cards for a task description |
+| `synrepo_change_impact(target)` | Inbound Imports+Calls edges showing what depends on target |
+
+**Phase 2 limitations:** Only `SymbolCard` and `FileCard` are compiled. `ModuleCard`, `EntryPointCard`, `CallPathCard`, and the specialist tools (`synrepo_entrypoints`, `synrepo_call_path`, `synrepo_test_surface`, `synrepo_minimum_context`, `synrepo_explain`, `synrepo_findings`) are planned for later phases.
+
+`SymbolCard.callers` and `.callees` are empty (file→symbol Calls edges exist; symbol→symbol resolution is phase 3+). `FileCard.git_intelligence` and `.co_changes` are empty until git mining ships.
+
+**CLI is still the fallback** when the MCP server isn't running. See "Falling back when the MCP server isn't available" below.
+
 ## When to use synrepo
 
 **Check first.** If the current working directory contains a `.synrepo/` folder, synrepo is available and you should prefer it over cold file reads for orientation and navigation. If there is no `.synrepo/` folder, this skill does not apply — fall back to normal file reading.
@@ -170,14 +194,31 @@ Don't use `synrepo_card` or `synrepo_where_to_edit` for this — it's a pure lex
 
 ## Falling back when the MCP server isn't available
 
-If the MCP server isn't connected but `.synrepo/` exists, you can shell out to the CLI:
+**Phase 1 (current):** The MCP server is not yet running. Use the CLI directly.
 
 ```
-synrepo card --target parse_query --budget tiny
-synrepo where-to-edit "add rate limiting" --budget tiny
-synrepo change-impact middleware/auth.ts --budget tiny
+# Check health before anything else
+synrepo status
+
+# Find a symbol or file name
+synrepo search "parse_query"
+
+# Dump a node's metadata (replace the ID with output from search or graph stats)
+synrepo node symbol_0000000000000024
+
+# See what depends on a node (outbound = what this node depends on)
+synrepo graph query "inbound symbol_0000000000000024"
+synrepo graph query "outbound symbol_0000000000000024 defines"
+
+# See overall graph counts
+synrepo graph stats
+
+# Refresh the graph if sources changed
+synrepo reconcile
 ```
 
-The CLI returns the same card JSON the MCP tools return. It's slower because each invocation pays startup cost, but it works in environments where the MCP daemon isn't running.
+Each CLI call pays startup cost (~100ms), so batch your queries where possible. Use `synrepo search` first to find node IDs, then use `synrepo node` and `synrepo graph query` to explore from there.
 
-If both the MCP server and the CLI are unavailable, fall back to normal file reading — this skill does not apply.
+**Phase 2 (coming):** Once the MCP server ships, the `synrepo_*` tools listed above replace these CLI calls. Cards returned by MCP tools are richer and token-budgeted; the CLI is an escape hatch for environments where the daemon isn't running.
+
+If neither the MCP server nor the CLI is available, fall back to normal file reading — this skill does not apply.

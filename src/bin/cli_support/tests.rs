@@ -2,6 +2,7 @@ use super::{
     commands::search,
     graph::{graph_query_output, graph_stats_output, node_output},
 };
+use std::process::Command;
 use synrepo::bootstrap::bootstrap;
 use synrepo::config::Config;
 use synrepo::core::ids::{ConceptNodeId, EdgeId, FileNodeId, SymbolNodeId};
@@ -13,6 +14,56 @@ use synrepo::structure::graph::{
 use synrepo::NodeId;
 use tempfile::tempdir;
 use time::OffsetDateTime;
+
+fn git(repo: &tempfile::TempDir, args: &[&str]) {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(repo.path())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "git {:?} failed: stdout={}, stderr={}",
+        args,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn git_stdout(repo: &tempfile::TempDir, args: &[&str]) -> String {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(repo.path())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "git {:?} failed: stdout={}, stderr={}",
+        args,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8_lossy(&output.stdout).trim().to_string()
+}
+
+fn git_with_author(repo: &tempfile::TempDir, args: &[&str], author: &str, email: &str) {
+    let output = Command::new("git")
+        .env("GIT_AUTHOR_NAME", author)
+        .env("GIT_AUTHOR_EMAIL", email)
+        .env("GIT_COMMITTER_NAME", author)
+        .env("GIT_COMMITTER_EMAIL", email)
+        .args(args)
+        .current_dir(repo.path())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "git {:?} failed: stdout={}, stderr={}",
+        args,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
 
 #[test]
 fn search_requires_rebuild_when_index_sensitive_config_changes() {
@@ -48,6 +99,16 @@ fn node_output_returns_persisted_node_json() {
     assert_eq!(json["node_type"], "file");
     assert_eq!(json["node"]["path"], "src/lib.rs");
     assert_eq!(json["node"]["provenance"]["pass"], "parse_code");
+    assert_eq!(json["git_intelligence"]["status"]["state"], "degraded");
+    assert_eq!(
+        json["git_intelligence"]["status"]["reasons"][0],
+        "repository_unavailable"
+    );
+    assert_eq!(json["git_intelligence"]["commits"], serde_json::json!([]));
+    assert_eq!(
+        json["git_intelligence"]["hotspot_touches"],
+        serde_json::Value::Null
+    );
 }
 
 #[test]
@@ -197,11 +258,7 @@ fn sample_provenance(pass: &str, path: &str) -> Provenance {
 fn reconcile_completes_on_initialized_repo() {
     let repo = tempdir().unwrap();
     std::fs::create_dir_all(repo.path().join("src")).unwrap();
-    std::fs::write(
-        repo.path().join("src/lib.rs"),
-        "pub fn greet() {}\n",
-    )
-    .unwrap();
+    std::fs::write(repo.path().join("src/lib.rs"), "pub fn greet() {}\n").unwrap();
     // bootstrap sets up .synrepo/ and runs the first compile.
     bootstrap(repo.path(), None).unwrap();
 
@@ -215,5 +272,72 @@ fn reconcile_completes_on_initialized_repo() {
     assert!(
         state.files_discovered.unwrap_or(0) >= 1,
         "reconcile must discover at least src/lib.rs"
+    );
+}
+
+#[test]
+fn node_output_includes_file_git_intelligence_for_sampled_history() {
+    let repo = tempdir().unwrap();
+    std::fs::create_dir_all(repo.path().join("src")).unwrap();
+    std::fs::write(repo.path().join("src/lib.rs"), "pub fn greet() {}\n").unwrap();
+
+    git(&repo, &["init"]);
+    git(&repo, &["config", "user.name", "setup"]);
+    git(&repo, &["config", "user.email", "setup@example.com"]);
+    git(&repo, &["add", "src/lib.rs"]);
+    git_with_author(
+        &repo,
+        &["commit", "-m", "add lib"],
+        "Alice",
+        "alice@example.com",
+    );
+
+    std::fs::write(
+        repo.path().join("src/lib.rs"),
+        "pub fn greet() { helper(); }\n",
+    )
+    .unwrap();
+    std::fs::write(repo.path().join("src/helper.rs"), "pub fn helper() {}\n").unwrap();
+    git(&repo, &["add", "src/lib.rs", "src/helper.rs"]);
+    git_with_author(
+        &repo,
+        &["commit", "-m", "touch lib and helper"],
+        "Bob",
+        "bob@example.com",
+    );
+
+    bootstrap(repo.path(), None).unwrap();
+
+    let graph_dir = Config::synrepo_dir(repo.path()).join("graph");
+    let store = SqliteGraphStore::open_existing(&graph_dir).unwrap();
+    let file = store.file_by_path("src/lib.rs").unwrap().unwrap();
+
+    let output = node_output(repo.path(), &file.id.to_string()).unwrap();
+    let json = serde_json::from_str::<serde_json::Value>(&output).unwrap();
+
+    assert_eq!(json["node_id"], file.id.to_string());
+    assert_eq!(json["node"]["path"], "src/lib.rs");
+    assert_eq!(json["git_intelligence"]["status"]["state"], "ready");
+    assert_eq!(json["git_intelligence"]["hotspot_touches"], 2);
+    assert_eq!(
+        json["git_intelligence"]["ownership"]["primary_author"],
+        "Alice"
+    );
+    assert_eq!(
+        json["git_intelligence"]["co_change_partners"][0]["path"],
+        "src/helper.rs"
+    );
+    assert_eq!(
+        json["git_intelligence"]["co_change_partners"][0]["co_change_count"],
+        1
+    );
+    assert_eq!(
+        json["git_intelligence"]["commits"][0]["summary"],
+        "touch lib and helper"
+    );
+    assert_eq!(json["git_intelligence"]["commits"][1]["summary"], "add lib");
+    assert_eq!(
+        json["git_intelligence"]["commits"][0]["revision"],
+        git_stdout(&repo, &["rev-parse", "HEAD"])
     );
 }

@@ -59,6 +59,32 @@ impl Language {
                 .unwrap_or(SymbolKind::Function),
         }
     }
+
+    /// Tree-sitter query that captures callee names at call sites.
+    ///
+    /// Each match yields a `@callee` capture with the name of the called
+    /// function or method. Phase-1 approximate resolution: only the local
+    /// name is captured (not the full qualified path).
+    pub(super) fn call_query(self) -> &'static str {
+        match self {
+            Language::Rust => RUST_CALL_QUERY,
+            Language::Python => PYTHON_CALL_QUERY,
+            Language::TypeScript | Language::Tsx => TS_CALL_QUERY,
+        }
+    }
+
+    /// Tree-sitter query that captures import/use references.
+    ///
+    /// Each match yields an `@import_ref` capture with the module path or
+    /// name being imported. Phase-1 approximate: the raw text is returned
+    /// as-is for downstream resolution.
+    pub(super) fn import_query(self) -> &'static str {
+        match self {
+            Language::Rust => RUST_IMPORT_QUERY,
+            Language::Python => PYTHON_IMPORT_QUERY,
+            Language::TypeScript | Language::Tsx => TS_IMPORT_QUERY,
+        }
+    }
 }
 
 const RUST_DEFINITION_QUERY: &str = r#"
@@ -107,3 +133,37 @@ const TS_KIND_MAP: &[SymbolKind] = &[
     SymbolKind::Method,
     SymbolKind::Method,
 ];
+
+// --- Call-site queries (stage 4: cross-file edge resolution) ---
+
+const RUST_CALL_QUERY: &str = r#"
+(call_expression function: (identifier) @callee)
+(call_expression function: (field_expression field: (field_identifier) @callee))
+(call_expression function: (scoped_identifier name: (identifier) @callee))
+"#;
+
+const PYTHON_CALL_QUERY: &str = r#"
+(call function: (identifier) @callee)
+(call function: (attribute attribute: (identifier) @callee))
+"#;
+
+const TS_CALL_QUERY: &str = r#"
+(call_expression function: (identifier) @callee)
+(call_expression function: (member_expression property: (property_identifier) @callee))
+"#;
+
+// --- Import/use queries (stage 4: cross-file edge resolution) ---
+
+const RUST_IMPORT_QUERY: &str = r#"
+(use_declaration argument: (identifier) @import_ref)
+(use_declaration argument: (scoped_identifier name: (identifier) @import_ref))
+"#;
+
+const PYTHON_IMPORT_QUERY: &str = r#"
+(import_statement name: (dotted_name) @import_ref)
+(import_from_statement module_name: (dotted_name) @import_ref)
+"#;
+
+const TS_IMPORT_QUERY: &str = r#"
+(import_statement source: (string (string_fragment) @import_ref))
+"#;

@@ -1,3 +1,7 @@
+[workspace]
+resolver = "2"
+members = [".", "crates/synrepo-mcp"]
+
 [package]
 name = "synrepo"
 version = "0.0.1"

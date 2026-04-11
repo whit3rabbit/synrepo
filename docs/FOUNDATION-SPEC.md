@@ -6,12 +6,14 @@ A context compiler for AI coding agents.
 
 synrepo exists to reduce context pressure for AI coding agents.
 
-> **Implementation status (2026-04-11):** Stages 1–3 of the structural pipeline are
-> complete: file nodes, symbol nodes (tree-sitter), and concept nodes from markdown.
-> Cards, MCP tools, synthesis pipeline, and overlay are Phase 2+ and not yet shipped.
-> `signature` and `doc_comment` fields are always `None`. Only `Defines` edges exist.
-> Identity cascade (rename detection) is not yet implemented — file renames produce
-> duplicate nodes until Phase 1 is complete.
+> **Implementation status (2026-04-11 — Milestone 3 starting):** Stages 1–3 of the
+> structural pipeline are complete: file nodes, symbol nodes (tree-sitter), and concept
+> nodes from markdown. Stage 6 content-hash rename detection is wired. Watch-reconcile
+> loop and `synrepo reconcile` are implemented. `synrepo status` and `synrepo agent-setup`
+> are shipped. Milestone 3 (`cards-and-mcp-v1`) is next: stage 4 cross-file edges,
+> CardCompiler (SymbolCard, FileCard, ModuleCard), workspace conversion, and MCP server
+> with 5 core tools using `rmcp`. `signature` and `doc_comment` are always `None` until
+> parse/extract.rs is extended. Only `Defines` edges exist until stage 4 lands.
 
 It precomputes a small, deterministic, queryable working set about a repository and serves it through MCP in token-budgeted packets called **cards**. The goal is not to build a browsable ontology or a generated wiki. The goal is to help an agent answer questions like:
 

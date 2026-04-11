@@ -26,3 +26,26 @@ synrepo SHALL define benchmark conditions that reflect ugly repositories, increm
 - **WHEN** a benchmark or demo is prepared
 - **THEN** the evaluation contract requires realistic repository conditions
 - **AND** success claims cannot rely solely on tidy showcase inputs
+
+### Requirement: Define operational telemetry separate from graph truth
+synrepo SHALL track operational metrics in a store that is physically separate from the canonical graph and overlay stores, so runtime performance and health are operator-visible without contaminating the trust model.
+
+Metrics to track:
+- structural compile durations (per-pass and total)
+- reconcile outcomes and counts (completed, lock-conflict, failed) over time
+- graph query counts by type (Phase 2+)
+- stale-repair counts from reconcile passes
+- token budget spent per card tier (Phase 2+)
+- agent-facing request hit/miss rates against the graph vs. overlay (Phase 2+)
+
+This store is for operator visibility and system health monitoring. It must never be read by the synthesis pipeline or used as input to graph production.
+
+#### Scenario: Inspect compile performance over time
+- **WHEN** an operator wants to understand whether the structural compile is keeping up with repository churn
+- **THEN** the telemetry store provides a historical record of compile durations and reconcile outcomes
+- **AND** this record is accessible from CLI diagnostics without touching the canonical graph
+
+#### Scenario: Verify separation from graph truth
+- **WHEN** the telemetry store is read by any pipeline component
+- **THEN** the read must be rejected at the retrieval layer with an explicit boundary violation
+- **AND** telemetry data must never appear as provenance or epistemic input to any graph node or edge

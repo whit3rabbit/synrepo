@@ -56,6 +56,12 @@ pub trait GraphStore: Send + Sync {
     /// compile cycle to publish atomic snapshots.
     fn commit(&mut self) -> crate::Result<()>;
 
+    /// Roll back any pending transaction. Called on error paths to prevent
+    /// leaving SQLite in an open-transaction state. No-op for in-memory/test stores.
+    fn rollback(&mut self) -> crate::Result<()> {
+        Ok(())
+    }
+
     /// Return all file paths currently in the graph with their stable node IDs.
     /// Used by the structural compile to detect stale file facts.
     fn all_file_paths(&self) -> crate::Result<Vec<(String, FileNodeId)>>;
@@ -63,4 +69,10 @@ pub trait GraphStore: Send + Sync {
     /// Return all concept paths currently in the graph with their stable node IDs.
     /// Used by the structural compile to detect stale concept facts.
     fn all_concept_paths(&self) -> crate::Result<Vec<(String, ConceptNodeId)>>;
+
+    /// Return (id, file_id, qualified_name) tuples for all symbol nodes.
+    ///
+    /// Used by the stage-4 name-resolution pass to build the global symbol
+    /// index without loading full JSON blobs.
+    fn all_symbol_names(&self) -> crate::Result<Vec<(SymbolNodeId, FileNodeId, String)>>;
 }

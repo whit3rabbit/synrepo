@@ -30,6 +30,9 @@
 #![warn(missing_docs)]
 #![warn(clippy::all)]
 
+#[cfg(test)]
+mod docs_drift;
+
 pub mod bootstrap;
 pub mod config;
 pub mod core;

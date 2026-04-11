@@ -170,6 +170,11 @@ impl GraphStore for SqliteGraphStore {
         Ok(())
     }
 
+    fn rollback(&mut self) -> crate::Result<()> {
+        self.conn.lock().execute_batch("ROLLBACK")?;
+        Ok(())
+    }
+
     fn all_file_paths(&self) -> crate::Result<Vec<(String, FileNodeId)>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare_cached("SELECT path, id FROM files ORDER BY path")?;
@@ -195,6 +200,31 @@ impl GraphStore for SqliteGraphStore {
         Ok(rows
             .into_iter()
             .map(|(p, id)| (p, ConceptNodeId(id as u64)))
+            .collect())
+    }
+
+    fn all_symbol_names(&self) -> crate::Result<Vec<(SymbolNodeId, FileNodeId, String)>> {
+        let conn = self.conn.lock();
+        let mut stmt =
+            conn.prepare_cached("SELECT id, file_id, qualified_name FROM symbols ORDER BY id")?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows
+            .into_iter()
+            .map(|(sym_id, file_id, name)| {
+                (
+                    SymbolNodeId(sym_id as u64),
+                    FileNodeId(file_id as u64),
+                    name,
+                )
+            })
             .collect())
     }
 }

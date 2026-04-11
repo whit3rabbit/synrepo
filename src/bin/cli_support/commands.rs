@@ -2,16 +2,147 @@ use std::path::Path;
 
 use synrepo::{
     config::{Config, Mode},
-    pipeline::watch::{persist_reconcile_state, run_reconcile_pass, ReconcileOutcome},
-    store::compatibility::StoreId,
+    pipeline::{
+        diagnostics::{collect_diagnostics, ReconcileHealth, RuntimeDiagnostics, WriterStatus},
+        watch::{persist_reconcile_state, run_reconcile_pass, ReconcileOutcome},
+    },
+    store::{compatibility::StoreId, sqlite::SqliteGraphStore},
 };
 
-use super::graph::{check_store_ready, graph_query_output, graph_stats_output, node_output};
+use super::{
+    agent_shims::AgentTool,
+    graph::{check_store_ready, graph_query_output, graph_stats_output, node_output},
+};
 
 pub(crate) fn init(repo_root: &Path, requested_mode: Option<Mode>) -> anyhow::Result<()> {
     let report = synrepo::bootstrap::bootstrap(repo_root, requested_mode)?;
     print!("{}", report.render());
     Ok(())
+}
+
+/// Print operational health: mode, graph node counts, last reconcile outcome, lock state.
+///
+/// Read-only. Never acquires the writer lock or mutates any store. Safe to call
+/// at any time, including while a reconcile is in progress.
+pub(crate) fn status(repo_root: &Path) -> anyhow::Result<()> {
+    let synrepo_dir = Config::synrepo_dir(repo_root);
+
+    let config = match Config::load(repo_root) {
+        Ok(c) => c,
+        Err(_) => {
+            println!("synrepo status: not initialized");
+            println!("  Run `synrepo init` to create .synrepo/ and populate the graph.");
+            return Ok(());
+        }
+    };
+
+    let diag = collect_diagnostics(&synrepo_dir, &config);
+
+    let graph_stats = {
+        let graph_dir = synrepo_dir.join("graph");
+        SqliteGraphStore::open_existing(&graph_dir)
+            .ok()
+            .and_then(|store| store.persisted_stats().ok())
+    };
+
+    println!("synrepo status");
+    println!("  mode:         {}", config.mode);
+
+    match &graph_stats {
+        Some(stats) => println!(
+            "  graph:        {} files  {} symbols  {} concepts",
+            stats.file_nodes, stats.symbol_nodes, stats.concept_nodes
+        ),
+        None => println!("  graph:        not materialized — run `synrepo init`"),
+    }
+
+    match &diag.reconcile_health {
+        ReconcileHealth::Current => println!("  reconcile:    current"),
+        ReconcileHealth::Stale { last_outcome } => {
+            println!("  reconcile:    stale (last outcome: {last_outcome})")
+        }
+        ReconcileHealth::Unknown => println!("  reconcile:    unknown (never run)"),
+    }
+
+    if let Some(state) = &diag.last_reconcile {
+        let detail = match (state.files_discovered, state.symbols_extracted) {
+            (Some(f), Some(s)) => {
+                format!(
+                    "completed — {f} files, {s} symbols ({} events)",
+                    state.triggering_events
+                )
+            }
+            _ => format!(
+                "{} ({} events)",
+                state.last_outcome, state.triggering_events
+            ),
+        };
+        println!("  last run:     {} — {detail}", state.last_reconcile_at);
+        if let Some(err) = &state.last_error {
+            println!("  error:        {err}");
+        }
+    }
+
+    match &diag.writer_status {
+        WriterStatus::Free => println!("  writer lock:  free"),
+        WriterStatus::HeldBySelf => println!("  writer lock:  held by this process"),
+        WriterStatus::HeldByOther { pid } => println!("  writer lock:  held by pid {pid}"),
+    }
+
+    for line in &diag.store_guidance {
+        println!("  store:        {line}");
+    }
+
+    println!(
+        "  next step:    {}",
+        next_step(&diag, graph_stats.is_none())
+    );
+    Ok(())
+}
+
+/// Generate a thin integration shim for the specified agent CLI.
+///
+/// Writes a named fragment file and prints the one-line include instruction.
+/// Never modifies existing user configuration. Pass `force = true` to overwrite.
+pub(crate) fn agent_setup(repo_root: &Path, tool: AgentTool, force: bool) -> anyhow::Result<()> {
+    let out_path = tool.output_path(repo_root);
+
+    if out_path.exists() && !force {
+        println!(
+            "synrepo agent-setup: {} already exists.",
+            out_path.display()
+        );
+        println!("  Pass --force to overwrite.");
+        return Ok(());
+    }
+
+    if let Some(parent) = out_path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| anyhow::anyhow!("could not create {}: {e}", parent.display()))?;
+    }
+
+    std::fs::write(&out_path, tool.shim_content())
+        .map_err(|e| anyhow::anyhow!("could not write {}: {e}", out_path.display()))?;
+
+    println!("Wrote {} shim: {}", tool.display_name(), out_path.display());
+    println!("  {}", tool.include_instruction());
+    Ok(())
+}
+
+fn next_step(diag: &RuntimeDiagnostics, graph_missing: bool) -> &'static str {
+    if graph_missing {
+        return "run `synrepo init` to materialize the graph";
+    }
+    match (&diag.reconcile_health, &diag.writer_status) {
+        (_, WriterStatus::HeldByOther { .. }) => {
+            "writer lock is held — wait for the other process or verify it is still alive"
+        }
+        (ReconcileHealth::Unknown, _) => "run `synrepo reconcile` to do the first graph pass",
+        (ReconcileHealth::Stale { .. }, _) => "run `synrepo reconcile` to refresh the graph",
+        (ReconcileHealth::Current, _) => {
+            "graph is current — use `synrepo graph query` or connect the MCP server (phase 2)"
+        }
+    }
 }
 
 pub(crate) fn reconcile(repo_root: &Path) -> anyhow::Result<()> {

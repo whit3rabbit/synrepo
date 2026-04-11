@@ -4,7 +4,7 @@ use tree_sitter::StreamingIterator as _;
 
 use crate::structure::graph::SymbolKind;
 
-use super::{ExtractedSymbol, Language, ParseOutput};
+use super::{ExtractedCallRef, ExtractedImportRef, ExtractedSymbol, Language, ParseOutput};
 
 /// Parse a source file and extract symbols and within-file edges.
 ///
@@ -35,6 +35,8 @@ pub fn parse_file(path: &Path, content: &[u8]) -> crate::Result<Option<ParseOutp
             language,
             symbols: vec![],
             edges: vec![],
+            call_refs: vec![],
+            import_refs: vec![],
         }));
     };
 
@@ -60,6 +62,8 @@ pub fn parse_file(path: &Path, content: &[u8]) -> crate::Result<Option<ParseOutp
             language,
             symbols: vec![],
             edges: vec![],
+            call_refs: vec![],
+            import_refs: vec![],
         }));
     };
 
@@ -106,11 +110,100 @@ pub fn parse_file(path: &Path, content: &[u8]) -> crate::Result<Option<ParseOutp
         });
     }
 
+    let call_refs = extract_call_refs(language, &ts_language, &tree, content, path)?;
+    let import_refs = extract_import_refs(language, &ts_language, &tree, content, path)?;
+
     Ok(Some(ParseOutput {
         language,
         symbols,
         edges: vec![],
+        call_refs,
+        import_refs,
     }))
+}
+
+/// Extract call-site references from a parsed file for stage-4 resolution.
+fn extract_call_refs(
+    language: Language,
+    ts_language: &tree_sitter::Language,
+    tree: &tree_sitter::Tree,
+    content: &[u8],
+    path: &Path,
+) -> crate::Result<Vec<ExtractedCallRef>> {
+    let query = tree_sitter::Query::new(ts_language, language.call_query()).map_err(|e| {
+        crate::Error::Parse {
+            path: path.display().to_string(),
+            message: format!("call query compilation failed: {e}"),
+        }
+    })?;
+
+    let capture_names = query.capture_names();
+    let callee_idx = capture_names
+        .iter()
+        .position(|n| *n == "callee")
+        .map(|i| i as u32);
+    let Some(callee_idx) = callee_idx else {
+        return Ok(vec![]);
+    };
+
+    let mut cursor = tree_sitter::QueryCursor::new();
+    let mut matches = cursor.matches(&query, tree.root_node(), content);
+    let mut refs = Vec::new();
+
+    while let Some(m) = matches.next() {
+        for capture in m.captures.iter().filter(|c| c.index == callee_idx) {
+            let bytes = &content[capture.node.start_byte()..capture.node.end_byte()];
+            if let Ok(name) = std::str::from_utf8(bytes) {
+                refs.push(ExtractedCallRef {
+                    callee_name: name.to_string(),
+                });
+            }
+        }
+    }
+
+    Ok(refs)
+}
+
+/// Extract import/use references from a parsed file for stage-4 resolution.
+fn extract_import_refs(
+    language: Language,
+    ts_language: &tree_sitter::Language,
+    tree: &tree_sitter::Tree,
+    content: &[u8],
+    path: &Path,
+) -> crate::Result<Vec<ExtractedImportRef>> {
+    let query = tree_sitter::Query::new(ts_language, language.import_query()).map_err(|e| {
+        crate::Error::Parse {
+            path: path.display().to_string(),
+            message: format!("import query compilation failed: {e}"),
+        }
+    })?;
+
+    let capture_names = query.capture_names();
+    let ref_idx = capture_names
+        .iter()
+        .position(|n| *n == "import_ref")
+        .map(|i| i as u32);
+    let Some(ref_idx) = ref_idx else {
+        return Ok(vec![]);
+    };
+
+    let mut cursor = tree_sitter::QueryCursor::new();
+    let mut matches = cursor.matches(&query, tree.root_node(), content);
+    let mut refs = Vec::new();
+
+    while let Some(m) = matches.next() {
+        for capture in m.captures.iter().filter(|c| c.index == ref_idx) {
+            let bytes = &content[capture.node.start_byte()..capture.node.end_byte()];
+            if let Ok(module_ref) = std::str::from_utf8(bytes) {
+                refs.push(ExtractedImportRef {
+                    module_ref: module_ref.to_string(),
+                });
+            }
+        }
+    }
+
+    Ok(refs)
 }
 
 /// Walk up the parent chain to determine qualified name and kind.
