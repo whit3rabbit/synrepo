@@ -103,6 +103,75 @@ fn persist_reconcile_state_records_failure_message() {
 }
 
 #[test]
+fn reconcile_prunes_cross_link_orphans() {
+    use crate::core::ids::{ConceptNodeId, NodeId, SymbolNodeId};
+    use crate::overlay::{
+        CitedSpan, ConfidenceTier, CrossLinkProvenance, OverlayEdgeKind, OverlayEpistemic,
+        OverlayLink, OverlayStore,
+    };
+    use crate::store::overlay::SqliteOverlayStore;
+    use time::OffsetDateTime;
+
+    let dir = tempdir().unwrap();
+    let (repo, config, synrepo_dir) = setup_test_repo(&dir);
+
+    // First reconcile populates the graph with src/lib.rs and its hello() symbol.
+    let first = run_reconcile_pass(&repo, &config, &synrepo_dir);
+    assert!(matches!(first, ReconcileOutcome::Completed(_)));
+
+    // Seed an overlay cross-link whose endpoints do not exist in the graph.
+    let mut overlay = SqliteOverlayStore::open(&synrepo_dir.join("overlay")).unwrap();
+    let from = NodeId::Concept(ConceptNodeId(9_999));
+    let to = NodeId::Symbol(SymbolNodeId(9_998));
+    overlay
+        .insert_link(OverlayLink {
+            from,
+            to,
+            kind: OverlayEdgeKind::References,
+            epistemic: OverlayEpistemic::MachineAuthoredHighConf,
+            source_spans: vec![CitedSpan {
+                artifact: from,
+                normalized_text: "gone".into(),
+                verified_at_offset: 0,
+                lcs_ratio: 0.9,
+            }],
+            target_spans: vec![CitedSpan {
+                artifact: to,
+                normalized_text: "fn gone".into(),
+                verified_at_offset: 0,
+                lcs_ratio: 1.0,
+            }],
+            from_content_hash: "hf".into(),
+            to_content_hash: "ht".into(),
+            confidence_score: 0.9,
+            confidence_tier: ConfidenceTier::High,
+            rationale: None,
+            provenance: CrossLinkProvenance {
+                pass_id: "cross-link-v1".into(),
+                model_identity: "claude-sonnet-4-6".into(),
+                generated_at: OffsetDateTime::from_unix_timestamp(1_712_000_000).unwrap(),
+            },
+        })
+        .unwrap();
+    assert_eq!(overlay.cross_link_count().unwrap(), 1);
+    drop(overlay);
+
+    // Second reconcile should prune the orphan via prune_overlay_orphans.
+    let second = run_reconcile_pass(&repo, &config, &synrepo_dir);
+    assert!(matches!(second, ReconcileOutcome::Completed(_)));
+
+    let overlay = SqliteOverlayStore::open_existing(&synrepo_dir.join("overlay")).unwrap();
+    assert_eq!(overlay.cross_link_count().unwrap(), 0);
+    let audit = overlay
+        .cross_link_audit_events(&from.to_string(), &to.to_string(), "references")
+        .unwrap();
+    assert!(
+        audit.iter().any(|e| e.event_kind == "pruned"),
+        "reconcile must append a `pruned` audit row"
+    );
+}
+
+#[test]
 fn persist_reconcile_state_records_lock_conflict() {
     let dir = tempdir().unwrap();
     let synrepo_dir = dir.path().join(".synrepo");

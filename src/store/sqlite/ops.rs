@@ -175,6 +175,41 @@ impl GraphStore for SqliteGraphStore {
         Ok(())
     }
 
+    fn begin_read_snapshot(&self) -> crate::Result<()> {
+        // Re-entrant: only the outermost begin issues BEGIN DEFERRED. Inner
+        // begins share the outer snapshot so callers composing wrapped
+        // operations (e.g. an MCP handler calling GraphCardCompiler, which
+        // wraps internally) don't trip SQLite's "transaction within a
+        // transaction" error. The depth lock is taken across the SQL issue
+        // to keep depth and transaction state consistent.
+        let mut depth = self.snapshot_depth.lock();
+        if *depth == 0 {
+            self.conn.lock().execute_batch("BEGIN DEFERRED")?;
+        }
+        *depth += 1;
+        Ok(())
+    }
+
+    fn end_read_snapshot(&self) -> crate::Result<()> {
+        let mut depth = self.snapshot_depth.lock();
+        if *depth == 0 {
+            // end-without-begin: treat as no-op so the `with_*` helper's
+            // error-path cleanup can't mask the caller's original error.
+            return Ok(());
+        }
+        *depth -= 1;
+        if *depth == 0 {
+            let conn = self.conn.lock();
+            match conn.execute_batch("COMMIT") {
+                Ok(()) => Ok(()),
+                Err(err) if err.to_string().contains("no transaction") => Ok(()),
+                Err(err) => Err(err.into()),
+            }
+        } else {
+            Ok(())
+        }
+    }
+
     fn all_file_paths(&self) -> crate::Result<Vec<(String, FileNodeId)>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare_cached("SELECT path, id FROM files ORDER BY path")?;

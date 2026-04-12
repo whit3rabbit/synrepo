@@ -25,7 +25,7 @@ use synrepo::{
     overlay::OverlayStore,
     pipeline::synthesis::{ClaudeCommentaryGenerator, CommentaryGenerator},
     store::{overlay::SqliteOverlayStore, sqlite::SqliteGraphStore},
-    structure::graph::EdgeKind,
+    structure::graph::{EdgeKind, GraphStore},
     surface::card::{compiler::GraphCardCompiler, Budget, CardCompiler, DecisionCard, Freshness},
 };
 
@@ -151,7 +151,7 @@ impl SynrepoServer {
         Parameters(CardParams { target, budget }): Parameters<CardParams>,
     ) -> String {
         let budget = parse_budget(&budget);
-        let result: anyhow::Result<serde_json::Value> = (|| {
+        let result = with_graph_snapshot(self.state.compiler.graph(), || {
             let node_id = self
                 .state
                 .compiler
@@ -192,7 +192,7 @@ impl SynrepoServer {
                     Ok(serde_json::to_value(&concept)?)
                 }
             }
-        })();
+        });
         render_result(result)
     }
 
@@ -232,11 +232,14 @@ impl SynrepoServer {
         description = "Return a high-level overview of the repository graph state."
     )]
     async fn synrepo_overview(&self) -> String {
+        // persisted_stats issues four COUNTs plus a GROUP BY on its own
+        // connection, so wrap that local store (not the compiler's graph)
+        // so all counts reflect one committed epoch.
         let result: anyhow::Result<serde_json::Value> = (|| {
             let synrepo_dir = Config::synrepo_dir(&self.state.repo_root);
             let graph_dir = synrepo_dir.join("graph");
             let store = SqliteGraphStore::open_existing(&graph_dir)?;
-            let stats = store.persisted_stats()?;
+            let stats = with_graph_snapshot(&store, || Ok(store.persisted_stats()?))?;
             Ok(json!({
                 "mode": self.state.config.mode.to_string(),
                 "graph": {
@@ -264,28 +267,30 @@ impl SynrepoServer {
             let matches =
                 synrepo::substrate::search(&self.state.config, &self.state.repo_root, &task)?;
 
-            // Group results by file path, taking the top `limit` unique files.
-            let mut seen = std::collections::HashSet::new();
-            let mut cards = Vec::new();
+            with_graph_snapshot(self.state.compiler.graph(), || {
+                // Group results by file path, taking the top `limit` unique files.
+                let mut seen = std::collections::HashSet::new();
+                let mut cards = Vec::new();
 
-            for m in &matches {
-                let path = m.path.to_string_lossy().to_string();
-                if seen.contains(&path) {
-                    continue;
+                for m in &matches {
+                    let path = m.path.to_string_lossy().to_string();
+                    if seen.contains(&path) {
+                        continue;
+                    }
+                    seen.insert(path.clone());
+
+                    if let Some(file) = self.state.compiler.graph().file_by_path(&path)? {
+                        let card = self.state.compiler.file_card(file.id, Budget::Tiny)?;
+                        cards.push(serde_json::to_value(&card)?);
+                    }
+
+                    if cards.len() >= limit as usize {
+                        break;
+                    }
                 }
-                seen.insert(path.clone());
 
-                if let Some(file) = self.state.compiler.graph().file_by_path(&path)? {
-                    let card = self.state.compiler.file_card(file.id, Budget::Tiny)?;
-                    cards.push(serde_json::to_value(&card)?);
-                }
-
-                if cards.len() >= limit as usize {
-                    break;
-                }
-            }
-
-            Ok(json!({ "task": task, "suggestions": cards }))
+                Ok(json!({ "task": task, "suggestions": cards }))
+            })
         })();
         render_result(result)
     }
@@ -299,58 +304,59 @@ impl SynrepoServer {
         &self,
         Parameters(ChangeImpactParams { target }): Parameters<ChangeImpactParams>,
     ) -> String {
-        let result: anyhow::Result<serde_json::Value> = (|| {
-            let node_id = self
-                .state
-                .compiler
-                .resolve_target(&target)?
-                .ok_or_else(|| anyhow::anyhow!("target not found: {target}"))?;
+        let result: anyhow::Result<serde_json::Value> =
+            with_graph_snapshot(self.state.compiler.graph(), || {
+                let node_id = self
+                    .state
+                    .compiler
+                    .resolve_target(&target)?
+                    .ok_or_else(|| anyhow::anyhow!("target not found: {target}"))?;
 
-            // Collect inbound Imports and Calls edges.
-            let imports_in = self
-                .state
-                .compiler
-                .graph()
-                .inbound(node_id, Some(EdgeKind::Imports))?;
-            let calls_in = self
-                .state
-                .compiler
-                .graph()
-                .inbound(node_id, Some(EdgeKind::Calls))?;
+                // Collect inbound Imports and Calls edges.
+                let imports_in = self
+                    .state
+                    .compiler
+                    .graph()
+                    .inbound(node_id, Some(EdgeKind::Imports))?;
+                let calls_in = self
+                    .state
+                    .compiler
+                    .graph()
+                    .inbound(node_id, Some(EdgeKind::Calls))?;
 
-            let mut impacted_files: Vec<serde_json::Value> = Vec::new();
-            let mut seen_files = std::collections::HashSet::new();
+                let mut impacted_files: Vec<serde_json::Value> = Vec::new();
+                let mut seen_files = std::collections::HashSet::new();
 
-            for edge in imports_in.iter().chain(calls_in.iter()) {
-                let file_id = match edge.from {
-                    NodeId::File(id) => id,
-                    NodeId::Symbol(sym_id) => {
-                        // Get the file that owns this symbol.
-                        if let Some(sym) = self.state.compiler.graph().get_symbol(sym_id)? {
-                            sym.file_id
-                        } else {
-                            continue;
+                for edge in imports_in.iter().chain(calls_in.iter()) {
+                    let file_id = match edge.from {
+                        NodeId::File(id) => id,
+                        NodeId::Symbol(sym_id) => {
+                            // Get the file that owns this symbol.
+                            if let Some(sym) = self.state.compiler.graph().get_symbol(sym_id)? {
+                                sym.file_id
+                            } else {
+                                continue;
+                            }
+                        }
+                        _ => continue,
+                    };
+
+                    if seen_files.insert(file_id) {
+                        if let Some(file) = self.state.compiler.graph().get_file(file_id)? {
+                            impacted_files.push(json!({
+                                "path": file.path,
+                                "edge_kind": edge.kind.as_str(),
+                            }));
                         }
                     }
-                    _ => continue,
-                };
-
-                if seen_files.insert(file_id) {
-                    if let Some(file) = self.state.compiler.graph().get_file(file_id)? {
-                        impacted_files.push(json!({
-                            "path": file.path,
-                            "edge_kind": edge.kind.as_str(),
-                        }));
-                    }
                 }
-            }
 
-            Ok(json!({
-                "target": target,
-                "impacted_files": impacted_files,
-                "total": impacted_files.len(),
-            }))
-        })();
+                Ok(json!({
+                    "target": target,
+                    "impacted_files": impacted_files,
+                    "total": impacted_files.len(),
+                }))
+            });
         render_result(result)
     }
 }
@@ -414,6 +420,24 @@ fn lift_commentary_text(json: &mut serde_json::Value) {
     if let Some(t) = text {
         obj.insert("commentary_text".to_string(), serde_json::Value::String(t));
     }
+}
+
+/// Hold a read snapshot across the whole handler body.
+///
+/// The graph snapshot methods are re-entrant, so wrapping here composes
+/// safely with the per-call wraps inside `GraphCardCompiler`. Any error
+/// from `end_read_snapshot` is intentionally swallowed (debug-logged) so
+/// the handler's original `Err` is never masked.
+fn with_graph_snapshot<R>(
+    graph: &dyn GraphStore,
+    f: impl FnOnce() -> anyhow::Result<R>,
+) -> anyhow::Result<R> {
+    graph.begin_read_snapshot()?;
+    let out = f();
+    // Intentionally swallow end-snapshot errors so the handler's original
+    // error path is never masked. The snapshot does not outlive this frame.
+    let _ = graph.end_read_snapshot();
+    out
 }
 
 fn parse_budget(s: &str) -> Budget {

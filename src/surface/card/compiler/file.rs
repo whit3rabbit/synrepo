@@ -5,8 +5,12 @@ use crate::{
 
 use super::{Budget, FileCard, FileRef, SourceStore, SymbolRef};
 
+use crate::overlay::OverlayStore;
+use std::sync::Arc;
+
 pub(super) fn file_card(
     graph: &dyn GraphStore,
+    overlay: Option<&Arc<parking_lot::Mutex<dyn OverlayStore>>>,
     id: FileNodeId,
     budget: Budget,
 ) -> crate::Result<FileCard> {
@@ -78,7 +82,24 @@ pub(super) fn file_card(
         drift_flag: None,
         approx_tokens: 0,
         source_store: SourceStore::Graph,
+        proposed_links: None,
+        links_state: None,
     };
+
+    match budget {
+        Budget::Tiny | Budget::Normal => {
+            card.links_state = Some("budget_withheld".to_string());
+        }
+        Budget::Deep => {
+            let (links, links_state) = super::links::resolve_proposed_links(
+                overlay.map(|o| &**o),
+                graph,
+                NodeId::File(id),
+            )?;
+            card.proposed_links = links;
+            card.links_state = Some(links_state.to_string());
+        }
+    }
 
     card.approx_tokens = estimate_tokens_file(&card);
     Ok(card)

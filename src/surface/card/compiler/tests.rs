@@ -384,3 +384,164 @@ fn symbol_card_deep_with_generator_persists_new_entry() {
     assert_eq!(persisted.text, "Freshly generated.");
     assert!(!persisted.provenance.source_content_hash.is_empty());
 }
+
+fn sample_proposed_link(
+    from: NodeId,
+    to: NodeId,
+    from_hash: &str,
+    to_hash: &str,
+    tier: crate::overlay::ConfidenceTier,
+) -> crate::overlay::OverlayLink {
+    crate::overlay::OverlayLink {
+        from,
+        to,
+        kind: crate::overlay::OverlayEdgeKind::References,
+        epistemic: crate::overlay::OverlayEpistemic::MachineAuthoredHighConf,
+        source_spans: vec![crate::overlay::CitedSpan {
+            artifact: from,
+            normalized_text: "span".into(),
+            verified_at_offset: 0,
+            lcs_ratio: 1.0,
+        }],
+        target_spans: vec![crate::overlay::CitedSpan {
+            artifact: to,
+            normalized_text: "span".into(),
+            verified_at_offset: 0,
+            lcs_ratio: 1.0,
+        }],
+        from_content_hash: from_hash.into(),
+        to_content_hash: to_hash.into(),
+        confidence_score: match tier {
+            crate::overlay::ConfidenceTier::High => 0.9,
+            crate::overlay::ConfidenceTier::ReviewQueue => 0.7,
+            crate::overlay::ConfidenceTier::BelowThreshold => 0.4,
+        },
+        confidence_tier: tier,
+        rationale: None,
+        provenance: crate::overlay::CrossLinkProvenance {
+            pass_id: "test".into(),
+            model_identity: "test".into(),
+            generated_at: OffsetDateTime::now_utc(),
+        },
+    }
+}
+
+#[test]
+fn symbol_card_deep_with_fresh_high_tier_link() {
+    let (repo, graph, sym_id) = fresh_symbol_fixture();
+    let hash = current_content_hash(&graph, "src/lib.rs");
+    let overlay = make_overlay_store(&repo);
+
+    let from_id = NodeId::Symbol(sym_id);
+    let file_id = graph.file_by_path("src/lib.rs").unwrap().unwrap().id;
+    let to_id = NodeId::File(file_id);
+    let link = sample_proposed_link(
+        from_id,
+        to_id,
+        &hash,
+        &hash,
+        crate::overlay::ConfidenceTier::High,
+    );
+    overlay.lock().insert_link(link).unwrap();
+
+    let compiler = GraphCardCompiler::new(Box::new(graph), Some(repo.path()))
+        .with_overlay(Some(overlay), None);
+    let card = compiler.symbol_card(sym_id, Budget::Deep).unwrap();
+
+    assert_eq!(card.links_state.as_deref(), Some("present"));
+    let links = card
+        .proposed_links
+        .as_ref()
+        .expect("proposed links present");
+    assert_eq!(links.len(), 1);
+    assert_eq!(
+        links[0].freshness,
+        crate::overlay::CrossLinkFreshness::Fresh
+    );
+
+    // Snapshot it
+    let json = serde_json::to_string_pretty(&card).unwrap();
+    assert_snapshot!("symbol_card_deep_with_proposed_links", json);
+}
+
+#[test]
+fn symbol_card_normal_reports_budget_withheld_for_links() {
+    let (repo, graph, sym_id) = fresh_symbol_fixture();
+    let compiler = GraphCardCompiler::new(Box::new(graph), Some(repo.path()));
+
+    let card = compiler.symbol_card(sym_id, Budget::Normal).unwrap();
+    assert_eq!(card.links_state.as_deref(), Some("budget_withheld"));
+    assert!(card.proposed_links.is_none());
+}
+
+#[test]
+fn symbol_card_deep_missing_links_state() {
+    let (repo, graph, sym_id) = fresh_symbol_fixture();
+    let overlay = make_overlay_store(&repo);
+
+    let compiler = GraphCardCompiler::new(Box::new(graph), Some(repo.path()))
+        .with_overlay(Some(overlay), None);
+    let card = compiler.symbol_card(sym_id, Budget::Deep).unwrap();
+
+    assert_eq!(card.links_state.as_deref(), Some("missing"));
+    assert!(card.proposed_links.is_none());
+}
+
+#[test]
+fn symbol_card_deep_filters_below_threshold_links() {
+    let (repo, graph, sym_id) = fresh_symbol_fixture();
+    let hash = current_content_hash(&graph, "src/lib.rs");
+    let overlay = make_overlay_store(&repo);
+
+    let from_id = NodeId::Symbol(sym_id);
+    let file_id = graph.file_by_path("src/lib.rs").unwrap().unwrap().id;
+    let to_id = NodeId::File(file_id);
+    let link = sample_proposed_link(
+        from_id,
+        to_id,
+        &hash,
+        &hash,
+        crate::overlay::ConfidenceTier::BelowThreshold,
+    );
+    overlay.lock().insert_link(link).unwrap();
+
+    let compiler = GraphCardCompiler::new(Box::new(graph), Some(repo.path()))
+        .with_overlay(Some(overlay), None);
+    let card = compiler.symbol_card(sym_id, Budget::Deep).unwrap();
+
+    // Since the only link is BelowThreshold, it's filtered out, making the state "missing"
+    assert_eq!(card.links_state.as_deref(), Some("missing"));
+    assert!(card.proposed_links.is_none() || card.proposed_links.unwrap().is_empty());
+}
+
+#[test]
+fn symbol_card_deep_stale_link_preservation() {
+    let (repo, graph, sym_id) = fresh_symbol_fixture();
+    let _hash = current_content_hash(&graph, "src/lib.rs");
+    let overlay = make_overlay_store(&repo);
+
+    let from_id = NodeId::Symbol(sym_id);
+    let file_id = graph.file_by_path("src/lib.rs").unwrap().unwrap().id;
+    let to_id = NodeId::File(file_id);
+    // Link has out-of-date hash
+    let link = sample_proposed_link(
+        from_id,
+        to_id,
+        "old-hash",
+        "old-hash",
+        crate::overlay::ConfidenceTier::High,
+    );
+    overlay.lock().insert_link(link).unwrap();
+
+    let compiler = GraphCardCompiler::new(Box::new(graph), Some(repo.path()))
+        .with_overlay(Some(overlay), None);
+    let card = compiler.symbol_card(sym_id, Budget::Deep).unwrap();
+
+    assert_eq!(card.links_state.as_deref(), Some("present"));
+    let links = card.proposed_links.as_ref().unwrap();
+    assert_eq!(links.len(), 1);
+    assert_eq!(
+        links[0].freshness,
+        crate::overlay::CrossLinkFreshness::Stale
+    );
+}

@@ -44,7 +44,15 @@ pub(crate) fn status(repo_root: &Path) -> anyhow::Result<()> {
         let graph_dir = synrepo_dir.join("graph");
         SqliteGraphStore::open_existing(&graph_dir)
             .ok()
-            .and_then(|store| store.persisted_stats().ok())
+            .and_then(|store| {
+                // Snapshot the graph so the COUNT queries inside persisted_stats
+                // see one committed epoch even if a concurrent reconcile commits
+                // mid-call.
+                synrepo::structure::graph::with_graph_read_snapshot(&store, |_graph| {
+                    store.persisted_stats()
+                })
+                .ok()
+            })
     };
 
     println!("synrepo status");
@@ -139,19 +147,25 @@ fn commentary_coverage_line(synrepo_dir: &Path) -> String {
         Err(_) => return format!("{} entries (graph unreadable)", rows.len()),
     };
 
-    let mut fresh = 0usize;
-    for (node_id_str, stored_hash) in &rows {
-        let Ok(node_id) = NodeId::from_str(node_id_str) else {
-            continue;
-        };
-        if resolve_commentary_node(&graph, node_id)
-            .ok()
-            .flatten()
-            .is_some_and(|snap| &snap.content_hash == stored_hash)
-        {
-            fresh += 1;
+    // Pin one snapshot for the whole fresh/stale sweep so the counts reflect
+    // a single committed epoch of the graph.
+    let fresh = synrepo::structure::graph::with_graph_read_snapshot(&graph, |graph| {
+        let mut fresh = 0usize;
+        for (node_id_str, stored_hash) in &rows {
+            let Ok(node_id) = NodeId::from_str(node_id_str) else {
+                continue;
+            };
+            if resolve_commentary_node(graph, node_id)
+                .ok()
+                .flatten()
+                .is_some_and(|snap| &snap.content_hash == stored_hash)
+            {
+                fresh += 1;
+            }
         }
-    }
+        Ok(fresh)
+    })
+    .unwrap_or(0);
 
     format!("{fresh} fresh / {} total nodes with commentary", rows.len())
 }

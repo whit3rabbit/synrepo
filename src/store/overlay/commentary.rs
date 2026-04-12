@@ -35,20 +35,47 @@ fn has_complete_provenance(prov: &CommentaryProvenance) -> bool {
 }
 
 impl OverlayStore for SqliteOverlayStore {
-    fn insert_link(&mut self, _link: crate::overlay::OverlayLink) -> crate::Result<()> {
-        // Phase 5+: cross-link proposals are not yet active.
-        Err(crate::Error::Other(anyhow::anyhow!(
-            "overlay cross-link surface is not yet active (phase 5+)"
-        )))
+    fn insert_link(&mut self, link: crate::overlay::OverlayLink) -> crate::Result<()> {
+        let conn = self.conn.lock();
+        super::cross_links::insert_candidate(&conn, &link)
     }
 
-    fn links_for(&self, _node: NodeId) -> crate::Result<Vec<crate::overlay::OverlayLink>> {
-        Ok(Vec::new())
+    fn links_for(&self, node: NodeId) -> crate::Result<Vec<crate::overlay::OverlayLink>> {
+        let conn = self.conn.lock();
+        super::cross_links::candidates_for_node(&conn, node)
     }
 
     fn commit(&mut self) -> crate::Result<()> {
         // Auto-commit via rusqlite's default transaction semantics; no-op.
         Ok(())
+    }
+
+    fn begin_read_snapshot(&self) -> crate::Result<()> {
+        // Re-entrant; see SqliteGraphStore::begin_read_snapshot for rationale.
+        let mut depth = self.snapshot_depth.lock();
+        if *depth == 0 {
+            self.conn.lock().execute_batch("BEGIN DEFERRED")?;
+        }
+        *depth += 1;
+        Ok(())
+    }
+
+    fn end_read_snapshot(&self) -> crate::Result<()> {
+        let mut depth = self.snapshot_depth.lock();
+        if *depth == 0 {
+            return Ok(());
+        }
+        *depth -= 1;
+        if *depth == 0 {
+            let conn = self.conn.lock();
+            match conn.execute_batch("COMMIT") {
+                Ok(()) => Ok(()),
+                Err(err) if err.to_string().contains("no transaction") => Ok(()),
+                Err(err) => Err(err.into()),
+            }
+        } else {
+            Ok(())
+        }
     }
 
     fn insert_commentary(&mut self, entry: CommentaryEntry) -> crate::Result<()> {
@@ -140,6 +167,8 @@ impl OverlayStore for SqliteOverlayStore {
         let live: HashSet<String> = live_nodes.iter().map(|id| id.to_string()).collect();
 
         let conn = self.conn.lock();
+
+        // Prune commentary.
         let mut stmt = conn.prepare("SELECT node_id FROM commentary")?;
         let existing: Vec<String> = stmt
             .query_map([], |row| row.get::<_, String>(0))?
@@ -153,6 +182,10 @@ impl OverlayStore for SqliteOverlayStore {
                 removed += 1;
             }
         }
+
+        // Prune cross-links (records audit rows with reason `source_deleted`).
+        removed += super::cross_links::prune_orphans(&conn, &live)?;
+
         Ok(removed)
     }
 }

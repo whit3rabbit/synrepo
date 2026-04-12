@@ -85,3 +85,11 @@ synrepo SHALL define budget limits, lazy versus eager generation policy, and ref
 - **WHEN** a commentary generation or inclusion request would exceed the configured cost limit
 - **THEN** the overlay contract withholds the commentary and labels the response accordingly
 - **AND** no partial or truncated commentary is synthesized or surfaced
+
+### Requirement: Expose a reader-consistent snapshot over multi-query overlay reads
+The overlay store SHALL expose a paired `begin_read_snapshot` / `end_read_snapshot` API mirroring the graph store's contract: any logical operation issuing multiple overlay queries through a single handle observes exactly one committed epoch for the entire scope, and nested snapshots on the same handle share the outermost epoch.
+
+#### Scenario: Reader is isolated from a concurrent commentary refresh
+- **WHEN** a reader opens an overlay read snapshot, reads a commentary entry, a writer replaces that entry through a different handle, and the reader re-reads the same entry inside the snapshot
+- **THEN** the second read still returns the entry observed at snapshot-begin rather than the refreshed content
+- **AND** the refreshed content becomes visible only after the snapshot is ended

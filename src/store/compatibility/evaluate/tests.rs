@@ -63,6 +63,31 @@ fn newer_graph_format_blocks_canonical_runtime() {
 }
 
 #[test]
+fn cross_link_threshold_change_is_advisory_only() {
+    let repo = tempdir().unwrap();
+    let synrepo_dir = repo.path().join(".synrepo");
+    fs::create_dir_all(synrepo_dir.join("state")).unwrap();
+    fs::create_dir_all(synrepo_dir.join("graph")).unwrap();
+    fs::write(synrepo_dir.join("graph/nodes.db"), "db").unwrap();
+    write_runtime_snapshot(&synrepo_dir, &crate::config::Config::default()).unwrap();
+
+    let mut config = crate::config::Config::default();
+    config.cross_link_confidence_thresholds.high = 0.9;
+
+    let report = evaluate_runtime(&synrepo_dir, true, &config).unwrap();
+
+    // No rebuild or invalidate for any store.
+    assert_eq!(report.action_for(StoreId::Graph), CompatAction::Continue);
+    assert_eq!(report.action_for(StoreId::Overlay), CompatAction::Continue);
+    assert_eq!(report.action_for(StoreId::Index), CompatAction::Continue);
+    // Warning surfaced instead.
+    assert!(report
+        .warnings
+        .iter()
+        .any(|w| w.contains("cross_link_confidence_thresholds")));
+}
+
+#[test]
 fn graph_sensitive_config_drift_warns_before_graph_exists() {
     let repo = tempdir().unwrap();
     let synrepo_dir = repo.path().join(".synrepo");

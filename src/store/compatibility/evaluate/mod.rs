@@ -88,6 +88,14 @@ pub fn evaluate_runtime(
             }
         }
 
+        if snapshot.config_fingerprints.advisory_inputs != fingerprints.advisory_inputs
+            && !snapshot.config_fingerprints.advisory_inputs.is_empty()
+        {
+            warnings.push(
+                "advisory config changed (`cross_link_confidence_thresholds` or `cross_link_cost_limit`); existing cross-link candidates are re-classified on the next `synrepo sync`".to_string(),
+            );
+        }
+
         if snapshot.config_fingerprints.history_inputs != fingerprints.history_inputs {
             if store_is_materialized(synrepo_dir, StoreId::Graph)? {
                 set_action(

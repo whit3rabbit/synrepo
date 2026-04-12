@@ -1,8 +1,11 @@
 //! Integration tests for the sqlite-backed overlay store.
 
 use super::{derive_freshness, SqliteOverlayStore};
-use crate::core::ids::{FileNodeId, NodeId, SymbolNodeId};
-use crate::overlay::{CommentaryEntry, CommentaryProvenance, FreshnessState, OverlayStore};
+use crate::core::ids::{ConceptNodeId, FileNodeId, NodeId, SymbolNodeId};
+use crate::overlay::{
+    CitedSpan, CommentaryEntry, CommentaryProvenance, ConfidenceTier, CrossLinkProvenance,
+    FreshnessState, OverlayEdgeKind, OverlayEpistemic, OverlayLink, OverlayStore,
+};
 use tempfile::tempdir;
 use time::OffsetDateTime;
 
@@ -185,4 +188,302 @@ fn derive_freshness_invalid_on_empty_provenance_fields() {
     entry.provenance.model_identity = String::new();
 
     assert_eq!(derive_freshness(&entry, "hash"), FreshnessState::Invalid);
+}
+
+// ---------- cross-link tests ----------
+
+fn sample_link(from: NodeId, to: NodeId, from_hash: &str, to_hash: &str) -> OverlayLink {
+    OverlayLink {
+        from,
+        to,
+        kind: OverlayEdgeKind::References,
+        epistemic: OverlayEpistemic::MachineAuthoredHighConf,
+        source_spans: vec![CitedSpan {
+            artifact: from,
+            normalized_text: "authenticate".into(),
+            verified_at_offset: 12,
+            lcs_ratio: 0.98,
+        }],
+        target_spans: vec![CitedSpan {
+            artifact: to,
+            normalized_text: "fn authenticate".into(),
+            verified_at_offset: 3,
+            lcs_ratio: 1.0,
+        }],
+        from_content_hash: from_hash.into(),
+        to_content_hash: to_hash.into(),
+        confidence_score: 0.91,
+        confidence_tier: ConfidenceTier::High,
+        rationale: Some("Prose names the symbol; matches qualified name.".into()),
+        provenance: CrossLinkProvenance {
+            pass_id: "cross-link-v1".into(),
+            model_identity: "claude-sonnet-4-6".into(),
+            generated_at: OffsetDateTime::from_unix_timestamp(1_712_000_000).unwrap(),
+        },
+    }
+}
+
+#[test]
+fn cross_link_insert_and_retrieve_by_either_endpoint() {
+    let dir = tempdir().unwrap();
+    let mut store = SqliteOverlayStore::open(dir.path()).unwrap();
+
+    let from = NodeId::Concept(ConceptNodeId(1));
+    let to = NodeId::Symbol(SymbolNodeId(2));
+    let link = sample_link(from, to, "h-from", "h-to");
+    store.insert_link(link.clone()).unwrap();
+
+    let by_from = store.links_for(from).unwrap();
+    assert_eq!(by_from.len(), 1);
+    assert_eq!(by_from[0].from, from);
+    assert_eq!(by_from[0].to, to);
+    assert_eq!(by_from[0].confidence_tier, ConfidenceTier::High);
+    assert_eq!(by_from[0].from_content_hash, "h-from");
+    assert_eq!(by_from[0].to_content_hash, "h-to");
+    assert_eq!(by_from[0].source_spans.len(), 1);
+    assert_eq!(by_from[0].target_spans.len(), 1);
+    assert_eq!(by_from[0].provenance.pass_id, "cross-link-v1");
+
+    let by_to = store.links_for(to).unwrap();
+    assert_eq!(by_to.len(), 1);
+}
+
+#[test]
+fn cross_link_insert_rejects_missing_provenance() {
+    let dir = tempdir().unwrap();
+    let mut store = SqliteOverlayStore::open(dir.path()).unwrap();
+
+    let from = NodeId::Concept(ConceptNodeId(1));
+    let to = NodeId::Symbol(SymbolNodeId(2));
+    let mut link = sample_link(from, to, "h-from", "h-to");
+    link.provenance.pass_id = String::new();
+
+    let err = store.insert_link(link).unwrap_err();
+    assert!(
+        err.to_string().contains("provenance"),
+        "expected provenance error, got: {err}"
+    );
+}
+
+#[test]
+fn cross_link_insert_rejects_empty_spans() {
+    let dir = tempdir().unwrap();
+    let mut store = SqliteOverlayStore::open(dir.path()).unwrap();
+
+    let from = NodeId::Concept(ConceptNodeId(1));
+    let to = NodeId::Symbol(SymbolNodeId(2));
+    let mut link = sample_link(from, to, "h-from", "h-to");
+    link.source_spans.clear();
+
+    assert!(store.insert_link(link).is_err());
+}
+
+#[test]
+fn cross_link_upsert_records_regeneration_audit() {
+    let dir = tempdir().unwrap();
+    let mut store = SqliteOverlayStore::open(dir.path()).unwrap();
+
+    let from = NodeId::Concept(ConceptNodeId(1));
+    let to = NodeId::Symbol(SymbolNodeId(2));
+    let mut link = sample_link(from, to, "h-from", "h-to");
+    store.insert_link(link.clone()).unwrap();
+
+    link.from_content_hash = "h-from-v2".into();
+    store.insert_link(link.clone()).unwrap();
+
+    assert_eq!(store.cross_link_count().unwrap(), 1);
+    let audit = store
+        .cross_link_audit_events(&from.to_string(), &to.to_string(), "references")
+        .unwrap();
+    assert_eq!(audit.len(), 2);
+    assert_eq!(audit[0].event_kind, "generated");
+    assert_eq!(audit[1].event_kind, "regenerated");
+}
+
+#[test]
+fn cross_link_prune_orphans_writes_audit_and_removes_row() {
+    let dir = tempdir().unwrap();
+    let mut store = SqliteOverlayStore::open(dir.path()).unwrap();
+
+    let keep_from = NodeId::Concept(ConceptNodeId(1));
+    let keep_to = NodeId::Symbol(SymbolNodeId(2));
+    let drop_from = NodeId::Concept(ConceptNodeId(3));
+    let drop_to = NodeId::Symbol(SymbolNodeId(4));
+
+    store
+        .insert_link(sample_link(keep_from, keep_to, "hk-from", "hk-to"))
+        .unwrap();
+    store
+        .insert_link(sample_link(drop_from, drop_to, "hd-from", "hd-to"))
+        .unwrap();
+
+    // Only the first pair's endpoints remain live.
+    let live = [keep_from, keep_to];
+    let removed = store.prune_orphans(&live).unwrap();
+    assert_eq!(removed, 1);
+    assert_eq!(store.cross_link_count().unwrap(), 1);
+
+    let audit = store
+        .cross_link_audit_events(&drop_from.to_string(), &drop_to.to_string(), "references")
+        .unwrap();
+    let pruned = audit
+        .iter()
+        .find(|r| r.event_kind == "pruned")
+        .expect("expected a `pruned` audit row");
+    assert_eq!(pruned.reason.as_deref(), Some("source_deleted"));
+}
+
+#[test]
+fn cross_link_schema_isolated_from_commentary() {
+    // Commentary writes and cross-link writes hit different tables; neither
+    // sees the other's rows.
+    let dir = tempdir().unwrap();
+    let mut store = SqliteOverlayStore::open(dir.path()).unwrap();
+
+    let sym = NodeId::Symbol(SymbolNodeId(99));
+    store.insert_commentary(sample_entry(sym, "h1")).unwrap();
+
+    let from = NodeId::Concept(ConceptNodeId(1));
+    let to = NodeId::Symbol(SymbolNodeId(2));
+    store
+        .insert_link(sample_link(from, to, "h-from", "h-to"))
+        .unwrap();
+
+    assert_eq!(store.commentary_count().unwrap(), 1);
+    assert_eq!(store.cross_link_count().unwrap(), 1);
+
+    let conn = store.conn.lock();
+    let cross_in_commentary: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM commentary WHERE node_id = ?1",
+            [from.to_string()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(cross_in_commentary, 0);
+    let comm_in_cross: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM cross_links WHERE from_node = ?1",
+            [sym.to_string()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(comm_in_cross, 0);
+}
+
+#[test]
+fn schema_version_recorded_on_open() {
+    let dir = tempdir().unwrap();
+    let store = SqliteOverlayStore::open(dir.path()).unwrap();
+    let conn = store.conn.lock();
+    let version: String = conn
+        .query_row(
+            "SELECT value FROM meta WHERE key = 'schema_version'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(version, super::CURRENT_SCHEMA_VERSION.to_string());
+}
+
+/// Overlay snapshot mirrors the graph-store contract: a reader pins a
+/// committed epoch; a writer committing through a separate handle does
+/// not become visible until the snapshot ends.
+#[test]
+fn overlay_read_snapshot_observes_one_commit_boundary() {
+    let dir = tempdir().unwrap();
+    let mut writer = SqliteOverlayStore::open(dir.path()).unwrap();
+
+    let node = NodeId::Symbol(SymbolNodeId(0xbee));
+    writer
+        .insert_commentary(sample_entry(node, "hash-v1"))
+        .unwrap();
+
+    let reader = SqliteOverlayStore::open(dir.path()).unwrap();
+    reader.begin_read_snapshot().unwrap();
+
+    let first = reader.commentary_for(node).unwrap().unwrap();
+    assert_eq!(first.provenance.source_content_hash, "hash-v1");
+
+    // Writer refreshes via the upsert path while the reader's snapshot is
+    // still open.
+    writer
+        .insert_commentary(sample_entry(node, "hash-v2"))
+        .unwrap();
+
+    let during = reader.commentary_for(node).unwrap().unwrap();
+    assert_eq!(
+        during.provenance.source_content_hash, "hash-v1",
+        "reader snapshot must isolate from concurrent overlay refresh"
+    );
+
+    reader.end_read_snapshot().unwrap();
+
+    let after = reader.commentary_for(node).unwrap().unwrap();
+    assert_eq!(after.provenance.source_content_hash, "hash-v2");
+}
+
+/// Nested overlay snapshots must share the outer epoch and only release
+/// when the matching depth drains to zero.
+#[test]
+fn overlay_nested_snapshots_share_the_outer_epoch() {
+    let dir = tempdir().unwrap();
+    let mut writer = SqliteOverlayStore::open(dir.path()).unwrap();
+
+    let node = NodeId::Symbol(SymbolNodeId(1));
+    writer
+        .insert_commentary(sample_entry(node, "hash-v1"))
+        .unwrap();
+
+    let reader = SqliteOverlayStore::open(dir.path()).unwrap();
+    reader.begin_read_snapshot().unwrap();
+    reader.begin_read_snapshot().unwrap();
+
+    // Pin the WAL snapshot with an early read; `BEGIN DEFERRED` upgrades
+    // to a read transaction on the first SELECT, not on begin.
+    assert_eq!(
+        reader
+            .commentary_for(node)
+            .unwrap()
+            .unwrap()
+            .provenance
+            .source_content_hash,
+        "hash-v1"
+    );
+
+    writer
+        .insert_commentary(sample_entry(node, "hash-v2"))
+        .unwrap();
+
+    reader.end_read_snapshot().unwrap();
+    assert_eq!(
+        reader
+            .commentary_for(node)
+            .unwrap()
+            .unwrap()
+            .provenance
+            .source_content_hash,
+        "hash-v1",
+        "inner end must not release the outer snapshot"
+    );
+
+    reader.end_read_snapshot().unwrap();
+    assert_eq!(
+        reader
+            .commentary_for(node)
+            .unwrap()
+            .unwrap()
+            .provenance
+            .source_content_hash,
+        "hash-v2"
+    );
+}
+
+/// Overlay `end_read_snapshot` without a matching begin must be a no-op.
+#[test]
+fn overlay_end_without_begin_is_noop() {
+    let dir = tempdir().unwrap();
+    let store = SqliteOverlayStore::open(dir.path()).unwrap();
+    store.end_read_snapshot().unwrap();
+    store.end_read_snapshot().unwrap();
 }

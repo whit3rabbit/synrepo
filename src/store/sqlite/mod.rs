@@ -38,6 +38,13 @@ pub struct PersistedGraphStats {
 /// Sqlite-backed graph store rooted at `.synrepo/graph/`.
 pub struct SqliteGraphStore {
     pub(super) conn: Mutex<Connection>,
+    /// Re-entrant read-snapshot depth counter. `begin_read_snapshot` issues
+    /// `BEGIN DEFERRED` only on the 0 -> 1 transition; `end_read_snapshot`
+    /// issues `COMMIT` only on the 1 -> 0 transition. This keeps nested
+    /// snapshots safe (e.g. an MCP handler wraps its body, and an inner
+    /// `GraphCardCompiler` method also wraps its body) while preserving the
+    /// "single committed epoch for the whole scope" guarantee.
+    pub(super) snapshot_depth: Mutex<usize>,
 }
 
 impl SqliteGraphStore {
@@ -58,6 +65,7 @@ impl SqliteGraphStore {
 
         Ok(Self {
             conn: Mutex::new(conn),
+            snapshot_depth: Mutex::new(0),
         })
     }
 
@@ -76,6 +84,7 @@ impl SqliteGraphStore {
 
         Ok(Self {
             conn: Mutex::new(conn),
+            snapshot_depth: Mutex::new(0),
         })
     }
 

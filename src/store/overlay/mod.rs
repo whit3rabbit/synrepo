@@ -6,12 +6,20 @@
 //! graph, or graph data to the overlay.
 
 mod commentary;
+mod cross_link_audit;
+mod cross_links;
 mod schema;
 
 #[cfg(test)]
 mod tests;
 
 pub use commentary::derive_freshness;
+pub use cross_link_audit::AuditRow;
+pub use cross_links::CrossLinkHashRow;
+
+/// Current overlay schema version shipped by this binary (v1: commentary-only;
+/// v2: commentary + cross-links).
+pub const CURRENT_SCHEMA_VERSION: u32 = schema::CURRENT_SCHEMA_VERSION;
 
 use parking_lot::Mutex;
 use rusqlite::{Connection, OpenFlags};
@@ -27,6 +35,10 @@ const OVERLAY_DB_FILENAME: &str = "overlay.db";
 /// Sqlite-backed overlay store rooted at `.synrepo/overlay/`.
 pub struct SqliteOverlayStore {
     pub(super) conn: Mutex<Connection>,
+    /// Re-entrant read-snapshot depth counter. See
+    /// [`crate::store::sqlite::SqliteGraphStore::snapshot_depth`] for the
+    /// semantics; the overlay mirrors them.
+    pub(super) snapshot_depth: Mutex<usize>,
 }
 
 impl SqliteOverlayStore {
@@ -50,6 +62,7 @@ impl SqliteOverlayStore {
 
         Ok(Self {
             conn: Mutex::new(conn),
+            snapshot_depth: Mutex::new(0),
         })
     }
 
@@ -70,6 +83,7 @@ impl SqliteOverlayStore {
 
         Ok(Self {
             conn: Mutex::new(conn),
+            snapshot_depth: Mutex::new(0),
         })
     }
 

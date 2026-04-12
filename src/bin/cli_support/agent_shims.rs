@@ -99,10 +99,13 @@ Use these when the synrepo MCP server is running:
 - `synrepo_search query=<text>` — lexical search across indexed files.
 - `synrepo_overview` — graph counts and mode summary.
 - `synrepo_where_to_edit task=<description>` — file suggestions for a plain-language task.
-- `synrepo_change_impact target=<id>` — what depends on this file or symbol.
+- `synrepo_change_impact target=<id>` — first-pass reverse dependencies for this file or symbol.
 
 Use `synrepo_search` to find node IDs (format: `file_0000000000000042`, \
 `symbol_0000000000000024`) before calling `synrepo_card` or `synrepo_change_impact`.
+
+Treat `synrepo_change_impact` as routing help, not exact blast-radius proof. The current \
+impact signal is file-level and approximate.
 
 ## CLI fallback (when MCP is not running)
 
@@ -119,7 +122,8 @@ synrepo reconcile                                # refresh graph against current
 
 ## Trust model
 
-- Graph content (`source_store: graph`) — parser-observed facts. Treat as ground truth.
+- Graph content (`source_store: graph`) — parser-observed facts. Treat as the primary \
+  source of truth, while current impact hints remain approximate.
 - Overlay content (`source_store: overlay`) — machine-authored suggestions. Secondary only.
 ";
 
@@ -141,7 +145,9 @@ reading files cold.
 - `synrepo_search` — lexical search
 - `synrepo_overview` — graph counts and mode
 - `synrepo_where_to_edit` — file suggestions for a plain-language task
-- `synrepo_change_impact` — reverse-dependency impact for a file or symbol
+- `synrepo_change_impact` — first-pass reverse-dependency impact for a file or symbol
+
+Treat `synrepo_change_impact` as approximate routing help, not exact blast-radius proof.
 
 ## CLI fallback (when MCP is not running)
 
@@ -168,10 +174,12 @@ codebase. Check for `.synrepo/` before reading source files cold.
 - `synrepo_search` — lexical search by symbol or file name
 - `synrepo_overview` — graph counts and repository mode
 - `synrepo_where_to_edit` — file suggestions for a plain-language task description
-- `synrepo_change_impact` — what depends on a given file or symbol
+- `synrepo_change_impact` — first-pass reverse dependencies for a given file or symbol
 
 Node IDs: `file_0000000000000042`, `symbol_0000000000000024`. \
 Use `synrepo_search` to find them before calling card or impact tools.
+
+Treat impact output as approximate routing help, not exact blast-radius proof.
 
 ### CLI fallback (when MCP is not running)
 
@@ -183,7 +191,8 @@ Use `synrepo_search` to find them before calling card or impact tools.
 - `synrepo graph stats` — node and edge counts
 - `synrepo reconcile` — refresh the graph
 
-Graph content is ground truth. Overlay content is machine-authored and secondary.
+Graph content is the primary source of truth, while current impact hints remain \
+approximate. Overlay content is machine-authored and secondary.
 ";
 
 const GENERIC_SHIM: &str = "\
@@ -202,10 +211,12 @@ When the synrepo MCP server is running, prefer these task-first tools:
 - `synrepo_search query=<text>` — lexical search across indexed files.
 - `synrepo_overview` — graph node counts and repository mode.
 - `synrepo_where_to_edit task=<description>` — file suggestions for a plain-language task.
-- `synrepo_change_impact target=<id>` — what depends on this file or symbol.
+- `synrepo_change_impact target=<id>` — first-pass reverse dependencies for this file or symbol.
 
 Node IDs: `file_0000000000000042`, `symbol_0000000000000024`. \
 Use `synrepo_search` to find them.
+
+Treat impact output as approximate routing help, not exact blast-radius proof.
 
 ### CLI fallback (when MCP is not running)
 
@@ -222,7 +233,7 @@ synrepo reconcile                                 # refresh graph against curren
 
 ### Trust model
 
-- `source_store: graph` — parser-observed or git-observed facts. Ground truth.
+- `source_store: graph` — parser-observed or git-observed facts. Primary source of truth, while current impact hints remain approximate.
 - `source_store: overlay` — machine-authored suggestions. Treat as secondary.
 ";
 

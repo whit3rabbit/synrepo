@@ -10,7 +10,7 @@ use synrepo::{
         compatibility::{self, CompatAction, StoreId},
         sqlite::SqliteGraphStore,
     },
-    structure::graph::{EdgeKind, Epistemic, GraphStore},
+    structure::graph::{with_graph_read_snapshot, EdgeKind, Epistemic},
     surface::card::FileGitIntelligence,
     NodeId,
 };
@@ -21,10 +21,10 @@ const FILE_NODE_GIT_INSIGHT_LIMIT: usize = 5;
 pub(crate) fn graph_query_output(repo_root: &Path, query: &str) -> anyhow::Result<String> {
     let store = open_graph_store_for_read(repo_root)?;
     let parsed = parse_graph_query(query)?;
-    let edges = match parsed.direction {
-        QueryDirection::Outbound => store.outbound(parsed.node_id, parsed.edge_kind)?,
-        QueryDirection::Inbound => store.inbound(parsed.node_id, parsed.edge_kind)?,
-    };
+    let edges = with_graph_read_snapshot(&store, |graph| match parsed.direction {
+        QueryDirection::Outbound => graph.outbound(parsed.node_id, parsed.edge_kind),
+        QueryDirection::Inbound => graph.inbound(parsed.node_id, parsed.edge_kind),
+    })?;
 
     render_json(&GraphQueryOutput {
         direction: parsed.direction.as_str(),
@@ -37,7 +37,12 @@ pub(crate) fn graph_query_output(repo_root: &Path, query: &str) -> anyhow::Resul
 /// Retrieve statistics for the currently persisted graph store.
 pub(crate) fn graph_stats_output(repo_root: &Path) -> anyhow::Result<String> {
     let store = open_graph_store_for_read(repo_root)?;
-    render_json(&store.persisted_stats()?)
+    // persisted_stats issues COUNT(*) against four tables plus a GROUP BY,
+    // so wrap it in one snapshot to avoid mixing counts from different epochs.
+    // persisted_stats is inherent on SqliteGraphStore, not a trait method, so
+    // we ignore the trait-object parameter and call through the concrete type.
+    let stats = with_graph_read_snapshot(&store, |_graph| store.persisted_stats())?;
+    render_json(&stats)
 }
 
 /// Retrieve the full JSON output of a specific node by ID.
@@ -46,30 +51,50 @@ pub(crate) fn node_output(repo_root: &Path, id: &str) -> anyhow::Result<String> 
     let store = open_graph_store_for_read(repo_root)?;
     let node_id = id.parse::<NodeId>()?;
 
-    let payload = match node_id {
-        NodeId::File(file_id) => store.get_file(file_id)?.map(|node| {
+    // Read the graph node inside a single snapshot. Git intelligence reads
+    // the on-disk repo rather than the graph, so it can run after the
+    // snapshot ends without reintroducing a consistency hazard.
+    let node_fetch: Option<NodePayload> = with_graph_read_snapshot(&store, |graph| {
+        Ok(match node_id {
+            NodeId::File(file_id) => graph.get_file(file_id)?.map(|node| NodePayload::File {
+                path: node.path.clone(),
+                node,
+            }),
+            NodeId::Symbol(symbol_id) => graph.get_symbol(symbol_id)?.map(NodePayload::Symbol),
+            NodeId::Concept(concept_id) => graph.get_concept(concept_id)?.map(NodePayload::Concept),
+        })
+    })?;
+
+    let payload = match node_fetch {
+        Some(NodePayload::File { path, node }) => {
             let git_context = GitIntelligenceContext::inspect(repo_root, &config);
             let git_intelligence = FileGitIntelligence::from(analyze_path_history(
                 &git_context,
-                &node.path,
+                &path,
                 config.git_commit_depth as usize,
                 FILE_NODE_GIT_INSIGHT_LIMIT,
             )?);
-            Ok::<_, anyhow::Error>(
-                json!({ "node_id": id, "node_type": "file", "node": node, "git_intelligence": git_intelligence }),
-            )
-        }),
-        NodeId::Symbol(symbol_id) => store
-            .get_symbol(symbol_id)?
-            .map(|node| Ok(json!({ "node_id": id, "node_type": "symbol", "node": node }))),
-        NodeId::Concept(concept_id) => store
-            .get_concept(concept_id)?
-            .map(|node| Ok(json!({ "node_id": id, "node_type": "concept", "node": node }))),
-    }
-    .transpose()?
-    .ok_or_else(|| anyhow::anyhow!("node not found: {id}"))?;
+            json!({ "node_id": id, "node_type": "file", "node": node, "git_intelligence": git_intelligence })
+        }
+        Some(NodePayload::Symbol(node)) => {
+            json!({ "node_id": id, "node_type": "symbol", "node": node })
+        }
+        Some(NodePayload::Concept(node)) => {
+            json!({ "node_id": id, "node_type": "concept", "node": node })
+        }
+        None => return Err(anyhow::anyhow!("node not found: {id}")),
+    };
 
     render_json(&payload)
+}
+
+enum NodePayload {
+    File {
+        path: String,
+        node: synrepo::structure::graph::FileNode,
+    },
+    Symbol(synrepo::structure::graph::SymbolNode),
+    Concept(synrepo::structure::graph::ConceptNode),
 }
 
 /// Verify that a store is in a compatible state before operating on it.

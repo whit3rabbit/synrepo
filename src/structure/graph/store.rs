@@ -62,6 +62,45 @@ pub trait GraphStore: Send + Sync {
         Ok(())
     }
 
+    /// Open a read snapshot on this store so that every subsequent read
+    /// through this handle observes a single committed epoch until
+    /// [`GraphStore::end_read_snapshot`] is called.
+    ///
+    /// Why this exists: a card compile or traversal issues many read
+    /// queries (file, symbols, inbound/outbound edges, concepts). Without a
+    /// snapshot, a writer commit between queries leaves the caller looking
+    /// at two different epochs at once, which is how agents end up
+    /// hallucinating about structure. With a snapshot, the reader sees one
+    /// epoch for the entire operation; a concurrent writer still commits,
+    /// but its result is invisible to this reader until the snapshot ends.
+    ///
+    /// Contract:
+    /// - Must be paired with `end_read_snapshot`. Prefer the
+    ///   `with_graph_read_snapshot` helper so the pairing is structural.
+    /// - Nesting is safe: implementations are re-entrant via a depth
+    ///   counter, so an outer wrap (e.g. an MCP handler) may compose
+    ///   cleanly with an inner wrap (e.g. `GraphCardCompiler::symbol_card`)
+    ///   without tripping the backing store. All nested levels share the
+    ///   outermost committed epoch; inner begins do NOT observe writes
+    ///   that the outer begin had not yet seen.
+    /// - Writer-side methods (`begin`/`commit`/`rollback`) are a separate
+    ///   lane and must not interleave with a read snapshot on the same
+    ///   handle.
+    ///
+    /// Default no-op so in-memory/test stores need no implementation.
+    fn begin_read_snapshot(&self) -> crate::Result<()> {
+        Ok(())
+    }
+
+    /// Close a read snapshot previously opened by `begin_read_snapshot`.
+    ///
+    /// Implementations should tolerate being called when no snapshot is
+    /// active (returns `Ok(())`), so the "always end" idiom in
+    /// `with_graph_read_snapshot` stays safe on the error path.
+    fn end_read_snapshot(&self) -> crate::Result<()> {
+        Ok(())
+    }
+
     /// Return all file paths currently in the graph with their stable node IDs.
     /// Used by the structural compile to detect stale file facts.
     fn all_file_paths(&self) -> crate::Result<Vec<(String, FileNodeId)>>;
@@ -92,4 +131,23 @@ pub trait GraphStore: Send + Sync {
         }
         Ok(concepts)
     }
+}
+
+/// Run `f` against `graph` with a read snapshot held for its duration.
+///
+/// Pairs `begin_read_snapshot` and `end_read_snapshot` structurally: the
+/// snapshot is always ended, even if `f` returns `Err`, so callers cannot
+/// accidentally leak an open transaction on the error path. An end-failure
+/// is swallowed on purpose; the snapshot does not outlive this stack frame,
+/// and surfacing an end-failure would mask the caller's original error.
+pub fn with_graph_read_snapshot<F, R>(graph: &dyn GraphStore, f: F) -> crate::Result<R>
+where
+    F: FnOnce(&dyn GraphStore) -> crate::Result<R>,
+{
+    graph.begin_read_snapshot()?;
+    let result = f(graph);
+    if let Err(err) = graph.end_read_snapshot() {
+        tracing::debug!(error = %err, "end_read_snapshot failed; ignoring");
+    }
+    result
 }

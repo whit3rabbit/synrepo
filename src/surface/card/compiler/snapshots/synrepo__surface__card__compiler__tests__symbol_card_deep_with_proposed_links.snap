@@ -1,0 +1,38 @@
+---
+source: src/surface/card/compiler/tests.rs
+expression: json
+---
+{
+  "symbol": 1646091276222327452,
+  "name": "annotated",
+  "qualified_name": "annotated",
+  "defined_at": "src/lib.rs:10",
+  "signature": "pub fn annotated() -> u32",
+  "doc_comment": "Docs.",
+  "callers": [],
+  "callees": [],
+  "tests_touching": [],
+  "last_change": null,
+  "drift_flag": null,
+  "source_body": "pub fn annotated() -> u32 { 7 }",
+  "approx_tokens": 23,
+  "source_store": "graph",
+  "epistemic": "parser_observed",
+  "overlay_commentary": null,
+  "commentary_state": "missing",
+  "proposed_links": [
+    {
+      "source": {
+        "Symbol": 1646091276222327452
+      },
+      "target": {
+        "File": 18328221221486569595
+      },
+      "kind": "references",
+      "tier": "high",
+      "freshness": "fresh",
+      "span_count": 2
+    }
+  ],
+  "links_state": "present"
+}

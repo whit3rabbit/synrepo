@@ -15,9 +15,15 @@
 //!   when `SYNREPO_ANTHROPIC_API_KEY` is set.
 
 pub mod claude;
+pub mod cross_link;
+pub mod cross_link_claude;
 pub mod stub;
 
 pub use claude::ClaudeCommentaryGenerator;
+pub use cross_link::{
+    score, CandidatePair, CandidateScope, CrossLinkGenerator, NoOpCrossLinkGenerator,
+};
+pub use cross_link_claude::ClaudeCrossLinkGenerator;
 pub use stub::NoOpGenerator;
 
 use crate::core::ids::NodeId;

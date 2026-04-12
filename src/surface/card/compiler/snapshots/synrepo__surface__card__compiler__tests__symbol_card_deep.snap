@@ -19,5 +19,7 @@ expression: deep
   "source_store": "graph",
   "epistemic": "parser_observed",
   "overlay_commentary": null,
-  "commentary_state": "missing"
+  "commentary_state": "missing",
+  "proposed_links": null,
+  "links_state": "missing"
 }

@@ -146,6 +146,18 @@ fn handle_actionable_finding(
         RepairAction::ManualReview | RepairAction::NotSupported => {
             report_only.push(finding.clone());
         }
+        RepairAction::RevalidateLinks => {
+            // PR 1 wires the dispatch path and records the intent on the
+            // resolution log. The deterministic fuzzy-LCS verifier ships with
+            // PR 2, alongside the cross-link generator and source-text
+            // loading. Until then, stale candidates remain on disk with their
+            // tier intact so a later revalidation pass can resolve them.
+            actions_taken.push(format!(
+                "cross-link revalidation deferred for {}: verifier not yet wired",
+                finding.surface.as_str()
+            ));
+            report_only.push(finding.clone());
+        }
         RepairAction::RefreshCommentary => match refresh_commentary(context, actions_taken) {
             Ok(()) => repaired.push(finding.clone()),
             Err(err) => {

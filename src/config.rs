@@ -57,6 +57,68 @@ pub struct Config {
     /// the decision at `warn` level.
     #[serde(default = "default_commentary_cost_limit")]
     pub commentary_cost_limit: u32,
+
+    /// Maximum number of LLM cross-link generation calls the synthesis pass
+    /// may make in one `synrepo sync --generate-cross-links` invocation.
+    /// Once the limit is reached, remaining candidate pairs are surfaced as
+    /// `blocked` without a model call.
+    #[serde(default = "default_cross_link_cost_limit")]
+    pub cross_link_cost_limit: u32,
+
+    /// Confidence-tier partition thresholds used by `classify_confidence`.
+    /// Changing these does not require a graph rebuild: `synrepo sync
+    /// revalidate_links` re-derives the tier for each stored candidate.
+    #[serde(default)]
+    pub cross_link_confidence_thresholds: CrossLinkConfidenceThresholds,
+}
+
+/// TOML-friendly mirror of `overlay::ConfidenceThresholds`. Lives in this
+/// module so config loading does not pull the overlay types into the config
+/// layer; `From` conversions in both directions keep the two in sync.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub struct CrossLinkConfidenceThresholds {
+    /// Scores at or above this value classify as `High`.
+    #[serde(default = "default_high_threshold")]
+    pub high: f32,
+    /// Scores at or above this value (and below `high`) classify as
+    /// `ReviewQueue`; anything lower is `BelowThreshold`.
+    #[serde(default = "default_review_queue_threshold")]
+    pub review_queue: f32,
+}
+
+impl Default for CrossLinkConfidenceThresholds {
+    fn default() -> Self {
+        Self {
+            high: default_high_threshold(),
+            review_queue: default_review_queue_threshold(),
+        }
+    }
+}
+
+impl From<CrossLinkConfidenceThresholds> for crate::overlay::ConfidenceThresholds {
+    fn from(c: CrossLinkConfidenceThresholds) -> Self {
+        crate::overlay::ConfidenceThresholds {
+            high: c.high,
+            review_queue: c.review_queue,
+        }
+    }
+}
+
+impl From<crate::overlay::ConfidenceThresholds> for CrossLinkConfidenceThresholds {
+    fn from(c: crate::overlay::ConfidenceThresholds) -> Self {
+        CrossLinkConfidenceThresholds {
+            high: c.high,
+            review_queue: c.review_queue,
+        }
+    }
+}
+
+fn default_high_threshold() -> f32 {
+    0.85
+}
+
+fn default_review_queue_threshold() -> f32 {
+    0.6
 }
 
 fn default_roots() -> Vec<String> {
@@ -91,6 +153,10 @@ fn default_commentary_cost_limit() -> u32 {
     5000
 }
 
+fn default_cross_link_cost_limit() -> u32 {
+    200
+}
+
 impl std::fmt::Display for Mode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -110,6 +176,8 @@ impl Default for Config {
             max_file_size_bytes: default_max_file_size(),
             redact_globs: default_redact_globs(),
             commentary_cost_limit: default_commentary_cost_limit(),
+            cross_link_cost_limit: default_cross_link_cost_limit(),
+            cross_link_confidence_thresholds: CrossLinkConfidenceThresholds::default(),
         }
     }
 }
@@ -168,6 +236,31 @@ mod tests {
 
         // Ensure defaults are kept for unmentioned fields
         assert_eq!(config.max_file_size_bytes, 1024 * 1024);
+    }
+
+    #[test]
+    fn cross_link_fields_round_trip_through_toml() {
+        let dir = tempdir().unwrap();
+        let synrepo_dir = Config::synrepo_dir(dir.path());
+        fs::create_dir_all(&synrepo_dir).unwrap();
+
+        let custom_toml = r#"
+            cross_link_cost_limit = 42
+            [cross_link_confidence_thresholds]
+            high = 0.9
+            review_queue = 0.55
+        "#;
+        fs::write(synrepo_dir.join("config.toml"), custom_toml).unwrap();
+
+        let config = Config::load(dir.path()).unwrap();
+        assert_eq!(config.cross_link_cost_limit, 42);
+        assert!((config.cross_link_confidence_thresholds.high - 0.9).abs() < 1e-6);
+        assert!((config.cross_link_confidence_thresholds.review_queue - 0.55).abs() < 1e-6);
+
+        // Defaults kick in when the TOML omits the cross-link keys.
+        let default = Config::default();
+        assert_eq!(default.cross_link_cost_limit, 200);
+        assert!((default.cross_link_confidence_thresholds.high - 0.85).abs() < 1e-6);
     }
 
     #[test]

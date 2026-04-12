@@ -17,6 +17,9 @@ pub enum RepairSurface {
     StaleRationale,
     /// Commentary overlay entries (LLM-authored symbol commentary in `.synrepo/overlay/overlay.db`).
     CommentaryOverlayEntries,
+    /// Proposed cross-link overlay entries (LLM-proposed prose↔code links in
+    /// `.synrepo/overlay/overlay.db`).
+    ProposedLinksOverlay,
     /// Generated exports or runtime views (not yet implemented).
     ExportViews,
 }
@@ -31,6 +34,7 @@ impl RepairSurface {
             Self::DeclaredLinks => "declared_links",
             Self::StaleRationale => "stale_rationale",
             Self::CommentaryOverlayEntries => "commentary_overlay_entries",
+            Self::ProposedLinksOverlay => "proposed_links_overlay",
             Self::ExportViews => "export_views",
         }
     }
@@ -52,6 +56,10 @@ pub enum DriftClass {
     Unsupported,
     /// Surface repair is blocked by a prerequisite condition.
     Blocked,
+    /// A cross-link candidate points at an endpoint that no longer exists.
+    /// Distinct from `Stale` (which the deterministic revalidator can fix)
+    /// because source-deleted candidates require manual review or pruning.
+    SourceDeleted,
 }
 
 impl DriftClass {
@@ -64,6 +72,7 @@ impl DriftClass {
             Self::TrustConflict => "trust_conflict",
             Self::Unsupported => "unsupported",
             Self::Blocked => "blocked",
+            Self::SourceDeleted => "source_deleted",
         }
     }
 }
@@ -112,6 +121,10 @@ pub enum RepairAction {
     NotSupported,
     /// Re-run the commentary generator for stale commentary overlay entries.
     RefreshCommentary,
+    /// Re-run the deterministic fuzzy-LCS verifier against stale cross-link
+    /// candidates; refresh endpoint hashes on success, demote tier on failure.
+    /// Never invokes the LLM; full regeneration uses a separate path.
+    RevalidateLinks,
 }
 
 impl RepairAction {
@@ -125,6 +138,7 @@ impl RepairAction {
             Self::ManualReview => "manual_review",
             Self::NotSupported => "not_supported",
             Self::RefreshCommentary => "refresh_commentary",
+            Self::RevalidateLinks => "revalidate_links",
         }
     }
 }

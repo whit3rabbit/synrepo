@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
-use crate::core::ids::{FileNodeId, SymbolNodeId};
+use crate::core::ids::{FileNodeId, NodeId, SymbolNodeId};
+use crate::overlay::{ConfidenceTier, CrossLinkFreshness, OverlayEdgeKind};
 use crate::structure::graph::Epistemic;
 
 use super::{FileGitIntelligence, SourceStore};
@@ -70,6 +71,12 @@ pub struct SymbolCard {
     /// deserializing the nested object.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub commentary_state: Option<String>,
+    /// Proposed cross-links authored by the synthesis layer with evidence verification.
+    /// Only populated at Deep budget.
+    pub proposed_links: Option<Vec<ProposedLink>>,
+    /// State of the proposed links (e.g., "budget_withheld", "fresh", etc.)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub links_state: Option<String>,
 }
 
 /// LLM-authored commentary layered on top of a structural card.
@@ -114,6 +121,23 @@ impl From<crate::overlay::FreshnessState> for Freshness {
     }
 }
 
+/// A proposed cross-link surfaced on a structural card.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ProposedLink {
+    /// Node ID of the source.
+    pub source: NodeId,
+    /// Node ID of the target.
+    pub target: NodeId,
+    /// Kind of edge proposed.
+    pub kind: OverlayEdgeKind,
+    /// Confidence tier.
+    pub tier: ConfidenceTier,
+    /// Freshness of this proposed link compared to the current file content.
+    pub freshness: CrossLinkFreshness,
+    /// Number of spans cited as evidence.
+    pub span_count: usize,
+}
+
 /// FileCard — answers "what's in this file, what depends on it?"
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct FileCard {
@@ -137,6 +161,11 @@ pub struct FileCard {
     pub approx_tokens: usize,
     /// Source store.
     pub source_store: SourceStore,
+    /// Proposed cross-links authored by the synthesis layer.
+    pub proposed_links: Option<Vec<ProposedLink>>,
+    /// State of the proposed links.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub links_state: Option<String>,
 }
 
 /// ModuleCard — answers "what lives in this directory/module?"

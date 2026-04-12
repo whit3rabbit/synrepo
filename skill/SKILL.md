@@ -1,6 +1,6 @@
 ---
 name: synrepo
-description: Use synrepo when working in a repository that contains a .synrepo/ directory. synrepo precomputes structural facts about the codebase and serves them as small token-budgeted cards through an MCP server. Reach for synrepo tools BEFORE reading source files cold — cards are usually 10-20x smaller than the files they describe while containing the information you actually need for orientation, routing, and change impact assessment.
+description: Use synrepo when working in a repository that contains a .synrepo/ directory. synrepo precomputes structural facts about the codebase and serves them as small token-budgeted cards through an MCP server. Reach for synrepo tools BEFORE reading source files cold. Cards are usually 10-20x smaller than the files they describe while containing the information you actually need for orientation, routing, and first-pass change impact assessment.
 ---
 
 # synrepo — skill for Claude
@@ -23,11 +23,11 @@ It serves over stdio. After `synrepo init` populates the graph, the MCP server e
 | `synrepo_card(target, budget?)` | SymbolCard or FileCard for a file path or symbol name |
 | `synrepo_search(query, limit?)` | Lexical n-gram search; returns `{path, line, content}` results |
 | `synrepo_where_to_edit(task, limit?)` | Search + ranked file cards for a task description |
-| `synrepo_change_impact(target)` | Inbound Imports+Calls edges showing what depends on target |
+| `synrepo_change_impact(target)` | Approximate file-level inbound Imports+Calls edges showing what depends on target |
 
 **Current limitations:** Only `SymbolCard` and `FileCard` are compiled. `ModuleCard` exists as a struct placeholder only. Specialist tools (`synrepo_entrypoints`, `synrepo_call_path`, `synrepo_test_surface`, `synrepo_minimum_context`, `synrepo_explain`, `synrepo_findings`) are not part of the current MCP surface.
 
-`SymbolCard.callers` and `.callees` are empty today because the current graph emits file→symbol `Calls` edges, not symbol→symbol call edges. `FileCard.git_intelligence` is populated for file-facing Git history summaries, but `FileCard.co_changes` remains empty until graph-level `CoChangesWith` edges ship.
+`SymbolCard.callers` and `.callees` are empty today because the current graph emits file→symbol `Calls` edges, not symbol→symbol call edges. `FileCard.git_intelligence` and `FileCard.co_changes` are not populated in cards yet. `synrepo_change_impact` is therefore a first-pass routing aid built from inbound `Imports` edges plus those file→symbol `Calls` edges, and overloaded names can still produce false positives.
 
 Active Milestone 4 work may also attach `decision_cards` to `synrepo_card` results when governing concepts exist, but that work is still in-flight and should not be treated as stable until the surrounding tests pass.
 
@@ -40,8 +40,8 @@ Active Milestone 4 work may also attach `decision_cards` to `synrepo_card` resul
 **Always try synrepo before reading a file cold** when you are:
 - Orienting on an unfamiliar codebase
 - Looking for where a feature lives
-- Assessing what might break if you change something
-- Tracing how two pieces of code are connected
+- Getting a first-pass view of what might break if you change something
+- Tracing how two pieces of code are connected at a high level
 - Finding the test surface for a symbol you're about to modify
 - Trying to understand a subsystem at a high level
 
@@ -55,7 +55,7 @@ Active Milestone 4 work may also attach `decision_cards` to `synrepo_card` resul
 
 There are two kinds of content in synrepo, and the distinction matters:
 
-- **Graph content** — facts that tree-sitter, git, or humans declared directly. Examples: "this function is defined at line 142," "this file imports that module," "this ADR frontmatter declares it governs `auth/middleware.rs`." Tagged `source_store: graph`, `epistemic_status: parser_observed | human_declared | git_observed`. **Treat graph content as ground truth.**
+- **Graph content** — facts that tree-sitter, git, or humans declared directly. Examples: "this function is defined at line 142," "this file imports that module," "this ADR frontmatter declares it governs `auth/middleware.rs`." Tagged `source_store: graph`, `epistemic_status: parser_observed | human_declared | git_observed`. **Treat graph content as the primary source of truth, but remember some current relationship surfaces are still approximate, especially change-impact hints built from file→symbol call resolution.**
 
 - **Overlay content** — things the LLM proposed: cross-links between code and prose with cited evidence, natural-language commentary on top of structural cards, findings about contradictions. Tagged `source_store: overlay`, `epistemic_status: machine_authored_high_conf | machine_authored_low_conf`. **Treat overlay content as helpful context, not ground truth.** If overlay content contradicts graph content, ignore the overlay.
 
@@ -71,7 +71,7 @@ The current shipped MCP surface is graph-first. Overlay-specific behavior is sti
 
 **`synrepo_where_to_edit(task, limit?)`** — Ask this when the user gives you a task and you do not know which files are relevant. It returns a small set of `FileCard` suggestions derived from lexical matches plus graph lookup.
 
-**`synrepo_change_impact(target)`** — Call this before you modify a file or symbol that may have dependents. Today it returns impacted files discovered through inbound `Imports` and `Calls` edges, plus a total count.
+**`synrepo_change_impact(target)`** — Call this before you modify a file or symbol that may have dependents. Today it returns a first-pass list of impacted files discovered through inbound `Imports` and file→symbol `Calls` edges, plus a total count. Treat it as orientation and routing help, not exact blast-radius proof.
 
 **`synrepo_search(query, limit?)`** — Lexical n-gram search via syntext. This is the fallback when you cannot guess an exact symbol name or file path. Use it like grep: short queries, specific terms.
 
@@ -106,7 +106,7 @@ If you find yourself repeatedly escalating from `tiny` to `normal` on the same t
 
 The current MCP surface is graph-backed. There is no shipped `require_freshness` parameter, no commentary refresh flow, and no stable overlay-facing MCP tool contract yet.
 
-- **Graph-sourced fields are the current truth.** The server reads structural data from the graph plus file-facing Git summaries where available.
+- **Graph-sourced fields are the current truth.** The server reads structural data from the graph, while some planned card enrichments are not populated yet.
 - **Overlay behavior is future architecture, not a live interface.** Do not plan workflows around stale commentary or blocking freshness overrides yet.
 
 ## Concrete examples
@@ -117,7 +117,7 @@ Good sequence:
 1. `synrepo_overview()` — orient on an unfamiliar project
 2. `synrepo_where_to_edit(task: "add rate limiting to all API endpoints", limit: 5)` — get ranked file candidates
 3. `synrepo_card(target: "middleware/auth.ts", budget: "normal")` — understand the existing middleware chain before adding to it
-4. `synrepo_change_impact(target: "middleware/auth.ts")` — check what could break
+4. `synrepo_change_impact(target: "middleware/auth.ts")` — get a first-pass blast radius before opening files
 5. `synrepo_card(target: "middleware/auth.ts", budget: "deep")` — now get the full source because you're about to modify it
 
 Note: this stays within the shipped five-tool surface and gets you to the real source only after narrowing the target.
@@ -127,7 +127,7 @@ Note: this stays within the shipped five-tool surface and gets you to the real s
 Good sequence:
 1. `synrepo_card(target: "parse_query", budget: "normal")` — done
 
-That's it. One tool call, ~500 tokens, answer includes signature, doc comment, callers, callees, tests, recent changes. Don't escalate to `deep` unless the user specifically asks for the implementation.
+That's it. One tool call, ~500 tokens, answer includes the current structural fields that are actually compiled, usually signature, doc comment, and identity/location. Don't escalate to `deep` unless the user specifically asks for the implementation.
 
 ### Example 3: User asks "Find everywhere we call fetch()"
 
@@ -140,7 +140,7 @@ Don't use `synrepo_card` or `synrepo_where_to_edit` for this — it's a pure lex
 
 **Don't invent tools that are not shipped.** The current MCP surface is exactly five tools. If you need entrypoints, call paths, tests, or rationale, fall back to CLI graph inspection and source reads instead of assuming a specialist tool exists.
 
-**Don't read the source file cold after getting a card.** The card probably already contains what you needed. If you find yourself doing `synrepo_card` followed by `Read` on the same file, either you needed `deep` budget on the card, or you needed something the card doesn't contain (rare), or you didn't trust the card (don't do this — the structural fields are authoritative).
+**Don't read the source file cold after getting a card.** The card probably already contains what you needed. If you find yourself doing `synrepo_card` followed by `Read` on the same file, either you needed `deep` budget on the card, or you needed something the card doesn't contain (rare), or you needed exact proof beyond the current card surface.
 
 **Don't trust overlay content over graph content.** If an overlay commentary says "this function uses JWT" and the graph shows the function doesn't import any JWT library, the overlay is wrong. The graph is always right about what the code currently is.
 

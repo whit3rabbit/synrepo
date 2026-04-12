@@ -20,6 +20,10 @@ fn repair_surface_stable_identifiers() {
         RepairSurface::CommentaryOverlayEntries.as_str(),
         "commentary_overlay_entries"
     );
+    assert_eq!(
+        RepairSurface::ProposedLinksOverlay.as_str(),
+        "proposed_links_overlay"
+    );
     assert_eq!(RepairSurface::ExportViews.as_str(), "export_views");
 }
 
@@ -31,6 +35,7 @@ fn drift_class_stable_identifiers() {
     assert_eq!(DriftClass::TrustConflict.as_str(), "trust_conflict");
     assert_eq!(DriftClass::Unsupported.as_str(), "unsupported");
     assert_eq!(DriftClass::Blocked.as_str(), "blocked");
+    assert_eq!(DriftClass::SourceDeleted.as_str(), "source_deleted");
 }
 
 #[test]
@@ -56,6 +61,7 @@ fn repair_action_stable_identifiers() {
         RepairAction::RefreshCommentary.as_str(),
         "refresh_commentary"
     );
+    assert_eq!(RepairAction::RevalidateLinks.as_str(), "revalidate_links");
 }
 
 #[test]

@@ -118,6 +118,90 @@ fn check_reports_commentary_overlay_absent_when_no_overlay_db() {
 }
 
 #[test]
+fn check_reports_cross_link_overlay_absent_when_no_overlay_db() {
+    use crate::pipeline::repair::{DriftClass, RepairAction};
+    let dir = tempdir().unwrap();
+    let synrepo_dir = dir.path().join(".synrepo");
+    init_synrepo(&synrepo_dir);
+
+    let report = build_repair_report(&synrepo_dir, &Config::default());
+    let finding = report
+        .findings
+        .iter()
+        .find(|f| f.surface == RepairSurface::ProposedLinksOverlay)
+        .expect("proposed links overlay finding must be present");
+
+    assert_eq!(finding.drift_class, DriftClass::Absent);
+    assert_eq!(finding.recommended_action, RepairAction::None);
+    assert_eq!(finding.severity, Severity::ReportOnly);
+}
+
+#[test]
+fn check_reports_source_deleted_when_endpoints_missing_from_graph() {
+    use crate::core::ids::{ConceptNodeId, NodeId, SymbolNodeId};
+    use crate::overlay::{
+        CitedSpan, ConfidenceTier, CrossLinkProvenance, OverlayEdgeKind, OverlayEpistemic,
+        OverlayLink, OverlayStore,
+    };
+    use crate::pipeline::repair::{DriftClass, RepairAction};
+    use crate::store::overlay::SqliteOverlayStore;
+    use crate::store::sqlite::SqliteGraphStore;
+    use time::OffsetDateTime;
+
+    let dir = tempdir().unwrap();
+    let synrepo_dir = dir.path().join(".synrepo");
+    init_synrepo(&synrepo_dir);
+
+    // Materialize the graph DB (empty) and overlay DB; seed a link whose
+    // endpoints do not exist in the graph.
+    drop(SqliteGraphStore::open(&synrepo_dir.join("graph")).unwrap());
+    let mut overlay = SqliteOverlayStore::open(&synrepo_dir.join("overlay")).unwrap();
+    let from = NodeId::Concept(ConceptNodeId(777));
+    let to = NodeId::Symbol(SymbolNodeId(888));
+    let link = OverlayLink {
+        from,
+        to,
+        kind: OverlayEdgeKind::References,
+        epistemic: OverlayEpistemic::MachineAuthoredHighConf,
+        source_spans: vec![CitedSpan {
+            artifact: from,
+            normalized_text: "login".into(),
+            verified_at_offset: 0,
+            lcs_ratio: 0.95,
+        }],
+        target_spans: vec![CitedSpan {
+            artifact: to,
+            normalized_text: "fn login".into(),
+            verified_at_offset: 0,
+            lcs_ratio: 1.0,
+        }],
+        from_content_hash: "stored-from".into(),
+        to_content_hash: "stored-to".into(),
+        confidence_score: 0.9,
+        confidence_tier: ConfidenceTier::High,
+        rationale: None,
+        provenance: CrossLinkProvenance {
+            pass_id: "cross-link-v1".into(),
+            model_identity: "claude-sonnet-4-6".into(),
+            generated_at: OffsetDateTime::from_unix_timestamp(1_712_000_000).unwrap(),
+        },
+    };
+    overlay.insert_link(link).unwrap();
+    drop(overlay);
+
+    let report = build_repair_report(&synrepo_dir, &Config::default());
+    let finding = report
+        .findings
+        .iter()
+        .find(|f| f.surface == RepairSurface::ProposedLinksOverlay)
+        .expect("proposed links overlay finding must be present");
+
+    assert_eq!(finding.drift_class, DriftClass::SourceDeleted);
+    assert_eq!(finding.recommended_action, RepairAction::ManualReview);
+    assert_eq!(finding.severity, Severity::ReportOnly);
+}
+
+#[test]
 fn check_report_render_includes_all_surfaces() {
     let dir = tempdir().unwrap();
     let synrepo_dir = dir.path().join(".synrepo");
@@ -132,6 +216,7 @@ fn check_report_render_includes_all_surfaces() {
         "writer_lock",
         "declared_links",
         "commentary_overlay_entries",
+        "proposed_links_overlay",
         "export_views",
     ] {
         assert!(

@@ -67,6 +67,14 @@ synrepo SHALL support direct inspection of persisted graph facts through node lo
 - **THEN** synrepo returns the stored node metadata or matching related edges from the graph store
 - **AND** the response is derived from persisted graph facts rather than inferred overlay content
 
+### Requirement: Expose a reader-consistent snapshot over multi-query reads
+The canonical graph store SHALL expose a paired `begin_read_snapshot` / `end_read_snapshot` API so that any logical operation issuing multiple queries through a single handle observes exactly one committed epoch for the entire scope. Nested snapshots on the same handle SHALL share the outermost epoch and MUST NOT error, so reader wrappers (MCP handlers, CLI commands) compose safely with inner wrappers (card compilation). The snapshot API SHALL NOT require writers to acquire additional locks and SHALL NOT make reads block on the writer.
+
+#### Scenario: Reader is isolated from a concurrent writer commit
+- **WHEN** a reader opens a read snapshot, issues one query, a writer commits through a different handle, and the reader issues a follow-up query inside the same snapshot
+- **THEN** the follow-up query observes the pre-commit epoch rather than a mix of pre- and post-commit state
+- **AND** the writer's commit becomes visible to the reader only after the snapshot is ended
+
 ### Requirement: Populate persisted graph facts automatically from repository state
 synrepo SHALL run a deterministic structural compile that discovers eligible repository inputs, parses supported code and configured concept markdown, and writes the resulting canonical graph facts into the persisted graph store without requiring manual graph seeding.
 

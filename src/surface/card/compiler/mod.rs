@@ -24,11 +24,12 @@ use crate::{
     core::ids::{FileNodeId, NodeId, SymbolNodeId},
     overlay::OverlayStore,
     pipeline::synthesis::CommentaryGenerator,
-    structure::graph::GraphStore,
+    structure::graph::{with_graph_read_snapshot, GraphStore},
 };
 
 mod file;
 mod io;
+mod links;
 mod resolve;
 mod symbol;
 
@@ -82,23 +83,36 @@ impl GraphCardCompiler {
 
 impl CardCompiler for GraphCardCompiler {
     fn symbol_card(&self, id: SymbolNodeId, budget: Budget) -> crate::Result<SymbolCard> {
-        symbol::symbol_card(
-            symbol::SymbolCardContext {
-                graph: self.graph.as_ref(),
-                repo_root: &self.repo_root,
-                overlay: self.overlay.as_ref(),
-                generator: self.generator.as_ref(),
-            },
-            id,
-            budget,
-        )
+        // Pin a single committed epoch on the graph for the whole compile.
+        // The overlay is intentionally NOT wrapped here: the Deep-budget
+        // commentary path may lazily write a freshly generated entry via
+        // `insert_commentary`, and mixing that write into an outer read
+        // snapshot would silently upgrade the snapshot to a write
+        // transaction. Overlay reads use per-statement auto-commit; any
+        // brief inconsistency is cosmetic rather than structural.
+        with_graph_read_snapshot(self.graph.as_ref(), |graph| {
+            symbol::symbol_card(
+                symbol::SymbolCardContext {
+                    graph,
+                    repo_root: &self.repo_root,
+                    overlay: self.overlay.as_ref(),
+                    generator: self.generator.as_ref(),
+                },
+                id,
+                budget,
+            )
+        })
     }
 
     fn file_card(&self, id: FileNodeId, budget: Budget) -> crate::Result<FileCard> {
-        file::file_card(self.graph.as_ref(), id, budget)
+        with_graph_read_snapshot(self.graph.as_ref(), |graph| {
+            file::file_card(graph, self.overlay.as_ref(), id, budget)
+        })
     }
 
     fn resolve_target(&self, target: &str) -> crate::Result<Option<NodeId>> {
-        resolve::resolve_target(self.graph.as_ref(), target)
+        with_graph_read_snapshot(self.graph.as_ref(), |graph| {
+            resolve::resolve_target(graph, target)
+        })
     }
 }

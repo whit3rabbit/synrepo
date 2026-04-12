@@ -74,13 +74,16 @@ pub(super) fn symbol_card(
         epistemic: symbol.epistemic,
         overlay_commentary: None,
         commentary_state: None,
+        proposed_links: None,
+        links_state: None,
     };
 
-    // Populate commentary state. Budget-withheld at Tiny/Normal; otherwise
+    // Populate commentary state and links. Budget-withheld at Tiny/Normal; otherwise
     // derived from the overlay store (and optionally the generator) at Deep.
     match budget {
         Budget::Tiny | Budget::Normal => {
             card.commentary_state = Some("budget_withheld".to_string());
+            card.links_state = Some("budget_withheld".to_string());
         }
         Budget::Deep => {
             let (text, state) =
@@ -93,6 +96,14 @@ pub(super) fn symbol_card(
                     source_store: SourceStore::Overlay,
                 });
             }
+
+            let (links, links_state) = super::links::resolve_proposed_links(
+                ctx.overlay.map(|o| &**o),
+                ctx.graph,
+                NodeId::Symbol(id),
+            )?;
+            card.proposed_links = links;
+            card.links_state = Some(links_state.to_string());
         }
     }
 

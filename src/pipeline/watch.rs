@@ -155,18 +155,19 @@ pub fn run_reconcile_pass(
             if let Err(err) = crate::substrate::build_index(config, repo_root) {
                 return ReconcileOutcome::Failed(format!("index rebuild failed: {err}"));
             }
-            prune_commentary_orphans(synrepo_dir, &graph);
+            prune_overlay_orphans(synrepo_dir, &graph);
             ReconcileOutcome::Completed(summary)
         }
         Err(err) => ReconcileOutcome::Failed(err.to_string()),
     }
 }
 
-/// After a successful structural compile, drop commentary entries for nodes
-/// that no longer exist in the graph. The overlay store is opened only when
-/// `overlay.db` already exists so reconcile never materializes the overlay
-/// on its own (that stays lazy, created by the MCP server or first write).
-fn prune_commentary_orphans(synrepo_dir: &Path, graph: &SqliteGraphStore) {
+/// After a successful structural compile, drop overlay rows (commentary
+/// entries and cross-link candidates) whose endpoints no longer exist in the
+/// graph. The overlay store is opened only when `overlay.db` already exists
+/// so reconcile never materializes the overlay on its own (that stays lazy,
+/// created by the first write from the generator, MCP server, or CLI).
+fn prune_overlay_orphans(synrepo_dir: &Path, graph: &SqliteGraphStore) {
     use crate::core::ids::NodeId;
     use crate::overlay::OverlayStore;
     use crate::store::overlay::SqliteOverlayStore;
@@ -192,17 +193,20 @@ fn prune_commentary_orphans(synrepo_dir: &Path, graph: &SqliteGraphStore) {
     let mut overlay = match SqliteOverlayStore::open_existing(&overlay_dir) {
         Ok(o) => o,
         Err(err) => {
-            tracing::warn!(error = %err, "commentary overlay: open failed, skipping orphan prune");
+            tracing::warn!(error = %err, "overlay: open failed, skipping orphan prune");
             return;
         }
     };
     match overlay.prune_orphans(&live) {
         Ok(n) if n > 0 => {
-            tracing::debug!(pruned = n, "commentary overlay: pruned orphaned entries")
+            tracing::debug!(
+                pruned = n,
+                "overlay: pruned orphaned rows (commentary + cross-links)"
+            )
         }
         Ok(_) => {}
         Err(err) => {
-            tracing::warn!(error = %err, "commentary overlay: prune failed");
+            tracing::warn!(error = %err, "overlay: prune failed");
         }
     }
 }

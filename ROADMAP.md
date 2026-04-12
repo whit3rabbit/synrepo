@@ -9,7 +9,7 @@
 - Milestone 2, Observed-facts core: complete
 - Milestone 3, First real product release: complete
 - Most recently completed implementation change: `commentary-overlay-v1` (implementation pass, archived 2026-04-12)
-- Active change: `cross-link-overlay-v1` (Milestone 5, Track K) — proposed 2026-04-12; proposal, design, delta specs, and tasks complete; ready for `/opsx:apply`
+- Active change: `cross-link-overlay-v1` (Milestone 5, Track K) — proposed 2026-04-12; PR 1 implementation (Storage, generation, and card wiring) completed; moving towards CLI and PR 2 workloads.
 - Completed in Milestone 2: `structural-graph-v1`, `structural-pipeline-v1`, `watch-reconcile-v1`, `agent-integration-v1`
 - Completed in Milestone 3: `cards-and-mcp-v1`, `git-intelligence-v1`
 - Completed in Milestone 4: `pattern-surface-v1` (patterns, rationale ingestion, DecisionCards, curated promotion rules), `repair-loop-v1` (check, sync, drift classification, selective refresh)

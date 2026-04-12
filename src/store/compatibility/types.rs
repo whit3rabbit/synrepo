@@ -202,6 +202,17 @@ pub struct ConfigFingerprints {
     pub graph_inputs: String,
     /// Inputs that affect future history-derived semantics.
     pub history_inputs: String,
+    /// Inputs that surface as advisories only; never trigger rebuild or
+    /// invalidate. Cross-link confidence thresholds live here: changing them
+    /// is a classifier retune, handled by `revalidate_links`.
+    #[serde(default = "default_advisory_inputs")]
+    pub advisory_inputs: String,
+}
+
+fn default_advisory_inputs() -> String {
+    // Empty fingerprint so snapshots written before the field existed still
+    // round-trip; the first reconcile rewrites them with the real value.
+    String::new()
 }
 
 impl ConfigFingerprints {
@@ -218,6 +229,17 @@ impl ConfigFingerprints {
                 config.concept_directories.join("\u{1f}")
             )]),
             history_inputs: fingerprint(&[format!("git_commit_depth={}", config.git_commit_depth)]),
+            advisory_inputs: fingerprint(&[
+                format!(
+                    "cross_link_high={:.4}",
+                    config.cross_link_confidence_thresholds.high
+                ),
+                format!(
+                    "cross_link_review_queue={:.4}",
+                    config.cross_link_confidence_thresholds.review_queue
+                ),
+                format!("cross_link_cost_limit={}", config.cross_link_cost_limit),
+            ]),
         }
     }
 }

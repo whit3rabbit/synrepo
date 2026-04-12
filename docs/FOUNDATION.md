@@ -6,11 +6,11 @@ A context compiler for AI coding agents.
 
 ## What synrepo is
 
-synrepo precomputes a small, deterministic, queryable working set of facts about a software project — symbol signatures, call graphs, file ownership, change risk, hidden coupling, drift between code and documentation — and serves that working set to coding agents through an MCP server in tight, task-shaped, token-budgeted packets called *cards*. The point is to let an agent act like it already knows the codebase without stuffing huge file chunks into context.
+synrepo precomputes a small, deterministic, queryable working set of facts about a software project and serves that working set to coding agents through an MCP server in tight, task-shaped, token-budgeted packets called *cards*. Today the strongest shipped signals are symbol definitions, import relationships, and approximate dependency hints that help an agent orient and route edits without stuffing huge file chunks into context. Higher-fidelity symbol-level call graphs, co-change links, and precise impact analysis are still follow-on work.
 
 Underneath, [syntext](https://github.com/whit3rabbit/syntext) provides deterministic lexical search; tree-sitter via per-language Rust crates provides structural parsing; sqlite holds the canonical graph of facts the parsers and git observed directly. An LLM is layered on top, strictly off the critical path, to compress long material into commentary and to propose cross-links between code and prose — but everything the LLM produces lives in a clearly separate **overlay store** that is queryable alongside the graph but is never part of it. The graph holds only what was directly observed. The overlay holds what was inferred, with provenance and confidence visible to agents that ask.
 
-The product wedge is concrete: **fewer blind reads, fewer wrong-file edits, lower token burn, faster orientation on unfamiliar code.** The graph is infrastructure. Cards are the product.
+The product wedge is concrete: **fewer blind reads, fewer wrong-file edits, lower token burn, faster orientation on unfamiliar code.** The graph is infrastructure. Cards are the product. In the current implementation, that value is strongest for orientation and first-pass routing, not exact blast-radius proof.
 
 ---
 
@@ -47,22 +47,21 @@ SymbolCard for `parse_query` (function)
   defined at: src/parser/query.rs:142
   signature: pub fn parse_query(input: &str) -> Result<Query, ParseError>
   doc-comment: "Parse a query string into a typed Query AST..."
-  callers (3): src/api/handlers.rs:67, src/cli/main.rs:89, tests/parser_test.rs:23
-  callees (5): tokenize, validate_keywords, build_ast, ...
-  tests touching this symbol (2): tests/parser_test.rs::parses_simple_query, ...
-  last meaningful change: 2 weeks ago by alice ("fix unicode handling in keyword parser")
-  drift flag: none
-  approx tokens: 180
+  source body: available at `deep` budget
+  callers/callees: pending richer symbol-level call edges
+  tests touching this symbol: pending dedicated test-surface wiring
+  last meaningful change: pending card-level git enrichment
+  approx tokens: 120
 ```
 
-Every field comes from the graph, syntext, or git. Zero LLM involvement in the card itself. An agent that needs to understand `parse_query` reads this card (~180 tokens) instead of opening `src/parser/query.rs` and consuming the whole file (possibly 4000 tokens).
+Every field comes from the graph, syntext, or git. Zero LLM involvement in the card itself. An agent that needs to understand `parse_query` reads this card (~120 tokens) instead of opening `src/parser/query.rs` and consuming the whole file (possibly 4000 tokens).
 
-synrepo compiles several card types:
+synrepo compiles several card types. The full family below describes the product direction. In the current shipped surface, `SymbolCard` and `FileCard` are the only compiled cards, and their connectivity and change-impact fields are still shallower than the target shape:
 
 | Card type | Answers | Compiled from |
 | --- | --- | --- |
-| **SymbolCard** | What is this function/class, and how is it connected? | tree-sitter symbol + call graph + git blame |
-| **FileCard** | What is in this file, what depends on it? | symbol list + import graph + co-change pairs |
+| **SymbolCard** | What is this function/class, and how is it connected? | tree-sitter symbol + graph edges, with symbol-level call graph still incomplete |
+| **FileCard** | What is in this file, what depends on it? | symbol list + import graph, with co-change enrichment landing later |
 | **ModuleCard** | What does this directory do, what is its public surface? | aggregated file/symbol facts + entry-point detection |
 | **EntryPointCard** | Where does execution start in this subsystem? | main()/handlers/CLI commands + reachability roots |
 | **CallPathCard** | How does control flow get from A to B? | shortest path in the call graph |
@@ -79,13 +78,13 @@ Every MCP tool that returns cards declares a token budget, and the agent picks t
 
 | Tier | Budget | What the agent gets |
 | --- | --- | --- |
-| `tiny` | ~200 tokens per card, ~1k total | Card headers: name, signature, location, top 3 callers/callees, drift flag |
-| `normal` | ~500 per card, ~3k total | Full card including test surface and recent change context |
+| `tiny` | ~200 tokens per card, ~1k total | Card headers plus whichever connectivity fields are currently compiled |
+| `normal` | ~500 per card, ~3k total | Full current card payload for local understanding |
 | `deep` | ~2k per card, ~10k total | Full card plus actual source body, plus linked DecisionCards if available |
 
 Default is `tiny`. The SKILL.md tells agents: use `tiny` to orient and route, use `normal` when you need to understand a specific symbol, use `deep` only when about to write code that depends on the exact source. This inverts how RAG usually works — instead of returning everything similar and hoping the right thing is in there, synrepo returns the smallest accurate answer and lets the agent ask for more.
 
-Token budgets are enforced server-side by truncating low-value fields (recent changes before drift flags, callees before callers) when needed. Agents never see surprise token blowouts.
+Token budgets are enforced server-side by trimming lower-priority optional fields as richer card surfaces land. Agents never see surprise token blowouts.
 
 ### Why cards are not summaries
 
@@ -272,8 +271,8 @@ Task-first and card-centric. The default response unit is a card (or set of card
 | --- | --- | --- |
 | `synrepo_overview(budget?)` | First-call orientation on an unfamiliar project | ModuleCards + EntryPointCards + recent activity |
 | `synrepo_card(target, type?, budget?, require_freshness?)` | Card for a specific symbol, file, or module | The requested card at the specified tier |
-| `synrepo_where_to_edit(task_description, budget?)` | "I want to do X — which files matter?" | Ranked FileCards and SymbolCards with reasoning from touch patterns, imports, naming, recent change traffic |
-| `synrepo_change_impact(target, budget?)` | "If I modify this, what could break?" | ChangeRiskCard: dependents, co-change partners, test surface, drift, blast radius |
+| `synrepo_where_to_edit(task_description, budget?)` | "I want to do X — which files matter?" | Ranked FileCards and SymbolCards from lexical matches plus lightweight structural signals |
+| `synrepo_change_impact(target, budget?)` | "If I modify this, what could break?" | Approximate impacted files today, fuller ChangeRiskCard shape later |
 | `synrepo_entrypoints(scope?, budget?)` | "Where does execution start?" | EntryPointCards for the scope |
 | `synrepo_call_path(from, to, budget?)` | "How does control flow get from A to B?" | CallPathCard with shortest path |
 | `synrepo_test_surface(target, budget?)` | "What tests constrain this behavior?" | TestSurfaceCard |
@@ -553,7 +552,7 @@ The key principle: agent usefulness arrives at phase 2 with zero LLM involvement
 
 **Phase 1 — structural graph.** tree-sitter parsing via crate-bundled queries plus per-language `extra.scm`. sqlite graph store with observed-only epistemic labels and provenance. AST-based rename detection cascade. Markdown link parser. Drift scoring on edges. Structural compile pipeline (LLM-free, synchronous). CLI: `synrepo init [--mode auto|curated]`, `synrepo graph query`, `synrepo node <id>`. Goal: a continuously-updated graph with drift detection.
 
-**Phase 2 — cards and the MCP server, no LLM.** The card compiler: SymbolCard, FileCard, ModuleCard, EntryPointCard, CallPathCard, ChangeRiskCard, PublicAPICard, TestSurfaceCard. Context budget protocol with `tiny` / `normal` / `deep` tiers and server-side enforcement. Task-first MCP tools: `synrepo_card`, `synrepo_where_to_edit`, `synrepo_change_impact`, `synrepo_entrypoints`, `synrepo_call_path`, `synrepo_test_surface`, `synrepo_minimum_context`. **This is the first phase where synrepo delivers real value, with zero LLM cost and zero staleness risk.** Goal: an agent on a fresh clone of an unfamiliar 10k-file repo can orient and start producing useful code in under 60 seconds.
+**Phase 2 — cards and the MCP server, no LLM.** The card compiler: SymbolCard, FileCard, ModuleCard, EntryPointCard, CallPathCard, ChangeRiskCard, PublicAPICard, TestSurfaceCard. Context budget protocol with `tiny` / `normal` / `deep` tiers and server-side enforcement. Task-first MCP tools: `synrepo_card`, `synrepo_where_to_edit`, `synrepo_change_impact`, `synrepo_entrypoints`, `synrepo_call_path`, `synrepo_test_surface`, `synrepo_minimum_context`. **This is the first phase where synrepo delivers real value, with zero LLM cost and zero staleness risk.** That first value is fast orientation and first-pass routing, while precise symbol-level impact analysis and hidden-coupling signals mature later. Goal: an agent on a fresh clone of an unfamiliar 10k-file repo can orient and start producing useful code in under 60 seconds.
 
 **Phase 3 — git intelligence and DecisionCards.** Hotspots, ownership, co-change, bus factor as card enrichments. Inline `# DECISION:` marker parsing. Optional DecisionCard type for repos with human-authored ADRs. All deterministic. Goal: rationale layer comes online when rationale exists.
 

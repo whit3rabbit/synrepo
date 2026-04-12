@@ -19,5 +19,7 @@ expression: normal
   "source_store": "graph",
   "epistemic": "parser_observed",
   "overlay_commentary": null,
-  "commentary_state": "budget_withheld"
+  "commentary_state": "budget_withheld",
+  "proposed_links": null,
+  "links_state": "budget_withheld"
 }
