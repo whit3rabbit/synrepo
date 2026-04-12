@@ -8,6 +8,7 @@ version = "0.0.1"
 edition = "2021"
 description = "A context compiler for AI coding agents"
 license = "MIT"
+repository = "https://github.com/whit3rabbit/synrepo"
 
 [[bin]]
 name = "synrepo"
@@ -22,7 +23,7 @@ path = "src/lib.rs"
 # syntext is the deterministic lexical retrieval layer. Verify publication
 # status on crates.io; if not published, switch to a git dependency pinned to
 # a specific commit hash (never a branch).
-syntext = "1.0.3"
+syntext = "1.0.4"
 
 # --- Tree-sitter via Rust crates (phase 1) ---
 # Per-language crates each ship a pre-generated C grammar and expose
@@ -46,7 +47,7 @@ notify = "6"                # cross-platform file watcher for phase 2+
 notify-debouncer-full = "0.3"
 
 # --- Git integration ---
-gix = { version = "0.63", default-features = false, features = ["max-performance-safe", "revision", "blob-diff"] }
+gix = { version = "0.81", default-features = false, features = ["sha1", "max-performance-safe", "revision", "blob-diff"] }
 
 # --- Hashing and encoding ---
 blake3 = "1"                # fast content hashing for file/symbol identity
@@ -72,7 +73,13 @@ parking_lot = "0.12"
 crossbeam-channel = "0.5"
 
 # --- Time ---
-time = { version = "0.3", features = ["serde", "macros", "formatting"] }
+time = { version = "0.3", features = ["serde", "macros", "formatting", "parsing"] }
+
+# --- HTTP client (commentary generation) ---
+# `rustls-tls` keeps us off OpenSSL to avoid portability and binary-size pain.
+# `blocking` is the sync façade; commentary generation runs on the card
+# compiler's thread and is not async in v1.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "blocking"] }
 
 # --- Phase 4+ deps, commented out until needed ---
 # ort = "2"                 # ONNX runtime for all-MiniLM-L6-v2 embeddings (phase 5)
@@ -87,3 +94,15 @@ criterion = "0.5"           # benchmarks
 [profile.release]
 lto = "thin"
 codegen-units = 1
+
+[package.metadata.deb]
+name = "synrepo"
+maintainer = "synrepo contributors"
+copyright = "2026, synrepo contributors"
+license-file = ["LICENSE", "4"]
+extended-description = "A context compiler for AI coding agents."
+section = "utils"
+priority = "optional"
+assets = [
+    ["target/release/synrepo", "usr/bin/synrepo", "755"],
+]

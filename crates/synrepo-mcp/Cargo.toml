@@ -26,3 +26,6 @@ serde_json = "1"
 
 # Error handling.
 anyhow = "1"
+
+# Mutex type shared with the synrepo overlay store.
+parking_lot = "0.12"

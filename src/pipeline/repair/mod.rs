@@ -13,7 +13,7 @@
 //! | `StructuralRefresh` | `diagnostics::ReconcileHealth` |
 //! | `DeclaredLinks` | `Governs` edges + concept node stats |
 //! | `StaleRationale` | not yet implemented (reported as Unsupported) |
-//! | `OverlayEntries` | not yet implemented (reported as Unsupported) |
+//! | `CommentaryOverlayEntries` | live: absent / current / stale + `RefreshCommentary` |
 //! | `ExportViews` | not yet implemented (reported as Unsupported) |
 //!
 //! ## Resolution log
@@ -21,6 +21,7 @@
 //! Each mutating `sync` run appends a JSONL record to
 //! `.synrepo/state/repair-log.jsonl`.
 
+mod commentary;
 mod declared_links;
 mod log;
 mod report;
@@ -30,6 +31,7 @@ mod types;
 #[cfg(test)]
 mod tests;
 
+pub use commentary::{resolve_commentary_node, CommentaryNodeSnapshot};
 pub use log::{append_resolution_log, repair_log_path};
 pub use report::build_repair_report;
 pub use sync::execute_sync;

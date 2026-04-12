@@ -6,8 +6,8 @@ use crate::{
 };
 
 use super::{
-    declared_links::check_declared_links,
-    DriftClass, RepairAction, RepairFinding, RepairReport, RepairSurface, Severity,
+    declared_links::check_declared_links, DriftClass, RepairAction, RepairFinding, RepairReport,
+    RepairSurface, Severity,
 };
 use crate::pipeline::{
     diagnostics::{collect_diagnostics, ReconcileHealth, WriterStatus},
@@ -37,6 +37,7 @@ pub(super) fn assemble_repair_report(
     findings.push(store_maintenance_finding(maint_plan));
     findings.push(structural_refresh_finding(&diag.reconcile_health));
     findings.push(check_declared_links(synrepo_dir));
+    findings.push(commentary_overlay_finding(synrepo_dir));
     findings.extend(unsupported_surface_findings());
 
     RepairReport {
@@ -141,15 +142,11 @@ fn structural_refresh_finding(health: &ReconcileHealth) -> RepairFinding {
     }
 }
 
-fn unsupported_surface_findings() -> [RepairFinding; 3] {
+fn unsupported_surface_findings() -> [RepairFinding; 2] {
     [
         (
             RepairSurface::StaleRationale,
             "Rationale drift scoring is not yet implemented.",
-        ),
-        (
-            RepairSurface::OverlayEntries,
-            "Overlay surface is not yet implemented (phase 4+).",
         ),
         (
             RepairSurface::ExportViews,
@@ -164,4 +161,102 @@ fn unsupported_surface_findings() -> [RepairFinding; 3] {
         recommended_action: RepairAction::NotSupported,
         notes: Some(hint.to_string()),
     })
+}
+
+/// Classify the commentary overlay surface.
+///
+/// - No `overlay.db` on disk → `DriftClass::Absent`, no action required.
+/// - Overlay present, staleness sweep runs: if any stored commentary entry
+///   references a content hash that no longer matches the current graph file
+///   → `DriftClass::Stale` with a `RefreshCommentary` recommendation.
+/// - Overlay present with zero entries or all entries fresh → `DriftClass::Current`.
+/// - If the graph is not available or the scan errors out, the finding is
+///   reported as blocked so callers can distinguish "no drift" from
+///   "couldn't evaluate."
+fn commentary_overlay_finding(synrepo_dir: &Path) -> RepairFinding {
+    use crate::store::overlay::SqliteOverlayStore;
+
+    let overlay_dir = synrepo_dir.join("overlay");
+    let overlay_db = SqliteOverlayStore::db_path(&overlay_dir);
+    if !overlay_db.exists() {
+        return RepairFinding {
+            surface: RepairSurface::CommentaryOverlayEntries,
+            drift_class: DriftClass::Absent,
+            severity: Severity::ReportOnly,
+            target_id: None,
+            recommended_action: RepairAction::None,
+            notes: Some(
+                "Commentary overlay has not been materialized yet (no overlay.db).".to_string(),
+            ),
+        };
+    }
+
+    match scan_commentary_staleness(synrepo_dir) {
+        Ok(CommentaryScan { total, stale }) if stale > 0 => RepairFinding {
+            surface: RepairSurface::CommentaryOverlayEntries,
+            drift_class: DriftClass::Stale,
+            severity: Severity::Actionable,
+            target_id: None,
+            recommended_action: RepairAction::RefreshCommentary,
+            notes: Some(format!(
+                "{stale} of {total} commentary entries are stale against the current graph."
+            )),
+        },
+        Ok(CommentaryScan { total, .. }) => RepairFinding {
+            surface: RepairSurface::CommentaryOverlayEntries,
+            drift_class: DriftClass::Current,
+            severity: Severity::Actionable,
+            target_id: None,
+            recommended_action: RepairAction::None,
+            notes: Some(format!("{total} commentary entries are current.")),
+        },
+        Err(err) => RepairFinding {
+            surface: RepairSurface::CommentaryOverlayEntries,
+            drift_class: DriftClass::Blocked,
+            severity: Severity::Blocked,
+            target_id: None,
+            recommended_action: RepairAction::ManualReview,
+            notes: Some(format!("Cannot evaluate commentary staleness: {err}")),
+        },
+    }
+}
+
+struct CommentaryScan {
+    total: usize,
+    stale: usize,
+}
+
+/// Walk every row in the `commentary` table and compare its stored
+/// `source_content_hash` against the graph's current content hash for the
+/// referenced node. A mismatch counts as stale; a missing node counts as
+/// stale too (the pruner will eventually remove it, but until then it still
+/// points at an out-of-date snapshot).
+fn scan_commentary_staleness(synrepo_dir: &Path) -> crate::Result<CommentaryScan> {
+    use super::commentary::resolve_commentary_node;
+    use crate::core::ids::NodeId;
+    use crate::store::overlay::SqliteOverlayStore;
+    use crate::store::sqlite::SqliteGraphStore;
+    use std::str::FromStr;
+
+    let overlay = SqliteOverlayStore::open_existing(&synrepo_dir.join("overlay"))?;
+    let rows = overlay.commentary_hashes()?;
+
+    let graph = SqliteGraphStore::open_existing(&synrepo_dir.join("graph"))?;
+
+    let mut total = 0usize;
+    let mut stale = 0usize;
+    for (node_id_str, stored_hash) in rows {
+        total += 1;
+        let Ok(node_id) = NodeId::from_str(&node_id_str) else {
+            stale += 1;
+            continue;
+        };
+        let fresh = resolve_commentary_node(&graph, node_id)?
+            .is_some_and(|snap| snap.content_hash == stored_hash);
+        if !fresh {
+            stale += 1;
+        }
+    }
+
+    Ok(CommentaryScan { total, stale })
 }

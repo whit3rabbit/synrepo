@@ -1,9 +1,20 @@
 use super::*;
 use crate::{
-    config::Config, pipeline::structural::run_structural_compile, store::sqlite::SqliteGraphStore,
+    config::Config,
+    core::ids::NodeId,
+    overlay::{CommentaryEntry, CommentaryProvenance, OverlayStore},
+    pipeline::structural::run_structural_compile,
+    pipeline::synthesis::{CommentaryGenerator, NoOpGenerator},
+    store::{overlay::SqliteOverlayStore, sqlite::SqliteGraphStore},
+    structure::graph::EdgeKind,
+    surface::card::Freshness,
 };
+use insta::assert_snapshot;
+use parking_lot::Mutex;
 use std::fs;
+use std::sync::Arc;
 use tempfile::tempdir;
+use time::OffsetDateTime;
 
 fn make_compiler(graph: SqliteGraphStore, repo: &tempfile::TempDir) -> GraphCardCompiler {
     GraphCardCompiler::new(Box::new(graph), Some(repo.path()))
@@ -157,4 +168,219 @@ fn file_card_includes_imports_edges() {
         utils_card.imported_by.iter().any(|r| r.id == main_id),
         "utils.ts card must list main.ts in imported_by"
     );
+}
+
+#[test]
+fn symbol_card_snapshots_with_signature_and_doc_comment() {
+    let repo = tempdir().unwrap();
+    fs::create_dir_all(repo.path().join("src")).unwrap();
+    fs::write(
+        repo.path().join("src/lib.rs"),
+        "/// Add two integers together.\npub fn add(a: i32, b: i32) -> i32 { a + b }\n",
+    )
+    .unwrap();
+
+    let graph = bootstrap(&repo);
+    let file = graph.file_by_path("src/lib.rs").unwrap().unwrap();
+    let sym_edge = graph
+        .outbound(NodeId::File(file.id), Some(EdgeKind::Defines))
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
+    let sym_id = match sym_edge.to {
+        NodeId::Symbol(id) => id,
+        _ => panic!("expected symbol"),
+    };
+    let compiler = make_compiler(graph, &repo);
+
+    // Snapshot all three budget tiers so regressions are visible.
+    let tiny =
+        serde_json::to_string_pretty(&compiler.symbol_card(sym_id, Budget::Tiny).unwrap()).unwrap();
+    assert_snapshot!("symbol_card_tiny", tiny);
+
+    let normal =
+        serde_json::to_string_pretty(&compiler.symbol_card(sym_id, Budget::Normal).unwrap())
+            .unwrap();
+    assert_snapshot!("symbol_card_normal", normal);
+
+    let deep =
+        serde_json::to_string_pretty(&compiler.symbol_card(sym_id, Budget::Deep).unwrap()).unwrap();
+    assert_snapshot!("symbol_card_deep", deep);
+}
+
+fn fresh_symbol_fixture() -> (
+    tempfile::TempDir,
+    SqliteGraphStore,
+    crate::core::ids::SymbolNodeId,
+) {
+    let repo = tempdir().unwrap();
+    fs::create_dir_all(repo.path().join("src")).unwrap();
+    fs::write(
+        repo.path().join("src/lib.rs"),
+        "/// Docs.\npub fn annotated() -> u32 { 7 }\n",
+    )
+    .unwrap();
+
+    let graph = bootstrap(&repo);
+    let file = graph.file_by_path("src/lib.rs").unwrap().unwrap();
+    let sym_edge = graph
+        .outbound(NodeId::File(file.id), Some(EdgeKind::Defines))
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
+    let sym_id = match sym_edge.to {
+        NodeId::Symbol(id) => id,
+        _ => panic!("expected symbol"),
+    };
+    (repo, graph, sym_id)
+}
+
+fn current_content_hash(graph: &SqliteGraphStore, path: &str) -> String {
+    graph.file_by_path(path).unwrap().unwrap().content_hash
+}
+
+fn make_overlay_store(repo: &tempfile::TempDir) -> Arc<Mutex<dyn OverlayStore>> {
+    let overlay_dir = repo.path().join(".synrepo/overlay");
+    let store = SqliteOverlayStore::open(&overlay_dir).unwrap();
+    Arc::new(Mutex::new(store))
+}
+
+#[test]
+fn symbol_card_deep_with_fresh_commentary_reports_fresh_state() {
+    let (repo, graph, sym_id) = fresh_symbol_fixture();
+    let hash = current_content_hash(&graph, "src/lib.rs");
+    let overlay = make_overlay_store(&repo);
+
+    overlay
+        .lock()
+        .insert_commentary(CommentaryEntry {
+            node_id: NodeId::Symbol(sym_id),
+            text: "Annotated function.".to_string(),
+            provenance: CommentaryProvenance {
+                source_content_hash: hash.clone(),
+                pass_id: "test".to_string(),
+                model_identity: "claude-fixture".to_string(),
+                generated_at: OffsetDateTime::now_utc(),
+            },
+        })
+        .unwrap();
+
+    let compiler = GraphCardCompiler::new(Box::new(graph), Some(repo.path()))
+        .with_overlay(Some(overlay), None);
+    let card = compiler.symbol_card(sym_id, Budget::Deep).unwrap();
+
+    assert_eq!(card.commentary_state.as_deref(), Some("fresh"));
+    let commentary = card.overlay_commentary.expect("commentary present");
+    assert_eq!(commentary.text, "Annotated function.");
+    assert_eq!(commentary.freshness, Freshness::Fresh);
+    assert_eq!(commentary.source_store, SourceStore::Overlay);
+}
+
+#[test]
+fn symbol_card_deep_with_stale_commentary_reports_stale_state() {
+    let (repo, graph, sym_id) = fresh_symbol_fixture();
+    let overlay = make_overlay_store(&repo);
+
+    overlay
+        .lock()
+        .insert_commentary(CommentaryEntry {
+            node_id: NodeId::Symbol(sym_id),
+            text: "Stale annotation.".to_string(),
+            provenance: CommentaryProvenance {
+                source_content_hash: "outdated-hash".to_string(),
+                pass_id: "test".to_string(),
+                model_identity: "claude-fixture".to_string(),
+                generated_at: OffsetDateTime::now_utc(),
+            },
+        })
+        .unwrap();
+
+    let compiler = GraphCardCompiler::new(Box::new(graph), Some(repo.path()))
+        .with_overlay(Some(overlay), None);
+    let card = compiler.symbol_card(sym_id, Budget::Deep).unwrap();
+
+    assert_eq!(card.commentary_state.as_deref(), Some("stale"));
+    let commentary = card
+        .overlay_commentary
+        .expect("stale commentary still returned");
+    assert_eq!(commentary.freshness, Freshness::Stale);
+}
+
+#[test]
+fn symbol_card_deep_missing_commentary_with_noop_generator() {
+    let (repo, graph, sym_id) = fresh_symbol_fixture();
+    let overlay = make_overlay_store(&repo);
+    let generator: Arc<dyn CommentaryGenerator> = Arc::new(NoOpGenerator);
+
+    let compiler = GraphCardCompiler::new(Box::new(graph), Some(repo.path()))
+        .with_overlay(Some(overlay), Some(generator));
+    let card = compiler.symbol_card(sym_id, Budget::Deep).unwrap();
+
+    assert_eq!(card.commentary_state.as_deref(), Some("missing"));
+    assert!(card.overlay_commentary.is_none());
+}
+
+#[test]
+fn symbol_card_tiny_and_normal_report_budget_withheld() {
+    let (repo, graph, sym_id) = fresh_symbol_fixture();
+    let overlay = make_overlay_store(&repo);
+
+    let compiler = GraphCardCompiler::new(Box::new(graph), Some(repo.path()))
+        .with_overlay(Some(overlay), None);
+
+    for budget in [Budget::Tiny, Budget::Normal] {
+        let card = compiler.symbol_card(sym_id, budget).unwrap();
+        assert_eq!(
+            card.commentary_state.as_deref(),
+            Some("budget_withheld"),
+            "budget {budget:?} must report budget_withheld"
+        );
+        assert!(card.overlay_commentary.is_none());
+    }
+}
+
+#[test]
+fn symbol_card_deep_with_generator_persists_new_entry() {
+    use crate::overlay::CommentaryEntry;
+
+    struct AlwaysGenerate;
+    impl CommentaryGenerator for AlwaysGenerate {
+        fn generate(&self, node: NodeId, _context: &str) -> crate::Result<Option<CommentaryEntry>> {
+            Ok(Some(CommentaryEntry {
+                node_id: node,
+                text: "Freshly generated.".to_string(),
+                provenance: CommentaryProvenance {
+                    source_content_hash: String::new(),
+                    pass_id: "test".to_string(),
+                    model_identity: "fixture".to_string(),
+                    generated_at: OffsetDateTime::now_utc(),
+                },
+            }))
+        }
+    }
+
+    let (repo, graph, sym_id) = fresh_symbol_fixture();
+    let overlay = make_overlay_store(&repo);
+    let generator: Arc<dyn CommentaryGenerator> = Arc::new(AlwaysGenerate);
+
+    let compiler = GraphCardCompiler::new(Box::new(graph), Some(repo.path()))
+        .with_overlay(Some(overlay.clone()), Some(generator));
+    let card = compiler.symbol_card(sym_id, Budget::Deep).unwrap();
+
+    assert_eq!(card.commentary_state.as_deref(), Some("fresh"));
+    let commentary = card
+        .overlay_commentary
+        .expect("generated commentary present");
+    assert_eq!(commentary.text, "Freshly generated.");
+
+    // Side effect: entry persisted to the overlay with the current hash.
+    let persisted = overlay
+        .lock()
+        .commentary_for(NodeId::Symbol(sym_id))
+        .unwrap()
+        .expect("entry persisted");
+    assert_eq!(persisted.text, "Freshly generated.");
+    assert!(!persisted.provenance.source_content_hash.is_empty());
 }

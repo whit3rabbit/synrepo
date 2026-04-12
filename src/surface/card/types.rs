@@ -63,6 +63,13 @@ pub struct SymbolCard {
     /// Only populated if the card was requested at `Deep` budget and
     /// commentary exists in the overlay.
     pub overlay_commentary: Option<OverlayCommentary>,
+    /// Flat commentary state label exposed to MCP callers so they can
+    /// distinguish `budget_withheld` (Tiny/Normal) from `missing`, `fresh`,
+    /// `stale`, `invalid`, or `unsupported` (Deep). Parallel to
+    /// `overlay_commentary` so callers can branch on the state without
+    /// deserializing the nested object.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub commentary_state: Option<String>,
 }
 
 /// LLM-authored commentary layered on top of a structural card.
@@ -77,6 +84,9 @@ pub struct OverlayCommentary {
 }
 
 /// Freshness state of an overlay entry.
+///
+/// Mirrors the five spec states from `FreshnessState` in `src/overlay/mod.rs`:
+/// `Fresh`, `Stale`, `Invalid`, `Missing`, `Unsupported`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Freshness {
@@ -84,8 +94,24 @@ pub enum Freshness {
     Fresh,
     /// The source has changed since the commentary was produced.
     Stale,
+    /// Entry is present but missing one or more required provenance fields.
+    Invalid,
     /// No commentary exists for this target yet.
     Missing,
+    /// The node kind has no commentary pipeline defined.
+    Unsupported,
+}
+
+impl From<crate::overlay::FreshnessState> for Freshness {
+    fn from(state: crate::overlay::FreshnessState) -> Self {
+        match state {
+            crate::overlay::FreshnessState::Fresh => Self::Fresh,
+            crate::overlay::FreshnessState::Stale => Self::Stale,
+            crate::overlay::FreshnessState::Invalid => Self::Invalid,
+            crate::overlay::FreshnessState::Missing => Self::Missing,
+            crate::overlay::FreshnessState::Unsupported => Self::Unsupported,
+        }
+    }
 }
 
 /// FileCard — answers "what's in this file, what depends on it?"

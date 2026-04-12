@@ -30,8 +30,12 @@
 //! refresh, and full daemon lifecycle are intentionally out of scope here.
 
 use std::{
+    fs,
     path::{Path, PathBuf},
-    sync::mpsc,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        mpsc,
+    },
     time::Duration,
 };
 
@@ -50,6 +54,7 @@ use super::{
 };
 
 const RECONCILE_STATE_FILENAME: &str = "reconcile-state.json";
+static NEXT_RECONCILE_STATE_TMP_ID: AtomicU64 = AtomicU64::new(0);
 
 /// Configuration for the watch and reconcile loop.
 #[derive(Clone, Debug)]
@@ -146,8 +151,59 @@ pub fn run_reconcile_pass(
     };
 
     match run_structural_compile(repo_root, config, &mut graph) {
-        Ok(summary) => ReconcileOutcome::Completed(summary),
+        Ok(summary) => {
+            if let Err(err) = crate::substrate::build_index(config, repo_root) {
+                return ReconcileOutcome::Failed(format!("index rebuild failed: {err}"));
+            }
+            prune_commentary_orphans(synrepo_dir, &graph);
+            ReconcileOutcome::Completed(summary)
+        }
         Err(err) => ReconcileOutcome::Failed(err.to_string()),
+    }
+}
+
+/// After a successful structural compile, drop commentary entries for nodes
+/// that no longer exist in the graph. The overlay store is opened only when
+/// `overlay.db` already exists so reconcile never materializes the overlay
+/// on its own (that stays lazy, created by the MCP server or first write).
+fn prune_commentary_orphans(synrepo_dir: &Path, graph: &SqliteGraphStore) {
+    use crate::core::ids::NodeId;
+    use crate::overlay::OverlayStore;
+    use crate::store::overlay::SqliteOverlayStore;
+    use crate::structure::graph::GraphStore;
+
+    let overlay_dir = synrepo_dir.join("overlay");
+    let overlay_db = SqliteOverlayStore::db_path(&overlay_dir);
+    if !overlay_db.exists() {
+        return;
+    }
+
+    let mut live: Vec<NodeId> = Vec::new();
+    if let Ok(files) = graph.all_file_paths() {
+        live.extend(files.into_iter().map(|(_, id)| NodeId::File(id)));
+    }
+    if let Ok(concepts) = graph.all_concept_paths() {
+        live.extend(concepts.into_iter().map(|(_, id)| NodeId::Concept(id)));
+    }
+    if let Ok(symbols) = graph.all_symbol_names() {
+        live.extend(symbols.into_iter().map(|(id, _, _)| NodeId::Symbol(id)));
+    }
+
+    let mut overlay = match SqliteOverlayStore::open_existing(&overlay_dir) {
+        Ok(o) => o,
+        Err(err) => {
+            tracing::warn!(error = %err, "commentary overlay: open failed, skipping orphan prune");
+            return;
+        }
+    };
+    match overlay.prune_orphans(&live) {
+        Ok(n) if n > 0 => {
+            tracing::debug!(pruned = n, "commentary overlay: pruned orphaned entries")
+        }
+        Ok(_) => {}
+        Err(err) => {
+            tracing::warn!(error = %err, "commentary overlay: prune failed");
+        }
     }
 }
 
@@ -195,12 +251,12 @@ pub fn persist_reconcile_state(
     // Write to .tmp then rename: readers see either the old complete file or
     // the new complete file, never a partial write.
     let final_path = state_dir.join(RECONCILE_STATE_FILENAME);
-    let tmp_path = state_dir.join(format!("{RECONCILE_STATE_FILENAME}.tmp"));
-    if let Err(e) = std::fs::write(&tmp_path, json.as_bytes())
-        .and_then(|_| std::fs::rename(&tmp_path, &final_path))
+    let tmp_path = reconcile_state_tmp_path(&state_dir);
+    if let Err(e) =
+        fs::write(&tmp_path, json.as_bytes()).and_then(|_| fs::rename(&tmp_path, &final_path))
     {
         tracing::warn!(path = ?final_path, error = %e, "failed to persist reconcile state");
-        let _ = std::fs::remove_file(&tmp_path); // clean up orphaned .tmp
+        let _ = fs::remove_file(&tmp_path); // clean up orphaned .tmp
     }
 }
 
@@ -214,6 +270,15 @@ pub fn load_reconcile_state(synrepo_dir: &Path) -> Option<ReconcileState> {
 /// Canonical path of the reconcile state file.
 pub fn reconcile_state_path(synrepo_dir: &Path) -> PathBuf {
     synrepo_dir.join("state").join(RECONCILE_STATE_FILENAME)
+}
+
+fn reconcile_state_tmp_path(state_dir: &Path) -> PathBuf {
+    let id = NEXT_RECONCILE_STATE_TMP_ID.fetch_add(1, Ordering::Relaxed);
+    state_dir.join(format!(
+        "{RECONCILE_STATE_FILENAME}.tmp.{}.{}",
+        std::process::id(),
+        id
+    ))
 }
 
 /// Run the watch loop, blocking the calling thread until a fatal error occurs.

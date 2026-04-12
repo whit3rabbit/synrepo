@@ -16,7 +16,10 @@ fn repair_surface_stable_identifiers() {
     assert_eq!(RepairSurface::WriterLock.as_str(), "writer_lock");
     assert_eq!(RepairSurface::DeclaredLinks.as_str(), "declared_links");
     assert_eq!(RepairSurface::StaleRationale.as_str(), "stale_rationale");
-    assert_eq!(RepairSurface::OverlayEntries.as_str(), "overlay_entries");
+    assert_eq!(
+        RepairSurface::CommentaryOverlayEntries.as_str(),
+        "commentary_overlay_entries"
+    );
     assert_eq!(RepairSurface::ExportViews.as_str(), "export_views");
 }
 
@@ -49,6 +52,10 @@ fn repair_action_stable_identifiers() {
     );
     assert_eq!(RepairAction::ManualReview.as_str(), "manual_review");
     assert_eq!(RepairAction::NotSupported.as_str(), "not_supported");
+    assert_eq!(
+        RepairAction::RefreshCommentary.as_str(),
+        "refresh_commentary"
+    );
 }
 
 #[test]

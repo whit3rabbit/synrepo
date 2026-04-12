@@ -17,6 +17,7 @@ mod cli_support;
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
+use syntext::SearchOptions;
 use tracing_subscriber::EnvFilter;
 
 use cli_support::agent_shims::AgentTool;
@@ -68,8 +69,8 @@ enum Command {
     /// Run a structural compile pass against the current repository state.
     ///
     /// Requires `.synrepo/` to be initialized (`synrepo init`). Re-reads all
-    /// source files and refreshes the graph store without recreating the full
-    /// runtime layout or re-indexing the substrate.
+    /// source files, refreshes the graph store, and rebuilds the substrate
+    /// index without recreating the full runtime layout.
     Reconcile,
 
     /// Report drift across all repair surfaces. Read-only; never mutates state.
@@ -98,6 +99,21 @@ enum Command {
     Search {
         /// The query string.
         query: String,
+        /// Match case-insensitively.
+        #[arg(short = 'i', long = "ignore-case")]
+        ignore_case: bool,
+        /// Restrict to one file extension such as `rs` or `py`.
+        #[arg(short = 't', long = "type")]
+        file_type: Option<String>,
+        /// Exclude one file extension such as `js`.
+        #[arg(short = 'T', long = "exclude-type")]
+        exclude_type: Option<String>,
+        /// Restrict to paths matching a glob such as `src/` or `**/*.rs`.
+        #[arg(short = 'g', long = "glob")]
+        path_filter: Option<String>,
+        /// Stop after this many matches.
+        #[arg(short = 'm', long = "max-results")]
+        max_results: Option<usize>,
     },
 
     /// Graph-level queries and inspection.
@@ -159,7 +175,24 @@ fn main() -> anyhow::Result<()> {
         Command::Reconcile => reconcile(&repo_root),
         Command::Check { json } => check(&repo_root, json),
         Command::Sync { json } => sync(&repo_root, json),
-        Command::Search { query } => search(&repo_root, &query),
+        Command::Search {
+            query,
+            ignore_case,
+            file_type,
+            exclude_type,
+            path_filter,
+            max_results,
+        } => search(
+            &repo_root,
+            &query,
+            SearchOptions {
+                path_filter,
+                file_type,
+                exclude_type,
+                max_results,
+                case_insensitive: ignore_case,
+            },
+        ),
         Command::Graph(GraphCommand::Query { q }) => graph_query(&repo_root, &q),
         Command::Graph(GraphCommand::Stats) => graph_stats(&repo_root),
         Command::Node { id } => node(&repo_root, &id),

@@ -15,8 +15,8 @@ pub enum RepairSurface {
     DeclaredLinks,
     /// Concept documents whose governed code targets have drifted.
     StaleRationale,
-    /// Overlay entries (not yet implemented in this runtime).
-    OverlayEntries,
+    /// Commentary overlay entries (LLM-authored symbol commentary in `.synrepo/overlay/overlay.db`).
+    CommentaryOverlayEntries,
     /// Generated exports or runtime views (not yet implemented).
     ExportViews,
 }
@@ -30,7 +30,7 @@ impl RepairSurface {
             Self::WriterLock => "writer_lock",
             Self::DeclaredLinks => "declared_links",
             Self::StaleRationale => "stale_rationale",
-            Self::OverlayEntries => "overlay_entries",
+            Self::CommentaryOverlayEntries => "commentary_overlay_entries",
             Self::ExportViews => "export_views",
         }
     }
@@ -110,6 +110,8 @@ pub enum RepairAction {
     ManualReview,
     /// Surface is not implemented; no action available.
     NotSupported,
+    /// Re-run the commentary generator for stale commentary overlay entries.
+    RefreshCommentary,
 }
 
 impl RepairAction {
@@ -122,6 +124,7 @@ impl RepairAction {
             Self::RunMaintenanceThenReconcile => "run_maintenance_then_reconcile",
             Self::ManualReview => "manual_review",
             Self::NotSupported => "not_supported",
+            Self::RefreshCommentary => "refresh_commentary",
         }
     }
 }

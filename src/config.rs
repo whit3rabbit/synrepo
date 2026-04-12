@@ -51,6 +51,12 @@ pub struct Config {
     /// Paths matching these globs are skipped entirely (e.g. secrets).
     #[serde(default = "default_redact_globs")]
     pub redact_globs: Vec<String>,
+
+    /// Approximate token budget per commentary-generation call. Callers
+    /// skip generation when the estimated cost exceeds this limit and log
+    /// the decision at `warn` level.
+    #[serde(default = "default_commentary_cost_limit")]
+    pub commentary_cost_limit: u32,
 }
 
 fn default_roots() -> Vec<String> {
@@ -81,6 +87,10 @@ fn default_redact_globs() -> Vec<String> {
     ]
 }
 
+fn default_commentary_cost_limit() -> u32 {
+    5000
+}
+
 impl std::fmt::Display for Mode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -99,6 +109,7 @@ impl Default for Config {
             git_commit_depth: default_git_commit_depth(),
             max_file_size_bytes: default_max_file_size(),
             redact_globs: default_redact_globs(),
+            commentary_cost_limit: default_commentary_cost_limit(),
         }
     }
 }

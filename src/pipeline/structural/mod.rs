@@ -44,11 +44,7 @@ mod tests;
 
 use std::{collections::BTreeSet, path::Path, time::Instant};
 
-use crate::{
-    config::Config,
-    structure::graph::GraphStore,
-    substrate,
-};
+use crate::{config::Config, structure::graph::GraphStore, substrate};
 
 use stages::stages_1_to_3;
 

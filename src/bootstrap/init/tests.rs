@@ -1,4 +1,4 @@
-use super::bootstrap;
+use super::{atomic_write_file, bootstrap};
 use crate::bootstrap::BootstrapHealth;
 use crate::config::{Config, Mode};
 use crate::store::compatibility::{self, StoreId};
@@ -243,4 +243,42 @@ fn bootstrap_blocked_when_writer_lock_held() {
         "expected 'writer lock' in error, got: {err}"
     );
     assert!(err.contains("pid"), "expected PID in error, got: {err}");
+}
+
+#[test]
+fn bootstrap_writes_config_and_gitignore_without_leaving_temp_files() {
+    let repo = tempdir().unwrap();
+    std::fs::write(repo.path().join("README.md"), "temp token\n").unwrap();
+
+    bootstrap(repo.path(), None).unwrap();
+
+    let synrepo_dir = Config::synrepo_dir(repo.path());
+    assert!(synrepo_dir.join("config.toml").exists());
+    assert!(synrepo_dir.join(".gitignore").exists());
+
+    let leftover_tmp_files: Vec<_> = std::fs::read_dir(&synrepo_dir)
+        .unwrap()
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| name.starts_with("config.toml.tmp.") || name.starts_with(".gitignore.tmp."))
+        .collect();
+    assert!(
+        leftover_tmp_files.is_empty(),
+        "bootstrap should not leave temp files behind: {:?}",
+        leftover_tmp_files
+    );
+}
+
+#[test]
+fn atomic_write_file_replaces_existing_contents() {
+    let repo = tempdir().unwrap();
+    let target = repo.path().join(".synrepo/config.toml");
+
+    atomic_write_file(&target, b"mode = \"auto\"\n").unwrap();
+    atomic_write_file(&target, b"mode = \"curated\"\n").unwrap();
+
+    assert_eq!(
+        std::fs::read_to_string(&target).unwrap(),
+        "mode = \"curated\"\n"
+    );
 }

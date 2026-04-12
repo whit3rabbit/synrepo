@@ -1,0 +1,104 @@
+//! Sqlite-backed overlay store for commentary entries.
+//!
+//! The overlay database is physically separate from the canonical graph
+//! store: commentary lives at `.synrepo/overlay/overlay.db`; the graph lives
+//! at `.synrepo/graph/nodes.db`. No code path writes commentary data to the
+//! graph, or graph data to the overlay.
+
+mod commentary;
+mod schema;
+
+#[cfg(test)]
+mod tests;
+
+pub use commentary::derive_freshness;
+
+use parking_lot::Mutex;
+use rusqlite::{Connection, OpenFlags};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
+
+use schema::init_schema;
+
+const OVERLAY_DB_FILENAME: &str = "overlay.db";
+
+/// Sqlite-backed overlay store rooted at `.synrepo/overlay/`.
+pub struct SqliteOverlayStore {
+    pub(super) conn: Mutex<Connection>,
+}
+
+impl SqliteOverlayStore {
+    /// Open or create the overlay store inside `.synrepo/overlay/`.
+    ///
+    /// Creates the directory and the `overlay.db` file on first use; the
+    /// store is otherwise lazy (never materialized during `synrepo init`).
+    pub fn open(overlay_dir: &Path) -> crate::Result<Self> {
+        fs::create_dir_all(overlay_dir)?;
+        Self::open_db(&overlay_dir.join(OVERLAY_DB_FILENAME))
+    }
+
+    /// Open or create the overlay store at an explicit sqlite database path.
+    pub fn open_db(db_path: &Path) -> crate::Result<Self> {
+        if let Some(parent) = db_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        let conn = Connection::open(db_path)?;
+        init_schema(&conn)?;
+
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
+    }
+
+    /// Open an existing overlay store without creating a new database.
+    ///
+    /// Returns an error if the overlay database file does not yet exist.
+    pub fn open_existing(overlay_dir: &Path) -> crate::Result<Self> {
+        let db_path = Self::db_path(overlay_dir);
+        if !db_path.exists() {
+            return Err(crate::Error::Other(anyhow::anyhow!(
+                "overlay store is not materialized at {}",
+                db_path.display()
+            )));
+        }
+
+        let conn = Connection::open_with_flags(db_path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+        init_schema(&conn)?;
+
+        Ok(Self {
+            conn: Mutex::new(conn),
+        })
+    }
+
+    /// Absolute path of the sqlite file used by the overlay store.
+    pub fn db_path(overlay_dir: &Path) -> PathBuf {
+        overlay_dir.join(OVERLAY_DB_FILENAME)
+    }
+
+    /// Return the number of commentary rows currently stored.
+    pub fn commentary_count(&self) -> crate::Result<usize> {
+        let conn = self.conn.lock();
+        Ok(
+            conn.query_row("SELECT COUNT(*) FROM commentary", [], |row| {
+                row.get::<_, usize>(0)
+            })?,
+        )
+    }
+
+    /// Return every `(node_id, source_content_hash)` pair from the commentary
+    /// table. Used by the repair loop to classify stale entries without
+    /// pulling full provenance for rows that do not need refresh.
+    pub fn commentary_hashes(&self) -> crate::Result<Vec<(String, String)>> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare("SELECT node_id, source_content_hash FROM commentary")?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+}

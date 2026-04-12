@@ -6,7 +6,8 @@ where
     T: DeserializeOwned,
     P: rusqlite::Params,
 {
-    conn.query_row(sql, params, |row| row.get::<_, String>(0))
+    let mut stmt = conn.prepare_cached(sql)?;
+    stmt.query_row(params, |row| row.get::<_, String>(0))
         .optional()?
         .map(|json| decode_json(&json))
         .transpose()
@@ -17,8 +18,7 @@ where
     T: DeserializeOwned,
     P: rusqlite::Params,
 {
-    // TODO(phase-1): switch to prepare_cached once Connection is held in a CachedConnection wrapper.
-    let mut stmt = conn.prepare(sql)?;
+    let mut stmt = conn.prepare_cached(sql)?;
     let rows = stmt
         .query_map(params, |row| row.get::<_, String>(0))?
         .collect::<Result<Vec<_>, _>>()?;

@@ -1,0 +1,164 @@
+use std::process::Command;
+
+use synrepo::bootstrap::bootstrap;
+use synrepo::config::Config;
+use synrepo::core::ids::{ConceptNodeId, EdgeId, FileNodeId, SymbolNodeId};
+use synrepo::core::provenance::{CreatedBy, Provenance, SourceRef};
+use synrepo::store::sqlite::SqliteGraphStore;
+use synrepo::structure::graph::{
+    ConceptNode, EdgeKind, Epistemic, FileNode, GraphStore, SymbolKind, SymbolNode,
+};
+use synrepo::NodeId;
+use time::OffsetDateTime;
+
+pub(super) fn git(repo: &tempfile::TempDir, args: &[&str]) {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(repo.path())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "git {:?} failed: stdout={}, stderr={}",
+        args,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+pub(super) fn git_stdout(repo: &tempfile::TempDir, args: &[&str]) -> String {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(repo.path())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "git {:?} failed: stdout={}, stderr={}",
+        args,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8_lossy(&output.stdout).trim().to_string()
+}
+
+pub(super) fn git_with_author(repo: &tempfile::TempDir, args: &[&str], author: &str, email: &str) {
+    let output = Command::new("git")
+        .env("GIT_AUTHOR_NAME", author)
+        .env("GIT_AUTHOR_EMAIL", email)
+        .env("GIT_COMMITTER_NAME", author)
+        .env("GIT_COMMITTER_EMAIL", email)
+        .args(args)
+        .current_dir(repo.path())
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "git {:?} failed: stdout={}, stderr={}",
+        args,
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+pub(super) struct SeededGraphIds {
+    pub(super) file_id: FileNodeId,
+    pub(super) symbol_id: SymbolNodeId,
+    pub(super) concept_id: ConceptNodeId,
+}
+
+pub(super) fn seed_graph(repo_root: &std::path::Path) -> SeededGraphIds {
+    bootstrap(repo_root, None).unwrap();
+
+    let graph_dir = Config::synrepo_dir(repo_root).join("graph");
+    let mut store = SqliteGraphStore::open(&graph_dir).unwrap();
+    let file_id = FileNodeId(0x42);
+    let symbol_id = SymbolNodeId(0x24);
+    let concept_id = ConceptNodeId(0x99);
+
+    store.begin().unwrap();
+    store
+        .upsert_file(FileNode {
+            id: file_id,
+            path: "src/lib.rs".to_string(),
+            path_history: vec!["src/old_lib.rs".to_string()],
+            content_hash: "abc123".to_string(),
+            size_bytes: 128,
+            language: Some("rust".to_string()),
+            inline_decisions: Vec::new(),
+            epistemic: Epistemic::ParserObserved,
+            provenance: sample_provenance("parse_code", "src/lib.rs"),
+        })
+        .unwrap();
+    store
+        .upsert_symbol(SymbolNode {
+            id: symbol_id,
+            file_id,
+            qualified_name: "synrepo::lib".to_string(),
+            display_name: "lib".to_string(),
+            kind: SymbolKind::Module,
+            body_byte_range: (0, 64),
+            body_hash: "def456".to_string(),
+            signature: Some("pub mod lib".to_string()),
+            doc_comment: None,
+            epistemic: Epistemic::ParserObserved,
+            provenance: sample_provenance("parse_code", "src/lib.rs"),
+        })
+        .unwrap();
+    store
+        .upsert_concept(ConceptNode {
+            id: concept_id,
+            path: "docs/adr/0001-graph.md".to_string(),
+            title: "Graph Storage".to_string(),
+            aliases: vec!["canonical-graph".to_string()],
+            summary: Some("Why the graph stays observed-only.".to_string()),
+            status: None,
+            decision_body: None,
+            epistemic: Epistemic::HumanDeclared,
+            provenance: sample_provenance("parse_prose", "docs/adr/0001-graph.md"),
+        })
+        .unwrap();
+    store
+        .insert_edge(synrepo::structure::graph::Edge {
+            id: EdgeId(0x77),
+            from: NodeId::File(file_id),
+            to: NodeId::Symbol(symbol_id),
+            kind: EdgeKind::Defines,
+            epistemic: Epistemic::ParserObserved,
+            drift_score: 0.0,
+            provenance: sample_provenance("resolve_edges", "src/lib.rs"),
+        })
+        .unwrap();
+    store
+        .insert_edge(synrepo::structure::graph::Edge {
+            id: EdgeId(0x78),
+            from: NodeId::Concept(concept_id),
+            to: NodeId::File(file_id),
+            kind: EdgeKind::Governs,
+            epistemic: Epistemic::HumanDeclared,
+            drift_score: 0.2,
+            provenance: sample_provenance("parse_prose", "docs/adr/0001-graph.md"),
+        })
+        .unwrap();
+    store.commit().unwrap();
+
+    SeededGraphIds {
+        file_id,
+        symbol_id,
+        concept_id,
+    }
+}
+
+fn sample_provenance(pass: &str, path: &str) -> Provenance {
+    Provenance {
+        created_at: OffsetDateTime::UNIX_EPOCH,
+        source_revision: "deadbeef".to_string(),
+        created_by: CreatedBy::StructuralPipeline,
+        pass: pass.to_string(),
+        source_artifacts: vec![SourceRef {
+            file_id: None,
+            path: path.to_string(),
+            content_hash: "hash".to_string(),
+        }],
+    }
+}

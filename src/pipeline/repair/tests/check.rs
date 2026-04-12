@@ -6,9 +6,7 @@ use crate::{
     pipeline::watch::{persist_reconcile_state, ReconcileOutcome},
 };
 
-use crate::pipeline::repair::{
-    build_repair_report, RepairAction, RepairSurface, Severity,
-};
+use crate::pipeline::repair::{build_repair_report, RepairAction, RepairSurface, Severity};
 
 #[test]
 fn check_on_fresh_initialized_runtime_has_no_actionable_findings() {
@@ -86,11 +84,7 @@ fn check_reports_unsupported_surfaces_explicitly() {
 
     let report = build_repair_report(&synrepo_dir, &Config::default());
 
-    for surface in [
-        RepairSurface::OverlayEntries,
-        RepairSurface::ExportViews,
-        RepairSurface::StaleRationale,
-    ] {
+    for surface in [RepairSurface::ExportViews, RepairSurface::StaleRationale] {
         let finding = report
             .findings
             .iter()
@@ -103,6 +97,24 @@ fn check_reports_unsupported_surfaces_explicitly() {
             surface.as_str()
         );
     }
+}
+
+#[test]
+fn check_reports_commentary_overlay_absent_when_no_overlay_db() {
+    use crate::pipeline::repair::{DriftClass, RepairAction};
+    let dir = tempdir().unwrap();
+    let synrepo_dir = dir.path().join(".synrepo");
+    init_synrepo(&synrepo_dir);
+
+    let report = build_repair_report(&synrepo_dir, &Config::default());
+    let finding = report
+        .findings
+        .iter()
+        .find(|f| f.surface == RepairSurface::CommentaryOverlayEntries)
+        .expect("commentary overlay finding must be present");
+
+    assert_eq!(finding.drift_class, DriftClass::Absent);
+    assert_eq!(finding.recommended_action, RepairAction::None);
 }
 
 #[test]
@@ -119,7 +131,7 @@ fn check_report_render_includes_all_surfaces() {
         "structural_refresh",
         "writer_lock",
         "declared_links",
-        "overlay_entries",
+        "commentary_overlay_entries",
         "export_views",
     ] {
         assert!(

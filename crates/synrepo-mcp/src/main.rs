@@ -9,6 +9,7 @@
 use std::{path::PathBuf, sync::Arc};
 
 use anyhow::Context as _;
+use parking_lot::Mutex;
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::{ServerCapabilities, ServerInfo},
@@ -21,7 +22,9 @@ use serde_json::json;
 use synrepo::{
     config::Config,
     core::ids::NodeId,
-    store::sqlite::SqliteGraphStore,
+    overlay::OverlayStore,
+    pipeline::synthesis::{ClaudeCommentaryGenerator, CommentaryGenerator},
+    store::{overlay::SqliteOverlayStore, sqlite::SqliteGraphStore},
     structure::graph::EdgeKind,
     surface::card::{compiler::GraphCardCompiler, Budget, CardCompiler, DecisionCard, Freshness},
 };
@@ -159,6 +162,7 @@ impl SynrepoServer {
                 NodeId::Symbol(sym_id) => {
                     let card = self.state.compiler.symbol_card(sym_id, budget)?;
                     let mut json = serde_json::to_value(&card)?;
+                    lift_commentary_text(&mut json);
                     attach_decision_cards(
                         &mut json,
                         NodeId::Symbol(sym_id),
@@ -395,6 +399,23 @@ fn attach_decision_cards(
     Ok(())
 }
 
+/// Mirror `overlay_commentary.text` onto a top-level `commentary_text` key
+/// so MCP callers can branch on a flat field without traversing the nested
+/// object. Absent when there is no commentary to surface.
+fn lift_commentary_text(json: &mut serde_json::Value) {
+    let Some(obj) = json.as_object_mut() else {
+        return;
+    };
+    let text = obj
+        .get("overlay_commentary")
+        .and_then(|oc| oc.get("text"))
+        .and_then(|t| t.as_str())
+        .map(|s| s.to_string());
+    if let Some(t) = text {
+        obj.insert("commentary_text".to_string(), serde_json::Value::String(t));
+    }
+}
+
 fn parse_budget(s: &str) -> Budget {
     match s {
         "normal" => Budget::Normal,
@@ -447,7 +468,21 @@ async fn main() -> anyhow::Result<()> {
         )
     })?;
 
-    let compiler = GraphCardCompiler::new(Box::new(graph), Some(repo_root.clone()));
+    // Lazily-materialized overlay store for commentary. Open here (not during
+    // `synrepo init`) so that `synrepo_card` at Deep budget can retrieve and
+    // persist entries without a prior init-time overlay file.
+    let overlay_dir = synrepo_dir.join("overlay");
+    let overlay_store = SqliteOverlayStore::open(&overlay_dir)
+        .with_context(|| format!("Failed to open overlay store at {}", overlay_dir.display()))?;
+    let overlay: Arc<Mutex<dyn OverlayStore>> = Arc::new(Mutex::new(overlay_store));
+
+    // Commentary generator: live Claude path if SYNREPO_ANTHROPIC_API_KEY is
+    // set, otherwise a NoOp that leaves the overlay untouched.
+    let boxed_generator = ClaudeCommentaryGenerator::new_or_noop(config.commentary_cost_limit);
+    let generator: Arc<dyn CommentaryGenerator> = Arc::from(boxed_generator);
+
+    let compiler = GraphCardCompiler::new(Box::new(graph), Some(repo_root.clone()))
+        .with_overlay(Some(overlay), Some(generator));
 
     let state = SynrepoState {
         compiler,

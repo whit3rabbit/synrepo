@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::pipeline::{
     git::{GitCommitSummary, GitIntelligenceReadiness},
-    git_intelligence::{GitPathCoChangePartner, GitPathHistoryInsights, GitOwnershipHint},
+    git_intelligence::{GitOwnershipHint, GitPathCoChangePartner, GitPathHistoryInsights},
 };
 
 /// A recent Git commit touching a file surface.

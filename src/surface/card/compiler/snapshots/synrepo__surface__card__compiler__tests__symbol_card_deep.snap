@@ -1,0 +1,23 @@
+---
+source: src/surface/card/compiler/tests.rs
+expression: deep
+---
+{
+  "symbol": 5559367378525914440,
+  "name": "add",
+  "qualified_name": "add",
+  "defined_at": "src/lib.rs:31",
+  "signature": "pub fn add(a: i32, b: i32) -> i32",
+  "doc_comment": "Add two integers together.",
+  "callers": [],
+  "callees": [],
+  "tests_touching": [],
+  "last_change": null,
+  "drift_flag": null,
+  "source_body": "pub fn add(a: i32, b: i32) -> i32 { a + b }",
+  "approx_tokens": 30,
+  "source_store": "graph",
+  "epistemic": "parser_observed",
+  "overlay_commentary": null,
+  "commentary_state": "missing"
+}

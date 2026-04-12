@@ -8,4 +8,4 @@ pub mod index;
 
 pub use classify::{classify, FileClass, SkipReason};
 pub use discover::{discover, DiscoveredFile};
-pub use index::{build_index, search, IndexBuildReport};
+pub use index::{build_index, search, search_with_options, IndexBuildReport};

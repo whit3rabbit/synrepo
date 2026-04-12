@@ -95,11 +95,65 @@ pub(crate) fn status(repo_root: &Path) -> anyhow::Result<()> {
         println!("  store:        {line}");
     }
 
+    println!("  commentary:   {}", commentary_coverage_line(&synrepo_dir));
+
     println!(
         "  next step:    {}",
         next_step(&diag, graph_stats.is_none())
     );
     Ok(())
+}
+
+/// Build the one-line commentary coverage summary shown under `synrepo status`.
+///
+/// Reports `not initialized` when the overlay db has not been materialized
+/// (no LLM commentary has ever been requested). Otherwise counts how many
+/// entries are fresh against the current graph vs the total stored.
+fn commentary_coverage_line(synrepo_dir: &Path) -> String {
+    use std::str::FromStr;
+    use synrepo::core::ids::NodeId;
+    use synrepo::pipeline::repair::resolve_commentary_node;
+    use synrepo::store::overlay::SqliteOverlayStore;
+    use synrepo::store::sqlite::SqliteGraphStore;
+
+    let overlay_dir = synrepo_dir.join("overlay");
+    let overlay_db = SqliteOverlayStore::db_path(&overlay_dir);
+    if !overlay_db.exists() {
+        return "not initialized".to_string();
+    }
+
+    let overlay = match SqliteOverlayStore::open_existing(&overlay_dir) {
+        Ok(o) => o,
+        Err(err) => return format!("unavailable ({err})"),
+    };
+    let rows = match overlay.commentary_hashes() {
+        Ok(r) => r,
+        Err(err) => return format!("unavailable ({err})"),
+    };
+    if rows.is_empty() {
+        return "0 entries".to_string();
+    }
+
+    let graph = match SqliteGraphStore::open_existing(&synrepo_dir.join("graph")) {
+        Ok(g) => g,
+        Err(_) => return format!("{} entries (graph unreadable)", rows.len()),
+    };
+
+    let mut fresh = 0usize;
+    for (node_id_str, stored_hash) in &rows {
+        let Ok(node_id) = NodeId::from_str(node_id_str) else {
+            continue;
+        };
+        if resolve_commentary_node(&graph, node_id)
+            .ok()
+            .flatten()
+            .is_some_and(|snap| &snap.content_hash == stored_hash)
+        {
+            fresh += 1;
+        }
+    }
+
+    format!("{fresh} fresh / {} total nodes with commentary", rows.len())
 }
 
 /// Generate a thin integration shim for the specified agent CLI.
@@ -231,12 +285,21 @@ pub(crate) fn reconcile(repo_root: &Path) -> anyhow::Result<()> {
 }
 
 /// Perform a lexical search across indexed files.
-pub(crate) fn search(repo_root: &Path, query: &str) -> anyhow::Result<()> {
+pub(crate) fn search(
+    repo_root: &Path,
+    query: &str,
+    options: syntext::SearchOptions,
+) -> anyhow::Result<()> {
     let config = Config::load(repo_root)?;
     let synrepo_dir = Config::synrepo_dir(repo_root);
     check_store_ready(&synrepo_dir, &config, StoreId::Index)?;
+    if let Some(pid) = synrepo::pipeline::writer::live_owner_pid(&synrepo_dir) {
+        anyhow::bail!(
+            "search is unavailable while writer lock is held by pid {pid}. Wait for the active write to finish, then retry."
+        );
+    }
 
-    let matches = synrepo::substrate::search(&config, repo_root, query)?;
+    let matches = synrepo::substrate::search_with_options(&config, repo_root, query, &options)?;
     for search_match in &matches {
         println!(
             "{}:{}: {}",

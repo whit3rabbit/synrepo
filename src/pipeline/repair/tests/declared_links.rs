@@ -21,8 +21,8 @@ fn check_declared_links_detects_dangling_governs_target() {
     let graph_dir = synrepo_dir.join("graph");
     let mut graph = SqliteGraphStore::open(&graph_dir).unwrap();
 
-    let concept_id = ConceptNodeId(0xc0ccc0cc_c0cc_c0cc);
-    let ghost_file_id = FileNodeId(0xdeadbeef_1234_5678);
+    let concept_id = ConceptNodeId(0xc0cc_c0cc_c0cc_c0cc);
+    let ghost_file_id = FileNodeId(0xdead_beef_1234_5678);
 
     let provenance = Provenance::structural(
         "test",

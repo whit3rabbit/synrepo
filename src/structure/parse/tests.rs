@@ -126,3 +126,120 @@ class Greeter:
     assert!(names.contains(&"greet"), "expected greet in {names:?}");
     assert!(names.contains(&"Greeter"), "expected Greeter in {names:?}");
 }
+
+#[test]
+fn parse_file_extracts_rust_doc_comment_and_signature() {
+    let source = b"/// Greet a user by name.\npub fn greet(name: &str) -> String {\n    format!(\"Hello!\")\n}\n";
+    let output = parse_file(Path::new("src/lib.rs"), source)
+        .unwrap()
+        .unwrap();
+    let sym = output
+        .symbols
+        .iter()
+        .find(|s| s.display_name == "greet")
+        .expect("greet not found");
+    assert_eq!(
+        sym.doc_comment.as_deref(),
+        Some("Greet a user by name."),
+        "expected Rust doc_comment"
+    );
+    let sig = sym.signature.as_deref().expect("expected Rust signature");
+    assert!(
+        sig.starts_with("pub fn greet"),
+        "expected sig to start with 'pub fn greet', got: {sig}"
+    );
+}
+
+#[test]
+fn parse_file_extracts_python_docstring_and_signature() {
+    let source = b"def greet(name):\n    \"\"\"Greet someone.\"\"\"\n    return f'Hello, {name}'\n";
+    let output = parse_file(Path::new("app.py"), source).unwrap().unwrap();
+    let sym = output
+        .symbols
+        .iter()
+        .find(|s| s.display_name == "greet")
+        .expect("greet not found");
+    assert_eq!(
+        sym.doc_comment.as_deref(),
+        Some("Greet someone."),
+        "expected Python docstring"
+    );
+    let sig = sym.signature.as_deref().expect("expected Python signature");
+    assert!(
+        sig.starts_with("def greet"),
+        "expected sig to start with 'def greet', got: {sig}"
+    );
+}
+
+#[test]
+fn parse_file_extracts_typescript_jsdoc_and_signature() {
+    let source =
+        b"/** Returns a greeting. */\nfunction greet(name: string): string {\n    return `Hi`;\n}\n";
+    let output = parse_file(Path::new("src/greet.ts"), source)
+        .unwrap()
+        .unwrap();
+    let sym = output
+        .symbols
+        .iter()
+        .find(|s| s.display_name == "greet")
+        .expect("greet not found");
+    assert_eq!(
+        sym.doc_comment.as_deref(),
+        Some("Returns a greeting."),
+        "expected TS JSDoc"
+    );
+    let sig = sym.signature.as_deref().expect("expected TS signature");
+    assert!(
+        sig.starts_with("function greet"),
+        "expected sig to start with 'function greet', got: {sig}"
+    );
+}
+
+#[test]
+fn parse_file_rust_no_doc_yields_none_doc_comment_but_some_signature() {
+    let source = b"pub fn no_doc() {}\n";
+    let output = parse_file(Path::new("src/lib.rs"), source)
+        .unwrap()
+        .unwrap();
+    let sym = output
+        .symbols
+        .iter()
+        .find(|s| s.display_name == "no_doc")
+        .unwrap();
+    assert!(sym.doc_comment.is_none(), "Rust: expected no doc_comment");
+    assert!(sym.signature.is_some(), "Rust: expected Some(signature)");
+}
+
+#[test]
+fn parse_file_python_no_doc_yields_none_doc_comment_but_some_signature() {
+    let source = b"def no_doc():\n    pass\n";
+    let output = parse_file(Path::new("app.py"), source).unwrap().unwrap();
+    let sym = output
+        .symbols
+        .iter()
+        .find(|s| s.display_name == "no_doc")
+        .unwrap();
+    assert!(sym.doc_comment.is_none(), "Python: expected no doc_comment");
+    assert!(sym.signature.is_some(), "Python: expected Some(signature)");
+}
+
+#[test]
+fn parse_file_typescript_no_doc_yields_none_doc_comment_but_some_signature() {
+    let source = b"function no_doc(): void {}\n";
+    let output = parse_file(Path::new("src/lib.ts"), source)
+        .unwrap()
+        .unwrap();
+    let sym = output
+        .symbols
+        .iter()
+        .find(|s| s.display_name == "no_doc")
+        .unwrap();
+    assert!(
+        sym.doc_comment.is_none(),
+        "TypeScript: expected no doc_comment"
+    );
+    assert!(
+        sym.signature.is_some(),
+        "TypeScript: expected Some(signature)"
+    );
+}

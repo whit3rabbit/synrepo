@@ -58,7 +58,11 @@ pub(super) fn check_declared_links(synrepo_dir: &Path) -> RepairFinding {
         };
     }
 
-    let governs_count = stats.edge_counts_by_kind.get("governs").copied().unwrap_or(0);
+    let governs_count = stats
+        .edge_counts_by_kind
+        .get("governs")
+        .copied()
+        .unwrap_or(0);
     if governs_count == 0 {
         return RepairFinding {
             surface: RepairSurface::DeclaredLinks,

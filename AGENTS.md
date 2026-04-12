@@ -2,6 +2,18 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## CI / Release
+
+Workflows live in `.github/workflows/`: `ci.yml` (push/PR) and `release.yml` (tag trigger).
+
+Secrets required in **this repo only** (Settings > Secrets and variables > Actions):
+- `CARGO_REGISTRY_TOKEN` — crates.io token (scopes: publish-new, publish-update)
+- `HOMEBREW_TAP_TOKEN` — GitHub PAT with repo scope on `whit3rabbit/homebrew-tap`
+
+Homebrew tap is a sibling repo at `../homebrew-tap/`; cask template is at `packaging/homebrew/Casks/synrepo.rb`.
+
+**Gotcha:** macOS Intel runner is `macos-15-intel` (not `macos-13` — deprecated Dec 2025).
+
 ## Commands
 
 ```bash
@@ -66,7 +78,7 @@ Node types: `FileNode` (content-hash identity), `SymbolNode` (tree-sitter extrac
 **3. Overlay** (`src/overlay/mod.rs`) — LLM-authored content in a physically separate SQLite database from the graph. Defines `OverlayStore`, `OverlayLink`, `OverlayEpistemic` (`machine_authored_high_conf` | `machine_authored_low_conf`), `CitedSpan`. Phase 4+ only; the module exists to establish the architectural boundary from the start.
 - Spec: `openspec/specs/overlay/spec.md`
 
-**4. Surface** (`src/surface/`, `src/bin/cli.rs`) — CLI (phase 0/1), MCP server (phase 2+), skill bundle (`skill/SKILL.md`). `src/surface/card/mod.rs` is the stable card surface (`Budget`, `SymbolCard`, `FileCard`, `CardCompiler`, `Freshness`, `SourceStore`) with `git.rs` for Git projections, `types.rs` for card payload structs, `compiler.rs` for `GraphCardCompiler`, and `decision.rs` for `DecisionCard`.
+**4. Surface** (`src/surface/`, `src/bin/cli.rs`) — CLI (phase 0/1), MCP server (phase 2+), skill bundle (`skill/SKILL.md`). `src/surface/card/mod.rs` is the stable card surface (`Budget`, `SymbolCard`, `FileCard`, `CardCompiler`, `Freshness`, `SourceStore`) with `git.rs` for Git projections, `types.rs` for card payload structs, `compiler/` for `GraphCardCompiler` (split into file.rs, io.rs, mod.rs, resolve.rs, symbol.rs), and `decision.rs` for `DecisionCard`.
 - Spec: `openspec/specs/cards/spec.md`, `openspec/specs/mcp-surface/spec.md`
 
 **Bootstrap** (`src/bootstrap/`) — First-run UX, mode detection, health checks. `src/bin/cli.rs` is a thin dispatcher only; all logic lives here.
@@ -77,7 +89,9 @@ Node types: `FileNode` (content-hash identity), `SymbolNode` (tree-sitter extrac
 
 **Pipeline** (`src/pipeline/`) — `structural/` defines the 8-stage compile cycle. `mod.rs` owns transaction orchestration and `CompileSummary`; `stages.rs` owns stages 1–3 (discover → parse code → parse prose); `stage4.rs` owns cross-file edge resolution. Stage 5 (git mining) runs via `src/pipeline/git/` and `src/pipeline/git_intelligence/`. Stages 6 (identity cascade, partially wired), 7 (drift scoring), and 8 (ArcSwap commit) are not yet wired end-to-end. `synthesis.rs` is a 4-line stub placeholder for the LLM pipeline (phase 4+).
 - `repair/` — `mod.rs` is a thin façade. `report.rs` builds the read-only drift view, `sync.rs` drives auto-repair, `log.rs` appends JSONL resolution records, `declared_links.rs` verifies `Governs` targets, and `types/` holds the stable enums plus report/log payload types.
+- `git_intelligence/` — `mod.rs` is a thin façade. `types.rs` defines the public Git-intelligence payloads, `analysis.rs` derives history/hotspot/ownership/co-change summaries, and `tests/` is split by status, history, path, and shared support helpers.
 - `watch.rs` — reconcile backstop and watch loop production logic; tests live in `src/pipeline/watch/tests.rs`.
+- `writer.rs` — single-writer lock production logic; tests live in `src/pipeline/writer/tests.rs`.
 - Spec: `openspec/specs/foundation/spec.md`
 
 **Store** (`src/store/`) — SQLite backends implementing graph/overlay traits.
@@ -95,21 +109,6 @@ Node types: `FileNode` (content-hash identity), `SymbolNode` (tree-sitter extrac
 - `.synrepo/state/reconcile-state.json` — last reconcile outcome, timestamp, and discovered/symbol counts
 - `.synrepo/state/repair-log.jsonl` — append-only resolution log written by `synrepo sync`; one JSON object per line
 - `openspec/` — planning artifacts only, not runtime
-
-### Spec-to-module quick reference
-
-| Module | Governing spec |
-|--------|----------------|
-| `src/core/` | `openspec/specs/foundation/spec.md` |
-| `src/substrate/` | `openspec/specs/substrate/spec.md` |
-| `src/structure/` | `openspec/specs/graph/spec.md` |
-| `src/overlay/` | `openspec/specs/overlay/spec.md` |
-| `src/store/compatibility/` | `openspec/specs/storage-and-compatibility/spec.md` |
-| `src/surface/card/` | `openspec/specs/cards/spec.md` |
-| `src/surface/mcp/` | `openspec/specs/mcp-surface/spec.md` |
-| `src/bootstrap/` | `openspec/specs/bootstrap/spec.md` |
-| `src/pipeline/` | `openspec/specs/foundation/spec.md` |
-| `src/pipeline/repair/` | `openspec/specs/repair-loop/spec.md` |
 
 ### Layer and size rules
 
@@ -134,19 +133,6 @@ These must hold across all changes:
 
 ## Phase status
 
-### Currently wired end-to-end
-
-- `synrepo init` — idempotent bootstrap: creates on first run, refreshes on re-run, repairs if layout is partial. Auto-selects `auto` vs `curated` mode by scanning `concept_directories` for markdown; `--mode` overrides. Runs structural compile (stages 1–3) automatically, populating the graph with file nodes, symbol nodes, and concept nodes.
-- `synrepo reconcile` — runs `run_reconcile_pass()` (same path as the watch loop): acquires writer lock, opens graph store, runs structural compile stages 1–4 in a single atomic transaction. Persists outcome to `.synrepo/state/reconcile-state.json`. Does not re-index the substrate or rewrite config.
-- `synrepo check [--json]` — read-only drift report across all repair surfaces (storage, structural refresh, writer lock, declared links, overlay/export gaps). Exits non-zero when actionable or blocked findings are present. Safe to run in CI. Logic in `src/pipeline/repair/`.
-- `synrepo sync [--json]` — repairs auto-fixable drift surfaces: runs storage maintenance then `run_reconcile_pass()` for actionable findings. Report-only and unsupported findings are surfaced but not mutated. Appends a structured entry to `.synrepo/state/repair-log.jsonl`. Logic in `src/pipeline/repair/`.
-- `synrepo status` — read-only operational health: mode, graph node counts, last reconcile outcome, writer lock state. Never acquires the writer lock. Safe to run while a reconcile is in progress.
-- `synrepo agent-setup <tool>` — generates a thin integration shim for `claude`, `cursor`, `copilot`, or `generic`. Writes a named fragment file and prints the one-line include instruction. `--force` overwrites an existing file. Logic in `src/bin/cli_support/agent_shims.rs`.
-- `synrepo search <query>` — calls `substrate::search` via syntext
-- `synrepo graph query "<direction> <node_id> [edge_kind]"` — graph traversal; direction is `inbound` or `outbound`; edge_kind filter is optional
-- `synrepo graph stats` — node and edge counts as JSON
-- `synrepo node <id>` — dumps a node's metadata as JSON
-
 ### Structural pipeline stage status
 
 Stages 1–3 run on every `synrepo init`:
@@ -163,15 +149,15 @@ Stages 4–8:
 
 ### Not yet implemented
 
-- `synrepo watch` CLI command (`run_watch_loop` in `pipeline/watch.rs` is implemented but not wired to a CLI subcommand; `synrepo reconcile` is the one-shot path)
-- `ModuleCard`, `EntryPointCard`, `CallPathCard` and specialist MCP tools (`synrepo_entrypoints`, `synrepo_call_path`, `synrepo_test_surface`, `synrepo_minimum_context`, `synrepo_explain`, `synrepo_findings`) — next phases
-- Graph-level `CoChangesWith` edges and symbol-level Git summaries such as `SymbolCard.last_change` — follow-on work after the first `git-intelligence-v1` slice
-- Synthesis pipeline (phase 4+)
+- `synrepo watch` subcommand (`run_watch_loop` in `pipeline/watch.rs` is wired; no CLI entry point yet)
+- `ModuleCard`, `EntryPointCard`, `CallPathCard`; specialist MCP tools (`synrepo_entrypoints`, `synrepo_call_path`, etc.)
+- Graph-level `CoChangesWith` edges; symbol-level `SymbolCard.last_change`
+- Drift scoring (stage 7), ArcSwap commit (stage 8), synthesis pipeline (phase 4+)
 
 ## Gotchas
 
-- **File size rule currently has no violations**: after the module split, every `src/**/*.rs` file is under 400 lines. Current watchlist from `wc -l` is `src/pipeline/writer.rs` (358), `src/pipeline/git_intelligence/mod.rs` (358), `src/store/sqlite/tests.rs` (357), and `src/pipeline/git_intelligence/tests.rs` (353). Re-check before adding more code to any of them.
-- **`signature` and `doc_comment` are always `None`** until the phase-1 TODO in `src/structure/parse/extract.rs` is resolved. Do not write code that assumes these fields are populated.
+- **`src/structure/parse/extract/` is a sub-module directory** (`mod.rs` ~377 lines, `qualname.rs` ~59 lines) — do not add more code to `mod.rs` without splitting further. Current watchlist: `src/pipeline/structural/stages.rs` (344), `src/pipeline/git/mod.rs` (338), `src/structure/prose.rs` (324), `src/store/compatibility/evaluate/mod.rs` (312), `src/pipeline/diagnostics.rs` (306). Re-check before adding to any of them.
+- **`signature` and `doc_comment` are populated** by `src/structure/parse/extract/mod.rs` for Rust (`///` line comments, declaration up to `{`/`;`), Python (docstring, `def` line up to `:`), and TypeScript/TSX (JSDoc `/** */`, declaration up to `{`). These fields are safe to use in all three languages.
 - **Stage 4 cross-file edges are now emitted**: `Calls` (file→symbol, approximate name resolution) and `Imports` (file→file, relative path resolution) edges are produced by `run_structural_compile`. `Inherits`, `References`, `CoChangesWith`, `Mentions` are not yet emitted. `SplitFrom` and `MergedFrom` edge kinds are defined but not yet produced.
 - **`criterion` is present in `Cargo.toml`**, but the documented test workflow still centers on `proptest` and `insta`. Use `criterion` only for explicit benchmark work.
 - **`.synrepo/graph/nodes.db`** is the actual SQLite file. Code that opens the graph store uses `SqliteGraphStore::open(&graph_dir)` where `graph_dir` is `.synrepo/graph/`; the `nodes.db` name is internal to `src/store/sqlite/mod.rs`.
@@ -204,9 +190,8 @@ Stages 4–8:
 
 `openspec/specs/` holds enduring domain specs (stable intended behavior). `openspec/changes/<name>/` holds active work: `proposal.md`, `design.md`, `tasks.md`, and optional delta specs.
 
-Active changes:
-- `card-quality-v1` — populate `SymbolCard.signature` and `SymbolCard.doc_comment` via tree-sitter extraction; split `compiler.rs`
+Active changes: none
 
-Archived: `openspec/changes/archive/` — completed changes including `2026-04-10-structural-graph-v1` (structural compile pipeline), `2026-04-11-foundation-bootstrap`, `2026-04-11-lexical-substrate-v1`, `2026-04-11-bootstrap-ux-v1`, `2026-04-11-structural-pipeline-v1`, `2026-04-11-watch-reconcile-v1` (watcher, reconcile, single-writer lock), `2026-04-11-agent-integration-v1` (status command, agent-setup shims, skill/SKILL.md current-phase section), `2026-04-11-cards-and-mcp-v1` (stage 4 edges, CardCompiler, workspace conversion, MCP server with 5 core tools), `2026-04-11-storage-compatibility-v1`, `2026-04-11-git-intelligence-v1`, `2026-04-11-pattern-surface-v1` (ADR frontmatter extraction, Governs edges, inline DECISION markers, DecisionCard), `2026-04-11-repair-loop-v1` (`synrepo check` / `synrepo sync`, repair finding model, resolution log, declared-link check), and `2026-04-11-commentary-overlay-v1` (contracts-only: narrows overlay spec to commentary, creates overlay-links spec for Track K, tightens MCP commentary state definitions, scopes repair-loop overlay surface to commentary).
+Archived completed changes are in `openspec/changes/archive/`.
 
 Specs govern intent; the graph governs runtime truth.

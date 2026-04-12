@@ -38,7 +38,8 @@ pub(super) fn stages_1_to_3(
     discovered_paths: &BTreeSet<String>,
 ) -> crate::Result<StagesTxnResult> {
     let existing_file_paths = graph.all_file_paths()?;
-    let disappeared_by_hash = load_disappeared_by_hash(graph, &existing_file_paths, discovered_paths)?;
+    let disappeared_by_hash =
+        load_disappeared_by_hash(graph, &existing_file_paths, discovered_paths)?;
     let mut rename_matched_old_paths = HashSet::new();
 
     delete_missing_concepts(graph, config, discovered)?;

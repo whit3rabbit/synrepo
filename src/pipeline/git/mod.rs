@@ -248,7 +248,7 @@ fn changed_paths_for_first_parent(
     repo: &gix::Repository,
     commit: &gix::Commit<'_>,
 ) -> crate::Result<Vec<String>> {
-    use gix::object::tree::diff::{change::Event, Action};
+    use gix::object::tree::diff::Change;
 
     let current_tree = commit
         .tree()
@@ -264,24 +264,43 @@ fn changed_paths_for_first_parent(
     };
 
     let mut paths = Vec::new();
-    let mut changes = parent_tree
+    let mut platform = parent_tree
         .changes()
-        .map_err(|err| crate::Error::Git(err.to_string()))?
-        .track_path()
-        .track_rewrites(None)
-        .to_owned();
-    changes
+        .map_err(|err| crate::Error::Git(err.to_string()))?;
+    platform.options(|opts| {
+        opts.track_path();
+        opts.track_rewrites(None);
+    });
+    platform
         .for_each_to_obtain_tree(&current_tree, |change| {
-            let mode = match change.event {
-                Event::Addition { entry_mode, .. }
-                | Event::Deletion { entry_mode, .. }
-                | Event::Modification { entry_mode, .. }
-                | Event::Rewrite { entry_mode, .. } => entry_mode,
+            let (mode, location) = match change {
+                Change::Addition {
+                    entry_mode,
+                    location,
+                    ..
+                } => (entry_mode, location),
+                Change::Deletion {
+                    entry_mode,
+                    location,
+                    ..
+                } => (entry_mode, location),
+                Change::Modification {
+                    entry_mode,
+                    location,
+                    ..
+                } => (entry_mode, location),
+                // Rewrite is unreachable while track_rewrites(None) disables rename detection,
+                // but kept for exhaustiveness so a future enable surfaces here automatically.
+                Change::Rewrite {
+                    entry_mode,
+                    location,
+                    ..
+                } => (entry_mode, location),
             };
-            if mode.is_no_tree() && !change.location.is_empty() {
-                paths.push(String::from_utf8_lossy(change.location.as_ref()).into_owned());
+            if mode.is_no_tree() && !location.is_empty() {
+                paths.push(String::from_utf8_lossy(location.as_ref()).into_owned());
             }
-            Ok::<_, crate::Error>(Action::Continue)
+            Ok::<_, crate::Error>(std::ops::ControlFlow::Continue(()))
         })
         .map_err(|err| crate::Error::Git(err.to_string()))?;
     paths.sort();

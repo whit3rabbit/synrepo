@@ -1,8 +1,8 @@
 //! The overlay store: LLM-authored content, physically separate from the graph.
 //!
-//! This module is intentionally thin in phase 0/1. The overlay exists
-//! architecturally but is empty until phase 4 adds commentary and phase 5
-//! adds cross-link proposals.
+//! Defines the [`OverlayStore`] trait and its payload types: commentary
+//! entries (with provenance, freshness derivation, and staleness repair), plus
+//! cross-link proposals (stubbed; activated in phase 5+).
 //!
 //! The key invariant: the synthesis pipeline never reads its own previous
 //! output as retrieval input. This is enforced both physically (overlay
@@ -10,6 +10,7 @@
 //! layer (synthesis queries filter on `source_store = "graph"`).
 
 use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
 
 use crate::core::ids::NodeId;
 use crate::core::provenance::Provenance;
@@ -84,16 +85,93 @@ pub struct OverlayLink {
     pub provenance: Provenance,
 }
 
-/// Trait for the overlay store. Phase 0/1 does not implement this; it
-/// exists so that graph callers can be written with the right architectural
-/// separation in place from the start.
+/// Provenance record for a single commentary entry.
+///
+/// Every commentary entry carries one of these; all fields are required and
+/// validated on insert. A missing or empty field yields `FreshnessState::Invalid`
+/// when derived.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CommentaryProvenance {
+    /// Content hash (typically the annotated node's file's `content_hash`) at
+    /// the time this commentary was generated. Used for freshness derivation.
+    pub source_content_hash: String,
+    /// Identifier of the generation pass that produced this entry (e.g. a
+    /// human-readable pass name or a deterministic pass ID).
+    pub pass_id: String,
+    /// Identity of the model that produced this entry (e.g. `claude-sonnet-4-6`).
+    pub model_identity: String,
+    /// Generation timestamp (RFC 3339 UTC when serialized).
+    #[serde(with = "time::serde::rfc3339")]
+    pub generated_at: OffsetDateTime,
+}
+
+/// A single commentary entry persisted in the overlay store.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CommentaryEntry {
+    /// The node this commentary annotates.
+    pub node_id: NodeId,
+    /// The commentary body text.
+    pub text: String,
+    /// Provenance record for this entry.
+    pub provenance: CommentaryProvenance,
+}
+
+/// Observable freshness state of a commentary entry.
+///
+/// Mirrors the five spec states: a match against the current source yields
+/// `Fresh`; a mismatch yields `Stale`; a present entry with missing
+/// provenance yields `Invalid`; absence of any entry yields `Missing`; a
+/// node kind with no commentary pipeline yields `Unsupported`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FreshnessState {
+    /// Stored `source_content_hash` matches the current `FileNode.content_hash`.
+    Fresh,
+    /// Stored `source_content_hash` does not match the current source.
+    Stale,
+    /// Entry is present but missing one or more required provenance fields.
+    Invalid,
+    /// No entry exists for the queried node.
+    Missing,
+    /// The node kind has no commentary pipeline defined.
+    Unsupported,
+}
+
+impl FreshnessState {
+    /// Stable snake_case identifier for serialization and logging.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Fresh => "fresh",
+            Self::Stale => "stale",
+            Self::Invalid => "invalid",
+            Self::Missing => "missing",
+            Self::Unsupported => "unsupported",
+        }
+    }
+}
+
+/// Trait for the overlay store. Phase 1 ships commentary persistence via
+/// `SqliteOverlayStore`; cross-link proposals remain stubbed until phase 5.
 pub trait OverlayStore: Send + Sync {
-    /// Insert a proposed cross-link.
+    /// Insert a proposed cross-link. Phase 5+; stub implementations may
+    /// return an error indicating the link surface is not yet active.
     fn insert_link(&mut self, link: OverlayLink) -> crate::Result<()>;
 
     /// Return all overlay links involving a given node (as source or target).
+    /// Phase 5+; stub implementations may return an empty list.
     fn links_for(&self, node: NodeId) -> crate::Result<Vec<OverlayLink>>;
 
-    /// Commit any pending writes.
+    /// Commit any pending writes (no-op for auto-commit SQLite connections).
     fn commit(&mut self) -> crate::Result<()>;
+
+    /// Upsert a commentary entry, keyed on `node_id`. Rejects entries whose
+    /// provenance is missing one or more required fields.
+    fn insert_commentary(&mut self, entry: CommentaryEntry) -> crate::Result<()>;
+
+    /// Return the commentary entry for a node, or `None` if absent.
+    fn commentary_for(&self, node: NodeId) -> crate::Result<Option<CommentaryEntry>>;
+
+    /// Delete all commentary entries whose `node_id` is not in `live_nodes`.
+    /// Returns the number of rows deleted.
+    fn prune_orphans(&mut self, live_nodes: &[NodeId]) -> crate::Result<usize>;
 }

@@ -1,6 +1,10 @@
 //! Bootstrap orchestrator: creates or repairs the `.synrepo/` runtime layout.
 
-use std::path::Path;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 use crate::config::{Config, Mode};
 use crate::pipeline::structural::run_structural_compile;
@@ -13,6 +17,8 @@ use super::report::{BootstrapAction, BootstrapHealth, BootstrapReport};
 
 #[cfg(test)]
 mod tests;
+
+static NEXT_BOOTSTRAP_TMP_ID: AtomicU64 = AtomicU64::new(0);
 
 /// Run bootstrap for the given repository root, optionally forcing a mode.
 pub fn bootstrap(
@@ -65,7 +71,7 @@ pub fn bootstrap(
     let layout_changed = compatibility::ensure_runtime_layout(&synrepo_dir)?;
     let remediated = compatibility::apply_runtime_actions(&synrepo_dir, &compatibility_report)?;
 
-    std::fs::write(&config_path, toml::to_string_pretty(&config)?)?;
+    atomic_write_file(&config_path, toml::to_string_pretty(&config)?.as_bytes())?;
     write_synrepo_gitignore(&synrepo_dir)?;
     let repaired = runtime_already_existed
         && (layout_changed || remediated || !had_existing_config || !had_gitignore);
@@ -168,14 +174,41 @@ fn load_existing_config(config_path: &Path, synrepo_dir: &Path) -> anyhow::Resul
 
 fn write_synrepo_gitignore(synrepo_dir: &Path) -> anyhow::Result<()> {
     let gitignore_path = synrepo_dir.join(".gitignore");
-    std::fs::write(
+    atomic_write_file(
         &gitignore_path,
-        "# Gitignore everything in .synrepo/ except config.toml\n\
+        b"# Gitignore everything in .synrepo/ except config.toml\n\
          *\n\
          !.gitignore\n\
          !config.toml\n",
     )?;
     Ok(())
+}
+
+fn atomic_write_file(path: &Path, contents: &[u8]) -> anyhow::Result<()> {
+    let Some(parent) = path.parent() else {
+        return Err(anyhow::anyhow!(
+            "cannot atomically write {} without a parent directory",
+            path.display()
+        ));
+    };
+    fs::create_dir_all(parent)?;
+
+    let tmp_path = atomic_write_tmp_path(path);
+    if let Err(error) = fs::write(&tmp_path, contents).and_then(|_| fs::rename(&tmp_path, path)) {
+        let _ = fs::remove_file(&tmp_path);
+        return Err(error.into());
+    }
+
+    Ok(())
+}
+
+fn atomic_write_tmp_path(path: &Path) -> PathBuf {
+    let id = NEXT_BOOTSTRAP_TMP_ID.fetch_add(1, Ordering::Relaxed);
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("bootstrap");
+    path.with_file_name(format!("{file_name}.tmp.{}.{}", std::process::id(), id))
 }
 
 fn blocked_by_compatibility(synrepo_dir: &Path, report: &CompatibilityReport) -> anyhow::Error {
