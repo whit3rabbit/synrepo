@@ -8,14 +8,14 @@
 - Milestone 1, First-run value: complete
 - Milestone 2, Observed-facts core: complete
 - Milestone 3, First real product release: complete
-- Most recently completed implementation change: `pattern-surface-v1`
+- Most recently completed implementation change: `repair-loop-v1`
+- Active change: `card-quality-v1` (v1 hardening — extract `signature`/`doc_comment` in structural parse, split `compiler.rs`)
 - Completed in Milestone 2: `structural-graph-v1`, `structural-pipeline-v1`, `watch-reconcile-v1`, `agent-integration-v1`
 - Completed in Milestone 3: `cards-and-mcp-v1`, `git-intelligence-v1`
-- Completed in Milestone 4 so far: `pattern-surface-v1` (patterns, rationale ingestion, DecisionCards, curated promotion rules)
-- Current Milestone 4 focus: `repair-loop-v1` (check, sync, drift classification, selective refresh)
-- Implementation sequence: `repair-loop-v1` → overlay work (Milestone 5) → exports/views hardening (Milestone 6)
+- Completed in Milestone 4: `pattern-surface-v1` (patterns, rationale ingestion, DecisionCards, curated promotion rules), `repair-loop-v1` (check, sync, drift classification, selective refresh)
+- Implementation sequence: overlay work (Milestone 5) → exports/views hardening (Milestone 6)
 - Current shipped surface: CLI commands `init`, `status`, `agent-setup`, `reconcile`, `search`, `graph query`, `graph stats`, and `node`; MCP tools `synrepo_overview`, `synrepo_card`, `synrepo_search`, `synrepo_where_to_edit`, and `synrepo_change_impact`; compiled cards `SymbolCard`, `FileCard`, and `DecisionCard`; plus a struct-only `ModuleCard` placeholder
-- Not yet shipped: `synrepo check`, `synrepo sync`, specialist MCP tools (`synrepo_entrypoints`, `synrepo_call_path`, `synrepo_test_surface`, `synrepo_minimum_context`, `synrepo_explain`, `synrepo_findings`), or compiled `ModuleCard` / `EntryPointCard` / `CallPathCard` / `ChangeRiskCard` / `PublicAPICard` / `TestSurfaceCard`
+- Not yet shipped: specialist MCP tools (`synrepo_entrypoints`, `synrepo_call_path`, `synrepo_test_surface`, `synrepo_minimum_context`, `synrepo_explain`, `synrepo_findings`), or compiled `ModuleCard` / `EntryPointCard` / `CallPathCard` / `ChangeRiskCard` / `PublicAPICard` / `TestSurfaceCard`
 - MCP library chosen: `rmcp` (crates.io, modelcontextprotocol/rust-sdk); workspace strategy: add `[workspace]` to existing Cargo.toml, add `crates/synrepo-mcp/` as new member without moving existing files
 
 ## 1. Purpose
@@ -537,7 +537,7 @@ Primary outcome:
 - human-declared guidance and cheap drift repair
 
 Status:
-- `pattern-surface-v1` complete; `repair-loop-v1` is the active remaining change
+- Complete through `pattern-surface-v1` and `repair-loop-v1`
 
 Exit gate:
 - A fresh-clone agent can explain not only "what is here" but also "why this area exists," with rationale clearly secondary to structural truth
@@ -546,8 +546,10 @@ Exit gate:
 ### Milestone 5 — Optional intelligence layers
 
 Tracks:
-- J Commentary overlay
-- K Evidence-verified cross-links
+- J Commentary overlay (governed by `openspec/specs/overlay/spec.md`)
+- K Evidence-verified cross-links (governed by `openspec/specs/overlay-links/spec.md`)
+
+Implementation sequence: `commentary-overlay-v1` first (Track J), then `cross-link-overlay-v1` (Track K) once commentary storage is proven stable.
 
 Primary outcome:
 - bounded machine assistance on top of a trustworthy core
@@ -757,20 +759,32 @@ Ties to roadmap:
 ## 7.12 `openspec/specs/overlay/spec.md`
 
 Purpose:
-- define machine-authored commentary and proposed-link behavior
+- define machine-authored commentary storage, provenance, freshness, retrieval boundaries, and audit exposure
 
 Must cover:
-- commentary contract
-- freshness states
-- source-store labels
-- cost limits
-- review surfaces
-- overlay never overrides graph
-- minimum overlay provenance fields
-- audit trail exposure rules
+- commentary-only machine-authored content (never graph truth)
+- minimum commentary provenance fields (source revision, producer pass, model identity, timestamps, evidence references)
+- commentary freshness states: fresh, stale, invalid, missing, unsupported
+- retrieval boundaries: commentary is optional, explicitly labeled, never silently merged into graph-backed fields
+- audit trail exposure: user-visible vs internal provenance, degraded state behavior
+- cost and generation controls: lazy vs eager generation, budget limits, refresh behavior
 
 Ties to roadmap:
 - Track J
+
+## 7.12a `openspec/specs/overlay-links/spec.md`
+
+Purpose:
+- define evidence-verified cross-link candidate generation, confidence scoring, human review workflow, and audit trail for proposed cross-node relationships
+
+Must cover:
+- candidate generation with cited evidence
+- confidence scoring model and surfacing tiers
+- review and promotion workflow (proposed link → human-declared graph fact)
+- rejection with audit trail
+- cross-links never enter the graph directly from the pipeline
+
+Ties to roadmap:
 - Track K
 
 ## 7.13 `openspec/specs/exports-and-views/spec.md`
@@ -907,21 +921,44 @@ Use for:
 Roadmap tie:
 - Milestone 4
 
-## 8.11 `openspec/changes/commentary-overlay-v1/`
+## 8.11 `openspec/changes/archive/2026-04-11-commentary-overlay-v1/`
 
 Use for:
-- commentary generation, freshness controls, cost accounting, cache behavior, and overlay provenance
+- commentary storage, provenance fields, freshness states, retrieval boundaries, audit exposure, cost and generation controls
+- narrows `openspec/specs/overlay/spec.md` to commentary-only scope
+- creates `openspec/specs/overlay-links/spec.md` as the durable home for Track K cross-link behavior
+- tightens `openspec/specs/mcp-surface/spec.md` provenance-and-freshness requirement with per-state commentary definitions
+- scopes the stale-overlay-entries repair surface in `openspec/specs/repair-loop/spec.md` to commentary overlay specifically
 
 Roadmap tie:
-- Milestone 5
+- Milestone 5, Track J
+
+Status: Complete and archived.
+
+## 8.11a `openspec/changes/card-quality-v1/`
+
+Use for:
+- populating `SymbolNode.signature` and `SymbolNode.doc_comment` via tree-sitter extraction for Rust, Python, and TypeScript/TSX
+- splitting `src/surface/card/compiler.rs` (currently over 400 lines) into sub-modules
+- adding insta snapshot tests for `SymbolCard` at all budget tiers
+
+Planning note:
+- v1 hardening sprint before Milestone 5 overlay work; see design.md for extraction strategy
+- no new MCP surface or spec changes, purely implementation catching up to existing card contracts
+
+Roadmap tie:
+- Track D (structural graph), Track E (cards and MCP surface)
+
+Status: Active.
 
 ## 8.12 `openspec/changes/cross-link-overlay-v1/`
 
 Use for:
 - candidate generation, verification, confidence scoring, findings, and review flows
+- governed by `openspec/specs/overlay-links/spec.md`
 
 Roadmap tie:
-- Milestone 5
+- Milestone 5, Track K
 
 ## 8.13 `openspec/changes/export-and-polish-v1/`
 
@@ -983,13 +1020,18 @@ Source-of-truth precedence: roadmap sets sequence, specs set enduring intent, ac
 
 ## 11. Suggested next move
 
-Milestone 3 is complete. Milestone 4 is in progress: `pattern-surface-v1` is complete and archived. `repair-loop-v1` is the remaining active change.
+Milestones 3 and 4 are complete. Before starting Milestone 5 overlay work, a v1 hardening sprint is in progress.
 
-The next concrete step is **`repair-loop-v1`**:
-- add `synrepo check` and `synrepo sync` CLI commands
-- define drift classes (stale governs links, stale exports, stale overlay, broken declared links)
-- selective refresh without full re-bootstrap
-- resolution logging
-- CI-safe behavior
+**Immediate: complete `card-quality-v1`**
+- Extract `signature` and `doc_comment` in the structural parse (Rust, Python, TypeScript/TSX)
+- Split `src/surface/card/compiler.rs` into sub-modules
+- Add insta snapshot tests for `SymbolCard` at all three budget tiers
+- Run `make check` green
 
-Exit criterion for Milestone 4: human-declared guidance can enrich cards and targeted repair can correct drift cheaply without collapsing the graph versus overlay trust boundary.
+After `card-quality-v1` is complete and archived, the next step is **overlay work (Milestone 5)**:
+- open a new change against `openspec/specs/overlay/spec.md`
+- split Milestone 5 into an overlay-first change (`commentary-overlay-v1` runtime implementation) before evidence-verified cross-links
+- define the first shipped overlay slice as commentary storage, provenance, freshness, and retrieval boundaries
+- keep proposed links and contradiction/reporting surfaces either explicitly deferred or scoped as a separate follow-on change once commentary boundaries are settled
+
+Exit criterion for Milestone 5: machine-authored commentary is useful, auditable, freshness-labeled, and structurally incapable of overriding graph truth.

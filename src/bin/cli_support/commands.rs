@@ -4,6 +4,7 @@ use synrepo::{
     config::{Config, Mode},
     pipeline::{
         diagnostics::{collect_diagnostics, ReconcileHealth, RuntimeDiagnostics, WriterStatus},
+        repair::{build_repair_report, execute_sync},
         watch::{persist_reconcile_state, run_reconcile_pass, ReconcileOutcome},
     },
     store::{compatibility::StoreId, sqlite::SqliteGraphStore},
@@ -14,6 +15,7 @@ use super::{
     graph::{check_store_ready, graph_query_output, graph_stats_output, node_output},
 };
 
+/// Initialize the repository with the specified mode.
 pub(crate) fn init(repo_root: &Path, requested_mode: Option<Mode>) -> anyhow::Result<()> {
     let report = synrepo::bootstrap::bootstrap(repo_root, requested_mode)?;
     print!("{}", report.render());
@@ -145,6 +147,63 @@ fn next_step(diag: &RuntimeDiagnostics, graph_missing: bool) -> &'static str {
     }
 }
 
+/// Report drift across all repair surfaces. Read-only; never mutates state.
+///
+/// Exits non-zero when any actionable or blocked findings are present so CI
+/// can detect drift without running a repair.
+pub(crate) fn check(repo_root: &Path, json_output: bool) -> anyhow::Result<()> {
+    let config = Config::load(repo_root)
+        .map_err(|e| anyhow::anyhow!("check: not initialized — run `synrepo init` first ({e})"))?;
+    let synrepo_dir = Config::synrepo_dir(repo_root);
+    let report = build_repair_report(&synrepo_dir, &config);
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&report)?);
+    } else {
+        print!("{}", report.render());
+    }
+
+    if report.has_blocked() {
+        return Err(anyhow::anyhow!(
+            "check: blocked findings require manual intervention"
+        ));
+    }
+    if report.has_actionable() {
+        return Err(anyhow::anyhow!(
+            "check: actionable findings detected — run `synrepo sync` to repair"
+        ));
+    }
+    Ok(())
+}
+
+/// Repair auto-fixable drift surfaces and record the outcome.
+///
+/// Routes storage repairs through the maintenance plan and structural
+/// refreshes through `run_reconcile_pass`. Report-only and unsupported
+/// findings are surfaced but not touched. Appends a resolution log entry.
+pub(crate) fn sync(repo_root: &Path, json_output: bool) -> anyhow::Result<()> {
+    let config = Config::load(repo_root)
+        .map_err(|e| anyhow::anyhow!("sync: not initialized — run `synrepo init` first ({e})"))?;
+    let synrepo_dir = Config::synrepo_dir(repo_root);
+
+    let summary = execute_sync(repo_root, &synrepo_dir, &config)?;
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&summary)?);
+    } else {
+        print!("{}", summary.render());
+    }
+
+    if !summary.blocked.is_empty() {
+        return Err(anyhow::anyhow!(
+            "sync: {} finding(s) could not be repaired (blocked)",
+            summary.blocked.len()
+        ));
+    }
+    Ok(())
+}
+
+/// Reconcile the structural graph and update the index.
 pub(crate) fn reconcile(repo_root: &Path) -> anyhow::Result<()> {
     let config = Config::load(repo_root)?;
     let synrepo_dir = Config::synrepo_dir(repo_root);
@@ -171,6 +230,7 @@ pub(crate) fn reconcile(repo_root: &Path) -> anyhow::Result<()> {
     }
 }
 
+/// Perform a lexical search across indexed files.
 pub(crate) fn search(repo_root: &Path, query: &str) -> anyhow::Result<()> {
     let config = Config::load(repo_root)?;
     let synrepo_dir = Config::synrepo_dir(repo_root);
@@ -190,16 +250,19 @@ pub(crate) fn search(repo_root: &Path, query: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Execute a graph query and format the output.
 pub(crate) fn graph_query(repo_root: &Path, query: &str) -> anyhow::Result<()> {
     println!("{}", graph_query_output(repo_root, query)?);
     Ok(())
 }
 
+/// Output graph statistics.
 pub(crate) fn graph_stats(repo_root: &Path) -> anyhow::Result<()> {
     println!("{}", graph_stats_output(repo_root)?);
     Ok(())
 }
 
+/// Output a specific node's data.
 pub(crate) fn node(repo_root: &Path, id: &str) -> anyhow::Result<()> {
     println!("{}", node_output(repo_root, id)?);
     Ok(())

@@ -140,8 +140,10 @@ mod tests {
     #[test]
     fn inspect_finds_markdown_in_configured_dirs() {
         let dir = tempdir().unwrap();
-        let mut config = Config::default();
-        config.concept_directories = vec!["docs".to_string()];
+        let config = Config {
+            concept_directories: vec!["docs".to_string()],
+            ..Config::default()
+        };
 
         let docs_dir = dir.path().join("docs");
         fs::create_dir_all(&docs_dir).unwrap();
@@ -157,8 +159,10 @@ mod tests {
     #[test]
     fn inspect_ignores_non_markdown_files() {
         let dir = tempdir().unwrap();
-        let mut config = Config::default();
-        config.concept_directories = vec!["docs".to_string()];
+        let config = Config {
+            concept_directories: vec!["docs".to_string()],
+            ..Config::default()
+        };
 
         let docs_dir = dir.path().join("docs");
         fs::create_dir_all(&docs_dir).unwrap();
@@ -176,8 +180,10 @@ mod tests {
             recommended_mode: Mode::Curated,
             rationale_dirs: vec![PathBuf::from("docs/concepts")],
         };
-        let mut config = Config::default();
-        config.mode = Mode::Auto;
+        let config = Config {
+            mode: Mode::Auto,
+            ..Config::default()
+        };
 
         // Requested explicitly mismatches recommended
         let guidance = inspection

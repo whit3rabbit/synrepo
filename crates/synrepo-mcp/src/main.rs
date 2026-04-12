@@ -37,9 +37,14 @@ struct SynrepoState {
     repo_root: PathBuf,
 }
 
-// SAFETY: SqliteGraphStore holds a Mutex<Connection>; Connection is Send.
-unsafe impl Send for SynrepoState {}
-unsafe impl Sync for SynrepoState {}
+// GraphStore: Send + Sync, PathBuf: Send + Sync, Config: Send + Sync.
+// SynrepoState is therefore auto-Send + Sync; no unsafe needed.
+const _: () = {
+    fn _assert_send_sync<T: Send + Sync>() {}
+    fn _check() {
+        _assert_send_sync::<SynrepoState>();
+    }
+};
 
 // ---------------------------------------------------------------------------
 // Tool parameter types

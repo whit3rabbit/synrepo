@@ -271,6 +271,7 @@ fn store_is_materialized(synrepo_dir: &Path, store_id: StoreId) -> crate::Result
     Ok(entries.next().transpose()?.is_some())
 }
 
+/// Clear the contents of a specific store.
 pub(crate) fn clear_store_contents(synrepo_dir: &Path, store_id: StoreId) -> crate::Result<()> {
     let store_path = synrepo_dir.join(store_id.relative_path());
     fs::create_dir_all(&store_path)?;

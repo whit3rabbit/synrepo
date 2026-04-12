@@ -25,6 +25,7 @@
 
 use std::{
     fs,
+    io::Write as _,
     path::{Path, PathBuf},
 };
 
@@ -79,7 +80,9 @@ impl WriterLock {
 
 impl Drop for WriterLock {
     fn drop(&mut self) {
-        let _ = fs::remove_file(&self.path);
+        if let Err(e) = fs::remove_file(&self.path) {
+            tracing::warn!(path = ?self.path, error = %e, "failed to remove writer lock file on drop");
+        }
     }
 }
 
@@ -89,8 +92,12 @@ impl Drop for WriterLock {
 /// is dropped. Returns `Err(LockError::HeldByOther)` when another live
 /// process holds the lock.
 ///
-/// A stale lock file from a terminated process is removed and replaced
-/// without error.
+/// Uses `O_CREAT|O_EXCL` semantics (`create_new`) for an atomic exclusive
+/// create: the OS guarantees only one caller wins the race, so two concurrent
+/// invocations cannot both believe they hold the lock.
+///
+/// A stale lock file from a terminated process is removed and the acquire
+/// is retried once without error.
 pub fn acquire_writer_lock(synrepo_dir: &Path) -> Result<WriterLock, LockError> {
     let lock_path = writer_lock_path(synrepo_dir);
     let state_dir = synrepo_dir.join("state");
@@ -100,34 +107,67 @@ pub fn acquire_writer_lock(synrepo_dir: &Path) -> Result<WriterLock, LockError> 
         source,
     })?;
 
-    // Not atomic (exists + read + write has a race window), but acceptable for
-    // single-process CLI use. Replace with O_CREAT|O_EXCL before daemon mode.
-    if lock_path.exists() {
-        match read_ownership(&lock_path) {
-            Ok(owner) if is_process_alive(owner.pid) => {
-                return Err(LockError::HeldByOther {
-                    pid: owner.pid,
-                    lock_path: lock_path.clone(),
-                });
-            }
-            _ => {
-                // Stale (dead PID) or malformed; clear before taking over.
-                let _ = fs::remove_file(&lock_path);
-            }
-        }
-    }
-
     let ownership = WriterOwnership {
         pid: std::process::id(),
         acquired_at: now_rfc3339(),
     };
     let json = serde_json::to_string(&ownership).expect("WriterOwnership serializes without error");
-    fs::write(&lock_path, json).map_err(|source| LockError::Io {
-        path: lock_path.clone(),
-        source,
-    })?;
 
-    Ok(WriterLock { path: lock_path })
+    // Retry once after clearing a stale lock; two iterations are sufficient
+    // because the only reason to loop is a single stale-lock removal.
+    let mut cleared_stale = false;
+    loop {
+        match fs::OpenOptions::new()
+            .create_new(true) // O_CREAT|O_EXCL — atomic; returns AlreadyExists if file is present
+            .write(true)
+            .open(&lock_path)
+        {
+            Ok(mut f) => {
+                f.write_all(json.as_bytes())
+                    .map_err(|source| LockError::Io {
+                        path: lock_path.clone(),
+                        source,
+                    })?;
+                return Ok(WriterLock { path: lock_path });
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                if cleared_stale {
+                    // Already cleared a stale lock once; another live process
+                    // won the race on the retry. Report current holder.
+                    return Err(match read_ownership(&lock_path) {
+                        Ok(owner) => LockError::HeldByOther {
+                            pid: owner.pid,
+                            lock_path: lock_path.clone(),
+                        },
+                        Err(_) => LockError::Io {
+                            path: lock_path.clone(),
+                            source: e,
+                        },
+                    });
+                }
+                // First AlreadyExists: check whether the recorded PID is alive.
+                match read_ownership(&lock_path) {
+                    Ok(owner) if is_process_alive(owner.pid) => {
+                        return Err(LockError::HeldByOther {
+                            pid: owner.pid,
+                            lock_path: lock_path.clone(),
+                        });
+                    }
+                    _ => {
+                        // Dead PID or unreadable (malformed/truncated): clear and retry.
+                        let _ = fs::remove_file(&lock_path);
+                        cleared_stale = true;
+                    }
+                }
+            }
+            Err(source) => {
+                return Err(LockError::Io {
+                    path: lock_path.clone(),
+                    source,
+                });
+            }
+        }
+    }
 }
 
 /// Read current writer ownership from the lock file, if present and readable.
@@ -286,5 +326,33 @@ mod tests {
         let lock = acquire_writer_lock(&synrepo_dir).unwrap();
         assert!(lock.path().exists());
         drop(lock);
+    }
+
+    #[test]
+    fn concurrent_acquire_only_one_succeeds() {
+        // Both threads race to acquire the lock on the same dir.
+        // Exactly one must succeed; the other must get HeldByOther.
+        use std::sync::Arc;
+
+        let dir = tempdir().unwrap();
+        let synrepo_dir = Arc::new(dir.path().join(".synrepo"));
+
+        let dir1 = Arc::clone(&synrepo_dir);
+        let dir2 = Arc::clone(&synrepo_dir);
+
+        let h1 = std::thread::spawn(move || acquire_writer_lock(&dir1));
+        let h2 = std::thread::spawn(move || acquire_writer_lock(&dir2));
+
+        let r1 = h1.join().unwrap();
+        let r2 = h2.join().unwrap();
+
+        let successes = [&r1, &r2].iter().filter(|r| r.is_ok()).count();
+        let conflicts = [&r1, &r2]
+            .iter()
+            .filter(|r| matches!(r, Err(LockError::HeldByOther { .. })))
+            .count();
+
+        assert_eq!(successes, 1, "exactly one thread must acquire the lock");
+        assert_eq!(conflicts, 1, "exactly one thread must see HeldByOther");
     }
 }

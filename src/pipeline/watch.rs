@@ -153,8 +153,9 @@ pub fn run_reconcile_pass(
 
 /// Persist a reconcile outcome to `.synrepo/state/reconcile-state.json`.
 ///
-/// Silently ignores I/O errors; diagnostics reflect missing state as unknown
-/// rather than blocking the caller on a write failure.
+/// Never blocks the caller. Writes atomically via a `.tmp` sibling file then
+/// rename so readers never observe partial JSON. I/O failures are logged as
+/// warnings; a missing state file is treated as "unknown" by diagnostics.
 pub fn persist_reconcile_state(
     synrepo_dir: &Path,
     outcome: &ReconcileOutcome,
@@ -177,10 +178,29 @@ pub fn persist_reconcile_state(
         symbols_extracted,
     };
 
-    if let Ok(json) = serde_json::to_string(&state) {
-        let state_dir = synrepo_dir.join("state");
-        let _ = std::fs::create_dir_all(&state_dir);
-        let _ = std::fs::write(state_dir.join(RECONCILE_STATE_FILENAME), json);
+    let json = match serde_json::to_string(&state) {
+        Ok(j) => j,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to serialize reconcile state");
+            return;
+        }
+    };
+
+    let state_dir = synrepo_dir.join("state");
+    if let Err(e) = std::fs::create_dir_all(&state_dir) {
+        tracing::warn!(path = ?state_dir, error = %e, "failed to create state dir for reconcile state");
+        return;
+    }
+
+    // Write to .tmp then rename: readers see either the old complete file or
+    // the new complete file, never a partial write.
+    let final_path = state_dir.join(RECONCILE_STATE_FILENAME);
+    let tmp_path = state_dir.join(format!("{RECONCILE_STATE_FILENAME}.tmp"));
+    if let Err(e) = std::fs::write(&tmp_path, json.as_bytes())
+        .and_then(|_| std::fs::rename(&tmp_path, &final_path))
+    {
+        tracing::warn!(path = ?final_path, error = %e, "failed to persist reconcile state");
+        let _ = std::fs::remove_file(&tmp_path); // clean up orphaned .tmp
     }
 }
 
@@ -261,131 +281,4 @@ pub fn run_watch_loop(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::store::compatibility::write_runtime_snapshot;
-    use std::fs;
-    use tempfile::tempdir;
-
-    fn setup_test_repo(dir: &tempfile::TempDir) -> (PathBuf, Config, PathBuf) {
-        let repo = dir.path().to_path_buf();
-        fs::create_dir_all(repo.join("src")).unwrap();
-        fs::write(repo.join("src/lib.rs"), "pub fn hello() {}\n").unwrap();
-        let synrepo_dir = repo.join(".synrepo");
-        // Compatibility snapshot is not required by run_reconcile_pass, but
-        // writing one keeps tests that check diagnostics from warning about
-        // missing state.
-        fs::create_dir_all(synrepo_dir.join("state")).unwrap();
-        write_runtime_snapshot(&synrepo_dir, &Config::default()).unwrap();
-        (repo, Config::default(), synrepo_dir)
-    }
-
-    #[test]
-    fn reconcile_pass_completes_on_valid_repo() {
-        let dir = tempdir().unwrap();
-        let (repo, config, synrepo_dir) = setup_test_repo(&dir);
-
-        let outcome = run_reconcile_pass(&repo, &config, &synrepo_dir);
-        assert!(
-            matches!(outcome, ReconcileOutcome::Completed(_)),
-            "expected Completed, got {}",
-            outcome.as_str(),
-        );
-
-        if let ReconcileOutcome::Completed(ref summary) = outcome {
-            assert!(summary.files_discovered >= 1, "must discover src/lib.rs");
-            assert!(summary.symbols_extracted >= 1, "must extract hello()");
-        }
-    }
-
-    #[test]
-    fn reconcile_pass_returns_lock_conflict_when_lock_is_held() {
-        let dir = tempdir().unwrap();
-        let (repo, config, synrepo_dir) = setup_test_repo(&dir);
-
-        // Hold the writer lock for the current process.
-        let _lock = crate::pipeline::writer::acquire_writer_lock(&synrepo_dir).unwrap();
-
-        // The reconcile pass must not block; it must report LockConflict.
-        let outcome = run_reconcile_pass(&repo, &config, &synrepo_dir);
-        assert!(
-            matches!(outcome, ReconcileOutcome::LockConflict { .. }),
-            "expected LockConflict, got {}",
-            outcome.as_str(),
-        );
-    }
-
-    #[test]
-    fn reconcile_pass_corrects_stale_graph_state() {
-        let dir = tempdir().unwrap();
-        let (repo, config, synrepo_dir) = setup_test_repo(&dir);
-
-        // First reconcile populates the graph.
-        let first = run_reconcile_pass(&repo, &config, &synrepo_dir);
-        assert!(matches!(first, ReconcileOutcome::Completed(_)));
-
-        // Add a new file without running another reconcile (simulate watcher
-        // miss during a branch switch or background build).
-        fs::write(repo.join("src/new.rs"), "pub fn new_fn() {}\n").unwrap();
-
-        // The reconcile backstop must pick up the new file.
-        let second = run_reconcile_pass(&repo, &config, &synrepo_dir);
-        if let ReconcileOutcome::Completed(summary) = second {
-            assert!(
-                summary.files_discovered >= 2,
-                "new file must be discovered on reconcile fallback"
-            );
-        } else {
-            panic!("expected Completed after adding new file");
-        }
-    }
-
-    #[test]
-    fn persist_and_load_reconcile_state_roundtrip() {
-        let dir = tempdir().unwrap();
-        let synrepo_dir = dir.path().join(".synrepo");
-
-        let summary = CompileSummary {
-            files_discovered: 5,
-            symbols_extracted: 12,
-            ..CompileSummary::default()
-        };
-        let outcome = ReconcileOutcome::Completed(summary);
-        persist_reconcile_state(&synrepo_dir, &outcome, 3);
-
-        let state = load_reconcile_state(&synrepo_dir).unwrap();
-        assert_eq!(state.last_outcome, "completed");
-        assert_eq!(state.files_discovered, Some(5));
-        assert_eq!(state.symbols_extracted, Some(12));
-        assert_eq!(state.triggering_events, 3);
-        assert!(state.last_error.is_none());
-    }
-
-    #[test]
-    fn persist_reconcile_state_records_failure_message() {
-        let dir = tempdir().unwrap();
-        let synrepo_dir = dir.path().join(".synrepo");
-
-        let outcome = ReconcileOutcome::Failed("disk full".to_string());
-        persist_reconcile_state(&synrepo_dir, &outcome, 0);
-
-        let state = load_reconcile_state(&synrepo_dir).unwrap();
-        assert_eq!(state.last_outcome, "failed");
-        assert_eq!(state.last_error.as_deref(), Some("disk full"));
-        assert!(state.files_discovered.is_none());
-    }
-
-    #[test]
-    fn persist_reconcile_state_records_lock_conflict() {
-        let dir = tempdir().unwrap();
-        let synrepo_dir = dir.path().join(".synrepo");
-
-        let outcome = ReconcileOutcome::LockConflict { holder_pid: 42 };
-        persist_reconcile_state(&synrepo_dir, &outcome, 1);
-
-        let state = load_reconcile_state(&synrepo_dir).unwrap();
-        assert_eq!(state.last_outcome, "lock-conflict");
-        assert!(state.last_error.is_none());
-        assert_eq!(state.triggering_events, 1);
-    }
-}
+mod tests;

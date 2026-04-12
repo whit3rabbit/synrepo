@@ -17,6 +17,7 @@ use synrepo::{
 
 const FILE_NODE_GIT_INSIGHT_LIMIT: usize = 5;
 
+/// Query the graph by direction, node ID, and optional edge kind.
 pub(crate) fn graph_query_output(repo_root: &Path, query: &str) -> anyhow::Result<String> {
     let store = open_graph_store_for_read(repo_root)?;
     let parsed = parse_graph_query(query)?;
@@ -33,11 +34,13 @@ pub(crate) fn graph_query_output(repo_root: &Path, query: &str) -> anyhow::Resul
     })
 }
 
+/// Retrieve statistics for the currently persisted graph store.
 pub(crate) fn graph_stats_output(repo_root: &Path) -> anyhow::Result<String> {
     let store = open_graph_store_for_read(repo_root)?;
     render_json(&store.persisted_stats()?)
 }
 
+/// Retrieve the full JSON output of a specific node by ID.
 pub(crate) fn node_output(repo_root: &Path, id: &str) -> anyhow::Result<String> {
     let config = Config::load(repo_root)?;
     let store = open_graph_store_for_read(repo_root)?;

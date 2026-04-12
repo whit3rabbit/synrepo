@@ -225,3 +225,65 @@ synrepo reconcile                                 # refresh graph against curren
 - `source_store: graph` — parser-observed or git-observed facts. Ground truth.
 - `source_store: overlay` — machine-authored suggestions. Treat as secondary.
 ";
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_display_name() {
+        assert_eq!(AgentTool::Claude.display_name(), "Claude Code");
+        assert_eq!(AgentTool::Cursor.display_name(), "Cursor");
+        assert_eq!(AgentTool::Copilot.display_name(), "GitHub Copilot");
+        assert_eq!(AgentTool::Generic.display_name(), "generic (AGENTS.md)");
+    }
+
+    #[test]
+    fn test_output_path() {
+        let repo_root = std::path::Path::new("/mock/repo");
+        assert_eq!(
+            AgentTool::Claude.output_path(repo_root),
+            repo_root.join(".claude").join("synrepo-context.md")
+        );
+        assert_eq!(
+            AgentTool::Cursor.output_path(repo_root),
+            repo_root.join(".cursor").join("synrepo.mdc")
+        );
+        assert_eq!(
+            AgentTool::Copilot.output_path(repo_root),
+            repo_root.join("synrepo-copilot-instructions.md")
+        );
+        assert_eq!(
+            AgentTool::Generic.output_path(repo_root),
+            repo_root.join("synrepo-agents.md")
+        );
+    }
+
+    #[test]
+    fn test_include_instruction() {
+        assert!(AgentTool::Claude
+            .include_instruction()
+            .contains("synrepo-context.md"));
+        assert!(AgentTool::Cursor
+            .include_instruction()
+            .contains("synrepo.mdc"));
+        assert!(AgentTool::Copilot
+            .include_instruction()
+            .contains("synrepo-copilot-instructions.md"));
+        assert!(AgentTool::Generic
+            .include_instruction()
+            .contains("synrepo-agents.md"));
+    }
+
+    #[test]
+    fn test_shim_content() {
+        assert!(AgentTool::Claude
+            .shim_content()
+            .starts_with("# synrepo context"));
+        assert!(AgentTool::Cursor
+            .shim_content()
+            .starts_with("---\ndescription"));
+        assert!(AgentTool::Copilot.shim_content().starts_with("## synrepo"));
+        assert!(AgentTool::Generic.shim_content().starts_with("## synrepo"));
+    }
+}

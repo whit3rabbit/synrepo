@@ -37,34 +37,20 @@
 mod ids;
 mod provenance;
 mod stage4;
+mod stages;
 
 #[cfg(test)]
 mod tests;
 
-use std::{
-    collections::{BTreeSet, HashMap, HashSet},
-    path::Path,
-    time::Instant,
-};
-
-use ids::{derive_edge_id, derive_file_id, derive_symbol_id};
-use provenance::make_provenance;
+use std::{collections::BTreeSet, path::Path, time::Instant};
 
 use crate::{
     config::Config,
-    core::ids::NodeId,
-    pipeline::git::GitRepositorySnapshot,
-    structure::{
-        graph::{
-            concept_source_path_allowed, Edge, EdgeKind, Epistemic, FileNode, GraphStore,
-            SymbolNode,
-        },
-        parse, prose, rationale,
-    },
-    substrate::{self, DiscoveredFile, FileClass},
+    structure::graph::GraphStore,
+    substrate,
 };
 
-use stage4::CrossFilePending;
+use stages::stages_1_to_3;
 
 /// Run one structural compile cycle.
 ///
@@ -83,11 +69,18 @@ pub fn run_structural_compile(
     let discovered_paths: BTreeSet<String> =
         discovered.iter().map(|f| f.relative_path.clone()).collect();
 
-    // Wrap all graph reads and writes in a single transaction so that each
-    // compile cycle is atomic and inserts are batched rather than auto-committed.
-    // On any error, rollback ensures the next reconcile starts with a clean slate.
+    // All four stages run inside a single transaction so readers never observe
+    // a partially-compiled graph (nodes present but cross-file edges absent).
+    // SQLite read-your-own-writes: stage 4's symbol/file queries see the nodes
+    // inserted by stages 1–3 on the same connection without an intermediate commit.
+    // On any error in any stage, rollback leaves the graph in its prior state.
     graph.begin()?;
-    let txn = match stages_1_to_3(repo_root, config, graph, &discovered, &discovered_paths) {
+    let (txn, stage4_edges) = match (|| -> crate::Result<_> {
+        let txn = stages_1_to_3(repo_root, config, graph, &discovered, &discovered_paths)?;
+        let edges =
+            stage4::run_cross_file_resolution(graph, &txn.cross_file_pending, &txn.revision)?;
+        Ok((txn, edges))
+    })() {
         Ok(v) => v,
         Err(e) => {
             let _ = graph.rollback();
@@ -95,12 +88,6 @@ pub fn run_structural_compile(
         }
     };
     graph.commit()?;
-
-    // Stage 4: cross-file edge resolution (Calls, Imports).
-    // Runs in its own transaction after stages 1–3 are committed so the
-    // name index query sees all nodes emitted this cycle.
-    let stage4_edges =
-        stage4::run_cross_file_resolution(graph, &txn.cross_file_pending, &txn.revision)?;
 
     Ok(CompileSummary {
         files_discovered,
@@ -110,295 +97,6 @@ pub fn run_structural_compile(
         concept_nodes_emitted: txn.concept_nodes_emitted,
         identities_resolved: txn.identities_resolved,
         elapsed_ms: start.elapsed().as_millis() as u64,
-    })
-}
-
-// Output of the stages 1-3 transaction body.
-struct StagesTxnResult {
-    files_parsed: usize,
-    symbols_extracted: usize,
-    edges_added: usize,
-    concept_nodes_emitted: usize,
-    identities_resolved: usize,
-    cross_file_pending: Vec<CrossFilePending>,
-    revision: String,
-}
-
-// Transaction wrapper: begin, run body, commit on Ok or rollback on Err.
-// Used by this module and accessible to submodule stage4 via `super::`.
-fn with_transaction<T>(
-    graph: &mut dyn GraphStore,
-    body: impl FnOnce(&mut dyn GraphStore) -> crate::Result<T>,
-) -> crate::Result<T> {
-    graph.begin()?;
-    match body(graph) {
-        Ok(v) => {
-            graph.commit()?;
-            Ok(v)
-        }
-        Err(e) => {
-            let _ = graph.rollback();
-            Err(e)
-        }
-    }
-}
-
-/// Stages 1–3 transaction body: stale detection, symbol extraction, concept
-/// extraction. Runs inside an already-open transaction; does not call
-/// begin/commit itself.
-fn stages_1_to_3(
-    repo_root: &Path,
-    config: &Config,
-    graph: &mut dyn GraphStore,
-    discovered: &[DiscoveredFile],
-    discovered_paths: &BTreeSet<String>,
-) -> crate::Result<StagesTxnResult> {
-    // Load all current file paths once; used for stale detection and rename matching.
-    let existing_file_paths = graph.all_file_paths()?;
-
-    // For each path that has disappeared, load the full node so we can match its
-    // content hash against new files that may be renames.
-    let mut disappeared_by_hash: HashMap<String, FileNode> = HashMap::new();
-    for (path, _) in &existing_file_paths {
-        if !discovered_paths.contains(path) {
-            if let Some(node) = graph.file_by_path(path)? {
-                // Keep first match per hash; duplicate content hashes are
-                // astronomically unlikely with blake3 but handled gracefully.
-                disappeared_by_hash
-                    .entry(node.content_hash.clone())
-                    .or_insert(node);
-            }
-        }
-    }
-
-    // Track which disappeared paths were matched as renames so we skip deleting them
-    // (the upsert in the parse loop moves the row to the new path in-place).
-    let mut rename_matched_old_paths: HashSet<String> = HashSet::new();
-
-    let discovered_concept_paths: BTreeSet<String> = discovered
-        .iter()
-        .filter(|f| {
-            matches!(f.class, FileClass::Markdown)
-                && concept_source_path_allowed(&f.relative_path, &config.concept_directories)
-        })
-        .map(|f| f.relative_path.clone())
-        .collect();
-
-    for (path, concept_id) in &graph.all_concept_paths()? {
-        if !discovered_concept_paths.contains(path) {
-            graph.delete_node(NodeId::Concept(*concept_id))?;
-        }
-    }
-
-    let git = GitRepositorySnapshot::inspect(repo_root);
-    let revision = git.source_revision().to_string();
-    let mut files_parsed = 0usize;
-    let mut symbols_extracted = 0usize;
-    let mut edges_added = 0usize;
-    let mut concept_nodes_emitted = 0usize;
-    let mut identities_resolved = 0usize;
-    // Stage 4: collect cross-file refs from newly parsed files.
-    let mut cross_file_pending: Vec<CrossFilePending> = Vec::new();
-
-    // file_map tracks path -> FileNodeId for all files visible this cycle,
-    // used by the concept stage to resolve governs path references.
-    let mut file_map: HashMap<String, crate::core::ids::FileNodeId> =
-        existing_file_paths.iter().cloned().collect();
-
-    // Pass 1: Process all SupportedCode files.
-    //
-    // Done first so that file_map is fully populated before the concept pass
-    // resolves governs-path references. Discovery order is filesystem-dependent
-    // so we cannot assume code files appear before ADRs in `discovered`.
-    for file in discovered {
-        if !matches!(file.class, FileClass::SupportedCode { .. }) {
-            continue;
-        }
-
-        let content = match std::fs::read(&file.absolute_path) {
-            Ok(content) => content,
-            Err(_) => continue,
-        };
-
-        let content_hash = hex::encode(blake3::hash(&content).as_bytes());
-        let existing = graph.file_by_path(&file.relative_path)?;
-
-        if let Some(ref file_node) = existing {
-            if file_node.content_hash == content_hash {
-                // Unchanged file: already in file_map via existing_file_paths.
-                continue;
-            }
-            graph.delete_node(NodeId::File(file_node.id))?;
-        }
-
-        let file_id = if let Some(ref file_node) = existing {
-            // Same path, different content: reuse the stable ID (content change, not rename).
-            file_node.id
-        } else if let Some(old_node) = disappeared_by_hash.get(&content_hash) {
-            // Same content, different path: this is a rename. Preserve the old ID
-            // and record the old path so we skip deleting it at the end.
-            rename_matched_old_paths.insert(old_node.path.clone());
-            identities_resolved += 1;
-            old_node.id
-        } else {
-            // Genuinely new file.
-            derive_file_id(&content_hash)
-        };
-
-        let language = match file.class {
-            FileClass::SupportedCode { language } => Some(language.to_string()),
-            _ => None,
-        };
-
-        let inline_decisions = rationale::extract_inline_decisions(&content, &file.class);
-
-        graph.upsert_file(FileNode {
-            id: file_id,
-            path: file.relative_path.clone(),
-            path_history: disappeared_by_hash
-                .get(&content_hash)
-                .map(|old| {
-                    let mut h = old.path_history.clone();
-                    h.insert(0, old.path.clone());
-                    h
-                })
-                .unwrap_or_default(),
-            content_hash: content_hash.clone(),
-            size_bytes: file.size_bytes,
-            language,
-            inline_decisions,
-            epistemic: Epistemic::ParserObserved,
-            provenance: make_provenance("discover", &revision, &file.relative_path, &content_hash),
-        })?;
-        file_map.insert(file.relative_path.clone(), file_id);
-
-        if let Some(parsed) = parse::parse_file(file.absolute_path.as_path(), &content)? {
-            if !parsed.symbols.is_empty() {
-                files_parsed += 1;
-                for symbol in &parsed.symbols {
-                    let symbol_id = derive_symbol_id(
-                        file_id,
-                        &symbol.qualified_name,
-                        symbol.kind,
-                        &symbol.body_hash,
-                    );
-                    let provenance = make_provenance(
-                        "parse_code",
-                        &revision,
-                        &file.relative_path,
-                        &content_hash,
-                    );
-
-                    graph.upsert_symbol(SymbolNode {
-                        id: symbol_id,
-                        file_id,
-                        qualified_name: symbol.qualified_name.clone(),
-                        display_name: symbol.display_name.clone(),
-                        kind: symbol.kind,
-                        body_byte_range: symbol.body_byte_range,
-                        body_hash: symbol.body_hash.clone(),
-                        signature: symbol.signature.clone(),
-                        doc_comment: symbol.doc_comment.clone(),
-                        epistemic: Epistemic::ParserObserved,
-                        provenance: provenance.clone(),
-                    })?;
-
-                    graph.insert_edge(Edge {
-                        id: derive_edge_id(
-                            NodeId::File(file_id),
-                            NodeId::Symbol(symbol_id),
-                            EdgeKind::Defines,
-                        ),
-                        from: NodeId::File(file_id),
-                        to: NodeId::Symbol(symbol_id),
-                        kind: EdgeKind::Defines,
-                        epistemic: Epistemic::ParserObserved,
-                        drift_score: 0.0,
-                        provenance,
-                    })?;
-
-                    symbols_extracted += 1;
-                    edges_added += 1;
-                }
-            }
-            // Collect cross-file refs for stage 4, regardless of symbol count.
-            if !parsed.call_refs.is_empty() || !parsed.import_refs.is_empty() {
-                cross_file_pending.push(CrossFilePending {
-                    file_id,
-                    file_path: file.relative_path.clone(),
-                    call_refs: parsed.call_refs,
-                    import_refs: parsed.import_refs,
-                });
-            }
-        }
-    }
-
-    // Pass 2: Process all Markdown concept files.
-    //
-    // file_map is now complete; governs-path resolution will find all code files
-    // regardless of the order they appeared in `discovered`.
-    for file in discovered {
-        if !matches!(file.class, FileClass::Markdown)
-            || !concept_source_path_allowed(&file.relative_path, &config.concept_directories)
-        {
-            continue;
-        }
-
-        let content = match std::fs::read(&file.absolute_path) {
-            Ok(content) => content,
-            Err(_) => continue,
-        };
-
-        if let Some((concept, governs_paths)) =
-            prose::extract_concept(&file.relative_path, &content, &revision)?
-        {
-            let concept_id = concept.id;
-            let content_hash = concept.provenance.source_artifacts[0].content_hash.clone();
-            graph.upsert_concept(concept)?;
-            concept_nodes_emitted += 1;
-
-            // Emit HumanDeclared Governs edges for each resolved governs path.
-            // Stale references (paths not in file_map) are silently skipped.
-            for governs_path in &governs_paths {
-                if let Some(&file_id) = file_map.get(governs_path.as_str()) {
-                    let from = NodeId::Concept(concept_id);
-                    let to = NodeId::File(file_id);
-                    graph.insert_edge(Edge {
-                        id: derive_edge_id(from, to, EdgeKind::Governs),
-                        from,
-                        to,
-                        kind: EdgeKind::Governs,
-                        epistemic: Epistemic::HumanDeclared,
-                        drift_score: 0.0,
-                        provenance: make_provenance(
-                            "parse_prose",
-                            &revision,
-                            &file.relative_path,
-                            &content_hash,
-                        ),
-                    })?;
-                    edges_added += 1;
-                }
-                // else: stale reference — skip silently, no edge emitted
-            }
-        }
-    }
-
-    // Delete file nodes that disappeared and were not matched as renames.
-    for (path, file_id) in &existing_file_paths {
-        if !discovered_paths.contains(path) && !rename_matched_old_paths.contains(path) {
-            graph.delete_node(NodeId::File(*file_id))?;
-        }
-    }
-
-    Ok(StagesTxnResult {
-        files_parsed,
-        symbols_extracted,
-        edges_added,
-        concept_nodes_emitted,
-        identities_resolved,
-        cross_file_pending,
-        revision,
     })
 }
 

@@ -24,6 +24,7 @@ pub mod diagnostics;
 pub mod git;
 pub mod git_intelligence;
 pub mod maintenance;
+pub mod repair;
 pub mod structural;
 pub mod synthesis;
 pub mod watch;

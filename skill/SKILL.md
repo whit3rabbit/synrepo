@@ -7,7 +7,7 @@ description: Use synrepo when working in a repository that contains a .synrepo/ 
 
 synrepo is a context compiler. It turns a repository into small, deterministic, task-shaped packets called **cards** that Claude can query through an MCP server instead of reading whole files. A card for a function is roughly 180 tokens; the file containing the function might be 4000. Over a coding session this matters: fewer tokens means more room for the actual task.
 
-## Current surface (Milestone 3 + active Milestone 4 work)
+## Current surface (Milestone 3 + Milestone 4 repair loop)
 
 **The MCP server (`synrepo-mcp`) is now available.** Start it with:
 
@@ -151,6 +151,26 @@ Don't use `synrepo_card` or `synrepo_where_to_edit` for this — it's a pure lex
 - **Not a summary generator.** Cards are structured records, not prose. If you need prose explanation, that is still a later surface.
 - **Not a replacement for reading source.** It is a way to avoid reading source *unnecessarily*. When you genuinely need to see the implementation, escalate to `deep` budget or read the file directly.
 
+## Health checking and repair
+
+Two new commands are available for detecting and repairing stale surfaces:
+
+**`synrepo check [--json]`** — Read-only drift report. Runs without acquiring the writer lock. Each named surface (storage, graph currency, writer lock, declared links, overlay gaps) gets one finding with a drift class, severity, and recommended action. Use this in CI to detect drift without mutating state. Exits non-zero when actionable or blocked findings are present.
+
+```
+synrepo check          # human-readable report
+synrepo check --json   # machine-readable JSON (one RepairReport object)
+```
+
+**`synrepo sync [--json]`** — Targeted repair. Runs storage maintenance for stale stores and a structural reconcile for stale graph state. Report-only and unsupported findings (overlay, exports, stale rationale) are surfaced but left untouched. Appends one JSONL line to `.synrepo/state/repair-log.jsonl` after each run.
+
+```
+synrepo sync           # repair + human-readable summary
+synrepo sync --json    # repair + JSON summary
+```
+
+The resolution log at `.synrepo/state/repair-log.jsonl` records every sync run: timestamp, scope, findings, actions taken, and outcome. Use it to audit what was detected and repaired across a session or CI run.
+
 ## Falling back when the MCP server isn't available
 
 If the MCP server is not running in your environment, use the CLI directly.
@@ -158,6 +178,7 @@ If the MCP server is not running in your environment, use the CLI directly.
 ```
 # Check health before anything else
 synrepo status
+synrepo check          # drift report across all repair surfaces
 
 # Find a symbol or file name
 synrepo search "parse_query"
@@ -173,7 +194,8 @@ synrepo graph query "outbound symbol_0000000000000024 defines"
 synrepo graph stats
 
 # Refresh the graph if sources changed
-synrepo reconcile
+synrepo reconcile      # one-shot structural refresh
+synrepo sync           # targeted repair (maintenance + reconcile as needed)
 ```
 
 Each CLI call pays startup cost (~100ms), so batch your queries where possible. Use `synrepo search` first to find node IDs, then use `synrepo node` and `synrepo graph query` to explore from there.

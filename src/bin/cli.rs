@@ -5,6 +5,8 @@
 //! - `synrepo status`, print operational health: mode, graph counts, last reconcile, lock state
 //! - `synrepo agent-setup <tool>`, generate a thin integration shim for claude/cursor/copilot/generic
 //! - `synrepo reconcile`, run a structural compile pass without full re-bootstrap
+//! - `synrepo check`, read-only drift report across all repair surfaces
+//! - `synrepo sync`, repair auto-fixable drift surfaces and log the outcome
 //! - `synrepo search <query>`, lexical search against the persisted index
 //! - `synrepo graph query "<direction> <node_id> [edge_kind]"`, narrow graph traversal query
 //! - `synrepo node <id>`, dump a node's metadata
@@ -19,7 +21,7 @@ use tracing_subscriber::EnvFilter;
 
 use cli_support::agent_shims::AgentTool;
 use cli_support::commands::{
-    agent_setup, graph_query, graph_stats, init, node, reconcile, search, status,
+    agent_setup, check, graph_query, graph_stats, init, node, reconcile, search, status, sync,
 };
 use synrepo::config::Mode;
 
@@ -69,6 +71,28 @@ enum Command {
     /// source files and refreshes the graph store without recreating the full
     /// runtime layout or re-indexing the substrate.
     Reconcile,
+
+    /// Report drift across all repair surfaces. Read-only; never mutates state.
+    ///
+    /// Inspects storage compatibility, reconcile health, declared links, and
+    /// unsupported surfaces. Exits non-zero if any actionable or blocked
+    /// findings are present.
+    Check {
+        /// Emit JSON instead of human-readable output.
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Repair auto-fixable drift surfaces and record the outcome.
+    ///
+    /// Runs storage maintenance and a structural reconcile for actionable
+    /// findings. Report-only and unsupported findings are surfaced but left
+    /// untouched. Appends an entry to `.synrepo/state/repair-log.jsonl`.
+    Sync {
+        /// Emit JSON instead of human-readable output.
+        #[arg(long)]
+        json: bool,
+    },
 
     /// Lexical search via the syntext index.
     Search {
@@ -133,6 +157,8 @@ fn main() -> anyhow::Result<()> {
         Command::Status => status(&repo_root),
         Command::AgentSetup { tool, force } => agent_setup(&repo_root, tool, force),
         Command::Reconcile => reconcile(&repo_root),
+        Command::Check { json } => check(&repo_root, json),
+        Command::Sync { json } => sync(&repo_root, json),
         Command::Search { query } => search(&repo_root, &query),
         Command::Graph(GraphCommand::Query { q }) => graph_query(&repo_root, &q),
         Command::Graph(GraphCommand::Stats) => graph_stats(&repo_root),

@@ -36,8 +36,11 @@ impl DecisionCard {
     /// - Normal (standard): adds status and decision_body truncated to 300 chars.
     /// - Deep (full): all fields.
     pub fn render(&self, budget: Budget) -> serde_json::Value {
-        let governed_ids: Vec<String> =
-            self.governed_node_ids.iter().map(|id| id.to_string()).collect();
+        let governed_ids: Vec<String> = self
+            .governed_node_ids
+            .iter()
+            .map(|id| id.to_string())
+            .collect();
         match budget {
             Budget::Tiny => serde_json::json!({
                 "title": self.title,

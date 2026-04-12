@@ -1,8 +1,10 @@
 //! Stage 4: cross-file edge resolution.
 //!
-//! Runs after stages 1–3 have committed all file and symbol nodes. Builds an
-//! in-memory name index from the graph, then emits `Calls` and `Imports` edges
-//! for newly parsed files.
+//! Runs inside the same transaction as stages 1–3. Builds an in-memory name
+//! index from the graph (SQLite read-your-own-writes sees the uncommitted nodes
+//! from stages 1–3 on the same connection), then emits `Calls` and `Imports`
+//! edges for newly parsed files. The caller owns the transaction; this module
+//! never calls begin or commit.
 //!
 //! ## Approximate resolution contract (phase 1)
 //!
@@ -52,6 +54,10 @@ pub fn run_cross_file_resolution(
     // Build name index from all symbols currently in the graph.
     // Key: short name (last '::' component of qualified_name).
     // Value: all symbol IDs with that short name.
+    //
+    // These reads run inside the caller's open transaction. SQLite guarantees
+    // that a connection sees its own uncommitted writes, so this sees nodes
+    // inserted by stages 1–3 even though they haven't been committed yet.
     let all_symbols = graph.all_symbol_names()?;
     let mut name_index: HashMap<String, Vec<SymbolNodeId>> = HashMap::new();
     for (sym_id, _file_id, qname) in &all_symbols {
@@ -66,71 +72,65 @@ pub fn run_cross_file_resolution(
     let all_files = graph.all_file_paths()?;
     let file_index: HashMap<String, FileNodeId> = all_files.into_iter().collect();
 
-    super::with_transaction(graph, |graph| {
-        let mut emitted = 0usize;
+    // Edge insertions run inside the caller's open transaction; no begin/commit here.
+    let mut emitted = 0usize;
 
-        for item in pending {
-            // Calls edges: file → callee symbol
-            for call_ref in &item.call_refs {
-                let candidates = name_index
-                    .get(&call_ref.callee_name)
-                    .map(Vec::as_slice)
-                    .unwrap_or(&[]);
+    for item in pending {
+        // Calls edges: file → callee symbol
+        for call_ref in &item.call_refs {
+            let candidates = name_index
+                .get(&call_ref.callee_name)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
 
-                for &callee_id in candidates {
-                    let edge = Edge {
-                        id: derive_edge_id(
-                            NodeId::File(item.file_id),
-                            NodeId::Symbol(callee_id),
-                            EdgeKind::Calls,
-                        ),
-                        from: NodeId::File(item.file_id),
-                        to: NodeId::Symbol(callee_id),
-                        kind: EdgeKind::Calls,
-                        epistemic: Epistemic::ParserObserved,
-                        drift_score: 0.0,
-                        provenance: make_provenance("stage4_calls", revision, &item.file_path, ""),
-                    };
-                    graph.insert_edge(edge)?;
-                    emitted += 1;
-                }
-            }
-
-            // Imports edges: file → imported file
-            for import_ref in &item.import_refs {
-                let resolved = resolve_import_ref(&import_ref.module_ref, &item.file_path);
-                let target_id = resolved.as_deref().and_then(|p| file_index.get(p)).copied();
-
-                if let Some(target_id) = target_id {
-                    if target_id == item.file_id {
-                        continue; // skip self-import
-                    }
-                    let edge = Edge {
-                        id: derive_edge_id(
-                            NodeId::File(item.file_id),
-                            NodeId::File(target_id),
-                            EdgeKind::Imports,
-                        ),
-                        from: NodeId::File(item.file_id),
-                        to: NodeId::File(target_id),
-                        kind: EdgeKind::Imports,
-                        epistemic: Epistemic::ParserObserved,
-                        drift_score: 0.0,
-                        provenance: make_provenance(
-                            "stage4_imports",
-                            revision,
-                            &item.file_path,
-                            "",
-                        ),
-                    };
-                    graph.insert_edge(edge)?;
-                    emitted += 1;
-                }
+            for &callee_id in candidates {
+                let edge = Edge {
+                    id: derive_edge_id(
+                        NodeId::File(item.file_id),
+                        NodeId::Symbol(callee_id),
+                        EdgeKind::Calls,
+                    ),
+                    from: NodeId::File(item.file_id),
+                    to: NodeId::Symbol(callee_id),
+                    kind: EdgeKind::Calls,
+                    epistemic: Epistemic::ParserObserved,
+                    drift_score: 0.0,
+                    provenance: make_provenance("stage4_calls", revision, &item.file_path, ""),
+                };
+                graph.insert_edge(edge)?;
+                emitted += 1;
             }
         }
 
-        Ok(emitted)
-    })
+        // Imports edges: file → imported file
+        for import_ref in &item.import_refs {
+            let resolved = resolve_import_ref(&import_ref.module_ref, &item.file_path);
+            let target_id = resolved.as_deref().and_then(|p| file_index.get(p)).copied();
+
+            if let Some(target_id) = target_id {
+                if target_id == item.file_id {
+                    continue; // skip self-import
+                }
+                let edge = Edge {
+                    id: derive_edge_id(
+                        NodeId::File(item.file_id),
+                        NodeId::File(target_id),
+                        EdgeKind::Imports,
+                    ),
+                    from: NodeId::File(item.file_id),
+                    to: NodeId::File(target_id),
+                    kind: EdgeKind::Imports,
+                    epistemic: Epistemic::ParserObserved,
+                    drift_score: 0.0,
+                    provenance: make_provenance("stage4_imports", revision, &item.file_path, ""),
+                };
+                graph.insert_edge(edge)?;
+                emitted += 1;
+            }
+        }
+    }
+
+    Ok(emitted)
 }
 
 /// Attempt to resolve a module reference to a repo-relative file path.

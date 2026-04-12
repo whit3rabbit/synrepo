@@ -61,6 +61,7 @@ impl StoreId {
         }
     }
 
+    /// Expected format version for this store.
     pub(crate) fn expected_format_version(self) -> u32 {
         super::STORE_FORMAT_VERSION
     }
@@ -204,6 +205,7 @@ pub struct ConfigFingerprints {
 }
 
 impl ConfigFingerprints {
+    /// Derive fingerprints from a runtime configuration.
     pub(crate) fn from_config(config: &Config) -> Self {
         Self {
             index_inputs: fingerprint(&[
