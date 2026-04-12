@@ -1,7 +1,4 @@
-## Purpose
-Define the optional human-guidance layer for patterns, ADRs, inline rationale, and DecisionCards without making prose mandatory for value.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Define optional human-guidance inputs
 synrepo SHALL define optional pattern documents, ADRs, and inline `# DECISION:` markers as a human-guidance layer. Pattern files are markdown documents in configured concept directories (same directories as ConceptNodes: `docs/concepts/`, `docs/adr/`, `docs/decisions/` by default). Inline `# DECISION:` markers are line comments in code files using the language-appropriate comment prefix followed by the exact token `DECISION:` and non-empty text. Both sources are optional; their absence does not affect structural card delivery.
@@ -63,11 +60,3 @@ synrepo SHALL define when human-authored rationale sources receive `HumanDeclare
 - **WHEN** a `# DECISION:` marker is found in a code file in auto mode
 - **THEN** the inline decision text is stored on the containing `FileNode`
 - **AND** the auto/curated mode setting does not affect inline decision storage
-
-### Requirement: Define DecisionCard behavior
-synrepo SHALL define DecisionCards as optional outputs backed by human-authored rationale sources and linked to structural cards without overriding descriptive truth.
-
-#### Scenario: Ask why a subsystem exists
-- **WHEN** an agent requests rationale for a target with linked human-authored decision material
-- **THEN** the system can return a DecisionCard
-- **AND** the response distinguishes rationale from current code behavior

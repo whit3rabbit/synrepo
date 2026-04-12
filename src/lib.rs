@@ -12,9 +12,9 @@
 //!    - [`identity`] handles AST-based rename detection
 //!    - [`drift`] computes edge drift scores on every commit
 //! 3. **Overlay layer** — LLM-authored content, physically separate from the graph.
-//!    Not present in phase 0/1; see [`overlay`] stub.
-//! 4. **Surface layer** — CLI, MCP server, skill bundle.
-//!    Phase 0/1 ships the CLI only; see `src/bin/cli.rs`.
+//!    Phase 4+ only; module exists to enforce the architectural boundary. See [`overlay`].
+//! 4. **Surface layer** — CLI (`src/bin/cli.rs`), MCP server (`crates/synrepo-mcp/`),
+//!    and skill bundle (`skill/SKILL.md`). Both CLI and MCP server shipped in Milestone 3.
 //!
 //! **Bootstrap** (`bootstrap`) — first-run UX, mode detection, health checks.
 //!    [`bootstrap::bootstrap`] is the main entry point for `synrepo init`.
@@ -24,7 +24,7 @@
 //! and synthesis queries filter at the retrieval layer so the synthesis
 //! pipeline never reads its own previous output.
 //!
-//! See `synrepo-design-v4.md` for the full design document.
+//! See `docs/FOUNDATION.md` and `docs/FOUNDATION-SPEC.md` for design documentation.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]

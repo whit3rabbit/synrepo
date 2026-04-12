@@ -179,6 +179,7 @@ fn seed_graph(repo_root: &std::path::Path) -> SeededGraphIds {
             content_hash: "abc123".to_string(),
             size_bytes: 128,
             language: Some("rust".to_string()),
+            inline_decisions: Vec::new(),
             epistemic: Epistemic::ParserObserved,
             provenance: sample_provenance("parse_code", "src/lib.rs"),
         })
@@ -205,6 +206,8 @@ fn seed_graph(repo_root: &std::path::Path) -> SeededGraphIds {
             title: "Graph Storage".to_string(),
             aliases: vec!["canonical-graph".to_string()],
             summary: Some("Why the graph stays observed-only.".to_string()),
+            status: None,
+            decision_body: None,
             epistemic: Epistemic::HumanDeclared,
             provenance: sample_provenance("parse_prose", "docs/adr/0001-graph.md"),
         })

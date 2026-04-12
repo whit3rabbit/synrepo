@@ -8,10 +8,14 @@
 - Milestone 1, First-run value: complete
 - Milestone 2, Observed-facts core: complete
 - Milestone 3, First real product release: complete
-- Most recently completed implementation change: `git-intelligence-v1`
+- Most recently completed implementation change: `pattern-surface-v1`
 - Completed in Milestone 2: `structural-graph-v1`, `structural-pipeline-v1`, `watch-reconcile-v1`, `agent-integration-v1`
 - Completed in Milestone 3: `cards-and-mcp-v1`, `git-intelligence-v1`
-- Current Milestone 4 focus: `pattern-surface-v1` (patterns, rationale ingestion, DecisionCards, curated promotion rules), followed by `repair-loop-v1` (check, sync, drift classification, selective refresh)
+- Completed in Milestone 4 so far: `pattern-surface-v1` (patterns, rationale ingestion, DecisionCards, curated promotion rules)
+- Current Milestone 4 focus: `repair-loop-v1` (check, sync, drift classification, selective refresh)
+- Implementation sequence: `repair-loop-v1` → overlay work (Milestone 5) → exports/views hardening (Milestone 6)
+- Current shipped surface: CLI commands `init`, `status`, `agent-setup`, `reconcile`, `search`, `graph query`, `graph stats`, and `node`; MCP tools `synrepo_overview`, `synrepo_card`, `synrepo_search`, `synrepo_where_to_edit`, and `synrepo_change_impact`; compiled cards `SymbolCard`, `FileCard`, and `DecisionCard`; plus a struct-only `ModuleCard` placeholder
+- Not yet shipped: `synrepo check`, `synrepo sync`, specialist MCP tools (`synrepo_entrypoints`, `synrepo_call_path`, `synrepo_test_surface`, `synrepo_minimum_context`, `synrepo_explain`, `synrepo_findings`), or compiled `ModuleCard` / `EntryPointCard` / `CallPathCard` / `ChangeRiskCard` / `PublicAPICard` / `TestSurfaceCard`
 - MCP library chosen: `rmcp` (crates.io, modelcontextprotocol/rust-sdk); workspace strategy: add `[workspace]` to existing Cargo.toml, add `crates/synrepo-mcp/` as new member without moving existing files
 
 ## 1. Purpose
@@ -234,16 +238,20 @@ Ship the first full product milestone.
 
 ### Deliverables
 
+Delivered in `cards-and-mcp-v1`:
 - `SymbolCard`
 - `FileCard`
+- struct-only `ModuleCard` placeholder
+- MCP server and five core tools: `synrepo_overview`, `synrepo_card`, `synrepo_search`, `synrepo_where_to_edit`, `synrepo_change_impact`
+- card budget enforcement with `tiny`, `normal`, and `deep`
+
+Planned follow-on surfaces under this track:
 - `ModuleCard`
 - `EntryPointCard`
 - `CallPathCard`
 - `ChangeRiskCard`
 - `PublicAPICard`
 - `TestSurfaceCard`
-- MCP server and core tools
-- card budget enforcement
 
 ### Exit criteria
 
@@ -516,6 +524,8 @@ Primary outcome:
 
 Status:
 - Complete through `cards-and-mcp-v1` and `git-intelligence-v1`
+- Shipped surface: `SymbolCard`, `FileCard`, five core MCP tools, file-facing Git intelligence, and a struct-only `ModuleCard`
+- Remaining Track E expansions move to later changes: compiled `ModuleCard`, `EntryPointCard`, `CallPathCard`, `ChangeRiskCard`, `PublicAPICard`, `TestSurfaceCard`, and specialist MCP tools
 
 ### Milestone 4 — Human-guidance enrichment
 
@@ -525,6 +535,13 @@ Tracks:
 
 Primary outcome:
 - human-declared guidance and cheap drift repair
+
+Status:
+- `pattern-surface-v1` complete; `repair-loop-v1` is the active remaining change
+
+Exit gate:
+- A fresh-clone agent can explain not only "what is here" but also "why this area exists," with rationale clearly secondary to structural truth
+- Drift repair can correct stale surfaces without collapsing the graph versus overlay trust boundary
 
 ### Milestone 5 — Optional intelligence layers
 
@@ -872,13 +889,15 @@ Planning note:
 Roadmap tie:
 - Milestone 3
 
-## 8.9 `openspec/changes/pattern-surface-v1/`
+## 8.9 `openspec/changes/archive/2026-04-11-pattern-surface-v1/`
 
 Use for:
 - patterns, rationale ingestion, DecisionCards, and curated promotion rules
 
 Roadmap tie:
 - Milestone 4
+
+Status: Complete and archived.
 
 ## 8.10 `openspec/changes/repair-loop-v1/`
 
@@ -937,6 +956,17 @@ To keep the roadmap aligned with the product thesis, avoid the following:
 6. Do not ship “AI understanding” before Phase 2 cards work on code-only repos.
 7. Do not treat watch, reconcile, and repair as polish. They are trust features.
 
+## 9.1 Not in v1 — explicit defers
+
+These are explicitly deferred past the first stable release to protect the product wedge. Defer criterion: anything that does not directly improve first-clone orientation, graph-versus-overlay trust separation, or disciplined review surfaces.
+
+- Commentary overlay and LLM synthesis (Milestone 5+)
+- Cross-link generation and verification (Milestone 5+)
+- Export views and generated markdown docs as primary surfaces (Milestone 6)
+- Additional language grammar support beyond the current set (Milestone 6)
+- Full optional daemon/background-process mode (Track H foundation is in; the daemon itself is not required for v1)
+- Graph-level `CoChangesWith` edges and symbol-level last-change summaries (follow-on to `git-intelligence-v1`)
+
 ## 10. Release gating guidance
 
 A milestone should not be marked complete unless its behavior is captured in the relevant domain spec and its change artifacts are archived cleanly.
@@ -949,13 +979,17 @@ Use this rule:
 - the overlay describes machine-authored supplements
 - exports are convenience surfaces only
 
+Source-of-truth precedence: roadmap sets sequence, specs set enduring intent, active changes set immediate work, runtime docs explain implementation.
+
 ## 11. Suggested next move
 
-Milestone 3 is complete. `cards-and-mcp-v1` and `git-intelligence-v1` are now implemented, validated, and ready to archive alongside the already archived Milestone 0–2 changes.
+Milestone 3 is complete. Milestone 4 is in progress: `pattern-surface-v1` is complete and archived. `repair-loop-v1` is the remaining active change.
 
-The next milestone target is Milestone 4:
-
-1. **`pattern-surface-v1`** — add human-declared patterns, rationale ingestion, DecisionCards, and curated promotion rules without making prose the primary product surface.
-2. **`repair-loop-v1`** — add `check`, `sync`, drift classification, selective refresh, and resolution logging so the runtime stays truthful as repositories change.
+The next concrete step is **`repair-loop-v1`**:
+- add `synrepo check` and `synrepo sync` CLI commands
+- define drift classes (stale governs links, stale exports, stale overlay, broken declared links)
+- selective refresh without full re-bootstrap
+- resolution logging
+- CI-safe behavior
 
 Exit criterion for Milestone 4: human-declared guidance can enrich cards and targeted repair can correct drift cheaply without collapsing the graph versus overlay trust boundary.

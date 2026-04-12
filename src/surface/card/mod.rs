@@ -271,6 +271,9 @@ pub struct FileCard {
 }
 
 pub mod compiler;
+pub mod decision;
+
+pub use decision::DecisionCard;
 
 /// ModuleCard — answers "what lives in this directory/module?"
 ///

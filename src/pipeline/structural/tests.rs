@@ -305,3 +305,42 @@ fn stage4_emits_imports_edge_for_typescript_relative_import() {
         "expected Imports edge from src/main.ts to src/utils.ts; got: {imports:?}"
     );
 }
+
+#[test]
+fn stage3_emits_governs_edge_from_adr_frontmatter() {
+    // An ADR with `governs: [src/lib.rs]` should produce a HumanDeclared Governs
+    // edge from the ConceptNode to the FileNode for src/lib.rs.
+    let repo = tempdir().unwrap();
+    let adr_dir = repo.path().join("docs/adr");
+    fs::create_dir_all(&adr_dir).unwrap();
+    fs::create_dir_all(repo.path().join("src")).unwrap();
+
+    fs::write(repo.path().join("src/lib.rs"), "pub fn governed() {}\n").unwrap();
+    fs::write(
+        adr_dir.join("0001-decision.md"),
+        "---\ntitle: Storage Decision\nstatus: Accepted\ngoverns: [src/lib.rs]\n---\n\n## Decision\n\nUse SQLite.\n",
+    )
+    .unwrap();
+
+    let config = Config {
+        concept_directories: vec!["docs/adr".to_string()],
+        ..Config::default()
+    };
+    let mut graph = open_graph(&repo);
+    run_structural_compile(repo.path(), &config, &mut graph).unwrap();
+
+    let lib_file = graph.file_by_path("src/lib.rs").unwrap().unwrap();
+    let inbound = graph
+        .inbound(NodeId::File(lib_file.id), Some(EdgeKind::Governs))
+        .unwrap();
+
+    assert_eq!(inbound.len(), 1, "expected exactly one Governs edge");
+    assert!(
+        matches!(inbound[0].from, NodeId::Concept(_)),
+        "Governs edge must come from a ConceptNode"
+    );
+    assert_eq!(
+        inbound[0].epistemic,
+        crate::structure::graph::Epistemic::HumanDeclared
+    );
+}

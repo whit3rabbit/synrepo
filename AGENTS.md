@@ -188,8 +188,8 @@ Stages 4–8:
 `openspec/specs/` holds enduring domain specs (stable intended behavior). `openspec/changes/<name>/` holds active work: `proposal.md`, `design.md`, `tasks.md`, and optional delta specs.
 
 Active changes:
-- No active implementation changes are open right now. Milestone 4 work should start with `pattern-surface-v1` and `repair-loop-v1`.
+- No active implementation changes are open right now. Next: `repair-loop-v1`.
 
-Archived: `openspec/changes/archive/` — completed changes including `2026-04-10-structural-graph-v1` (structural compile pipeline), `2026-04-11-foundation-bootstrap`, `2026-04-11-lexical-substrate-v1`, `2026-04-11-bootstrap-ux-v1`, `2026-04-11-structural-pipeline-v1`, `2026-04-11-watch-reconcile-v1` (watcher, reconcile, single-writer lock), `2026-04-11-agent-integration-v1` (status command, agent-setup shims, skill/SKILL.md current-phase section), `2026-04-11-cards-and-mcp-v1` (stage 4 edges, CardCompiler, workspace conversion, MCP server with 5 core tools), `2026-04-11-storage-compatibility-v1`, and `2026-04-11-git-intelligence-v1`.
+Archived: `openspec/changes/archive/` — completed changes including `2026-04-10-structural-graph-v1` (structural compile pipeline), `2026-04-11-foundation-bootstrap`, `2026-04-11-lexical-substrate-v1`, `2026-04-11-bootstrap-ux-v1`, `2026-04-11-structural-pipeline-v1`, `2026-04-11-watch-reconcile-v1` (watcher, reconcile, single-writer lock), `2026-04-11-agent-integration-v1` (status command, agent-setup shims, skill/SKILL.md current-phase section), `2026-04-11-cards-and-mcp-v1` (stage 4 edges, CardCompiler, workspace conversion, MCP server with 5 core tools), `2026-04-11-storage-compatibility-v1`, `2026-04-11-git-intelligence-v1`, and `2026-04-11-pattern-surface-v1` (ADR frontmatter extraction, Governs edges, inline DECISION markers, DecisionCard).
 
 Specs govern intent; the graph governs runtime truth.

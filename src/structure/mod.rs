@@ -5,3 +5,4 @@ pub mod graph;
 pub mod identity;
 pub mod parse;
 pub mod prose;
+pub mod rationale;

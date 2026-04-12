@@ -23,7 +23,7 @@ use synrepo::{
     core::ids::NodeId,
     store::sqlite::SqliteGraphStore,
     structure::graph::EdgeKind,
-    surface::card::{compiler::GraphCardCompiler, Budget, CardCompiler},
+    surface::card::{compiler::GraphCardCompiler, Budget, CardCompiler, DecisionCard, Freshness},
 };
 
 // ---------------------------------------------------------------------------
@@ -153,11 +153,25 @@ impl SynrepoServer {
             match node_id {
                 NodeId::Symbol(sym_id) => {
                     let card = self.state.compiler.symbol_card(sym_id, budget)?;
-                    Ok(serde_json::to_value(&card)?)
+                    let mut json = serde_json::to_value(&card)?;
+                    attach_decision_cards(
+                        &mut json,
+                        NodeId::Symbol(sym_id),
+                        self.state.compiler.graph(),
+                        budget,
+                    )?;
+                    Ok(json)
                 }
                 NodeId::File(file_id) => {
                     let card = self.state.compiler.file_card(file_id, budget)?;
-                    Ok(serde_json::to_value(&card)?)
+                    let mut json = serde_json::to_value(&card)?;
+                    attach_decision_cards(
+                        &mut json,
+                        NodeId::File(file_id),
+                        self.state.compiler.graph(),
+                        budget,
+                    )?;
+                    Ok(json)
                 }
                 NodeId::Concept(concept_id) => {
                     let concept = self
@@ -335,6 +349,46 @@ impl SynrepoServer {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/// If `node_id` has incoming Governs edges, build DecisionCards and attach
+/// them to the JSON card object under the key `"decision_cards"`.
+/// The key is absent (not null) when no governing concepts exist.
+fn attach_decision_cards(
+    json: &mut serde_json::Value,
+    node_id: NodeId,
+    graph: &dyn synrepo::structure::graph::GraphStore,
+    budget: Budget,
+) -> anyhow::Result<()> {
+    let concepts = graph.find_governing_concepts(node_id)?;
+    if concepts.is_empty() {
+        return Ok(());
+    }
+
+    let mut cards: Vec<serde_json::Value> = Vec::new();
+    for concept in concepts {
+        // Collect all node IDs this concept governs (outbound Governs edges).
+        let governs_edges = graph.outbound(NodeId::Concept(concept.id), Some(EdgeKind::Governs))?;
+        let governed_node_ids: Vec<NodeId> = governs_edges.iter().map(|e| e.to).collect();
+
+        let dc = DecisionCard {
+            title: concept.title.clone(),
+            status: concept.status.clone(),
+            decision_body: concept.decision_body.clone(),
+            governed_node_ids,
+            source_path: concept.path.clone(),
+            freshness: Freshness::Fresh, // git-based freshness is a later phase
+        };
+        cards.push(dc.render(budget));
+    }
+
+    if let serde_json::Value::Object(ref mut map) = json {
+        map.insert(
+            "decision_cards".to_string(),
+            serde_json::Value::Array(cards),
+        );
+    }
+    Ok(())
+}
 
 fn parse_budget(s: &str) -> Budget {
     match s {

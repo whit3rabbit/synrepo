@@ -75,4 +75,21 @@ pub trait GraphStore: Send + Sync {
     /// Used by the stage-4 name-resolution pass to build the global symbol
     /// index without loading full JSON blobs.
     fn all_symbol_names(&self) -> crate::Result<Vec<(SymbolNodeId, FileNodeId, String)>>;
+
+    /// Return all `ConceptNode`s that have an outgoing `Governs` edge to `node_id`.
+    ///
+    /// This is a default method backed by `inbound` + `get_concept` so all
+    /// `GraphStore` implementations inherit it automatically.
+    fn find_governing_concepts(&self, node_id: NodeId) -> crate::Result<Vec<ConceptNode>> {
+        let edges = self.inbound(node_id, Some(EdgeKind::Governs))?;
+        let mut concepts = Vec::new();
+        for edge in edges {
+            if let NodeId::Concept(concept_id) = edge.from {
+                if let Some(concept) = self.get_concept(concept_id)? {
+                    concepts.push(concept);
+                }
+            }
+        }
+        Ok(concepts)
+    }
 }

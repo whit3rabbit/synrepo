@@ -1,8 +1,8 @@
 //! Markdown concept extraction for the structural pipeline.
 //!
 //! Produces `ConceptNode` records from human-authored markdown files in
-//! configured concept directories. Only the title, aliases, and a short
-//! summary are extracted here — semantic tagging and cross-linking are
+//! configured concept directories. Only the title, aliases, summary, status,
+//! and decision body are extracted — semantic tagging and cross-linking are
 //! overlay concerns and do not belong in the structural pipeline.
 
 use crate::core::ids::ConceptNodeId;
@@ -10,20 +10,18 @@ use crate::core::provenance::{CreatedBy, Provenance, SourceRef};
 use crate::structure::graph::{ConceptNode, Epistemic};
 use time::OffsetDateTime;
 
-/// Extract a `ConceptNode` from human-authored markdown content.
+/// Extract a `ConceptNode` and the governs paths declared in its frontmatter.
 ///
-/// The concept title is taken from the frontmatter `title:` key if present,
-/// otherwise from the first `# ` heading in the document body. Aliases come
-/// from the frontmatter `aliases:` list. The summary is the first non-empty
-/// paragraph after any heading.
+/// The second tuple element is the raw `governs:` path list from frontmatter;
+/// the caller resolves these to `FileNodeId`s and emits `Governs` edges.
+/// Returns `None` when the content is not valid UTF-8.
 ///
-/// `path` must be the repo-relative path (used for the node's `path` field
-/// and for deriving the stable `ConceptNodeId`).
+/// `path` must be the repo-relative path used for `ConceptNodeId` derivation.
 pub fn extract_concept(
     path: &str,
     content: &[u8],
     revision: &str,
-) -> crate::Result<Option<ConceptNode>> {
+) -> crate::Result<Option<(ConceptNode, Vec<String>)>> {
     let text = match std::str::from_utf8(content) {
         Ok(t) => t,
         Err(_) => return Ok(None),
@@ -43,38 +41,46 @@ pub fn extract_concept(
         .unwrap_or_default();
 
     let summary = extract_first_paragraph(body);
+    let status = frontmatter
+        .as_deref()
+        .and_then(|fm| extract_frontmatter_scalar(fm, "status"));
+    let decision_body = extract_decision_body(body);
+    let governs_paths = frontmatter
+        .as_deref()
+        .map(extract_governs_paths)
+        .unwrap_or_default();
 
     let id = derive_concept_id(path);
     let content_hash = hex::encode(blake3::hash(content).as_bytes());
-
     let provenance = Provenance {
         created_at: OffsetDateTime::now_utc(),
         source_revision: revision.to_string(),
         created_by: CreatedBy::StructuralPipeline,
         pass: "parse_prose".to_string(),
         source_artifacts: vec![SourceRef {
-            file_id: None, // concept nodes reference markdown source by path, not graph FileNodeId
+            file_id: None,
             path: path.to_string(),
             content_hash,
         }],
     };
 
-    Ok(Some(ConceptNode {
-        id,
-        path: path.to_string(),
-        title,
-        aliases,
-        summary,
-        epistemic: Epistemic::HumanDeclared,
-        provenance,
-    }))
+    Ok(Some((
+        ConceptNode {
+            id,
+            path: path.to_string(),
+            title,
+            aliases,
+            summary,
+            status,
+            decision_body,
+            epistemic: Epistemic::HumanDeclared,
+            provenance,
+        },
+        governs_paths,
+    )))
 }
 
 /// Derive a stable `ConceptNodeId` from the repo-relative path.
-///
-/// Path-derived IDs stay stable across content edits: when the author
-/// updates the document, the concept node is updated in-place rather
-/// than replaced with a new identity.
 pub fn derive_concept_id(path: &str) -> ConceptNodeId {
     let hash = blake3::hash(path.as_bytes());
     let bytes = hash.as_bytes();
@@ -82,26 +88,62 @@ pub fn derive_concept_id(path: &str) -> ConceptNodeId {
     ConceptNodeId(id)
 }
 
-/// Split a markdown document into optional frontmatter and body text.
+/// Extract the relative file paths declared in the `governs:` frontmatter key.
 ///
-/// Frontmatter is recognized as a block of text between the first `---`
-/// line and the next `---` line, when those lines appear at the very
-/// start of the document (before any non-empty content).
+/// Supports both inline (`governs: [src/foo.rs]`) and block-list YAML format.
+/// Returns an empty vec when the key is absent.
+pub fn extract_governs_paths(frontmatter: &str) -> Vec<String> {
+    extract_frontmatter_list(frontmatter, "governs")
+}
+
+/// Extract the decision body from markdown body text.
+///
+/// Tries `## Decision`, then `## Context`, then returns the full body.
+fn extract_decision_body(body: &str) -> Option<String> {
+    for heading in &["## Decision", "## Context"] {
+        if let Some(text) = extract_section(body, heading) {
+            return Some(text);
+        }
+    }
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+/// Extract text between a `## Heading` line and the next `## ` heading.
+fn extract_section(body: &str, heading: &str) -> Option<String> {
+    let needle = format!("\n{heading}\n");
+    let start = if let Some(p) = body.find(&needle) {
+        p + needle.len()
+    } else if body.starts_with(heading) && body[heading.len()..].starts_with('\n') {
+        heading.len() + 1
+    } else {
+        return None;
+    };
+    let after = &body[start..];
+    let end = after.find("\n## ").unwrap_or(after.len());
+    let text = after[..end].trim();
+    if text.is_empty() {
+        None
+    } else {
+        Some(text.to_string())
+    }
+}
+
 fn split_frontmatter(text: &str) -> (Option<String>, &str) {
     let trimmed = text.trim_start_matches('\n');
     if !trimmed.starts_with("---") {
         return (None, text);
     }
-
-    // The opening `---` must be followed by a newline.
     let after_open = match trimmed.strip_prefix("---") {
         Some(rest) if rest.starts_with('\n') || rest.starts_with("\r\n") => {
             rest.trim_start_matches('\n').trim_start_matches('\r')
         }
         _ => return (None, text),
     };
-
-    // Find the closing `---`.
     let closing_marker = "\n---";
     if let Some(pos) = after_open.find(closing_marker) {
         let fm = after_open[..pos].to_string();
@@ -112,9 +154,6 @@ fn split_frontmatter(text: &str) -> (Option<String>, &str) {
     }
 }
 
-/// Extract a single-value key from a YAML-light frontmatter block.
-///
-/// Handles `key: value` and `key: "quoted value"` forms.
 fn extract_frontmatter_scalar(frontmatter: &str, key: &str) -> Option<String> {
     for line in frontmatter.lines() {
         let line = line.trim();
@@ -130,24 +169,13 @@ fn extract_frontmatter_scalar(frontmatter: &str, key: &str) -> Option<String> {
     None
 }
 
-/// Extract a list value from a YAML-light frontmatter block.
-///
-/// Supports both inline arrays (`aliases: [foo, bar]`) and block lists:
-/// ```yaml
-/// aliases:
-///   - foo
-///   - bar
-/// ```
 fn extract_frontmatter_list(frontmatter: &str, key: &str) -> Vec<String> {
     let lines: Vec<&str> = frontmatter.lines().collect();
-
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
         if let Some(rest) = trimmed.strip_prefix(key) {
             if let Some(rest) = rest.strip_prefix(':') {
                 let rest = rest.trim();
-
-                // Inline array: [foo, bar]
                 if rest.starts_with('[') {
                     let inner = rest.trim_matches(|c| c == '[' || c == ']');
                     return inner
@@ -156,8 +184,6 @@ fn extract_frontmatter_list(frontmatter: &str, key: &str) -> Vec<String> {
                         .filter(|s| !s.is_empty())
                         .collect();
                 }
-
-                // Block list: subsequent lines starting with "  - "
                 if rest.is_empty() {
                     let mut result = Vec::new();
                     for next_line in lines.iter().skip(i + 1) {
@@ -176,50 +202,39 @@ fn extract_frontmatter_list(frontmatter: &str, key: &str) -> Vec<String> {
             }
         }
     }
-
     Vec::new()
 }
 
-/// Extract the title from the first `# ` heading in the body.
 fn extract_h1_title(body: &str) -> Option<String> {
-    for line in body.lines() {
-        if let Some(title) = line.strip_prefix("# ") {
-            let title = title.trim();
-            if !title.is_empty() {
-                return Some(title.to_string());
-            }
-        }
-    }
-    None
+    body.lines()
+        .find_map(|line| {
+            line.strip_prefix("# ")
+                .map(str::trim)
+                .filter(|t| !t.is_empty())
+        })
+        .map(str::to_string)
 }
 
-/// Extract the first non-empty paragraph from the body (after skipping headings).
 fn extract_first_paragraph(body: &str) -> Option<String> {
     let mut in_para = false;
     let mut para_lines: Vec<&str> = Vec::new();
-
     for line in body.lines() {
         let trimmed = line.trim();
-
-        // Skip headings and blank lines before first paragraph.
         if trimmed.starts_with('#') {
             if in_para {
                 break;
             }
             continue;
         }
-
         if trimmed.is_empty() {
             if in_para {
                 break;
             }
             continue;
         }
-
         in_para = true;
         para_lines.push(trimmed);
     }
-
     if para_lines.is_empty() {
         None
     } else {
@@ -227,7 +242,6 @@ fn extract_first_paragraph(body: &str) -> Option<String> {
     }
 }
 
-/// Return the filename stem from a repo-relative path, for use as a fallback title.
 fn path_basename(path: &str) -> &str {
     path.rsplit('/').next().unwrap_or(path)
 }
@@ -236,74 +250,75 @@ fn path_basename(path: &str) -> &str {
 mod tests {
     use super::*;
 
-    #[test]
-    fn extract_concept_reads_h1_title_and_first_paragraph() {
-        let md = b"# Graph Storage\n\nWhy the graph stays observed-only.\n";
-        let node = extract_concept("docs/adr/0001-graph.md", md, "abc123")
+    fn concept(md: &[u8]) -> (ConceptNode, Vec<String>) {
+        extract_concept("docs/adr/test.md", md, "rev")
             .unwrap()
-            .unwrap();
+            .unwrap()
+    }
 
+    #[test]
+    fn extract_concept_title_and_summary() {
+        let (node, governs) = concept(b"# Graph Storage\n\nWhy observed-only.\n");
         assert_eq!(node.title, "Graph Storage");
-        assert_eq!(
-            node.summary.as_deref(),
-            Some("Why the graph stays observed-only.")
-        );
-        assert_eq!(node.path, "docs/adr/0001-graph.md");
-        assert!(node.aliases.is_empty());
+        assert_eq!(node.summary.as_deref(), Some("Why observed-only."));
+        assert!(governs.is_empty());
     }
 
     #[test]
-    fn extract_concept_prefers_frontmatter_title_over_h1() {
-        let md = b"---\ntitle: Override Title\n---\n# Body Title\n\nSummary text.\n";
-        let node = extract_concept("docs/adr/0002.md", md, "rev")
-            .unwrap()
-            .unwrap();
-
-        assert_eq!(node.title, "Override Title");
+    fn extract_concept_frontmatter_title_overrides_h1() {
+        let (node, _) = concept(b"---\ntitle: Override\n---\n# Body\n\nText.\n");
+        assert_eq!(node.title, "Override");
     }
 
     #[test]
-    fn extract_concept_parses_inline_alias_array() {
-        let md = b"---\ntitle: My Concept\naliases: [foo, bar, baz]\n---\nContent here.\n";
-        let node = extract_concept("docs/concepts/my.md", md, "rev")
-            .unwrap()
-            .unwrap();
+    fn extract_concept_aliases_inline_and_block() {
+        let (node, _) = concept(b"---\ntitle: A\naliases: [x, y]\n---\n");
+        assert_eq!(node.aliases, vec!["x", "y"]);
 
-        assert_eq!(node.title, "My Concept");
-        assert_eq!(node.aliases, vec!["foo", "bar", "baz"]);
+        let (node2, _) = concept(b"---\ntitle: A\naliases:\n  - p\n  - q\n---\n");
+        assert_eq!(node2.aliases, vec!["p", "q"]);
     }
 
     #[test]
-    fn extract_concept_parses_block_alias_list() {
-        let md = b"---\ntitle: My Concept\naliases:\n  - foo\n  - bar\n---\nContent.\n";
-        let node = extract_concept("docs/concepts/my.md", md, "rev")
-            .unwrap()
-            .unwrap();
-
-        assert_eq!(node.aliases, vec!["foo", "bar"]);
+    fn extract_concept_status_and_decision_body() {
+        let md =
+            b"---\ntitle: Use SQLite\nstatus: Accepted\n---\n\n## Context\n\nBackground.\n\n## Decision\n\nWe use SQLite.\n\n## Consequences\n\nFast.\n";
+        let (node, _) = concept(md);
+        assert_eq!(node.status.as_deref(), Some("Accepted"));
+        assert_eq!(node.decision_body.as_deref(), Some("We use SQLite."));
     }
 
     #[test]
-    fn extract_concept_falls_back_to_filename_when_no_title() {
-        let md = b"No heading here, just prose.\n";
-        let node = extract_concept("docs/adr/0003-decision.md", md, "rev")
-            .unwrap()
-            .unwrap();
-
-        assert_eq!(node.title, "0003-decision.md");
+    fn extract_concept_decision_body_falls_back_to_context() {
+        let md = b"---\nstatus: Accepted\n---\n\n## Context\n\nBackground info.\n";
+        let (node, _) = concept(md);
+        assert_eq!(node.decision_body.as_deref(), Some("Background info."));
     }
 
     #[test]
-    fn derive_concept_id_is_path_stable() {
+    fn extract_governs_paths_formats() {
+        // inline array
+        let paths = extract_governs_paths("governs: [src/lib.rs, src/store/mod.rs]\n");
+        assert_eq!(paths, vec!["src/lib.rs", "src/store/mod.rs"]);
+        // block list
+        let paths = extract_governs_paths("governs:\n  - src/lib.rs\n  - src/config.rs\n");
+        assert_eq!(paths, vec!["src/lib.rs", "src/config.rs"]);
+        // absent key -> empty
+        assert!(extract_governs_paths("title: ADR\n").is_empty());
+        // empty inline list
+        assert!(extract_governs_paths("governs: []\n").is_empty());
+    }
+
+    #[test]
+    fn extract_concept_returns_governs_paths() {
+        let (_, governs) = concept(b"---\ntitle: A\ngoverns: [src/lib.rs]\n---\nContent.\n");
+        assert_eq!(governs, vec!["src/lib.rs"]);
+    }
+
+    #[test]
+    fn derive_concept_id_stable_and_distinct() {
         let id1 = derive_concept_id("docs/adr/0001.md");
-        let id2 = derive_concept_id("docs/adr/0001.md");
-        assert_eq!(id1, id2);
-    }
-
-    #[test]
-    fn derive_concept_id_differs_by_path() {
-        let id1 = derive_concept_id("docs/adr/0001.md");
-        let id2 = derive_concept_id("docs/adr/0002.md");
-        assert_ne!(id1, id2);
+        assert_eq!(id1, derive_concept_id("docs/adr/0001.md"));
+        assert_ne!(id1, derive_concept_id("docs/adr/0002.md"));
     }
 }

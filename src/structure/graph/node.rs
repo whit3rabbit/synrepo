@@ -61,6 +61,10 @@ pub struct FileNode {
     pub size_bytes: u64,
     /// Detected language, if supported by a tree-sitter grammar.
     pub language: Option<String>,
+    /// Decision text extracted from `// DECISION:` (or language-equivalent)
+    /// line comments. Empty when no markers are present.
+    #[serde(default)]
+    pub inline_decisions: Vec<String>,
     /// Epistemic origin (always `ParserObserved` for files).
     pub epistemic: Epistemic,
     /// Provenance metadata.
@@ -107,6 +111,14 @@ pub struct ConceptNode {
     pub aliases: Vec<String>,
     /// Optional one-line summary extracted from the source document.
     pub summary: Option<String>,
+    /// ADR/decision status from frontmatter (e.g. "Accepted", "Deprecated").
+    /// Present when the frontmatter contains a `status:` key.
+    #[serde(default)]
+    pub status: Option<String>,
+    /// Decision body extracted from the `## Decision` section (or full body
+    /// if no such heading is found). Present only for ADR-style documents.
+    #[serde(default)]
+    pub decision_body: Option<String>,
     /// Epistemic origin (always `HumanDeclared` for concept nodes).
     pub epistemic: Epistemic,
     /// Provenance metadata.

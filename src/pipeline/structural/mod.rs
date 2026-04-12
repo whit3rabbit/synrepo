@@ -59,7 +59,7 @@ use crate::{
             concept_source_path_allowed, Edge, EdgeKind, Epistemic, FileNode, GraphStore,
             SymbolNode,
         },
-        parse, prose,
+        parse, prose, rationale,
     },
     substrate::{self, DiscoveredFile, FileClass},
 };
@@ -200,139 +200,186 @@ fn stages_1_to_3(
     // Stage 4: collect cross-file refs from newly parsed files.
     let mut cross_file_pending: Vec<CrossFilePending> = Vec::new();
 
+    // file_map tracks path -> FileNodeId for all files visible this cycle,
+    // used by the concept stage to resolve governs path references.
+    let mut file_map: HashMap<String, crate::core::ids::FileNodeId> =
+        existing_file_paths.iter().cloned().collect();
+
+    // Pass 1: Process all SupportedCode files.
+    //
+    // Done first so that file_map is fully populated before the concept pass
+    // resolves governs-path references. Discovery order is filesystem-dependent
+    // so we cannot assume code files appear before ADRs in `discovered`.
     for file in discovered {
-        if matches!(file.class, FileClass::SupportedCode { .. }) {
-            let content = match std::fs::read(&file.absolute_path) {
-                Ok(content) => content,
-                Err(_) => continue,
-            };
+        if !matches!(file.class, FileClass::SupportedCode { .. }) {
+            continue;
+        }
 
-            let content_hash = hex::encode(blake3::hash(&content).as_bytes());
-            let existing = graph.file_by_path(&file.relative_path)?;
+        let content = match std::fs::read(&file.absolute_path) {
+            Ok(content) => content,
+            Err(_) => continue,
+        };
 
-            if let Some(ref file_node) = existing {
-                if file_node.content_hash == content_hash {
-                    continue;
-                }
-                graph.delete_node(NodeId::File(file_node.id))?;
+        let content_hash = hex::encode(blake3::hash(&content).as_bytes());
+        let existing = graph.file_by_path(&file.relative_path)?;
+
+        if let Some(ref file_node) = existing {
+            if file_node.content_hash == content_hash {
+                // Unchanged file: already in file_map via existing_file_paths.
+                continue;
             }
+            graph.delete_node(NodeId::File(file_node.id))?;
+        }
 
-            let file_id = if let Some(ref file_node) = existing {
-                // Same path, different content: reuse the stable ID (content change, not rename).
-                file_node.id
-            } else if let Some(old_node) = disappeared_by_hash.get(&content_hash) {
-                // Same content, different path: this is a rename. Preserve the old ID
-                // and record the old path so we skip deleting it at the end.
-                rename_matched_old_paths.insert(old_node.path.clone());
-                identities_resolved += 1;
-                old_node.id
-            } else {
-                // Genuinely new file.
-                derive_file_id(&content_hash)
-            };
+        let file_id = if let Some(ref file_node) = existing {
+            // Same path, different content: reuse the stable ID (content change, not rename).
+            file_node.id
+        } else if let Some(old_node) = disappeared_by_hash.get(&content_hash) {
+            // Same content, different path: this is a rename. Preserve the old ID
+            // and record the old path so we skip deleting it at the end.
+            rename_matched_old_paths.insert(old_node.path.clone());
+            identities_resolved += 1;
+            old_node.id
+        } else {
+            // Genuinely new file.
+            derive_file_id(&content_hash)
+        };
 
-            let language = match file.class {
-                FileClass::SupportedCode { language } => Some(language.to_string()),
-                _ => None,
-            };
+        let language = match file.class {
+            FileClass::SupportedCode { language } => Some(language.to_string()),
+            _ => None,
+        };
 
-            graph.upsert_file(FileNode {
-                id: file_id,
-                path: file.relative_path.clone(),
-                path_history: disappeared_by_hash
-                    .get(&content_hash)
-                    .map(|old| {
-                        let mut h = old.path_history.clone();
-                        h.insert(0, old.path.clone());
-                        h
-                    })
-                    .unwrap_or_default(),
-                content_hash: content_hash.clone(),
-                size_bytes: file.size_bytes,
-                language,
-                epistemic: Epistemic::ParserObserved,
-                provenance: make_provenance(
-                    "discover",
-                    &revision,
-                    &file.relative_path,
-                    &content_hash,
-                ),
-            })?;
+        let inline_decisions = rationale::extract_inline_decisions(&content, &file.class);
 
-            if let Some(parsed) = parse::parse_file(file.absolute_path.as_path(), &content)? {
-                if !parsed.symbols.is_empty() {
-                    files_parsed += 1;
-                    for symbol in &parsed.symbols {
-                        let symbol_id = derive_symbol_id(
-                            file_id,
-                            &symbol.qualified_name,
-                            symbol.kind,
-                            &symbol.body_hash,
-                        );
-                        let provenance = make_provenance(
-                            "parse_code",
+        graph.upsert_file(FileNode {
+            id: file_id,
+            path: file.relative_path.clone(),
+            path_history: disappeared_by_hash
+                .get(&content_hash)
+                .map(|old| {
+                    let mut h = old.path_history.clone();
+                    h.insert(0, old.path.clone());
+                    h
+                })
+                .unwrap_or_default(),
+            content_hash: content_hash.clone(),
+            size_bytes: file.size_bytes,
+            language,
+            inline_decisions,
+            epistemic: Epistemic::ParserObserved,
+            provenance: make_provenance("discover", &revision, &file.relative_path, &content_hash),
+        })?;
+        file_map.insert(file.relative_path.clone(), file_id);
+
+        if let Some(parsed) = parse::parse_file(file.absolute_path.as_path(), &content)? {
+            if !parsed.symbols.is_empty() {
+                files_parsed += 1;
+                for symbol in &parsed.symbols {
+                    let symbol_id = derive_symbol_id(
+                        file_id,
+                        &symbol.qualified_name,
+                        symbol.kind,
+                        &symbol.body_hash,
+                    );
+                    let provenance = make_provenance(
+                        "parse_code",
+                        &revision,
+                        &file.relative_path,
+                        &content_hash,
+                    );
+
+                    graph.upsert_symbol(SymbolNode {
+                        id: symbol_id,
+                        file_id,
+                        qualified_name: symbol.qualified_name.clone(),
+                        display_name: symbol.display_name.clone(),
+                        kind: symbol.kind,
+                        body_byte_range: symbol.body_byte_range,
+                        body_hash: symbol.body_hash.clone(),
+                        signature: symbol.signature.clone(),
+                        doc_comment: symbol.doc_comment.clone(),
+                        epistemic: Epistemic::ParserObserved,
+                        provenance: provenance.clone(),
+                    })?;
+
+                    graph.insert_edge(Edge {
+                        id: derive_edge_id(
+                            NodeId::File(file_id),
+                            NodeId::Symbol(symbol_id),
+                            EdgeKind::Defines,
+                        ),
+                        from: NodeId::File(file_id),
+                        to: NodeId::Symbol(symbol_id),
+                        kind: EdgeKind::Defines,
+                        epistemic: Epistemic::ParserObserved,
+                        drift_score: 0.0,
+                        provenance,
+                    })?;
+
+                    symbols_extracted += 1;
+                    edges_added += 1;
+                }
+            }
+            // Collect cross-file refs for stage 4, regardless of symbol count.
+            if !parsed.call_refs.is_empty() || !parsed.import_refs.is_empty() {
+                cross_file_pending.push(CrossFilePending {
+                    file_id,
+                    file_path: file.relative_path.clone(),
+                    call_refs: parsed.call_refs,
+                    import_refs: parsed.import_refs,
+                });
+            }
+        }
+    }
+
+    // Pass 2: Process all Markdown concept files.
+    //
+    // file_map is now complete; governs-path resolution will find all code files
+    // regardless of the order they appeared in `discovered`.
+    for file in discovered {
+        if !matches!(file.class, FileClass::Markdown)
+            || !concept_source_path_allowed(&file.relative_path, &config.concept_directories)
+        {
+            continue;
+        }
+
+        let content = match std::fs::read(&file.absolute_path) {
+            Ok(content) => content,
+            Err(_) => continue,
+        };
+
+        if let Some((concept, governs_paths)) =
+            prose::extract_concept(&file.relative_path, &content, &revision)?
+        {
+            let concept_id = concept.id;
+            let content_hash = concept.provenance.source_artifacts[0].content_hash.clone();
+            graph.upsert_concept(concept)?;
+            concept_nodes_emitted += 1;
+
+            // Emit HumanDeclared Governs edges for each resolved governs path.
+            // Stale references (paths not in file_map) are silently skipped.
+            for governs_path in &governs_paths {
+                if let Some(&file_id) = file_map.get(governs_path.as_str()) {
+                    let from = NodeId::Concept(concept_id);
+                    let to = NodeId::File(file_id);
+                    graph.insert_edge(Edge {
+                        id: derive_edge_id(from, to, EdgeKind::Governs),
+                        from,
+                        to,
+                        kind: EdgeKind::Governs,
+                        epistemic: Epistemic::HumanDeclared,
+                        drift_score: 0.0,
+                        provenance: make_provenance(
+                            "parse_prose",
                             &revision,
                             &file.relative_path,
                             &content_hash,
-                        );
-
-                        graph.upsert_symbol(SymbolNode {
-                            id: symbol_id,
-                            file_id,
-                            qualified_name: symbol.qualified_name.clone(),
-                            display_name: symbol.display_name.clone(),
-                            kind: symbol.kind,
-                            body_byte_range: symbol.body_byte_range,
-                            body_hash: symbol.body_hash.clone(),
-                            signature: symbol.signature.clone(),
-                            doc_comment: symbol.doc_comment.clone(),
-                            epistemic: Epistemic::ParserObserved,
-                            provenance: provenance.clone(),
-                        })?;
-
-                        graph.insert_edge(Edge {
-                            id: derive_edge_id(
-                                NodeId::File(file_id),
-                                NodeId::Symbol(symbol_id),
-                                EdgeKind::Defines,
-                            ),
-                            from: NodeId::File(file_id),
-                            to: NodeId::Symbol(symbol_id),
-                            kind: EdgeKind::Defines,
-                            epistemic: Epistemic::ParserObserved,
-                            drift_score: 0.0,
-                            provenance,
-                        })?;
-
-                        symbols_extracted += 1;
-                        edges_added += 1;
-                    }
+                        ),
+                    })?;
+                    edges_added += 1;
                 }
-                // Collect cross-file refs for stage 4, regardless of symbol count.
-                if !parsed.call_refs.is_empty() || !parsed.import_refs.is_empty() {
-                    cross_file_pending.push(CrossFilePending {
-                        file_id,
-                        file_path: file.relative_path.clone(),
-                        call_refs: parsed.call_refs,
-                        import_refs: parsed.import_refs,
-                    });
-                }
-            }
-        }
-
-        if matches!(file.class, FileClass::Markdown)
-            && concept_source_path_allowed(&file.relative_path, &config.concept_directories)
-        {
-            let content = match std::fs::read(&file.absolute_path) {
-                Ok(content) => content,
-                Err(_) => continue,
-            };
-
-            if let Some(concept) =
-                prose::extract_concept(&file.relative_path, &content, &revision)?
-            {
-                graph.upsert_concept(concept)?;
-                concept_nodes_emitted += 1;
+                // else: stale reference — skip silently, no edge emitted
             }
         }
     }

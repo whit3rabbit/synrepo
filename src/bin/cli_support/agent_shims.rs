@@ -1,9 +1,8 @@
 //! Static shim content and output paths for `synrepo agent-setup <tool>`.
 //!
-//! Each shim is a thin integration file that teaches an agent CLI to use synrepo's
-//! Phase 1 commands. Shims never embed long-form explanations — those live in
-//! `skill/SKILL.md`. The shim checks for `.synrepo/`, documents CLI commands, and
-//! notes when Phase 2 MCP tools land.
+//! Each shim teaches an agent how to use synrepo. Shims cover the MCP tools
+//! (primary interface) and CLI fallback commands. Long-form explanations live in
+//! `skill/SKILL.md`.
 
 use std::path::{Path, PathBuf};
 
@@ -76,44 +75,47 @@ impl AgentTool {
 // Each shim covers:
 //   1. What synrepo is (one sentence)
 //   2. When to use it (check for .synrepo/)
-//   3. Phase 1 CLI commands (available today)
-//   4. Phase 2 note (MCP tools coming later)
-//   5. Commands quick reference
+//   3. MCP tools (primary interface)
+//   4. CLI commands (fallback when MCP is not running)
+//   5. Trust model
 
 const CLAUDE_SHIM: &str = "\
 # synrepo context
 
 synrepo is a context compiler: it precomputes a structural graph of the codebase and \
-serves it through CLI commands (Phase 1) and an MCP server (Phase 2, coming later).
+serves it through MCP tools (primary) and CLI commands (fallback).
 
 ## When to use synrepo
 
-Check for a `.synrepo/` directory. If it exists, use synrepo commands BEFORE reading \
-source files cold.
+Check for a `.synrepo/` directory. If it exists, use synrepo BEFORE reading source \
+files cold.
 
-## Phase 1 — CLI commands (available now)
+## MCP tools (primary interface)
 
-The MCP server is not yet running. Use these CLI commands for structural graph access:
+Use these when the synrepo MCP server is running:
+
+- `synrepo_card target=<id> budget=<tiny|normal|deep>` — structured card for a file or \
+  symbol. Budget tiers: tiny (~200 tokens), normal (~500 tokens), deep (~2 k tokens).
+- `synrepo_search query=<text>` — lexical search across indexed files.
+- `synrepo_overview` — graph counts and mode summary.
+- `synrepo_where_to_edit task=<description>` — file suggestions for a plain-language task.
+- `synrepo_change_impact target=<id>` — what depends on this file or symbol.
+
+Use `synrepo_search` to find node IDs (format: `file_0000000000000042`, \
+`symbol_0000000000000024`) before calling `synrepo_card` or `synrepo_change_impact`.
+
+## CLI fallback (when MCP is not running)
 
 ```
 synrepo status                                   # health: mode, graph counts, last reconcile
 synrepo graph stats                              # node and edge counts as JSON
-synrepo search <query>                           # lexical search across indexed files
-synrepo node <id>                                # dump a node's metadata as JSON
+synrepo search <query>                           # lexical search
+synrepo node <id>                                # node metadata as JSON
 synrepo graph query \"inbound <node_id>\"          # what depends on this node
 synrepo graph query \"outbound <node_id>\"         # what this node depends on
 synrepo graph query \"outbound <node_id> defines\" # filtered by edge kind
 synrepo reconcile                                # refresh graph against current files
 ```
-
-Node IDs use display format: `file_0000000000000042`, `symbol_0000000000000024`.
-Use `synrepo search <name>` to find IDs by symbol or file name.
-
-## Phase 2 — MCP tools (coming later)
-
-When the MCP server ships, `synrepo_card`, `synrepo_where_to_edit`, \
-`synrepo_change_impact`, and other task-first tools replace these CLI calls. \
-See `skill/SKILL.md` for the full Phase 2 interface description.
 
 ## Trust model
 
@@ -123,52 +125,63 @@ See `skill/SKILL.md` for the full Phase 2 interface description.
 
 const CURSOR_SHIM: &str = "\
 ---
-description: synrepo structural graph commands for Phase 1 (no MCP yet)
+description: synrepo structural graph — MCP tools and CLI fallback
 globs: [\"**/*\"]
 alwaysApply: false
 ---
 
-# synrepo (Phase 1)
+# synrepo
 
 synrepo precomputes a structural graph of this codebase. Check for `.synrepo/` before \
 reading files cold.
 
-## Available CLI commands
+## MCP tools (primary)
+
+- `synrepo_card` — structured card for a file or symbol (budget: tiny/normal/deep)
+- `synrepo_search` — lexical search
+- `synrepo_overview` — graph counts and mode
+- `synrepo_where_to_edit` — file suggestions for a plain-language task
+- `synrepo_change_impact` — reverse-dependency impact for a file or symbol
+
+## CLI fallback (when MCP is not running)
 
 ```
 synrepo status                           # health check
 synrepo search <query>                   # find symbols or files by name
-synrepo node <id>                        # dump node metadata
+synrepo node <id>                        # node metadata as JSON
 synrepo graph query \"inbound <node_id>\"  # reverse dependencies
 synrepo graph query \"outbound <node_id>\" # forward dependencies
 synrepo graph stats                      # counts by type
 synrepo reconcile                        # refresh graph
 ```
-
-Phase 2 MCP tools (`synrepo_card`, `synrepo_where_to_edit`, etc.) are not yet running. \
-Use CLI commands for now.
 ";
 
 const COPILOT_SHIM: &str = "\
-## synrepo (structural graph — Phase 1)
+## synrepo (structural graph)
 
 This repo uses synrepo, a context compiler that precomputes a structural graph of the \
 codebase. Check for `.synrepo/` before reading source files cold.
 
-### Phase 1 CLI commands (MCP not yet running)
+### MCP tools (primary interface)
 
-Use these shell commands to navigate the graph:
-
-- `synrepo status` — health: mode, graph counts, last reconcile
-- `synrepo search <query>` — lexical search by symbol or file name
-- `synrepo node <id>` — node metadata as JSON
-- `synrepo graph query \"inbound <id>\"` — what depends on this node
-- `synrepo graph query \"outbound <id>\"` — what this node depends on
-- `synrepo graph stats` — node and edge counts
-- `synrepo reconcile` — refresh the graph
+- `synrepo_card` — structured card for a file or symbol; budgets: tiny/normal/deep
+- `synrepo_search` — lexical search by symbol or file name
+- `synrepo_overview` — graph counts and repository mode
+- `synrepo_where_to_edit` — file suggestions for a plain-language task description
+- `synrepo_change_impact` — what depends on a given file or symbol
 
 Node IDs: `file_0000000000000042`, `symbol_0000000000000024`. \
-Use `synrepo search` to find them.
+Use `synrepo_search` to find them before calling card or impact tools.
+
+### CLI fallback (when MCP is not running)
+
+- `synrepo status` — health: mode, graph counts, last reconcile
+- `synrepo search <query>` — lexical search
+- `synrepo node <id>` — node metadata as JSON
+- `synrepo graph query \"inbound <id>\"` — reverse dependencies
+- `synrepo graph query \"outbound <id>\"` — forward dependencies
+- `synrepo graph stats` — node and edge counts
+- `synrepo reconcile` — refresh the graph
 
 Graph content is ground truth. Overlay content is machine-authored and secondary.
 ";
@@ -180,9 +193,21 @@ synrepo is a context compiler: it precomputes a structural graph of the codebase
 tree-sitter parsing and git history. Use it BEFORE reading source files cold when \
 `.synrepo/` exists in the repo root.
 
-### Phase 1 — CLI commands
+### MCP tools (primary interface)
 
-The MCP server is not yet running. Use the CLI for structural graph access:
+When the synrepo MCP server is running, prefer these task-first tools:
+
+- `synrepo_card target=<id> budget=<tiny|normal|deep>` — structured card for a file or \
+  symbol. Budget: tiny (~200 tokens), normal (~500 tokens), deep (~2 k tokens).
+- `synrepo_search query=<text>` — lexical search across indexed files.
+- `synrepo_overview` — graph node counts and repository mode.
+- `synrepo_where_to_edit task=<description>` — file suggestions for a plain-language task.
+- `synrepo_change_impact target=<id>` — what depends on this file or symbol.
+
+Node IDs: `file_0000000000000042`, `symbol_0000000000000024`. \
+Use `synrepo_search` to find them.
+
+### CLI fallback (when MCP is not running)
 
 ```bash
 synrepo status                                    # health check
@@ -195,16 +220,8 @@ synrepo graph stats                               # counts by type
 synrepo reconcile                                 # refresh graph against current files
 ```
 
-Node IDs: `file_0000000000000042`, `symbol_0000000000000024`.
-
 ### Trust model
 
 - `source_store: graph` — parser-observed or git-observed facts. Ground truth.
 - `source_store: overlay` — machine-authored suggestions. Treat as secondary.
-
-### Phase 2
-
-When the MCP server ships, task-first tools (`synrepo_card`, `synrepo_where_to_edit`, \
-`synrepo_change_impact`, etc.) replace these CLI calls. See `skill/SKILL.md` for the \
-full planned interface.
 ";

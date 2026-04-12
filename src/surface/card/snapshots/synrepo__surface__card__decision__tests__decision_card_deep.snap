@@ -1,0 +1,13 @@
+---
+source: src/surface/card/decision.rs
+assertion_line: 114
+expression: rendered
+---
+{
+  "decision_body": "We store the canonical graph in SQLite because it provides transactional writes and zero-dependency deployment without a separate server process.",
+  "freshness": "fresh",
+  "governed_node_ids": [],
+  "source_path": "docs/adr/0001-sqlite.md",
+  "status": "Accepted",
+  "title": "Use SQLite for Graph Storage"
+}

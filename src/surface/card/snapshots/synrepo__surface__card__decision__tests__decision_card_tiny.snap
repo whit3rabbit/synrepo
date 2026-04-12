@@ -1,0 +1,9 @@
+---
+source: src/surface/card/decision.rs
+assertion_line: 102
+expression: rendered
+---
+{
+  "governed_node_ids": [],
+  "title": "Use SQLite for Graph Storage"
+}

@@ -25,6 +25,7 @@ fn graph_store_round_trips_nodes_edges_and_provenance() {
         content_hash: "abc123".to_string(),
         size_bytes: 128,
         language: Some("rust".to_string()),
+        inline_decisions: Vec::new(),
         epistemic: Epistemic::ParserObserved,
         provenance: sample_provenance("parse_code", "src/lib.rs"),
     };
@@ -47,6 +48,8 @@ fn graph_store_round_trips_nodes_edges_and_provenance() {
         title: "Graph Storage".to_string(),
         aliases: vec!["canonical-graph".to_string()],
         summary: Some("Why the graph stays observed-only.".to_string()),
+        status: None,
+        decision_body: None,
         epistemic: Epistemic::HumanDeclared,
         provenance: sample_provenance("parse_prose", "docs/adr/0001-graph.md"),
     };
@@ -102,6 +105,7 @@ fn deleting_a_file_removes_child_symbols_and_incident_edges() {
         content_hash: "main".to_string(),
         size_bytes: 10,
         language: Some("rust".to_string()),
+        inline_decisions: Vec::new(),
         epistemic: Epistemic::ParserObserved,
         provenance: sample_provenance("parse_code", "src/main.rs"),
     };
@@ -155,6 +159,7 @@ fn deleting_a_file_removes_edges_for_all_symbols_in_one_pass() {
         content_hash: "main".to_string(),
         size_bytes: 10,
         language: Some("rust".to_string()),
+        inline_decisions: Vec::new(),
         epistemic: Epistemic::ParserObserved,
         provenance: sample_provenance("parse_code", "src/main.rs"),
     };
@@ -265,6 +270,7 @@ fn persisted_stats_count_nodes_and_edges_by_kind() {
         content_hash: "a".to_string(),
         size_bytes: 1,
         language: Some("rust".to_string()),
+        inline_decisions: Vec::new(),
         epistemic: Epistemic::ParserObserved,
         provenance: sample_provenance("parse_code", "src/lib.rs"),
     };
@@ -287,6 +293,8 @@ fn persisted_stats_count_nodes_and_edges_by_kind() {
         title: "Decision".to_string(),
         aliases: Vec::new(),
         summary: None,
+        status: None,
+        decision_body: None,
         epistemic: Epistemic::HumanDeclared,
         provenance: sample_provenance("parse_prose", "docs/adr/0001.md"),
     };
