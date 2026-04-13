@@ -22,6 +22,10 @@ pub enum SymbolKind {
     Trait,
     /// A type alias or typedef.
     Type,
+    /// A named type definition (e.g. Go type declarations).
+    TypeDef,
+    /// An interface type (e.g. Go interface declarations).
+    Interface,
     /// A module or namespace.
     Module,
     /// A constant or static.
@@ -39,6 +43,8 @@ impl SymbolKind {
             SymbolKind::Class => "class",
             SymbolKind::Trait => "trait",
             SymbolKind::Type => "type",
+            SymbolKind::TypeDef => "type_def",
+            SymbolKind::Interface => "interface",
             SymbolKind::Module => "module",
             SymbolKind::Constant => "constant",
             SymbolKind::Export => "export",

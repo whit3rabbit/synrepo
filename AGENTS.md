@@ -23,6 +23,7 @@ cargo build                        # build
 cargo test                         # run all tests
 cargo test <test_name>             # run a single test (substring match)
 cargo test -p synrepo <test_name>  # run a single test by exact path
+cargo test --bin synrepo <test_name>  # run binary-crate tests (cli_support::tests::*)
 cargo clippy --workspace --all-targets -- -D warnings  # lint (CI-equivalent; covers MCP + test targets)
 cargo fmt                          # format
 make check                         # fmt-check + lint + test (CI equivalent)
@@ -33,8 +34,14 @@ cargo run -- check                 # read-only drift report: surfaces, severitie
 cargo run -- check --json          # machine-readable JSON drift report
 cargo run -- sync                  # repair auto-fixable drift surfaces; appends to .synrepo/state/repair-log.jsonl
 cargo run -- sync --json           # JSON sync summary
-cargo run -- status                # operational health: mode, counts, last reconcile, lock
-cargo run -- agent-setup <tool>    # write integration shim for claude/cursor/copilot/generic
+cargo run -- status [--json]        # operational health: mode, counts, last reconcile, lock, export freshness
+cargo run -- export [--format markdown|json] [--deep] [--commit] [--out <dir>]  # generate synrepo-context/
+cargo run -- upgrade [--apply]     # dry-run or apply storage compatibility actions
+cargo run -- watch                 # foreground watch for the current repo
+cargo run -- watch --daemon        # detached per-repo watch service
+cargo run -- watch status          # watch ownership and reconcile telemetry
+cargo run -- watch stop            # stop active watch service or clean stale watch artifacts
+cargo run -- agent-setup <tool>    # write integration shim; tools: claude/cursor/copilot/generic/codex/windsurf; --regen to update if stale
 cargo run -- search <query>        # lexical search
 cargo run -- graph query "outbound <node_id> [edge_kind]"  # graph traversal
 cargo run -- graph stats           # node/edge counts
@@ -91,9 +98,9 @@ Node types: `FileNode` (content-hash identity), `SymbolNode` (tree-sitter extrac
 
 **Pipeline** (`src/pipeline/`) — `structural/` defines the 8-stage compile cycle. `mod.rs` owns transaction orchestration and `CompileSummary`; `stages.rs` owns stages 1–3 (discover → parse code → parse prose); `stage4.rs` owns cross-file edge resolution. Stage 5 (git mining) runs via `src/pipeline/git/` and `src/pipeline/git_intelligence/`. Stages 6 (identity cascade, partially wired), 7 (drift scoring), and 8 (ArcSwap commit) are not yet wired end-to-end. `synthesis/` defines the `CommentaryGenerator` trait boundary with `stub.rs` (`NoOpGenerator`, default) and `claude.rs` (`ClaudeCommentaryGenerator`, reads `SYNREPO_ANTHROPIC_API_KEY`); called lazily by the card compiler at `Deep` budget when no overlay entry exists.
 - `maintenance.rs` — storage-compatibility cleanup and compaction hooks; driven by `sync`.
-- `repair/` — `mod.rs` is a thin façade. `report.rs` builds the read-only drift view, `sync.rs` drives auto-repair, `log.rs` appends JSONL resolution records, `declared_links.rs` verifies `Governs` targets, `commentary.rs` is the commentary-refresh repair action that calls the synthesis generator, and `types/` holds the stable enums plus report/log payload types.
+- `repair/` — `mod.rs` is a thin façade. `report.rs` builds the read-only drift view, `sync.rs` drives auto-repair, `cross_links.rs` runs the cross-link generation pass, `log.rs` appends JSONL resolution records, `declared_links.rs` verifies `Governs` targets, `commentary.rs` is the commentary-refresh repair action that calls the synthesis generator, and `types/` holds the stable enums plus report/log payload types.
 - `git_intelligence/` — `mod.rs` is a thin façade. `types.rs` defines the public Git-intelligence payloads, `analysis.rs` derives history/hotspot/ownership/co-change summaries, and `tests/` is split by status, history, path, and shared support helpers.
-- `watch.rs` — reconcile backstop and watch loop production logic; tests live in `src/pipeline/watch/tests.rs`.
+- `watch/` — reconcile backstop, watch lease/control plane, and watch loop production logic; tests live in `src/pipeline/watch/tests.rs`.
 - `writer.rs` — single-writer lock production logic; tests live in `src/pipeline/writer/tests.rs`.
 - Spec: `openspec/specs/foundation/spec.md`
 
@@ -108,7 +115,9 @@ Node types: `FileNode` (content-hash identity), `SymbolNode` (tree-sitter extrac
 - `.synrepo/index/` — syntext lexical index
 - `.synrepo/config.toml` — runtime config (`Config` struct in `src/config.rs`)
 - `.synrepo/.gitignore` — gitignores everything in `.synrepo/` except `config.toml` and `.gitignore`
-- `.synrepo/state/writer.lock` — process-level write lock (PID + timestamp); held during `init`, `reconcile`, and `sync`
+- `.synrepo/state/writer.lock` — process-level write lock (PID + timestamp); held during each actual runtime mutation, including watch-triggered reconcile passes
+- `.synrepo/state/watch-daemon.json` — per-repo watch lease plus owner/telemetry snapshot for `synrepo watch`
+- `.synrepo/state/watch.sock` — local control socket for active daemon watch mode
 - `.synrepo/state/reconcile-state.json` — last reconcile outcome, timestamp, and discovered/symbol counts
 - `.synrepo/state/repair-log.jsonl` — append-only resolution log written by `synrepo sync`; one JSON object per line
 - `openspec/` — planning artifacts only, not runtime
@@ -139,9 +148,11 @@ These must hold across all changes:
 
 ### Structural pipeline stage status
 
+Structural parsing supports Rust, Python, TypeScript/TSX, and Go.
+
 Stages 1–3 run on every `synrepo init`:
 1. **Discover** — substrate walk, `.gitignore`/`.synignore` respected
-2. **Parse code** — tree-sitter symbol extraction; emits `FileNode`, `SymbolNode`, `Defines` edges
+2. **Parse code** — tree-sitter symbol extraction; emits `FileNode`, `SymbolNode`, `Defines` edges (Rust, Python, TypeScript/TSX, Go)
 3. **Parse prose** — concept node extraction from configured markdown directories
 
 Stages 4–8:
@@ -151,12 +162,23 @@ Stages 4–8:
 7. Drift scoring — TODO stub
 8. ArcSwap commit — TODO stub
 
+### Overlay and audit surfaces
+
+- Cross-link overlay store, card surfacing, CLI review flow, `synrepo_findings` MCP audit tool, and `synrepo sync --generate-cross-links` / `--regenerate-cross-links` are implemented in `cross-link-overlay-v1`.
+- Cross-link promotion remains curated-mode-only. Accepted links become graph edges with `Epistemic::HumanDeclared`; overlay candidates stay in the audit trail.
+
+### Shipped CLI surface (export-and-polish-v1)
+
+- `synrepo export [--format markdown|json] [--deep] [--commit] [--out <dir>]` — generates `synrepo-context/` with rendered card output; added to `.gitignore` unless `--commit`.
+- `synrepo upgrade [--apply]` — dry-run or apply storage compatibility actions; replaces the old "run `synrepo init`" recovery instruction for version-skew scenarios.
+- `synrepo status [--json]` — enriched with export freshness and overlay cost summary.
+- `synrepo agent-setup` — now accepts `codex` and `windsurf` targets, plus `--regen` flag for idempotent updates.
+
 ### Not yet implemented
 
-- `synrepo watch` subcommand (`run_watch_loop` in `pipeline/watch.rs` is wired; no CLI entry point yet)
 - `EntryPointCard`, `CallPathCard`; specialist MCP tools (`synrepo_entrypoints`, `synrepo_call_path`, etc.). `ModuleCard` is implemented (`src/surface/card/types.rs`).
 - Graph-level `CoChangesWith` edges; symbol-level `SymbolCard.last_change`
-- Drift scoring (stage 7), ArcSwap commit (stage 8), synthesis pipeline (phase 4+)
+- Drift scoring (stage 7), ArcSwap commit (stage 8)
 
 ## Gotchas
 
@@ -165,16 +187,18 @@ Stages 4–8:
 - **Stage 4 cross-file edges are now emitted**: `Calls` (file→symbol, approximate name resolution) and `Imports` (file→file, relative path resolution) edges are produced by `run_structural_compile`. `Inherits`, `References`, `CoChangesWith`, `Mentions` are not yet emitted. `SplitFrom` and `MergedFrom` edge kinds are defined but not yet produced.
 - **`criterion` is present in `Cargo.toml`**, but the documented test workflow still centers on `proptest` and `insta`. Use `criterion` only for explicit benchmark work.
 - **`.synrepo/graph/nodes.db`** is the actual SQLite file. Code that opens the graph store uses `SqliteGraphStore::open(&graph_dir)` where `graph_dir` is `.synrepo/graph/`; the `nodes.db` name is internal to `src/store/sqlite/mod.rs`.
-- **Compatibility blocks on version mismatch**: if `.synrepo/` contains a graph store whose recorded format version is newer than the current binary understands, `synrepo init` and all graph commands will error. Resolve by removing `.synrepo/` and reinitializing.
+- **Compatibility blocks on version mismatch**: if `.synrepo/` contains a graph store whose recorded format version is newer than the current binary understands, `synrepo init` and all graph commands will error. Run `synrepo upgrade` to see recovery steps; for a full reset, remove `.synrepo/` and run `synrepo init`.
 - **Git history mining uses `gix`** (not `git2`). The current slice ships deterministic first-parent history sampling, degraded-history handling, hotspots, ownership hints, and file-scoped co-change summaries. Graph-level `CoChangesWith` edges and symbol-level last-change summaries are still future work.
-- **`notify` and `notify-debouncer-full` are in `Cargo.toml`** and are used by `run_watch_loop` in `pipeline/watch.rs`. The watcher is implemented; there is no `synrepo watch` CLI subcommand yet.
+- **`notify` and `notify-debouncer-full` are in `Cargo.toml`** and are used by the shipped watch runtime in `src/pipeline/watch/service.rs`. The service runs both `synrepo watch` foreground mode and `synrepo watch --daemon`, with `.synrepo/` self-event suppression and startup reconcile before steady-state watching.
 - **`concept_directories` config defaults**: `docs/concepts`, `docs/adr`, `docs/decisions`. Adding a fourth directory (e.g. `architecture/decisions`) requires a config-sensitive compatibility check — changing this field triggers a graph advisory in the compat report.
 - **File rename detection is implemented (content-hash matching).** When a file is moved to a new path with the same content, the structural compile detects the rename, preserves the `FileNodeId`, and records the old path in `path_history`. Caveat: split/merge detection is still TODO — a single file split into two will still produce orphaned nodes until split detection is wired.
-- **Writer lock is enforced on all writes**: `synrepo init` and `synrepo reconcile` both acquire `.synrepo/state/writer.lock` before any state mutation. If a concurrent process holds the lock, both commands fail immediately with "writer lock held by pid N." Remove the lock file only if the recorded PID is confirmed dead (`kill -0 <pid>` returns non-zero). The canonical write path is `run_reconcile_pass()` in `pipeline/watch.rs` — any new code that needs to trigger a structural compile should go through it.
-- **`repair/types/` has dual string mappings**: `RepairSurface`, `DriftClass`, `Severity`, and `RepairAction` each have `#[serde(rename_all = "snake_case")]` AND a manual `as_str()` in `src/pipeline/repair/types/stable.rs`. Adding a new variant requires updating both. The stable-identifier tests in `src/pipeline/repair/types/tests.rs` catch `as_str()` divergence from literals but do not cross-check serde output.
+- **Watch lease and writer lock are separate**: `.synrepo/state/watch-daemon.json` records long-lived watch ownership, while `.synrepo/state/writer.lock` still guards each actual write. `synrepo reconcile` delegates to the watch owner when watch is active; unsupported mutating commands fail fast until watch is stopped. Remove stale watch or writer artifacts only after confirming the recorded PID is dead (`kill -0 <pid>` returns non-zero). The canonical structural write path remains `run_reconcile_pass()` in `src/pipeline/watch/reconcile.rs`.
+- **`repair/types/` has dual string mappings**: `RepairSurface`, `DriftClass`, `Severity`, and `RepairAction` each have `#[serde(rename_all = "snake_case")]` AND a manual `as_str()` in `src/pipeline/repair/types/stable.rs`. Adding a new variant requires updating both. `RepairSurface::ProposedLinksOverlay`, `RepairSurface::ExportSurface`, `RepairAction::RevalidateLinks`, and `RepairAction::RegenerateExports` follow the same rule. The stable-identifier tests in `src/pipeline/repair/types/tests.rs` catch `as_str()` divergence from literals but do not cross-check serde output.
 - **Structural compile is a single atomic transaction (stages 1–4)**: `run_structural_compile` wraps all four stages in one `BEGIN`/`COMMIT`. Stage 4 reads uncommitted nodes from stages 1–3 via SQLite read-your-own-writes on the same connection. The `with_transaction` helper that existed in `structural/mod.rs` has been removed; do not re-add it.
 - **Reader snapshots are re-entrant**: `SqliteGraphStore::begin_read_snapshot` and the overlay equivalent use a `Mutex<usize>` depth counter. Only the outermost begin issues `BEGIN DEFERRED`; only the outermost end issues `COMMIT`. This lets an MCP handler wrap a request while `GraphCardCompiler` also wraps each method internally without tripping SQLite's "transaction within a transaction" error. Writer-side `begin`/`commit`/`rollback` is a separate lane (`&mut self`) and must not interleave with a read snapshot on the same handle. Note: `BEGIN DEFERRED` only upgrades to a real read transaction on the first SELECT, so the snapshot epoch is pinned at the first read, not at begin.
 - **Both SQLite stores set `busy_timeout = 5000`** (see `src/store/sqlite/schema.rs` and `src/store/overlay/schema.rs`) so transient WAL checkpoint contention waits up to 5 s rather than surfacing `SQLITE_BUSY`. This becomes load-bearing when readers hold snapshots across writer commits.
+- **Binary crate test visibility**: In `src/bin/cli_support/tests/`, functions are accessible as `crate::<name>` only if imported at the binary root (`cli.rs`) via `use`. Modules declared `mod <name>` inside `commands/` are private — tests cannot reference them by full path; use the re-exported name instead.
+- **`bootstrap()` signature**: `synrepo::bootstrap::bootstrap(repo_root: &Path, mode: Option<Mode>)` — two args only. Does not accept a pre-built `Config` or `synrepo_dir`; it derives both internally.
 - **`cargo build --workspace` does not imply `cargo test` will compile**: test-scoped code (`#[cfg(test)]` and `mod tests`) only compiles under `cargo test` / `cargo check --tests` / `cargo clippy --all-targets`. A pre-existing test-only compile error in an unrelated module will surface there, not in `cargo build`. When verifying focused work against in-tree WIP, isolate the WIP (temporary rename or stash) before running tests to confirm your own work.
 
 ## Config fields (`src/config.rs`)
@@ -197,7 +221,7 @@ Stages 4–8:
 
 `openspec/specs/` holds enduring domain specs (stable intended behavior). `openspec/changes/<name>/` holds active work: `proposal.md`, `design.md`, `tasks.md`, and optional delta specs.
 
-Active changes: none
+Active changes: `export-and-polish-v1`
 
 Archived completed changes are in `openspec/changes/archive/`.
 

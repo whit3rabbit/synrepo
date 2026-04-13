@@ -51,26 +51,26 @@
 
 ## 7. CLI — `synrepo links` and `synrepo findings`
 
-- [ ] 7.1 Add `synrepo links list [--tier <tier>] [--json]` subcommand in `src/bin/cli_support/commands.rs`; routes through `SqliteOverlayStore::candidates_for_node` for all stored candidates
-- [ ] 7.2 Add `synrepo links review [--limit <n>] [--json]` — returns `review_queue`-tier candidates only, sorted by confidence score descending
-- [ ] 7.3 Add `synrepo links accept <candidate-id> [--reviewer <name>]` — curated mode only; writes graph edge with `Epistemic::HumanDeclared` + reviewer identity, updates candidate with `promoted_at` + `graph_edge_id`, appends audit row. Errors cleanly in auto mode.
-- [ ] 7.4 Add `synrepo links reject <candidate-id> [--reviewer <name>]` — updates candidate to `rejected` state, appends audit row
-- [ ] 7.5 Add `synrepo findings [--node <id>] [--kind <kind>] [--freshness <state>] [--json]` — returns `review_queue` + `below_threshold` + `source_deleted` candidates with full provenance; no tier filter by default
-- [ ] 7.6 Tests in `src/bin/cli_support/tests/`: links accept is blocked in auto mode; accept writes a `HumanDeclared` edge; reject updates state; findings returns below-threshold candidates
+- [x] 7.1 Add `synrepo links list [--tier <tier>] [--json]` subcommand in `src/bin/cli_support/commands.rs`; routes through `SqliteOverlayStore::candidates_for_node` for all stored candidates
+- [x] 7.2 Add `synrepo links review [--limit <n>] [--json]` — returns `review_queue`-tier candidates only, sorted by confidence score descending
+- [x] 7.3 Add `synrepo links accept <candidate-id> [--reviewer <name>]` — curated mode only; writes graph edge with `Epistemic::HumanDeclared` + reviewer identity, updates candidate with `promoted_at` + `graph_edge_id`, appends audit row. Errors cleanly in auto mode.
+- [x] 7.4 Add `synrepo links reject <candidate-id> [--reviewer <name>]` — updates candidate to `rejected` state, appends audit row
+- [x] 7.5 Add `synrepo findings [--node <id>] [--kind <kind>] [--freshness <state>] [--json]` — returns `review_queue` + `below_threshold` + `source_deleted` candidates with full provenance; no tier filter by default
+- [x] 7.6 Tests in `src/bin/cli_support/tests/`: links accept is blocked in auto mode; accept writes a `HumanDeclared` edge; reject updates state; findings returns below-threshold candidates
 
 ## 8. MCP — `synrepo_findings` tool
 
-- [ ] 8.1 Add `synrepo_findings` tool handler in `crates/synrepo-mcp/src/main.rs` with params `node_id?`, `kind?`, `freshness?`, `limit?`
-- [ ] 8.2 Implement the handler by calling the same overlay-store path as the CLI `findings` command
-- [ ] 8.3 Ensure the response schema matches the spec: provenance, tier, score, freshness, endpoint IDs
-- [ ] 8.4 Update the MCP server's tool description string; update the agent orientation text that lists available tools
+- [x] 8.1 Add `synrepo_findings` tool handler in `crates/synrepo-mcp/src/main.rs` with params `node_id?`, `kind?`, `freshness?`, `limit?`
+- [x] 8.2 Implement the handler by calling the same overlay-store path as the CLI `findings` command
+- [x] 8.3 Ensure the response schema matches the spec: provenance, tier, score, freshness, endpoint IDs
+- [x] 8.4 Update the MCP server's tool description string; update the agent orientation text that lists available tools
 
 ## 9. Candidate generation pass — hook into CLI
 
-- [ ] 9.1 Add `synrepo sync --generate-cross-links` flag in `commands.rs`; runs the full pipeline: triage prefilter → LLM generation (`ClaudeCrossLinkGenerator` or `NoOp`) → evidence verification → confidence scoring → persistence
-- [ ] 9.2 Respect `cross_link_cost_limit`: bail with a report-only summary once the limit is hit; report remaining candidates as `blocked`
-- [ ] 9.3 Add `synrepo sync --regenerate-cross-links` that re-runs full generation for stale candidates (in contrast to `revalidate_links`, which is deterministic-verification-only)
-- [ ] 9.4 Tests: run generation against a small fixture repo with a fake `CrossLinkGenerator`; verify stored rows, audit trail, and tier distribution
+- [x] 9.1 Add `synrepo sync --generate-cross-links` flag in `commands.rs`; runs the full pipeline: triage prefilter → LLM generation (`ClaudeCrossLinkGenerator` or `NoOp`) → evidence verification → confidence scoring → persistence
+- [x] 9.2 Respect `cross_link_cost_limit`: bail with a report-only summary once the limit is hit; report remaining candidates as `blocked`
+- [x] 9.3 Add `synrepo sync --regenerate-cross-links` that re-runs full generation for stale candidates (in contrast to `revalidate_links`, which is deterministic-verification-only)
+- [x] 9.4 Tests: run generation against a small fixture repo with a fake `CrossLinkGenerator`; verify stored rows, audit trail, and tier distribution
 
 ## 10. Reconcile integration
 
@@ -79,9 +79,9 @@
 
 ## 11. Validation and documentation
 
-- [ ] 11.1 Run `openspec validate cross-link-overlay-v1` and confirm it passes
-- [ ] 11.2 Run `make check` (fmt-check + clippy + test); resolve any lint or test failures
-- [ ] 11.3 Update `CLAUDE.md` Gotchas section: note `RepairSurface::ProposedLinksOverlay` and `RepairAction::RevalidateLinks` require dual-mapping updates (matches existing commentary gotcha)
-- [ ] 11.4 Update `CLAUDE.md` Phase status section: mark cross-link overlay implemented; update shipped/not-shipped MCP tool list
-- [ ] 11.5 Update `AGENTS.md` Active changes section to reflect the new active change while work is in progress (and back to "none" after archive)
-- [ ] 11.6 After implementation is complete and tests pass, run `/opsx:archive` to archive the change and sync delta specs into the main specs tree
+- [x] 11.1 Run `openspec validate cross-link-overlay-v1` and confirm it passes
+- [x] 11.2 Run `make check` (fmt-check + clippy + test); resolve any lint or test failures
+- [x] 11.3 Update `CLAUDE.md` Gotchas section: note `RepairSurface::ProposedLinksOverlay` and `RepairAction::RevalidateLinks` require dual-mapping updates (matches existing commentary gotcha)
+- [x] 11.4 Update `CLAUDE.md` Phase status section: mark cross-link overlay implemented; update shipped/not-shipped MCP tool list
+- [x] 11.5 Update `AGENTS.md` Active changes section to reflect the new active change while work is in progress (and back to "none" after archive)
+- [x] 11.6 After implementation is complete and tests pass, run `/opsx:archive` to archive the change and sync delta specs into the main specs tree

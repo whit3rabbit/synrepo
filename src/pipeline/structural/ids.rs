@@ -29,7 +29,7 @@ pub(super) fn derive_symbol_id(
 }
 
 /// Derive a stable `EdgeId` from `(from_node, to_node, kind)`.
-pub(super) fn derive_edge_id(from: NodeId, to: NodeId, kind: EdgeKind) -> EdgeId {
+pub fn derive_edge_id(from: NodeId, to: NodeId, kind: EdgeKind) -> EdgeId {
     let mut hasher = blake3::Hasher::new();
     hasher.update(from.to_string().as_bytes());
     hasher.update(to.to_string().as_bytes());

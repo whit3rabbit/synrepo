@@ -106,8 +106,14 @@ pub(crate) fn check_store_ready(
     let report = compatibility::evaluate_runtime(synrepo_dir, synrepo_dir.exists(), config)?;
     if let Some(entry) = report.entry_for(store) {
         if entry.action != CompatAction::Continue {
+            let hint = match entry.action {
+                CompatAction::Block | CompatAction::MigrateRequired => {
+                    "Run `synrepo upgrade` to see recovery steps."
+                }
+                _ => "Run `synrepo upgrade --apply` to resolve, or `synrepo init` to reinitialize.",
+            };
             anyhow::bail!(
-                "Storage compatibility: {} requires {} because {}. Run `synrepo init` first.",
+                "Storage compatibility: {} requires {} because {}. {hint}",
                 entry.store_id.as_str(),
                 entry.action.as_str(),
                 entry.reason

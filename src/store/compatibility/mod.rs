@@ -7,7 +7,8 @@ mod types;
 // Constants shared across sub-modules. Private here; child modules
 // access them via `super::CONST`.
 const SNAPSHOT_VERSION: u32 = 1;
-const STORE_FORMAT_VERSION: u32 = 1;
+/// Current store format version expected by this binary.
+pub const STORE_FORMAT_VERSION: u32 = 1;
 const SNAPSHOT_FILENAME: &str = "storage-compat.json";
 
 pub(crate) use evaluate::clear_store_contents;

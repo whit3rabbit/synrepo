@@ -21,6 +21,7 @@
 //! - `synthesis` — LLM-driven overlay pipeline (phase 4+).
 
 pub mod diagnostics;
+pub mod export;
 pub mod git;
 pub mod git_intelligence;
 pub mod maintenance;

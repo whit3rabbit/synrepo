@@ -24,7 +24,7 @@ fn repair_surface_stable_identifiers() {
         RepairSurface::ProposedLinksOverlay.as_str(),
         "proposed_links_overlay"
     );
-    assert_eq!(RepairSurface::ExportViews.as_str(), "export_views");
+    assert_eq!(RepairSurface::ExportSurface.as_str(), "export_surface");
 }
 
 #[test]
@@ -62,6 +62,10 @@ fn repair_action_stable_identifiers() {
         "refresh_commentary"
     );
     assert_eq!(RepairAction::RevalidateLinks.as_str(), "revalidate_links");
+    assert_eq!(
+        RepairAction::RegenerateExports.as_str(),
+        "regenerate_exports"
+    );
 }
 
 #[test]

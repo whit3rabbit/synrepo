@@ -65,6 +65,12 @@ pub struct Config {
     #[serde(default = "default_cross_link_cost_limit")]
     pub cross_link_cost_limit: u32,
 
+    /// Directory where `synrepo export` writes generated context snapshots,
+    /// relative to the repo root. Defaults to `synrepo-context`. Changing
+    /// this field does not trigger a graph rebuild (non-compatibility-sensitive).
+    #[serde(default = "default_export_dir")]
+    pub export_dir: String,
+
     /// Confidence-tier partition thresholds used by `classify_confidence`.
     /// Changing these does not require a graph rebuild: `synrepo sync
     /// revalidate_links` re-derives the tier for each stored candidate.
@@ -157,6 +163,10 @@ fn default_cross_link_cost_limit() -> u32 {
     200
 }
 
+fn default_export_dir() -> String {
+    "synrepo-context".to_string()
+}
+
 impl std::fmt::Display for Mode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -178,6 +188,7 @@ impl Default for Config {
             commentary_cost_limit: default_commentary_cost_limit(),
             cross_link_cost_limit: default_cross_link_cost_limit(),
             cross_link_confidence_thresholds: CrossLinkConfidenceThresholds::default(),
+            export_dir: default_export_dir(),
         }
     }
 }

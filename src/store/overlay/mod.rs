@@ -8,14 +8,21 @@
 mod commentary;
 mod cross_link_audit;
 mod cross_links;
+mod findings;
 mod schema;
 
+#[cfg(test)]
+mod findings_tests;
 #[cfg(test)]
 mod tests;
 
 pub use commentary::derive_freshness;
 pub use cross_link_audit::AuditRow;
 pub use cross_links::CrossLinkHashRow;
+pub use findings::{
+    format_candidate_id, parse_cross_link_freshness, parse_overlay_edge_kind, CrossLinkFinding,
+    FindingsFilter,
+};
 
 /// Current overlay schema version shipped by this binary (v1: commentary-only;
 /// v2: commentary + cross-links).
@@ -90,6 +97,17 @@ impl SqliteOverlayStore {
     /// Absolute path of the sqlite file used by the overlay store.
     pub fn db_path(overlay_dir: &Path) -> PathBuf {
         overlay_dir.join(OVERLAY_DB_FILENAME)
+    }
+
+    /// Return the number of `generated` events in the cross-link audit trail.
+    /// Each event corresponds to one LLM generation call.
+    pub fn cross_link_generation_count(&self) -> crate::Result<usize> {
+        let conn = self.conn.lock();
+        Ok(conn.query_row(
+            "SELECT COUNT(*) FROM cross_link_audit WHERE event_kind = 'generated'",
+            [],
+            |row| row.get::<_, usize>(0),
+        )?)
     }
 
     /// Return the number of commentary rows currently stored.

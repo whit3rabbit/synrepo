@@ -290,7 +290,7 @@ mod tests {
             Ok(self
                 .edges
                 .iter()
-                .filter(|e| e.from == from && kind.map_or(true, |k| e.kind == k))
+                .filter(|e| e.from == from && kind.is_none_or(|k| e.kind == k))
                 .cloned()
                 .collect())
         }
@@ -298,7 +298,7 @@ mod tests {
             Ok(self
                 .edges
                 .iter()
-                .filter(|e| e.to == to && kind.map_or(true, |k| e.kind == k))
+                .filter(|e| e.to == to && kind.is_none_or(|k| e.kind == k))
                 .cloned()
                 .collect())
         }

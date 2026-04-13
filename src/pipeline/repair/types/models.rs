@@ -28,6 +28,15 @@ pub struct RepairReport {
     pub findings: Vec<RepairFinding>,
 }
 
+/// Options for `synrepo sync`.
+#[derive(Clone, Debug, Default)]
+pub struct SyncOptions {
+    /// If true, generate new cross-link candidates for the whole repository.
+    pub generate_cross_links: bool,
+    /// If true, re-run generation for stale candidates.
+    pub regenerate_cross_links: bool,
+}
+
 impl RepairReport {
     /// Returns true if any finding has `Severity::Actionable` and a non-None action.
     pub fn has_actionable(&self) -> bool {

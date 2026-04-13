@@ -30,6 +30,7 @@ syntext = "1.0.4"
 # LOCALS_QUERY, HIGHLIGHTS_QUERY, INJECTIONS_QUERY as &'static str constants.
 # We read those directly and add synrepo-specific extras on top.
 tree-sitter = "0.26.8"
+tree-sitter-go = "0.25.0"
 tree-sitter-rust = "0.24.2"
 tree-sitter-python = "0.25.0"
 tree-sitter-typescript = "0.23.2"

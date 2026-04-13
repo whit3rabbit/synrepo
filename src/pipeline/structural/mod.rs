@@ -35,6 +35,8 @@
 //! - The run is idempotent, unchanged files are skipped entirely.
 
 mod ids;
+pub use ids::derive_edge_id;
+
 mod provenance;
 mod stage4;
 mod stages;

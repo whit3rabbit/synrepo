@@ -266,6 +266,40 @@ fn extract_doc_comment(
             }
             None
         }
+        Language::Go => {
+            // Go doc comments are contiguous `//` or `/* */` comment nodes
+            // immediately preceding the declaration. Unlike Rust, no special
+            // prefix is required: any preceding comment is a doc comment.
+            let mut lines: Vec<String> = Vec::new();
+            let mut prev = item_node.prev_named_sibling();
+            while let Some(node) = prev {
+                if node.kind() != "comment" {
+                    break;
+                }
+                let t = node_text(node, source);
+                let stripped = if let Some(rest) = t.strip_prefix("// ") {
+                    rest.trim_end().to_string()
+                } else if let Some(rest) = t.strip_prefix("//") {
+                    rest.trim().to_string()
+                } else if t.starts_with("/*") {
+                    strip_comment_block(&t, "/*")
+                } else {
+                    break;
+                };
+                lines.push(stripped);
+                prev = node.prev_named_sibling();
+            }
+            if lines.is_empty() {
+                return None;
+            }
+            lines.reverse();
+            let joined = lines.join("\n");
+            if joined.is_empty() {
+                None
+            } else {
+                Some(joined)
+            }
+        }
     }
 }
 
@@ -314,6 +348,12 @@ fn extract_signature(
                     return Some(collapse_ws(&text[..p]));
                 }
             }
+            let end = text.find('{').unwrap_or(text.len());
+            collapse_ws(&text[..end])
+        }
+        Language::Go => {
+            // For functions, methods, structs, and interfaces: take up to the
+            // opening `{`. For constants/variables: take the full text.
             let end = text.find('{').unwrap_or(text.len());
             collapse_ws(&text[..end])
         }
@@ -372,7 +412,13 @@ fn strip_python_quotes(raw: &str) -> Option<String> {
 }
 
 fn strip_jsdoc(text: &str) -> String {
-    text.trim_start_matches("/**")
+    strip_comment_block(text, "/**")
+}
+
+/// Strip a `/* ... */` block comment to its inner text.
+/// `open_marker` is the prefix to remove (`"/**"` for JSDoc, `"/*"` for Go/C).
+fn strip_comment_block(text: &str, open_marker: &str) -> String {
+    text.trim_start_matches(open_marker)
         .trim_end_matches("*/")
         .trim()
         .lines()

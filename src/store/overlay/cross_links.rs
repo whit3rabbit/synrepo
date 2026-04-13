@@ -140,6 +140,28 @@ pub(super) fn candidates_for_node(
     rows.into_iter().collect::<crate::Result<Vec<_>>>()
 }
 
+/// Retrieve all active candidates, optionally filtered by tier.
+pub(super) fn all_candidates(
+    conn: &Connection,
+    tier: Option<&str>,
+) -> crate::Result<Vec<OverlayLink>> {
+    let mut stmt = conn.prepare(
+        "SELECT from_node, to_node, kind, epistemic,
+                source_spans_json, target_spans_json,
+                from_content_hash, to_content_hash,
+                confidence_score, confidence_tier, rationale,
+                pass_id, model_identity, generated_at
+         FROM cross_links
+         WHERE state = 'active' AND (?1 IS NULL OR confidence_tier = ?1)
+         ORDER BY confidence_score DESC, generated_at DESC",
+    )?;
+
+    let mapped = stmt
+        .query_map(params![tier], row_to_overlay_link)?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    mapped.into_iter().collect()
+}
+
 /// Count cross-link rows currently stored.
 pub(super) fn count(conn: &Connection) -> crate::Result<usize> {
     Ok(
@@ -238,28 +260,27 @@ pub(super) fn update_tier(
     let from_key = from.to_string();
     let to_key = to.to_string();
     let kind_str = overlay_edge_kind_as_str(kind);
-    let previous_tier: Option<String> = conn
+    let row: Option<(String, String, String)> = conn
         .query_row(
-            "SELECT confidence_tier FROM cross_links
+            "SELECT confidence_tier, pass_id, model_identity FROM cross_links
              WHERE from_node = ?1 AND to_node = ?2 AND kind = ?3",
             params![from_key, to_key, kind_str],
-            |row| row.get::<_, String>(0),
-        )
-        .optional()?;
-    let pass_and_model: Option<(String, String)> = conn
-        .query_row(
-            "SELECT pass_id, model_identity FROM cross_links
-             WHERE from_node = ?1 AND to_node = ?2 AND kind = ?3",
-            params![from_key, to_key, kind_str],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            },
         )
         .optional()?;
 
-    let Some((pass_id, model_identity)) = pass_and_model else {
+    let Some((previous_tier, pass_id, model_identity)) = row else {
         return Err(crate::Error::Other(anyhow::anyhow!(
             "update_tier: no candidate for ({from_key}, {to_key}, {kind_str})"
         )));
     };
+    let previous_tier = Some(previous_tier);
 
     conn.execute(
         "UPDATE cross_links
@@ -637,6 +658,12 @@ impl SqliteOverlayStore {
     pub fn cross_link_hashes(&self) -> crate::Result<Vec<CrossLinkHashRow>> {
         let conn = self.conn.lock();
         endpoint_hashes(&conn)
+    }
+
+    /// Retrieve all active candidates, optionally filtered by tier.
+    pub fn all_candidates(&self, tier: Option<&str>) -> crate::Result<Vec<OverlayLink>> {
+        let conn = self.conn.lock();
+        all_candidates(&conn, tier)
     }
 
     /// Refresh stored endpoint hashes for a candidate after a successful

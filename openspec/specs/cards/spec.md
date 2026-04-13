@@ -1,8 +1,6 @@
 ## Purpose
 Define the card contracts, budget tiers, and source-labeling rules that make cards the primary product surface for agents.
-
 ## Requirements
-
 ### Requirement: Define card types as the product surface
 synrepo SHALL define card contracts for the core structural card types that agents use to orient, route edits, assess impact, and inspect test coverage.
 
@@ -20,7 +18,7 @@ synrepo SHALL define explicit card budget tiers and the order in which lower-pri
 - **AND** truncation happens by declared priority instead of accidental omission
 
 ### Requirement: Distinguish graph-backed and overlay-backed card fields
-synrepo SHALL label card fields by source store and freshness so agents can distinguish current structural facts from optional commentary. The `overlay_commentary` field on `SymbolCard` SHALL carry one of five freshness states: `fresh` (commentary matches current source), `stale` (source has changed since generation), `invalid` (entry is present but missing required provenance), `missing` (no entry exists), or `unsupported` (commentary is not defined for this node kind). At `tiny` and `normal` budget tiers, the `overlay_commentary` field is omitted and the response MAY include a `commentary_state: "budget_withheld"` label so callers can distinguish budget-withheld from absent. At `deep` budget, the field is populated if an entry exists; otherwise the state label reflects the actual absence reason.
+synrepo SHALL label card fields by source store and freshness so agents can distinguish current structural facts from optional overlay content. The `overlay_commentary` field on `SymbolCard` SHALL carry one of five freshness states: `fresh`, `stale`, `invalid`, `missing`, or `unsupported`. The `proposed_links` field on `SymbolCard` and `FileCard` SHALL carry zero or more surfaced cross-link candidates, each labeled with its overlay source store, freshness state (`fresh` | `stale` | `source_deleted` | `invalid` | `missing`), and confidence tier (`high` | `review_queue`). `below_threshold` candidates SHALL NOT appear in `proposed_links`. At `tiny` and `normal` budget tiers, both `overlay_commentary` and `proposed_links` are omitted and the response MAY include `commentary_state: "budget_withheld"` and `links_state: "budget_withheld"` so callers can distinguish budget-withheld from absent. At `deep` budget, each field is populated if content exists; otherwise the state label reflects the actual absence reason.
 
 #### Scenario: Attach commentary to a card
 - **WHEN** a card includes both structural data and optional commentary
@@ -51,6 +49,26 @@ synrepo SHALL label card fields by source store and freshness so agents can dist
 - **WHEN** a `SymbolCard` is requested at `deep` budget for a node kind that the commentary pipeline does not support
 - **THEN** `overlay_commentary` is `null` and `commentary_state` is `"unsupported"`
 
+#### Scenario: Return proposed links at deep budget
+- **WHEN** a `SymbolCard` or `FileCard` is requested at `deep` budget and one or more cross-link candidates involving the node exist at `high` or `review_queue` tier
+- **THEN** `proposed_links` is populated with the candidate entries, each carrying its endpoint IDs, overlay edge kind, confidence tier, freshness state, and cited-span count
+- **AND** the structural edge fields on the card remain untouched by the overlay content
+- **AND** `below_threshold` candidates are excluded from the response
+
+#### Scenario: Return proposed links budget-withheld at tight budgets
+- **WHEN** a card is requested at `tiny` or `normal` budget
+- **THEN** `proposed_links` is omitted
+- **AND** the response includes `links_state: "budget_withheld"` so callers can distinguish from absent
+
+#### Scenario: Return missing state when no proposed links exist
+- **WHEN** a card is requested at `deep` budget and no cross-link candidates at `high` or `review_queue` tier exist for the node
+- **THEN** `proposed_links` is an empty list and `links_state` is `"missing"`
+
+#### Scenario: Stale candidate surfaces with explicit staleness label
+- **WHEN** a card is requested at `deep` budget and a cross-link candidate's stored endpoint hash no longer matches the current graph
+- **THEN** the candidate appears in `proposed_links` with `freshness: "stale"`
+- **AND** the stale label is surfaced to callers rather than withheld
+
 ### Requirement: Define DecisionCard as an optional rationale output
 synrepo SHALL define DecisionCard as an optional card type returned when a queried node has incoming `Governs` edges from ConceptNodes with rationale content. DecisionCard is backed exclusively by `HumanDeclared` or `ParserObserved` ConceptNodes; overlay content SHALL NOT populate DecisionCard fields. The card SHALL distinguish rationale from current code behavior by labeling its source as human-authored.
 
@@ -77,3 +95,4 @@ synrepo SHALL apply the same `tiny` / `normal` / `deep` budget tier model to Dec
 - **WHEN** a tool requests a `tiny` budget response for a node with linked rationale
 - **THEN** the DecisionCard includes only title and governed node IDs
 - **AND** the decision body is omitted
+

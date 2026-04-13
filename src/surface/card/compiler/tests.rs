@@ -545,3 +545,22 @@ fn symbol_card_deep_stale_link_preservation() {
         crate::overlay::CrossLinkFreshness::Stale
     );
 }
+
+// 7.5: entry_point_card returns empty list (no panic) when no files are indexed
+
+#[test]
+fn entry_point_card_empty_repo_returns_no_panic() {
+    let repo = tempdir().unwrap();
+    // Bootstrap produces an empty graph (no source files to index).
+    let graph = bootstrap(&repo);
+    let compiler = make_compiler(graph, &repo);
+
+    let card = compiler
+        .entry_point_card(None, Budget::Tiny)
+        .expect("entry_point_card must not error on empty graph");
+    assert!(
+        card.entry_points.is_empty(),
+        "empty graph must produce empty entry_points list"
+    );
+    assert_eq!(card.source_store, SourceStore::Graph);
+}

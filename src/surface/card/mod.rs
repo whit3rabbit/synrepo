@@ -17,7 +17,8 @@ mod types;
 pub use decision::DecisionCard;
 pub use git::{FileGitCoChange, FileGitCommit, FileGitIntelligence, FileGitOwnership};
 pub use types::{
-    FileCard, FileRef, Freshness, ModuleCard, OverlayCommentary, SymbolCard, SymbolRef,
+    EntryPoint, EntryPointCard, EntryPointKind, FileCard, FileRef, Freshness, ModuleCard,
+    OverlayCommentary, SymbolCard, SymbolRef,
 };
 
 /// Context budget tier for a card request.
@@ -78,6 +79,16 @@ pub trait CardCompiler {
 
     /// Compile a FileCard at the given budget.
     fn file_card(&self, id: FileNodeId, budget: Budget) -> crate::Result<FileCard>;
+
+    /// Compile an EntryPointCard covering the optional path-prefix scope.
+    fn entry_point_card(
+        &self,
+        scope: Option<&str>,
+        budget: Budget,
+    ) -> crate::Result<EntryPointCard>;
+
+    /// Compile a ModuleCard for the given directory path.
+    fn module_card(&self, path: &str, budget: Budget) -> crate::Result<ModuleCard>;
 
     /// Resolve a human-readable target string (a path, a qualified name,
     /// or a symbol name) to a NodeId for card compilation.
