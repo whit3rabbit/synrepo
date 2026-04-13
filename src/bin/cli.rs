@@ -7,6 +7,7 @@
 //! - `synrepo reconcile`, run a structural compile pass without full re-bootstrap
 //! - `synrepo check`, read-only drift report across all repair surfaces
 //! - `synrepo sync`, repair auto-fixable drift surfaces and log the outcome
+//! - `synrepo watch [--daemon]`, keep `.synrepo/` fresh for the current repo
 //! - `synrepo search <query>`, lexical search against the persisted index
 //! - `synrepo graph query "<direction> <node_id> [edge_kind]"`, narrow graph traversal query
 //! - `synrepo node <id>`, dump a node's metadata
@@ -22,9 +23,12 @@ use tracing_subscriber::EnvFilter;
 
 use cli_support::agent_shims::AgentTool;
 use cli_support::commands::{
-    agent_setup, check, graph_query, graph_stats, init, node, reconcile, search, status, sync,
+    agent_setup, check, export, findings, graph_query, graph_stats, init, links_accept, links_list,
+    links_reject, links_review, node, reconcile, search, status, sync, upgrade, watch,
+    watch_internal, watch_status, watch_stop,
 };
 use synrepo::config::Mode;
+use synrepo::pipeline::export::ExportFormat;
 
 #[derive(Parser)]
 #[command(name = "synrepo")]
@@ -52,18 +56,26 @@ enum Command {
     ///
     /// Reads only; never acquires the writer lock or mutates any store.
     /// Safe to run at any time, including while a reconcile is in progress.
-    Status,
+    Status {
+        /// Emit JSON instead of human-readable output.
+        #[arg(long)]
+        json: bool,
+    },
 
     /// Generate a thin integration shim for the specified agent CLI.
     ///
     /// Writes a named fragment file and prints the one-line include instruction.
-    /// Never modifies existing configuration files. Use `--force` to overwrite.
+    /// Never modifies existing configuration files. Use `--force` to overwrite,
+    /// or `--regen` to compare and overwrite only if the content has changed.
     AgentSetup {
         /// Target agent CLI.
         tool: AgentTool,
         /// Overwrite an existing shim file if one already exists.
         #[arg(long)]
         force: bool,
+        /// Compare existing file against the current template; overwrite if different.
+        #[arg(long)]
+        regen: bool,
     },
 
     /// Run a structural compile pass against the current repository state.
@@ -93,6 +105,12 @@ enum Command {
         /// Emit JSON instead of human-readable output.
         #[arg(long)]
         json: bool,
+        /// Generate new cross-link candidates for the whole repository.
+        #[arg(long)]
+        generate_cross_links: bool,
+        /// Re-run generation for stale candidates.
+        #[arg(long)]
+        regenerate_cross_links: bool,
     },
 
     /// Lexical search via the syntext index.
@@ -125,6 +143,116 @@ enum Command {
         /// The node ID in display format (for example `file_0000000000000042`).
         id: String,
     },
+    /// Watch the current repository and keep `.synrepo/` fresh.
+    Watch {
+        /// Start the watcher as a detached daemon.
+        #[arg(long)]
+        daemon: bool,
+        /// Optional watch control subcommand.
+        #[command(subcommand)]
+        command: Option<WatchCommand>,
+    },
+    /// Proposed overlay cross-links interactions.
+    #[command(subcommand)]
+    Links(LinksCommand),
+
+    /// Evaluate and apply storage compatibility actions for `.synrepo/`.
+    ///
+    /// Dry-run by default: prints a plan table (store, action, reason) and exits.
+    /// Pass `--apply` to execute non-blocking actions in dependency order and run
+    /// a reconcile pass if any stores were rebuilt.
+    Upgrade {
+        /// Execute the compatibility actions instead of printing a dry-run plan.
+        #[arg(long)]
+        apply: bool,
+    },
+
+    /// Generate export files (markdown or JSON snapshots) in the configured export directory.
+    ///
+    /// Produces `synrepo-context/` (or the configured directory) with rendered card output.
+    /// The directory is added to `.gitignore` unless `--commit` is passed.
+    Export {
+        /// Output format.
+        #[arg(long, default_value = "markdown")]
+        format: ExportFormatArg,
+        /// Use Deep budget (more detail; slower).
+        #[arg(long)]
+        deep: bool,
+        /// Track the export directory in source control (suppress .gitignore insertion).
+        #[arg(long)]
+        commit: bool,
+        /// Override the export directory from config.
+        #[arg(long)]
+        out: Option<String>,
+    },
+
+    /// Search and retrieve proposed cross-links and their provenance.
+    Findings {
+        /// Target node endpoint ID
+        #[arg(long)]
+        node: Option<String>,
+        /// Filter by edge kind (references, governs, derived_from, mentions)
+        #[arg(long)]
+        kind: Option<String>,
+        /// Filter by freshness state (fresh, stale, source_deleted)
+        #[arg(long)]
+        freshness: Option<String>,
+        /// Maximum number of findings to return
+        #[arg(long)]
+        limit: Option<usize>,
+        /// Emit JSON instead of human-readable output
+        #[arg(long)]
+        json: bool,
+    },
+
+    #[command(name = "watch-internal", hide = true)]
+    WatchInternal,
+}
+
+#[derive(Subcommand)]
+enum WatchCommand {
+    /// Show watch-service status for the current repo.
+    Status,
+    /// Stop the active watch service for the current repo.
+    Stop,
+}
+
+#[derive(Subcommand)]
+enum LinksCommand {
+    /// List all generated proposed cross-links.
+    List {
+        /// Filter by confidence tier
+        #[arg(long)]
+        tier: Option<String>,
+        /// Emit JSON instead of human-readable output
+        #[arg(long)]
+        json: bool,
+    },
+    /// Review review-queue candidates awaiting manual acceptance.
+    Review {
+        /// Maximum number of candidates to return
+        #[arg(long)]
+        limit: Option<usize>,
+        /// Emit JSON instead of human-readable output
+        #[arg(long)]
+        json: bool,
+    },
+    /// Accept a proposed cross-link and mutate graph edge (curated mode).
+    Accept {
+        /// The candidate UUID string
+        candidate_id: String,
+        /// Optional reviewer identity
+        #[arg(long)]
+        reviewer: Option<String>,
+    },
+    /// Reject a proposed cross-link.
+    Reject {
+        /// The candidate UUID string
+        candidate_id: String,
+        /// Optional reviewer identity
+        #[arg(long)]
+        reviewer: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -143,6 +271,21 @@ enum GraphCommand {
 enum ModeArg {
     Auto,
     Curated,
+}
+
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+enum ExportFormatArg {
+    Markdown,
+    Json,
+}
+
+impl From<ExportFormatArg> for ExportFormat {
+    fn from(arg: ExportFormatArg) -> Self {
+        match arg {
+            ExportFormatArg::Markdown => ExportFormat::Markdown,
+            ExportFormatArg::Json => ExportFormat::Json,
+        }
+    }
 }
 
 impl From<ModeArg> for Mode {
@@ -170,11 +313,20 @@ fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Command::Init { mode } => init(&repo_root, mode.map(Into::into)),
-        Command::Status => status(&repo_root),
-        Command::AgentSetup { tool, force } => agent_setup(&repo_root, tool, force),
+        Command::Status { json } => status(&repo_root, json),
+        Command::AgentSetup { tool, force, regen } => agent_setup(&repo_root, tool, force, regen),
         Command::Reconcile => reconcile(&repo_root),
         Command::Check { json } => check(&repo_root, json),
-        Command::Sync { json } => sync(&repo_root, json),
+        Command::Sync {
+            json,
+            generate_cross_links,
+            regenerate_cross_links,
+        } => sync(
+            &repo_root,
+            json,
+            generate_cross_links,
+            regenerate_cross_links,
+        ),
         Command::Search {
             query,
             ignore_case,
@@ -196,5 +348,60 @@ fn main() -> anyhow::Result<()> {
         Command::Graph(GraphCommand::Query { q }) => graph_query(&repo_root, &q),
         Command::Graph(GraphCommand::Stats) => graph_stats(&repo_root),
         Command::Node { id } => node(&repo_root, &id),
+        Command::Watch { daemon, command } => {
+            if let Some(subcmd) = command {
+                if daemon {
+                    anyhow::bail!(
+                        "`--daemon` has no effect with `watch {}`",
+                        match subcmd {
+                            WatchCommand::Status => "status",
+                            WatchCommand::Stop => "stop",
+                        }
+                    );
+                }
+                match subcmd {
+                    WatchCommand::Status => watch_status(&repo_root),
+                    WatchCommand::Stop => watch_stop(&repo_root),
+                }
+            } else {
+                watch(&repo_root, daemon)
+            }
+        }
+        Command::Links(LinksCommand::List { tier, json }) => {
+            links_list(&repo_root, tier.as_deref(), json)
+        }
+        Command::Links(LinksCommand::Review { limit, json }) => {
+            links_review(&repo_root, limit, json)
+        }
+        Command::Links(LinksCommand::Accept {
+            candidate_id,
+            reviewer,
+        }) => links_accept(&repo_root, &candidate_id, reviewer.as_deref()),
+        Command::Links(LinksCommand::Reject {
+            candidate_id,
+            reviewer,
+        }) => links_reject(&repo_root, &candidate_id, reviewer.as_deref()),
+        Command::Upgrade { apply } => upgrade(&repo_root, apply),
+        Command::Export {
+            format,
+            deep,
+            commit,
+            out,
+        } => export(&repo_root, format.into(), deep, commit, out),
+        Command::Findings {
+            node,
+            kind,
+            freshness,
+            limit,
+            json,
+        } => findings(
+            &repo_root,
+            node.as_deref(),
+            kind.as_deref(),
+            freshness.as_deref(),
+            limit,
+            json,
+        ),
+        Command::WatchInternal => watch_internal(&repo_root),
     }
 }

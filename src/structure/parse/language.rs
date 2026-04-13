@@ -11,6 +11,8 @@ pub enum Language {
     TypeScript,
     /// TypeScript with JSX (`tree-sitter-typescript::language_tsx`).
     Tsx,
+    /// Go (`tree-sitter-go` crate).
+    Go,
 }
 
 impl Language {
@@ -21,6 +23,7 @@ impl Language {
             "py" => Some(Language::Python),
             "ts" => Some(Language::TypeScript),
             "tsx" => Some(Language::Tsx),
+            "go" => Some(Language::Go),
             _ => None,
         }
     }
@@ -32,6 +35,7 @@ impl Language {
             Language::Python => tree_sitter_python::LANGUAGE.into(),
             Language::TypeScript => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
             Language::Tsx => tree_sitter_typescript::LANGUAGE_TSX.into(),
+            Language::Go => tree_sitter_go::LANGUAGE.into(),
         }
     }
 
@@ -40,6 +44,7 @@ impl Language {
             Language::Rust => RUST_DEFINITION_QUERY,
             Language::Python => PYTHON_DEFINITION_QUERY,
             Language::TypeScript | Language::Tsx => TS_DEFINITION_QUERY,
+            Language::Go => GO_DEFINITION_QUERY,
         }
     }
 
@@ -57,6 +62,10 @@ impl Language {
                 .get(pattern_index)
                 .copied()
                 .unwrap_or(SymbolKind::Function),
+            Language::Go => GO_KIND_MAP
+                .get(pattern_index)
+                .copied()
+                .unwrap_or(SymbolKind::Function),
         }
     }
 
@@ -70,6 +79,7 @@ impl Language {
             Language::Rust => RUST_CALL_QUERY,
             Language::Python => PYTHON_CALL_QUERY,
             Language::TypeScript | Language::Tsx => TS_CALL_QUERY,
+            Language::Go => GO_CALL_QUERY,
         }
     }
 
@@ -83,6 +93,7 @@ impl Language {
             Language::Rust => RUST_IMPORT_QUERY,
             Language::Python => PYTHON_IMPORT_QUERY,
             Language::TypeScript | Language::Tsx => TS_IMPORT_QUERY,
+            Language::Go => GO_IMPORT_QUERY,
         }
     }
 }
@@ -166,4 +177,42 @@ const PYTHON_IMPORT_QUERY: &str = r#"
 
 const TS_IMPORT_QUERY: &str = r#"
 (import_statement source: (string (string_fragment) @import_ref))
+"#;
+
+// --- Go queries ---
+
+/// Go definition query.
+///
+/// Pattern index → kind (see GO_KIND_MAP):
+///   0: function_declaration → Function
+///   1: method_declaration   → Method
+///   2: interface type_spec  → Interface
+///   3: struct type_spec     → Class
+///   4: const_spec           → Constant
+///   5: var_spec             → Constant
+const GO_DEFINITION_QUERY: &str = r#"
+(function_declaration name: (identifier) @name) @item
+(method_declaration name: (field_identifier) @name) @item
+(type_spec name: (type_identifier) @name type: (interface_type)) @item
+(type_spec name: (type_identifier) @name type: (struct_type)) @item
+(const_spec name: (identifier) @name) @item
+(var_spec name: (identifier) @name) @item
+"#;
+
+const GO_KIND_MAP: &[SymbolKind] = &[
+    SymbolKind::Function,
+    SymbolKind::Method,
+    SymbolKind::Interface,
+    SymbolKind::Class,
+    SymbolKind::Constant,
+    SymbolKind::Constant,
+];
+
+const GO_CALL_QUERY: &str = r#"
+(call_expression function: (identifier) @callee)
+(call_expression function: (selector_expression field: (field_identifier) @callee))
+"#;
+
+const GO_IMPORT_QUERY: &str = r#"
+(import_spec path: (interpreted_string_literal) @import_ref)
 "#;

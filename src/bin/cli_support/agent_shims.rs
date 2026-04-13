@@ -17,6 +17,10 @@ pub(crate) enum AgentTool {
     Copilot,
     /// Generic AGENTS.md — writes `synrepo-agents.md`
     Generic,
+    /// OpenAI Codex CLI — writes `.codex/instructions.md`
+    Codex,
+    /// Windsurf — writes `.windsurf/rules/synrepo.md`
+    Windsurf,
 }
 
 impl AgentTool {
@@ -27,6 +31,8 @@ impl AgentTool {
             AgentTool::Cursor => "Cursor",
             AgentTool::Copilot => "GitHub Copilot",
             AgentTool::Generic => "generic (AGENTS.md)",
+            AgentTool::Codex => "Codex CLI",
+            AgentTool::Windsurf => "Windsurf",
         }
     }
 
@@ -37,6 +43,8 @@ impl AgentTool {
             AgentTool::Cursor => repo_root.join(".cursor").join("synrepo.mdc"),
             AgentTool::Copilot => repo_root.join("synrepo-copilot-instructions.md"),
             AgentTool::Generic => repo_root.join("synrepo-agents.md"),
+            AgentTool::Codex => repo_root.join(".codex").join("instructions.md"),
+            AgentTool::Windsurf => repo_root.join(".windsurf").join("rules").join("synrepo.md"),
         }
     }
 
@@ -56,6 +64,12 @@ impl AgentTool {
             AgentTool::Generic => {
                 "Paste the contents of `synrepo-agents.md` into your `AGENTS.md` file."
             }
+            AgentTool::Codex => {
+                "Codex CLI loads `.codex/instructions.md` automatically from the project root."
+            }
+            AgentTool::Windsurf => {
+                "Windsurf loads `.windsurf/rules/synrepo.md` as a project rule automatically."
+            }
         }
     }
 
@@ -66,6 +80,8 @@ impl AgentTool {
             AgentTool::Cursor => CURSOR_SHIM,
             AgentTool::Copilot => COPILOT_SHIM,
             AgentTool::Generic => GENERIC_SHIM,
+            AgentTool::Codex => CODEX_SHIM,
+            AgentTool::Windsurf => WINDSURF_SHIM,
         }
     }
 }
@@ -100,9 +116,11 @@ Use these when the synrepo MCP server is running:
 - `synrepo_overview` — graph counts and mode summary.
 - `synrepo_where_to_edit task=<description>` — file suggestions for a plain-language task.
 - `synrepo_change_impact target=<id>` — first-pass reverse dependencies for this file or symbol.
+- `synrepo_findings [node_id=<id>] [kind=<kind>] [freshness=<state>]` — list operator-facing cross-link findings.
 
 Use `synrepo_search` to find node IDs (format: `file_0000000000000042`, \
-`symbol_0000000000000024`) before calling `synrepo_card` or `synrepo_change_impact`.
+`symbol_0000000000000024`) before calling `synrepo_card`, `synrepo_change_impact`, \
+or `synrepo_findings`.
 
 Treat `synrepo_change_impact` as routing help, not exact blast-radius proof. The current \
 impact signal is file-level and approximate.
@@ -118,6 +136,8 @@ synrepo graph query \"inbound <node_id>\"          # what depends on this node
 synrepo graph query \"outbound <node_id>\"         # what this node depends on
 synrepo graph query \"outbound <node_id> defines\" # filtered by edge kind
 synrepo reconcile                                # refresh graph against current files
+synrepo links list [--tier <tier>]               # list active cross-link candidates
+synrepo findings [--node <id>] [--freshness <state>] # audit findings
 ```
 
 ## Trust model
@@ -146,6 +166,7 @@ reading files cold.
 - `synrepo_overview` — graph counts and mode
 - `synrepo_where_to_edit` — file suggestions for a plain-language task
 - `synrepo_change_impact` — first-pass reverse-dependency impact for a file or symbol
+- `synrepo_findings` — list operator-facing cross-link findings
 
 Treat `synrepo_change_impact` as approximate routing help, not exact blast-radius proof.
 
@@ -159,6 +180,8 @@ synrepo graph query \"inbound <node_id>\"  # reverse dependencies
 synrepo graph query \"outbound <node_id>\" # forward dependencies
 synrepo graph stats                      # counts by type
 synrepo reconcile                        # refresh graph
+synrepo links list                       # active cross-link candidates
+synrepo findings                         # findings report
 ```
 ";
 
@@ -175,9 +198,10 @@ codebase. Check for `.synrepo/` before reading source files cold.
 - `synrepo_overview` — graph counts and repository mode
 - `synrepo_where_to_edit` — file suggestions for a plain-language task description
 - `synrepo_change_impact` — first-pass reverse dependencies for a given file or symbol
+- `synrepo_findings` — list operator-facing cross-link findings
 
 Node IDs: `file_0000000000000042`, `symbol_0000000000000024`. \
-Use `synrepo_search` to find them before calling card or impact tools.
+Use `synrepo_search` to find them before calling card, impact, or findings tools.
 
 Treat impact output as approximate routing help, not exact blast-radius proof.
 
@@ -189,7 +213,9 @@ Treat impact output as approximate routing help, not exact blast-radius proof.
 - `synrepo graph query \"inbound <id>\"` — reverse dependencies
 - `synrepo graph query \"outbound <id>\"` — forward dependencies
 - `synrepo graph stats` — node and edge counts
-- `synrepo reconcile` — refresh the graph
+- `synrepo_reconcile` — refresh the graph
+- `synrepo links list` — list active cross-link candidates
+- `synrepo findings` — view overlay findings
 
 Graph content is the primary source of truth, while current impact hints remain \
 approximate. Overlay content is machine-authored and secondary.
@@ -212,6 +238,7 @@ When the synrepo MCP server is running, prefer these task-first tools:
 - `synrepo_overview` — graph node counts and repository mode.
 - `synrepo_where_to_edit task=<description>` — file suggestions for a plain-language task.
 - `synrepo_change_impact target=<id>` — first-pass reverse dependencies for this file or symbol.
+- `synrepo_findings [node_id=<id>] [kind=<kind>] [freshness=<state>]` — list operator-facing cross-link findings.
 
 Node IDs: `file_0000000000000042`, `symbol_0000000000000024`. \
 Use `synrepo_search` to find them.
@@ -229,12 +256,94 @@ synrepo graph query \"outbound <node_id>\"          # forward dependencies
 synrepo graph query \"outbound <node_id> defines\"  # filtered by edge kind
 synrepo graph stats                               # counts by type
 synrepo reconcile                                 # refresh graph against current files
+synrepo links list                                # list active candidates
+synrepo findings [--freshness <state>]            # findings summary
 ```
 
 ### Trust model
 
 - `source_store: graph` — parser-observed or git-observed facts. Primary source of truth, while current impact hints remain approximate.
 - `source_store: overlay` — machine-authored suggestions. Treat as secondary.
+";
+
+const CODEX_SHIM: &str = "\
+# synrepo context
+
+synrepo is a context compiler: it precomputes a structural graph of the codebase from \
+tree-sitter parsing and git history and serves it through MCP tools (primary) and CLI \
+commands (fallback).
+
+## When to use synrepo
+
+Check for a `.synrepo/` directory. If it exists, use synrepo BEFORE reading source files cold.
+
+## MCP tools (primary interface)
+
+- `synrepo_card target=<id> budget=<tiny|normal|deep>` — structured card for a file or symbol
+- `synrepo_search query=<text>` — lexical search across indexed files
+- `synrepo_overview` — graph node counts and repository mode
+- `synrepo_where_to_edit task=<description>` — file suggestions for a plain-language task
+- `synrepo_change_impact target=<id>` — first-pass reverse dependencies
+- `synrepo_findings [node_id=<id>] [kind=<kind>]` — cross-link findings
+
+Node IDs: `file_0000000000000042`, `symbol_0000000000000024`. Use `synrepo_search` to find them.
+
+## CLI fallback
+
+```bash
+synrepo status                                   # health check
+synrepo search <query>                           # lexical search
+synrepo node <id>                                # node metadata as JSON
+synrepo graph query \"inbound <node_id>\"          # reverse dependencies
+synrepo graph query \"outbound <node_id>\"         # forward dependencies
+synrepo graph stats                              # counts by type
+synrepo reconcile                                # refresh graph
+synrepo links list                               # cross-link candidates
+synrepo findings [--freshness <state>]           # findings summary
+```
+
+## Trust model
+
+Graph content is parser-observed facts (primary). Overlay content is machine-authored (secondary).
+";
+
+const WINDSURF_SHIM: &str = "\
+# synrepo
+
+synrepo is a context compiler: it precomputes a structural graph of this codebase. \
+Check for `.synrepo/` before reading source files cold.
+
+## MCP tools (primary interface)
+
+When the synrepo MCP server is running:
+
+- `synrepo_card target=<id> budget=<tiny|normal|deep>` — structured card for a file or symbol
+- `synrepo_search query=<text>` — lexical search
+- `synrepo_overview` — graph counts and mode
+- `synrepo_where_to_edit task=<description>` — file suggestions for a task
+- `synrepo_change_impact target=<id>` — first-pass reverse-dependency impact
+- `synrepo_findings [node_id=<id>]` — cross-link findings
+
+Node IDs: `file_0000000000000042`, `symbol_0000000000000024`. Use `synrepo_search` first.
+
+## CLI fallback
+
+```bash
+synrepo status                         # health check
+synrepo search <query>                 # lexical search
+synrepo node <id>                      # node metadata as JSON
+synrepo graph query \"inbound <id>\"    # reverse dependencies
+synrepo graph query \"outbound <id>\"   # forward dependencies
+synrepo graph stats                    # node and edge counts
+synrepo reconcile                      # refresh graph
+synrepo links list                     # cross-link candidates
+synrepo findings                       # findings report
+```
+
+## Trust model
+
+- Graph content: parser-observed facts. Primary source of truth.
+- Overlay content: machine-authored suggestions. Secondary.
 ";
 
 #[cfg(test)]
@@ -247,6 +356,8 @@ mod tests {
         assert_eq!(AgentTool::Cursor.display_name(), "Cursor");
         assert_eq!(AgentTool::Copilot.display_name(), "GitHub Copilot");
         assert_eq!(AgentTool::Generic.display_name(), "generic (AGENTS.md)");
+        assert_eq!(AgentTool::Codex.display_name(), "Codex CLI");
+        assert_eq!(AgentTool::Windsurf.display_name(), "Windsurf");
     }
 
     #[test]
@@ -268,6 +379,14 @@ mod tests {
             AgentTool::Generic.output_path(repo_root),
             repo_root.join("synrepo-agents.md")
         );
+        assert_eq!(
+            AgentTool::Codex.output_path(repo_root),
+            repo_root.join(".codex").join("instructions.md")
+        );
+        assert_eq!(
+            AgentTool::Windsurf.output_path(repo_root),
+            repo_root.join(".windsurf").join("rules").join("synrepo.md")
+        );
     }
 
     #[test]
@@ -284,6 +403,12 @@ mod tests {
         assert!(AgentTool::Generic
             .include_instruction()
             .contains("synrepo-agents.md"));
+        assert!(AgentTool::Codex
+            .include_instruction()
+            .contains(".codex/instructions.md"));
+        assert!(AgentTool::Windsurf
+            .include_instruction()
+            .contains(".windsurf/rules/synrepo.md"));
     }
 
     #[test]
@@ -296,5 +421,11 @@ mod tests {
             .starts_with("---\ndescription"));
         assert!(AgentTool::Copilot.shim_content().starts_with("## synrepo"));
         assert!(AgentTool::Generic.shim_content().starts_with("## synrepo"));
+        assert!(AgentTool::Codex
+            .shim_content()
+            .starts_with("# synrepo context"));
+        assert!(AgentTool::Windsurf
+            .shim_content()
+            .starts_with("# synrepo\n"));
     }
 }

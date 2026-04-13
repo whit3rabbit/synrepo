@@ -14,7 +14,7 @@
 //! | `DeclaredLinks` | `Governs` edges + concept node stats |
 //! | `StaleRationale` | not yet implemented (reported as Unsupported) |
 //! | `CommentaryOverlayEntries` | live: absent / current / stale + `RefreshCommentary` |
-//! | `ExportViews` | not yet implemented (reported as Unsupported) |
+//! | `ExportSurface` | export manifest freshness vs current reconcile epoch |
 //!
 //! ## Resolution log
 //!
@@ -22,6 +22,8 @@
 //! `.synrepo/state/repair-log.jsonl`.
 
 mod commentary;
+mod cross_link_verify;
+mod cross_links;
 mod declared_links;
 mod log;
 mod report;
@@ -37,5 +39,5 @@ pub use report::build_repair_report;
 pub use sync::execute_sync;
 pub use types::{
     DriftClass, RepairAction, RepairFinding, RepairReport, RepairSurface, ResolutionLogEntry,
-    Severity, SyncOutcome, SyncSummary,
+    Severity, SyncOptions, SyncOutcome, SyncSummary,
 };

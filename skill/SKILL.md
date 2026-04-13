@@ -15,7 +15,7 @@ synrepo is a context compiler. It turns a repository into small, deterministic, 
 synrepo-mcp [--repo <path>]
 ```
 
-It serves over stdio. After `synrepo init` populates the graph, the MCP server exposes five core tools:
+It serves over stdio. After `synrepo init` populates the graph, the MCP server exposes six core tools:
 
 | Tool | What it does |
 | --- | --- |
@@ -24,8 +24,9 @@ It serves over stdio. After `synrepo init` populates the graph, the MCP server e
 | `synrepo_search(query, limit?)` | Lexical n-gram search; returns `{path, line, content}` results |
 | `synrepo_where_to_edit(task, limit?)` | Search + ranked file cards for a task description |
 | `synrepo_change_impact(target)` | Approximate file-level inbound Imports+Calls edges showing what depends on target |
+| `synrepo_entrypoints(scope?, budget?)` | Heuristic entry-point detection: binaries, CLI commands, HTTP handlers, library roots |
 
-**Current limitations:** Only `SymbolCard` and `FileCard` are compiled. `ModuleCard` exists as a struct placeholder only. Specialist tools (`synrepo_entrypoints`, `synrepo_call_path`, `synrepo_test_surface`, `synrepo_minimum_context`, `synrepo_explain`, `synrepo_findings`) are not part of the current MCP surface.
+**Current limitations:** Only `SymbolCard` and `FileCard` are compiled in full detail. `synrepo_entrypoints` returns an `EntryPointCard` with heuristic detection from graph symbol names and file paths. Specialist tools (`synrepo_call_path`, `synrepo_test_surface`, `synrepo_minimum_context`, `synrepo_explain`) are not part of the current MCP surface.
 
 `SymbolCard.callers` and `.callees` are empty today because the current graph emits file→symbol `Calls` edges, not symbol→symbol call edges. `FileCard.git_intelligence` and `FileCard.co_changes` are not populated in cards yet. `synrepo_change_impact` is therefore a first-pass routing aid built from inbound `Imports` edges plus those file→symbol `Calls` edges, and overloaded names can still produce false positives.
 
@@ -77,7 +78,7 @@ The current shipped MCP surface is graph-first. Overlay-specific behavior is sti
 
 ### Planned later tools
 
-These are not part of the current MCP surface: `synrepo_entrypoints`, `synrepo_call_path`, `synrepo_test_surface`, `synrepo_minimum_context`, `synrepo_explain`, and `synrepo_findings`.
+These are not part of the current MCP surface: `synrepo_call_path`, `synrepo_test_surface`, `synrepo_minimum_context`, and `synrepo_explain`.
 
 ### The low-level escape hatches
 

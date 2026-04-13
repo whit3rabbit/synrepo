@@ -283,7 +283,7 @@ fn cleanup_partial_lock_file(lock_path: &Path) {
 ///
 /// On non-Unix platforms, conservatively returns `true` (assumes alive) to
 /// prevent spurious stale-lock takeover on untested operating systems.
-fn is_process_alive(pid: u32) -> bool {
+pub(crate) fn is_process_alive(pid: u32) -> bool {
     #[cfg(unix)]
     {
         std::process::Command::new("kill")

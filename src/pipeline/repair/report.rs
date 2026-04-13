@@ -2,7 +2,11 @@ use std::path::Path;
 
 use crate::{
     config::Config,
-    pipeline::maintenance::{plan_maintenance, MaintenancePlan},
+    pipeline::{
+        export::load_manifest,
+        maintenance::{plan_maintenance, MaintenancePlan},
+        watch::ReconcileState,
+    },
 };
 
 use super::{
@@ -33,11 +37,13 @@ pub(super) fn assemble_repair_report(
     let mut findings = Vec::new();
     let diag = collect_diagnostics(synrepo_dir, config);
 
+    let repo_root = synrepo_dir.parent().unwrap_or(synrepo_dir);
     findings.push(writer_lock_finding(&diag.writer_status));
     findings.push(store_maintenance_finding(maint_plan));
     findings.push(structural_refresh_finding(&diag.reconcile_health));
     findings.push(check_declared_links(synrepo_dir));
     findings.push(commentary_overlay_finding(synrepo_dir));
+    findings.push(export_surface_finding(repo_root, config, diag.last_reconcile.as_ref()));
     findings.extend(proposed_links_overlay_findings(synrepo_dir));
     findings.extend(unsupported_surface_findings());
 
@@ -143,17 +149,11 @@ fn structural_refresh_finding(health: &ReconcileHealth) -> RepairFinding {
     }
 }
 
-fn unsupported_surface_findings() -> [RepairFinding; 2] {
-    [
-        (
-            RepairSurface::StaleRationale,
-            "Rationale drift scoring is not yet implemented.",
-        ),
-        (
-            RepairSurface::ExportViews,
-            "Export surface is not yet implemented.",
-        ),
-    ]
+fn unsupported_surface_findings() -> [RepairFinding; 1] {
+    [(
+        RepairSurface::StaleRationale,
+        "Rationale drift scoring is not yet implemented.",
+    )]
     .map(|(surface, hint)| RepairFinding {
         surface,
         drift_class: DriftClass::Unsupported,
@@ -162,6 +162,59 @@ fn unsupported_surface_findings() -> [RepairFinding; 2] {
         recommended_action: RepairAction::NotSupported,
         notes: Some(hint.to_string()),
     })
+}
+
+/// Check export surface freshness against the current reconcile epoch.
+///
+/// - No manifest → `Absent`, actionable, `RegenerateExports`.
+/// - Manifest epoch behind current `last_reconcile_at` → `Stale`, actionable.
+/// - Manifest epoch matches current → `Current`.
+fn export_surface_finding(
+    repo_root: &Path,
+    config: &Config,
+    last_reconcile: Option<&ReconcileState>,
+) -> RepairFinding {
+    let manifest = load_manifest(repo_root, config);
+
+    match manifest {
+        None => RepairFinding {
+            surface: RepairSurface::ExportSurface,
+            drift_class: DriftClass::Absent,
+            severity: Severity::ReportOnly,
+            target_id: None,
+            recommended_action: RepairAction::None,
+            notes: Some(
+                "Export directory has not been generated yet. Run `synrepo export`.".to_string(),
+            ),
+        },
+        Some(manifest) => {
+            let current_epoch = last_reconcile
+                .map(|r| r.last_reconcile_at.as_str())
+                .unwrap_or_default();
+            if manifest.last_reconcile_at == current_epoch {
+                RepairFinding {
+                    surface: RepairSurface::ExportSurface,
+                    drift_class: DriftClass::Current,
+                    severity: Severity::Actionable,
+                    target_id: None,
+                    recommended_action: RepairAction::None,
+                    notes: None,
+                }
+            } else {
+                RepairFinding {
+                    surface: RepairSurface::ExportSurface,
+                    drift_class: DriftClass::Stale,
+                    severity: Severity::Actionable,
+                    target_id: None,
+                    recommended_action: RepairAction::RegenerateExports,
+                    notes: Some(format!(
+                        "Export was generated at reconcile epoch `{}`, but current epoch is `{}`.",
+                        manifest.last_reconcile_at, current_epoch
+                    )),
+                }
+            }
+        }
+    }
 }
 
 /// Classify the commentary overlay surface.

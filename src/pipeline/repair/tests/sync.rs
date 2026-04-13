@@ -2,7 +2,7 @@ use tempfile::tempdir;
 
 use super::support::{setup_repo_for_sync, write_foreign_lock};
 use crate::pipeline::repair::{
-    execute_sync, repair_log_path, RepairSurface, ResolutionLogEntry, SyncOutcome,
+    execute_sync, repair_log_path, RepairSurface, ResolutionLogEntry, SyncOptions, SyncOutcome,
 };
 use crate::{
     config::Config,
@@ -17,7 +17,13 @@ fn sync_on_current_runtime_produces_no_repaired_findings() {
     let dir = tempdir().unwrap();
     let (repo, synrepo_dir) = setup_repo_for_sync(&dir);
 
-    let summary = execute_sync(&repo, &synrepo_dir, &Config::default()).unwrap();
+    let summary = execute_sync(
+        &repo,
+        &synrepo_dir,
+        &Config::default(),
+        SyncOptions::default(),
+    )
+    .unwrap();
 
     assert_eq!(
         summary.repaired.len(),
@@ -38,7 +44,13 @@ fn sync_repairs_stale_reconcile_and_writes_resolution_log() {
         0,
     );
 
-    let summary = execute_sync(&repo, &synrepo_dir, &Config::default()).unwrap();
+    let summary = execute_sync(
+        &repo,
+        &synrepo_dir,
+        &Config::default(),
+        SyncOptions::default(),
+    )
+    .unwrap();
     let repaired_surfaces: Vec<_> = summary.repaired.iter().map(|f| f.surface).collect();
     assert!(
         repaired_surfaces.contains(&RepairSurface::StructuralRefresh),
@@ -71,16 +83,20 @@ fn sync_places_unsupported_surfaces_in_report_only() {
     let dir = tempdir().unwrap();
     let (repo, synrepo_dir) = setup_repo_for_sync(&dir);
 
-    let summary = execute_sync(&repo, &synrepo_dir, &Config::default()).unwrap();
+    let summary = execute_sync(
+        &repo,
+        &synrepo_dir,
+        &Config::default(),
+        SyncOptions::default(),
+    )
+    .unwrap();
     let report_only_surfaces: Vec<_> = summary.report_only.iter().map(|f| f.surface).collect();
-    for surface in [RepairSurface::ExportViews, RepairSurface::StaleRationale] {
-        assert!(
-            report_only_surfaces.contains(&surface),
-            "{} must be in report_only, got: {:?}",
-            surface.as_str(),
-            report_only_surfaces
-        );
-    }
+    // StaleRationale is Unsupported so it routes to report_only.
+    assert!(
+        report_only_surfaces.contains(&RepairSurface::StaleRationale),
+        "stale_rationale must be in report_only, got: {:?}",
+        report_only_surfaces
+    );
     // CommentaryOverlayEntries with DriftClass::Absent / Severity::ReportOnly
     // also routes to report_only when no overlay.db exists.
     assert!(
@@ -95,7 +111,13 @@ fn sync_sets_partial_outcome_when_blocked_findings_present() {
     let (repo, synrepo_dir) = setup_repo_for_sync(&dir);
     write_foreign_lock(&synrepo_dir);
 
-    let _ = execute_sync(&repo, &synrepo_dir, &Config::default()).unwrap();
+    let _ = execute_sync(
+        &repo,
+        &synrepo_dir,
+        &Config::default(),
+        SyncOptions::default(),
+    )
+    .unwrap();
 
     // append_resolution_log always writes the file; no conditional guard needed.
     let log_content = std::fs::read_to_string(repair_log_path(&synrepo_dir)).unwrap();
@@ -120,7 +142,13 @@ fn sync_renders_report_only_and_repaired_distinctly() {
         0,
     );
 
-    let summary = execute_sync(&repo, &synrepo_dir, &Config::default()).unwrap();
+    let summary = execute_sync(
+        &repo,
+        &synrepo_dir,
+        &Config::default(),
+        SyncOptions::default(),
+    )
+    .unwrap();
     let rendered = summary.render();
 
     assert!(
@@ -153,7 +181,13 @@ fn sync_does_not_report_structural_refresh_as_repaired_when_reconcile_hits_lock_
     );
     let _lock = acquire_writer_lock(&synrepo_dir).unwrap();
 
-    let summary = execute_sync(&repo, &synrepo_dir, &Config::default()).unwrap();
+    let summary = execute_sync(
+        &repo,
+        &synrepo_dir,
+        &Config::default(),
+        SyncOptions::default(),
+    )
+    .unwrap();
 
     assert!(
         !summary
@@ -189,7 +223,13 @@ fn sync_does_not_report_structural_refresh_as_repaired_when_reconcile_fails() {
     std::fs::remove_dir_all(synrepo_dir.join("graph")).unwrap();
     std::fs::write(synrepo_dir.join("graph"), "not a directory").unwrap();
 
-    let summary = execute_sync(&repo, &synrepo_dir, &Config::default()).unwrap();
+    let summary = execute_sync(
+        &repo,
+        &synrepo_dir,
+        &Config::default(),
+        SyncOptions::default(),
+    )
+    .unwrap();
 
     assert!(
         !summary

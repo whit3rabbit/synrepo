@@ -188,4 +188,35 @@ impl OverlayStore for SqliteOverlayStore {
 
         Ok(removed)
     }
+
+    fn all_candidates(
+        &self,
+        tier: Option<&str>,
+    ) -> crate::Result<Vec<crate::overlay::OverlayLink>> {
+        let conn = self.conn.lock();
+        super::cross_links::all_candidates(&conn, tier)
+    }
+
+    fn mark_candidate_rejected(
+        &mut self,
+        from: NodeId,
+        to: NodeId,
+        kind: crate::overlay::OverlayEdgeKind,
+        reviewer: &str,
+    ) -> crate::Result<()> {
+        let conn = self.conn.lock();
+        super::cross_links::mark_rejected(&conn, from, to, kind, reviewer)
+    }
+
+    fn mark_candidate_promoted(
+        &mut self,
+        from: NodeId,
+        to: NodeId,
+        kind: crate::overlay::OverlayEdgeKind,
+        reviewer: &str,
+        graph_edge_id: &str,
+    ) -> crate::Result<()> {
+        let conn = self.conn.lock();
+        super::cross_links::mark_promoted(&conn, from, to, kind, reviewer, graph_edge_id)
+    }
 }

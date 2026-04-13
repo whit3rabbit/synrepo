@@ -12,8 +12,9 @@ use crate::{
 };
 
 use super::{
-    append_resolution_log, report::assemble_repair_report, RepairAction, RepairFinding,
-    ResolutionLogEntry, Severity, SyncOutcome, SyncSummary,
+    append_resolution_log, cross_links::run_cross_link_generation, report::assemble_repair_report,
+    DriftClass, RepairAction, RepairFinding, RepairSurface, ResolutionLogEntry, Severity,
+    SyncOptions, SyncOutcome, SyncSummary,
 };
 
 /// Execute a targeted sync: repair auto-fixable findings from `build_repair_report`.
@@ -26,6 +27,7 @@ pub fn execute_sync(
     repo_root: &Path,
     synrepo_dir: &Path,
     config: &Config,
+    options: SyncOptions,
 ) -> crate::Result<SyncSummary> {
     let now = now_rfc3339();
     let maint_plan = plan_maintenance(synrepo_dir, config);
@@ -35,6 +37,8 @@ pub fn execute_sync(
     let mut report_only: Vec<RepairFinding> = Vec::new();
     let mut blocked: Vec<RepairFinding> = Vec::new();
     let mut actions_taken: Vec<String> = Vec::new();
+
+    // 1. Storage maintenance and structural repairs
     let action_context = ActionContext {
         repo_root,
         synrepo_dir,
@@ -55,6 +59,49 @@ pub fn execute_sync(
                     &mut blocked,
                     &mut actions_taken,
                 )?;
+            }
+        }
+    }
+
+    // 2. Optional cross-link generation pass
+    if options.generate_cross_links || options.regenerate_cross_links {
+        match run_cross_link_generation(
+            action_context.repo_root,
+            action_context.synrepo_dir,
+            action_context.config,
+            options.generate_cross_links,
+            options.regenerate_cross_links,
+        ) {
+            Ok(outcome) => {
+                actions_taken.push(format!(
+                    "cross-link generation pass: {} new candidates",
+                    outcome.inserted
+                ));
+                if outcome.blocked_pairs > 0 {
+                    blocked.push(RepairFinding {
+                        surface: RepairSurface::ProposedLinksOverlay,
+                        drift_class: DriftClass::Blocked,
+                        severity: Severity::Blocked,
+                        target_id: Some(outcome.blocked_pairs.to_string()),
+                        recommended_action: RepairAction::ManualReview,
+                        notes: Some(format!(
+                            "Cross-link generation hit the per-run cost limit ({}); {} candidate pair(s) were left blocked.",
+                            action_context.config.cross_link_cost_limit,
+                            outcome.blocked_pairs
+                        )),
+                    });
+                }
+            }
+            Err(err) => {
+                actions_taken.push(format!("cross-link generation pass failed: {err}"));
+                blocked.push(RepairFinding {
+                    surface: RepairSurface::ProposedLinksOverlay,
+                    drift_class: DriftClass::Blocked,
+                    severity: Severity::Blocked,
+                    target_id: None,
+                    recommended_action: RepairAction::ManualReview,
+                    notes: Some(format!("Cross-link generation failed: {err}")),
+                });
             }
         }
     }
@@ -158,6 +205,21 @@ fn handle_actionable_finding(
             ));
             report_only.push(finding.clone());
         }
+        RepairAction::RegenerateExports => match regenerate_exports(context, actions_taken) {
+            Ok(()) => repaired.push(finding.clone()),
+            Err(err) => {
+                actions_taken.push(format!(
+                    "export regeneration failed for {}: {err}",
+                    finding.surface.as_str()
+                ));
+                let mut blocked_finding = finding.clone();
+                blocked_finding.drift_class = super::DriftClass::Blocked;
+                blocked_finding.severity = Severity::Blocked;
+                blocked_finding.recommended_action = RepairAction::ManualReview;
+                blocked_finding.notes = Some(format!("Export regeneration failed: {err}"));
+                blocked.push(blocked_finding);
+            }
+        },
         RepairAction::RefreshCommentary => match refresh_commentary(context, actions_taken) {
             Ok(()) => repaired.push(finding.clone()),
             Err(err) => {
@@ -294,6 +356,51 @@ fn record_reconcile_attempt(
             ));
         }
     }
+}
+
+/// Re-run export generation using the format/budget recorded in the existing
+/// manifest, or markdown/normal if no manifest is present.
+fn regenerate_exports(
+    context: &ActionContext<'_>,
+    actions_taken: &mut Vec<String>,
+) -> crate::Result<()> {
+    use crate::pipeline::export::{load_manifest, write_exports, ExportFormat};
+    use crate::surface::card::Budget;
+
+    let existing = load_manifest(context.repo_root, context.config);
+    let format = existing
+        .as_ref()
+        .map(|m| m.format)
+        .unwrap_or(ExportFormat::Markdown);
+    let budget = existing
+        .as_ref()
+        .and_then(|m| match m.budget.as_str() {
+            "deep" => Some(Budget::Deep),
+            "normal" => Some(Budget::Normal),
+            _ => None,
+        })
+        .unwrap_or(Budget::Normal);
+
+    write_exports(
+        context.repo_root,
+        context.synrepo_dir,
+        context.config,
+        format,
+        budget,
+        false,
+    )
+    .map_err(|e| anyhow!("{e}"))?;
+
+    actions_taken.push(format!(
+        "regenerated export directory (format={}, budget={})",
+        format.as_str(),
+        match budget {
+            Budget::Tiny => "tiny",
+            Budget::Normal => "normal",
+            Budget::Deep => "deep",
+        }
+    ));
+    Ok(())
 }
 
 fn blocked_reconcile_finding(finding: &RepairFinding, notes: String) -> RepairFinding {

@@ -350,6 +350,28 @@ pub trait OverlayStore: Send + Sync {
     /// immutable audit row. Returns the total number of rows deleted.
     fn prune_orphans(&mut self, live_nodes: &[NodeId]) -> crate::Result<usize>;
 
+    /// Retrieve all active candidates, optionally filtered by tier.
+    fn all_candidates(&self, tier: Option<&str>) -> crate::Result<Vec<OverlayLink>>;
+
+    /// Mark a candidate as rejected by a human reviewer.
+    fn mark_candidate_rejected(
+        &mut self,
+        from: NodeId,
+        to: NodeId,
+        kind: OverlayEdgeKind,
+        reviewer: &str,
+    ) -> crate::Result<()>;
+
+    /// Mark a candidate as promoted into the graph.
+    fn mark_candidate_promoted(
+        &mut self,
+        from: NodeId,
+        to: NodeId,
+        kind: OverlayEdgeKind,
+        reviewer: &str,
+        graph_edge_id: &str,
+    ) -> crate::Result<()>;
+
     /// Open a read snapshot on this store. Reads through this handle
     /// observe a single committed epoch until `end_read_snapshot` is
     /// called. Same contract as [`crate::structure::graph::GraphStore::begin_read_snapshot`]:

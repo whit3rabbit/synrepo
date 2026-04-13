@@ -6,6 +6,8 @@
 //! The server opens the graph store from `.synrepo/graph/` at the repo root
 //! and serves tools until the client disconnects.
 
+mod findings;
+
 use std::{path::PathBuf, sync::Arc};
 
 use anyhow::Context as _;
@@ -26,7 +28,9 @@ use synrepo::{
     pipeline::synthesis::{ClaudeCommentaryGenerator, CommentaryGenerator},
     store::{overlay::SqliteOverlayStore, sqlite::SqliteGraphStore},
     structure::graph::{EdgeKind, GraphStore},
-    surface::card::{compiler::GraphCardCompiler, Budget, CardCompiler, DecisionCard, Freshness},
+    surface::card::{
+        compiler::GraphCardCompiler, Budget, CardCompiler, DecisionCard, Freshness,
+    },
 };
 
 // ---------------------------------------------------------------------------
@@ -103,6 +107,31 @@ pub struct ChangeImpactParams {
     pub target: String,
 }
 
+/// Parameters for the `synrepo_entrypoints` tool.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct EntrypointsParams {
+    /// Optional path prefix to scope the search (e.g. `"src/bin/"`, `"src/surface/"`).
+    /// When absent, all indexed files are scanned.
+    pub scope: Option<String>,
+    /// Budget tier: "tiny" (default), "normal", or "deep".
+    #[serde(default = "default_budget")]
+    pub budget: String,
+}
+
+/// Parameters for the `synrepo_findings` tool.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct FindingsParams {
+    /// Optional node ID in display form.
+    pub node_id: Option<String>,
+    /// Optional kind to filter by (e.g. "references", "governs").
+    pub kind: Option<String>,
+    /// Optional freshness state to filter by.
+    pub freshness: Option<String>,
+    /// Maximum number of findings to return. Defaults to 20.
+    #[serde(default = "default_limit")]
+    pub limit: u32,
+}
+
 // ---------------------------------------------------------------------------
 // Server implementation
 // ---------------------------------------------------------------------------
@@ -128,8 +157,10 @@ impl ServerHandler for SynrepoServer {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build()).with_instructions(
             "synrepo provides structured code-intelligence context. \
              Use synrepo_overview to start, synrepo_card for details, \
-             synrepo_where_to_edit to route a task, and synrepo_change_impact \
-             before large refactors.",
+             synrepo_where_to_edit to route a task, synrepo_change_impact \
+             before large refactors, synrepo_entrypoints to find execution \
+             roots (binaries, CLI commands, HTTP handlers, library entry points), \
+             and synrepo_findings to see machine-authored relationship candidates.",
         )
     }
 }
@@ -359,6 +390,51 @@ impl SynrepoServer {
             });
         render_result(result)
     }
+
+    /// Return detected execution entry points for a scope.
+    ///
+    /// Budget tiers:
+    ///   tiny   (~30 tokens/entry) — kind, qualified name, location only
+    ///   normal (~60 tokens/entry) — above + caller count and doc comment
+    ///   deep  (~150 tokens/entry) — above + full signature
+    #[tool(
+        name = "synrepo_entrypoints",
+        description = "Return detected execution entry points (binaries, CLI commands, HTTP handlers, library roots) for an optional path-prefix scope."
+    )]
+    async fn synrepo_entrypoints(
+        &self,
+        Parameters(EntrypointsParams { scope, budget }): Parameters<EntrypointsParams>,
+    ) -> String {
+        let budget = parse_budget(&budget);
+        let result: anyhow::Result<serde_json::Value> =
+            with_graph_snapshot(self.state.compiler.graph(), || {
+                let card = self
+                    .state
+                    .compiler
+                    .entry_point_card(scope.as_deref(), budget)?;
+                Ok(serde_json::to_value(&card)?)
+            });
+        render_result(result)
+    }
+
+    /// List machine-authored cross-link findings.
+    #[tool(
+        name = "synrepo_findings",
+        description = "List operator-facing cross-link findings with provenance, tier, score, freshness, and endpoint IDs."
+    )]
+    async fn synrepo_findings(
+        &self,
+        Parameters(FindingsParams {
+            node_id,
+            kind,
+            freshness,
+            limit,
+        }): Parameters<FindingsParams>,
+    ) -> String {
+        let result =
+            findings::render_findings(&self.state.repo_root, node_id, kind, freshness, limit);
+        render_result(result)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -441,7 +517,7 @@ fn with_graph_snapshot<R>(
 }
 
 fn parse_budget(s: &str) -> Budget {
-    match s {
+    match s.to_ascii_lowercase().as_str() {
         "normal" => Budget::Normal,
         "deep" => Budget::Deep,
         _ => Budget::Tiny,
@@ -506,7 +582,7 @@ async fn main() -> anyhow::Result<()> {
     let generator: Arc<dyn CommentaryGenerator> = Arc::from(boxed_generator);
 
     let compiler = GraphCardCompiler::new(Box::new(graph), Some(repo_root.clone()))
-        .with_overlay(Some(overlay), Some(generator));
+        .with_overlay(Some(overlay.clone()), Some(generator));
 
     let state = SynrepoState {
         compiler,

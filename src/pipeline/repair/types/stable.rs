@@ -20,8 +20,8 @@ pub enum RepairSurface {
     /// Proposed cross-link overlay entries (LLM-proposed prose↔code links in
     /// `.synrepo/overlay/overlay.db`).
     ProposedLinksOverlay,
-    /// Generated exports or runtime views (not yet implemented).
-    ExportViews,
+    /// Export directory freshness tracked via the export manifest.
+    ExportSurface,
 }
 
 impl RepairSurface {
@@ -35,7 +35,7 @@ impl RepairSurface {
             Self::StaleRationale => "stale_rationale",
             Self::CommentaryOverlayEntries => "commentary_overlay_entries",
             Self::ProposedLinksOverlay => "proposed_links_overlay",
-            Self::ExportViews => "export_views",
+            Self::ExportSurface => "export_surface",
         }
     }
 }
@@ -125,6 +125,8 @@ pub enum RepairAction {
     /// candidates; refresh endpoint hashes on success, demote tier on failure.
     /// Never invokes the LLM; full regeneration uses a separate path.
     RevalidateLinks,
+    /// Re-run `write_exports` to refresh the stale export directory.
+    RegenerateExports,
 }
 
 impl RepairAction {
@@ -139,6 +141,7 @@ impl RepairAction {
             Self::NotSupported => "not_supported",
             Self::RefreshCommentary => "refresh_commentary",
             Self::RevalidateLinks => "revalidate_links",
+            Self::RegenerateExports => "regenerate_exports",
         }
     }
 }

@@ -19,7 +19,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use super::{Budget, CardCompiler, FileCard, FileRef, SourceStore, SymbolCard, SymbolRef};
+use super::{
+    Budget, CardCompiler, EntryPointCard, FileCard, FileRef, ModuleCard, SourceStore, SymbolCard,
+    SymbolRef,
+};
 use crate::{
     core::ids::{FileNodeId, NodeId, SymbolNodeId},
     overlay::OverlayStore,
@@ -27,9 +30,11 @@ use crate::{
     structure::graph::{with_graph_read_snapshot, GraphStore},
 };
 
+mod entry_point;
 mod file;
 mod io;
 mod links;
+mod module;
 mod resolve;
 mod symbol;
 
@@ -107,6 +112,22 @@ impl CardCompiler for GraphCardCompiler {
     fn file_card(&self, id: FileNodeId, budget: Budget) -> crate::Result<FileCard> {
         with_graph_read_snapshot(self.graph.as_ref(), |graph| {
             file::file_card(graph, self.overlay.as_ref(), id, budget)
+        })
+    }
+
+    fn entry_point_card(
+        &self,
+        scope: Option<&str>,
+        budget: Budget,
+    ) -> crate::Result<EntryPointCard> {
+        with_graph_read_snapshot(self.graph.as_ref(), |graph| {
+            entry_point::entry_point_card_impl(graph, scope, budget)
+        })
+    }
+
+    fn module_card(&self, path: &str, budget: Budget) -> crate::Result<ModuleCard> {
+        with_graph_read_snapshot(self.graph.as_ref(), |graph| {
+            module::module_card_impl(graph, path, budget)
         })
     }
 

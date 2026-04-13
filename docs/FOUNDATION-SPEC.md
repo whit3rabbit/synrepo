@@ -6,14 +6,14 @@ A context compiler for AI coding agents.
 
 synrepo exists to reduce context pressure for AI coding agents.
 
-> **Implementation status (2026-04-11 — Milestone 3 starting):** Stages 1–3 of the
-> structural pipeline are complete: file nodes, symbol nodes (tree-sitter), and concept
-> nodes from markdown. Stage 6 content-hash rename detection is wired. Watch-reconcile
-> loop and `synrepo reconcile` are implemented. `synrepo status` and `synrepo agent-setup`
-> are shipped. Milestone 3 (`cards-and-mcp-v1`) is next: stage 4 cross-file edges,
-> CardCompiler (SymbolCard, FileCard, ModuleCard), workspace conversion, and MCP server
-> with 5 core tools using `rmcp`. `signature` and `doc_comment` are always `None` until
-> parse/extract.rs is extended. Only `Defines` edges exist until stage 4 lands.
+> **Implementation status (2026-04-12):** Stages 1–5 of the structural pipeline are
+> shipped, including cross-file `calls` and `imports`, file-scoped Git intelligence,
+> content-hash rename reuse, commentary freshness, and the optional watch runtime.
+> `synrepo watch`, `synrepo watch --daemon`, `synrepo watch status`, `synrepo watch stop`,
+> `synrepo status`, `synrepo check`, `synrepo sync`, and `synrepo agent-setup` are
+> shipped. The stdio MCP server is shipped with the core task-first tools. Remaining
+> follow-on work includes specialist cards and MCP tools, graph-level drift scoring,
+> and broader overlay workflows.
 
 It precomputes a small, deterministic, queryable working set about a repository and serves it through MCP in token-budgeted packets called **cards**. The goal is not to build a browsable ontology or a generated wiki. The goal is to help an agent answer questions like:
 
@@ -79,7 +79,7 @@ A **card** is a small, structured, deterministic record compiled from the live g
 
 Cards are not summaries. A summary is prose. A card is a structured fact packet with a token budget.
 
-### Core card types in v1 *(Phase 2 — card compilers not yet implemented)*
+### Core card types in v1
 
 * **SymbolCard**: what a symbol is, where it lives, who calls it, what it calls, which tests touch it
 * **FileCard**: what is in a file, what depends on it, recent meaningful changes
@@ -91,8 +91,9 @@ Cards are not summaries. A summary is prose. A card is a structured fact packet 
 * **TestSurfaceCard**: tests and assertions constraining behavior
 * **DecisionCard**: optional rationale card when human-authored decision material exists
 
-> **Current state:** Card type structs are defined in `src/surface/card.rs`. The
-> `CardCompiler` trait has no implementations. No card can be compiled or served yet.
+> **Current state:** `GraphCardCompiler` serves `SymbolCard`, `FileCard`, and
+> `DecisionCard` today. `ModuleCard` exists as a struct shape only. Entry-point,
+> call-path, change-risk, public-API, and test-surface cards remain follow-on work.
 
 ### Budget tiers
 
@@ -143,11 +144,11 @@ Store:
 * single source of truth
 * no in-memory graph mirror unless benchmarks prove it is needed
 
-### 7.3 Overlay layer *(Phase 4+ — not yet implemented)*
+### 7.3 Overlay layer
 
-> **Current state:** `src/overlay/mod.rs` defines the types to establish the
-> architectural boundary. No overlay data is written or read. The MCP queryability
-> described below requires Phase 2 (MCP server) and Phase 4 (synthesis) first.
+> **Current state:** commentary overlay storage and freshness labeling are shipped,
+> with the graph and overlay still physically separated. Broader machine-authored
+> link workflows remain additive and should not be treated as graph truth.
 
 The overlay stores machine-authored outputs:
 
@@ -309,11 +310,12 @@ Highest to lowest:
 * Code can contradict intent documents; both may still matter for different questions.
 * Two human sources in direct conflict are surfaced as a finding, not silently resolved.
 
-## 12. MCP surface *(Phase 2 — not yet implemented)*
+## 12. MCP surface
 
-> **Current state:** No MCP server exists. The tools listed below are the planned
-> Phase 2 surface, not the current one. The only agent-accessible interface today
-> is the CLI (`synrepo init`, `search`, `graph query`, `graph stats`, `node`).
+> **Current state:** the stdio MCP server is shipped. Today it exposes
+> `synrepo_overview`, `synrepo_card`, `synrepo_search`, `synrepo_where_to_edit`,
+> `synrepo_change_impact`, and `synrepo_findings`. The specialist tools below
+> remain planned follow-on surface area.
 
 The primary interface is task-first.
 
@@ -394,10 +396,11 @@ Out of scope in v1:
 ## 15. Operational requirements
 
 * single-writer model
-* local socket when daemon is running
-* file locking when standalone
+* explicit per-repo opt-in watch mode
+* local socket when watch daemon mode is running
+* operation-scoped file locking via `writer.lock`
 * watcher coalescing under heavy churn
-* periodic reconcile pass to recover missed events
+* startup reconcile plus reconcile backstop to recover missed events
 * compaction command for disk growth
 * explicit budget caps for embeddings and LLM cache
 

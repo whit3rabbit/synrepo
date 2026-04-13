@@ -1,0 +1,68 @@
+use std::path::Path;
+
+use synrepo::{config::Config, store::compatibility::StoreId};
+
+use super::graph::{check_store_ready, graph_query_output, graph_stats_output, node_output};
+
+mod basic;
+mod export;
+mod links;
+mod repair;
+mod status;
+mod upgrade;
+mod watch;
+
+pub(crate) use basic::{agent_setup, init};
+pub(crate) use export::export;
+pub(crate) use links::{findings, links_accept, links_list, links_reject, links_review};
+pub(crate) use repair::{check, reconcile, sync};
+pub(crate) use status::status;
+pub(crate) use upgrade::upgrade;
+pub(crate) use watch::{watch, watch_internal, watch_status, watch_stop};
+
+/// Perform a lexical search across indexed files.
+pub(crate) fn search(
+    repo_root: &Path,
+    query: &str,
+    options: syntext::SearchOptions,
+) -> anyhow::Result<()> {
+    let config = Config::load(repo_root)?;
+    let synrepo_dir = Config::synrepo_dir(repo_root);
+    check_store_ready(&synrepo_dir, &config, StoreId::Index)?;
+    if let Some(pid) = synrepo::pipeline::writer::live_owner_pid(&synrepo_dir) {
+        anyhow::bail!(
+            "search is unavailable while writer lock is held by pid {pid}. Wait for the active write to finish, then retry."
+        );
+    }
+
+    let matches = synrepo::substrate::search_with_options(&config, repo_root, query, &options)?;
+    for search_match in &matches {
+        println!(
+            "{}:{}: {}",
+            search_match.path.display(),
+            search_match.line_number,
+            String::from_utf8_lossy(&search_match.line_content).trim_end()
+        );
+    }
+
+    println!("Found {} matches.", matches.len());
+    Ok(())
+}
+
+/// Execute a graph query and format the output.
+pub(crate) fn graph_query(repo_root: &Path, query: &str) -> anyhow::Result<()> {
+    println!("{}", graph_query_output(repo_root, query)?);
+    Ok(())
+}
+
+/// Output graph statistics.
+pub(crate) fn graph_stats(repo_root: &Path) -> anyhow::Result<()> {
+    println!("{}", graph_stats_output(repo_root)?);
+    Ok(())
+}
+
+/// Output a specific node's data.
+pub(crate) fn node(repo_root: &Path, id: &str) -> anyhow::Result<()> {
+    println!("{}", node_output(repo_root, id)?);
+    Ok(())
+}

@@ -9,5 +9,7 @@ mod stable;
 #[cfg(test)]
 mod tests;
 
-pub use models::{RepairFinding, RepairReport, ResolutionLogEntry, SyncOutcome, SyncSummary};
+pub use models::{
+    RepairFinding, RepairReport, ResolutionLogEntry, SyncOptions, SyncOutcome, SyncSummary,
+};
 pub use stable::{DriftClass, RepairAction, RepairSurface, Severity};

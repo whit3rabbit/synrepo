@@ -104,7 +104,7 @@ Four layers, bottom to top.
 
 **Overlay layer.** LLM-authored content lives here, physically separate from the graph. The overlay holds proposed cross-links (with cited evidence and confidence), optional card commentary tiers, and findings. The overlay is queryable via MCP so agents can see it, but the synthesis pipeline never reads it as input for subsequent passes. This is the contamination invariant.
 
-**Surface layer.** The CLI, the MCP server, and a thin skill bundle for Claude. The CLI is for humans and CI. The MCP server is the daemon that serves cards and graph primitives to agents. The skill is a discoverability layer that tells Claude when to reach for the MCP server.
+**Surface layer.** The CLI, the MCP server, and a thin skill bundle for Claude. The CLI is for humans and CI. The MCP server is a separate stdio server that serves cards and graph primitives to agents. Optional watch mode is a per-repo local service started explicitly with `synrepo watch` or `synrepo watch --daemon`. The skill is a discoverability layer that tells Claude when to reach for the MCP server.
 
 ---
 
@@ -384,11 +384,11 @@ The graph store is canonical. The overlay is physically separate. Nothing in `.s
 
 ## Concurrency model
 
-Single writer, many readers. The MCP server holds the authoritative state. The CLI talks to the server via local socket if running, otherwise acquires a file lock on `.synrepo/state/` and runs standalone.
+Single writer, many readers. The stdio MCP server is an agent-facing read surface, not the daemon or authoritative writer. Standalone CLI commands remain the default operational path and acquire `.synrepo/state/writer.lock` only for the duration of an actual write. Optional watch mode is a separate per-repo service started explicitly by the user.
 
-The structural compile runs as a worker thread inside the MCP server process. While compiling, queries continue to be served from the previous consistent snapshot via `ArcSwap`. When compile finishes, new state is published atomically.
+When watch mode is active, `.synrepo/state/watch-daemon.json` records the watch owner and recent telemetry, and `.synrepo/state/watch.sock` provides a local control socket for `status`, `stop`, and `reconcile_now`. The watch lease is long-lived. `writer.lock` remains operation-scoped and still guards each actual mutate step, including watch-triggered reconcile passes.
 
-File watching uses `notify` for cross-platform inotify/kqueue/ReadDirectoryChangesW. Events debounced (default 500ms) and batched. Aggressive coalescing — a `cargo build` producing thousands of events should result in zero structural compiles.
+The watch service runs a startup reconcile before attaching steady-state watching. File watching uses `notify` for cross-platform inotify/kqueue/ReadDirectoryChangesW. Events are debounced (default 500 ms), batched, and filtered so `.synrepo/` runtime writes do not trigger self-induced reconcile loops. Watch mode stays a trigger and coalescing layer over the deterministic reconcile path rather than a second source of graph truth.
 
 ---
 
@@ -442,10 +442,10 @@ Verbose on purpose. Auditability is the value proposition versus RAG. Every cros
 16. **Index format migrations.** Version every store independently; ship migration code.
 17. **Multi-root projects.** `synrepo init` asks explicitly — one synrepo per subproject or one combined.
 18. **Cross-repo references.** Out of scope for v1. Documented.
-19. **The watcher missing events under load.** Full reconcile pass on startup and configurable interval.
+19. **The watcher missing events under load.** Full reconcile pass on startup and reconcile backstop after coalesced bursts.
 20. **Tree-sitter version skew.** Pin grammar versions; CI against representative sources.
 21. **Symlink loops.** Detect during discover; never recurse twice.
-22. **Concurrent CLI invocations.** MCP server is the single writer; CLI acquires file lock when standalone.
+22. **Concurrent CLI invocations.** Watch ownership is separate from `writer.lock`; unsupported mutating commands fail fast while watch is active, and standalone writes still use the file lock when watch is inactive.
 23. **When the LLM is wrong.** It will be. Lint pass and confirmation on high-impact changes are the safety net.
 
 ---

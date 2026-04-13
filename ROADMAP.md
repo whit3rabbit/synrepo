@@ -8,16 +8,19 @@
 - Milestone 1, First-run value: complete
 - Milestone 2, Observed-facts core: complete
 - Milestone 3, First real product release: complete
-- Most recently completed implementation change: `commentary-overlay-v1` (implementation pass, archived 2026-04-12)
-- Active change: `cross-link-overlay-v1` (Milestone 5, Track K) — proposed 2026-04-12; PR 1 implementation (Storage, generation, and card wiring) completed; moving towards CLI and PR 2 workloads.
+- Active changes: none
+- Most recently completed implementation change: `export-and-polish-v1` (archived 2026-04-12)
+- Milestone 5, Optional intelligence layers: complete
+- Milestone 6, Expansion and hardening: complete
 - Completed in Milestone 2: `structural-graph-v1`, `structural-pipeline-v1`, `watch-reconcile-v1`, `agent-integration-v1`
 - Completed in Milestone 3: `cards-and-mcp-v1`, `git-intelligence-v1`
 - Completed in Milestone 4: `pattern-surface-v1` (patterns, rationale ingestion, DecisionCards, curated promotion rules), `repair-loop-v1` (check, sync, drift classification, selective refresh)
 - Completed v1 hardening: `card-quality-v1` (signature/doc_comment extraction, compiler.rs split, insta snapshot tests)
 - Completed in Milestone 5 (Track J): `commentary-overlay-v1` shipped in two passes — spec-split (2026-04-11 archive: narrowed `overlay/spec.md`, created `overlay-links/spec.md`) and implementation (2026-04-12 archive: SQLite commentary store, content-hash freshness, prune-orphans, `refresh_commentary` repair action, `CommentaryGenerator` trait with Claude + NoOp impls, `SymbolCard.overlay_commentary` wiring)
-- Implementation sequence: cross-link overlay (Milestone 5 Track K, next) → exports/views hardening (Milestone 6)
-- Current shipped surface: CLI commands `init`, `status`, `agent-setup`, `reconcile`, `search`, `graph query`, `graph stats`, and `node`; MCP tools `synrepo_overview`, `synrepo_card`, `synrepo_search`, `synrepo_where_to_edit`, and `synrepo_change_impact`; compiled cards `SymbolCard`, `FileCard`, and `DecisionCard`; plus a struct-only `ModuleCard` placeholder
-- Not yet shipped: specialist MCP tools (`synrepo_entrypoints`, `synrepo_call_path`, `synrepo_test_surface`, `synrepo_minimum_context`, `synrepo_explain`), or compiled `ModuleCard` / `EntryPointCard` / `CallPathCard` / `ChangeRiskCard` / `PublicAPICard` / `TestSurfaceCard`. `synrepo_findings` is scoped into `cross-link-overlay-v1`.
+- Completed in Milestone 5 (Track K): `cross-link-overlay-v1` (archived 2026-04-12: two-stage triage + `ClaudeCrossLinkGenerator`, `cross_links` + `cross_link_audit` dual-table storage, `proposed_links` on `SymbolCard`/`FileCard` at Deep budget, `revalidate_links` repair action, `synrepo links list/review/accept/reject` CLI, `synrepo findings` CLI, `synrepo_findings` MCP tool, `openspec/specs/cross-link-store/spec.md`)
+- Completed in Milestone 6 (Track L): `export-and-polish-v1` (archived 2026-04-12: Go structural language support, `synrepo export` command, `ExportSurface` repair surface + `regenerate_exports` action, `synrepo upgrade [--apply]` command, `agent-setup` cursor/codex/windsurf targets + `--regen` flag, enriched `status` with export freshness and overlay cost summary)
+- Current shipped surface: CLI commands `init`, `status`, `agent-setup`, `reconcile`, `check`, `sync`, `watch`, `watch status`, `watch stop`, `search`, `graph query`, `graph stats`, `node`, `links list`, `links review`, `links accept`, `links reject`, `findings`, `export`, and `upgrade`; MCP tools `synrepo_overview`, `synrepo_card`, `synrepo_search`, `synrepo_where_to_edit`, `synrepo_change_impact`, and `synrepo_findings`; compiled cards `SymbolCard`, `FileCard`, and `DecisionCard`; plus a struct-only `ModuleCard` placeholder; structural languages Rust, Python, TypeScript/TSX, and Go
+- Not yet shipped: specialist MCP tools (`synrepo_entrypoints`, `synrepo_call_path`, `synrepo_test_surface`, `synrepo_minimum_context`, `synrepo_explain`), or compiled `ModuleCard` / `EntryPointCard` / `CallPathCard` / `ChangeRiskCard` / `PublicAPICard` / `TestSurfaceCard`.
 - MCP library chosen: `rmcp` (crates.io, modelcontextprotocol/rust-sdk); workspace strategy: add `[workspace]` to existing Cargo.toml, add `crates/synrepo-mcp/` as new member without moving existing files
 
 ## 1. Purpose
@@ -558,7 +561,7 @@ Primary outcome:
 
 Status:
 - Track J complete through `commentary-overlay-v1` (spec-split pass archived 2026-04-11; implementation pass archived 2026-04-12). Shipped: `CommentaryEntry`/`CommentaryProvenance`/`FreshnessState` types in `src/overlay/mod.rs`, `SqliteOverlayStore` commentary persistence in `src/store/overlay/`, content-hash freshness derivation, `prune_orphans` during reconcile, `SymbolCard.overlay_commentary` + `commentary_state` budget-tier labeling, `RepairSurface::CommentaryOverlayEntries` + `RefreshCommentary` action, `CommentaryGenerator` trait with `ClaudeCommentaryGenerator` (API-key gated) and `NoOpGenerator` fallback.
-- Track K (`cross-link-overlay-v1`) proposed 2026-04-12; all artifacts complete and change is valid. Proposal defines: candidate generation via two-stage triage (deterministic prefilter → `ClaudeCrossLinkGenerator`), confidence scoring mapped to `high`/`review_queue`/`below_threshold` tiers, dual-table storage (`cross_links` + immutable `cross_link_audit`), `proposed_links` card fields at Deep budget, `proposed_links_overlay` repair surface with deterministic `revalidate_links` action, `synrepo links review/accept/reject` CLI (curated-mode only), and `synrepo_findings` MCP tool. Implementation is staged in 3 PRs (storage + repair inert → card wiring + auto-generation → review/promotion). Ready for `/opsx:apply`.
+- Track K complete through `cross-link-overlay-v1` (archived 2026-04-12). Shipped: two-stage triage (deterministic prefilter → `ClaudeCrossLinkGenerator`), confidence scoring with `high`/`review_queue`/`below_threshold` tiers, dual-table storage (`cross_links` + immutable `cross_link_audit`), `proposed_links` on `SymbolCard`/`FileCard` at Deep budget, `RepairSurface::ProposedLinksOverlay` + `RepairAction::RevalidateLinks`, `synrepo links list/review/accept/reject` CLI (accept writes `HumanDeclared` graph edge), `synrepo findings` CLI, `synrepo_findings` MCP tool, and `openspec/specs/cross-link-store/spec.md` storage contract.
 
 ### Milestone 6 — Expansion and hardening
 
@@ -567,6 +570,9 @@ Tracks:
 
 Primary outcome:
 - broader adoption, more integrations, stronger maintenance story
+
+Status:
+- Complete through `export-and-polish-v1` (archived 2026-04-12). Shipped: Go structural language support (tree-sitter-go, symbol extraction, Calls/Imports edges), `synrepo export` command with markdown and JSON formats, `ExportSurface` repair surface with `regenerate_exports` action, `synrepo upgrade [--apply]` command, `agent-setup` cursor/codex/windsurf targets and `--regen` flag, enriched `status` output with export freshness and overlay cost-to-date summary.
 
 ## 7. OpenSpec domain specs to maintain now
 
@@ -988,7 +994,7 @@ Roadmap tie:
 
 Status: Complete and archived.
 
-## 8.12 `openspec/changes/cross-link-overlay-v1/`
+## 8.12 `openspec/changes/archive/2026-04-12-cross-link-overlay-v1/`
 
 Use for:
 - two-stage candidate generation (deterministic prefilter + LLM evidence extraction), confidence scoring with tier enum (`high`/`review_queue`/`below_threshold`), dual-table overlay storage (`cross_links` + immutable `cross_link_audit`), two-endpoint freshness derivation, deterministic `revalidate_links` repair action, curated-mode review/promotion CLI (`synrepo links review/accept/reject`), `synrepo_findings` MCP tool, and `proposed_links` field on `SymbolCard`/`FileCard` at Deep budget
@@ -999,15 +1005,17 @@ Use for:
 Roadmap tie:
 - Milestone 5, Track K
 
-Status: Proposed 2026-04-12. All artifacts (proposal, design, delta specs, tasks) complete and validated. Ready for `/opsx:apply`.
+Status: Complete and archived (2026-04-12).
 
-## 8.13 `openspec/changes/export-and-polish-v1/`
+## 8.13 `openspec/changes/archive/2026-04-12-export-and-polish-v1/`
 
 Use for:
 - generated docs and views, tool shims, update flows, extra file support, packaging polish, and export freshness/repair rules
 
 Roadmap tie:
 - Milestone 6
+
+Status: Complete and archived (2026-04-12). Shipped: Go structural language support, `synrepo export`, `ExportSurface` + `regenerate_exports`, `synrepo upgrade`, `agent-setup` cursor/codex/windsurf + `--regen`, enriched `status` with export freshness and overlay cost summary. Delta specs synced to `openspec/specs/bootstrap/`, `exports-and-views/`, `repair-loop/`, `storage-and-compatibility/`, and `substrate/`.
 
 ## 8.14 `openspec/changes/archive/2026-04-11-storage-compatibility-v1/`
 
@@ -1042,7 +1050,7 @@ These are explicitly deferred past the first stable release to protect the produ
 - Cross-link generation and verification (Milestone 5+)
 - Export views and generated markdown docs as primary surfaces (Milestone 6)
 - Additional language grammar support beyond the current set (Milestone 6)
-- Full optional daemon/background-process mode (Track H foundation is in; the daemon itself is not required for v1)
+- Global auto-watch or start-at-login daemon behavior (per-repo opt-in watch mode exists; broader background automation remains deferred)
 - Graph-level `CoChangesWith` edges and symbol-level last-change summaries (follow-on to `git-intelligence-v1`)
 
 ## 10. Release gating guidance
@@ -1061,18 +1069,13 @@ Source-of-truth precedence: roadmap sets sequence, specs set enduring intent, ac
 
 ## 11. Suggested next move
 
-Milestones 3 and 4 are complete. The v1 hardening sprint (`card-quality-v1`) is complete and archived. Milestone 5 Track J (`commentary-overlay-v1`) is complete and archived. Milestone 5 Track K (`cross-link-overlay-v1`) is proposed and ready for implementation.
+Milestones 0–6 are complete. The v1 hardening sprint (`card-quality-v1`) is complete and archived. Milestone 5 (`commentary-overlay-v1`, `cross-link-overlay-v1`) and Milestone 6 (`export-and-polish-v1`) are all complete and archived. The shipped surface now includes Go structural support, export command, upgrade command, three new agent-setup targets, and enriched status output.
 
-**Immediate: implement `cross-link-overlay-v1` via `/opsx:apply`**
-- Change is at `openspec/changes/cross-link-overlay-v1/` with proposal, design (9 decisions + rationale), 5 delta specs, and 11 task groups (~50 tasks)
-- Implementation is staged in 3 PRs:
-  1. Storage (`cross_links` + `cross_link_audit` tables, overlay store v1→v2 migration) + repair surface inert (surface reports `absent`)
-  2. Card wiring (`proposed_links` field on `SymbolCard`/`FileCard`) + auto-generation in auto mode (`ClaudeCrossLinkGenerator` or `NoOp` fallback) + `revalidate_links` repair action
-  3. Review/promotion CLI (`synrepo links review/accept/reject`, curated mode only) + `synrepo findings` CLI + `synrepo_findings` MCP tool
-- Before starting: resolve the 3 open questions in `design.md` (FileCard scope of `proposed_links`, contradiction-detection scope, default `cross_link_cost_limit`)
+**Remaining Track E surfaces (follow-on to Milestone 3):**
+- Compiled `ModuleCard`, `EntryPointCard`, `CallPathCard`, `ChangeRiskCard`, `PublicAPICard`, `TestSurfaceCard`
+- Specialist MCP tools (`synrepo_entrypoints`, `synrepo_call_path`, `synrepo_test_surface`, `synrepo_minimum_context`, `synrepo_explain`)
 
-Exit criterion for Milestone 5: cross-links are auditable, non-authoritative, operationally affordable, and structurally incapable of promotion into the graph without an explicit human-declared path. Combined with the shipped commentary overlay, this closes the optional-intelligence layer.
-
-**Follow-on (Milestone 6): open `export-and-polish-v1` (Track L)**
-- Only after cross-link overlay stabilizes
-- Scope: generated docs/views as convenience surfaces, upgrade flows, additional grammar support, packaging polish, and export-freshness participation in the repair loop
+**Remaining Track D / I surfaces:**
+- Graph-level `CoChangesWith` edges and symbol-level `SymbolCard.last_change`
+- Drift scoring (stage 7), ArcSwap commit (stage 8)
+- Split/merge rename detection (stage 6 partial)

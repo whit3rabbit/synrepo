@@ -84,7 +84,7 @@ fn check_reports_unsupported_surfaces_explicitly() {
 
     let report = build_repair_report(&synrepo_dir, &Config::default());
 
-    for surface in [RepairSurface::ExportViews, RepairSurface::StaleRationale] {
+    for surface in [RepairSurface::StaleRationale] {
         let finding = report
             .findings
             .iter()
@@ -97,6 +97,17 @@ fn check_reports_unsupported_surfaces_explicitly() {
             surface.as_str()
         );
     }
+
+    // ExportSurface is now implemented; no manifest means Absent/ReportOnly.
+    let export_finding = report
+        .findings
+        .iter()
+        .find(|f| f.surface == RepairSurface::ExportSurface)
+        .expect("ExportSurface must be in report");
+    use crate::pipeline::repair::{DriftClass, RepairAction};
+    assert_eq!(export_finding.drift_class, DriftClass::Absent);
+    assert_eq!(export_finding.recommended_action, RepairAction::None);
+    assert_eq!(export_finding.severity, Severity::ReportOnly);
 }
 
 #[test]
@@ -217,7 +228,7 @@ fn check_report_render_includes_all_surfaces() {
         "declared_links",
         "commentary_overlay_entries",
         "proposed_links_overlay",
-        "export_views",
+        "export_surface",
     ] {
         assert!(
             rendered.contains(surface),

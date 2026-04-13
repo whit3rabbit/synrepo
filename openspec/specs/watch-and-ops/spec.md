@@ -12,12 +12,17 @@ synrepo SHALL define watch-mode behavior, event coalescing, and reconcile passes
 - **AND** stale or missed events are corrected by a defined reconcile path
 
 ### Requirement: Define operational lifecycle boundaries
-synrepo SHALL define daemon optionality, locking, cache lifecycle, compact behavior, and failure recovery for local operation.
+synrepo SHALL define daemon optionality, locking, cache lifecycle, compact behavior, and failure recovery for local operation. Watch mode SHALL be explicit and per-repository: `synrepo watch` runs in the foreground for the current repo, `synrepo watch --daemon` starts the same service detached for the current repo, and standalone CLI behavior remains supported without any daemon.
 
 #### Scenario: Run synrepo with and without a daemon
 - **WHEN** a user runs synrepo in standalone or daemon-assisted mode
 - **THEN** the ops contract defines the ownership of writes, locks, and snapshots
 - **AND** both modes preserve consistent state and recovery expectations
+
+#### Scenario: Start watch explicitly for one repo
+- **WHEN** a user runs `synrepo watch` or `synrepo watch --daemon`
+- **THEN** synrepo watches only the initialized repository that command targeted
+- **AND** the stdio MCP server remains a separate process model rather than the daemon
 
 ### Requirement: Define store retention and compatibility operations
 synrepo SHALL define retention and maintenance behavior for runtime stores by consuming the storage-compatibility contract, so maintenance behavior is predictable under upgrades and long-lived usage.
@@ -36,12 +41,17 @@ synrepo SHALL define operational status and diagnostics surfaces sufficient to u
 - **AND** the contract avoids treating watcher behavior as opaque background magic
 
 ### Requirement: Define single-writer operational safety
-synrepo SHALL define single-writer safety for daemon and standalone operation, including how concurrent writers are prevented or rejected.
+synrepo SHALL define single-writer safety for daemon and standalone operation, including how concurrent writers are prevented or rejected. A long-lived watch lease SHALL record repo-level watch ownership, while `writer.lock` SHALL remain operation-scoped and guard actual runtime mutations only.
 
 #### Scenario: Run multiple control surfaces at once
 - **WHEN** an MCP server, CLI, or background process could write runtime state concurrently
 - **THEN** the ops contract defines the authoritative writer and locking behavior
 - **AND** state consistency does not depend on undocumented process ordering
+
+#### Scenario: Reconcile while watch service is active
+- **WHEN** a user runs `synrepo reconcile` while a watch service already owns the repo
+- **THEN** the command delegates `reconcile_now` to the active watch service
+- **AND** the reconcile work still acquires the normal write lock inside the watch-owned process
 
 ### Requirement: Sequence watch and reconcile after structural graph production exists
 synrepo SHALL treat watch and reconcile behavior as downstream of the structural compile that populates the graph automatically, so watcher-driven updates rerun a deterministic producer path instead of inventing a second truth source.
@@ -52,12 +62,17 @@ synrepo SHALL treat watch and reconcile behavior as downstream of the structural
 - **AND** watcher behavior is defined as a trigger and coalescing layer over that compile path rather than as a separate source of graph facts
 
 ### Requirement: Define the first watch-triggered reconcile loop
-synrepo SHALL define a watch-triggered update loop that coalesces local filesystem churn into bounded refresh work and uses reconcile passes to correct missed or ambiguous watcher events.
+synrepo SHALL define a watch-triggered update loop that coalesces local filesystem churn into bounded refresh work and uses reconcile passes to correct missed or ambiguous watcher events. The watcher SHALL suppress `.synrepo/` self-events and SHALL remain a trigger layer over the deterministic reconcile path rather than a separate mutation path.
 
 #### Scenario: Handle a burst of local repository changes
 - **WHEN** many filesystem events arrive during a build, refactor, or branch switch
 - **THEN** synrepo coalesces them into a bounded update cycle instead of naively running one compile per event
 - **AND** a defined reconcile path can restore correctness if watcher coverage is incomplete or stale
+
+#### Scenario: Observe runtime-only writes under `.synrepo/`
+- **WHEN** the watch service sees filesystem activity only inside `.synrepo/`
+- **THEN** it ignores those events for structural refresh purposes
+- **AND** it does not trigger reconcile cycles from its own runtime writes
 
 ### Requirement: Define initial single-writer runtime safety
 synrepo SHALL define the initial single-writer safety model for standalone CLI and future daemon-assisted operation, including lock acquisition, conflict behavior, and recovery expectations.
@@ -68,9 +83,14 @@ synrepo SHALL define the initial single-writer safety model for standalone CLI a
 - **AND** correctness does not depend on undocumented process timing
 
 ### Requirement: Expose initial reconcile and runtime diagnostics
-synrepo SHALL expose a small operational diagnostics surface sufficient to understand stale state, recent reconcile outcomes, lock conflicts, and maintenance needs for the current runtime.
+synrepo SHALL expose a small operational diagnostics surface sufficient to understand stale state, recent reconcile outcomes, lock conflicts, maintenance needs, and watch-service ownership for the current runtime.
 
 #### Scenario: Investigate why synrepo appears stale
 - **WHEN** a user or agent needs to understand whether watch and reconcile behavior is healthy
 - **THEN** synrepo provides observable diagnostics about reconcile health, writer ownership, or stale runtime state
 - **AND** the operator does not have to infer system state from silent background behavior
+
+#### Scenario: Inspect active watch ownership
+- **WHEN** a user runs `synrepo watch status` or `synrepo status` while watch mode is active
+- **THEN** synrepo reports the watch mode, owner PID, and recent reconcile outcome
+- **AND** stale lease or socket artifacts are surfaced explicitly rather than silently ignored

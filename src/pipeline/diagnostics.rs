@@ -10,7 +10,7 @@ use std::path::Path;
 use crate::config::Config;
 
 use super::{
-    watch::{load_reconcile_state, ReconcileState},
+    watch::{load_reconcile_state, watch_service_status, ReconcileState, WatchServiceStatus},
     writer::{current_ownership, WriterOwnership},
 };
 
@@ -55,6 +55,8 @@ pub enum WriterStatus {
 pub struct RuntimeDiagnostics {
     /// Reconcile system health.
     pub reconcile_health: ReconcileHealth,
+    /// Current watch-service status.
+    pub watch_status: WatchServiceStatus,
     /// Current writer lock status.
     pub writer_status: WriterStatus,
     /// Non-trivial storage compatibility guidance lines.
@@ -112,11 +114,13 @@ impl RuntimeDiagnostics {
 pub fn collect_diagnostics(synrepo_dir: &Path, config: &Config) -> RuntimeDiagnostics {
     let last_reconcile = load_reconcile_state(synrepo_dir);
     let reconcile_health = compute_reconcile_health(last_reconcile.as_ref());
+    let watch_status = watch_service_status(synrepo_dir);
     let writer_status = compute_writer_status(synrepo_dir);
     let store_guidance = compute_store_guidance(synrepo_dir, config);
 
     RuntimeDiagnostics {
         reconcile_health,
+        watch_status,
         writer_status,
         store_guidance,
         last_reconcile,
