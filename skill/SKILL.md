@@ -25,12 +25,15 @@ It serves over stdio. After `synrepo init` populates the graph, the MCP server e
 | `synrepo_where_to_edit(task, limit?)` | Search + ranked file cards for a task description |
 | `synrepo_change_impact(target)` | Approximate file-level inbound Imports+Calls edges showing what depends on target |
 | `synrepo_entrypoints(scope?, budget?)` | Heuristic entry-point detection: binaries, CLI commands, HTTP handlers, library roots |
+| `synrepo_module_card(path, budget?)` | Directory-level summary: files, nested modules, public symbol count |
+| `synrepo_public_api(path, budget?)` | Public API surface of a directory: exported symbols with kinds and signatures, public entry points, recently changed API at deep budget (Rust-only visibility detection in v1) |
+| `synrepo_minimum_context(target, budget?)` | Budget-bounded 1-hop neighborhood around a focal symbol or file: structural neighbors, governing decisions, co-change partners |
+| `synrepo_recent_activity(limit?, kinds?)` | Bounded operational event history (default limit 20) |
+| `synrepo_findings(node_id?)` | Machine-authored cross-link candidates with provenance and tier |
 
-**Current limitations:** Only `SymbolCard` and `FileCard` are compiled in full detail. `synrepo_entrypoints` returns an `EntryPointCard` with heuristic detection from graph symbol names and file paths. Specialist tools (`synrepo_call_path`, `synrepo_test_surface`, `synrepo_minimum_context`, `synrepo_explain`) are not part of the current MCP surface.
+**Current limitations:** `SymbolCard.callers` and `.callees` are empty — the graph emits file→symbol `Calls` edges, not symbol→symbol. Specialist tools (`synrepo_call_path`, `synrepo_test_surface`, `synrepo_explain`) are not yet implemented. `synrepo_public_api` visibility detection is Rust-specific; non-Rust directories return empty symbol lists.
 
-`SymbolCard.callers` and `.callees` are empty today because the current graph emits file→symbol `Calls` edges, not symbol→symbol call edges. `FileCard.git_intelligence` and `FileCard.co_changes` are not populated in cards yet. `synrepo_change_impact` is therefore a first-pass routing aid built from inbound `Imports` edges plus those file→symbol `Calls` edges, and overloaded names can still produce false positives.
-
-Active Milestone 4 work may also attach `decision_cards` to `synrepo_card` results when governing concepts exist, but that work is still in-flight and should not be treated as stable until the surrounding tests pass.
+`SymbolCard.callers` and `.callees` are empty because the current graph emits file→symbol `Calls` edges, not symbol→symbol call edges. `synrepo_change_impact` is therefore a first-pass routing aid built from inbound `Imports` edges plus file→symbol `Calls` edges; overloaded names can produce false positives.
 
 **CLI is still the fallback** when the MCP server isn't running. See "Falling back when the MCP server isn't available" below.
 
@@ -78,7 +81,7 @@ The current shipped MCP surface is graph-first. Overlay-specific behavior is sti
 
 ### Planned later tools
 
-These are not part of the current MCP surface: `synrepo_call_path`, `synrepo_test_surface`, `synrepo_minimum_context`, and `synrepo_explain`.
+These are not part of the current MCP surface: `synrepo_call_path`, `synrepo_test_surface`, and `synrepo_explain`.
 
 ### The low-level escape hatches
 
@@ -102,6 +105,20 @@ Every card-returning tool takes a `budget` parameter. Default is `tiny`. You sho
 **Rule of thumb:** `tiny` to find, `normal` to understand, `deep` to write.
 
 If you find yourself repeatedly escalating from `tiny` to `normal` on the same targets, the `tiny` tier wasn't what you needed — adjust and request `normal` directly next time in the session.
+
+## Budget Escalation
+
+The three budget tiers are a deliberate three-step interaction pattern, not a size knob. Always start at `tiny` or `normal` to orient, then escalate only when a specific field forces it.
+
+**Decision rule:**
+
+1. Start with `tiny` for any unfamiliar symbol or file. The response includes name, location, edge counts, and co-change state — enough to decide relevance.
+2. Escalate to `normal` when you have confirmed relevance and need the interface: signature, doc comment, neighbor summaries, co-change partners.
+3. Escalate to `deep` only when you must read or write the implementation. `deep` adds source body, full overlay commentary, and full neighbor cards.
+
+**Do not default to `deep`.** Deep reads consume 10-15x more tokens than `tiny`. A pattern of `synrepo_card(target, budget: "deep")` on first contact is wasteful; use `tiny` first.
+
+**Budget is preserved in every response.** Each card and neighborhood response includes a `budget` field so you can confirm which tier was served without inspecting field presence.
 
 ## Freshness today
 

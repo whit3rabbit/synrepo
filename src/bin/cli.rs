@@ -60,6 +60,9 @@ enum Command {
         /// Emit JSON instead of human-readable output.
         #[arg(long)]
         json: bool,
+        /// Include recent operational activity (reconcile, repair, overlay events).
+        #[arg(long)]
+        recent: bool,
     },
 
     /// Generate a thin integration shim for the specified agent CLI.
@@ -313,7 +316,7 @@ fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Command::Init { mode } => init(&repo_root, mode.map(Into::into)),
-        Command::Status { json } => status(&repo_root, json),
+        Command::Status { json, recent } => status(&repo_root, json, recent),
         Command::AgentSetup { tool, force, regen } => agent_setup(&repo_root, tool, force, regen),
         Command::Reconcile => reconcile(&repo_root),
         Command::Check { json } => check(&repo_root, json),

@@ -81,6 +81,16 @@ synrepo SHALL expose a `synrepo_recent_activity(scope?, kinds?, limit?, since?)`
 - **THEN** the tool applies the default cap (20 entries)
 - **AND** responses exceeding the hard maximum (200 entries) SHALL be rejected with an explicit error rather than silently truncated
 
+#### Scenario: Tool registration appears in MCP capabilities
+- **WHEN** an MCP client connects and enumerates available tools
+- **THEN** `synrepo_recent_activity` appears in the tool list
+- **AND** the tool description indicates it returns a bounded lane of synrepo operational events
+
+#### Scenario: Tool is not a session-memory or agent-history surface
+- **WHEN** `synrepo_recent_activity` is invoked
+- **THEN** the response contains only synrepo's own operational events (reconcile, repair, cross-link, overlay, hotspot)
+- **AND** no agent identity, prompt content, or inter-session interaction data appears in any response field
+
 ### Requirement: Expose synrepo_entrypoints as a task-first MCP tool
 synrepo SHALL expose a `synrepo_entrypoints(scope?, budget?)` MCP tool that returns an `EntryPointCard` for the requested scope. The `scope` parameter SHALL be an optional path prefix string; when absent, the compiler scans all indexed files. The `budget` parameter SHALL accept `"tiny"` (default), `"normal"`, or `"deep"`. Results SHALL be sorted by kind (binary first, then cli_command, http_handler, lib_root) then by file path within each kind. The result set SHALL be limited to 20 entries by default. The tool SHALL return a parseable JSON object and SHALL NOT raise an error when no entry points are found — it returns an empty `entry_points` list instead.
 
@@ -105,3 +115,29 @@ synrepo SHALL expose a `synrepo_entrypoints(scope?, budget?)` MCP tool that retu
 - **THEN** each entry in the response includes the caller count and truncated doc comment
 - **AND** source bodies are omitted
 
+### Requirement: Expose synrepo_minimum_context as a task-first MCP tool
+synrepo SHALL expose `synrepo_minimum_context` as a task-first MCP tool that returns a budget-bounded 1-hop neighborhood around a focal symbol or file. The tool SHALL accept parameters: `target` (node ID or qualified path, required), `budget` (`tiny`, `normal`, `deep`, default `normal`). The response SHALL follow the minimum-context spec contract: focal card, structural neighbor summaries or full cards depending on budget, governing decisions, and co-change partners.
+
+#### Scenario: Tool registration appears in MCP capabilities
+- **WHEN** an MCP client connects and enumerates available tools
+- **THEN** `synrepo_minimum_context` appears in the tool list alongside the existing task-first tools
+- **AND** the tool description indicates it returns a budget-bounded neighborhood for a focal node
+
+#### Scenario: Default budget is normal
+- **WHEN** an agent invokes `synrepo_minimum_context` without specifying a budget
+- **THEN** the tool uses `normal` budget as the default
+- **AND** the response includes structural neighbor summaries and top-3 co-change partners
+
+
+### Requirement: Expose synrepo_public_api as a directory API surface tool
+synrepo SHALL expose `synrepo_public_api(path, budget?)` as an MCP tool that returns a `PublicAPICard` for the given directory path. The tool SHALL accept parameters: `path` (directory path, required), `budget` (`tiny`, `normal`, `deep`, default `tiny`). In v1, visibility detection is Rust-specific; non-Rust directories return an empty symbol list.
+
+#### Scenario: Tool registration appears in MCP capabilities
+- **WHEN** an MCP client connects and enumerates available tools
+- **THEN** `synrepo_public_api` appears in the tool list alongside the other card-surface tools
+- **AND** the tool description indicates it returns a `PublicAPICard` with public symbols and entry points
+
+#### Scenario: Default budget is tiny
+- **WHEN** an agent invokes `synrepo_public_api` without specifying a budget
+- **THEN** the tool uses `tiny` budget as the default
+- **AND** the response includes only `path`, `public_symbol_count`, `approx_tokens`, and `source_store`

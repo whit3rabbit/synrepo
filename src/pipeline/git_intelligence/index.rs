@@ -130,6 +130,20 @@ impl GitHistoryIndex {
             co_change_partners,
         }
     }
+
+    /// Return the top-N paths by touch count, sorted descending.
+    ///
+    /// Used by `recent_activity::read_hotspot_events` to rank churn-hot files.
+    pub fn top_hotspots(&self, limit: usize) -> Vec<(String, usize)> {
+        let mut counts: Vec<(String, usize)> = self
+            .by_path
+            .iter()
+            .map(|(path, indices)| (path.clone(), indices.len()))
+            .collect();
+        counts.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        counts.truncate(limit);
+        counts
+    }
 }
 
 pub(super) fn primary_author(authors: BTreeMap<String, usize>) -> Option<(String, usize)> {

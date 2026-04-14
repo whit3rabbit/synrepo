@@ -126,6 +126,16 @@ pub struct ModuleCardParams {
     pub budget: String,
 }
 
+/// Parameters for the `synrepo_public_api` tool.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct PublicAPICardParams {
+    /// Directory path to inspect (e.g. `"src/auth"` or `"src/surface/card"`).
+    pub path: String,
+    /// Budget tier: "tiny" (default), "normal", or "deep".
+    #[serde(default = "default_budget")]
+    pub budget: String,
+}
+
 /// Parameters for the `synrepo_findings` tool.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct FindingsParams {
@@ -138,6 +148,33 @@ pub struct FindingsParams {
     /// Maximum number of findings to return. Defaults to 20.
     #[serde(default = "default_limit")]
     pub limit: u32,
+}
+
+/// Parameters for the `synrepo_minimum_context` tool.
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct MinimumContextParams {
+    /// Target: node ID (e.g. "symbol_0000000000000024") or qualified path.
+    pub target: String,
+    /// Budget tier: "tiny", "normal", or "deep". Defaults to "normal".
+    #[serde(default = "default_budget")]
+    pub budget: String,
+}
+
+/// Parameters for the `synrepo_recent_activity` tool.
+#[derive(Deserialize, schemars::JsonSchema)]
+pub struct RecentActivityParams {
+    /// Activity kinds to include: "reconcile", "repair", "cross_link",
+    /// "overlay_refresh", "hotspot". Defaults to all kinds.
+    pub kinds: Option<Vec<String>>,
+    /// Maximum entries to return (default 20, max 200).
+    #[serde(default = "default_activity_limit")]
+    pub limit: usize,
+    /// Exclude entries older than this RFC 3339 timestamp.
+    pub since: Option<String>,
+}
+
+fn default_activity_limit() -> usize {
+    20
 }
 
 // ---------------------------------------------------------------------------
@@ -169,7 +206,9 @@ impl ServerHandler for SynrepoServer {
              before large refactors, synrepo_entrypoints to find execution \
              roots (binaries, CLI commands, HTTP handlers, library entry points), \
              synrepo_module_card for directory-level summaries, \
-             and synrepo_findings to see machine-authored relationship candidates.",
+             synrepo_public_api for exported symbols and public API surface of a directory, \
+             synrepo_findings to see machine-authored relationship candidates, \
+             and synrepo_recent_activity for bounded operational event history.",
         )
     }
 }
@@ -449,6 +488,33 @@ impl SynrepoServer {
         render_result(result)
     }
 
+    /// Return a `PublicAPICard` for a directory: exported symbols with kinds and
+    /// signatures, public entry points, and (at deep budget) recently changed API.
+    ///
+    /// Budget tiers:
+    ///   tiny   (~200 tokens) — path and public symbol count only
+    ///   normal (~500 tokens) — plus symbol list with kinds and signatures
+    ///   deep   (~2k tokens)  — plus last_change per symbol and recent_api_changes (30-day window)
+    ///
+    /// Note: visibility detection is Rust-specific (signature `pub` prefix).
+    /// Non-Rust directories return an empty symbol list in v1.
+    #[tool(
+        name = "synrepo_public_api",
+        description = "Return a PublicAPICard for a directory: public symbols with kinds and signatures, public entry points, and (at deep budget) recently changed public API surface."
+    )]
+    async fn synrepo_public_api(
+        &self,
+        Parameters(PublicAPICardParams { path, budget }): Parameters<PublicAPICardParams>,
+    ) -> String {
+        let budget = parse_budget(&budget);
+        let result: anyhow::Result<serde_json::Value> =
+            with_graph_snapshot(self.state.compiler.graph(), || {
+                let card = self.state.compiler.public_api_card(&path, budget)?;
+                Ok(serde_json::to_value(&card)?)
+            });
+        render_result(result)
+    }
+
     /// List machine-authored cross-link findings.
     #[tool(
         name = "synrepo_findings",
@@ -466,6 +532,84 @@ impl SynrepoServer {
         let result =
             findings::render_findings(&self.state.repo_root, node_id, kind, freshness, limit);
         render_result(result)
+    }
+
+    /// Return a budget-bounded 1-hop neighborhood around a focal node.
+    #[tool(
+        name = "synrepo_minimum_context",
+        description = "Return the minimum-useful context neighborhood for a symbol or file: focal card, outbound structural neighbors, governing decisions, and co-change partners."
+    )]
+    async fn synrepo_minimum_context(
+        &self,
+        Parameters(MinimumContextParams { target, budget }): Parameters<MinimumContextParams>,
+    ) -> String {
+        let budget = parse_budget(&budget);
+        let result = with_graph_snapshot(self.state.compiler.graph(), || {
+            let response = synrepo::surface::card::neighborhood::resolve_neighborhood(
+                &self.state.compiler,
+                &target,
+                budget,
+            )?;
+            Ok(serde_json::to_value(&response)?)
+        });
+        render_result(result)
+    }
+
+    /// Return bounded operational activity from `.synrepo/state/` and the overlay store.
+    ///
+    /// This tool reports what synrepo itself has done: reconcile outcomes, repair-log
+    /// entries, cross-link audit events, commentary refresh timestamps, and churn-hot
+    /// files from git history. It is NOT a session-memory or agent-interaction log —
+    /// it contains no record of prompts, tool calls, or model responses.
+    #[tool(
+        name = "synrepo_recent_activity",
+        description = "Return bounded operational activity: reconcile outcomes, repair events, cross-link audit entries, commentary refreshes, and git hotspots. NOT a session-memory or agent-interaction log."
+    )]
+    async fn synrepo_recent_activity(
+        &self,
+        Parameters(RecentActivityParams {
+            kinds,
+            limit,
+            since,
+        }): Parameters<RecentActivityParams>,
+    ) -> String {
+        render_result(self.recent_activity_impl(kinds, limit, since))
+    }
+
+    fn recent_activity_impl(
+        &self,
+        kinds: Option<Vec<String>>,
+        limit: usize,
+        since: Option<String>,
+    ) -> anyhow::Result<serde_json::Value> {
+        use synrepo::pipeline::recent_activity::{
+            read_recent_activity, RecentActivityKind, RecentActivityQuery,
+        };
+
+        let parsed_kinds = kinds
+            .map(|strs| {
+                strs.into_iter()
+                    .map(|s| {
+                        RecentActivityKind::parse_kind(&s)
+                            .ok_or_else(|| anyhow::anyhow!("unknown activity kind: {s}"))
+                    })
+                    .collect::<anyhow::Result<Vec<_>>>()
+            })
+            .transpose()?;
+
+        let synrepo_dir = synrepo::config::Config::synrepo_dir(&self.state.repo_root);
+        let query = RecentActivityQuery {
+            kinds: parsed_kinds,
+            limit,
+            since,
+        };
+        let entries = read_recent_activity(
+            &synrepo_dir,
+            &self.state.repo_root,
+            &self.state.config,
+            query,
+        )?;
+        Ok(serde_json::to_value(&entries)?)
     }
 }
 

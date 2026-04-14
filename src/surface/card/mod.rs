@@ -12,6 +12,7 @@ use crate::core::ids::{FileNodeId, NodeId, SymbolNodeId};
 pub mod compiler;
 pub mod decision;
 mod git;
+pub use compiler::neighborhood;
 mod types;
 
 /// Truncate `s` to at most `max_chars` Unicode scalar values, appending an
@@ -31,7 +32,7 @@ pub use git::{
 };
 pub use types::{
     EntryPoint, EntryPointCard, EntryPointKind, FileCard, FileRef, Freshness, ModuleCard,
-    OverlayCommentary, SymbolCard, SymbolRef,
+    OverlayCommentary, PublicAPICard, PublicAPIEntry, SymbolCard, SymbolRef,
 };
 
 /// Context budget tier for a card request.
@@ -102,6 +103,14 @@ pub trait CardCompiler {
 
     /// Compile a ModuleCard for the given directory path.
     fn module_card(&self, path: &str, budget: Budget) -> crate::Result<ModuleCard>;
+
+    /// Compile a PublicAPICard for the given directory path.
+    ///
+    /// Returns the exported symbols (those whose signature starts with `pub`),
+    /// public entry points, and (at `Deep` budget) recently changed public API.
+    /// In v1, visibility detection is Rust-specific; non-Rust directories return
+    /// an empty symbol list.
+    fn public_api_card(&self, path: &str, budget: Budget) -> crate::Result<PublicAPICard>;
 
     /// Resolve a human-readable target string (a path, a qualified name,
     /// or a symbol name) to a NodeId for card compilation.

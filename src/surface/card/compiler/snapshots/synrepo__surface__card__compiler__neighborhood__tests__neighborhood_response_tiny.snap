@@ -1,0 +1,36 @@
+---
+source: src/surface/card/compiler/neighborhood.rs
+expression: tiny
+---
+{
+  "focal_card": {
+    "approx_tokens": 10,
+    "co_changes": [],
+    "drift_flag": null,
+    "file": 4849841517771044389,
+    "git_intelligence": null,
+    "imported_by": [],
+    "imports": [],
+    "path": "src/lib.rs",
+    "source_store": "graph",
+    "symbols": [
+      {
+        "id": 8599377644913348356,
+        "location": "src/lib.rs:22",
+        "qualified_name": "add"
+      }
+    ]
+  },
+  "neighbors": null,
+  "neighbor_summaries": null,
+  "decision_cards": null,
+  "co_change_partners": null,
+  "co_change_state": "missing",
+  "edge_counts": {
+    "outbound_calls_count": 0,
+    "outbound_imports_count": 0,
+    "governs_count": 0,
+    "co_change_count": 0
+  },
+  "budget": "tiny"
+}

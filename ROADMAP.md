@@ -9,7 +9,7 @@
 - Milestone 2, Observed-facts core: complete
 - Milestone 3, First real product release: complete
 - Active changes: none
-- Most recently completed implementation change: `export-and-polish-v1` (archived 2026-04-12)
+- Most recently completed implementation change: `progressive-disclosure-v1` (archived 2026-04-14)
 - Milestone 5, Optional intelligence layers: complete
 - Milestone 6, Expansion and hardening: complete
 - Completed in Milestone 2: `structural-graph-v1`, `structural-pipeline-v1`, `watch-reconcile-v1`, `agent-integration-v1`
@@ -19,8 +19,8 @@
 - Completed in Milestone 5 (Track J): `commentary-overlay-v1` shipped in two passes — spec-split (2026-04-11 archive: narrowed `overlay/spec.md`, created `overlay-links/spec.md`) and implementation (2026-04-12 archive: SQLite commentary store, content-hash freshness, prune-orphans, `refresh_commentary` repair action, `CommentaryGenerator` trait with Claude + NoOp impls, `SymbolCard.overlay_commentary` wiring)
 - Completed in Milestone 5 (Track K): `cross-link-overlay-v1` (archived 2026-04-12: two-stage triage + `ClaudeCrossLinkGenerator`, `cross_links` + `cross_link_audit` dual-table storage, `proposed_links` on `SymbolCard`/`FileCard` at Deep budget, `revalidate_links` repair action, `synrepo links list/review/accept/reject` CLI, `synrepo findings` CLI, `synrepo_findings` MCP tool, `openspec/specs/cross-link-store/spec.md`)
 - Completed in Milestone 6 (Track L): `export-and-polish-v1` (archived 2026-04-12: Go structural language support, `synrepo export` command, `ExportSurface` repair surface + `regenerate_exports` action, `synrepo upgrade [--apply]` command, `agent-setup` cursor/codex/windsurf targets + `--regen` flag, enriched `status` with export freshness and overlay cost summary)
-- Current shipped surface: CLI commands `init`, `status`, `agent-setup`, `reconcile`, `check`, `sync`, `watch`, `watch status`, `watch stop`, `search`, `graph query`, `graph stats`, `node`, `links list`, `links review`, `links accept`, `links reject`, `findings`, `export`, and `upgrade`; MCP tools `synrepo_overview`, `synrepo_card`, `synrepo_search`, `synrepo_where_to_edit`, `synrepo_change_impact`, `synrepo_findings`, and `synrepo_entrypoints`; compiled cards `SymbolCard`, `FileCard`, `DecisionCard`, `EntryPointCard`, and `ModuleCard`; structural languages Rust, Python, TypeScript/TSX, and Go
-- Not yet shipped: specialist MCP tools (`synrepo_module`, `synrepo_call_path`, `synrepo_test_surface`, `synrepo_minimum_context`, `synrepo_explain`); compiled `CallPathCard` / `ChangeRiskCard` / `PublicAPICard` / `TestSurfaceCard`; graph-level `CoChangesWith` edges (kind defined, never emitted)
+- Current shipped surface: CLI commands `init`, `status`, `status --recent`, `agent-setup`, `reconcile`, `check`, `sync`, `watch`, `watch status`, `watch stop`, `search`, `graph query`, `graph stats`, `node`, `links list`, `links review`, `links accept`, `links reject`, `findings`, `export`, and `upgrade`; MCP tools `synrepo_overview`, `synrepo_card`, `synrepo_search`, `synrepo_where_to_edit`, `synrepo_change_impact`, `synrepo_findings`, `synrepo_entrypoints`, `synrepo_module_card`, `synrepo_public_api`, `synrepo_minimum_context`, and `synrepo_recent_activity`; compiled cards `SymbolCard`, `FileCard`, `DecisionCard`, `EntryPointCard`, `ModuleCard`, and `PublicAPICard`; structural languages Rust, Python, TypeScript/TSX, and Go
+- Not yet shipped: specialist MCP tools (`synrepo_call_path`, `synrepo_test_surface`, `synrepo_explain`); compiled `CallPathCard` / `ChangeRiskCard` / `TestSurfaceCard`; graph-level `CoChangesWith` edges (kind defined, never emitted)
 - MCP library chosen: `rmcp` (crates.io, modelcontextprotocol/rust-sdk); workspace strategy: add `[workspace]` to existing Cargo.toml, add `crates/synrepo-mcp/` as new member without moving existing files
 
 ## 1. Purpose
@@ -250,12 +250,14 @@ Delivered in `cards-and-mcp-v1`:
 - MCP server and five core tools: `synrepo_overview`, `synrepo_card`, `synrepo_search`, `synrepo_where_to_edit`, `synrepo_change_impact`
 - card budget enforcement with `tiny`, `normal`, and `deep`
 
-Planned follow-on surfaces under this track:
-- `ModuleCard`
-- `EntryPointCard`
+Shipped follow-on surfaces:
+- `ModuleCard` + `synrepo_module_card` (`cards-and-mcp-v1` follow-on)
+- `EntryPointCard` + `synrepo_entrypoints` (shipped)
+- `PublicAPICard` + `synrepo_public_api` (`public-api-card-v1`, 2026-04-14)
+
+Remaining planned surfaces:
 - `CallPathCard`
 - `ChangeRiskCard`
-- `PublicAPICard`
 - `TestSurfaceCard`
 - Progressive-disclosure protocol doc pass: reframe `tiny` / `normal` / `deep` as a deliberate three-surface interaction pattern (index → neighborhood → deep fetch) in the cards spec and SKILL.md copy so agents learn to escalate intentionally. No new card type.
 
@@ -1020,6 +1022,33 @@ Roadmap tie:
 
 Status: Complete and archived (2026-04-12). Shipped: Go structural language support, `synrepo export`, `ExportSurface` + `regenerate_exports`, `synrepo upgrade`, `agent-setup` cursor/codex/windsurf + `--regen`, enriched `status` with export freshness and overlay cost summary. Delta specs synced to `openspec/specs/bootstrap/`, `exports-and-views/`, `repair-loop/`, `storage-and-compatibility/`, and `substrate/`.
 
+## 8.14a `openspec/changes/archive/2026-04-13-git-data-surfacing-v1/`
+
+Use for:
+- wiring `FileCard.git_intelligence` at Normal+/Deep budget via `GraphCardCompiler` with per-session `GitCache`
+- adding `SymbolCard.last_change` (file-level granularity, `LastChangeGranularity::File` label, absent at Tiny)
+- `synrepo_module_card` MCP tool wired to existing `ModuleCard` compiler
+- `entry_point.rs` split into `entry_point/` submodule; tests extracted
+- large simplify refactor across card compiler and pipeline modules
+
+Roadmap tie:
+- Milestone 3 Track I (git-data surfacing), Track E (ModuleCard MCP gap)
+
+Status: Complete and archived (2026-04-13).
+
+## 8.14b `openspec/changes/archive/2026-04-14-synrepo-minimum-context/`
+
+Use for:
+- `synrepo_minimum_context` MCP tool: budget-bounded 1-hop neighborhood (focal card, structural neighbors, governing DecisionCards, co-change partners)
+- `neighborhood.rs` module in `src/surface/card/compiler/` with `MinimumContextResponse`, `resolve_neighborhood`, read-snapshot enforcement
+- new canonical spec: `openspec/specs/minimum-context/spec.md`
+- extended: `openspec/specs/mcp-surface/spec.md` (synrepo_minimum_context requirement)
+
+Roadmap tie:
+- Phase 2 per §11.2, Track E
+
+Status: Complete and archived (2026-04-14).
+
 ## 8.14 `openspec/changes/archive/2026-04-11-storage-compatibility-v1/`
 
 Use for:
@@ -1077,22 +1106,20 @@ Source-of-truth precedence: roadmap sets sequence, specs set enduring intent, ac
 
 ## 11. Suggested next move
 
-Milestones 0–6 are complete. Beyond the originally-gated milestone set, two additional specialist card surfaces have been compiled post-Milestone-3: `EntryPointCard` (type + compiler + `synrepo_entrypoints` MCP tool) and `ModuleCard` (type + compiler; MCP tool not yet wired). The most consequential remaining gap is that `git-intelligence-v1` archived without plumbing its computed signals into the card surface — the data is mined but still invisible to agents.
+Milestones 0–6 are complete. Post-milestone additions: `EntryPointCard` + `synrepo_entrypoints`, `ModuleCard` + `synrepo_module_card`, `synrepo_minimum_context` (budget-bounded 1-hop neighborhood), git intelligence wired into `FileCard.git_intelligence` and `SymbolCard.last_change`, and the progressive-disclosure surface (`synrepo_recent_activity` MCP tool + `synrepo status --recent` CLI flag).
 
 ### 11.1 Current gap summary
 
 **Track E — compiled and wired to MCP:**
-- Cards: `SymbolCard`, `FileCard`, `DecisionCard`, `EntryPointCard`
-- MCP: `synrepo_overview`, `synrepo_card`, `synrepo_search`, `synrepo_where_to_edit`, `synrepo_change_impact`, `synrepo_findings`, `synrepo_entrypoints`
-
-**Track E — compiled, MCP gap:**
-- `ModuleCard` (compiler at `src/surface/card/compiler/module.rs`; no `synrepo_module` tool wired)
+- Cards: `SymbolCard`, `FileCard`, `DecisionCard`, `EntryPointCard`, `ModuleCard`, `PublicAPICard`
+- MCP: `synrepo_overview`, `synrepo_card`, `synrepo_search`, `synrepo_where_to_edit`, `synrepo_change_impact`, `synrepo_findings`, `synrepo_entrypoints`, `synrepo_module_card`, `synrepo_public_api`, `synrepo_minimum_context`, `synrepo_recent_activity`
+- CLI: `status --recent` (bounded operational event history, all kinds, default limit 20)
 
 **Track E — not yet compiled:**
-- `CallPathCard`, `ChangeRiskCard`, `PublicAPICard`, `TestSurfaceCard`
-- MCP: `synrepo_call_path`, `synrepo_test_surface`, `synrepo_minimum_context`, `synrepo_explain`
+- `CallPathCard`, `ChangeRiskCard`, `TestSurfaceCard`
+- MCP: `synrepo_call_path`, `synrepo_test_surface`, `synrepo_explain`
 
-**Track D / I — data computed but not surfaced (highest-value gap):**
+**Track D / I — data computed but not surfaced:**
 - `CoChangesWith` is defined in `EdgeKind` but never produced (graph-level co-change edges still pending)
 
 **Track D — infrastructure:**
@@ -1105,33 +1132,21 @@ Milestones 0–6 are complete. Beyond the originally-gated milestone set, two ad
 
 Thread 3 (git-data surfacing) is the priority. It's the simplest unblock of the highest-impact routing improvement, and it restores the Track I commitment that `git-intelligence-v1` archived without completing.
 
-**Phase 1 — `git-data-surfacing-v1`** (primary focus; unblocks Phase 2)
+**Phase 1 — `git-data-surfacing-v1`** ✓ Complete (archived 2026-04-13)
 
-Scope:
-- Wire `FileCard.git_intelligence` at Normal+/Deep budget. Call `git_intelligence::analyze_path(repo_root, path)` from the file card compiler; cache per-compile-session to amortize cost when multiple cards are requested against files in the same reconcile epoch.
-- Add `SymbolCard.last_change` field per the design in §11.3 below. V1 is file-level granularity with explicit labeling.
-- Emit `CoChangesWith` edges during Stage 5. Source: `GitHistoryInsights.co_changes` already computed. Threshold: same minimum `co_change_count` surfaced today in file-facing outputs — no looser.
-- Spec updates: `openspec/specs/cards/spec.md` (add `last_change` field contract); `openspec/specs/git-intelligence/spec.md` (tighten `git_observed` surfacing contract to include the new edge kind and card fields).
-
-Opportunistic cleanup riding along (not gating):
-- Split `entry_point.rs` tests into a submodule to clear the 400-line violation before any further card work touches nearby files.
-- Wire `synrepo_module` MCP tool (30-line wrapper around the existing compiler). Open question: does `synrepo_card` extend to accept a directory path for module lookup, or does `synrepo_module` get its own tool? A dedicated tool is cleaner ergonomically; extending `synrepo_card` is a credible alternative. Defer the decision to when the change is opened.
-
-**Phase 2 — `synrepo_minimum_context`** (depends on Phase 1)
-
-With `FileCard.git_intelligence` wired, a co-change-aware minimum-context traversal becomes possible. The tool returns a focal card plus a minimum-useful-neighborhood: 1-hop outbound `Calls`/`Imports`, incoming `Governs` (as DecisionCards), and top-N co-change partners scoped by the budget tier. This is the strongest direct expression of invariant 4 ("smallest truthful context first") on the MCP surface.
+**Phase 2 — `synrepo-minimum-context`** ✓ Complete (archived 2026-04-14)
 
 **Phase 3 — remaining specialist card types**
 
-`CallPathCard`, `ChangeRiskCard`, `PublicAPICard`, `TestSurfaceCard` and their MCP tools. Scoped as separate changes per card type because each has distinct data requirements (e.g. `ChangeRiskCard` needs drift scoring — stage 7 — which is still stubbed).
+`CallPathCard`, `ChangeRiskCard`, `TestSurfaceCard` and their MCP tools. Scoped as separate changes per card type because each has distinct data requirements (e.g. `ChangeRiskCard` needs drift scoring — stage 7 — which is still stubbed). `CallPathCard` and `TestSurfaceCard` have no pending infrastructure dependencies. `PublicAPICard` is now shipped (`public-api-card-v1`, archived 2026-04-14).
 
 **Phase 4 — structural pipeline completion**
 
 Drift scoring (stage 7), ArcSwap commit (stage 8), split/merge detection. Not on the critical path for current product value, but needed for long-term operational guarantees.
 
-**Phase 5 — progressive-disclosure and recent-activity surfaces**
+**Phase 5 — progressive-disclosure and recent-activity surfaces** ✓ Complete (archived 2026-04-14)
 
-Pure surface-layer work; depends only on data already persisted in `.synrepo/state/` and the overlay store. Two deliverables: the doc/SKILL.md pass that reframes `tiny/normal/deep` as a three-surface progressive-disclosure protocol (Track E), and the `synrepo_recent_activity` MCP tool plus `synrepo status --recent` flag (Track H / Track L). One OpenSpec change, scope roughly equal to `git-data-surfacing-v1`. Closes the claude-mem-inspired UX gaps (intentional escalation, bounded history surface, inspectability) without absorbing session-memory patterns.
+`synrepo_recent_activity` MCP tool, `synrepo status --recent` CLI flag, `tiny/normal/deep` budget-escalation protocol documented in `skill/SKILL.md` and `openspec/specs/cards/spec.md`. Canonical spec at `openspec/specs/recent-activity/spec.md`.
 
 ### 11.3 Design note — `SymbolCard.last_change`
 
@@ -1187,4 +1202,4 @@ Rationale for Option A as v1:
 
 ### 11.4 Completion checkpoint
 
-Once `git-data-surfacing-v1` is implemented and archived, update this section: move its bullets from §11.1 "Track D / I — data computed but not surfaced" to "Track E — compiled and wired", and remove the deferred-v1 bullet for "Graph-level `CoChangesWith` edges and symbol-level last-change summaries" in §9.1.
+Phases 1, 2, 5, and `PublicAPICard` (Phase 3 first) are archived. §11.1 reflects the current shipped surface. The next completion checkpoint is Phase 3 continued: when `CallPathCard` or `TestSurfaceCard` is archived, move it from "Track E — not yet compiled" to "Track E — compiled and wired to MCP" in §11.1.

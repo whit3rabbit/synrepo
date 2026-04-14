@@ -5,13 +5,14 @@ use synrepo::{
     pipeline::{
         diagnostics::{collect_diagnostics, ReconcileHealth, RuntimeDiagnostics, WriterStatus},
         export::load_manifest,
+        recent_activity::{read_recent_activity, ActivityEntry, RecentActivityQuery},
         watch::WatchServiceStatus,
     },
     store::sqlite::SqliteGraphStore,
 };
 
 /// Print operational health: mode, graph counts, reconcile status, and watch state.
-pub(crate) fn status(repo_root: &Path, json: bool) -> anyhow::Result<()> {
+pub(crate) fn status(repo_root: &Path, json: bool, recent: bool) -> anyhow::Result<()> {
     let synrepo_dir = Config::synrepo_dir(repo_root);
 
     let config = match Config::load(repo_root) {
@@ -43,6 +44,17 @@ pub(crate) fn status(repo_root: &Path, json: bool) -> anyhow::Result<()> {
     let export_freshness = export_freshness_summary(repo_root, &synrepo_dir, &config);
     let overlay_cost = overlay_cost_summary(&synrepo_dir);
 
+    let recent_entries: Option<Vec<ActivityEntry>> = if recent {
+        let query = RecentActivityQuery {
+            kinds: None,
+            limit: 20,
+            since: None,
+        };
+        read_recent_activity(&synrepo_dir, repo_root, &config, query).ok()
+    } else {
+        None
+    };
+
     if json {
         return print_status_json(
             &config,
@@ -50,6 +62,7 @@ pub(crate) fn status(repo_root: &Path, json: bool) -> anyhow::Result<()> {
             graph_stats.as_ref(),
             &export_freshness,
             &overlay_cost,
+            recent_entries.as_deref(),
         );
     }
 
@@ -113,6 +126,21 @@ pub(crate) fn status(repo_root: &Path, json: bool) -> anyhow::Result<()> {
         "  next step:    {}",
         next_step(&diag, graph_stats.is_none())
     );
+
+    if let Some(entries) = &recent_entries {
+        println!();
+        println!("recent activity:");
+        if entries.is_empty() {
+            println!("  (none)");
+        }
+        for entry in entries {
+            if entry.timestamp.is_empty() {
+                println!("  [{}] {}", entry.kind, entry.payload);
+            } else {
+                println!("  {} [{}] {}", entry.timestamp, entry.kind, entry.payload);
+            }
+        }
+    }
     Ok(())
 }
 
@@ -122,6 +150,7 @@ fn print_status_json(
     graph_stats: Option<&synrepo::store::sqlite::PersistedGraphStats>,
     export_freshness: &str,
     overlay_cost: &str,
+    recent_activity: Option<&[ActivityEntry]>,
 ) -> anyhow::Result<()> {
     let graph_json = match graph_stats {
         Some(stats) => serde_json::json!({
@@ -152,6 +181,11 @@ fn print_status_json(
 
     let watch = render_watch_summary(&diag.watch_status);
 
+    let activity_json: serde_json::Value = match recent_activity {
+        Some(entries) => serde_json::to_value(entries).unwrap_or(serde_json::Value::Null),
+        None => serde_json::Value::Null,
+    };
+
     let output = serde_json::json!({
         "initialized": true,
         "mode": config.mode.to_string(),
@@ -162,6 +196,7 @@ fn print_status_json(
         "writer_lock": writer_lock,
         "export_freshness": export_freshness,
         "overlay_cost_summary": overlay_cost,
+        "recent_activity": activity_json,
     });
 
     println!("{}", serde_json::to_string_pretty(&output)?);

@@ -25,6 +25,7 @@ pub mod export;
 pub mod git;
 pub mod git_intelligence;
 pub mod maintenance;
+pub mod recent_activity;
 pub mod repair;
 pub mod structural;
 pub mod synthesis;

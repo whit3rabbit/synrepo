@@ -30,8 +30,8 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 
 use super::{
-    Budget, CardCompiler, EntryPointCard, FileCard, FileRef, ModuleCard, SourceStore, SymbolCard,
-    SymbolRef,
+    Budget, CardCompiler, EntryPointCard, FileCard, FileRef, ModuleCard, PublicAPICard,
+    SourceStore, SymbolCard, SymbolRef,
 };
 use crate::{
     config::Config,
@@ -49,6 +49,8 @@ mod git_cache;
 mod io;
 mod links;
 mod module;
+pub mod neighborhood;
+mod public_api;
 mod resolve;
 mod symbol;
 
@@ -181,6 +183,12 @@ impl CardCompiler for GraphCardCompiler {
     fn module_card(&self, path: &str, budget: Budget) -> crate::Result<ModuleCard> {
         with_graph_read_snapshot(self.graph.as_ref(), |graph| {
             module::module_card_impl(graph, path, budget)
+        })
+    }
+
+    fn public_api_card(&self, path: &str, budget: Budget) -> crate::Result<PublicAPICard> {
+        with_graph_read_snapshot(self.graph.as_ref(), |graph| {
+            public_api::public_api_card_impl(self, graph, path, budget)
         })
     }
 
