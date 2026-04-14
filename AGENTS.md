@@ -177,7 +177,7 @@ Stages 4–8:
 ### Not yet implemented
 
 - `EntryPointCard`, `CallPathCard`; specialist MCP tools (`synrepo_entrypoints`, `synrepo_call_path`, etc.). `ModuleCard` is implemented (`src/surface/card/types.rs`).
-- Graph-level `CoChangesWith` edges; symbol-level `SymbolCard.last_change`
+- Graph-level `CoChangesWith` edges. `SymbolCard.last_change` projects the containing file's newest commit with `granularity: file`; true per-symbol tracking stays on the roadmap.
 - Drift scoring (stage 7), ArcSwap commit (stage 8)
 
 ## Gotchas

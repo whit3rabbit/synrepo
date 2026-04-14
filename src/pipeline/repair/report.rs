@@ -43,7 +43,11 @@ pub(super) fn assemble_repair_report(
     findings.push(structural_refresh_finding(&diag.reconcile_health));
     findings.push(check_declared_links(synrepo_dir));
     findings.push(commentary_overlay_finding(synrepo_dir));
-    findings.push(export_surface_finding(repo_root, config, diag.last_reconcile.as_ref()));
+    findings.push(export_surface_finding(
+        repo_root,
+        config,
+        diag.last_reconcile.as_ref(),
+    ));
     findings.extend(proposed_links_overlay_findings(synrepo_dir));
     findings.extend(unsupported_surface_findings());
 

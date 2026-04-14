@@ -1,13 +1,16 @@
+use super::test_support::bootstrap;
 use super::*;
 use crate::{
     config::Config,
     core::ids::NodeId,
     overlay::{CommentaryEntry, CommentaryProvenance, OverlayStore},
-    pipeline::structural::run_structural_compile,
-    pipeline::synthesis::{CommentaryGenerator, NoOpGenerator},
+    pipeline::{
+        git::test_support::{git, init_commit},
+        synthesis::{CommentaryGenerator, NoOpGenerator},
+    },
     store::{overlay::SqliteOverlayStore, sqlite::SqliteGraphStore},
     structure::graph::EdgeKind,
-    surface::card::Freshness,
+    surface::card::{Freshness, LastChangeGranularity},
 };
 use insta::assert_snapshot;
 use parking_lot::Mutex;
@@ -18,13 +21,6 @@ use time::OffsetDateTime;
 
 fn make_compiler(graph: SqliteGraphStore, repo: &tempfile::TempDir) -> GraphCardCompiler {
     GraphCardCompiler::new(Box::new(graph), Some(repo.path()))
-}
-
-fn bootstrap(repo: &tempfile::TempDir) -> SqliteGraphStore {
-    let graph_dir = repo.path().join(".synrepo/graph");
-    let mut graph = SqliteGraphStore::open(&graph_dir).unwrap();
-    run_structural_compile(repo.path(), &Config::default(), &mut graph).unwrap();
-    graph
 }
 
 #[test]
@@ -563,4 +559,137 @@ fn entry_point_card_empty_repo_returns_no_panic() {
         "empty graph must produce empty entry_points list"
     );
     assert_eq!(card.source_store, SourceStore::Graph);
+}
+
+// --- git-data-surfacing-v1: FileCard.git_intelligence + SymbolCard.last_change ---
+
+/// Build a temp repo with a single `src/lib.rs` committed, return the repo,
+/// a `GraphCardCompiler` configured with `Config::default()`, and the file
+/// + symbol IDs of the committed symbol.
+fn git_backed_fixture() -> (
+    tempfile::TempDir,
+    GraphCardCompiler,
+    crate::core::ids::FileNodeId,
+    crate::core::ids::SymbolNodeId,
+) {
+    let repo = tempdir().unwrap();
+    // init_commit creates `tracked.txt` and an initial commit so HEAD exists.
+    init_commit(&repo);
+    fs::create_dir_all(repo.path().join("src")).unwrap();
+    fs::write(
+        repo.path().join("src/lib.rs"),
+        "/// Adds.\npub fn add(a: i32, b: i32) -> i32 { a + b }\n",
+    )
+    .unwrap();
+    git(&repo, &["add", "src/lib.rs"]);
+    git(&repo, &["commit", "-m", "add add"]);
+
+    let graph = bootstrap(&repo);
+    let file = graph.file_by_path("src/lib.rs").unwrap().unwrap();
+    let file_id = file.id;
+    let sym_edge = graph
+        .outbound(NodeId::File(file_id), Some(EdgeKind::Defines))
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
+    let sym_id = match sym_edge.to {
+        NodeId::Symbol(id) => id,
+        _ => panic!("expected symbol edge target"),
+    };
+    let compiler =
+        GraphCardCompiler::new(Box::new(graph), Some(repo.path())).with_config(Config::default());
+    (repo, compiler, file_id, sym_id)
+}
+
+#[test]
+fn file_card_normal_populates_git_intelligence_when_repo_has_history() {
+    let (_repo, compiler, file_id, _sym_id) = git_backed_fixture();
+    let card = compiler.file_card(file_id, Budget::Normal).unwrap();
+    let gi = card
+        .git_intelligence
+        .expect("git_intelligence must be populated at Normal budget in a git repo");
+    assert!(!gi.commits.is_empty(), "must record at least one commit");
+    let owner = gi.ownership.expect("ownership must be present");
+    assert_eq!(owner.primary_author, "synrepo");
+}
+
+#[test]
+fn file_card_tiny_omits_git_intelligence() {
+    let (_repo, compiler, file_id, _sym_id) = git_backed_fixture();
+    let card = compiler.file_card(file_id, Budget::Tiny).unwrap();
+    assert!(
+        card.git_intelligence.is_none(),
+        "Tiny budget must not include git_intelligence"
+    );
+}
+
+#[test]
+fn file_card_git_intelligence_is_none_without_config() {
+    // Same fixture but skip `.with_config`: the compiler must gracefully
+    // degrade rather than erroring.
+    let repo = tempdir().unwrap();
+    init_commit(&repo);
+    fs::create_dir_all(repo.path().join("src")).unwrap();
+    fs::write(repo.path().join("src/lib.rs"), "pub fn foo() {}\n").unwrap();
+    git(&repo, &["add", "src/lib.rs"]);
+    git(&repo, &["commit", "-m", "add foo"]);
+    let graph = bootstrap(&repo);
+    let file_id = graph.file_by_path("src/lib.rs").unwrap().unwrap().id;
+    let compiler = GraphCardCompiler::new(Box::new(graph), Some(repo.path()));
+    let card = compiler.file_card(file_id, Budget::Normal).unwrap();
+    assert!(card.git_intelligence.is_none());
+}
+
+#[test]
+fn file_card_git_intelligence_is_none_without_git() {
+    // No `git init`: the resolver must swallow the missing-repo condition
+    // and return None rather than error.
+    let repo = tempdir().unwrap();
+    fs::create_dir_all(repo.path().join("src")).unwrap();
+    fs::write(repo.path().join("src/lib.rs"), "pub fn foo() {}\n").unwrap();
+    let graph = bootstrap(&repo);
+    let file_id = graph.file_by_path("src/lib.rs").unwrap().unwrap().id;
+    let compiler =
+        GraphCardCompiler::new(Box::new(graph), Some(repo.path())).with_config(Config::default());
+    let card = compiler.file_card(file_id, Budget::Normal).unwrap();
+    assert!(
+        card.git_intelligence.is_none(),
+        "non-git repo must yield None, not error"
+    );
+}
+
+#[test]
+fn symbol_card_normal_last_change_uses_file_granularity_without_summary() {
+    let (_repo, compiler, _file_id, sym_id) = git_backed_fixture();
+    let card = compiler.symbol_card(sym_id, Budget::Normal).unwrap();
+    let lc = card.last_change.expect("last_change must be populated");
+    assert_eq!(lc.granularity, LastChangeGranularity::File);
+    assert_eq!(lc.summary, None, "Normal budget must omit summary");
+    assert_eq!(
+        lc.revision.len(),
+        12,
+        "revision must be shortened to 12 hex chars"
+    );
+    assert_eq!(lc.author_name, "synrepo");
+}
+
+#[test]
+fn symbol_card_deep_last_change_includes_summary() {
+    let (_repo, compiler, _file_id, sym_id) = git_backed_fixture();
+    let card = compiler.symbol_card(sym_id, Budget::Deep).unwrap();
+    let lc = card.last_change.expect("last_change must be populated");
+    assert_eq!(lc.granularity, LastChangeGranularity::File);
+    assert_eq!(
+        lc.summary.as_deref(),
+        Some("add add"),
+        "Deep budget must include commit summary"
+    );
+}
+
+#[test]
+fn symbol_card_tiny_has_no_last_change() {
+    let (_repo, compiler, _file_id, sym_id) = git_backed_fixture();
+    let card = compiler.symbol_card(sym_id, Budget::Tiny).unwrap();
+    assert!(card.last_change.is_none());
 }

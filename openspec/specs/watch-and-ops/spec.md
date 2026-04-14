@@ -40,6 +40,16 @@ synrepo SHALL define operational status and diagnostics surfaces sufficient to u
 - **THEN** the ops surface provides observable diagnostics
 - **AND** the contract avoids treating watcher behavior as opaque background magic
 
+#### Scenario: Enumerate recent reconcile outcomes
+- **WHEN** an operator or agent requests the last N reconcile passes
+- **THEN** synrepo returns each pass's timestamp, file-count delta, duration, and success/failure sourced from persisted reconcile state
+- **AND** the surface does not invent history beyond what is already recorded in `.synrepo/state/reconcile-state.json` and its rotated predecessors
+
+#### Scenario: Enumerate recent repair-log entries
+- **WHEN** an operator or agent requests recent repair-log entries
+- **THEN** synrepo returns entries read from `.synrepo/state/repair-log.jsonl` with their drift surface, severity, action taken, and timestamp
+- **AND** the response is bounded by an explicit limit rather than returning the entire log
+
 ### Requirement: Define single-writer operational safety
 synrepo SHALL define single-writer safety for daemon and standalone operation, including how concurrent writers are prevented or rejected. A long-lived watch lease SHALL record repo-level watch ownership, while `writer.lock` SHALL remain operation-scoped and guard actual runtime mutations only.
 
@@ -94,3 +104,8 @@ synrepo SHALL expose a small operational diagnostics surface sufficient to under
 - **WHEN** a user runs `synrepo watch status` or `synrepo status` while watch mode is active
 - **THEN** synrepo reports the watch mode, owner PID, and recent reconcile outcome
 - **AND** stale lease or socket artifacts are surfaced explicitly rather than silently ignored
+
+#### Scenario: Request a bounded recent-activity view
+- **WHEN** an operator runs `synrepo status --recent` or an agent invokes `synrepo_recent_activity`
+- **THEN** synrepo returns a bounded enumeration of recent reconcile, repair, cross-link, and overlay-refresh events drawn from already-persisted state
+- **AND** the surface refuses unbounded lookback and does not record caller identity, prompt content, or agent-facing interactions

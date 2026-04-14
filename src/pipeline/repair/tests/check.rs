@@ -84,7 +84,8 @@ fn check_reports_unsupported_surfaces_explicitly() {
 
     let report = build_repair_report(&synrepo_dir, &Config::default());
 
-    for surface in [RepairSurface::StaleRationale] {
+    {
+        let surface = RepairSurface::StaleRationale;
         let finding = report
             .findings
             .iter()

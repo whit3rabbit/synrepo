@@ -19,8 +19,10 @@ fn export_produces_markdown_files() {
     let synrepo_dir = repo.path().join(".synrepo");
     init_empty_graph(&synrepo_dir).unwrap();
 
-    let mut config = Config::default();
-    config.export_dir = "test-export".to_string();
+    let config = Config {
+        export_dir: "test-export".to_string(),
+        ..Config::default()
+    };
 
     write_exports(
         repo.path(),
@@ -57,8 +59,10 @@ fn export_produces_json_file() {
     let synrepo_dir = repo.path().join(".synrepo");
     init_empty_graph(&synrepo_dir).unwrap();
 
-    let mut config = Config::default();
-    config.export_dir = "test-export-json".to_string();
+    let config = Config {
+        export_dir: "test-export-json".to_string(),
+        ..Config::default()
+    };
 
     write_exports(
         repo.path(),
@@ -83,8 +87,10 @@ fn manifest_records_correct_format_and_budget() {
     let synrepo_dir = repo.path().join(".synrepo");
     init_empty_graph(&synrepo_dir).unwrap();
 
-    let mut config = Config::default();
-    config.export_dir = "test-export-manifest".to_string();
+    let config = Config {
+        export_dir: "test-export-manifest".to_string(),
+        ..Config::default()
+    };
 
     write_exports(
         repo.path(),
@@ -108,8 +114,10 @@ fn commit_flag_suppresses_gitignore_insertion() {
     let synrepo_dir = repo.path().join(".synrepo");
     init_empty_graph(&synrepo_dir).unwrap();
 
-    let mut config = Config::default();
-    config.export_dir = "test-export-commit".to_string();
+    let config = Config {
+        export_dir: "test-export-commit".to_string(),
+        ..Config::default()
+    };
 
     // With --commit, .gitignore should NOT be modified.
     write_exports(
@@ -134,8 +142,10 @@ fn no_commit_flag_inserts_gitignore_entry() {
     let synrepo_dir = repo.path().join(".synrepo");
     init_empty_graph(&synrepo_dir).unwrap();
 
-    let mut config = Config::default();
-    config.export_dir = "test-export-gitignore".to_string();
+    let config = Config {
+        export_dir: "test-export-gitignore".to_string(),
+        ..Config::default()
+    };
 
     // Without --commit, .gitignore should contain the export dir entry.
     write_exports(
@@ -161,8 +171,10 @@ fn deep_flag_uses_deep_budget() {
     let synrepo_dir = repo.path().join(".synrepo");
     init_empty_graph(&synrepo_dir).unwrap();
 
-    let mut config = Config::default();
-    config.export_dir = "test-export-deep".to_string();
+    let config = Config {
+        export_dir: "test-export-deep".to_string(),
+        ..Config::default()
+    };
 
     let result = write_exports(
         repo.path(),

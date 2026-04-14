@@ -2,9 +2,10 @@ use std::collections::{BTreeMap, HashMap};
 
 use crate::pipeline::git::{GitCommitChangeSet, GitCommitSummary, GitIntelligenceContext};
 
+use super::index::primary_author;
 use super::types::{
     GitCoChange, GitFileHotspot, GitHistoryInsights, GitHistorySample, GitIntelligenceStatus,
-    GitOwnershipHint, GitPathCoChangePartner, GitPathHistoryInsights,
+    GitOwnershipHint, GitPathHistoryInsights,
 };
 
 /// Sample recent first-parent history through the git-intelligence boundary.
@@ -85,87 +86,18 @@ pub fn analyze_recent_history(
 }
 
 /// Derive deterministic history, ownership, and co-change summaries for one path.
+///
+/// Thin wrapper over `GitHistoryIndex`: single-path callers still pay for
+/// the full first-parent walk, but the derivation body is shared with the
+/// bulk path in the card compiler so both surfaces stay in lockstep.
 pub fn analyze_path_history(
     context: &GitIntelligenceContext,
     target_path: &str,
     max_commits: usize,
     max_results: usize,
 ) -> crate::Result<GitPathHistoryInsights> {
-    let status = GitIntelligenceStatus::from_context(context);
-    let change_sets = context.recent_first_parent_commit_changes(max_commits)?;
-
-    let mut commits = Vec::new();
-    let mut ownership_counts: BTreeMap<String, usize> = BTreeMap::new();
-    let mut co_change_counts: BTreeMap<String, usize> = BTreeMap::new();
-    let mut touches = 0usize;
-    let mut last_touch: Option<(String, String)> = None;
-
-    for GitCommitChangeSet {
-        commit,
-        changed_paths,
-    } in &change_sets
-    {
-        if !changed_paths.iter().any(|path| path == target_path) {
-            continue;
-        }
-
-        touches += 1;
-        // change_sets are newest-first; the first match is the most recent touch.
-        if last_touch.is_none() {
-            last_touch = Some((commit.revision.clone(), commit.summary.clone()));
-        }
-        commits.push(commit.clone());
-        *ownership_counts
-            .entry(commit.author_name.clone())
-            .or_insert(0) += 1;
-
-        for path in changed_paths {
-            if path != target_path {
-                *co_change_counts.entry(path.clone()).or_insert(0) += 1;
-            }
-        }
-    }
-
-    commits.truncate(max_results);
-
-    let hotspot = last_touch.map(|(last_revision, last_summary)| GitFileHotspot {
-        path: target_path.to_string(),
-        touches,
-        last_revision,
-        last_summary,
-    });
-
-    let ownership =
-        primary_author(ownership_counts).map(|(author, author_touches)| GitOwnershipHint {
-            path: target_path.to_string(),
-            primary_author: author,
-            primary_author_touches: author_touches,
-            total_touches: touches,
-        });
-
-    let mut co_change_partners: Vec<_> = co_change_counts
-        .into_iter()
-        .map(|(path, co_change_count)| GitPathCoChangePartner {
-            path,
-            co_change_count,
-        })
-        .collect();
-    co_change_partners.sort_by(|left, right| {
-        right
-            .co_change_count
-            .cmp(&left.co_change_count)
-            .then_with(|| left.path.cmp(&right.path))
-    });
-    co_change_partners.truncate(max_results);
-
-    Ok(GitPathHistoryInsights {
-        path: target_path.to_string(),
-        status,
-        commits,
-        hotspot,
-        ownership,
-        co_change_partners,
-    })
+    let index = super::index::GitHistoryIndex::build(context, max_commits)?;
+    Ok(index.project_path(target_path, max_results))
 }
 
 fn record_change_set(
@@ -236,13 +168,6 @@ fn build_ownership_hints(
             }
         })
         .collect()
-}
-
-/// Return the author with the highest touch count, tie-breaking by name descending.
-fn primary_author(authors: BTreeMap<String, usize>) -> Option<(String, usize)> {
-    authors
-        .into_iter()
-        .max_by(|left, right| left.1.cmp(&right.1).then_with(|| right.0.cmp(&left.0)))
 }
 
 fn build_co_changes(co_change_counts: BTreeMap<(String, String), usize>) -> Vec<GitCoChange> {

@@ -98,6 +98,15 @@ impl Language {
     }
 }
 
+// Pattern index → kind (see RUST_KIND_MAP):
+//   0: function_item → Function
+//   1: struct_item   → Class
+//   2: enum_item     → Class
+//   3: trait_item    → Trait
+//   4: type_item     → Type
+//   5: mod_item      → Module
+//   6: const_item    → Constant
+//   7: static_item   → Constant
 const RUST_DEFINITION_QUERY: &str = r#"
 (function_item name: (identifier) @name) @item
 (struct_item name: (type_identifier) @name) @item
@@ -120,6 +129,9 @@ const RUST_KIND_MAP: &[SymbolKind] = &[
     SymbolKind::Constant,
 ];
 
+// Pattern index → kind (see PYTHON_KIND_MAP):
+//   0: function_definition → Function
+//   1: class_definition    → Class
 const PYTHON_DEFINITION_QUERY: &str = r#"
 (function_definition name: (identifier) @name) @item
 (class_definition name: (identifier) @name) @item
@@ -127,6 +139,13 @@ const PYTHON_DEFINITION_QUERY: &str = r#"
 
 const PYTHON_KIND_MAP: &[SymbolKind] = &[SymbolKind::Function, SymbolKind::Class];
 
+// Pattern index → kind (see TS_KIND_MAP):
+//   0: function_declaration       → Function
+//   1: class_declaration          → Class
+//   2: interface_declaration      → Trait
+//   3: type_alias_declaration     → Type
+//   4: method_definition          → Method
+//   5: abstract_method_signature  → Method
 const TS_DEFINITION_QUERY: &str = r#"
 (function_declaration name: (identifier) @name) @item
 (class_declaration name: (type_identifier) @name) @item
@@ -181,15 +200,13 @@ const TS_IMPORT_QUERY: &str = r#"
 
 // --- Go queries ---
 
-/// Go definition query.
-///
-/// Pattern index → kind (see GO_KIND_MAP):
-///   0: function_declaration → Function
-///   1: method_declaration   → Method
-///   2: interface type_spec  → Interface
-///   3: struct type_spec     → Class
-///   4: const_spec           → Constant
-///   5: var_spec             → Constant
+// Pattern index → kind (see GO_KIND_MAP):
+//   0: function_declaration → Function
+//   1: method_declaration   → Method
+//   2: interface type_spec  → Interface
+//   3: struct type_spec     → Class
+//   4: const_spec           → Constant
+//   5: var_spec             → Constant
 const GO_DEFINITION_QUERY: &str = r#"
 (function_declaration name: (identifier) @name) @item
 (method_declaration name: (field_identifier) @name) @item

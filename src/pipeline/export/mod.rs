@@ -111,7 +111,8 @@ pub fn write_exports(
 ) -> crate::Result<ExportResult> {
     let graph_dir = synrepo_dir.join("graph");
     let graph = SqliteGraphStore::open_existing(&graph_dir)?;
-    let compiler = GraphCardCompiler::new(Box::new(graph), Some(repo_root));
+    let compiler =
+        GraphCardCompiler::new(Box::new(graph), Some(repo_root)).with_config(config.clone());
 
     // Collect all node IDs under a single snapshot epoch.
     let (file_ids, symbol_ids, concept_ids) = with_graph_read_snapshot(compiler.graph(), |g| {

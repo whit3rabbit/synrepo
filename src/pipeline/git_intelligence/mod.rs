@@ -5,12 +5,14 @@
 //! directly, which keeps degraded-history handling and config coupling in one place.
 
 mod analysis;
+mod index;
 mod types;
 
 #[cfg(test)]
 mod tests;
 
 pub use analysis::{analyze_path_history, analyze_recent_history, sample_recent_history};
+pub use index::GitHistoryIndex;
 pub use types::{
     GitCoChange, GitFileHotspot, GitHistoryInsights, GitHistorySample, GitIntelligenceStatus,
     GitOwnershipHint, GitPathCoChangePartner, GitPathHistoryInsights,

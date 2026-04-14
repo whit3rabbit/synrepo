@@ -23,3 +23,5 @@ __MACOSX
 
 # Repomix
 repomix-output.xml
+/tmp/synrepo-context/
+/tmp/synrepo-context-json/

@@ -146,7 +146,7 @@ fn go_fixture_grammar_validation() {
         .collect();
 
     assert!(
-        functions.len() >= 1,
+        !functions.is_empty(),
         "expected at least 1 function, got {}",
         functions.len()
     );
@@ -156,17 +156,17 @@ fn go_fixture_grammar_validation() {
         methods.len()
     );
     assert!(
-        structs.len() >= 1,
+        !structs.is_empty(),
         "expected at least 1 struct, got {}",
         structs.len()
     );
     assert!(
-        interfaces.len() >= 1,
+        !interfaces.is_empty(),
         "expected at least 1 interface, got {}",
         interfaces.len()
     );
     assert!(
-        constants.len() >= 1,
+        !constants.is_empty(),
         "expected at least 1 constant, got {}",
         constants.len()
     );

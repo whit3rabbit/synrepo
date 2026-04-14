@@ -63,6 +63,24 @@ synrepo SHALL expose a `synrepo_findings` MCP tool that returns overlay audit in
 - **THEN** the tool returns an explicit error indicating the audit surface is not available
 - **AND** no candidate data is returned
 
+### Requirement: Expose a bounded recent-activity surface
+synrepo SHALL expose a `synrepo_recent_activity(scope?, kinds?, limit?, since?)` MCP tool that returns a bounded lane over synrepo's own operational history. The tool SHALL surface: (a) recent reconcile outcomes with timestamp, file-count delta, duration, and success/failure; (b) recent repair-log entries (drift surface, severity, action taken) read from `.synrepo/state/repair-log.jsonl`; (c) recent cross-link accept/reject decisions from the overlay; (d) recent commentary refreshes with content-hash freshness state; (e) recent churn-hot files derived from persisted Git intelligence. The `kinds` parameter SHALL filter to any subset of `reconcile | repair | cross_link | overlay_refresh | hotspot`. The tool SHALL cap results (default 20, maximum 200) and SHALL NOT accept unbounded lookback (either `limit` or `since` SHALL bound the response). The tool is explicitly NOT a session-memory log, NOT an agent-interaction history, and NOT a replacement for `git log`; it surfaces synrepo's own operational events only. The tool SHALL NOT record caller identity, prompt content, or agent-facing interactions.
+
+#### Scenario: Agent requests recent reconcile outcomes
+- **WHEN** an agent invokes `synrepo_recent_activity` with `kinds: ["reconcile"]` and `limit: 10`
+- **THEN** the tool returns the most recent reconcile events with timestamp, file-count delta, duration, and success/failure
+- **AND** no other activity kinds are included
+
+#### Scenario: Agent filters by multiple activity kinds
+- **WHEN** an agent invokes `synrepo_recent_activity` with `kinds: ["repair", "cross_link"]`
+- **THEN** the response contains only repair-log entries and cross-link accept/reject events
+- **AND** each entry is labeled with its kind and source store
+
+#### Scenario: Tool refuses unbounded lookback
+- **WHEN** `synrepo_recent_activity` is invoked without a `limit` or `since` argument
+- **THEN** the tool applies the default cap (20 entries)
+- **AND** responses exceeding the hard maximum (200 entries) SHALL be rejected with an explicit error rather than silently truncated
+
 ### Requirement: Expose synrepo_entrypoints as a task-first MCP tool
 synrepo SHALL expose a `synrepo_entrypoints(scope?, budget?)` MCP tool that returns an `EntryPointCard` for the requested scope. The `scope` parameter SHALL be an optional path prefix string; when absent, the compiler scans all indexed files. The `budget` parameter SHALL accept `"tiny"` (default), `"normal"`, or `"deep"`. Results SHALL be sorted by kind (binary first, then cli_command, http_handler, lib_root) then by file path within each kind. The result set SHALL be limited to 20 entries by default. The tool SHALL return a parseable JSON object and SHALL NOT raise an error when no entry points are found — it returns an empty `entry_points` list instead.
 

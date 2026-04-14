@@ -5,8 +5,16 @@
 //!
 //! - `SymbolCard.callers` and `.callees` are empty: stage-4 edges are
 //!   file→symbol, not symbol→symbol. Symbol-level call resolution is stage 5+.
-//! - `FileCard.co_changes` is empty until stage 5 (git mining) is wired.
-//! - `FileCard.git_intelligence` is `None` until `git-intelligence-v1`.
+//! - `FileCard.co_changes` is empty until graph-level `CoChangesWith` edges
+//!   are emitted during stage 5 (currently defined but not produced).
+//!
+//! ## Git intelligence
+//!
+//! When the compiler is constructed with [`GraphCardCompiler::with_config`]
+//! and a `repo_root`, `FileCard.git_intelligence` and `SymbolCard.last_change`
+//! are populated at `Normal` and `Deep` budgets via `analyze_path_history`.
+//! Results are cached on the compiler so multiple cards against the same
+//! file share one git walk per compile session.
 //!
 //! ## Overlay commentary
 //!
@@ -19,25 +27,33 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use parking_lot::Mutex;
+
 use super::{
     Budget, CardCompiler, EntryPointCard, FileCard, FileRef, ModuleCard, SourceStore, SymbolCard,
     SymbolRef,
 };
 use crate::{
+    config::Config,
     core::ids::{FileNodeId, NodeId, SymbolNodeId},
     overlay::OverlayStore,
-    pipeline::synthesis::CommentaryGenerator,
+    pipeline::{git_intelligence::GitPathHistoryInsights, synthesis::CommentaryGenerator},
     structure::graph::{with_graph_read_snapshot, GraphStore},
 };
 
+use self::git_cache::GitCache;
+
 mod entry_point;
 mod file;
+mod git_cache;
 mod io;
 mod links;
 mod module;
 mod resolve;
 mod symbol;
 
+#[cfg(test)]
+mod test_support;
 #[cfg(test)]
 mod tests;
 
@@ -47,10 +63,20 @@ mod tests;
 /// are absent, commentary resolution is a no-op.
 pub struct GraphCardCompiler {
     graph: Box<dyn GraphStore>,
-    /// Repository root, used to read source bodies at `Deep` budget.
+    /// Repository root, used to read source bodies at `Deep` budget and to
+    /// scope git-intelligence lookups.
     repo_root: Option<PathBuf>,
+    /// Optional runtime config. When paired with `repo_root`, the compiler
+    /// populates git-derived card fields using `git_commit_depth`. When
+    /// absent, git-derived fields stay `None`.
+    config: Option<Config>,
+    /// Per-compiler cache of path-scoped git analyses. Opens the
+    /// `GitIntelligenceContext` at most once per HEAD generation, serves
+    /// reads through an internal `RwLock`, and rebuilds the underlying
+    /// history index when the repository's HEAD SHA moves.
+    git_cache: GitCache,
     /// Optional overlay store for commentary retrieval and persistence.
-    overlay: Option<Arc<parking_lot::Mutex<dyn OverlayStore>>>,
+    overlay: Option<Arc<Mutex<dyn OverlayStore>>>,
     /// Optional generator invoked lazily at `Deep` budget when no overlay
     /// entry yet exists for the target node.
     generator: Option<Arc<dyn CommentaryGenerator>>,
@@ -64,15 +90,25 @@ impl GraphCardCompiler {
         Self {
             graph,
             repo_root: repo_root.map(Into::into),
+            config: None,
+            git_cache: GitCache::new(),
             overlay: None,
             generator: None,
         }
     }
 
+    /// Attach a runtime `Config`, enabling git-intelligence population on
+    /// cards at `Normal` and `Deep` budgets. Without this builder the
+    /// compiler treats git-derived fields as unavailable.
+    pub fn with_config(mut self, config: Config) -> Self {
+        self.config = Some(config);
+        self
+    }
+
     /// Attach an optional overlay store and generator for commentary.
     pub fn with_overlay(
         mut self,
-        overlay: Option<Arc<parking_lot::Mutex<dyn OverlayStore>>>,
+        overlay: Option<Arc<Mutex<dyn OverlayStore>>>,
         generator: Option<Arc<dyn CommentaryGenerator>>,
     ) -> Self {
         self.overlay = overlay;
@@ -83,6 +119,22 @@ impl GraphCardCompiler {
     /// Access the underlying graph store for direct queries.
     pub fn graph(&self) -> &dyn GraphStore {
         self.graph.as_ref()
+    }
+
+    /// Resolve (and cache) git-intelligence for a repo-relative path.
+    ///
+    /// Returns `None` when the compiler was not configured with both a
+    /// `repo_root` and a `Config`, when the repo has no git, or when the
+    /// underlying analysis errors. Failures are swallowed at `debug` level
+    /// rather than propagated — git-derived card fields are best-effort,
+    /// not load-bearing.
+    pub(crate) fn resolve_file_git_intelligence(
+        &self,
+        path: &str,
+    ) -> Option<Arc<GitPathHistoryInsights>> {
+        let repo_root = self.repo_root.as_ref()?;
+        let config = self.config.as_ref()?;
+        self.git_cache.resolve_path(repo_root, config, path)
     }
 }
 
@@ -98,6 +150,7 @@ impl CardCompiler for GraphCardCompiler {
         with_graph_read_snapshot(self.graph.as_ref(), |graph| {
             symbol::symbol_card(
                 symbol::SymbolCardContext {
+                    compiler: self,
                     graph,
                     repo_root: &self.repo_root,
                     overlay: self.overlay.as_ref(),
@@ -111,7 +164,7 @@ impl CardCompiler for GraphCardCompiler {
 
     fn file_card(&self, id: FileNodeId, budget: Budget) -> crate::Result<FileCard> {
         with_graph_read_snapshot(self.graph.as_ref(), |graph| {
-            file::file_card(graph, self.overlay.as_ref(), id, budget)
+            file::file_card(self, graph, id, budget)
         })
     }
 

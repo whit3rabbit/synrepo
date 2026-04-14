@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::ids::NodeId;
 
-use super::{Budget, Freshness};
+use super::{truncate_chars, Budget, Freshness};
 
 /// A card representing a human-authored design decision linked to a graph node.
 ///
@@ -49,7 +49,7 @@ impl DecisionCard {
             Budget::Normal => serde_json::json!({
                 "title": self.title,
                 "status": self.status,
-                "decision_body": self.decision_body.as_deref().map(|s| truncate(s, 300)),
+                "decision_body": self.decision_body.as_deref().map(|s| truncate_chars(s, 300)),
                 "governed_node_ids": governed_ids,
             }),
             Budget::Deep => serde_json::json!({
@@ -61,13 +61,6 @@ impl DecisionCard {
                 "freshness": self.freshness,
             }),
         }
-    }
-}
-
-fn truncate(s: &str, max_chars: usize) -> String {
-    match s.char_indices().nth(max_chars) {
-        None => s.to_string(),
-        Some((end, _)) => format!("{}…", &s[..end]),
     }
 }
 

@@ -4,7 +4,7 @@ use crate::core::ids::{FileNodeId, NodeId, SymbolNodeId};
 use crate::overlay::{ConfidenceTier, CrossLinkFreshness, OverlayEdgeKind};
 use crate::structure::graph::Epistemic;
 
-use super::{FileGitIntelligence, SourceStore};
+use super::{FileGitIntelligence, SourceStore, SymbolLastChange};
 
 /// A reference to a caller or callee in a SymbolCard.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -47,8 +47,11 @@ pub struct SymbolCard {
     pub callees: Vec<SymbolRef>,
     /// Test symbols that exercise this one. Empty for `tiny`.
     pub tests_touching: Vec<SymbolRef>,
-    /// Human-readable description of the last meaningful change.
-    pub last_change: Option<String>,
+    /// Most recent commit touching this symbol's containing file (V1
+    /// granularity: `File`). Absent at `Tiny` budget; revision + author +
+    /// timestamp at `Normal`; adds the folded summary at `Deep`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_change: Option<SymbolLastChange>,
     /// Drift score and flag, if any.
     pub drift_flag: Option<String>,
     /// Full source body, only populated for `Deep` budget.

@@ -19,8 +19,8 @@
 - Completed in Milestone 5 (Track J): `commentary-overlay-v1` shipped in two passes — spec-split (2026-04-11 archive: narrowed `overlay/spec.md`, created `overlay-links/spec.md`) and implementation (2026-04-12 archive: SQLite commentary store, content-hash freshness, prune-orphans, `refresh_commentary` repair action, `CommentaryGenerator` trait with Claude + NoOp impls, `SymbolCard.overlay_commentary` wiring)
 - Completed in Milestone 5 (Track K): `cross-link-overlay-v1` (archived 2026-04-12: two-stage triage + `ClaudeCrossLinkGenerator`, `cross_links` + `cross_link_audit` dual-table storage, `proposed_links` on `SymbolCard`/`FileCard` at Deep budget, `revalidate_links` repair action, `synrepo links list/review/accept/reject` CLI, `synrepo findings` CLI, `synrepo_findings` MCP tool, `openspec/specs/cross-link-store/spec.md`)
 - Completed in Milestone 6 (Track L): `export-and-polish-v1` (archived 2026-04-12: Go structural language support, `synrepo export` command, `ExportSurface` repair surface + `regenerate_exports` action, `synrepo upgrade [--apply]` command, `agent-setup` cursor/codex/windsurf targets + `--regen` flag, enriched `status` with export freshness and overlay cost summary)
-- Current shipped surface: CLI commands `init`, `status`, `agent-setup`, `reconcile`, `check`, `sync`, `watch`, `watch status`, `watch stop`, `search`, `graph query`, `graph stats`, `node`, `links list`, `links review`, `links accept`, `links reject`, `findings`, `export`, and `upgrade`; MCP tools `synrepo_overview`, `synrepo_card`, `synrepo_search`, `synrepo_where_to_edit`, `synrepo_change_impact`, and `synrepo_findings`; compiled cards `SymbolCard`, `FileCard`, and `DecisionCard`; plus a struct-only `ModuleCard` placeholder; structural languages Rust, Python, TypeScript/TSX, and Go
-- Not yet shipped: specialist MCP tools (`synrepo_entrypoints`, `synrepo_call_path`, `synrepo_test_surface`, `synrepo_minimum_context`, `synrepo_explain`), or compiled `ModuleCard` / `EntryPointCard` / `CallPathCard` / `ChangeRiskCard` / `PublicAPICard` / `TestSurfaceCard`.
+- Current shipped surface: CLI commands `init`, `status`, `agent-setup`, `reconcile`, `check`, `sync`, `watch`, `watch status`, `watch stop`, `search`, `graph query`, `graph stats`, `node`, `links list`, `links review`, `links accept`, `links reject`, `findings`, `export`, and `upgrade`; MCP tools `synrepo_overview`, `synrepo_card`, `synrepo_search`, `synrepo_where_to_edit`, `synrepo_change_impact`, `synrepo_findings`, and `synrepo_entrypoints`; compiled cards `SymbolCard`, `FileCard`, `DecisionCard`, `EntryPointCard`, and `ModuleCard`; structural languages Rust, Python, TypeScript/TSX, and Go
+- Not yet shipped: specialist MCP tools (`synrepo_module`, `synrepo_call_path`, `synrepo_test_surface`, `synrepo_minimum_context`, `synrepo_explain`); compiled `CallPathCard` / `ChangeRiskCard` / `PublicAPICard` / `TestSurfaceCard`; graph-level `CoChangesWith` edges (kind defined, never emitted)
 - MCP library chosen: `rmcp` (crates.io, modelcontextprotocol/rust-sdk); workspace strategy: add `[workspace]` to existing Cargo.toml, add `crates/synrepo-mcp/` as new member without moving existing files
 
 ## 1. Purpose
@@ -257,6 +257,7 @@ Planned follow-on surfaces under this track:
 - `ChangeRiskCard`
 - `PublicAPICard`
 - `TestSurfaceCard`
+- Progressive-disclosure protocol doc pass: reframe `tiny` / `normal` / `deep` as a deliberate three-surface interaction pattern (index → neighborhood → deep fetch) in the cards spec and SKILL.md copy so agents learn to escalate intentionally. No new card type.
 
 ### Exit criteria
 
@@ -348,6 +349,7 @@ Keep the system current under real developer churn.
 - operational diagnostics
 - compact and cleanup commands
 - storage maintenance and migration behavior
+- bounded recent-activity surface: enumerate recent reconcile outcomes, repair-log entries, cross-link accept/reject, commentary refreshes, and churn-hot files via a task-first MCP tool (`synrepo_recent_activity`). Data already persisted in `reconcile-state.json`, `repair-log.jsonl`, and the overlay store; this deliverable wires it into the surface layer. Not a session-memory or agent-interaction log.
 
 ### Exit criteria
 
@@ -471,6 +473,7 @@ Ownership map:
 - schema migrations
 - additional grammar support
 - polish around onboarding and operations
+- inspectability polish: `synrepo status` grows a `--recent` flag over the same data the new `synrepo_recent_activity` MCP tool surfaces; per-card `source_store` and freshness labeling already ships, do not regress.
 
 ### Exit criteria
 
@@ -1041,6 +1044,10 @@ To keep the roadmap aligned with the product thesis, avoid the following:
 5. Do not postpone instability handling until late phases.
 6. Do not ship “AI understanding” before Phase 2 cards work on code-only repos.
 7. Do not treat watch, reconcile, and repair as polish. They are trust features.
+8. Do not absorb generic session-memory or cross-session agent-memory patterns. synrepo is a repo context compiler, not a memory product.
+9. Do not copy hook-heavy auto-capture as a core value prop. Hooks remain optional surfaces, not the center of gravity.
+10. Do not let background behavior become invisible. Watch stays explicit and per-repo; ownership and state must always be inspectable.
+11. Do not make vector-first retrieval a core dependency. Embeddings remain a bounded, opt-in candidate generator for overlay cross-links only.
 
 ## 9.1 Not in v1 — explicit defers
 
@@ -1052,6 +1059,7 @@ These are explicitly deferred past the first stable release to protect the produ
 - Additional language grammar support beyond the current set (Milestone 6)
 - Global auto-watch or start-at-login daemon behavior (per-repo opt-in watch mode exists; broader background automation remains deferred)
 - Graph-level `CoChangesWith` edges and symbol-level last-change summaries (follow-on to `git-intelligence-v1`)
+- Cross-session agent memory, persistent observation capture, or chat-history summarization. These are explicitly out of scope, not deferred. If agent-memory value is wanted, it belongs in a separate product alongside synrepo, not inside it.
 
 ## 10. Release gating guidance
 
@@ -1069,13 +1077,114 @@ Source-of-truth precedence: roadmap sets sequence, specs set enduring intent, ac
 
 ## 11. Suggested next move
 
-Milestones 0–6 are complete. The v1 hardening sprint (`card-quality-v1`) is complete and archived. Milestone 5 (`commentary-overlay-v1`, `cross-link-overlay-v1`) and Milestone 6 (`export-and-polish-v1`) are all complete and archived. The shipped surface now includes Go structural support, export command, upgrade command, three new agent-setup targets, and enriched status output.
+Milestones 0–6 are complete. Beyond the originally-gated milestone set, two additional specialist card surfaces have been compiled post-Milestone-3: `EntryPointCard` (type + compiler + `synrepo_entrypoints` MCP tool) and `ModuleCard` (type + compiler; MCP tool not yet wired). The most consequential remaining gap is that `git-intelligence-v1` archived without plumbing its computed signals into the card surface — the data is mined but still invisible to agents.
 
-**Remaining Track E surfaces (follow-on to Milestone 3):**
-- Compiled `ModuleCard`, `EntryPointCard`, `CallPathCard`, `ChangeRiskCard`, `PublicAPICard`, `TestSurfaceCard`
-- Specialist MCP tools (`synrepo_entrypoints`, `synrepo_call_path`, `synrepo_test_surface`, `synrepo_minimum_context`, `synrepo_explain`)
+### 11.1 Current gap summary
 
-**Remaining Track D / I surfaces:**
-- Graph-level `CoChangesWith` edges and symbol-level `SymbolCard.last_change`
-- Drift scoring (stage 7), ArcSwap commit (stage 8)
-- Split/merge rename detection (stage 6 partial)
+**Track E — compiled and wired to MCP:**
+- Cards: `SymbolCard`, `FileCard`, `DecisionCard`, `EntryPointCard`
+- MCP: `synrepo_overview`, `synrepo_card`, `synrepo_search`, `synrepo_where_to_edit`, `synrepo_change_impact`, `synrepo_findings`, `synrepo_entrypoints`
+
+**Track E — compiled, MCP gap:**
+- `ModuleCard` (compiler at `src/surface/card/compiler/module.rs`; no `synrepo_module` tool wired)
+
+**Track E — not yet compiled:**
+- `CallPathCard`, `ChangeRiskCard`, `PublicAPICard`, `TestSurfaceCard`
+- MCP: `synrepo_call_path`, `synrepo_test_surface`, `synrepo_minimum_context`, `synrepo_explain`
+
+**Track D / I — data computed but not surfaced (highest-value gap):**
+- `CoChangesWith` is defined in `EdgeKind` but never produced (graph-level co-change edges still pending)
+
+**Track D — infrastructure:**
+- Drift scoring (stage 7), ArcSwap commit (stage 8), split/merge detection (stage 6 partial) remain stubbed
+
+**Code health:**
+- `src/surface/card/compiler/entry_point.rs` is 428 lines, over the 400-line split threshold from `CLAUDE.md`. Tests occupy lines 184–428 and should move to a tests submodule.
+
+### 11.2 Recommended sequencing
+
+Thread 3 (git-data surfacing) is the priority. It's the simplest unblock of the highest-impact routing improvement, and it restores the Track I commitment that `git-intelligence-v1` archived without completing.
+
+**Phase 1 — `git-data-surfacing-v1`** (primary focus; unblocks Phase 2)
+
+Scope:
+- Wire `FileCard.git_intelligence` at Normal+/Deep budget. Call `git_intelligence::analyze_path(repo_root, path)` from the file card compiler; cache per-compile-session to amortize cost when multiple cards are requested against files in the same reconcile epoch.
+- Add `SymbolCard.last_change` field per the design in §11.3 below. V1 is file-level granularity with explicit labeling.
+- Emit `CoChangesWith` edges during Stage 5. Source: `GitHistoryInsights.co_changes` already computed. Threshold: same minimum `co_change_count` surfaced today in file-facing outputs — no looser.
+- Spec updates: `openspec/specs/cards/spec.md` (add `last_change` field contract); `openspec/specs/git-intelligence/spec.md` (tighten `git_observed` surfacing contract to include the new edge kind and card fields).
+
+Opportunistic cleanup riding along (not gating):
+- Split `entry_point.rs` tests into a submodule to clear the 400-line violation before any further card work touches nearby files.
+- Wire `synrepo_module` MCP tool (30-line wrapper around the existing compiler). Open question: does `synrepo_card` extend to accept a directory path for module lookup, or does `synrepo_module` get its own tool? A dedicated tool is cleaner ergonomically; extending `synrepo_card` is a credible alternative. Defer the decision to when the change is opened.
+
+**Phase 2 — `synrepo_minimum_context`** (depends on Phase 1)
+
+With `FileCard.git_intelligence` wired, a co-change-aware minimum-context traversal becomes possible. The tool returns a focal card plus a minimum-useful-neighborhood: 1-hop outbound `Calls`/`Imports`, incoming `Governs` (as DecisionCards), and top-N co-change partners scoped by the budget tier. This is the strongest direct expression of invariant 4 ("smallest truthful context first") on the MCP surface.
+
+**Phase 3 — remaining specialist card types**
+
+`CallPathCard`, `ChangeRiskCard`, `PublicAPICard`, `TestSurfaceCard` and their MCP tools. Scoped as separate changes per card type because each has distinct data requirements (e.g. `ChangeRiskCard` needs drift scoring — stage 7 — which is still stubbed).
+
+**Phase 4 — structural pipeline completion**
+
+Drift scoring (stage 7), ArcSwap commit (stage 8), split/merge detection. Not on the critical path for current product value, but needed for long-term operational guarantees.
+
+**Phase 5 — progressive-disclosure and recent-activity surfaces**
+
+Pure surface-layer work; depends only on data already persisted in `.synrepo/state/` and the overlay store. Two deliverables: the doc/SKILL.md pass that reframes `tiny/normal/deep` as a three-surface progressive-disclosure protocol (Track E), and the `synrepo_recent_activity` MCP tool plus `synrepo status --recent` flag (Track H / Track L). One OpenSpec change, scope roughly equal to `git-data-surfacing-v1`. Closes the claude-mem-inspired UX gaps (intentional escalation, bounded history surface, inspectability) without absorbing session-memory patterns.
+
+### 11.3 Design note — `SymbolCard.last_change`
+
+The `last_change` field must answer "when was this symbol meaningfully changed, and by whom?" without lying about precision. Four options considered:
+
+| Option | Granularity | Data source | Cost | Limitation |
+|---|---|---|---|---|
+| A. File-level proxy | Most recent commit touching containing file | `analyze_path()` already computed | Free — data already mined | All symbols in a file share one value; imprecise in large files |
+| B. `git blame` over symbol's byte range | Line-accurate at `HEAD` | `gix` blame | Per-file blame, amortized O(commits × lines) | Byte ranges shift across history; blame-across-renames is an open problem |
+| C. Commit-overlap over current range | Like B but diff-scan based | Diff walk per commit | Similar to B | Same rename problem |
+| D. Graph-native body-hash tracking | Per-symbol, recorded on reconcile | New `SymbolNode` fields (`first_seen_rev`, `last_modified_rev`) + one-time bootstrap backfill | Incremental per reconcile; heavy one-time backfill | Window-limited — without backfill, all symbols look "recently modified" on fresh init |
+
+**Recommended v1: Option A, with explicit granularity labeling.**
+
+Card surface:
+
+```
+pub struct SymbolLastChange {
+    pub revision: String,              // hex SHA
+    pub summary: String,               // folded one-line
+    pub author_name: String,
+    pub committed_at_unix: i64,
+    pub granularity: LastChangeGranularity,
+}
+
+pub enum LastChangeGranularity {
+    File,      // "most recent commit touching this file"
+    Symbol,    // "most recent commit modifying this symbol's body hash" (future, Option D)
+    Unknown,   // degraded git history
+}
+```
+
+Budget behavior:
+- `tiny`: absent
+- `normal`: `revision` (short SHA), `author_name`, `committed_at_unix`, `granularity`
+- `deep`: above + `summary`
+
+Rationale for Option A as v1:
+
+1. **Zero additional git work.** The data is already computed by `analyze_path` and is effectively free once `FileCard.git_intelligence` is wired. No new mining passes, no schema changes.
+2. **Truthful under invariant 4.** "Smallest truthful context first" requires that we not claim precision we don't have. The `granularity: "file"` label makes the approximation explicit; downstream consumers (routing, UIs) can filter or discount based on granularity.
+3. **Clean upgrade path to Option D.** When symbol-level `last_modified_rev` tracking lands as a later change, the card surface stays stable; only the `granularity` value flips to `"symbol"`. Consumers that read only `revision` + `author_name` + `committed_at_unix` upgrade transparently — no breaking contract change.
+4. **Options B and C are red herrings.** Byte-range-based approaches look more precise but break across renames, which are common in active codebases. The illusion of precision is worse than explicit approximation — an agent that trusts a blame result that silently reset across a file rename will make worse decisions than one that sees `granularity: "file"` and knows to discount.
+5. **Option D is correct long-term but disproportionately expensive for a first cut.** It requires schema migration (two new fields on `SymbolNode`), reconcile-time update logic, and one-time backfill across git history. Deferring it behind the stable card surface preserves optionality without blocking value delivery now.
+
+**Provenance.** The field is `git_observed` per invariant 1. Cards label it through the existing `source_store: "graph"` channel; the `granularity` enum carries the precision qualifier.
+
+**"Meaningful" filter.** The data source already filters via first-parent-only history (merge commits collapsed) and a configurable depth budget (`git_commit_depth`, default 500). A further filter for whitespace-only or format-only commits is deferred — content-weighted ranking is a Track I enhancement, not a prerequisite for surfacing `last_change`.
+
+**Cache strategy.** Per-compile-session cache keyed by `(repo_revision, file_path)`, held on `GraphCardCompiler`. Invalidated implicitly when reconcile updates the repo_revision. No new storage; the cache is in-memory only. If future benchmarks show git analysis dominating card compile cost, the Option D persisted approach can replace this; until then, the cheaper approach is sufficient.
+
+**Integration note.** Wiring `FileCard.git_intelligence` and `SymbolCard.last_change` both depend on the card compiler calling `pipeline::git_intelligence::analyze_path`. This is consistent with the existing pattern — the compiler already imports `pipeline::synthesis::CommentaryGenerator`. The Surface-to-Pipeline relationship is already bidirectional through trait callbacks; this extends that pattern, not violates it.
+
+### 11.4 Completion checkpoint
+
+Once `git-data-surfacing-v1` is implemented and archived, update this section: move its bullets from §11.1 "Track D / I — data computed but not surfaced" to "Track E — compiled and wired", and remove the deferred-v1 bullet for "Graph-level `CoChangesWith` edges and symbol-level last-change summaries" in §9.1.

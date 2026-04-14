@@ -1,19 +1,18 @@
 use crate::{
     core::ids::{FileNodeId, NodeId},
     structure::graph::{EdgeKind, GraphStore},
+    surface::card::git::FileGitIntelligence,
 };
 
-use super::{Budget, FileCard, FileRef, SourceStore, SymbolRef};
-
-use crate::overlay::OverlayStore;
-use std::sync::Arc;
+use super::{Budget, FileCard, FileRef, GraphCardCompiler, SourceStore, SymbolRef};
 
 pub(super) fn file_card(
+    compiler: &GraphCardCompiler,
     graph: &dyn GraphStore,
-    overlay: Option<&Arc<parking_lot::Mutex<dyn OverlayStore>>>,
     id: FileNodeId,
     budget: Budget,
 ) -> crate::Result<FileCard> {
+    let overlay = compiler.overlay.as_ref();
     let file = graph
         .get_file(id)?
         .ok_or_else(|| crate::Error::Other(anyhow::anyhow!("file {id} not found")))?;
@@ -71,6 +70,13 @@ pub(super) fn file_card(
 
     // TODO: truncate imported_by/imports for Tiny budget (symbol_limit already handles symbols)
 
+    let git_intelligence = match budget {
+        Budget::Tiny => None,
+        Budget::Normal | Budget::Deep => compiler
+            .resolve_file_git_intelligence(&file.path)
+            .map(|arc| FileGitIntelligence::from(&*arc)),
+    };
+
     let mut card = FileCard {
         file: id,
         path: file.path.clone(),
@@ -78,7 +84,7 @@ pub(super) fn file_card(
         imported_by,
         imports,
         co_changes: vec![],
-        git_intelligence: None,
+        git_intelligence,
         drift_flag: None,
         approx_tokens: 0,
         source_store: SourceStore::Graph,

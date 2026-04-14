@@ -14,8 +14,21 @@ pub mod decision;
 mod git;
 mod types;
 
+/// Truncate `s` to at most `max_chars` Unicode scalar values, appending an
+/// ellipsis when truncation occurs. `char_indices` keeps the slice boundary
+/// on a UTF-8 code point.
+pub(crate) fn truncate_chars(s: &str, max_chars: usize) -> String {
+    match s.char_indices().nth(max_chars) {
+        None => s.to_string(),
+        Some((end, _)) => format!("{}…", &s[..end]),
+    }
+}
+
 pub use decision::DecisionCard;
-pub use git::{FileGitCoChange, FileGitCommit, FileGitIntelligence, FileGitOwnership};
+pub use git::{
+    FileGitCoChange, FileGitCommit, FileGitIntelligence, FileGitOwnership, LastChangeGranularity,
+    SymbolLastChange,
+};
 pub use types::{
     EntryPoint, EntryPointCard, EntryPointKind, FileCard, FileRef, Freshness, ModuleCard,
     OverlayCommentary, SymbolCard, SymbolRef,

@@ -10,9 +10,7 @@ use std::collections::{HashMap, HashSet};
 use crate::{
     core::ids::{FileNodeId, NodeId},
     structure::graph::{EdgeKind, GraphStore},
-    surface::card::{
-        types::ModuleCard, Budget, FileRef, SourceStore, SymbolRef,
-    },
+    surface::card::{types::ModuleCard, Budget, FileRef, SourceStore, SymbolRef},
 };
 
 /// Compile a `ModuleCard` for the given directory path.
@@ -62,8 +60,7 @@ pub(super) fn module_card_impl(
     nested_modules.sort();
 
     // Collect public symbols based on budget.
-    let (public_symbols, total_symbol_count) =
-        collect_symbols(graph, &files, budget)?;
+    let (public_symbols, total_symbol_count) = collect_symbols(graph, &files, budget)?;
 
     let file_tokens = 15 * files.len();
     let symbol_tokens = match budget {
@@ -129,20 +126,10 @@ fn collect_symbols(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        config::Config, pipeline::structural::run_structural_compile,
-        store::sqlite::SqliteGraphStore,
-        surface::card::compiler::{GraphCardCompiler, CardCompiler},
-    };
+    use crate::surface::card::compiler::test_support::bootstrap;
+    use crate::surface::card::compiler::{CardCompiler, GraphCardCompiler};
     use std::fs;
     use tempfile::tempdir;
-
-    fn bootstrap(repo: &tempfile::TempDir) -> SqliteGraphStore {
-        let graph_dir = repo.path().join(".synrepo/graph");
-        let mut graph = SqliteGraphStore::open(&graph_dir).unwrap();
-        run_structural_compile(repo.path(), &Config::default(), &mut graph).unwrap();
-        graph
-    }
 
     // 7.3: subdirectory files excluded from `files`, appear in `nested_modules`
 
@@ -169,7 +156,9 @@ mod tests {
 
         // Subdirectory file must NOT appear in files
         assert!(
-            card.files.iter().all(|f| f.path != "src/auth/jwt/verify.rs"),
+            card.files
+                .iter()
+                .all(|f| f.path != "src/auth/jwt/verify.rs"),
             "jwt/verify.rs must not appear in files directly"
         );
 
@@ -194,8 +183,13 @@ mod tests {
         let compiler = GraphCardCompiler::new(Box::new(graph), Some(repo.path()));
 
         // Request a directory with no indexed files.
-        let card = compiler.module_card("src/nonexistent", Budget::Tiny).unwrap();
-        assert!(card.files.is_empty(), "empty directory must return empty file list");
+        let card = compiler
+            .module_card("src/nonexistent", Budget::Tiny)
+            .unwrap();
+        assert!(
+            card.files.is_empty(),
+            "empty directory must return empty file list"
+        );
         assert_eq!(card.total_symbol_count, 0);
     }
 }

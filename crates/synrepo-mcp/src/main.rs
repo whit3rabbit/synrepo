@@ -28,9 +28,7 @@ use synrepo::{
     pipeline::synthesis::{ClaudeCommentaryGenerator, CommentaryGenerator},
     store::{overlay::SqliteOverlayStore, sqlite::SqliteGraphStore},
     structure::graph::{EdgeKind, GraphStore},
-    surface::card::{
-        compiler::GraphCardCompiler, Budget, CardCompiler, DecisionCard, Freshness,
-    },
+    surface::card::{compiler::GraphCardCompiler, Budget, CardCompiler, DecisionCard, Freshness},
 };
 
 // ---------------------------------------------------------------------------
@@ -118,6 +116,16 @@ pub struct EntrypointsParams {
     pub budget: String,
 }
 
+/// Parameters for the `synrepo_module_card` tool.
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ModuleCardParams {
+    /// Directory path of the module to summarize (e.g. `"src/auth"`).
+    pub path: String,
+    /// Budget tier: "tiny" (default), "normal", or "deep".
+    #[serde(default = "default_budget")]
+    pub budget: String,
+}
+
 /// Parameters for the `synrepo_findings` tool.
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 pub struct FindingsParams {
@@ -160,6 +168,7 @@ impl ServerHandler for SynrepoServer {
              synrepo_where_to_edit to route a task, synrepo_change_impact \
              before large refactors, synrepo_entrypoints to find execution \
              roots (binaries, CLI commands, HTTP handlers, library entry points), \
+             synrepo_module_card for directory-level summaries, \
              and synrepo_findings to see machine-authored relationship candidates.",
         )
     }
@@ -417,6 +426,29 @@ impl SynrepoServer {
         render_result(result)
     }
 
+    /// Return a `ModuleCard` summarizing a directory.
+    ///
+    /// Budget tiers:
+    ///   tiny  (~200 tokens) — path, file count, public symbol count
+    ///   normal (~500 tokens) — plus file list and public symbol list
+    ///   deep  (~2k tokens)  — plus nested module structure
+    #[tool(
+        name = "synrepo_module_card",
+        description = "Return a ModuleCard summarizing a directory: files, nested modules, public symbols, and token budget."
+    )]
+    async fn synrepo_module_card(
+        &self,
+        Parameters(ModuleCardParams { path, budget }): Parameters<ModuleCardParams>,
+    ) -> String {
+        let budget = parse_budget(&budget);
+        let result: anyhow::Result<serde_json::Value> =
+            with_graph_snapshot(self.state.compiler.graph(), || {
+                let card = self.state.compiler.module_card(&path, budget)?;
+                Ok(serde_json::to_value(&card)?)
+            });
+        render_result(result)
+    }
+
     /// List machine-authored cross-link findings.
     #[tool(
         name = "synrepo_findings",
@@ -582,6 +614,7 @@ async fn main() -> anyhow::Result<()> {
     let generator: Arc<dyn CommentaryGenerator> = Arc::from(boxed_generator);
 
     let compiler = GraphCardCompiler::new(Box::new(graph), Some(repo_root.clone()))
+        .with_config(config.clone())
         .with_overlay(Some(overlay.clone()), Some(generator));
 
     let state = SynrepoState {

@@ -6,15 +6,17 @@ use crate::{
     overlay::{CommentaryEntry, FreshnessState, OverlayStore},
     pipeline::synthesis::CommentaryGenerator,
     structure::graph::GraphStore,
+    surface::card::git::symbol_last_change_from_insights,
     surface::card::types::{Freshness, OverlayCommentary},
 };
 
 use super::io::read_symbol_body;
-use super::{Budget, SourceStore, SymbolCard, SymbolRef};
+use super::{Budget, GraphCardCompiler, SourceStore, SymbolCard, SymbolRef};
 
 /// Inputs shared across symbol-card construction: graph, repo root, and the
 /// optional overlay/generator pair.
 pub(super) struct SymbolCardContext<'a> {
+    pub compiler: &'a GraphCardCompiler,
     pub graph: &'a dyn GraphStore,
     pub repo_root: &'a Option<PathBuf>,
     pub overlay: Option<&'a Arc<parking_lot::Mutex<dyn OverlayStore>>>,
@@ -56,6 +58,15 @@ pub(super) fn symbol_card(
         _ => symbol.doc_comment.clone(),
     };
 
+    let last_change = if budget == Budget::Tiny {
+        None
+    } else {
+        let include_summary = budget == Budget::Deep;
+        ctx.compiler
+            .resolve_file_git_intelligence(&file.path)
+            .and_then(|arc| symbol_last_change_from_insights(&arc, include_summary))
+    };
+
     let mut card = SymbolCard {
         symbol: id,
         name: symbol.display_name.clone(),
@@ -66,7 +77,7 @@ pub(super) fn symbol_card(
         callers,
         callees,
         tests_touching: vec![],
-        last_change: None,
+        last_change,
         drift_flag: None,
         source_body,
         approx_tokens: 0,
