@@ -9,6 +9,11 @@ use super::findings;
 use super::helpers::render_result;
 use super::SynrepoState;
 
+/// Hard ceiling on `synrepo_findings` page size. Mirrors the 200-entry cap
+/// enforced by `recent_activity_impl`; prevents an LLM-supplied `limit` of
+/// millions from pulling the entire overlay table into memory.
+const MAX_FINDINGS_LIMIT: u32 = 500;
+
 /// Parameters for the `synrepo_findings` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct FindingsParams {
@@ -18,7 +23,7 @@ pub struct FindingsParams {
     pub kind: Option<String>,
     /// Optional freshness state to filter by.
     pub freshness: Option<String>,
-    /// Maximum number of findings to return. Defaults to 20.
+    /// Maximum number of findings to return. Defaults to 20, capped at 500.
     #[serde(default = "default_limit")]
     pub limit: u32,
 }
@@ -51,7 +56,8 @@ pub fn handle_findings(
     freshness: Option<String>,
     limit: u32,
 ) -> String {
-    let result = findings::render_findings(repo_root, node_id, kind, freshness, limit);
+    let capped = limit.min(MAX_FINDINGS_LIMIT);
+    let result = findings::render_findings(repo_root, node_id, kind, freshness, capped);
     render_result(result)
 }
 

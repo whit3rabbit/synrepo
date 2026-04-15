@@ -23,6 +23,12 @@ use synrepo::surface::mcp::{audit, cards, primitives, search, SynrepoState};
 struct SynrepoServer {
     state: Arc<SynrepoState>,
     tool_router: ToolRouter<Self>,
+    /// Serialises tool invocations against the shared graph snapshot. See
+    /// the doc comment on `SynrepoState` and on
+    /// `SqliteGraphStore::snapshot_depth` for the underlying invariant.
+    /// Lives on the binary side so the library stays synchronous (no
+    /// `tokio` dep on the lib).
+    request_serializer: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl SynrepoServer {
@@ -30,6 +36,7 @@ impl SynrepoServer {
         Self {
             state: Arc::new(state),
             tool_router: Self::tool_router(),
+            request_serializer: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 }
@@ -60,6 +67,7 @@ impl SynrepoServer {
         description = "Return a structured card describing a file or symbol. Default budget is tiny; escalate to normal for local understanding and deep only before edits."
     )]
     async fn synrepo_card(&self, Parameters(params): Parameters<cards::CardParams>) -> String {
+        let _guard = self.request_serializer.lock().await;
         cards::handle_card(&self.state, params.target, params.budget)
     }
 
@@ -68,6 +76,7 @@ impl SynrepoServer {
         description = "Search the repository using lexical queries."
     )]
     async fn synrepo_search(&self, Parameters(params): Parameters<search::SearchParams>) -> String {
+        let _guard = self.request_serializer.lock().await;
         search::handle_search(&self.state, params.query, params.limit)
     }
 
@@ -76,6 +85,7 @@ impl SynrepoServer {
         description = "Return a high-level overview of the repository graph state."
     )]
     async fn synrepo_overview(&self) -> String {
+        let _guard = self.request_serializer.lock().await;
         search::handle_overview(&self.state)
     }
 
@@ -84,6 +94,7 @@ impl SynrepoServer {
         description = "Look up a graph node by display ID. Returns full stored metadata as JSON."
     )]
     async fn synrepo_node(&self, Parameters(params): Parameters<primitives::NodeParams>) -> String {
+        let _guard = self.request_serializer.lock().await;
         primitives::handle_node(&self.state, params.id)
     }
 
@@ -95,6 +106,7 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<primitives::EdgesParams>,
     ) -> String {
+        let _guard = self.request_serializer.lock().await;
         primitives::handle_edges(&self.state, params.id, params.direction, params.edge_types)
     }
 
@@ -106,6 +118,7 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<primitives::QueryParams>,
     ) -> String {
+        let _guard = self.request_serializer.lock().await;
         primitives::handle_query(&self.state, params.query)
     }
 
@@ -117,6 +130,7 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<primitives::OverlayParams>,
     ) -> String {
+        let _guard = self.request_serializer.lock().await;
         primitives::handle_overlay(&self.state, params.id)
     }
 
@@ -128,6 +142,7 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<primitives::ProvenanceParams>,
     ) -> String {
+        let _guard = self.request_serializer.lock().await;
         primitives::handle_provenance(&self.state, params.id)
     }
 
@@ -139,6 +154,7 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<search::WhereToEditParams>,
     ) -> String {
+        let _guard = self.request_serializer.lock().await;
         search::handle_where_to_edit(&self.state, params.task, params.limit)
     }
 
@@ -150,6 +166,7 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<search::ChangeImpactParams>,
     ) -> String {
+        let _guard = self.request_serializer.lock().await;
         search::handle_change_impact(&self.state, params.target)
     }
 
@@ -161,6 +178,7 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<cards::EntrypointsParams>,
     ) -> String {
+        let _guard = self.request_serializer.lock().await;
         cards::handle_entrypoints(&self.state, params.scope, params.budget)
     }
 
@@ -172,6 +190,7 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<cards::ModuleCardParams>,
     ) -> String {
+        let _guard = self.request_serializer.lock().await;
         cards::handle_module_card(&self.state, params.path, params.budget)
     }
 
@@ -183,6 +202,7 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<cards::PublicAPICardParams>,
     ) -> String {
+        let _guard = self.request_serializer.lock().await;
         cards::handle_public_api(&self.state, params.path, params.budget)
     }
 
@@ -194,6 +214,7 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<cards::MinimumContextParams>,
     ) -> String {
+        let _guard = self.request_serializer.lock().await;
         cards::handle_minimum_context(&self.state, params.target, params.budget)
     }
 
@@ -205,6 +226,7 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<audit::FindingsParams>,
     ) -> String {
+        let _guard = self.request_serializer.lock().await;
         audit::handle_findings(
             &self.state.repo_root,
             params.node_id,
@@ -222,6 +244,7 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<audit::RecentActivityParams>,
     ) -> String {
+        let _guard = self.request_serializer.lock().await;
         audit::handle_recent_activity(&self.state, params.kinds, params.limit, params.since)
     }
 }

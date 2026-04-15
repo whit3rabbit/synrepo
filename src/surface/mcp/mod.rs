@@ -28,6 +28,19 @@ pub mod search;
 mod findings;
 
 /// Shared read-only state held across all MCP tool invocations.
+///
+/// Note on concurrency: `SqliteGraphStore` holds a single connection and a
+/// re-entrant `snapshot_depth` counter. The counter is safe for nested
+/// calls on one logical request (a handler wraps its body and
+/// `GraphCardCompiler` wraps each internal method) but NOT for two
+/// concurrent requests sharing the same store handle. The MCP transport
+/// must serialise tool invocations at the request boundary so
+/// `begin_read_snapshot`/`end_read_snapshot` always returns to depth 0
+/// between requests; otherwise concurrent requests piggyback on one
+/// another's snapshot epoch and the open transaction never commits,
+/// growing the WAL unbounded under load. The binary-side `SynrepoServer`
+/// owns a `tokio::sync::Mutex` for that purpose; this library type stays
+/// synchronous.
 pub struct SynrepoState {
     /// The card compiler, which owns the graph store handle.
     pub compiler: GraphCardCompiler,
