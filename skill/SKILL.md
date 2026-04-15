@@ -9,10 +9,10 @@ synrepo is a context compiler. It turns a repository into small, deterministic, 
 
 ## Current surface
 
-**The MCP server (`synrepo-mcp`) is shipped.** Start it with:
+**The MCP server is shipped.** Start it with:
 
 ```
-synrepo-mcp [--repo <path>]
+synrepo mcp [--repo <path>]
 ```
 
 It serves over stdio. After `synrepo init` populates the graph, the MCP server exposes eleven tools:

@@ -196,13 +196,33 @@ fn render_watch_status_snapshot(snapshot: &WatchDaemonState) {
 fn spawn_watch_daemon(repo_root: &Path) -> anyhow::Result<u32> {
     let exe = std::env::current_exe()
         .map_err(|error| anyhow::anyhow!("could not resolve current executable: {error}"))?;
+
+    // Capture daemon stderr to a file so startup crashes and panics are
+    // recoverable post-mortem. File::create truncates on each spawn, bounding
+    // the log to the current session without needing rotation. stdout stays
+    // nulled so normal tracing output does not grow unbounded.
+    let state_dir = Config::synrepo_dir(repo_root).join("state");
+    std::fs::create_dir_all(&state_dir).map_err(|error| {
+        anyhow::anyhow!(
+            "could not create watch state dir {}: {error}",
+            state_dir.display()
+        )
+    })?;
+    let log_path = state_dir.join("watch-daemon.log");
+    let stderr_file = std::fs::File::create(&log_path).map_err(|error| {
+        anyhow::anyhow!(
+            "could not open watch daemon log {}: {error}",
+            log_path.display()
+        )
+    })?;
+
     let mut child = Command::new(&exe)
         .arg("--repo")
         .arg(repo_root)
         .arg("watch-internal")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(Stdio::from(stderr_file))
         .current_dir(repo_root)
         .spawn()
         .map_err(|error| anyhow::anyhow!("failed to spawn watch daemon: {error}"))?;

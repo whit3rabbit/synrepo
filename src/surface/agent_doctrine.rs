@@ -8,8 +8,8 @@
 //!
 //! Source-of-truth prose lives in `docs/FOUNDATION.md` §"Product boundaries
 //! and doctrine"; the macros mirror that text and are consumed by the
-//! `synrepo` binary (agent-setup shims), `synrepo-mcp` (card-returning tool
-//! descriptions), and `skill/SKILL.md` (via a runtime assertion test).
+//! `synrepo` binary (agent-setup shims, `synrepo mcp` tool descriptions),
+//! and `skill/SKILL.md` (via a runtime assertion test).
 
 /// Canonical doctrine text, Markdown-formatted, heading `## Agent doctrine`.
 ///

@@ -113,7 +113,8 @@ impl BootstrapReport {
                 format!("See {display} for the full protocol.")
             })
             .unwrap_or_else(|| {
-                "Run `synrepo agent-setup <tool>` to write a shim with the full protocol.".to_string()
+                "Run `synrepo agent-setup <tool>` to write a shim with the full protocol."
+                    .to_string()
             });
         format!("Agent doctrine: tiny → normal → deep. {target}\n")
     }

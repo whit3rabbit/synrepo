@@ -150,7 +150,11 @@ fn skill_md_includes_doctrine_lines_verbatim() {
         "Freshness is explicit. A stale label is information, not an error; it is not silently refreshed.",
     ];
 
-    let missing: Vec<&str> = required.iter().copied().filter(|line| !skill.contains(line)).collect();
+    let missing: Vec<&str> = required
+        .iter()
+        .copied()
+        .filter(|line| !skill.contains(line))
+        .collect();
     assert!(
         missing.is_empty(),
         "skill/SKILL.md is missing {} doctrine line(s):\n{}",
@@ -167,10 +171,11 @@ fn skill_md_includes_doctrine_lines_verbatim() {
 fn card_returning_mcp_tool_descriptions_share_escalation_line() {
     let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let main_path = manifest_dir
-        .join("crates")
-        .join("synrepo-mcp")
         .join("src")
-        .join("main.rs");
+        .join("bin")
+        .join("cli_support")
+        .join("commands")
+        .join("mcp.rs");
     let source = std::fs::read_to_string(&main_path)
         .unwrap_or_else(|e| panic!("read {}: {e}", main_path.display()));
 

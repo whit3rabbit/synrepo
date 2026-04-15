@@ -84,6 +84,9 @@ pub fn run_reconcile_pass(
 
     match run_structural_compile(repo_root, config, &mut graph) {
         Ok(summary) => {
+            if let Err(err) = emit_cochange_edges_pass(repo_root, config, &mut graph) {
+                tracing::warn!(error = %err, "co-change edge emission failed; continuing");
+            }
             if let Err(err) = crate::substrate::build_index(config, repo_root) {
                 return ReconcileOutcome::Failed(format!("index rebuild failed: {err}"));
             }
@@ -92,6 +95,43 @@ pub fn run_reconcile_pass(
         }
         Err(err) => ReconcileOutcome::Failed(err.to_string()),
     }
+}
+
+/// Re-emit all CoChangesWith edges from the current git history.
+///
+/// Full re-emit strategy: delete all existing CoChangesWith edges, then
+/// re-derive from the current `GitHistoryInsights`. Runs in its own
+/// transaction so a failure does not affect the structural compile.
+pub fn emit_cochange_edges_pass(
+    repo_root: &Path,
+    config: &Config,
+    graph: &mut dyn crate::structure::graph::GraphStore,
+) -> crate::Result<()> {
+    use crate::pipeline::git::GitIntelligenceContext;
+    use crate::pipeline::git_intelligence::{analyze_recent_history, emit_cochange_edges};
+    use crate::structure::graph::EdgeKind;
+    use std::collections::HashMap;
+
+    let context = GitIntelligenceContext::inspect(repo_root, config);
+    let max_commits = config.git_commit_depth as usize;
+    let insights = analyze_recent_history(&context, max_commits, 100)?;
+    let revision = insights.history.status.source_revision.clone();
+
+    let file_paths = graph.all_file_paths()?;
+    let file_index: HashMap<String, crate::core::ids::FileNodeId> =
+        file_paths.into_iter().collect();
+
+    graph.begin()?;
+    if let Err(err) = (|| -> crate::Result<()> {
+        graph.delete_edges_by_kind(EdgeKind::CoChangesWith)?;
+        emit_cochange_edges(graph, &insights, &file_index, &revision)?;
+        Ok(())
+    })() {
+        let _ = graph.rollback();
+        return Err(err);
+    }
+    graph.commit()?;
+    Ok(())
 }
 
 fn prune_overlay_orphans(synrepo_dir: &Path, graph: &SqliteGraphStore) {

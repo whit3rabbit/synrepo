@@ -2,3 +2,4 @@
 
 pub mod agent_doctrine;
 pub mod card;
+pub mod mcp;

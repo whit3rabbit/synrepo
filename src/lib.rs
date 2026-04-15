@@ -10,11 +10,11 @@
 //!    - [`parse`] runs tree-sitter and the markdown parser
 //!    - [`graph`] is the sqlite-backed graph store
 //!    - [`identity`] handles AST-based rename detection
-//!    - [`drift`] computes edge drift scores on every commit
+//!    - [`drift`] is the scaffold for per-edge drift scoring (stage 7, not yet implemented)
 //! 3. **Overlay layer** — LLM-authored content, physically separate from the graph.
 //!    Phase 4+ only; module exists to enforce the architectural boundary. See [`overlay`].
-//! 4. **Surface layer** — CLI (`src/bin/cli.rs`), MCP server (`crates/synrepo-mcp/`),
-//!    and skill bundle (`skill/SKILL.md`). Both CLI and MCP server shipped in Milestone 3.
+//! 4. **Surface layer** — CLI (`src/bin/cli.rs`), MCP server (`synrepo mcp` subcommand),
+//!    and skill bundle (`skill/SKILL.md`). MCP tool handlers live in [`surface::mcp`].
 //!
 //! **Bootstrap** (`bootstrap`) — first-run UX, mode detection, health checks.
 //!    [`bootstrap::bootstrap`] is the main entry point for `synrepo init`.

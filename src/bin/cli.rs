@@ -1,6 +1,7 @@
 //! synrepo CLI entry point.
 //!
 //! Phase 0/1 subcommands:
+//! - `synrepo mcp`, start MCP server over stdio
 //! - `synrepo init [--mode auto|curated]`, create `.synrepo/` in the current repo
 //! - `synrepo status`, print operational health: mode, graph counts, last reconcile, lock state
 //! - `synrepo agent-setup <tool>`, generate a thin integration shim for claude/cursor/copilot/generic
@@ -22,10 +23,12 @@ use syntext::SearchOptions;
 use tracing_subscriber::EnvFilter;
 
 use cli_support::agent_shims::AgentTool;
+#[cfg(test)]
+use cli_support::commands::report_reconcile_outcome;
 use cli_support::commands::{
     agent_setup, check, export, findings, graph_query, graph_stats, init, links_accept, links_list,
-    links_reject, links_review, node, reconcile, search, status, sync, upgrade, watch,
-    watch_internal, watch_status, watch_stop,
+    links_reject, links_review, node, reconcile, run_mcp_server, search, status, sync, upgrade,
+    watch, watch_internal, watch_status, watch_stop,
 };
 use synrepo::config::Mode;
 use synrepo::pipeline::export::ExportFormat;
@@ -210,6 +213,13 @@ enum Command {
 
     #[command(name = "watch-internal", hide = true)]
     WatchInternal,
+
+    /// Start the MCP server over stdio.
+    ///
+    /// Exposes 16 read-only tools for coding agents to query the repository's
+    /// structural graph, cards, search index, overlay data, and provenance.
+    /// Communicates over stdio using the MCP protocol.
+    Mcp,
 }
 
 #[derive(Subcommand)]
@@ -406,5 +416,6 @@ fn main() -> anyhow::Result<()> {
             json,
         ),
         Command::WatchInternal => watch_internal(&repo_root),
+        Command::Mcp => run_mcp_server(&repo_root),
     }
 }

@@ -12,7 +12,7 @@
 - CLI commands for `init`, `status`, `reconcile`, `check`, `sync`, `search`, `graph`, and `node`
 - A persisted `.synrepo/` workspace with lexical index, graph store, config, and operational state
 - Structural extraction for files, symbols, markdown concepts, and some cross-file edges
-- An MCP server in `crates/synrepo-mcp/` for agent-facing repository context
+- An MCP server (`synrepo mcp`) for agent-facing repository context
 
 ## Quick Start
 
@@ -48,7 +48,7 @@ cargo fmt --check
 
 ```bash
 cargo run -- --help
-cargo run -p synrepo-mcp -- --repo .
+cargo run -- mcp
 ```
 
 </details>

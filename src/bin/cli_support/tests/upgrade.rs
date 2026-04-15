@@ -51,6 +51,29 @@ fn upgrade_apply_on_current_runtime_exits_zero() {
 }
 
 #[test]
+fn report_reconcile_outcome_bails_on_failed() {
+    use synrepo::pipeline::watch::ReconcileOutcome;
+    let err = crate::report_reconcile_outcome(ReconcileOutcome::Failed("boom".into())).unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("reconcile after rebuild failed") && msg.contains("boom"),
+        "failure arm must surface both the prefix and the underlying cause, got: {msg}"
+    );
+}
+
+#[test]
+fn report_reconcile_outcome_bails_on_lock_conflict() {
+    use synrepo::pipeline::watch::ReconcileOutcome;
+    let err = crate::report_reconcile_outcome(ReconcileOutcome::LockConflict { holder_pid: 4242 })
+        .unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("writer lock is held by pid 4242"),
+        "lock-conflict arm must name the holder, got: {msg}"
+    );
+}
+
+#[test]
 fn upgrade_apply_with_blocking_store_returns_error() {
     let (dir, repo) = setup_bootstrapped_repo();
     let synrepo_dir = Config::synrepo_dir(&repo);
@@ -71,5 +94,38 @@ fn upgrade_apply_with_blocking_store_returns_error() {
         msg.contains("manual intervention") || msg.contains("blocked"),
         "error message must describe manual intervention, got: {msg}"
     );
+    drop(dir);
+}
+
+#[test]
+fn upgrade_apply_rebuild_runs_reconcile_and_persists_completed_state() {
+    use synrepo::config::Config;
+    use synrepo::pipeline::watch::load_reconcile_state;
+
+    let (dir, repo) = setup_bootstrapped_repo();
+    let synrepo_dir = Config::synrepo_dir(&repo);
+
+    // Change an index-sensitive config field so the snapshot fingerprint diverges
+    // and evaluate_runtime returns Rebuild for the Index store. This drives the
+    // `needs_reconcile` branch in upgrade.rs.
+    let updated = Config {
+        roots: vec!["src".to_string()],
+        ..Config::load(&repo).unwrap()
+    };
+    std::fs::write(
+        synrepo_dir.join("config.toml"),
+        toml::to_string_pretty(&updated).unwrap(),
+    )
+    .unwrap();
+
+    upgrade(&repo, true).expect("apply with Rebuild action must succeed");
+
+    let state = load_reconcile_state(&synrepo_dir)
+        .expect("reconcile-state.json must exist after rebuild-triggered reconcile");
+    assert_eq!(
+        state.last_outcome, "completed",
+        "rebuild-triggered reconcile must complete, state: {state:?}"
+    );
+
     drop(dir);
 }

@@ -89,6 +89,14 @@ pub fn bootstrap(
     let mut graph = SqliteGraphStore::open(&graph_dir)?;
     let compile = run_structural_compile(repo_root, &config, &mut graph)?;
 
+    // Co-change edge emission is best-effort during bootstrap. Failure is
+    // non-fatal: the graph is structurally complete without co-change edges.
+    if let Err(err) =
+        crate::pipeline::watch::emit_cochange_edges_pass(repo_root, &config, &mut graph)
+    {
+        tracing::warn!(error = %err, "co-change edge emission skipped during bootstrap");
+    }
+
     compatibility::write_runtime_snapshot(&synrepo_dir, &config)?;
     let health = match action {
         BootstrapAction::Repaired => BootstrapHealth::Degraded,

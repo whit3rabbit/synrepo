@@ -151,3 +151,66 @@ fn persist_reconcile_state_records_lock_conflict() {
     assert_eq!(state.last_outcome, "lock-conflict");
     assert_eq!(state.triggering_events, 1);
 }
+
+#[test]
+fn reconcile_emits_cochange_edges_on_repo_with_multi_file_commits() {
+    use crate::core::ids::NodeId;
+    use crate::store::sqlite::SqliteGraphStore;
+    use crate::structure::graph::{EdgeKind, GraphStore};
+
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path().to_path_buf();
+
+    // Create a git repo with multi-file commits to produce co-change data.
+    let git = |args: &[&str]| {
+        std::process::Command::new("git")
+            .args(args)
+            .current_dir(&repo)
+            .output()
+            .expect("git command")
+    };
+    git(&["init"]);
+    git(&["config", "user.name", "test"]);
+    git(&["config", "user.email", "test@test.com"]);
+
+    fs::create_dir_all(repo.join("src")).unwrap();
+    fs::write(repo.join("src/a.rs"), "pub fn one() {}\n").unwrap();
+    fs::write(repo.join("src/b.rs"), "pub fn two() {}\n").unwrap();
+    git(&["add", "."]);
+    git(&["commit", "-m", "initial"]);
+
+    // Make two more commits touching both files to exceed the threshold of 2.
+    fs::write(repo.join("src/a.rs"), "pub fn one() { /* v2 */ }\n").unwrap();
+    fs::write(repo.join("src/b.rs"), "pub fn two() { /* v2 */ }\n").unwrap();
+    git(&["add", "."]);
+    git(&["commit", "-m", "touch both v2"]);
+
+    fs::write(repo.join("src/a.rs"), "pub fn one() { /* v3 */ }\n").unwrap();
+    fs::write(repo.join("src/b.rs"), "pub fn two() { /* v3 */ }\n").unwrap();
+    git(&["add", "."]);
+    git(&["commit", "-m", "touch both v3"]);
+
+    let synrepo_dir = repo.join(".synrepo");
+    fs::create_dir_all(synrepo_dir.join("state")).unwrap();
+    crate::store::compatibility::write_runtime_snapshot(
+        &synrepo_dir,
+        &crate::config::Config::default(),
+    )
+    .unwrap();
+
+    let config = crate::config::Config::default();
+    let outcome = run_reconcile_pass(&repo, &config, &synrepo_dir);
+    assert!(matches!(outcome, ReconcileOutcome::Completed(_)));
+
+    // Verify CoChangesWith edges exist in the graph.
+    let graph = SqliteGraphStore::open(&synrepo_dir.join("graph")).unwrap();
+    let files = graph.all_file_paths().unwrap();
+    let file_a = files.iter().find(|(p, _)| p.contains("a.rs")).unwrap().1;
+    let cochange_edges = graph
+        .outbound(NodeId::File(file_a), Some(EdgeKind::CoChangesWith))
+        .unwrap();
+    assert!(
+        !cochange_edges.is_empty(),
+        "expected CoChangesWith edges after reconcile on repo with multi-file commits"
+    );
+}

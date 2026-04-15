@@ -1,6 +1,6 @@
 //! The `GraphStore` trait: canonical graph persistence interface.
 
-use crate::core::ids::{ConceptNodeId, FileNodeId, NodeId, SymbolNodeId};
+use crate::core::ids::{ConceptNodeId, EdgeId, FileNodeId, NodeId, SymbolNodeId};
 
 use super::edge::{Edge, EdgeKind};
 use super::node::{ConceptNode, FileNode, SymbolNode};
@@ -23,6 +23,23 @@ pub trait GraphStore: Send + Sync {
     /// Insert an edge. Edges are immutable once committed; to change an
     /// edge, delete it and insert a new one.
     fn insert_edge(&mut self, edge: Edge) -> crate::Result<()>;
+
+    /// Delete a single edge by id. Used by compensation paths that must
+    /// unwind a speculative `insert_edge` when a paired cross-store write
+    /// fails. Default impl returns an error so stores that do not wire it
+    /// up surface a clear diagnostic instead of silently succeeding.
+    fn delete_edge(&mut self, _edge_id: EdgeId) -> crate::Result<()> {
+        Err(crate::Error::Other(anyhow::anyhow!(
+            "delete_edge is not implemented for this GraphStore backend"
+        )))
+    }
+
+    /// Delete all edges of a given kind. Returns the number of deleted edges.
+    /// Used for full re-emit strategies where a category of edges is rebuilt
+    /// from scratch each reconcile (e.g. CoChangesWith).
+    fn delete_edges_by_kind(&mut self, _kind: EdgeKind) -> crate::Result<usize> {
+        Ok(0)
+    }
 
     /// Delete a node and all incident edges. Used when a file disappears
     /// and the identity cascade cannot find a new home for it.

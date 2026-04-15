@@ -7,6 +7,7 @@ use super::graph::{check_store_ready, graph_query_output, graph_stats_output, no
 mod basic;
 mod export;
 mod links;
+pub(crate) mod mcp;
 mod repair;
 mod status;
 mod upgrade;
@@ -15,8 +16,16 @@ mod watch;
 pub(crate) use basic::{agent_setup, init};
 pub(crate) use export::export;
 pub(crate) use links::{findings, links_accept, links_list, links_reject, links_review};
+#[cfg(test)]
+pub(crate) use links::{findings_output, links_list_output, links_review_output};
+pub(crate) use mcp::run_mcp_server;
 pub(crate) use repair::{check, reconcile, sync};
 pub(crate) use status::status;
+#[cfg(test)]
+#[allow(unused_imports)]
+pub(crate) use status::status_output;
+#[cfg(test)]
+pub(crate) use upgrade::report_reconcile_outcome;
 pub(crate) use upgrade::upgrade;
 pub(crate) use watch::{watch, watch_internal, watch_status, watch_stop};
 
@@ -26,6 +35,18 @@ pub(crate) fn search(
     query: &str,
     options: syntext::SearchOptions,
 ) -> anyhow::Result<()> {
+    print!("{}", search_output(repo_root, query, options)?);
+    Ok(())
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn search_output(
+    repo_root: &Path,
+    query: &str,
+    options: syntext::SearchOptions,
+) -> anyhow::Result<String> {
+    use std::fmt::Write as _;
+
     let config = Config::load(repo_root)?;
     let synrepo_dir = Config::synrepo_dir(repo_root);
     check_store_ready(&synrepo_dir, &config, StoreId::Index)?;
@@ -36,17 +57,20 @@ pub(crate) fn search(
     }
 
     let matches = synrepo::substrate::search_with_options(&config, repo_root, query, &options)?;
+    let mut out = String::new();
     for search_match in &matches {
-        println!(
+        writeln!(
+            out,
             "{}:{}: {}",
             search_match.path.display(),
             search_match.line_number,
             String::from_utf8_lossy(&search_match.line_content).trim_end()
-        );
+        )
+        .unwrap();
     }
 
-    println!("Found {} matches.", matches.len());
-    Ok(())
+    writeln!(out, "Found {} matches.", matches.len()).unwrap();
+    Ok(out)
 }
 
 /// Execute a graph query and format the output.

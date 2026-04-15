@@ -5,8 +5,8 @@ use synrepo::{
     core::ids::NodeId,
     overlay::{OverlayEdgeKind, OverlayStore},
     store::overlay::{
-        format_candidate_id, parse_cross_link_freshness, parse_overlay_edge_kind, FindingsFilter,
-        SqliteOverlayStore,
+        candidate_pass_suffix, compare_score_desc, format_candidate_id, parse_cross_link_freshness,
+        parse_overlay_edge_kind, FindingsFilter, SqliteOverlayStore,
     },
     store::sqlite::SqliteGraphStore,
     structure::graph::Epistemic,
@@ -14,10 +14,21 @@ use synrepo::{
 
 use super::watch::ensure_watch_not_running;
 
-fn parse_candidate_id(id: &str) -> anyhow::Result<(NodeId, NodeId, OverlayEdgeKind)> {
+/// A candidate ID parsed into its endpoint triple plus optional revision suffix.
+/// `pass_suffix` is `None` for the legacy 3-part form (`from::to::kind`) emitted
+/// before revision binding landed; the 4-part form is required for new scripts.
+struct ParsedCandidateId<'a> {
+    raw: &'a str,
+    from: NodeId,
+    to: NodeId,
+    kind: OverlayEdgeKind,
+    pass_suffix: Option<String>,
+}
+
+fn parse_candidate_id(id: &str) -> anyhow::Result<ParsedCandidateId<'_>> {
     let parts: Vec<&str> = id.split("::").collect();
-    if parts.len() != 3 {
-        anyhow::bail!("Invalid candidate ID format. Expected <from>::<to>::<kind>");
+    if !matches!(parts.len(), 3 | 4) {
+        anyhow::bail!("Invalid candidate ID format. Expected <from>::<to>::<kind>::<pass_suffix>");
     }
     let from = std::str::FromStr::from_str(parts[0])
         .map_err(|error| anyhow::anyhow!("Invalid from_node: {error}"))?;
@@ -25,7 +36,14 @@ fn parse_candidate_id(id: &str) -> anyhow::Result<(NodeId, NodeId, OverlayEdgeKi
         .map_err(|error| anyhow::anyhow!("Invalid to_node: {error}"))?;
     let kind = parse_overlay_edge_kind(parts[2])
         .map_err(|error| anyhow::anyhow!("Invalid edge kind: {error}"))?;
-    Ok((from, to, kind))
+    let pass_suffix = parts.get(3).map(|s| (*s).to_string());
+    Ok(ParsedCandidateId {
+        raw: id,
+        from,
+        to,
+        kind,
+        pass_suffix,
+    })
 }
 
 pub(crate) fn links_list(
@@ -33,27 +51,46 @@ pub(crate) fn links_list(
     tier: Option<&str>,
     json_output: bool,
 ) -> anyhow::Result<()> {
+    print!("{}", links_list_output(repo_root, tier, json_output)?);
+    Ok(())
+}
+
+pub(crate) fn links_list_output(
+    repo_root: &Path,
+    tier: Option<&str>,
+    json_output: bool,
+) -> anyhow::Result<String> {
+    use std::fmt::Write as _;
+
     let synrepo_dir = Config::synrepo_dir(repo_root);
     let overlay_dir = synrepo_dir.join("overlay");
     let overlay = SqliteOverlayStore::open_existing(&overlay_dir)
         .map_err(|error| anyhow::anyhow!("Could not open overlay store: {error}"))?;
 
     let candidates = overlay.all_candidates(tier)?;
+    let mut out = String::new();
     if json_output {
-        println!("{}", serde_json::to_string_pretty(&candidates)?);
-        return Ok(());
+        writeln!(out, "{}", serde_json::to_string_pretty(&candidates)?).unwrap();
+        return Ok(out);
     }
 
-    println!("Found {} candidates.", candidates.len());
+    writeln!(out, "Found {} candidates.", candidates.len()).unwrap();
     for candidate in candidates {
-        println!(
+        writeln!(
+            out,
             "{}  tier: {}  score: {:.3}",
-            format_candidate_id(candidate.from, candidate.to, candidate.kind),
+            format_candidate_id(
+                candidate.from,
+                candidate.to,
+                candidate.kind,
+                &candidate.provenance.pass_id,
+            ),
             candidate.confidence_tier.as_str(),
             candidate.confidence_score
-        );
+        )
+        .unwrap();
     }
-    Ok(())
+    Ok(out)
 }
 
 pub(crate) fn links_review(
@@ -61,40 +98,55 @@ pub(crate) fn links_review(
     limit: Option<usize>,
     json_output: bool,
 ) -> anyhow::Result<()> {
+    print!("{}", links_review_output(repo_root, limit, json_output)?);
+    Ok(())
+}
+
+pub(crate) fn links_review_output(
+    repo_root: &Path,
+    limit: Option<usize>,
+    json_output: bool,
+) -> anyhow::Result<String> {
+    use std::fmt::Write as _;
+
     let synrepo_dir = Config::synrepo_dir(repo_root);
     let overlay_dir = synrepo_dir.join("overlay");
     let overlay = SqliteOverlayStore::open_existing(&overlay_dir)
         .map_err(|error| anyhow::anyhow!("Could not open overlay store: {error}"))?;
 
     let mut candidates = overlay.all_candidates(Some("review_queue"))?;
-    candidates.sort_by(|left, right| {
-        right
-            .confidence_score
-            .partial_cmp(&left.confidence_score)
-            .unwrap()
-    });
+    candidates
+        .sort_by(|left, right| compare_score_desc(left.confidence_score, right.confidence_score));
 
     if let Some(limit) = limit {
         candidates.truncate(limit);
     }
 
+    let mut out = String::new();
     if json_output {
-        println!("{}", serde_json::to_string_pretty(&candidates)?);
-        return Ok(());
+        writeln!(out, "{}", serde_json::to_string_pretty(&candidates)?).unwrap();
+        return Ok(out);
     }
 
-    println!("Review queue: {} candidates.", candidates.len());
+    writeln!(out, "Review queue: {} candidates.", candidates.len()).unwrap();
     for candidate in candidates {
-        println!(
+        writeln!(
+            out,
             "Candidate: {}",
-            format_candidate_id(candidate.from, candidate.to, candidate.kind)
-        );
-        println!("  Score: {:.3}", candidate.confidence_score);
+            format_candidate_id(
+                candidate.from,
+                candidate.to,
+                candidate.kind,
+                &candidate.provenance.pass_id,
+            )
+        )
+        .unwrap();
+        writeln!(out, "  Score: {:.3}", candidate.confidence_score).unwrap();
         if let Some(rationale) = &candidate.rationale {
-            println!("  Rationale: {rationale}");
+            writeln!(out, "  Rationale: {rationale}").unwrap();
         }
     }
-    Ok(())
+    Ok(out)
 }
 
 pub(crate) fn links_accept(
@@ -113,9 +165,10 @@ pub(crate) fn links_accept(
     let mut overlay = SqliteOverlayStore::open_existing(&overlay_dir)
         .map_err(|error| anyhow::anyhow!("Could not open overlay store: {error}"))?;
 
-    let (from, to, kind) = parse_candidate_id(candidate_id)?;
+    let parsed = parse_candidate_id(candidate_id)?;
     let reviewer = reviewer.unwrap_or("cli-user");
-    ensure_candidate_exists(&overlay, from, to, kind, candidate_id)?;
+    ensure_candidate_exists(&overlay, &parsed)?;
+    let ParsedCandidateId { from, to, kind, .. } = parsed;
 
     let graph_dir = synrepo_dir.join("graph");
     let mut graph = SqliteGraphStore::open_existing(&graph_dir)?;
@@ -145,27 +198,55 @@ pub(crate) fn links_accept(
         },
     })?;
 
-    overlay.mark_candidate_promoted(from, to, kind, reviewer, &edge_id.to_string())?;
+    // Compensation only: a crash between `insert_edge` and
+    // `mark_candidate_promoted` still leaves the overlay candidate `active`.
+    // Full two-phase safety requires a `pending_promotion` state, deferred.
+    if let Err(overlay_err) =
+        overlay.mark_candidate_promoted(from, to, kind, reviewer, &edge_id.to_string())
+    {
+        match graph.delete_edge(edge_id) {
+            Ok(()) => anyhow::bail!(
+                "links accept failed: overlay write failed ({overlay_err}); graph edge was rolled back"
+            ),
+            Err(delete_err) => anyhow::bail!(
+                "links accept failed and stores may be inconsistent: overlay write failed ({overlay_err}); graph edge {edge_id} could not be rolled back ({delete_err}). Inspect `.synrepo/` manually."
+            ),
+        }
+    }
     println!("Candidate {candidate_id} accepted and written to graph.");
     Ok(())
 }
 
 fn ensure_candidate_exists(
     overlay: &SqliteOverlayStore,
-    from: NodeId,
-    to: NodeId,
-    kind: OverlayEdgeKind,
-    candidate_id: &str,
+    parsed: &ParsedCandidateId<'_>,
 ) -> anyhow::Result<()> {
-    let exists = overlay
-        .links_for(from)?
+    let matched = overlay
+        .links_for(parsed.from)?
         .into_iter()
-        .any(|candidate| candidate.to == to && candidate.kind == kind);
-    if exists {
-        return Ok(());
-    }
+        .find(|candidate| candidate.to == parsed.to && candidate.kind == parsed.kind);
+    let Some(candidate) = matched else {
+        anyhow::bail!("Candidate not found: {}", parsed.raw);
+    };
 
-    anyhow::bail!("Candidate not found: {candidate_id}");
+    match parsed.pass_suffix.as_deref() {
+        Some(expected) => {
+            let actual = candidate_pass_suffix(&candidate.provenance.pass_id);
+            if actual != expected {
+                anyhow::bail!(
+                    "Stale review: candidate {} was regenerated (stored pass suffix `{actual}`, reviewed `{expected}`). Re-run `synrepo links review` and accept the current revision.",
+                    parsed.raw
+                );
+            }
+        }
+        None => {
+            eprintln!(
+                "warning: candidate ID `{}` is in the legacy 3-part form. Future versions will require the 4-part form (`from::to::kind::pass_suffix`). Re-run `synrepo links review` for the current ID.",
+                parsed.raw
+            );
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn links_reject(
@@ -184,9 +265,9 @@ pub(crate) fn links_reject(
     let mut overlay = SqliteOverlayStore::open_existing(&overlay_dir)
         .map_err(|error| anyhow::anyhow!("Could not open overlay store: {error}"))?;
 
-    let (from, to, kind) = parse_candidate_id(candidate_id)?;
+    let parsed = parse_candidate_id(candidate_id)?;
     let reviewer = reviewer.unwrap_or("cli-user");
-    overlay.mark_candidate_rejected(from, to, kind, reviewer)?;
+    overlay.mark_candidate_rejected(parsed.from, parsed.to, parsed.kind, reviewer)?;
 
     println!("Candidate {candidate_id} rejected.");
     Ok(())
@@ -200,6 +281,23 @@ pub(crate) fn findings(
     limit: Option<usize>,
     json_output: bool,
 ) -> anyhow::Result<()> {
+    print!(
+        "{}",
+        findings_output(repo_root, node, kind, freshness, limit, json_output)?
+    );
+    Ok(())
+}
+
+pub(crate) fn findings_output(
+    repo_root: &Path,
+    node: Option<&str>,
+    kind: Option<&str>,
+    freshness: Option<&str>,
+    limit: Option<usize>,
+    json_output: bool,
+) -> anyhow::Result<String> {
+    use std::fmt::Write as _;
+
     let synrepo_dir = Config::synrepo_dir(repo_root);
     let overlay_dir = synrepo_dir.join("overlay");
     let graph_dir = synrepo_dir.join("graph");
@@ -231,20 +329,23 @@ pub(crate) fn findings(
         },
     )?;
 
+    let mut out = String::new();
     if json_output {
-        println!("{}", serde_json::to_string_pretty(&findings)?);
-        return Ok(());
+        writeln!(out, "{}", serde_json::to_string_pretty(&findings)?).unwrap();
+        return Ok(out);
     }
 
-    println!("Found {} findings.", findings.len());
+    writeln!(out, "Found {} findings.", findings.len()).unwrap();
     for finding in findings {
-        println!(
+        writeln!(
+            out,
             "{} [Tier: {}] [Freshness: {}] [Score: {:.3}]",
             finding.candidate_id,
             finding.tier.as_str(),
             finding.freshness.as_str(),
             finding.score
-        );
+        )
+        .unwrap();
     }
-    Ok(())
+    Ok(out)
 }

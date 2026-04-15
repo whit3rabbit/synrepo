@@ -159,3 +159,101 @@ fn deleting_a_file_removes_edges_for_all_symbols_in_one_pass() {
             .is_empty());
     }
 }
+
+#[test]
+fn delete_edges_by_kind_removes_only_matching_edges() {
+    let repo = tempdir().unwrap();
+    let graph_dir = repo.path().join(".synrepo/graph");
+    let mut store = SqliteGraphStore::open(&graph_dir).unwrap();
+
+    let file_a = FileNode {
+        id: FileNodeId(1),
+        path: "src/a.rs".to_string(),
+        path_history: Vec::new(),
+        content_hash: "a".to_string(),
+        size_bytes: 10,
+        language: Some("rust".to_string()),
+        inline_decisions: Vec::new(),
+        epistemic: Epistemic::ParserObserved,
+        provenance: sample_provenance("parse_code", "src/a.rs"),
+    };
+    let file_b = FileNode {
+        id: FileNodeId(2),
+        path: "src/b.rs".to_string(),
+        path_history: Vec::new(),
+        content_hash: "b".to_string(),
+        size_bytes: 10,
+        language: Some("rust".to_string()),
+        inline_decisions: Vec::new(),
+        epistemic: Epistemic::ParserObserved,
+        provenance: sample_provenance("parse_code", "src/b.rs"),
+    };
+    let file_c = FileNode {
+        id: FileNodeId(3),
+        path: "src/c.rs".to_string(),
+        path_history: Vec::new(),
+        content_hash: "c".to_string(),
+        size_bytes: 10,
+        language: Some("rust".to_string()),
+        inline_decisions: Vec::new(),
+        epistemic: Epistemic::ParserObserved,
+        provenance: sample_provenance("parse_code", "src/c.rs"),
+    };
+
+    store.upsert_file(file_a.clone()).unwrap();
+    store.upsert_file(file_b.clone()).unwrap();
+    store.upsert_file(file_c.clone()).unwrap();
+
+    // An Imports edge (should survive).
+    store
+        .insert_edge(Edge {
+            id: EdgeId(10),
+            from: NodeId::File(file_a.id),
+            to: NodeId::File(file_b.id),
+            kind: EdgeKind::Imports,
+            epistemic: Epistemic::ParserObserved,
+            drift_score: 0.0,
+            provenance: sample_provenance("stage4", "src/a.rs"),
+        })
+        .unwrap();
+
+    // Two CoChangesWith edges (should be deleted).
+    store
+        .insert_edge(Edge {
+            id: EdgeId(20),
+            from: NodeId::File(file_a.id),
+            to: NodeId::File(file_b.id),
+            kind: EdgeKind::CoChangesWith,
+            epistemic: Epistemic::GitObserved,
+            drift_score: 0.0,
+            provenance: sample_provenance("stage5_cochange", "src/a.rs"),
+        })
+        .unwrap();
+    store
+        .insert_edge(Edge {
+            id: EdgeId(21),
+            from: NodeId::File(file_a.id),
+            to: NodeId::File(file_c.id),
+            kind: EdgeKind::CoChangesWith,
+            epistemic: Epistemic::GitObserved,
+            drift_score: 0.0,
+            provenance: sample_provenance("stage5_cochange", "src/a.rs"),
+        })
+        .unwrap();
+
+    let deleted = store.delete_edges_by_kind(EdgeKind::CoChangesWith).unwrap();
+    assert_eq!(deleted, 2);
+
+    // CoChangesWith edges are gone.
+    assert!(store
+        .outbound(NodeId::File(file_a.id), Some(EdgeKind::CoChangesWith))
+        .unwrap()
+        .is_empty());
+
+    // Imports edge survives.
+    let imports = store
+        .outbound(NodeId::File(file_a.id), Some(EdgeKind::Imports))
+        .unwrap();
+    assert_eq!(imports.len(), 1);
+    assert_eq!(imports[0].id, EdgeId(10));
+}

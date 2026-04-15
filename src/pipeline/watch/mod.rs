@@ -15,8 +15,8 @@ pub use lease::{
     watch_socket_path, WatchDaemonError, WatchDaemonState, WatchServiceMode, WatchServiceStatus,
 };
 pub use reconcile::{
-    load_reconcile_state, persist_reconcile_state, reconcile_state_path, run_reconcile_pass,
-    ReconcileOutcome, ReconcileState,
+    emit_cochange_edges_pass, load_reconcile_state, persist_reconcile_state, reconcile_state_path,
+    run_reconcile_pass, ReconcileOutcome, ReconcileState,
 };
 pub use service::{run_watch_loop, run_watch_service, WatchConfig};
 
