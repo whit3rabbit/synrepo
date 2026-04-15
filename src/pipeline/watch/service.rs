@@ -259,6 +259,9 @@ fn spawn_control_listener(
                         tracing::warn!(error = %error, "failed to write watch control response");
                     }
                 }
+                // REVIEW NOTE: the 50ms sleep is the backoff for the
+                // non-blocking accept loop. Removing it pegs a CPU core at
+                // 100% while the daemon idles. Keep this arm.
                 Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                     thread::sleep(Duration::from_millis(50));
                 }

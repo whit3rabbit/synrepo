@@ -1,4 +1,4 @@
-use std::fs;
+use std::{fs, path::PathBuf};
 
 use super::super::{
     cleanup_stale_watch_artifacts, lease::acquire_watch_daemon_lease, load_watch_state,
@@ -71,4 +71,45 @@ fn cleanup_stale_watch_artifacts_removes_dead_state_and_socket() {
     assert!(cleanup_stale_watch_artifacts(&synrepo_dir).unwrap());
     assert!(load_watch_state(&synrepo_dir).is_none());
     assert!(!socket_path.exists());
+}
+
+#[test]
+fn watch_socket_path_fits_sockaddr_un_limit_for_deep_repos() {
+    // sockaddr_un.sun_path is 104 bytes on macOS and 108 on Linux
+    // (NUL-terminated). Simulate a pathologically deep repo path and
+    // confirm the hashed socket path stays well under that ceiling.
+    let mut deep = PathBuf::from("/Users/someone.with-a-long-handle/Documents");
+    for segment in [
+        "clients",
+        "acme-enterprise-consulting-services",
+        "monorepos",
+        "platform-core-shared-infrastructure",
+        "services",
+        "authentication-and-session-management",
+        ".synrepo",
+    ] {
+        deep.push(segment);
+    }
+
+    let socket = watch_socket_path(&deep);
+    let len = socket.as_os_str().len();
+    assert!(
+        len < 100,
+        "watch socket path is {} bytes long: {}",
+        len,
+        socket.display()
+    );
+}
+
+#[test]
+fn watch_socket_path_is_deterministic_for_same_input() {
+    let dir = PathBuf::from("/tmp/does/not/exist/synrepo-socket-test/.synrepo");
+    assert_eq!(watch_socket_path(&dir), watch_socket_path(&dir));
+}
+
+#[test]
+fn watch_socket_path_differs_per_repo() {
+    let a = PathBuf::from("/tmp/does/not/exist/repo-a/.synrepo");
+    let b = PathBuf::from("/tmp/does/not/exist/repo-b/.synrepo");
+    assert_ne!(watch_socket_path(&a), watch_socket_path(&b));
 }

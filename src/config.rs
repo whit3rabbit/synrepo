@@ -23,6 +23,13 @@ pub enum Mode {
 }
 
 /// Top-level config read from `.synrepo/config.toml`.
+//
+// REVIEW NOTE: every field below has `#[serde(default)]` or
+// `#[serde(default = "...")]`. This is the backward-compatibility contract:
+// an older `config.toml` missing a newer field still deserializes. Any new
+// field MUST carry one of those attributes. Container-level
+// `#[serde(default)]` is deliberately not used so the author of a new
+// field is forced to name the default explicitly.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
     /// Operational mode. Bootstrap prefers an explicit `--mode`, otherwise

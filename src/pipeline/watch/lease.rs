@@ -12,7 +12,6 @@ use serde::{Deserialize, Serialize};
 use crate::pipeline::writer::{is_process_alive, now_rfc3339};
 
 const WATCH_DAEMON_FILENAME: &str = "watch-daemon.json";
-const WATCH_SOCKET_FILENAME: &str = "watch.sock";
 static NEXT_WATCH_STATE_TMP_ID: AtomicU64 = AtomicU64::new(0);
 
 /// Foreground or daemon execution mode for the watch service.
@@ -324,8 +323,29 @@ pub fn watch_daemon_state_path(synrepo_dir: &Path) -> PathBuf {
 }
 
 /// Canonical path of the per-repo watch control socket.
+///
+/// Resolves to `<temp_dir>/synrepo-<hash>.sock`, not inside `.synrepo/state/`.
+/// The Unix domain socket path must fit inside `sockaddr_un.sun_path`, which
+/// is capped at 104 bytes on macOS and 108 on Linux (NUL inclusive). A deep
+/// repo path such as
+/// `/Users/<name>/Documents/<client>/<monorepo>/<service>/.synrepo/state/watch.sock`
+/// blows past that limit and `UnixListener::bind` returns ENAMETOOLONG with
+/// no useful diagnostic, so we hash the canonicalised synrepo directory and
+/// place the socket in `std::env::temp_dir()`, which is short on every
+/// supported platform.
+///
+/// The repo_dir → socket mapping is deterministic: the same repo always
+/// gets the same socket path, so clients reading `watch-daemon.json` and
+/// reconnecting see a stable endpoint. A canonicalisation failure falls
+/// back to the literal input, which is still consistent for the lifetime
+/// of one synrepo install.
 pub fn watch_socket_path(synrepo_dir: &Path) -> PathBuf {
-    synrepo_dir.join("state").join(WATCH_SOCKET_FILENAME)
+    let canonical = fs::canonicalize(synrepo_dir).unwrap_or_else(|_| synrepo_dir.to_path_buf());
+    let digest = blake3::hash(canonical.to_string_lossy().as_bytes());
+    let hex = hex::encode(digest.as_bytes());
+    // 16 hex chars = 64 bits of collision resistance, plenty for a
+    // per-user/per-repo namespacing of socket files.
+    std::env::temp_dir().join(format!("synrepo-{}.sock", &hex[..16]))
 }
 
 pub(super) fn persist_watch_state_at(

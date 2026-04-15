@@ -185,6 +185,11 @@ fn strip_python_quotes(raw: &str) -> Option<String> {
     let c = if (r.starts_with("\"\"\"") && r.ends_with("\"\"\""))
         || (r.starts_with("'''") && r.ends_with("'''"))
     {
+        // REVIEW NOTE: the `r.len() < 6` early return guards the slice
+        // below. `starts_with` + `ends_with` on the same 3-byte prefix both
+        // match when `r == "\"\"\""` (len 3), so without this check the
+        // slice `r[3..r.len() - 3]` would underflow and panic. Do not
+        // remove.
         if r.len() < 6 {
             return None;
         }

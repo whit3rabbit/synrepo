@@ -283,6 +283,13 @@ fn cleanup_partial_lock_file(lock_path: &Path) {
 ///
 /// On non-Unix platforms, conservatively returns `true` (assumes alive) to
 /// prevent spurious stale-lock takeover on untested operating systems.
+//
+// REVIEW NOTE: the `#[cfg(unix)]` / `#[cfg(not(unix))]` split is
+// load-bearing. Collapsing the two branches would either (a) attempt to
+// exec `kill` on Windows, which returns NotFound and then falls through to
+// `unwrap_or(false)`, causing Windows writers to steal each other's locks,
+// or (b) assume alive on Unix, which breaks stale-lock cleanup. Keep both
+// branches; keep `unwrap_or(false)` strictly inside `cfg(unix)`.
 pub(crate) fn is_process_alive(pid: u32) -> bool {
     #[cfg(unix)]
     {
