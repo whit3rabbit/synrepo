@@ -42,6 +42,22 @@ pub(super) fn init_schema(conn: &Connection) -> crate::Result<()> {
         CREATE INDEX IF NOT EXISTS idx_edges_to_kind ON edges(to_node_id, kind);
         ",
     )?;
+
+    // Additive migration: symbol-scoped revision columns (symbol-last-change-v1).
+    // Safe to re-run: "duplicate column" errors are silently ignored.
+    let migratables = [
+        "ALTER TABLE symbols ADD COLUMN first_seen_rev TEXT NULL",
+        "ALTER TABLE symbols ADD COLUMN last_modified_rev TEXT NULL",
+    ];
+    for sql in &migratables {
+        // sqlite3_stricmp-based match for the specific "duplicate column" error.
+        match conn.execute_batch(sql) {
+            Ok(()) => {}
+            Err(err) if err.to_string().contains("duplicate column") => {}
+            Err(err) => return Err(err.into()),
+        }
+    }
+
     Ok(())
 }
 

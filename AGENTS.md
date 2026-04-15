@@ -186,7 +186,7 @@ Stages 4–8:
 ## Gotchas
 
 - **`src/bin/cli_support/agent_shims/` is a sub-module directory** — the canonical agent-doctrine text lives in `doctrine.rs` as a `doctrine_block!()` macro that every shim in `shims.rs` embeds via `concat!`. Edits to shim copy that touch escalation rules, do-not rules, or the product-boundary paragraph MUST go through `doctrine_block!`; the byte-identical test in `tests.rs` (`every_shim_embeds_doctrine_block`) enforces this. The escalation-line source-scan test reads `src/bin/cli_support/commands/mcp.rs` — do not move the MCP tool registration out of that file without updating the test path. Edit target-specific sections (tool list framing, CLI fallback examples, file paths) directly in `shims.rs`.
-- **`src/structure/parse/extract/` is a sub-module directory** (`mod.rs` ~388 lines, `qualname.rs` ~59 lines) — do not add more code to `mod.rs` without splitting further. Current watchlist (sorted): `src/bin/cli.rs` (420, **over the 400 limit** — dispatcher-only; split enum definitions into a separate `cli_args.rs` if it grows further), `src/pipeline/git/mod.rs` (357, approaching the 400 limit), `src/surface/mcp/primitives.rs` (354), `src/pipeline/structural/stages.rs` (345), `src/structure/prose.rs` (324), `src/store/compatibility/evaluate/mod.rs` (312), `src/bin/cli_support/commands/mcp.rs` (304), `src/pipeline/diagnostics.rs` (306). Re-check before adding to any of them.
+- **`src/structure/parse/extract/` is a sub-module directory** (`mod.rs` ~388 lines, `qualname.rs` ~59 lines) — do not add more code to `mod.rs` without splitting further. Current watchlist (sorted): `src/pipeline/git/mod.rs` (357, approaching the 400 limit), `src/bin/cli_support/cli_args.rs` (288), `src/pipeline/structural/stages.rs` (345), `src/surface/mcp/primitives.rs` (330), `src/structure/prose.rs` (324), `src/store/compatibility/evaluate/mod.rs` (312), `src/pipeline/diagnostics.rs` (306), `src/bin/cli_support/commands/mcp.rs` (304). Re-check before adding to any of them.
 - **`signature` and `doc_comment` are populated** by `src/structure/parse/extract/mod.rs` for Rust (`///` line comments, declaration up to `{`/`;`), Python (docstring, `def` line up to `:`), and TypeScript/TSX (JSDoc `/** */`, declaration up to `{`). These fields are safe to use in all three languages.
 - **Stage 4 cross-file edges are now emitted**: `Calls` (file→symbol, approximate name resolution) and `Imports` (file→file, relative path resolution) edges are produced by `run_structural_compile`. `Inherits`, `References`, `CoChangesWith`, `Mentions` are not yet emitted. `SplitFrom` and `MergedFrom` edge kinds are defined but not yet produced.
 - **`criterion` is present in `Cargo.toml`**, but the documented test workflow still centers on `proptest` and `insta`. Use `criterion` only for explicit benchmark work.
@@ -225,7 +225,7 @@ Stages 4–8:
 
 `openspec/specs/` holds enduring domain specs (stable intended behavior). `openspec/changes/<name>/` holds active work: `proposal.md`, `design.md`, `tasks.md`, and optional delta specs.
 
-Active changes: `graph-cochange-edges-v1`, `symbol-last-change-v1`, `structural-resilience-v1`, `specialist-cards-v1`, `semantic-triage-v1`, `storage-compaction-v1`
+Active changes: `symbol-last-change-v1`, `structural-resilience-v1`, `specialist-cards-v1`, `semantic-triage-v1`, `storage-compaction-v1`
 
 Archived completed changes are in `openspec/changes/archive/`.
 
