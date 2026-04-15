@@ -1,21 +1,19 @@
-//! Drift scoring for graph edges.
+//! Drift scoring for graph edges (stage 7 — scaffold only, not yet wired).
 //!
-//! The structural pipeline computes a drift score in `[0.0, 1.0]` for
-//! every edge on every commit. A low score means the edge is fresh;
-//! a high score means the linked source artifacts have diverged
-//! structurally since the edge was created.
-//!
-//! Drift scoring catches prose rot when linked code changes structurally.
-//! It does NOT catch cases where code stays structurally similar while
-//! meaning changes — phase 6 may add a "decision relevance decay" signal
-//! for those cases. See `synrepo-design-v4.md` "Unresolved risks".
+//! The eventual contract: each edge carries a drift score in `[0.0, 1.0]`,
+//! where a low score means the edge is fresh and a high score means the
+//! linked source artifacts have diverged structurally since the edge was
+//! created. The current implementation is a stub: [`compute_drift_score`]
+//! always returns `0.0`. See `AGENTS.md` "Phase status" for the live
+//! pipeline-stage status, and `synrepo-design-v4.md` "Unresolved risks"
+//! for the broader drift-vs-meaning trade-off this stage will eventually
+//! address.
 
 use crate::structure::graph::Edge;
 
-/// Compute a drift score for an edge based on structural changes to the
-/// source artifacts since the edge was created.
+/// Compute a drift score for an edge. **Stub** — currently always returns
+/// `0.0`. The intended scoring once stage 7 lands:
 ///
-/// Phase 1 scoring (conservative):
 /// - Both artifacts unchanged since edge creation → 0.0
 /// - Only cosmetic changes (whitespace, comments, formatting) → 0.0–0.1
 /// - Signature changes but body preserved → 0.1–0.3

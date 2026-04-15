@@ -103,21 +103,28 @@ pub(crate) fn upgrade(repo_root: &Path, apply: bool) -> anyhow::Result<()> {
         use synrepo::pipeline::watch::{persist_reconcile_state, run_reconcile_pass};
         let outcome = run_reconcile_pass(repo_root, &config, &synrepo_dir);
         persist_reconcile_state(&synrepo_dir, &outcome, 0);
-        match outcome {
-            synrepo::pipeline::watch::ReconcileOutcome::Completed(_) => {
-                println!("  Reconcile completed.");
-            }
-            synrepo::pipeline::watch::ReconcileOutcome::Failed(msg) => {
-                anyhow::bail!("upgrade: reconcile after rebuild failed: {msg}");
-            }
-            synrepo::pipeline::watch::ReconcileOutcome::LockConflict { holder_pid } => {
-                anyhow::bail!(
-                    "upgrade: reconcile skipped because writer lock is held by pid {holder_pid}"
-                );
-            }
-        }
+        report_reconcile_outcome(outcome)?;
     }
 
     println!("Upgrade complete.");
     Ok(())
+}
+
+pub(crate) fn report_reconcile_outcome(
+    outcome: synrepo::pipeline::watch::ReconcileOutcome,
+) -> anyhow::Result<()> {
+    match outcome {
+        synrepo::pipeline::watch::ReconcileOutcome::Completed(_) => {
+            println!("  Reconcile completed.");
+            Ok(())
+        }
+        synrepo::pipeline::watch::ReconcileOutcome::Failed(msg) => {
+            anyhow::bail!("upgrade: reconcile after rebuild failed: {msg}");
+        }
+        synrepo::pipeline::watch::ReconcileOutcome::LockConflict { holder_pid } => {
+            anyhow::bail!(
+                "upgrade: reconcile skipped because writer lock is held by pid {holder_pid}"
+            );
+        }
+    }
 }

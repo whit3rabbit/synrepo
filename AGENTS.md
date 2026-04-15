@@ -24,7 +24,7 @@ cargo test                         # run all tests
 cargo test <test_name>             # run a single test (substring match)
 cargo test -p synrepo <test_name>  # run a single test by exact path
 cargo test --bin synrepo <test_name>  # run binary-crate tests (cli_support::tests::*)
-cargo clippy --workspace --all-targets -- -D warnings  # lint (CI-equivalent; covers MCP + test targets)
+cargo clippy --all-targets -- -D warnings  # lint (CI-equivalent)
 cargo fmt                          # format
 make check                         # fmt-check + lint + test (CI equivalent)
 cargo run -- init                  # initialize .synrepo/ in cwd
@@ -46,6 +46,8 @@ cargo run -- search <query>        # lexical search
 cargo run -- graph query "outbound <node_id> [edge_kind]"  # graph traversal
 cargo run -- graph stats           # node/edge counts
 cargo run -- node <node_id>        # dump a node's metadata as JSON
+cargo run -- mcp                   # start MCP server over stdio
+cargo run -- mcp --repo <path>     # start MCP server for a specific repo
 RUST_LOG=debug cargo run -- <cmd>  # enable tracing output
 ```
 
@@ -87,7 +89,7 @@ Node types: `FileNode` (content-hash identity), `SymbolNode` (tree-sitter extrac
 **3. Overlay** (`src/overlay/mod.rs`) — LLM-authored content in a physically separate SQLite database from the graph. Defines `OverlayStore`, `OverlayLink`, `OverlayEpistemic` (`machine_authored_high_conf` | `machine_authored_low_conf`), `CitedSpan`. Phase 4+ only; the module exists to establish the architectural boundary from the start.
 - Spec: `openspec/specs/overlay/spec.md`
 
-**4. Surface** (`src/surface/`, `src/bin/cli.rs`) — CLI (phase 0/1), MCP server (phase 2+), skill bundle (`skill/SKILL.md`). `src/surface/card/mod.rs` is the stable card surface (`Budget`, `SymbolCard`, `FileCard`, `CardCompiler`, `Freshness`, `SourceStore`) with `git.rs` for Git projections, `types.rs` for card payload structs, `compiler/` for `GraphCardCompiler` (split into file.rs, io.rs, mod.rs, resolve.rs, symbol.rs), and `decision.rs` for `DecisionCard`.
+**4. Surface** (`src/surface/`, `src/bin/cli.rs`) — CLI (phase 0/1), MCP server (`synrepo mcp` subcommand, phase 2+), skill bundle (`skill/SKILL.md`). `src/surface/card/mod.rs` is the stable card surface (`Budget`, `SymbolCard`, `FileCard`, `CardCompiler`, `Freshness`, `SourceStore`) with `git.rs` for Git projections, `types.rs` for card payload structs, `compiler/` for `GraphCardCompiler` (split into file.rs, io.rs, mod.rs, resolve.rs, symbol.rs), and `decision.rs` for `DecisionCard`. `src/surface/mcp/` holds the MCP tool handlers (helpers, cards, search, audit, findings, primitives) and `SynrepoState`; the server dispatch lives in `src/bin/cli_support/commands/mcp.rs`.
 - Spec: `openspec/specs/cards/spec.md`, `openspec/specs/mcp-surface/spec.md`
 
 **Bootstrap** (`src/bootstrap/`) — First-run UX, mode detection, health checks. `src/bin/cli.rs` is a thin dispatcher only; all logic lives here.
@@ -117,6 +119,7 @@ Node types: `FileNode` (content-hash identity), `SymbolNode` (tree-sitter extrac
 - `.synrepo/.gitignore` — gitignores everything in `.synrepo/` except `config.toml` and `.gitignore`
 - `.synrepo/state/writer.lock` — process-level write lock (PID + timestamp); held during each actual runtime mutation, including watch-triggered reconcile passes
 - `.synrepo/state/watch-daemon.json` — per-repo watch lease plus owner/telemetry snapshot for `synrepo watch`
+- `.synrepo/state/watch-daemon.log` — stderr of the detached watch daemon; truncated on each spawn, useful for post-mortem on startup crashes
 - `.synrepo/state/watch.sock` — local control socket for active daemon watch mode
 - `.synrepo/state/reconcile-state.json` — last reconcile outcome, timestamp, and discovered/symbol counts
 - `.synrepo/state/repair-log.jsonl` — append-only resolution log written by `synrepo sync`; one JSON object per line
@@ -129,7 +132,7 @@ Node types: `FileNode` (content-hash identity), `SymbolNode` (tree-sitter extrac
 
 ### Workspace layout
 
-`Cargo.toml` is a workspace root with two members: `.` (the library + `synrepo` binary) and `crates/synrepo-mcp/` (the MCP server binary). The MCP crate adds `rmcp` and `tokio` without infecting the library.
+`Cargo.toml` is a single-member workspace (the library + `synrepo` binary). The MCP server runs as a `synrepo mcp` subcommand — there is no separate binary crate. `rmcp`, `tokio`, and `schemars` are direct dependencies; `rmcp` and `tokio` are only used by the binary-side MCP command (`src/bin/cli_support/commands/mcp.rs`), keeping the library crate (`src/lib.rs`) synchronous.
 
 ## Hard invariants
 
@@ -176,13 +179,14 @@ Stages 4–8:
 
 ### Not yet implemented
 
-- `EntryPointCard`, `CallPathCard`; specialist MCP tools (`synrepo_entrypoints`, `synrepo_call_path`, etc.). `ModuleCard` is implemented (`src/surface/card/types.rs`).
-- Graph-level `CoChangesWith` edges. `SymbolCard.last_change` projects the containing file's newest commit with `granularity: file`; true per-symbol tracking stays on the roadmap.
-- Drift scoring (stage 7), ArcSwap commit (stage 8)
+- `CallPathCard`, `ChangeRiskCard`, `TestSurfaceCard`; specialist MCP tools (`synrepo_call_path`, `synrepo_test_surface`, `synrepo_change_risk`). `EntryPointCard`, `ModuleCard`, and `PublicAPICard` are shipped.
+- Graph-level `CoChangesWith` edges (kind defined, never emitted). `SymbolCard.last_change` projects the containing file's newest commit with `granularity: file`; true per-symbol body-hash tracking is staged in `symbol-last-change-v1`.
+- Drift scoring (stage 7), ArcSwap commit (stage 8), split/merge detection (stage 6 partial)
 
 ## Gotchas
 
-- **`src/structure/parse/extract/` is a sub-module directory** (`mod.rs` ~388 lines, `qualname.rs` ~59 lines) — do not add more code to `mod.rs` without splitting further. Current watchlist (sorted): `src/pipeline/git/mod.rs` (357, approaching the 400 limit), `src/pipeline/structural/stages.rs` (345), `src/structure/prose.rs` (324), `src/store/compatibility/evaluate/mod.rs` (312), `src/pipeline/diagnostics.rs` (306). Re-check before adding to any of them.
+- **`src/bin/cli_support/agent_shims/` is a sub-module directory** — the canonical agent-doctrine text lives in `doctrine.rs` as a `doctrine_block!()` macro that every shim in `shims.rs` embeds via `concat!`. Edits to shim copy that touch escalation rules, do-not rules, or the product-boundary paragraph MUST go through `doctrine_block!`; the byte-identical test in `tests.rs` (`every_shim_embeds_doctrine_block`) enforces this. The escalation-line source-scan test reads `src/bin/cli_support/commands/mcp.rs` — do not move the MCP tool registration out of that file without updating the test path. Edit target-specific sections (tool list framing, CLI fallback examples, file paths) directly in `shims.rs`.
+- **`src/structure/parse/extract/` is a sub-module directory** (`mod.rs` ~388 lines, `qualname.rs` ~59 lines) — do not add more code to `mod.rs` without splitting further. Current watchlist (sorted): `src/bin/cli.rs` (420, **over the 400 limit** — dispatcher-only; split enum definitions into a separate `cli_args.rs` if it grows further), `src/pipeline/git/mod.rs` (357, approaching the 400 limit), `src/surface/mcp/primitives.rs` (354), `src/pipeline/structural/stages.rs` (345), `src/structure/prose.rs` (324), `src/store/compatibility/evaluate/mod.rs` (312), `src/bin/cli_support/commands/mcp.rs` (304), `src/pipeline/diagnostics.rs` (306). Re-check before adding to any of them.
 - **`signature` and `doc_comment` are populated** by `src/structure/parse/extract/mod.rs` for Rust (`///` line comments, declaration up to `{`/`;`), Python (docstring, `def` line up to `:`), and TypeScript/TSX (JSDoc `/** */`, declaration up to `{`). These fields are safe to use in all three languages.
 - **Stage 4 cross-file edges are now emitted**: `Calls` (file→symbol, approximate name resolution) and `Imports` (file→file, relative path resolution) edges are produced by `run_structural_compile`. `Inherits`, `References`, `CoChangesWith`, `Mentions` are not yet emitted. `SplitFrom` and `MergedFrom` edge kinds are defined but not yet produced.
 - **`criterion` is present in `Cargo.toml`**, but the documented test workflow still centers on `proptest` and `insta`. Use `criterion` only for explicit benchmark work.
@@ -221,7 +225,7 @@ Stages 4–8:
 
 `openspec/specs/` holds enduring domain specs (stable intended behavior). `openspec/changes/<name>/` holds active work: `proposal.md`, `design.md`, `tasks.md`, and optional delta specs.
 
-Active changes: `export-and-polish-v1`
+Active changes: `graph-cochange-edges-v1`, `symbol-last-change-v1`, `structural-resilience-v1`, `specialist-cards-v1`, `semantic-triage-v1`, `storage-compaction-v1`
 
 Archived completed changes are in `openspec/changes/archive/`.
 

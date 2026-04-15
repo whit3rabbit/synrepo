@@ -1,7 +1,7 @@
 use rusqlite::{params, Connection};
 
 use crate::{
-    core::ids::{ConceptNodeId, FileNodeId, NodeId, SymbolNodeId},
+    core::ids::{ConceptNodeId, EdgeId, FileNodeId, NodeId, SymbolNodeId},
     structure::graph::{ConceptNode, Edge, EdgeKind, FileNode, GraphStore, SymbolNode},
 };
 
@@ -77,6 +77,23 @@ impl GraphStore for SqliteGraphStore {
             params![id, from_node_id, to_node_id, kind, data],
         )?;
         Ok(())
+    }
+
+    fn delete_edge(&mut self, edge_id: EdgeId) -> crate::Result<()> {
+        let id = edge_id.0 as i64;
+        self.conn
+            .lock()
+            .execute("DELETE FROM edges WHERE id = ?1", params![id])?;
+        Ok(())
+    }
+
+    fn delete_edges_by_kind(&mut self, kind: EdgeKind) -> crate::Result<usize> {
+        let kind_label = encode_label(&kind)?;
+        let count = self
+            .conn
+            .lock()
+            .execute("DELETE FROM edges WHERE kind = ?1", params![kind_label])?;
+        Ok(count)
     }
 
     fn delete_node(&mut self, id: NodeId) -> crate::Result<()> {

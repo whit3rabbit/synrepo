@@ -3335,13 +3335,16 @@ dependencies = [
  "parking_lot",
  "proptest",
  "reqwest",
+ "rmcp",
  "rusqlite",
+ "schemars",
  "serde",
  "serde_json",
  "syntext",
  "tempfile",
  "thiserror 1.0.69",
  "time",
+ "tokio",
  "toml",
  "tracing",
  "tracing-subscriber",
@@ -3351,19 +3354,6 @@ dependencies = [
  "tree-sitter-rust",
  "tree-sitter-typescript",
  "walkdir",
-]
-
-[[package]]
-name = "synrepo-mcp"
-version = "0.0.1"
-dependencies = [
- "anyhow",
- "parking_lot",
- "rmcp",
- "serde",
- "serde_json",
- "synrepo",
- "tokio",
 ]
 
 [[package]]

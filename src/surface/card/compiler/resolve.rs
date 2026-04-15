@@ -1,9 +1,23 @@
+use std::str::FromStr;
+
 use crate::{core::ids::NodeId, structure::graph::GraphStore};
 
 pub(super) fn resolve_target(
     graph: &dyn GraphStore,
     target: &str,
 ) -> crate::Result<Option<NodeId>> {
+    // 0. Try node ID parse (e.g. "symbol_0000000000000024", "file_0000000000000042").
+    if let Ok(node_id) = NodeId::from_str(target) {
+        let exists = match &node_id {
+            NodeId::File(id) => graph.get_file(*id)?.is_some(),
+            NodeId::Symbol(id) => graph.get_symbol(*id)?.is_some(),
+            NodeId::Concept(id) => graph.get_concept(*id)?.is_some(),
+        };
+        if exists {
+            return Ok(Some(node_id));
+        }
+    }
+
     // 1. Try exact file path lookup.
     if let Some(file) = graph.file_by_path(target)? {
         return Ok(Some(NodeId::File(file.id)));

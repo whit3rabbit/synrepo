@@ -1,7 +1,25 @@
 //! Bootstrap health states and report type.
 
 use crate::config::Mode;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+/// Shim paths (relative to repo root) written by `synrepo agent-setup <tool>`.
+/// Listed in the preference order used when picking a pointer target.
+const KNOWN_SHIM_PATHS: &[&str] = &[
+    ".claude/synrepo-context.md",
+    ".cursor/synrepo.mdc",
+    ".codex/instructions.md",
+    ".windsurf/rules/synrepo.md",
+    "synrepo-copilot-instructions.md",
+    "synrepo-agents.md",
+];
+
+fn first_existing_shim(repo_root: &Path) -> Option<PathBuf> {
+    KNOWN_SHIM_PATHS
+        .iter()
+        .map(|rel| repo_root.join(rel))
+        .find(|p| p.is_file())
+}
 
 /// Whether bootstrap completed cleanly or required repair.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -74,6 +92,88 @@ impl BootstrapReport {
             self.graph_status,
             self.next_step
         ));
+        if matches!(self.health, BootstrapHealth::Healthy) {
+            rendered.push_str(&self.doctrine_pointer_line());
+        }
         rendered
+    }
+
+    /// Single-line pointer to the agent doctrine. Names the first shim written
+    /// by `synrepo agent-setup` if one exists under the repo root; otherwise
+    /// directs the user to run `synrepo agent-setup <tool>`.
+    fn doctrine_pointer_line(&self) -> String {
+        let repo_root = self.synrepo_dir.parent();
+        let target = repo_root
+            .and_then(first_existing_shim)
+            .map(|path| {
+                let display = repo_root
+                    .and_then(|root| path.strip_prefix(root).ok())
+                    .map(|rel| rel.display().to_string())
+                    .unwrap_or_else(|| path.display().to_string());
+                format!("See {display} for the full protocol.")
+            })
+            .unwrap_or_else(|| {
+                "Run `synrepo agent-setup <tool>` to write a shim with the full protocol."
+                    .to_string()
+            });
+        format!("Agent doctrine: tiny → normal → deep. {target}\n")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    fn base_report(health: BootstrapHealth, synrepo_dir: PathBuf) -> BootstrapReport {
+        BootstrapReport {
+            health,
+            mode: Mode::Auto,
+            mode_guidance: None,
+            compatibility_guidance: vec![],
+            synrepo_dir,
+            substrate_status: "built initial index".to_string(),
+            graph_status: "compiled".to_string(),
+            next_step: "run `synrepo search <query>`".to_string(),
+        }
+    }
+
+    #[test]
+    fn healthy_render_without_shim_points_at_agent_setup() {
+        let repo = tempdir().unwrap();
+        let synrepo_dir = repo.path().join(".synrepo");
+        let report = base_report(BootstrapHealth::Healthy, synrepo_dir);
+
+        let rendered = report.render();
+        assert!(rendered.contains("Agent doctrine: tiny → normal → deep."));
+        assert!(rendered.contains("Run `synrepo agent-setup <tool>`"));
+    }
+
+    #[test]
+    fn healthy_render_with_existing_shim_points_at_shim_path() {
+        let repo = tempdir().unwrap();
+        std::fs::create_dir_all(repo.path().join(".claude")).unwrap();
+        std::fs::write(
+            repo.path().join(".claude").join("synrepo-context.md"),
+            "# existing shim\n",
+        )
+        .unwrap();
+        let synrepo_dir = repo.path().join(".synrepo");
+        let report = base_report(BootstrapHealth::Healthy, synrepo_dir);
+
+        let rendered = report.render();
+        assert!(rendered.contains("Agent doctrine: tiny → normal → deep."));
+        assert!(rendered.contains(".claude/synrepo-context.md"));
+        assert!(!rendered.contains("Run `synrepo agent-setup"));
+    }
+
+    #[test]
+    fn degraded_render_omits_doctrine_pointer() {
+        let repo = tempdir().unwrap();
+        let synrepo_dir = repo.path().join(".synrepo");
+        let report = base_report(BootstrapHealth::Degraded, synrepo_dir);
+
+        let rendered = report.render();
+        assert!(!rendered.contains("Agent doctrine:"));
     }
 }

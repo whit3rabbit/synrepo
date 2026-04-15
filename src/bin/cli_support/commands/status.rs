@@ -1,3 +1,4 @@
+use std::fmt::Write;
 use std::path::Path;
 
 use synrepo::{
@@ -5,25 +6,39 @@ use synrepo::{
     pipeline::{
         diagnostics::{collect_diagnostics, ReconcileHealth, RuntimeDiagnostics, WriterStatus},
         export::load_manifest,
+        recent_activity::{read_recent_activity, ActivityEntry, RecentActivityQuery},
         watch::WatchServiceStatus,
     },
     store::sqlite::SqliteGraphStore,
 };
 
 /// Print operational health: mode, graph counts, reconcile status, and watch state.
-pub(crate) fn status(repo_root: &Path, json: bool) -> anyhow::Result<()> {
+pub(crate) fn status(repo_root: &Path, json: bool, recent: bool) -> anyhow::Result<()> {
+    let rendered = status_output(repo_root, json, recent)?;
+    print!("{rendered}");
+    Ok(())
+}
+
+/// Render the status output as a String (test-friendly equivalent of `status`).
+/// Output is identical to what `status` prints, including trailing newlines.
+pub(crate) fn status_output(repo_root: &Path, json: bool, recent: bool) -> anyhow::Result<String> {
     let synrepo_dir = Config::synrepo_dir(repo_root);
+    let mut out = String::new();
 
     let config = match Config::load(repo_root) {
         Ok(config) => config,
         Err(_) => {
             if json {
-                println!("{{\"initialized\":false}}");
+                writeln!(out, "{{\"initialized\":false}}").unwrap();
             } else {
-                println!("synrepo status: not initialized");
-                println!("  Run `synrepo init` to create .synrepo/ and populate the graph.");
+                writeln!(out, "synrepo status: not initialized").unwrap();
+                writeln!(
+                    out,
+                    "  Run `synrepo init` to create .synrepo/ and populate the graph."
+                )
+                .unwrap();
             }
-            return Ok(());
+            return Ok(out);
         }
     };
 
@@ -43,33 +58,49 @@ pub(crate) fn status(repo_root: &Path, json: bool) -> anyhow::Result<()> {
     let export_freshness = export_freshness_summary(repo_root, &synrepo_dir, &config);
     let overlay_cost = overlay_cost_summary(&synrepo_dir);
 
+    let recent_entries: Option<Vec<ActivityEntry>> = if recent {
+        let query = RecentActivityQuery {
+            kinds: None,
+            limit: 20,
+            since: None,
+        };
+        read_recent_activity(&synrepo_dir, repo_root, &config, query).ok()
+    } else {
+        None
+    };
+
     if json {
-        return print_status_json(
+        write_status_json(
+            &mut out,
             &config,
             &diag,
             graph_stats.as_ref(),
             &export_freshness,
             &overlay_cost,
-        );
+            recent_entries.as_deref(),
+        )?;
+        return Ok(out);
     }
 
-    println!("synrepo status");
-    println!("  mode:         {}", config.mode);
+    writeln!(out, "synrepo status").unwrap();
+    writeln!(out, "  mode:         {}", config.mode).unwrap();
 
     match &graph_stats {
-        Some(stats) => println!(
+        Some(stats) => writeln!(
+            out,
             "  graph:        {} files  {} symbols  {} concepts",
             stats.file_nodes, stats.symbol_nodes, stats.concept_nodes
-        ),
-        None => println!("  graph:        not materialized — run `synrepo init`"),
+        )
+        .unwrap(),
+        None => writeln!(out, "  graph:        not materialized — run `synrepo init`").unwrap(),
     }
 
     match &diag.reconcile_health {
-        ReconcileHealth::Current => println!("  reconcile:    current"),
+        ReconcileHealth::Current => writeln!(out, "  reconcile:    current").unwrap(),
         ReconcileHealth::Stale { last_outcome } => {
-            println!("  reconcile:    stale (last outcome: {last_outcome})")
+            writeln!(out, "  reconcile:    stale (last outcome: {last_outcome})").unwrap()
         }
-        ReconcileHealth::Unknown => println!("  reconcile:    unknown (never run)"),
+        ReconcileHealth::Unknown => writeln!(out, "  reconcile:    unknown (never run)").unwrap(),
     }
 
     if let Some(state) = &diag.last_reconcile {
@@ -85,43 +116,81 @@ pub(crate) fn status(repo_root: &Path, json: bool) -> anyhow::Result<()> {
                 state.last_outcome, state.triggering_events
             ),
         };
-        println!("  last run:     {} — {detail}", state.last_reconcile_at);
+        writeln!(
+            out,
+            "  last run:     {} — {detail}",
+            state.last_reconcile_at
+        )
+        .unwrap();
         if let Some(error) = &state.last_error {
-            println!("  error:        {error}");
+            writeln!(out, "  error:        {error}").unwrap();
         }
     }
 
-    println!(
+    writeln!(
+        out,
         "  watch:        {}",
         render_watch_summary(&diag.watch_status)
-    );
+    )
+    .unwrap();
 
     match &diag.writer_status {
-        WriterStatus::Free => println!("  writer lock:  free"),
-        WriterStatus::HeldBySelf => println!("  writer lock:  held by this process"),
-        WriterStatus::HeldByOther { pid } => println!("  writer lock:  held by pid {pid}"),
+        WriterStatus::Free => writeln!(out, "  writer lock:  free").unwrap(),
+        WriterStatus::HeldBySelf => writeln!(out, "  writer lock:  held by this process").unwrap(),
+        WriterStatus::HeldByOther { pid } => {
+            writeln!(out, "  writer lock:  held by pid {pid}").unwrap()
+        }
     }
 
     for line in &diag.store_guidance {
-        println!("  store:        {line}");
+        writeln!(out, "  store:        {line}").unwrap();
     }
 
-    println!("  commentary:   {}", commentary_coverage_line(&synrepo_dir));
-    println!("  export:       {export_freshness}");
-    println!("  overlay cost: {overlay_cost}");
-    println!(
+    writeln!(
+        out,
+        "  commentary:   {}",
+        commentary_coverage_line(&synrepo_dir)
+    )
+    .unwrap();
+    writeln!(out, "  export:       {export_freshness}").unwrap();
+    writeln!(out, "  overlay cost: {overlay_cost}").unwrap();
+    writeln!(
+        out,
         "  next step:    {}",
         next_step(&diag, graph_stats.is_none())
-    );
-    Ok(())
+    )
+    .unwrap();
+
+    if let Some(entries) = &recent_entries {
+        writeln!(out).unwrap();
+        writeln!(out, "recent activity:").unwrap();
+        if entries.is_empty() {
+            writeln!(out, "  (none)").unwrap();
+        }
+        for entry in entries {
+            if entry.timestamp.is_empty() {
+                writeln!(out, "  [{}] {}", entry.kind, entry.payload).unwrap();
+            } else {
+                writeln!(
+                    out,
+                    "  {} [{}] {}",
+                    entry.timestamp, entry.kind, entry.payload
+                )
+                .unwrap();
+            }
+        }
+    }
+    Ok(out)
 }
 
-fn print_status_json(
+fn write_status_json(
+    out: &mut String,
     config: &Config,
     diag: &RuntimeDiagnostics,
     graph_stats: Option<&synrepo::store::sqlite::PersistedGraphStats>,
     export_freshness: &str,
     overlay_cost: &str,
+    recent_activity: Option<&[ActivityEntry]>,
 ) -> anyhow::Result<()> {
     let graph_json = match graph_stats {
         Some(stats) => serde_json::json!({
@@ -152,6 +221,11 @@ fn print_status_json(
 
     let watch = render_watch_summary(&diag.watch_status);
 
+    let activity_json: serde_json::Value = match recent_activity {
+        Some(entries) => serde_json::to_value(entries).unwrap_or(serde_json::Value::Null),
+        None => serde_json::Value::Null,
+    };
+
     let output = serde_json::json!({
         "initialized": true,
         "mode": config.mode.to_string(),
@@ -162,9 +236,10 @@ fn print_status_json(
         "writer_lock": writer_lock,
         "export_freshness": export_freshness,
         "overlay_cost_summary": overlay_cost,
+        "recent_activity": activity_json,
     });
 
-    println!("{}", serde_json::to_string_pretty(&output)?);
+    writeln!(out, "{}", serde_json::to_string_pretty(&output)?).unwrap();
     Ok(())
 }
 
@@ -206,8 +281,17 @@ fn overlay_cost_summary(synrepo_dir: &Path) -> String {
         Err(e) => return format!("unavailable ({e})"),
     };
 
-    let cross_link_gens = overlay.cross_link_generation_count().unwrap_or(0);
-    let commentary_entries = overlay.commentary_count().unwrap_or(0);
+    // Surface query failures as "unavailable (...)" rather than collapsing to
+    // zero. A silent zero count is indistinguishable from a healthy overlay
+    // with no LLM activity, which masks operational issues.
+    let cross_link_gens = match overlay.cross_link_generation_count() {
+        Ok(n) => n,
+        Err(e) => return format!("unavailable (cross-link count query failed: {e})"),
+    };
+    let commentary_entries = match overlay.commentary_count() {
+        Ok(n) => n,
+        Err(e) => return format!("unavailable (commentary count query failed: {e})"),
+    };
     let total_calls = cross_link_gens + commentary_entries;
 
     format!(

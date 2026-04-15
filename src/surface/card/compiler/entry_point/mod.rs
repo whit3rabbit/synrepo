@@ -124,7 +124,7 @@ pub(super) fn entry_point_card_impl(
 // ---------------------------------------------------------------------------
 
 /// Apply the four detection rules in priority order; return the first match.
-fn classify_kind(qname: &str, path: &str, kind: SymbolKind) -> Option<EntryPointKind> {
+pub(super) fn classify_kind(qname: &str, path: &str, kind: SymbolKind) -> Option<EntryPointKind> {
     // Rule 1: Binary
     if qname == "main" && is_binary_path(path) {
         return Some(EntryPointKind::Binary);

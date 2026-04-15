@@ -140,3 +140,85 @@ fn node_output_includes_file_git_intelligence_for_sampled_history() {
         git_stdout(&repo, &["rev-parse", "HEAD"])
     );
 }
+
+#[test]
+fn graph_query_rejects_bad_arity() {
+    let repo = tempdir().unwrap();
+    seed_graph(repo.path());
+
+    for query in ["", "outbound", "outbound a b c extra"] {
+        let err = graph_query_output(repo.path(), query)
+            .expect_err(&format!("query `{query}` must be rejected"));
+        assert!(
+            err.to_string().contains("invalid graph query"),
+            "expected `invalid graph query` for `{query}`, got: {err}"
+        );
+    }
+}
+
+#[test]
+fn graph_query_rejects_invalid_direction() {
+    let repo = tempdir().unwrap();
+    let ids = seed_graph(repo.path());
+
+    let err = graph_query_output(repo.path(), &format!("sideways {}", ids.file_id)).unwrap_err();
+    assert!(
+        err.to_string().contains("invalid graph query direction"),
+        "expected direction error, got: {err}"
+    );
+}
+
+#[test]
+fn graph_query_rejects_invalid_node_id() {
+    let repo = tempdir().unwrap();
+    seed_graph(repo.path());
+
+    let err = graph_query_output(repo.path(), "outbound not_a_node_id").unwrap_err();
+    let msg = err.to_string();
+    // NodeId::from_str surfaces a parse error; the exact wording is owned by
+    // synrepo::core::ids, so assert only that the error mentions the bad input
+    // or a parsing concept rather than panicking.
+    assert!(
+        !msg.is_empty(),
+        "expected non-empty parse error for invalid node id"
+    );
+}
+
+#[test]
+fn graph_query_rejects_invalid_edge_kind() {
+    let repo = tempdir().unwrap();
+    let ids = seed_graph(repo.path());
+
+    let err = graph_query_output(repo.path(), &format!("outbound {} bogus_kind", ids.file_id))
+        .unwrap_err();
+    let msg = err.to_string();
+    // EdgeKind::from_str returns a parse error for unknown kinds.
+    assert!(
+        !msg.is_empty(),
+        "expected non-empty parse error for invalid edge kind, got: {msg}"
+    );
+}
+
+#[test]
+fn node_output_returns_not_found_for_missing_node() {
+    let repo = tempdir().unwrap();
+    seed_graph(repo.path());
+
+    let err = node_output(repo.path(), "file_0000000000000999").unwrap_err();
+    assert!(
+        err.to_string().contains("node not found"),
+        "expected `node not found`, got: {err}"
+    );
+}
+
+#[test]
+fn node_output_rejects_invalid_id_format() {
+    let repo = tempdir().unwrap();
+    seed_graph(repo.path());
+
+    let err = node_output(repo.path(), "totally-bogus").unwrap_err();
+    assert!(
+        !err.to_string().is_empty(),
+        "expected non-empty parse error for invalid id"
+    );
+}

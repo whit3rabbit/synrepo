@@ -1,8 +1,6 @@
 use std::path::Path;
 
-use anyhow::Context as _;
-use serde_json::json;
-use synrepo::{
+use crate::{
     core::ids::NodeId,
     store::{
         overlay::{
@@ -11,6 +9,8 @@ use synrepo::{
         sqlite::SqliteGraphStore,
     },
 };
+use anyhow::Context as _;
+use serde_json::json;
 
 pub(crate) fn render_findings(
     repo_root: &Path,
@@ -19,7 +19,7 @@ pub(crate) fn render_findings(
     freshness: Option<String>,
     limit: u32,
 ) -> anyhow::Result<serde_json::Value> {
-    let synrepo_dir = synrepo::config::Config::synrepo_dir(repo_root);
+    let synrepo_dir = crate::config::Config::synrepo_dir(repo_root);
     let graph_dir = synrepo_dir.join("graph");
     let overlay_dir = synrepo_dir.join("overlay");
 

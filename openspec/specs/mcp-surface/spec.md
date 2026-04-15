@@ -1,4 +1,87 @@
 ## Purpose
+
+### Requirement: Expose synrepo_node as a raw graph lookup tool
+The MCP server SHALL provide a `synrepo_node` tool that accepts a node ID string and returns the full stored metadata for that node as JSON. The node ID SHALL be parsed using the display-format convention (`file_`, `symbol_`, `concept_` prefix). If the ID does not parse or no node exists, the tool SHALL return a structured error.
+
+#### Scenario: Agent looks up a file node by display ID
+- **WHEN** agent calls `synrepo_node` with `id = "file_0000000000000042"`
+- **THEN** the tool returns JSON with the FileNode fields: id, path, language, content_hash, file_class, path_history, git_intelligence, provenance
+
+#### Scenario: Agent looks up a symbol node by display ID
+- **WHEN** agent calls `synrepo_node` with `id = "symbol_0000000000000024"`
+- **THEN** the tool returns JSON with the SymbolNode fields: id, file_id, qualified_name, kind, signature, doc_comment, body_hash, last_change, provenance
+
+#### Scenario: Agent provides an invalid node ID
+- **WHEN** agent calls `synrepo_node` with `id = "invalid_123"`
+- **THEN** the tool returns an error message listing the valid ID prefixes (file_, symbol_, concept_)
+
+#### Scenario: Agent provides a valid ID for a non-existent node
+- **WHEN** agent calls `synrepo_node` with `id = "file_9999999999999999"`
+- **THEN** the tool returns an error stating the node was not found
+
+### Requirement: Expose synrepo_edges as a raw edge traversal tool
+The MCP server SHALL provide a `synrepo_edges` tool that accepts a node ID string, an optional direction (`outbound` or `inbound`, defaulting to `outbound`), and an optional list of edge type filters. It SHALL return all matching edges with their full metadata including provenance.
+
+#### Scenario: Agent traverses outbound edges from a node
+- **WHEN** agent calls `synrepo_edges` with `id = "file_0000000000000042"` and no direction
+- **THEN** the tool returns all outbound edges from that node, each with edge_kind, target node ID, and provenance
+
+#### Scenario: Agent traverses inbound edges filtered by type
+- **WHEN** agent calls `synrepo_edges` with `id = "symbol_0000000000000024"`, `direction = "inbound"`, and `edge_types = ["Calls"]`
+- **THEN** the tool returns only inbound `Calls` edges targeting that symbol
+
+#### Scenario: Agent traverses with multiple edge type filters
+- **WHEN** agent calls `synrepo_edges` with `id = "file_0000000000000042"` and `edge_types = ["Defines", "Imports"]`
+- **THEN** the tool returns only outbound edges of kind `Defines` or `Imports`
+
+#### Scenario: Node has no matching edges
+- **WHEN** agent calls `synrepo_edges` for a valid node that has no edges matching the filters
+- **THEN** the tool returns an empty edges array
+
+### Requirement: Expose synrepo_query as a structured graph query tool
+The MCP server SHALL provide a `synrepo_query` tool that accepts a query string in the existing CLI graph query syntax (`outbound <id> [edge_kind]`, `inbound <id> [edge_kind]`) and returns the matching edges as JSON. This reuses the same query DSL already supported by the CLI `synrepo graph query` command.
+
+#### Scenario: Agent queries outbound edges with kind filter
+- **WHEN** agent calls `synrepo_query` with `query = "outbound file_0000000000000042 Defines"`
+- **THEN** the tool returns all `Defines` edges from that file node
+
+#### Scenario: Agent queries inbound edges without kind filter
+- **WHEN** agent calls `synrepo_query` with `query = "inbound symbol_0000000000000024"`
+- **THEN** the tool returns all inbound edges to that symbol
+
+#### Scenario: Agent provides a malformed query string
+- **WHEN** agent calls `synrepo_query` with `query = "sideways file_123"`
+- **THEN** the tool returns an error describing the expected syntax
+
+### Requirement: Expose synrepo_overlay as an overlay inspection tool
+The MCP server SHALL provide a `synrepo_overlay` tool that accepts a node ID string and returns all overlay data associated with that node: commentary entry (if present) and proposed links with their status and confidence. If no overlay data exists, the tool SHALL return `{"overlay": null}` to distinguish absence from an error.
+
+#### Scenario: Agent inspects a node with commentary and proposed links
+- **WHEN** agent calls `synrepo_overlay` with `id = "file_0000000000000042"` and overlay data exists
+- **THEN** the tool returns the commentary entry (text, confidence, freshness) and all proposed links with status, confidence tier, and source/target spans
+
+#### Scenario: Agent inspects a node with no overlay data
+- **WHEN** agent calls `synrepo_overlay` with `id = "symbol_0000000000000024"` and no overlay data exists
+- **THEN** the tool returns `{"overlay": null}`
+
+#### Scenario: Agent inspects a non-existent node
+- **WHEN** agent calls `synrepo_overlay` with `id = "file_9999999999999999"`
+- **THEN** the tool returns an error stating the node was not found in the graph
+
+### Requirement: Expose synrepo_provenance as a provenance audit tool
+The MCP server SHALL provide a `synrepo_provenance` tool that accepts a node ID string and returns the full provenance chain for that node and its incident edges. This includes the node's own provenance (source, created_by, source_ref) and for each incident edge, the edge's provenance and the peer node ID.
+
+#### Scenario: Agent audits provenance for a node with edges
+- **WHEN** agent calls `synrepo_provenance` with `id = "file_0000000000000042"`
+- **THEN** the tool returns the node's provenance, plus a list of incident edges each with their provenance and the peer node ID
+
+#### Scenario: Agent audits provenance for a node with no edges
+- **WHEN** agent calls `synrepo_provenance` with `id = "concept_0000000000000099"` and the concept has no edges
+- **THEN** the tool returns the node's provenance with an empty edges list
+
+#### Scenario: Agent audits provenance for a non-existent node
+- **WHEN** agent calls `synrepo_provenance` with `id = "file_9999999999999999"`
+- **THEN** the tool returns an error stating the node was not found
 Define the task-first MCP tools and response contracts that expose card-based synrepo behavior to coding agents.
 ## Requirements
 ### Requirement: Provide task-first MCP tools
@@ -81,6 +164,16 @@ synrepo SHALL expose a `synrepo_recent_activity(scope?, kinds?, limit?, since?)`
 - **THEN** the tool applies the default cap (20 entries)
 - **AND** responses exceeding the hard maximum (200 entries) SHALL be rejected with an explicit error rather than silently truncated
 
+#### Scenario: Tool registration appears in MCP capabilities
+- **WHEN** an MCP client connects and enumerates available tools
+- **THEN** `synrepo_recent_activity` appears in the tool list
+- **AND** the tool description indicates it returns a bounded lane of synrepo operational events
+
+#### Scenario: Tool is not a session-memory or agent-history surface
+- **WHEN** `synrepo_recent_activity` is invoked
+- **THEN** the response contains only synrepo's own operational events (reconcile, repair, cross-link, overlay, hotspot)
+- **AND** no agent identity, prompt content, or inter-session interaction data appears in any response field
+
 ### Requirement: Expose synrepo_entrypoints as a task-first MCP tool
 synrepo SHALL expose a `synrepo_entrypoints(scope?, budget?)` MCP tool that returns an `EntryPointCard` for the requested scope. The `scope` parameter SHALL be an optional path prefix string; when absent, the compiler scans all indexed files. The `budget` parameter SHALL accept `"tiny"` (default), `"normal"`, or `"deep"`. Results SHALL be sorted by kind (binary first, then cli_command, http_handler, lib_root) then by file path within each kind. The result set SHALL be limited to 20 entries by default. The tool SHALL return a parseable JSON object and SHALL NOT raise an error when no entry points are found — it returns an empty `entry_points` list instead.
 
@@ -105,3 +198,42 @@ synrepo SHALL expose a `synrepo_entrypoints(scope?, budget?)` MCP tool that retu
 - **THEN** each entry in the response includes the caller count and truncated doc comment
 - **AND** source bodies are omitted
 
+### Requirement: Expose synrepo_minimum_context as a task-first MCP tool
+synrepo SHALL expose `synrepo_minimum_context` as a task-first MCP tool that returns a budget-bounded 1-hop neighborhood around a focal symbol or file. The tool SHALL accept parameters: `target` (node ID or qualified path, required), `budget` (`tiny`, `normal`, `deep`, default `normal`). The response SHALL follow the minimum-context spec contract: focal card, structural neighbor summaries or full cards depending on budget, governing decisions, and co-change partners.
+
+#### Scenario: Tool registration appears in MCP capabilities
+- **WHEN** an MCP client connects and enumerates available tools
+- **THEN** `synrepo_minimum_context` appears in the tool list alongside the existing task-first tools
+- **AND** the tool description indicates it returns a budget-bounded neighborhood for a focal node
+
+#### Scenario: Default budget is normal
+- **WHEN** an agent invokes `synrepo_minimum_context` without specifying a budget
+- **THEN** the tool uses `normal` budget as the default
+- **AND** the response includes structural neighbor summaries and top-3 co-change partners
+
+
+### Requirement: Expose synrepo_public_api as a directory API surface tool
+synrepo SHALL expose `synrepo_public_api(path, budget?)` as an MCP tool that returns a `PublicAPICard` for the given directory path. The tool SHALL accept parameters: `path` (directory path, required), `budget` (`tiny`, `normal`, `deep`, default `tiny`). In v1, visibility detection is Rust-specific; non-Rust directories return an empty symbol list.
+
+#### Scenario: Tool registration appears in MCP capabilities
+- **WHEN** an MCP client connects and enumerates available tools
+- **THEN** `synrepo_public_api` appears in the tool list alongside the other card-surface tools
+- **AND** the tool description indicates it returns a `PublicAPICard` with public symbols and entry points
+
+#### Scenario: Default budget is tiny
+- **WHEN** an agent invokes `synrepo_public_api` without specifying a budget
+- **THEN** the tool uses `tiny` budget as the default
+- **AND** the response includes only `path`, `public_symbol_count`, `approx_tokens`, and `source_store`
+
+### Requirement: Card-returning MCP tool descriptions name the escalation default
+synrepo SHALL include a single, consistent escalation-default sentence in the `description` field of every card-returning MCP tool (`synrepo_card`, `synrepo_module_card`, `synrepo_public_api`, `synrepo_minimum_context`, `synrepo_entrypoints`, `synrepo_where_to_edit`, `synrepo_change_impact`). The sentence SHALL be sourced from a shared compile-time constant tied to the canonical agent-doctrine block so wording cannot drift per tool.
+
+#### Scenario: Agent enumerates tools
+- **WHEN** an MCP client connects and retrieves the tool list
+- **THEN** every card-returning tool's description ends with the same escalation-default sentence
+- **AND** non-card tools (`synrepo_search`, `synrepo_findings`, `synrepo_recent_activity`, `synrepo_overview`) do not include the escalation-default sentence because their default-budget semantics differ
+
+#### Scenario: Shared constant prevents drift
+- **WHEN** a contributor edits the escalation sentence in one tool description directly
+- **THEN** the compiled tool descriptions diverge from the shared constant
+- **AND** the shims test or a dedicated MCP description test fails, blocking the change

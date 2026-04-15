@@ -45,6 +45,7 @@ pub(super) fn init_schema(conn: &Connection) -> crate::Result<()> {
         );
 
         CREATE INDEX IF NOT EXISTS idx_commentary_node_id ON commentary(node_id);
+        CREATE INDEX IF NOT EXISTS idx_commentary_generated_at ON commentary(generated_at);
 
         -- Cross-link candidates. Keyed on (from_node, to_node, kind) so a
         -- single (source, target, relationship) triple has at most one active

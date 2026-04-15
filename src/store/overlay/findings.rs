@@ -96,6 +96,7 @@ impl SqliteOverlayStore {
                             candidate.from,
                             candidate.to,
                             candidate.kind,
+                            &candidate.provenance.pass_id,
                         ),
                         from_node_id: candidate.from.to_string(),
                         to_node_id: candidate.to.to_string(),
@@ -121,9 +122,41 @@ impl SqliteOverlayStore {
     }
 }
 
-/// Stable identifier for an overlay candidate triple.
-pub fn format_candidate_id(from: NodeId, to: NodeId, kind: OverlayEdgeKind) -> String {
-    format!("{}::{}::{}", from, to, overlay_edge_kind_as_str(kind),)
+/// Length of the `pass_id` suffix included in a candidate ID. Binds a
+/// reviewed revision to the accept call: when the generator re-runs and
+/// produces a new `pass_id`, the ID shown to the reviewer no longer matches
+/// the stored row, so stale `links accept` calls fail loudly instead of
+/// silently promoting a different revision with the same endpoint triple.
+pub const CANDIDATE_ID_PASS_SUFFIX_LEN: usize = 12;
+
+/// Return the stable pass-id suffix for a given provenance `pass_id`.
+/// Callers should not truncate `pass_id` inline; use this helper so the
+/// format stays consistent with `parse_candidate_id`.
+pub fn candidate_pass_suffix(pass_id: &str) -> &str {
+    let take = CANDIDATE_ID_PASS_SUFFIX_LEN.min(pass_id.len());
+    &pass_id[..take]
+}
+
+/// Stable identifier for an overlay candidate revision. Format:
+/// `{from}::{to}::{kind}::{pass_suffix}`.
+///
+/// `pass_id` is the generation-pass identifier from `CrossLinkProvenance`.
+/// Including a suffix here makes the ID revision-bound: a second generation
+/// pass for the same `(from, to, kind)` triple produces a different ID, so
+/// a reviewer who captured the old ID cannot silently promote the new row.
+pub fn format_candidate_id(
+    from: NodeId,
+    to: NodeId,
+    kind: OverlayEdgeKind,
+    pass_id: &str,
+) -> String {
+    format!(
+        "{}::{}::{}::{}",
+        from,
+        to,
+        overlay_edge_kind_as_str(kind),
+        candidate_pass_suffix(pass_id),
+    )
 }
 
 /// Parse a CLI/MCP freshness filter.
@@ -153,11 +186,15 @@ pub fn parse_overlay_edge_kind(value: &str) -> crate::Result<OverlayEdgeKind> {
     }
 }
 
+/// Descending NaN-safe `f32` comparison used by every candidate/finding sort.
+/// SQLite rejects NaN at NOT NULL boundaries, but in-memory candidate sources
+/// can still construct it, so callers must not use `partial_cmp().unwrap()`.
+pub fn compare_score_desc(left: f32, right: f32) -> Ordering {
+    right.partial_cmp(&left).unwrap_or(Ordering::Equal)
+}
+
 fn compare_findings(left: &CrossLinkFinding, right: &CrossLinkFinding) -> Ordering {
-    right
-        .score
-        .partial_cmp(&left.score)
-        .unwrap_or(Ordering::Equal)
+    compare_score_desc(left.score, right.score)
         .then_with(|| {
             right
                 .provenance

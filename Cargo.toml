@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = [".", "crates/synrepo-mcp"]
+members = ["."]
 
 [package]
 name = "synrepo"
@@ -58,6 +58,7 @@ hex = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
+schemars = "1"              # JSON Schema derives for MCP tool param structs
 
 # --- Error handling and logging ---
 anyhow = "1"
@@ -67,6 +68,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # --- CLI ---
 clap = { version = "4", features = ["derive"] }
+
+# --- MCP server (used by `synrepo mcp` subcommand) ---
+rmcp = { version = "1.4.0", features = ["transport-io"] }
+tokio = { version = "1", features = ["full"] }
 
 # --- Concurrency ---
 arc-swap = "1"              # for atomic snapshot publishing, matches syntext's model
