@@ -102,6 +102,9 @@ synrepo is not:
 * a hook-driven auto-capture system that records what callers did
 * a background "magic" service with invisible ownership (watch is explicit, per-repo, and stoppable)
 * a vector-first retrieval system (embeddings remain a bounded, opt-in candidate generator for overlay cross-links only)
+* an issue tracker or general-purpose task database; handoff items are derived recommendations regenerated from repo state, not authoritative task records
+* a distributed planning store; synrepo is single-user-local at its core and does not inherit multi-writer task-sync semantics
+* a system that semantically compresses canonical graph data; only soft surfaces (commentary, cross-link candidates, findings, recent operational history) are subject to compaction or summarization
 
 Semantic embeddings are allowed only as a bounded candidate generator for optional overlay cross-linking.
 

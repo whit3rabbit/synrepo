@@ -34,6 +34,62 @@ The **hard invariant** survives in both modes: the synthesis layer never reads i
 
 ---
 
+## Product boundaries and doctrine
+
+Four boundary rules govern what synrepo is and how it is used. They sit above the architecture because they decide which architecture questions are even in scope.
+
+### Product boundary: code memory, not task memory
+
+synrepo manages code memory and bounded operational memory. It does not manage generic task memory, chat memory, or cross-session agent memory. The graph is the source of truth for observed facts. The overlay is advisory and machine-authored. Any workflow handoff surface is derived from graph and overlay state, regenerated on demand, and is not the canonical storage layer for project planning.
+
+Concretely:
+
+- synrepo stores what parsers, git, and humans observed about the repo.
+- synrepo does not store assignments, statuses, comments, sprints, or chat logs.
+- synrepo can emit structured next-action recommendations, but the authoritative task record belongs in whatever issue tracker the team already uses.
+
+This line exists because the code-memory product and the task-memory product have different failure modes. Mixing them produces a system that is bad at both.
+
+### Agent doctrine: one obvious way to use synrepo
+
+There is one default agent path, and every SKILL doc, MCP tool description, `agent-setup` shim, and CLI example describes it the same way.
+
+The path is:
+
+1. search or entry-point discovery to find candidates,
+2. `tiny` cards to orient and route,
+3. `normal` cards to understand a neighborhood,
+4. `deep` cards only before writing code or when exact source or body details matter,
+5. overlay commentary is optional, labeled machine-authored, and freshness-sensitive — request `require_freshness=true` explicitly when it matters.
+
+Do-not rules, asserted uniformly across surfaces:
+
+- do not open large files first;
+- do not treat commentary as canonical;
+- do not trigger synthesis unless the task justifies it;
+- do not expect watch or background behavior unless explicitly enabled.
+
+The existing context-budget protocol is the substrate for this doctrine; the doctrine makes the protocol visible at every entry point an agent can hit.
+
+### Soft-state lifecycle
+
+Overlay and operational-history surfaces have an explicit lifecycle: create, mark stale, refresh on demand, compact, prune or expire. Semantic compression applies only to these soft surfaces — commentary, cross-link candidates, findings, and recent operational history. Canonical graph data is never compacted semantically and is never replaced by summaries.
+
+Retention rules live in the existing `Retention and compaction` table and are extended by the compaction milestone in the roadmap. The rule that stays constant: the graph is permanent for its current schema and cannot be collapsed into prose.
+
+### Workflow handoff as a derived surface
+
+synrepo may emit action-oriented handoff items such as "refresh stale commentary," "review high-confidence cross-link," "inspect hotspot pair," or "repair drift surface." These items are:
+
+- derived from repair reports, recent-activity events, overlay candidates and audit rows, commentary freshness, git-intelligence hotspots and co-change partners, and reconcile or export status;
+- bounded and ordered — the surface returns a capped, prioritized list, not a full history;
+- regeneratable — losing the list costs nothing because the inputs are persisted in their canonical stores;
+- exportable to external task systems (JSON or Markdown) without synrepo taking ownership of assignment, status, or collaboration.
+
+Handoff items carry the same provenance fields as cards: `source_store`, `epistemic_status`, and freshness. This prevents them from drifting into a pseudo-graph of recommendations that nobody can verify.
+
+---
+
 ## Cards and the context budget protocol
 
 The user-facing centerpiece. The thing an agent actually consumes is not a graph and not a query result — it is a card.

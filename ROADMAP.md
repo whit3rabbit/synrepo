@@ -1077,6 +1077,10 @@ To keep the roadmap aligned with the product thesis, avoid the following:
 9. Do not copy hook-heavy auto-capture as a core value prop. Hooks remain optional surfaces, not the center of gravity.
 10. Do not let background behavior become invisible. Watch stays explicit and per-repo; ownership and state must always be inspectable.
 11. Do not make vector-first retrieval a core dependency. Embeddings remain a bounded, opt-in candidate generator for overlay cross-links only.
+12. Do not build a general-purpose issue or task tracker inside synrepo. Handoff items are derived recommendations regenerated from repo state, never the canonical planning store.
+13. Do not let soft-state lifecycle bleed into the graph. Semantic compaction applies only to commentary, cross-link candidates, findings, and recent operational history; canonical graph data is never collapsed into summaries.
+14. Do not adopt distributed or multi-writer sync semantics for handoff state. synrepo is single-user-local at its core; external task systems own assignment, status, and collaboration.
+15. Do not allow any handoff or workflow surface to skip provenance. Every emitted item must carry `source_store`, `epistemic_status`, and freshness, same as cards.
 
 ## 9.1 Not in v1 — explicit defers
 
@@ -1089,6 +1093,9 @@ These are explicitly deferred past the first stable release to protect the produ
 - Global auto-watch or start-at-login daemon behavior (per-repo opt-in watch mode exists; broader background automation remains deferred)
 - Graph-level `CoChangesWith` edges and symbol-level last-change summaries (follow-on to `git-intelligence-v1`)
 - Cross-session agent memory, persistent observation capture, or chat-history summarization. These are explicitly out of scope, not deferred. If agent-memory value is wanted, it belongs in a separate product alongside synrepo, not inside it.
+- General-purpose task tracking (assignments, statuses, comments, sprints). Explicitly out of scope, not deferred. Handoff items are advisory recommendations; the authoritative task store belongs in whatever issue tracker the team already uses.
+- Semantic compression of canonical graph data. Explicitly out of scope, not deferred. Compaction applies only to overlay and operational-history surfaces.
+- Distributed or multi-writer sync for handoff or overlay state. Explicitly out of scope, not deferred.
 
 ## 10. Release gating guidance
 
@@ -1203,3 +1210,135 @@ Rationale for Option A as v1:
 ### 11.4 Completion checkpoint
 
 Phases 1, 2, 5, and `PublicAPICard` (Phase 3 first) are archived. §11.1 reflects the current shipped surface. The next completion checkpoint is Phase 3 continued: when `CallPathCard` or `TestSurfaceCard` is archived, move it from "Track E — not yet compiled" to "Track E — compiled and wired to MCP" in §11.1.
+
+## 12. Forward plan — Milestones A through E
+
+This post-v1 plan treats three adjacencies as separate improvements, not a product pivot: make the agent workflow obvious, turn findings into actionable handoffs, add lifecycle management for soft state only. It fits the existing design because synrepo is already built around cards, progressive disclosure, a physically separate overlay, explicit freshness, and a bounded recent-activity surface. The codebase already has agent shims, `status --recent`, overlay freshness, review and audit flows, and overlay pruning hooks.
+
+The core rule through all of it: **synrepo should help agents understand code and produce next actions, but it should not become the place where project work is canonically managed.**
+
+Recommended implementation order: A, then B, then D, then C, then E. That sequence delivers visible agent-facing improvement fastest while keeping the architectural line between code memory and task memory intact.
+
+### Milestone A — Agent doctrine and onboarding
+
+**Goal.** Remove ambiguity about how an agent is supposed to use synrepo. Make the default path painfully obvious.
+
+**Deliverables.**
+
+- Rewrite `skill/SKILL.md` and every generated agent shim around a single default flow: detect synrepo → start with `tiny` → escalate to `normal` → use `deep` only before edits → treat overlay as advisory → request freshness explicitly only when needed.
+- One canonical happy-path example per target: unfamiliar repo orientation, "where should I edit?", change-impact inspection, then open source body.
+- Do-not rules embedded in shims and MCP tool descriptions: no large file reads first, no treating commentary as canonical, no triggering synthesis without cause, no expecting background behavior unless watch is explicit.
+
+**File targets.**
+
+- `src/bin/cli_support/agent_shims/` (text of the shims for each target)
+- `skill/SKILL.md`
+- MCP tool descriptions in `crates/synrepo-mcp/`
+- bootstrap output copy in `src/bootstrap/report.rs`
+
+**Acceptance criteria.**
+
+- A new user can `synrepo init`, run `agent-setup`, and understand the intended flow within two minutes.
+- Every agent target (claude, cursor, copilot, generic, codex, windsurf) gets the same escalation doctrine, not different ones.
+- Docs no longer describe multiple competing ways to use synrepo.
+
+**Why first.** No storage-semantic changes; leverages existing cards, progressive disclosure, `require_freshness`, explicit watch behavior, and `agent-setup`.
+
+### Milestone B — Derived handoff surface
+
+**Goal.** Give agents a crisp answer to "what should I do next?" without turning synrepo into an issue tracker.
+
+**Deliverables.** A new surface, tentatively `synrepo_next_actions` (MCP) and `synrepo handoffs list` (CLI), emitting structured items:
+
+- stale commentary needs refresh;
+- high-confidence cross-link needs review;
+- blocked drift repair exists;
+- hotspot file has repeated churn;
+- co-change partner suggests blast-radius inspection;
+- export is stale;
+- reconcile is stale or failed.
+
+Each item includes: stable kind, target node or path, reason, confidence and severity, freshness, suggested next command or MCP call, and whether the item is auto-fixable, review-only, or informational.
+
+**Storage rule.** Do not introduce a new long-lived mutable task DB. Build the surface by reading existing state: the repair report, `status --recent`, overlay candidates and audit tables, commentary freshness, git hotspots and co-change, and reconcile/export status.
+
+**File targets.**
+
+- `src/pipeline/recent_activity/` (aggregator extensions)
+- `src/pipeline/repair/report.rs`
+- `src/store/overlay/` (read-only aggregate queries)
+- `src/bin/cli_support/commands/` (new `handoffs` command)
+- new MCP tool module under `crates/synrepo-mcp/`
+
+**Acceptance criteria.**
+
+- An agent can ask one question and receive a bounded, ordered list of next actions.
+- No new canonical mutable store is introduced.
+- Handoff items are reproducible from repo state; deleting the list and regenerating it produces the same content (up to ordering within a tied severity tier).
+
+### Milestone C — Handoff export
+
+**Goal.** Let synrepo hand off actionable work to humans or external task systems without owning the lifecycle.
+
+**Deliverables.**
+
+- `synrepo handoffs export --format json`
+- `synrepo handoffs export --format markdown`
+- Optional later: adapters for GitHub Issues, Linear, or similar. Adapter code stays out of the core crate until there is real demand.
+
+Each exported item contains: title, short rationale, target symbols or files, evidence citations, suggested next step, freshness timestamp, and the originating synrepo surface (repair, recent-activity, overlay-review, git-intelligence).
+
+**Rule.** synrepo emits recommendations and evidence. The external system owns assignment, status, comments, and collaboration. synrepo stays single-user-local and does not inherit distributed task-sync complexity.
+
+**Acceptance criteria.**
+
+- A stale finding or hotspot can be exported cleanly to both formats.
+- Exported items can be regenerated from repo state if lost.
+- No external-system credentials are required for JSON or Markdown export.
+
+### Milestone D — Soft-state compaction and retention
+
+**Goal.** Prevent overlay and history surfaces from growing into noisy, stale sludge. Applies only to soft surfaces; the graph is never compacted semantically.
+
+**Deliverables.** A `synrepo compact` capability with policies for:
+
+- stale commentary retention (keep latest per node, retain stale copies for a short review window, drop very old stale entries);
+- cross-link candidates (keep active, keep promoted or rejected for audit for a bounded period, compact older audit rows into counts or summaries if needed);
+- findings (retain actionable or open findings, expire superseded informational findings);
+- recent activity (full fidelity for a short window, summarized after that, hard cap on returned rows by default);
+- audit retention tiering with optional summarization of very old operational history into bounded periodic summaries.
+
+**Commands.**
+
+- `synrepo compact --dry-run`
+- `synrepo compact --apply`
+- `synrepo compact --policy default|aggressive|audit-heavy`
+
+**Scope boundary.** Compaction touches only overlay, findings, and state directories. Canonical graph rows are left alone; normal pruning of dead-node references remains unchanged. The store trait already exposes deletion and pruning hooks for orphaned commentary and cross-links — this milestone builds policy and operator surfaces on top of that.
+
+**Acceptance criteria.**
+
+- Overlay cost stays legible in `synrepo status`.
+- Recent activity remains bounded and useful.
+- A test proves compaction never touches canonical graph rows.
+
+### Milestone E — Hardening, inspectability, and anti-drift guardrails
+
+**Goal.** Lock in the product-boundary discipline so the new workflow surfaces do not drift into the wrong category.
+
+**Deliverables.**
+
+- Surface `source_store`, `epistemic_status`, and freshness on every handoff item, not just cards.
+- Add status counters to `synrepo status`: active handoffs, stale commentary count, review-queue count, compactable rows, last compaction run.
+- Tests that assert:
+  - handoff surfaces are derived only from graph, overlay, or state;
+  - compaction never touches canonical graph rows;
+  - no hidden background behavior occurs unless watch is explicitly enabled;
+  - export and import adapters do not become authoritative task state.
+- Measure agent adoption where possible: time-to-first-useful-result, next-action usefulness, reduced blind reads, reduced token burn.
+
+**Why last.** Enforcement work is only meaningful once the surfaces it protects exist. Running E before B or D would harden the wrong invariants.
+
+### 12.1 Roadmap tie-in
+
+The forward plan does not replace Tracks A–L; it sits on top of them. Tracks E (cards and MCP), J (commentary overlay), K (cross-links), and H (watch and reconcile) produce the state that Milestone B reads from. Track L (exports) is the shape Milestone C extends. The existing `Retention and compaction` section of `docs/FOUNDATION.md` is the home for the Milestone D policy details once they are concrete. The four new sections in `docs/FOUNDATION.md` under "Product boundaries and doctrine" are the governing text for all five milestones.
