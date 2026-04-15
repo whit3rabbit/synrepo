@@ -30,7 +30,7 @@ synrepo is a code-context compiler. When `.synrepo/` exists in the repo root, pr
 3. Use `normal` cards to understand a neighborhood.
 4. Use `deep` cards only before writing code, or when exact source or body details matter.
 
-Overlay commentary and proposed cross-links are advisory, labeled machine-authored, and freshness-sensitive. Pass `require_freshness=true` only when freshness actually matters for the task.
+Overlay commentary and proposed cross-links are advisory, labeled machine-authored, and freshness-sensitive. Treat stale labels as information, not as errors. Request fresh synthesis explicitly only when the task actually needs it.
 
 ### Do not
 

@@ -7,15 +7,15 @@ description: Use synrepo when working in a repository that contains a .synrepo/ 
 
 synrepo is a context compiler. It turns a repository into small, deterministic, task-shaped packets called **cards** that Claude can query through an MCP server instead of reading whole files. A card for a function is roughly 180 tokens; the file containing the function might be 4000. Over a coding session this matters: fewer tokens means more room for the actual task.
 
-## Current surface (Milestone 3 + Milestone 4 repair loop)
+## Current surface
 
-**The MCP server (`synrepo-mcp`) is now available.** Start it with:
+**The MCP server (`synrepo-mcp`) is shipped.** Start it with:
 
 ```
 synrepo-mcp [--repo <path>]
 ```
 
-It serves over stdio. After `synrepo init` populates the graph, the MCP server exposes six core tools:
+It serves over stdio. After `synrepo init` populates the graph, the MCP server exposes eleven tools:
 
 | Tool | What it does |
 | --- | --- |
@@ -55,6 +55,28 @@ It serves over stdio. After `synrepo init` populates the graph, the MCP server e
 - Config files or simple text files that don't have symbols
 - Tasks where you've already seen the relevant source
 
+## Default path
+
+1. Start with search or entry-point discovery to find candidates.
+2. Use `tiny` cards to orient and route.
+3. Use `normal` cards to understand a neighborhood.
+4. Use `deep` cards only before writing code, or when exact source or body details matter.
+
+Overlay commentary and proposed cross-links are advisory, labeled machine-authored, and freshness-sensitive. Treat stale labels as information, not as errors. Request fresh synthesis explicitly only when the task actually needs it.
+
+## Do not
+
+- Do not open large files first. Start at `tiny` and escalate only when a specific field forces it.
+- Do not treat overlay commentary as canonical. It is advisory prose layered on structural cards.
+- Do not trigger synthesis (`--generate-cross-links`, deep commentary refresh) unless the task justifies the cost.
+- Do not expect watch or background behavior unless `synrepo watch` is explicitly running.
+
+## Product boundary
+
+- synrepo stores code facts and bounded operational memory. It is not a task tracker, not session memory, and not cross-session agent memory.
+- Any handoff or next-action list is a derived recommendation regenerated from repo state. External task systems own assignment, status, and collaboration.
+- Freshness is explicit. A stale label is information, not an error; it is not silently refreshed.
+
 ## The core mental model
 
 There are two kinds of content in synrepo, and the distinction matters:
@@ -85,12 +107,12 @@ These are not part of the current MCP surface: `synrepo_call_path`, `synrepo_tes
 
 ### The low-level escape hatches
 
-These exist for debugging and edge cases. Use the CLI equivalents when the five MCP tools are not enough:
+There is no MCP-side escape hatch yet. When the task-shaped MCP tools are not enough, drop to the CLI:
 
-- `synrepo_node(id)` — raw graph node lookup
-- `synrepo_edges(id, direction?, types?)` — raw edge traversal
-- `synrepo_query(graph_query)` — structured graph query
-- `synrepo_provenance(id)` — full provenance chain for debugging where a fact came from
+- `synrepo node <id>` — raw node metadata as JSON
+- `synrepo graph query "inbound <id>"` / `"outbound <id> [edge_kind]"` — raw edge traversal
+- `synrepo graph stats` — node and edge counts
+- `synrepo findings [--node <id>] [--freshness <state>]` — overlay audit details
 
 ## The budget protocol
 
@@ -122,10 +144,10 @@ The three budget tiers are a deliberate three-step interaction pattern, not a si
 
 ## Freshness today
 
-The current MCP surface is graph-backed. There is no shipped `require_freshness` parameter, no commentary refresh flow, and no stable overlay-facing MCP tool contract yet.
+The shipped MCP surface is graph-backed. Cards and neighborhoods reflect the most recently reconciled graph state. Overlay commentary and proposed cross-links carry their own freshness labels (fresh, stale, missing, budget_withheld); the contract for explicit freshness override at the MCP layer is not wired yet, so today freshness is observed, not requested.
 
-- **Graph-sourced fields are the current truth.** The server reads structural data from the graph, while some planned card enrichments are not populated yet.
-- **Overlay behavior is future architecture, not a live interface.** Do not plan workflows around stale commentary or blocking freshness overrides yet.
+- **Graph-sourced fields are the current truth.** The server reads structural data from the graph; some planned card enrichments may not be populated for every node yet.
+- **Overlay freshness is reported but not refreshable through the MCP surface.** Use the CLI (`synrepo sync`, `synrepo links review`) when commentary or proposed-link freshness needs to change.
 
 ## Concrete examples
 
@@ -156,7 +178,7 @@ Don't use `synrepo_card` or `synrepo_where_to_edit` for this — it's a pure lex
 
 ## Anti-patterns to avoid
 
-**Don't invent tools that are not shipped.** The current MCP surface is exactly five tools. If you need entrypoints, call paths, tests, or rationale, fall back to CLI graph inspection and source reads instead of assuming a specialist tool exists.
+**Don't invent tools that are not shipped.** The current MCP surface is the eleven tools listed in the table above. `synrepo_call_path`, `synrepo_test_surface`, and `synrepo_explain` are not shipped yet; for call-path or test-surface questions, fall back to CLI graph inspection (`synrepo graph query`, `synrepo node`) or targeted source reads.
 
 **Don't read the source file cold after getting a card.** The card probably already contains what you needed. If you find yourself doing `synrepo_card` followed by `Read` on the same file, either you needed `deep` budget on the card, or you needed something the card doesn't contain (rare), or you needed exact proof beyond the current card surface.
 

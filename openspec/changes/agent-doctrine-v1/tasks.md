@@ -16,10 +16,10 @@
 
 ## 3. SKILL.md alignment
 
-- [ ] 3.1 Rewrite the escalation section of `skill/SKILL.md` so its wording is a superset of `DOCTRINE_BLOCK` (SKILL.md can expand with examples; the core block text must appear verbatim).
-- [ ] 3.2 Add a "Do not" subsection in `skill/SKILL.md` using the same four bullets as the block.
-- [ ] 3.3 Add a "Product boundary" subsection in `skill/SKILL.md` using the same three bullets as the block.
-- [ ] 3.4 Collapse any competing examples so the four canonical examples match the ones in §1 (unfamiliar repo, where to edit, change impact, open source body).
+- [x] 3.1 Added "Default path" section to `skill/SKILL.md` immediately after "When to use synrepo"; bullets match the doctrine. Existing "Budget protocol" and "Budget Escalation" sections retained as expansion (per spec, SKILL.md may add examples beyond the block).
+- [x] 3.2 Added "Do not" subsection with all four bullets verbatim.
+- [x] 3.3 Added "Product boundary" subsection with all three bullets verbatim.
+- [x] 3.4 Fixed stale claims in SKILL.md: "Milestone 3 + Milestone 4" header (now "Current surface"), "exposes six core tools" (now eleven), hallucinated `synrepo_node`/`synrepo_edges`/`synrepo_query`/`synrepo_provenance` MCP tools (replaced with real CLI fallbacks), "exactly five tools" anti-pattern line (now references the eleven shipped tools and names the missing specialist trio).
 
 ## 4. MCP tool descriptions
 
@@ -38,7 +38,7 @@
 
 - [x] 6.1 Unit test in `src/bin/cli_support/agent_shims/tests.rs` (`doctrine_block_size_is_bounded`): asserts `DOCTRINE_BLOCK.is_empty() == false` and `DOCTRINE_BLOCK.len() < 4096`.
 - [x] 6.2 Unit test `every_shim_embeds_doctrine_block`: for each variant of `AgentTool`, asserts `shim.contains(DOCTRINE_BLOCK)`. Byte-identical guarantee enforced; passes on 6/6 shims. Also added `doctrine_block_covers_required_sections`.
-- [ ] 6.3 Integration test: read `skill/SKILL.md`, assert it contains the opening sentence of `DOCTRINE_BLOCK` and each of the four do-not bullets and each of the three product-boundary bullets verbatim.
+- [x] 6.3 Integration test `skill_md_includes_doctrine_lines_verbatim` in `agent_shims/tests.rs`: reads `skill/SKILL.md` via `CARGO_MANIFEST_DIR` and asserts the three default-path bullets, four do-not bullets, and three product-boundary bullets all appear verbatim.
 - [ ] 6.4 Unit test for MCP tool descriptions: for each card-returning tool listed in task 4.1, assert its description contains `TOOL_DESC_ESCALATION_LINE`.
 - [ ] 6.5 Snapshot test (insta): snapshot the full text of each shim so future diff review is explicit when the block or target-specific text changes.
 

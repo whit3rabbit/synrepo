@@ -176,9 +176,9 @@ Stages 4–8:
 
 ### Not yet implemented
 
-- `EntryPointCard`, `CallPathCard`; specialist MCP tools (`synrepo_entrypoints`, `synrepo_call_path`, etc.). `ModuleCard` is implemented (`src/surface/card/types.rs`).
-- Graph-level `CoChangesWith` edges. `SymbolCard.last_change` projects the containing file's newest commit with `granularity: file`; true per-symbol tracking stays on the roadmap.
-- Drift scoring (stage 7), ArcSwap commit (stage 8)
+- `CallPathCard`, `ChangeRiskCard`, `TestSurfaceCard`; specialist MCP tools (`synrepo_call_path`, `synrepo_test_surface`, `synrepo_change_risk`). `EntryPointCard`, `ModuleCard`, and `PublicAPICard` are shipped.
+- Graph-level `CoChangesWith` edges (kind defined, never emitted). `SymbolCard.last_change` projects the containing file's newest commit with `granularity: file`; true per-symbol body-hash tracking is staged in `symbol-last-change-v1`.
+- Drift scoring (stage 7), ArcSwap commit (stage 8), split/merge detection (stage 6 partial)
 
 ## Gotchas
 
@@ -222,7 +222,7 @@ Stages 4–8:
 
 `openspec/specs/` holds enduring domain specs (stable intended behavior). `openspec/changes/<name>/` holds active work: `proposal.md`, `design.md`, `tasks.md`, and optional delta specs.
 
-Active changes: `export-and-polish-v1`
+Active changes: `agent-doctrine-v1`, `mcp-primitives-v1`, `graph-cochange-edges-v1`, `symbol-last-change-v1`, `structural-resilience-v1`, `specialist-cards-v1`, `semantic-triage-v1`, `storage-compaction-v1`
 
 Archived completed changes are in `openspec/changes/archive/`.
 

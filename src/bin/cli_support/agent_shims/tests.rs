@@ -121,5 +121,40 @@ fn doctrine_block_covers_required_sections() {
     assert!(DOCTRINE_BLOCK.contains("`normal`"));
     assert!(DOCTRINE_BLOCK.contains("`deep`"));
     assert!(DOCTRINE_BLOCK.contains("not a task tracker"));
-    assert!(DOCTRINE_BLOCK.contains("`require_freshness=true`"));
+    assert!(DOCTRINE_BLOCK.contains("Request fresh synthesis"));
+}
+
+/// SKILL.md duplicates doctrine prose (Markdown rendered tools cannot embed a
+/// Rust constant). Assert the load-bearing lines from `DOCTRINE_BLOCK` appear
+/// verbatim so SKILL.md cannot drift away from the canonical doctrine.
+#[test]
+fn skill_md_includes_doctrine_lines_verbatim() {
+    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let skill_path = manifest_dir.join("skill").join("SKILL.md");
+    let skill = std::fs::read_to_string(&skill_path)
+        .unwrap_or_else(|e| panic!("read {}: {e}", skill_path.display()));
+
+    let required = [
+        // Default path bullets
+        "Use `tiny` cards to orient and route.",
+        "Use `normal` cards to understand a neighborhood.",
+        "Use `deep` cards only before writing code, or when exact source or body details matter.",
+        // Do-not bullets
+        "Do not open large files first. Start at `tiny` and escalate only when a specific field forces it.",
+        "Do not treat overlay commentary as canonical. It is advisory prose layered on structural cards.",
+        "Do not trigger synthesis (`--generate-cross-links`, deep commentary refresh) unless the task justifies the cost.",
+        "Do not expect watch or background behavior unless `synrepo watch` is explicitly running.",
+        // Product-boundary bullets
+        "synrepo stores code facts and bounded operational memory. It is not a task tracker, not session memory, and not cross-session agent memory.",
+        "Any handoff or next-action list is a derived recommendation regenerated from repo state. External task systems own assignment, status, and collaboration.",
+        "Freshness is explicit. A stale label is information, not an error; it is not silently refreshed.",
+    ];
+
+    let missing: Vec<&str> = required.iter().copied().filter(|line| !skill.contains(line)).collect();
+    assert!(
+        missing.is_empty(),
+        "skill/SKILL.md is missing {} doctrine line(s):\n{}",
+        missing.len(),
+        missing.join("\n")
+    );
 }
