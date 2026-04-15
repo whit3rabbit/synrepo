@@ -223,7 +223,7 @@ impl SynrepoServer {
     ///   deep  (~2k tokens)  — normal + full source body
     #[tool(
         name = "synrepo_card",
-        description = "Return a structured card describing a file or symbol."
+        description = "Return a structured card describing a file or symbol. Default budget is tiny; escalate to normal for local understanding and deep only before edits."
     )]
     async fn synrepo_card(
         &self,
@@ -336,7 +336,7 @@ impl SynrepoServer {
     /// Suggest where to make edits for a plain-language task description.
     #[tool(
         name = "synrepo_where_to_edit",
-        description = "Suggest where to make edits for a plain-language task description."
+        description = "Suggest where to make edits for a plain-language task description. Default budget is tiny; escalate to normal for local understanding and deep only before edits."
     )]
     async fn synrepo_where_to_edit(
         &self,
@@ -377,7 +377,7 @@ impl SynrepoServer {
     /// Assess the change impact of modifying a file or symbol.
     #[tool(
         name = "synrepo_change_impact",
-        description = "Assess the change impact of modifying a file or symbol."
+        description = "Assess the change impact of modifying a file or symbol. Default budget is tiny; escalate to normal for local understanding and deep only before edits."
     )]
     async fn synrepo_change_impact(
         &self,
@@ -447,7 +447,7 @@ impl SynrepoServer {
     ///   deep  (~150 tokens/entry) — above + full signature
     #[tool(
         name = "synrepo_entrypoints",
-        description = "Return detected execution entry points (binaries, CLI commands, HTTP handlers, library roots) for an optional path-prefix scope."
+        description = "Return detected execution entry points (binaries, CLI commands, HTTP handlers, library roots) for an optional path-prefix scope. Default budget is tiny; escalate to normal for local understanding and deep only before edits."
     )]
     async fn synrepo_entrypoints(
         &self,
@@ -473,7 +473,7 @@ impl SynrepoServer {
     ///   deep  (~2k tokens)  — plus nested module structure
     #[tool(
         name = "synrepo_module_card",
-        description = "Return a ModuleCard summarizing a directory: files, nested modules, public symbols, and token budget."
+        description = "Return a ModuleCard summarizing a directory: files, nested modules, public symbols, and token budget. Default budget is tiny; escalate to normal for local understanding and deep only before edits."
     )]
     async fn synrepo_module_card(
         &self,
@@ -500,7 +500,7 @@ impl SynrepoServer {
     /// Non-Rust directories return an empty symbol list in v1.
     #[tool(
         name = "synrepo_public_api",
-        description = "Return a PublicAPICard for a directory: public symbols with kinds and signatures, public entry points, and (at deep budget) recently changed public API surface."
+        description = "Return a PublicAPICard for a directory: public symbols with kinds and signatures, public entry points, and (at deep budget) recently changed public API surface. Default budget is tiny; escalate to normal for local understanding and deep only before edits."
     )]
     async fn synrepo_public_api(
         &self,
@@ -537,7 +537,7 @@ impl SynrepoServer {
     /// Return a budget-bounded 1-hop neighborhood around a focal node.
     #[tool(
         name = "synrepo_minimum_context",
-        description = "Return the minimum-useful context neighborhood for a symbol or file: focal card, outbound structural neighbors, governing decisions, and co-change partners."
+        description = "Return the minimum-useful context neighborhood for a symbol or file: focal card, outbound structural neighbors, governing decisions, and co-change partners. Default budget is tiny; escalate to normal for local understanding and deep only before edits."
     )]
     async fn synrepo_minimum_context(
         &self,

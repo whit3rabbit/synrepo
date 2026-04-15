@@ -1,4 +1,4 @@
-use super::doctrine::DOCTRINE_BLOCK;
+use super::doctrine::{DOCTRINE_BLOCK, TOOL_DESC_ESCALATION_LINE};
 use super::*;
 
 #[test]
@@ -157,4 +157,68 @@ fn skill_md_includes_doctrine_lines_verbatim() {
         missing.len(),
         missing.join("\n")
     );
+}
+
+/// rmcp's `#[tool]` attribute rejects `concat!()` in `description`, so each
+/// card-returning tool description duplicates the escalation sentence. This
+/// source-scan test detects drift: if a card-returning tool's description is
+/// edited and the escalation sentence is dropped or reworded, the test fails.
+#[test]
+fn card_returning_mcp_tool_descriptions_share_escalation_line() {
+    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let main_path = manifest_dir
+        .join("crates")
+        .join("synrepo-mcp")
+        .join("src")
+        .join("main.rs");
+    let source = std::fs::read_to_string(&main_path)
+        .unwrap_or_else(|e| panic!("read {}: {e}", main_path.display()));
+
+    // Card-returning tools per openspec/changes/agent-doctrine-v1/specs/mcp-surface/spec.md.
+    let card_returning = [
+        "synrepo_card",
+        "synrepo_where_to_edit",
+        "synrepo_change_impact",
+        "synrepo_entrypoints",
+        "synrepo_module_card",
+        "synrepo_public_api",
+        "synrepo_minimum_context",
+    ];
+
+    for tool in card_returning {
+        let needle = format!("name = \"{tool}\"");
+        let idx = source
+            .find(&needle)
+            .unwrap_or_else(|| panic!("did not find `{needle}` in MCP main.rs"));
+        // Each #[tool(...)] attribute spans one or two lines; the description
+        // sits within ~8 lines of the `name` field.
+        let window_end = (idx + 800).min(source.len());
+        let window = &source[idx..window_end];
+        assert!(
+            window.contains(TOOL_DESC_ESCALATION_LINE),
+            "card-returning MCP tool `{tool}` description does not contain TOOL_DESC_ESCALATION_LINE"
+        );
+    }
+
+    // Non-card tools must NOT carry the escalation sentence (their default-
+    // budget semantics differ).
+    let non_card = [
+        "synrepo_search",
+        "synrepo_overview",
+        "synrepo_findings",
+        "synrepo_recent_activity",
+    ];
+
+    for tool in non_card {
+        let needle = format!("name = \"{tool}\"");
+        let idx = source
+            .find(&needle)
+            .unwrap_or_else(|| panic!("did not find `{needle}` in MCP main.rs"));
+        let window_end = (idx + 800).min(source.len());
+        let window = &source[idx..window_end];
+        assert!(
+            !window.contains(TOOL_DESC_ESCALATION_LINE),
+            "non-card MCP tool `{tool}` description carries the escalation sentence; remove it (the default-budget semantics for this tool differ from card-returning tools)"
+        );
+    }
 }
