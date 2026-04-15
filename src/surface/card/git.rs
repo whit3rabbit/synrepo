@@ -179,24 +179,47 @@ pub struct SymbolLastChange {
     pub granularity: LastChangeGranularity,
 }
 
-/// Project `GitPathHistoryInsights` onto a `SymbolLastChange` using the
-/// newest commit touching the file. `include_summary` maps to the budget
-/// tier: `Deep` includes the summary line, `Normal` omits it.
+/// Project `GitPathHistoryInsights` onto a `SymbolLastChange`.
+///
+/// When `last_modified_rev` is `Some(rev)`, resolves that revision's metadata
+/// from the sampled history and returns `granularity: "symbol"`. Otherwise
+/// falls back to the file's newest commit with `granularity: "file"`.
+/// `include_summary` maps to the budget tier: `Deep` includes the summary
+/// line, `Normal` omits it.
 pub(crate) fn symbol_last_change_from_insights(
     insights: &GitPathHistoryInsights,
     include_summary: bool,
+    last_modified_rev: Option<&str>,
 ) -> Option<SymbolLastChange> {
+    // Try symbol-scoped resolution first.
+    if let Some(target_rev) = last_modified_rev {
+        if matches!(insights.status.readiness, GitIntelligenceReadiness::Ready) {
+            if let Some(commit) = insights.commits.iter().find(|c| c.revision == target_rev) {
+                return Some(build_last_change(commit, include_summary, LastChangeGranularity::Symbol));
+            }
+        }
+    }
+
+    // File-level fallback.
     let commit = insights.commits.first()?;
     let granularity = match insights.status.readiness {
         GitIntelligenceReadiness::Ready => LastChangeGranularity::File,
         GitIntelligenceReadiness::Degraded { .. } => LastChangeGranularity::Unknown,
     };
+    Some(build_last_change(commit, include_summary, granularity))
+}
+
+fn build_last_change(
+    commit: &GitCommitSummary,
+    include_summary: bool,
+    granularity: LastChangeGranularity,
+) -> SymbolLastChange {
     let short = commit
         .revision
         .get(..SHORT_REVISION_LEN)
         .unwrap_or(commit.revision.as_str())
         .to_string();
-    Some(SymbolLastChange {
+    SymbolLastChange {
         revision: short,
         summary: if include_summary {
             Some(commit.summary.clone())
@@ -206,7 +229,7 @@ pub(crate) fn symbol_last_change_from_insights(
         author_name: commit.author_name.clone(),
         committed_at_unix: commit.committed_at_unix,
         granularity,
-    })
+    }
 }
 
 #[cfg(test)]
@@ -351,7 +374,7 @@ mod tests {
     #[test]
     fn symbol_last_change_ready_without_summary() {
         let insights = sample_insights(GitIntelligenceReadiness::Ready);
-        let got = symbol_last_change_from_insights(&insights, false).unwrap();
+        let got = symbol_last_change_from_insights(&insights, false, None).unwrap();
         assert_eq!(
             got,
             SymbolLastChange {
@@ -367,7 +390,7 @@ mod tests {
     #[test]
     fn symbol_last_change_ready_with_summary() {
         let insights = sample_insights(GitIntelligenceReadiness::Ready);
-        let got = symbol_last_change_from_insights(&insights, true).unwrap();
+        let got = symbol_last_change_from_insights(&insights, true, None).unwrap();
         assert_eq!(got.summary.as_deref(), Some("rewrite lib"));
         assert_eq!(got.granularity, LastChangeGranularity::File);
     }
@@ -377,7 +400,7 @@ mod tests {
         let insights = sample_insights(GitIntelligenceReadiness::Degraded {
             reasons: vec![GitDegradedReason::ShallowHistory],
         });
-        let got = symbol_last_change_from_insights(&insights, false).unwrap();
+        let got = symbol_last_change_from_insights(&insights, false, None).unwrap();
         assert_eq!(got.granularity, LastChangeGranularity::Unknown);
         assert_eq!(got.revision, "0123456789ab");
     }
@@ -386,6 +409,34 @@ mod tests {
     fn symbol_last_change_empty_commits_returns_none() {
         let mut insights = sample_insights(GitIntelligenceReadiness::Ready);
         insights.commits.clear();
-        assert!(symbol_last_change_from_insights(&insights, true).is_none());
+        assert!(symbol_last_change_from_insights(&insights, true, None).is_none());
+    }
+
+    #[test]
+    fn symbol_last_change_with_symbol_granularity_when_rev_set() {
+        let insights = sample_insights(GitIntelligenceReadiness::Ready);
+        // The second commit in sample_insights has revision "fedcba9876543210fedc".
+        let got = symbol_last_change_from_insights(&insights, true, Some("fedcba9876543210fedc"))
+            .unwrap();
+        assert_eq!(got.granularity, LastChangeGranularity::Symbol);
+        assert_eq!(got.author_name, "Bob");
+        assert_eq!(got.summary.as_deref(), Some("earlier touch"));
+    }
+
+    #[test]
+    fn symbol_last_change_file_granularity_when_rev_none() {
+        let insights = sample_insights(GitIntelligenceReadiness::Ready);
+        let got = symbol_last_change_from_insights(&insights, false, None).unwrap();
+        assert_eq!(got.granularity, LastChangeGranularity::File);
+    }
+
+    #[test]
+    fn symbol_last_change_falls_back_when_rev_not_in_commits() {
+        let insights = sample_insights(GitIntelligenceReadiness::Ready);
+        let got = symbol_last_change_from_insights(&insights, false, Some("nonexistent_revision"))
+            .unwrap();
+        // Falls back to file granularity (first commit).
+        assert_eq!(got.granularity, LastChangeGranularity::File);
+        assert_eq!(got.author_name, "Alice");
     }
 }

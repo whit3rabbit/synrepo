@@ -98,6 +98,14 @@ pub struct SymbolNode {
     pub signature: Option<String>,
     /// Doc comment text, if any (extracted by the language's `extra.scm`).
     pub doc_comment: Option<String>,
+    /// Oldest sampled commit where this symbol's qualified name appeared.
+    /// A lower bound: the symbol may predate the sampling window.
+    #[serde(default)]
+    pub first_seen_rev: Option<String>,
+    /// Newest sampled commit where this symbol's body_hash differs from the
+    /// current value. `None` when no transition was found in the window.
+    #[serde(default)]
+    pub last_modified_rev: Option<String>,
     /// Epistemic origin (always `ParserObserved` for symbols).
     pub epistemic: Epistemic,
     /// Provenance metadata.

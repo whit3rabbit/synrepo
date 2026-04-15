@@ -87,6 +87,9 @@ pub fn run_reconcile_pass(
             if let Err(err) = emit_cochange_edges_pass(repo_root, config, &mut graph) {
                 tracing::warn!(error = %err, "co-change edge emission failed; continuing");
             }
+            if let Err(err) = emit_symbol_revisions_pass(repo_root, config, &mut graph) {
+                tracing::warn!(error = %err, "symbol revision derivation failed; continuing");
+            }
             if let Err(err) = crate::substrate::build_index(config, repo_root) {
                 return ReconcileOutcome::Failed(format!("index rebuild failed: {err}"));
             }
@@ -125,6 +128,32 @@ pub fn emit_cochange_edges_pass(
     if let Err(err) = (|| -> crate::Result<()> {
         graph.delete_edges_by_kind(EdgeKind::CoChangesWith)?;
         emit_cochange_edges(graph, &insights, &file_index, &revision)?;
+        Ok(())
+    })() {
+        let _ = graph.rollback();
+        return Err(err);
+    }
+    graph.commit()?;
+    Ok(())
+}
+
+/// Derive per-symbol `first_seen_rev` and `last_modified_rev` from body-hash
+/// transitions in sampled git history. Runs in its own transaction so a
+/// failure does not affect the structural compile or co-change emission.
+fn emit_symbol_revisions_pass(
+    repo_root: &Path,
+    config: &Config,
+    graph: &mut dyn crate::structure::graph::GraphStore,
+) -> crate::Result<()> {
+    use crate::pipeline::git::GitIntelligenceContext;
+    use crate::pipeline::git_intelligence::derive_symbol_revisions;
+
+    let context = GitIntelligenceContext::inspect(repo_root, config);
+    let max_commits = config.git_commit_depth as usize;
+
+    graph.begin()?;
+    if let Err(err) = (|| -> crate::Result<()> {
+        derive_symbol_revisions(repo_root, &context, graph, max_commits)?;
         Ok(())
     })() {
         let _ = graph.rollback();

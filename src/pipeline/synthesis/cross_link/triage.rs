@@ -353,6 +353,8 @@ mod tests {
             body_hash: "b".into(),
             signature: None,
             doc_comment: None,
+            first_seen_rev: None,
+            last_modified_rev: None,
             epistemic: Epistemic::ParserObserved,
             provenance: test_provenance(),
         }

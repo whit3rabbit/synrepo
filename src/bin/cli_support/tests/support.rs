@@ -101,6 +101,8 @@ pub(super) fn seed_graph(repo_root: &std::path::Path) -> SeededGraphIds {
             body_hash: "def456".to_string(),
             signature: Some("pub mod lib".to_string()),
             doc_comment: None,
+            first_seen_rev: None,
+            last_modified_rev: None,
             epistemic: Epistemic::ParserObserved,
             provenance: sample_provenance("parse_code", "src/lib.rs"),
         })

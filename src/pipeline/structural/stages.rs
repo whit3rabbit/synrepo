@@ -218,6 +218,8 @@ fn process_supported_code_files(
                         body_hash: symbol.body_hash.clone(),
                         signature: symbol.signature.clone(),
                         doc_comment: symbol.doc_comment.clone(),
+                        first_seen_rev: None,
+                        last_modified_rev: None,
                         epistemic: Epistemic::ParserObserved,
                         provenance: provenance.clone(),
                     })?;

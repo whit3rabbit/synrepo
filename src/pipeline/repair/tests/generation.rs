@@ -190,6 +190,8 @@ fn seed_fixture_graph(graph: &mut SqliteGraphStore, with_second_pair: bool, code
             body_hash: "body-auth".to_string(),
             signature: Some("pub fn authenticate()".to_string()),
             doc_comment: None,
+            first_seen_rev: None,
+            last_modified_rev: None,
             epistemic: Epistemic::ParserObserved,
             provenance: provenance("src/lib.rs", "code-hash"),
         })
@@ -255,6 +257,8 @@ fn seed_fixture_graph(graph: &mut SqliteGraphStore, with_second_pair: bool, code
                 body_hash: "body-authorize".to_string(),
                 signature: Some("pub fn authorize()".to_string()),
                 doc_comment: None,
+                first_seen_rev: None,
+                last_modified_rev: None,
                 epistemic: Epistemic::ParserObserved,
                 provenance: provenance("src/lib.rs", "code-hash"),
             })

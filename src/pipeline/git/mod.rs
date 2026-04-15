@@ -244,6 +244,27 @@ impl GitIntelligenceContext {
     }
 }
 
+/// Open the git repository at `repo_root`. Returns `Err` if not a git repo.
+pub fn open_repo(repo_root: &Path) -> crate::Result<gix::Repository> {
+    gix::discover(repo_root).map_err(|e| crate::Error::Io(std::io::Error::other(e.to_string())))
+}
+
+/// Extract file content at a given commit revision.
+///
+/// Returns `None` if the revision or file path cannot be resolved.
+pub fn file_content_at_revision(
+    repo: &gix::Repository,
+    revision: &str,
+    file_path: &str,
+) -> Option<Vec<u8>> {
+    let oid = gix::ObjectId::from_hex(revision.as_bytes()).ok()?;
+    let commit = repo.find_commit(oid).ok()?;
+    let tree = commit.tree().ok()?;
+    let entry = tree.lookup_entry_by_path(file_path).ok()??;
+    let blob = repo.find_blob(entry.object_id()).ok()?;
+    Some(blob.data.to_vec())
+}
+
 fn changed_paths_for_first_parent(
     repo: &gix::Repository,
     commit: &gix::Commit<'_>,

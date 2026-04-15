@@ -104,6 +104,8 @@ fn seed_graph(graph: &mut SqliteGraphStore) {
             body_hash: "body-hash".to_string(),
             signature: Some("fn authenticate()".to_string()),
             doc_comment: None,
+            first_seen_rev: None,
+            last_modified_rev: None,
             epistemic: Epistemic::ParserObserved,
             provenance: sample_provenance("src/lib.rs", "code-hash"),
         })

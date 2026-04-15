@@ -62,9 +62,10 @@ pub(super) fn symbol_card(
         None
     } else {
         let include_summary = budget == Budget::Deep;
+        let rev = symbol.last_modified_rev.as_deref();
         ctx.compiler
             .resolve_file_git_intelligence(&file.path)
-            .and_then(|arc| symbol_last_change_from_insights(&arc, include_summary))
+            .and_then(|arc| symbol_last_change_from_insights(&arc, include_summary, rev))
     };
 
     let mut card = SymbolCard {

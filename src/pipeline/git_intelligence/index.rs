@@ -31,6 +31,16 @@ pub struct GitHistoryIndex {
 }
 
 impl GitHistoryIndex {
+    /// Return the sampled change sets, newest first.
+    pub(super) fn change_sets(&self) -> &[GitCommitChangeSet] {
+        &self.change_sets
+    }
+
+    /// Return the reverse index mapping file paths to their change-set indices.
+    pub(super) fn by_path(&self) -> &HashMap<String, Vec<usize>> {
+        &self.by_path
+    }
+
     /// Walk first-parent history once and populate the reverse index.
     pub fn build(context: &GitIntelligenceContext, max_commits: usize) -> crate::Result<Self> {
         let status = GitIntelligenceStatus::from_context(context);

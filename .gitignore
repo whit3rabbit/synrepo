@@ -25,3 +25,6 @@ __MACOSX
 repomix-output.xml
 /tmp/synrepo-context/
 /tmp/synrepo-context-json/
+synrepo-context/
+/tmp/synrepo-export-test/
+/tmp/synrepo-export-test2/

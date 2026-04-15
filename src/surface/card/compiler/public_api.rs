@@ -106,7 +106,7 @@ pub(super) fn public_api_card_impl(
             let file_path_str = path_map.get(file_id).copied().unwrap_or("");
             let last_change = git_insights
                 .as_ref()
-                .and_then(|arc| symbol_last_change_from_insights(arc, include_summary));
+                .and_then(|arc| symbol_last_change_from_insights(arc, include_summary, None));
 
             public_symbols.push(PublicAPIEntry {
                 id: sym_id,

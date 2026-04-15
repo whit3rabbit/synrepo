@@ -5,8 +5,6 @@
 //!
 //! - `SymbolCard.callers` and `.callees` are empty: stage-4 edges are
 //!   file→symbol, not symbol→symbol. Symbol-level call resolution is stage 5+.
-//! - `FileCard.co_changes` is empty until graph-level `CoChangesWith` edges
-//!   are emitted during stage 5 (currently defined but not produced).
 //!
 //! ## Git intelligence
 //!

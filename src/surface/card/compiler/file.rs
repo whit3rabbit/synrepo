@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::{
     core::ids::{FileNodeId, NodeId},
     structure::graph::{EdgeKind, GraphStore},
@@ -77,13 +79,62 @@ pub(super) fn file_card(
             .map(|arc| FileGitIntelligence::from(&*arc)),
     };
 
+    // Co-change partners: graph-backed CoChangesWith edges, filtered to
+    // hidden-coupling-only (partners without an existing Imports edge).
+    let co_changes = match budget {
+        Budget::Tiny => vec![],
+        Budget::Normal | Budget::Deep => {
+            let outbound_cc = graph.outbound(NodeId::File(id), Some(EdgeKind::CoChangesWith))?;
+            let inbound_cc = graph.inbound(NodeId::File(id), Some(EdgeKind::CoChangesWith))?;
+
+            // Collect partner FileNodeIds from both directions.
+            let mut partner_ids: Vec<FileNodeId> = Vec::new();
+            for edge in &outbound_cc {
+                if let NodeId::File(to_id) = edge.to {
+                    partner_ids.push(to_id);
+                }
+            }
+            for edge in &inbound_cc {
+                if let NodeId::File(from_id) = edge.from {
+                    partner_ids.push(from_id);
+                }
+            }
+            partner_ids.sort();
+            partner_ids.dedup();
+
+            // Build a set of file IDs already connected via Imports.
+            let imports_set: HashSet<FileNodeId> = outbound_imports
+                .iter()
+                .filter_map(|e| {
+                    if let NodeId::File(to_id) = e.to {
+                        Some(to_id)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            // Filter to hidden-coupling partners only, resolve to FileRef.
+            partner_ids
+                .into_iter()
+                .filter(|pid| !imports_set.contains(pid))
+                .filter_map(|pid| {
+                    graph.get_file(pid).ok().flatten().map(|f| FileRef {
+                        id: pid,
+                        path: f.path,
+                    })
+                })
+                .collect()
+        }
+    };
+
     let mut card = FileCard {
         file: id,
         path: file.path.clone(),
         symbols,
         imported_by,
         imports,
-        co_changes: vec![],
+        co_changes,
         git_intelligence,
         drift_flag: None,
         approx_tokens: 0,

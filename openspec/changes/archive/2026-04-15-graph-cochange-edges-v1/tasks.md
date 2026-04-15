@@ -18,14 +18,14 @@
 
 ## 4. Card surface: populate FileCard.co_changes from graph edges
 
-- [ ] 4.1 In `src/surface/card/compiler/file.rs`, replace `co_changes: vec![]` with graph-backed population: query `outbound(file_id, Some(EdgeKind::CoChangesWith))` + `inbound(file_id, Some(EdgeKind::CoChangesWith))`, collect partner `FileNodeId`s
-- [ ] 4.2 Filter out partners that already have an `Imports` edge to the focal file (hidden-coupling-only semantic per the field comment)
-- [ ] 4.3 Resolve each partner `FileNodeId` to a `FileRef` (path + kind) via `get_file`
-- [ ] 4.4 Remove the "co_changes is empty until..." comment in `src/surface/card/compiler/mod.rs`
-- [ ] 4.5 Update snapshot tests: co_changes will now be populated in snapshots that have git context
+- [x] 4.1 In `src/surface/card/compiler/file.rs`, replace `co_changes: vec![]` with graph-backed population: query `outbound(file_id, Some(EdgeKind::CoChangesWith))` + `inbound(file_id, Some(EdgeKind::CoChangesWith))`, collect partner `FileNodeId`s
+- [x] 4.2 Filter out partners that already have an `Imports` edge to the focal file (hidden-coupling-only semantic per the field comment)
+- [x] 4.3 Resolve each partner `FileNodeId` to a `FileRef` (path + kind) via `get_file`
+- [x] 4.4 Remove the "co_changes is empty until..." comment in `src/surface/card/compiler/mod.rs`
+- [x] 4.5 Update snapshot tests: co_changes will now be populated in snapshots that have git context
 
 ## 5. Verify and clean up
 
-- [ ] 5.1 Run `make check` (fmt, clippy, tests) and verify all pass
-- [ ] 5.2 Run `cargo run -- init` on the synrepo repo itself and verify CoChangesWith edges appear in the graph via `cargo run -- graph stats`
-- [ ] 5.3 Run `cargo run -- export --deep` and verify FileCard.co_changes is populated in the JSON output
+- [x] 5.1 Run `make check` (fmt, clippy, tests) and verify all pass
+- [x] 5.2 Run `cargo run -- init` on the synrepo repo itself and verify CoChangesWith edges appear in the graph via `cargo run -- graph stats`
+- [x] 5.3 Run `cargo run -- export --deep` and verify FileCard.co_changes is populated in the JSON output

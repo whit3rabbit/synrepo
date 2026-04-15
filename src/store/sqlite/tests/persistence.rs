@@ -36,6 +36,8 @@ fn graph_store_round_trips_nodes_edges_and_provenance() {
         body_hash: "def456".to_string(),
         signature: Some("pub mod lib".to_string()),
         doc_comment: None,
+        first_seen_rev: None,
+        last_modified_rev: None,
         epistemic: Epistemic::ParserObserved,
         provenance: sample_provenance("parse_code", "src/lib.rs"),
     };
@@ -127,6 +129,8 @@ fn persisted_stats_count_nodes_and_edges_by_kind() {
         body_hash: "b".to_string(),
         signature: None,
         doc_comment: None,
+        first_seen_rev: None,
+        last_modified_rev: None,
         epistemic: Epistemic::ParserObserved,
         provenance: sample_provenance("parse_code", "src/lib.rs"),
     };

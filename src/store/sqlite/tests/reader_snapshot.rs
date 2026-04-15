@@ -37,6 +37,8 @@ fn make_symbol(id: u64, file_id: FileNodeId, qname: &str) -> SymbolNode {
         body_hash: format!("body-{id:x}"),
         signature: None,
         doc_comment: None,
+        first_seen_rev: None,
+        last_modified_rev: None,
         epistemic: Epistemic::ParserObserved,
         provenance: sample_provenance("parse_code", "src/lib.rs"),
     }
