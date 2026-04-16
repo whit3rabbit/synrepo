@@ -5,35 +5,13 @@
 
 ## Active OpenSpec Changes
 
-No changes are active. 8 changes have been archived.
-
-## Shipped Changes
-
-| Change | Purpose | Tracks |
+| Change | Purpose | Status |
 |--------|---------|--------|
-| [`graph-cochange-edges-v1`](openspec/changes/archive/2026-04-15-graph-cochange-edges-v1/) | Emit physical `CoChangesWith` graph edges from git history | D, I |
-| [`symbol-last-change-v1`](openspec/changes/archive/2026-04-15-symbol-last-change-v1/) | True symbol-level `last_change` tracking via `body_hash` transitions | D, I |
-| [`structural-resilience-v1`](openspec/changes/archive/2026-04-15-structural-resilience-v1/) | Stage 6 split/merge + Stage 7 drift scoring infrastructure | D |
-| [`structural-resilience-v2`](openspec/changes/archive/2026-04-15-structural-resilience-v2/) | Finish drift scoring, wire git rename fallback, fix repair absent-vs-current | D |
-| [`graph-lifecycle-v1`](openspec/changes/archive/2026-04-16-graph-lifecycle-v1/) | Stable identity + owned observations + soft retirement | D |
-| [`specialist-cards-v1`](openspec/changes/archive/2026-04-15-specialist-cards-v1/) | `CallPathCard` + `TestSurfaceCard` | E |
-| [`semantic-triage-v1`](openspec/changes/archive/2026-04-16-semantic-triage-v1/) | ONNX/MiniLM embedding pre-filter for cross-link candidate generation | K |
-| [`change-risk-card-v1`](openspec/changes/archive/2026-04-16-change-risk-card-v1/) | `ChangeRiskCard` consuming drift scores, co-change edges, hotspots | M |
-| [`storage-compaction-v1`](openspec/changes/archive/2026-04-15-storage-compaction-v1/) | `synrepo compact` command; policy-driven retention | H, L |
+| [`workflow-handoffs-v1`](openspec/changes/workflow-handoffs-v1/) | Derived `synrepo_next_actions` MCP tool + `synrepo handoffs` CLI; reads repair report, overlay candidates, git hotspots — no new mutable store | In progress |
 
 ---
 
 ## Future Changes (not yet spec'd)
-
-These open after the remaining active change is shipped:
-
-| Change | Purpose | Depends on |
-|--------|---------|------------|
-| `workflow-handoffs-v1` | Derived `synrepo_next_actions` MCP tool + `synrepo handoffs` CLI; reads repair report, overlay candidates, git hotspots — no new mutable store | Phase 2 (compaction, specialist cards) |
-
----
-
-## Remaining Structural Pipeline Gaps
 
 These are tracked by the active changes above but worth calling out:
 

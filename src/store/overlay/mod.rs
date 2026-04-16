@@ -133,4 +133,26 @@ impl SqliteOverlayStore {
             .collect::<std::result::Result<Vec<_>, _>>()?;
         Ok(rows)
     }
+
+    /// Return active cross-link candidates as simple row tuples.
+    /// Used by the handoffs surface to display pending candidates.
+    pub fn active_cross_links(&self) -> crate::Result<Vec<(String, String, String, String)>> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT from_node, to_node, confidence_tier, rationale
+             FROM cross_links
+             WHERE state = 'active'",
+        )?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3).unwrap_or_default(),
+                ))
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
 }

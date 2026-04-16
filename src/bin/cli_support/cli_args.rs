@@ -216,6 +216,19 @@ pub(crate) enum Command {
         json: bool,
     },
 
+    /// Display prioritized actionable items from repair-log, cross-link candidates, and git hotspots.
+    Handoffs {
+        /// Limit to top N items.
+        #[arg(long, short)]
+        limit: Option<usize>,
+        /// Only include items from the last N days.
+        #[arg(long)]
+        since: Option<u32>,
+        /// Emit JSON instead of markdown table.
+        #[arg(long)]
+        json: bool,
+    },
+
     #[command(name = "watch-internal", hide = true)]
     WatchInternal,
 

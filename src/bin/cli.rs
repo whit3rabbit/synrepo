@@ -25,9 +25,9 @@ use cli_support::cli_args::{Cli, Command, GraphCommand, LinksCommand, WatchComma
 #[cfg(test)]
 use cli_support::commands::report_reconcile_outcome;
 use cli_support::commands::{
-    agent_setup, change_risk, check, compact, export, findings, graph_query, graph_stats, init,
-    links_accept, links_list, links_reject, links_review, node, reconcile, run_mcp_server, search,
-    status, sync, upgrade, watch, watch_internal, watch_status, watch_stop,
+    agent_setup, change_risk, check, compact, export, findings, graph_query, graph_stats, handoffs,
+    init, links_accept, links_list, links_reject, links_review, node, reconcile, run_mcp_server,
+    search, status, sync, upgrade, watch, watch_internal, watch_status, watch_stop,
 };
 
 fn main() -> anyhow::Result<()> {
@@ -141,6 +141,7 @@ fn main() -> anyhow::Result<()> {
             budget,
             json,
         } => change_risk(&repo_root, &target, budget.as_deref(), json),
+        Command::Handoffs { limit, since, json } => handoffs(&repo_root, limit, since, json),
         Command::WatchInternal => watch_internal(&repo_root),
         Command::Mcp => run_mcp_server(&repo_root),
     }

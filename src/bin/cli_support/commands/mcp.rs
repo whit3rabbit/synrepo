@@ -12,7 +12,31 @@ use rmcp::{
     ServerHandler, ServiceExt as _,
 };
 use synrepo::config::Config;
+use synrepo::surface::handoffs::HandoffsRequest;
+use synrepo::surface::handoffs::{collect_handoffs, to_json as handoffs_to_json};
 use synrepo::surface::mcp::{audit, cards, primitives, search, SynrepoState};
+
+use schemars::JsonSchema;
+use serde::Deserialize;
+
+/// Parameters for the `synrepo_next_actions` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct NextActionsParams {
+    /// Maximum number of items to return. Defaults to 20, capped at 100.
+    #[serde(default = "default_next_actions_limit")]
+    pub limit: Option<usize>,
+    /// Only include items from the last N days. Defaults to 30.
+    #[serde(default = "default_next_actions_since")]
+    pub since_days: Option<u32>,
+}
+
+fn default_next_actions_limit() -> Option<usize> {
+    Some(20)
+}
+
+fn default_next_actions_since() -> Option<u32> {
+    Some(30)
+}
 
 #[derive(Clone)]
 struct SynrepoServer {
@@ -264,6 +288,27 @@ impl SynrepoServer {
         Parameters(params): Parameters<audit::RecentActivityParams>,
     ) -> String {
         audit::handle_recent_activity(&self.state, params.kinds, params.limit, params.since)
+    }
+
+    #[tool(
+        name = "synrepo_next_actions",
+        description = "Return prioritized actionable items from repair-log, cross-link candidates, and git hotspots."
+    )]
+    async fn synrepo_next_actions(
+        &self,
+        Parameters(params): Parameters<NextActionsParams>,
+    ) -> String {
+        let request = HandoffsRequest {
+            limit: params.limit.unwrap_or(20),
+            since_days: params.since_days.unwrap_or(30),
+        };
+        match collect_handoffs(&self.state.repo_root, &request) {
+            Ok(items) => handoffs_to_json(&items),
+            Err(e) => serde_json::json!({
+                "error": e.to_string()
+            })
+            .to_string(),
+        }
     }
 }
 

@@ -7,6 +7,7 @@ use super::graph::{check_store_ready, graph_query_output, graph_stats_output, no
 mod basic;
 mod compact;
 mod export;
+mod handoffs;
 mod links;
 pub(crate) mod mcp;
 mod repair;
@@ -19,6 +20,7 @@ pub(crate) use basic::change_risk_output;
 pub(crate) use basic::{agent_setup, change_risk, init};
 pub(crate) use compact::compact;
 pub(crate) use export::export;
+pub(crate) use handoffs::handoffs;
 pub(crate) use links::{findings, links_accept, links_list, links_reject, links_review};
 #[cfg(test)]
 pub(crate) use links::{findings_output, links_list_output, links_review_output};
