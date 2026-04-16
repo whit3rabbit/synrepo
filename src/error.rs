@@ -45,6 +45,10 @@ pub enum Error {
     #[error("identity resolution failed: {0}")]
     IdentityResolution(String),
 
+    /// Repository is not initialized (missing .synrepo/config.toml).
+    #[error("synrepo not initialized in {0}")]
+    NotInitialized(std::path::PathBuf),
+
     /// Catch-all for errors that don't fit another variant.
     #[error(transparent)]
     Other(#[from] anyhow::Error),

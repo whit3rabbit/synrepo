@@ -31,9 +31,10 @@ pub use git::{
     SymbolLastChange,
 };
 pub use types::{
-    CallPath, CallPathCard, CallPathEdge, EntryPoint, EntryPointCard, EntryPointKind, FileCard,
-    FileRef, Freshness, ModuleCard, OverlayCommentary, PublicAPICard, PublicAPIEntry, SymbolCard,
-    SymbolRef, TestAssociation, TestEntry, TestSurfaceCard,
+    CallPath, CallPathCard, CallPathEdge, ChangeRiskCard, EntryPoint, EntryPointCard,
+    EntryPointKind, FileCard, FileRef, Freshness, ModuleCard, OverlayCommentary, PublicAPICard,
+    PublicAPIEntry, RiskFactor, RiskLevel, SymbolCard, SymbolRef, TestAssociation, TestEntry,
+    TestSurfaceCard,
 };
 
 /// Context budget tier for a card request.
@@ -128,4 +129,10 @@ pub trait CardCompiler {
     /// Resolve a human-readable target string (a path, a qualified name,
     /// or a symbol name) to a NodeId for card compilation.
     fn resolve_target(&self, target: &str) -> crate::Result<Option<NodeId>>;
+
+    /// Compile a ChangeRiskCard for a symbol or file target.
+    ///
+    /// Aggregates drift score, co-change relationships, and git hotspot
+    /// data into a risk assessment computed on-demand from graph signals.
+    fn change_risk_card(&self, target: NodeId, budget: Budget) -> crate::Result<ChangeRiskCard>;
 }

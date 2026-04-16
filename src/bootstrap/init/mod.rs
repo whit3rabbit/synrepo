@@ -97,6 +97,17 @@ pub fn bootstrap(
         tracing::warn!(error = %err, "co-change edge emission skipped during bootstrap");
     }
 
+    // Build embedding index AFTER structural compile so graph has symbols and concepts
+    #[cfg(feature = "semantic-triage")]
+    {
+        if config.enable_semantic_triage {
+            if let Err(err) = crate::substrate::build_embedding_index(&graph, &config, &synrepo_dir)
+            {
+                tracing::warn!(error = %err, "embedding index build skipped during bootstrap");
+            }
+        }
+    }
+
     compatibility::write_runtime_snapshot(&synrepo_dir, &config)?;
     let health = match action {
         BootstrapAction::Repaired => BootstrapHealth::Degraded,
@@ -187,7 +198,9 @@ fn write_synrepo_gitignore(synrepo_dir: &Path) -> anyhow::Result<()> {
         b"# Gitignore everything in .synrepo/ except config.toml\n\
          *\n\
          !.gitignore\n\
-         !config.toml\n",
+         !config.toml\n\
+         # Generated vectors directory (semantic-triage)\n\
+         index/vectors/\n",
     )?;
     Ok(())
 }

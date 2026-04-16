@@ -89,6 +89,31 @@ pub struct Config {
     /// and `upgrade --apply`, never during the hot reconcile path.
     #[serde(default = "default_retain_retired_revisions")]
     pub retain_retired_revisions: u64,
+
+    /// Enable embedding-based semantic triage for cross-link candidate
+    /// generation. When true, an embedding index is built (during init
+    /// or reconcile) and used to prefilter candidate pairs based on
+    /// cosine similarity.
+    #[serde(default)]
+    pub enable_semantic_triage: bool,
+
+    /// The embedding model to use for semantic triage. Can be a built-in
+    /// model name (all-MiniLM-L6-v2, all-MiniLM-L12-v2, all-mpnet-base-v2),
+    /// a Hugging Face model ID (e.g., intfloat/e5-base-v2), or an
+    /// absolute path to a local `.onnx` file.
+    #[serde(default = "default_semantic_model")]
+    pub semantic_model: String,
+
+    /// The expected output dimension of the embedding model. Must match
+    /// the model's actual output dimension. Built-in models: 384 for
+    /// L6/L12, 768 for mpnet-base.
+    #[serde(default = "default_embedding_dim")]
+    pub embedding_dim: u16,
+
+    /// Cosine similarity threshold for the semantic prefilter. Pairs exceeding
+    /// this threshold are forwarded to LLM evidence extraction.
+    #[serde(default = "default_semantic_similarity_threshold")]
+    pub semantic_similarity_threshold: f64,
 }
 
 /// TOML-friendly mirror of `overlay::ConfidenceThresholds`. Lives in this
@@ -184,6 +209,18 @@ fn default_retain_retired_revisions() -> u64 {
     10
 }
 
+fn default_semantic_model() -> String {
+    "all-MiniLM-L6-v2".to_string()
+}
+
+fn default_embedding_dim() -> u16 {
+    384
+}
+
+fn default_semantic_similarity_threshold() -> f64 {
+    0.6
+}
+
 impl std::fmt::Display for Mode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -207,6 +244,10 @@ impl Default for Config {
             cross_link_confidence_thresholds: CrossLinkConfidenceThresholds::default(),
             export_dir: default_export_dir(),
             retain_retired_revisions: default_retain_retired_revisions(),
+            enable_semantic_triage: false,
+            semantic_model: default_semantic_model(),
+            embedding_dim: default_embedding_dim(),
+            semantic_similarity_threshold: default_semantic_similarity_threshold(),
         }
     }
 }
@@ -217,7 +258,7 @@ impl Config {
     pub fn load(repo_root: &Path) -> crate::Result<Self> {
         let path = repo_root.join(".synrepo/config.toml");
         if !path.exists() {
-            return Ok(Self::default());
+            return Err(crate::Error::NotInitialized(repo_root.to_path_buf()));
         }
         let text = std::fs::read_to_string(&path)?;
         toml::from_str(&text).map_err(|e| crate::Error::Config(e.to_string()))
@@ -236,12 +277,10 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn load_missing_file_returns_defaults() {
+    fn load_missing_file_returns_error() {
         let dir = tempdir().unwrap();
-        let config = Config::load(dir.path()).unwrap();
-
-        assert_eq!(config.mode, Mode::Auto);
-        assert_eq!(config.roots, vec![".".to_string()]);
+        let err = Config::load(dir.path()).unwrap_err();
+        assert!(matches!(err, crate::Error::NotInitialized(_)));
     }
 
     #[test]

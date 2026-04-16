@@ -133,6 +133,10 @@ pub fn evaluate_runtime(
 }
 
 /// Apply non-blocking compatibility actions to the on-disk runtime.
+///
+/// ANY caller of this function MUST hold the exclusive `WriterLock` for the
+/// duration of the call to prevent data races with concurrent writers or
+/// the watch daemon.
 pub fn apply_runtime_actions(
     synrepo_dir: &Path,
     report: &CompatibilityReport,

@@ -85,6 +85,17 @@ pub enum WatchServiceStatus {
     Running(WatchDaemonState),
     /// A stale lease or socket remains from a dead service.
     Stale(Option<WatchDaemonState>),
+    /// The lease file exists but is malformed.
+    Corrupt(String),
+}
+
+/// Reason watch or reconcile state could not be loaded.
+#[derive(Debug, Eq, PartialEq)]
+pub enum StateLoadError {
+    /// No state file exists.
+    NotFound,
+    /// The state file exists but is unreadable or malformed.
+    Malformed(String),
 }
 
 /// Errors raised by the watch daemon lease or control plane.
@@ -176,7 +187,7 @@ impl Drop for WatchDaemonLease {
         let current = load_watch_state_from_path(&self.state_path);
         if current
             .as_ref()
-            .is_some_and(|state| state.same_owner(&self.identity))
+            .is_ok_and(|state| state.same_owner(&self.identity))
         {
             cleanup_file(&self.state_path);
             cleanup_file(&self.socket_path);
@@ -234,11 +245,11 @@ pub(crate) fn acquire_watch_daemon_lease(
                 if cleared_stale {
                     return Err(
                         match load_watch_state_from_path(&watch_daemon_state_path(synrepo_dir)) {
-                            Some(state) => WatchDaemonError::HeldByOther {
+                            Ok(state) => WatchDaemonError::HeldByOther {
                                 pid: state.pid,
                                 state_path: watch_daemon_state_path(synrepo_dir),
                             },
-                            None => WatchDaemonError::Io {
+                            Err(_) => WatchDaemonError::Io {
                                 path: watch_daemon_state_path(synrepo_dir),
                                 source: error,
                             },
@@ -247,7 +258,7 @@ pub(crate) fn acquire_watch_daemon_lease(
                 }
 
                 match load_watch_state_with_retry(&watch_daemon_state_path(synrepo_dir)) {
-                    Some(state) if is_process_alive(state.pid) => {
+                    Ok(state) if is_process_alive(state.pid) => {
                         return Err(WatchDaemonError::HeldByOther {
                             pid: state.pid,
                             state_path: watch_daemon_state_path(synrepo_dir),
@@ -271,7 +282,7 @@ pub(crate) fn acquire_watch_daemon_lease(
 }
 
 /// Load the persisted watch-service state, if present and readable.
-pub fn load_watch_state(synrepo_dir: &Path) -> Option<WatchDaemonState> {
+pub fn load_watch_state(synrepo_dir: &Path) -> Result<WatchDaemonState, StateLoadError> {
     load_watch_state_from_path(&watch_daemon_state_path(synrepo_dir))
 }
 
@@ -283,9 +294,10 @@ pub fn watch_service_status(synrepo_dir: &Path) -> WatchServiceStatus {
     }
 
     match load_watch_state_from_path(&state_path) {
-        Some(state) if is_process_alive(state.pid) => WatchServiceStatus::Running(state),
-        Some(state) => WatchServiceStatus::Stale(Some(state)),
-        None => WatchServiceStatus::Stale(None),
+        Ok(state) if is_process_alive(state.pid) => WatchServiceStatus::Running(state),
+        Ok(state) => WatchServiceStatus::Stale(Some(state)),
+        Err(StateLoadError::NotFound) => WatchServiceStatus::Inactive,
+        Err(StateLoadError::Malformed(e)) => WatchServiceStatus::Corrupt(e),
     }
 }
 
@@ -293,7 +305,7 @@ pub fn watch_service_status(synrepo_dir: &Path) -> WatchServiceStatus {
 pub fn cleanup_stale_watch_artifacts(synrepo_dir: &Path) -> Result<bool, WatchDaemonError> {
     match watch_service_status(synrepo_dir) {
         WatchServiceStatus::Inactive | WatchServiceStatus::Running(_) => Ok(false),
-        WatchServiceStatus::Stale(_) => {
+        WatchServiceStatus::Stale(_) | WatchServiceStatus::Corrupt(_) => {
             let state_path = watch_daemon_state_path(synrepo_dir);
             let socket_path = watch_socket_path(synrepo_dir);
             if let Err(source) = fs::remove_file(&state_path) {
@@ -406,17 +418,23 @@ pub(super) fn persist_watch_state_at(
     Ok(())
 }
 
-fn load_watch_state_from_path(state_path: &Path) -> Option<WatchDaemonState> {
-    let text = fs::read_to_string(state_path).ok()?;
-    serde_json::from_str(&text).ok()
+fn load_watch_state_from_path(state_path: &Path) -> Result<WatchDaemonState, StateLoadError> {
+    let text = fs::read_to_string(state_path).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            StateLoadError::NotFound
+        } else {
+            StateLoadError::Malformed(e.to_string())
+        }
+    })?;
+    serde_json::from_str(&text).map_err(|e| StateLoadError::Malformed(e.to_string()))
 }
 
-fn load_watch_state_with_retry(state_path: &Path) -> Option<WatchDaemonState> {
+fn load_watch_state_with_retry(state_path: &Path) -> Result<WatchDaemonState, StateLoadError> {
     const RETRIES: u32 = 5;
     const BACKOFF_MS: u64 = 1;
     for _ in 0..RETRIES {
-        if let Some(state) = load_watch_state_from_path(state_path) {
-            return Some(state);
+        if let Ok(state) = load_watch_state_from_path(state_path) {
+            return Ok(state);
         }
         std::thread::sleep(Duration::from_millis(BACKOFF_MS));
     }

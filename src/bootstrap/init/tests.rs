@@ -232,12 +232,20 @@ fn bootstrap_rerun_refreshes_graph_on_content_change() {
 fn bootstrap_blocked_when_writer_lock_held() {
     let repo = tempdir().unwrap();
     let synrepo_dir = Config::synrepo_dir(repo.path());
-    // Create state dir so the pre-held lock can be written before bootstrap
-    // tries to create .synrepo/ itself.
+    // Write a fake lock held by a live foreign process so bootstrap sees a
+    // conflicting owner. Acquiring the lock in the current process would
+    // re-enter (same PID), so we simulate a foreign holder instead.
     std::fs::create_dir_all(synrepo_dir.join("state")).unwrap();
-    let _lock = crate::pipeline::writer::acquire_writer_lock(&synrepo_dir).unwrap();
+    let mut holder = std::process::Command::new("sleep")
+        .arg("30")
+        .spawn()
+        .expect("spawn sleep");
+    let holder_pid = holder.id();
+    let fake = serde_json::json!({"pid": holder_pid, "acquired_at": "2099-01-01T00:00:00Z"});
+    std::fs::write(synrepo_dir.join("state/writer.lock"), fake.to_string()).unwrap();
 
     let err = bootstrap(repo.path(), None).unwrap_err().to_string();
+    let _ = holder.kill();
     assert!(
         err.contains("writer lock"),
         "expected 'writer lock' in error, got: {err}"

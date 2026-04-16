@@ -436,6 +436,14 @@ pub fn persist_resolutions(
                 preserved_id,
                 new_path,
             } => {
+                // The pipeline already inserted a new file node at new_path
+                // before the identity cascade ran. Delete that duplicate so
+                // the preserved node can take its place.
+                if let Some(dup) = graph.file_by_path(new_path)? {
+                    if dup.id != *preserved_id {
+                        graph.delete_node(NodeId::File(dup.id))?;
+                    }
+                }
                 // Preserve the old node ID, update its path, and append the
                 // old path to path_history.
                 if let Some(mut file) = graph.get_file(*preserved_id)? {

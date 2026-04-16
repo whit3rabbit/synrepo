@@ -148,6 +148,25 @@ synrepo SHALL define `revalidate_links` as a named repair action for the `propos
 - **THEN** the graph store is not modified
 - **AND** the structural compile is not triggered unless a separate structural finding is also being repaired
 
+### Requirement: Define repair-log rotation as a compact sub-action
+synrepo SHALL support repair-log rotation as a compact sub-action that summarizes JSONL entries older than the retention window into a header line while preserving recent entries.
+
+#### Scenario: Detect compactable repair-log entries
+- **WHEN** a compaction pass evaluates the repair-log
+- **THEN** entries beyond the policy's retention window are identified for summarization
+- **AND** recent entries are preserved verbatim
+
+#### Scenario: Execute repair-log rotation
+- **WHEN** rotation executes on a repair-log with entries beyond retention
+- **THEN** old entries are summarized into a header line with counts by surface and action
+- **AND** the log is rewritten atomically with the header followed by retained entries
+- **AND** the file ends with `.jsonl` extension (no `.tmp` artifacts)
+
+#### Scenario: Repair-log rotation is idempotent
+- **WHEN** rotation runs on an already-compacted log
+- **THEN** no entries are summarized (counts are zero)
+- **AND** the existing header is preserved
+
 ### Requirement: Define retired observations as a repair surface
 synrepo SHALL define `retired_observations` as a named repair surface for graph facts that have been soft-retired but not yet compacted. When the count of retired symbols or edges exceeds a reporting threshold, `synrepo check` SHALL report the surface with recommended action `compact_retired`. When `synrepo sync` processes this action, it SHALL run the compaction pass using the configured retention window.
 

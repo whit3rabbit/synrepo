@@ -14,7 +14,9 @@ mod status;
 mod upgrade;
 mod watch;
 
-pub(crate) use basic::{agent_setup, init};
+#[cfg(test)]
+pub(crate) use basic::change_risk_output;
+pub(crate) use basic::{agent_setup, change_risk, init};
 pub(crate) use compact::compact;
 pub(crate) use export::export;
 pub(crate) use links::{findings, links_accept, links_list, links_reject, links_review};

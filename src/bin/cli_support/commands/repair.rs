@@ -4,9 +4,7 @@ use synrepo::{
     config::Config,
     pipeline::{
         repair::{build_repair_report, execute_sync, SyncOptions},
-        watch::{
-            load_reconcile_state, request_watch_control, WatchControlRequest, WatchControlResponse,
-        },
+        watch::{request_watch_control, WatchControlRequest, WatchControlResponse},
     },
 };
 
@@ -80,57 +78,46 @@ pub(crate) fn reconcile(repo_root: &Path) -> anyhow::Result<()> {
 
     if let Some(pid) = super::watch::active_watch_pid(&synrepo_dir)? {
         match request_watch_control(&synrepo_dir, WatchControlRequest::ReconcileNow)? {
-            WatchControlResponse::Status { .. } => {
+            WatchControlResponse::Reconcile {
+                outcome,
+                triggering_events,
+            } => {
                 println!("Delegated reconcile to active watch service (pid {pid}).");
-                print_reconcile_summary(&synrepo_dir)
+                report_reconcile_outcome(&outcome, triggering_events)
             }
-            WatchControlResponse::Ack { message } => Err(anyhow::anyhow!(
-                "reconcile delegation did not return a status snapshot: {message}"
-            )),
             WatchControlResponse::Error { message } => {
                 Err(anyhow::anyhow!("reconcile delegation failed: {message}"))
             }
+            other => Err(anyhow::anyhow!(
+                "reconcile delegation returned unexpected response: {:?}",
+                other
+            )),
         }
     } else {
         let outcome =
             synrepo::pipeline::watch::run_reconcile_pass(repo_root, &config, &synrepo_dir);
         synrepo::pipeline::watch::persist_reconcile_state(&synrepo_dir, &outcome, 0);
-        match &outcome {
-            synrepo::pipeline::watch::ReconcileOutcome::Completed(_) => print_reconcile_summary(&synrepo_dir),
-            synrepo::pipeline::watch::ReconcileOutcome::LockConflict { holder_pid } => Err(anyhow::anyhow!(
-                "Reconcile skipped: writer lock held by pid {holder_pid}. Wait for that process to finish, then retry."
-            )),
-            synrepo::pipeline::watch::ReconcileOutcome::Failed(message) => {
-                Err(anyhow::anyhow!("Reconcile failed: {message}"))
-            }
-        }
+        report_reconcile_outcome(&outcome, 0)
     }
 }
 
-fn print_reconcile_summary(synrepo_dir: &Path) -> anyhow::Result<()> {
-    let Some(state) = load_reconcile_state(synrepo_dir) else {
-        anyhow::bail!("reconcile completed, but no reconcile state was written");
-    };
+use synrepo::pipeline::watch::ReconcileOutcome;
 
-    match state.last_outcome.as_str() {
-        "completed" => {
+fn report_reconcile_outcome(
+    outcome: &ReconcileOutcome,
+    triggering_events: usize,
+) -> anyhow::Result<()> {
+    match outcome {
+        ReconcileOutcome::Completed(summary) => {
             println!(
                 "Reconcile outcome: completed\n  files discovered: {}\n  symbols extracted: {}\n  triggering events: {}",
-                state.files_discovered.unwrap_or(0),
-                state.symbols_extracted.unwrap_or(0),
-                state.triggering_events
+                summary.files_discovered, summary.symbols_extracted, triggering_events
             );
             Ok(())
         }
-        "lock-conflict" => Err(anyhow::anyhow!(
-            "Reconcile skipped: writer lock held by another process."
+        ReconcileOutcome::LockConflict { holder_pid } => Err(anyhow::anyhow!(
+            "Reconcile skipped: writer lock held by pid {holder_pid}. Wait for that process to finish, then retry."
         )),
-        "failed" => Err(anyhow::anyhow!(
-            "Reconcile failed: {}",
-            state
-                .last_error
-                .unwrap_or_else(|| "unknown error".to_string())
-        )),
-        other => Err(anyhow::anyhow!("unexpected reconcile outcome: {other}")),
+        ReconcileOutcome::Failed(message) => Err(anyhow::anyhow!("Reconcile failed: {message}")),
     }
 }

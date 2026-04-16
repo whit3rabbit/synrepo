@@ -141,8 +141,9 @@ pub fn run_watch_service(
                     let outcome = run_reconcile_pass(repo_root, config, synrepo_dir);
                     persist_reconcile_state(synrepo_dir, &outcome, 0);
                     state_handle.note_reconcile(&outcome, 0);
-                    let _ = respond_to.send(WatchControlResponse::Status {
-                        snapshot: state_handle.snapshot(),
+                    let _ = respond_to.send(WatchControlResponse::Reconcile {
+                        outcome,
+                        triggering_events: 0,
                     });
                 }
                 Err(_) => break,

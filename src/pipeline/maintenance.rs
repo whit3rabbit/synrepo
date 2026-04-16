@@ -43,10 +43,11 @@ pub fn retention_cutoff(retention_days: u32) -> crate::Result<String> {
 }
 
 /// Retention policy presets for compaction operations.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CompactPolicy {
     /// Conservative retention: 30-day commentary window, 90-day audit window.
+    #[default]
     Default,
     /// Aggressive retention: 7-day commentary window, 30-day audit window.
     Aggressive,
@@ -89,12 +90,6 @@ impl CompactPolicy {
             CompactPolicy::Aggressive => 7,
             CompactPolicy::AuditHeavy => 60,
         }
-    }
-}
-
-impl Default for CompactPolicy {
-    fn default() -> Self {
-        CompactPolicy::Default
     }
 }
 
@@ -167,10 +162,15 @@ pub struct ComponentCompact {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CompactComponent {
+    /// Symbol commentary overlay entries (LLM-authored prose).
     Commentary,
+    /// Cross-link overlay entries (prose-to-code associations).
     CrossLinks,
+    /// Repair log JSONL file (`.synrepo/state/repair-log.jsonl`).
     RepairLog,
+    /// Write-Ahead Log (WAL) files for SQLite stores.
     Wal,
+    /// Syntext lexical index (`.synrepo/index/`).
     Index,
 }
 
@@ -204,9 +204,8 @@ pub struct CompactSummary {
     pub compaction_timestamp: OffsetDateTime,
 }
 
-impl CompactSummary {
-    /// Create a default (empty) compaction summary.
-    pub fn default() -> Self {
+impl Default for CompactSummary {
+    fn default() -> Self {
         Self {
             commentary_compacted: 0,
             cross_links_compacted: 0,
@@ -216,18 +215,29 @@ impl CompactSummary {
             compaction_timestamp: OffsetDateTime::now_utc(),
         }
     }
+}
 
+impl CompactSummary {
     /// Render a brief human-readable summary.
     pub fn render(&self) -> String {
         let mut parts = Vec::new();
         if self.commentary_compacted > 0 {
-            parts.push(format!("{} commentary entries compacted", self.commentary_compacted));
+            parts.push(format!(
+                "{} commentary entries compacted",
+                self.commentary_compacted
+            ));
         }
         if self.cross_links_compacted > 0 {
-            parts.push(format!("{} cross-link rows compacted", self.cross_links_compacted));
+            parts.push(format!(
+                "{} cross-link rows compacted",
+                self.cross_links_compacted
+            ));
         }
         if self.repair_log_summarized > 0 {
-            parts.push(format!("{} repair-log entries summarized", self.repair_log_summarized));
+            parts.push(format!(
+                "{} repair-log entries summarized",
+                self.repair_log_summarized
+            ));
         }
         if self.wal_checkpoint_completed {
             parts.push("WAL checkpoint completed".to_string());
@@ -501,5 +511,112 @@ mod tests {
             stores_skipped: 6,
         };
         assert!(summary.render().contains("No maintenance needed"));
+    }
+
+    #[test]
+    fn execute_compact_preserves_graph_row_counts() {
+        use std::fs;
+
+        let dir = tempdir().unwrap();
+        let synrepo_dir = dir.path().join(".synrepo");
+        let graph_dir = synrepo_dir.join("graph");
+        let overlay_dir = synrepo_dir.join("overlay");
+        let state_dir = synrepo_dir.join("state");
+
+        fs::create_dir_all(&graph_dir).unwrap();
+        fs::create_dir_all(&overlay_dir).unwrap();
+        fs::create_dir_all(&state_dir).unwrap();
+
+        let conn = rusqlite::Connection::open(graph_dir.join("nodes.db")).unwrap();
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS files (id TEXT PRIMARY KEY, path TEXT, content_hash TEXT)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS symbols (id TEXT PRIMARY KEY, file_id TEXT, qualified_name TEXT)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS edges (id TEXT PRIMARY KEY, from_node TEXT, to_node TEXT)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO files (id, path) VALUES ('file_1', 'src/lib.rs')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO files (id, path) VALUES ('file_2', 'src/main.rs')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO symbols (id, file_id, qualified_name) VALUES ('sym_1', 'file_1', 'main')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO edges (id, from_node, to_node) VALUES ('edge_1', 'file_1', 'sym_1')",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+
+        use crate::overlay::OverlayStore;
+        use crate::store::overlay::SqliteOverlayStore;
+        let mut overlay = SqliteOverlayStore::open(&overlay_dir).unwrap();
+        let old_ts = OffsetDateTime::now_utc() - time::Duration::days(60);
+        overlay
+            .insert_commentary(crate::overlay::CommentaryEntry {
+                node_id: crate::core::ids::NodeId::Symbol(crate::core::ids::SymbolNodeId(1)),
+                text: "old".to_string(),
+                provenance: crate::overlay::CommentaryProvenance {
+                    source_content_hash: "h".to_string(),
+                    pass_id: "test".to_string(),
+                    model_identity: "test".to_string(),
+                    generated_at: old_ts,
+                },
+            })
+            .unwrap();
+        overlay.commit().unwrap();
+
+        let conn = rusqlite::Connection::open(graph_dir.join("nodes.db")).unwrap();
+        let pre_files: i64 = conn
+            .query_row("SELECT COUNT(*) FROM files", [], |row| row.get(0))
+            .unwrap();
+        let pre_symbols: i64 = conn
+            .query_row("SELECT COUNT(*) FROM symbols", [], |row| row.get(0))
+            .unwrap();
+        let pre_edges: i64 = conn
+            .query_row("SELECT COUNT(*) FROM edges", [], |row| row.get(0))
+            .unwrap();
+        drop(conn);
+
+        let config = Config::default();
+        let plan =
+            crate::pipeline::compact::plan_compact(&synrepo_dir, &config, CompactPolicy::Default)
+                .unwrap();
+        let _summary =
+            crate::pipeline::compact::execute_compact(&synrepo_dir, &plan, CompactPolicy::Default)
+                .unwrap();
+
+        let conn = rusqlite::Connection::open(graph_dir.join("nodes.db")).unwrap();
+        let post_files: i64 = conn
+            .query_row("SELECT COUNT(*) FROM files", [], |row| row.get(0))
+            .unwrap();
+        let post_symbols: i64 = conn
+            .query_row("SELECT COUNT(*) FROM symbols", [], |row| row.get(0))
+            .unwrap();
+        let post_edges: i64 = conn
+            .query_row("SELECT COUNT(*) FROM edges", [], |row| row.get(0))
+            .unwrap();
+        drop(conn);
+
+        assert_eq!(pre_files, post_files, "files rows must be preserved");
+        assert_eq!(pre_symbols, post_symbols, "symbols rows must be preserved");
+        assert_eq!(pre_edges, post_edges, "edges rows must be preserved");
     }
 }

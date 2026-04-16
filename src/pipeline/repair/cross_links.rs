@@ -62,7 +62,14 @@ pub(super) fn run_cross_link_generation_with_generator(
     let graph = SqliteGraphStore::open_existing(&synrepo_dir.join("graph"))?;
     let mut overlay = SqliteOverlayStore::open(&synrepo_dir.join("overlay"))?;
 
-    let eligible_pairs = select_generation_pairs(&graph, &overlay, generate_new, regenerate_stale)?;
+    let eligible_pairs = select_generation_pairs(
+        &graph,
+        &overlay,
+        synrepo_dir,
+        config,
+        generate_new,
+        regenerate_stale,
+    )?;
     if eligible_pairs.is_empty() {
         return Ok(GenerationOutcome::default());
     }
@@ -121,6 +128,8 @@ pub(super) fn run_cross_link_generation_with_generator(
 fn select_generation_pairs(
     graph: &SqliteGraphStore,
     overlay: &SqliteOverlayStore,
+    _synrepo_dir: &Path,
+    _config: &Config,
     generate_new: bool,
     regenerate_stale: bool,
 ) -> crate::Result<Vec<CandidatePair>> {
@@ -134,13 +143,66 @@ fn select_generation_pairs(
         .into_iter()
         .map(|(_, id)| NodeId::Concept(id))
         .collect::<Vec<_>>();
-    let pairs = candidate_pairs(
+
+    // First run deterministic prefilter
+    #[allow(unused_mut)]
+    let mut pairs = candidate_pairs(
         graph,
         &TriageScope {
-            concepts,
+            concepts: concepts.clone(),
             ..TriageScope::default()
         },
     )?;
+
+    // If semantic triage is enabled, also run semantic prefilter on unmatched concepts
+    #[cfg(feature = "semantic-triage")]
+    {
+        use crate::pipeline::synthesis::cross_link::triage::semantic_candidates;
+
+        if _config.enable_semantic_triage {
+            // Find concepts that were matched by deterministic
+            let matched_concepts: std::collections::HashSet<crate::core::ids::ConceptNodeId> =
+                pairs
+                    .iter()
+                    .filter_map(|p| {
+                        if let NodeId::Concept(cid) = p.from {
+                            Some(cid)
+                        } else {
+                            None
+                        }
+                    })
+                    .collect();
+
+            // Get unmatched concepts
+            let unmatched_concepts: Vec<NodeId> = concepts
+                .iter()
+                .filter(|c| {
+                    if let NodeId::Concept(cid) = c {
+                        !matched_concepts.contains(cid)
+                    } else {
+                        true
+                    }
+                })
+                .cloned()
+                .collect();
+
+            // Run semantic prefilter on unmatched concepts
+            if !unmatched_concepts.is_empty() {
+                // Load embedding index for query-time embedding
+                if let Some(index) = crate::substrate::load_embedding_index(_config, _synrepo_dir)?
+                {
+                    let semantic_scope = TriageScope {
+                        concepts: unmatched_concepts,
+                        ..TriageScope::default()
+                    };
+                    let semantic_pairs =
+                        semantic_candidates(graph, &index, _config, &semantic_scope)?;
+                    pairs.extend(semantic_pairs);
+                }
+            }
+        }
+    }
+
     if pairs.is_empty() {
         return Ok(Vec::new());
     }

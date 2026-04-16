@@ -16,8 +16,9 @@ use super::super::{
 const RECONCILE_STATE_FILENAME: &str = "reconcile-state.json";
 static NEXT_RECONCILE_STATE_TMP_ID: AtomicU64 = AtomicU64::new(0);
 
-/// Outcome of a single reconcile pass.
-#[derive(Clone, Debug)]
+/// Outcome of a reconcile pass, written to reconcile-state.json.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "outcome", rename_all = "snake_case")]
 pub enum ReconcileOutcome {
     /// The reconcile completed successfully.
     Completed(CompileSummary),
@@ -58,6 +59,15 @@ pub struct ReconcileState {
     pub symbols_extracted: Option<usize>,
 }
 
+/// Reason reconcile state could not be loaded.
+#[derive(Debug, Eq, PartialEq)]
+pub enum ReconcileStateError {
+    /// No reconcile state file exists.
+    NotFound,
+    /// The state file exists but is unreadable or malformed.
+    Malformed(String),
+}
+
 /// Run one full reconcile pass against the structural compile path.
 ///
 /// Acquires the writer lock, opens the graph store, and runs
@@ -93,6 +103,19 @@ pub fn run_reconcile_pass(
             if let Err(err) = crate::substrate::build_index(config, repo_root) {
                 return ReconcileOutcome::Failed(format!("index rebuild failed: {err}"));
             }
+
+            // Rebuild embedding index if semantic triage is enabled
+            #[cfg(feature = "semantic-triage")]
+            {
+                if config.enable_semantic_triage {
+                    if let Err(err) =
+                        crate::substrate::build_embedding_index(&mut graph, config, synrepo_dir)
+                    {
+                        tracing::warn!(error = %err, "embedding index rebuild skipped");
+                    }
+                }
+            }
+
             prune_overlay_orphans(synrepo_dir, &graph);
             ReconcileOutcome::Completed(summary)
         }
@@ -261,10 +284,16 @@ pub fn persist_reconcile_state(
 }
 
 /// Load the persisted reconcile state, if present and readable.
-pub fn load_reconcile_state(synrepo_dir: &Path) -> Option<ReconcileState> {
+pub fn load_reconcile_state(synrepo_dir: &Path) -> Result<ReconcileState, ReconcileStateError> {
     let path = reconcile_state_path(synrepo_dir);
-    let text = std::fs::read_to_string(&path).ok()?;
-    serde_json::from_str(&text).ok()
+    let text = std::fs::read_to_string(&path).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            ReconcileStateError::NotFound
+        } else {
+            ReconcileStateError::Malformed(e.to_string())
+        }
+    })?;
+    serde_json::from_str(&text).map_err(|e| ReconcileStateError::Malformed(e.to_string()))
 }
 
 /// Canonical path of the reconcile state file.

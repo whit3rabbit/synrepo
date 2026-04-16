@@ -118,6 +118,18 @@ pub(crate) enum Command {
         max_results: Option<usize>,
     },
 
+    /// Change risk assessment for a symbol or file.
+    ChangeRisk {
+        /// Target: file path or qualified symbol name.
+        target: String,
+        /// Budget tier: tiny, normal, or deep. Defaults to tiny.
+        #[arg(long, short)]
+        budget: Option<String>,
+        /// Output as JSON.
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Graph-level queries and inspection.
     #[command(subcommand)]
     Graph(GraphCommand),

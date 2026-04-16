@@ -24,12 +24,43 @@
 //! the daemon rather than competing for the lock.
 
 use std::{
+    collections::HashMap,
     fs,
     io::Write as _,
     path::{Path, PathBuf},
+    sync::{Mutex, OnceLock},
 };
 
 use serde::{Deserialize, Serialize};
+
+/// Per-lock-path re-entrancy depth counters.
+///
+/// Uses an absolute canonical path as key so that different relative path
+/// spellings for the same file do not create independent entries. A global
+/// `AtomicUsize` would interfere across concurrent tests that use distinct
+/// `synrepo_dir` paths, so we track depth per path.
+static LOCK_DEPTHS: OnceLock<Mutex<HashMap<PathBuf, usize>>> = OnceLock::new();
+
+fn lock_depths() -> &'static Mutex<HashMap<PathBuf, usize>> {
+    LOCK_DEPTHS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn increment_depth(lock_path: &Path) {
+    let mut map = lock_depths().lock().unwrap();
+    *map.entry(lock_path.to_path_buf()).or_insert(0) += 1;
+}
+
+/// Decrement depth for `lock_path` and return the value *after* decrement.
+fn decrement_depth(lock_path: &Path) -> usize {
+    let mut map = lock_depths().lock().unwrap();
+    let entry = map.entry(lock_path.to_path_buf()).or_insert(0);
+    *entry = entry.saturating_sub(1);
+    let remaining = *entry;
+    if remaining == 0 {
+        map.remove(lock_path);
+    }
+    remaining
+}
 
 /// Ownership record written to `.synrepo/state/writer.lock`.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -38,6 +69,15 @@ pub struct WriterOwnership {
     pub pid: u32,
     /// RFC 3339 UTC timestamp when the lock was acquired.
     pub acquired_at: String,
+}
+
+/// Reason writer ownership could not be read.
+#[derive(Debug, Eq, PartialEq)]
+pub enum WriterOwnershipError {
+    /// No lock file exists.
+    NotFound,
+    /// The lock file exists but is unreadable or malformed.
+    Malformed(String),
 }
 
 /// Reason a writer lock acquisition failed.
@@ -81,6 +121,12 @@ impl WriterLock {
 
 impl Drop for WriterLock {
     fn drop(&mut self) {
+        let remaining = decrement_depth(&self.path);
+        if remaining > 0 {
+            // Not the last lock for this path; do not remove the file.
+            return;
+        }
+
         match read_ownership(&self.path) {
             Ok(owner) if owner == self.ownership => {
                 if let Err(e) = fs::remove_file(&self.path) {
@@ -97,13 +143,13 @@ impl Drop for WriterLock {
                     "writer lock file was replaced before drop; leaving current owner intact"
                 );
             }
-            Err(()) if self.path.exists() => {
+            Err(WriterOwnershipError::Malformed(_)) if self.path.exists() => {
                 tracing::warn!(
                     path = ?self.path,
                     "writer lock file became unreadable before drop; leaving it in place"
                 );
             }
-            Err(()) => {}
+            Err(_) => {}
         }
     }
 }
@@ -146,12 +192,24 @@ pub fn acquire_writer_lock(synrepo_dir: &Path) -> Result<WriterLock, LockError> 
         {
             Ok(mut f) => {
                 write_lock_file(&mut f, &lock_path, &json)?;
+                increment_depth(&lock_path);
                 return Ok(WriterLock {
                     path: lock_path,
                     ownership: ownership.clone(),
                 });
             }
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                // If the lock is already held by the current process, allow re-entrancy.
+                if let Ok(owner) = read_ownership(&lock_path) {
+                    if owner.pid == std::process::id() {
+                        increment_depth(&lock_path);
+                        return Ok(WriterLock {
+                            path: lock_path,
+                            ownership: owner,
+                        });
+                    }
+                }
+
                 if cleared_stale {
                     // Already cleared a stale lock once; another live process
                     // won the race on the retry. Report current holder.
@@ -173,6 +231,15 @@ pub fn acquire_writer_lock(synrepo_dir: &Path) -> Result<WriterLock, LockError> 
                 // acquirer remove the file mid-write and both callers would
                 // then believe they hold the lock.
                 match read_ownership_with_retry(&lock_path) {
+                    Ok(owner) if owner.pid == std::process::id() => {
+                        // Same process: allow re-entrancy even if the initial fast-path
+                        // read raced with the concurrent write and returned Err.
+                        increment_depth(&lock_path);
+                        return Ok(WriterLock {
+                            path: lock_path,
+                            ownership: owner,
+                        });
+                    }
                     Ok(owner) if is_process_alive(owner.pid) => {
                         return Err(LockError::HeldByOther {
                             pid: owner.pid,
@@ -205,10 +272,11 @@ pub fn acquire_writer_lock(synrepo_dir: &Path) -> Result<WriterLock, LockError> 
 
 /// Read current writer ownership from the lock file, if present and readable.
 ///
-/// Returns `None` when no lock file exists or the file cannot be parsed.
+/// Returns `Err(WriterOwnershipError::NotFound)` when no lock file exists,
+/// or `Err(WriterOwnershipError::Malformed)` when the file cannot be parsed.
 /// Does not check whether the recorded PID is still alive.
-pub fn current_ownership(synrepo_dir: &Path) -> Option<WriterOwnership> {
-    read_ownership(&writer_lock_path(synrepo_dir)).ok()
+pub fn current_ownership(synrepo_dir: &Path) -> Result<WriterOwnership, WriterOwnershipError> {
+    read_ownership(&writer_lock_path(synrepo_dir))
 }
 
 /// Return the PID of a live foreign writer lock holder, if one exists.
@@ -216,7 +284,7 @@ pub fn current_ownership(synrepo_dir: &Path) -> Option<WriterOwnership> {
 /// Ignores locks owned by the current process and treats stale lock files as
 /// absent so readers do not block on dead processes.
 pub fn live_owner_pid(synrepo_dir: &Path) -> Option<u32> {
-    let owner = current_ownership(synrepo_dir)?;
+    let owner = current_ownership(synrepo_dir).ok()?;
     if owner.pid == std::process::id() {
         return None;
     }
@@ -228,14 +296,20 @@ pub fn writer_lock_path(synrepo_dir: &Path) -> PathBuf {
     synrepo_dir.join("state").join("writer.lock")
 }
 
-fn read_ownership(lock_path: &Path) -> Result<WriterOwnership, ()> {
-    let text = fs::read_to_string(lock_path).map_err(|_| ())?;
-    serde_json::from_str(&text).map_err(|_| ())
+fn read_ownership(lock_path: &Path) -> Result<WriterOwnership, WriterOwnershipError> {
+    let text = fs::read_to_string(lock_path).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            WriterOwnershipError::NotFound
+        } else {
+            WriterOwnershipError::Malformed(e.to_string())
+        }
+    })?;
+    serde_json::from_str(&text).map_err(|e| WriterOwnershipError::Malformed(e.to_string()))
 }
 
 /// Read ownership, retrying briefly on parse failure to ride out the narrow
 /// race between a concurrent `create_new` and its subsequent `write_all`.
-fn read_ownership_with_retry(lock_path: &Path) -> Result<WriterOwnership, ()> {
+fn read_ownership_with_retry(lock_path: &Path) -> Result<WriterOwnership, WriterOwnershipError> {
     const RETRIES: u32 = 5;
     const BACKOFF_MS: u64 = 1;
     for _ in 0..RETRIES {

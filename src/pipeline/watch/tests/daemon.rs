@@ -69,7 +69,7 @@ fn cleanup_stale_watch_artifacts_removes_dead_state_and_socket() {
     fs::write(&socket_path, b"stale socket").unwrap();
 
     assert!(cleanup_stale_watch_artifacts(&synrepo_dir).unwrap());
-    assert!(load_watch_state(&synrepo_dir).is_none());
+    assert!(load_watch_state(&synrepo_dir).is_err());
     assert!(!socket_path.exists());
 }
 

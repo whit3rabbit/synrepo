@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use super::lease::{watch_socket_path, WatchDaemonError, WatchDaemonState};
+use super::reconcile::ReconcileOutcome;
 
 /// Control message sent over the per-repo watch socket.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -29,6 +30,13 @@ pub enum WatchControlResponse {
     Status {
         /// Latest service telemetry snapshot.
         snapshot: WatchDaemonState,
+    },
+    /// Reconcile outcome.
+    Reconcile {
+        /// Outcome of the reconcile pass.
+        outcome: ReconcileOutcome,
+        /// Triggering events (usually 0 for manual calls).
+        triggering_events: usize,
     },
     /// Request failed.
     Error {

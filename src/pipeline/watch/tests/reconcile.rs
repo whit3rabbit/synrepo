@@ -32,10 +32,24 @@ fn reconcile_pass_completes_on_valid_repo() {
 #[test]
 fn reconcile_pass_returns_lock_conflict_when_lock_is_held() {
     let (_dir, repo, config, synrepo_dir) = setup_test_repo();
-    let _lock = crate::pipeline::writer::acquire_writer_lock(&synrepo_dir).unwrap();
+
+    // Use a foreign PID to avoid re-entrancy in the same process
+    let (mut child, foreign_pid) = super::live_foreign_pid();
+    let lock_path = crate::pipeline::writer::writer_lock_path(&synrepo_dir);
+    fs::create_dir_all(lock_path.parent().unwrap()).unwrap();
+    let owner = crate::pipeline::writer::WriterOwnership {
+        pid: foreign_pid,
+        acquired_at: crate::pipeline::writer::now_rfc3339(),
+    };
+    fs::write(&lock_path, serde_json::to_string(&owner).unwrap()).unwrap();
 
     let outcome = run_reconcile_pass(&repo, &config, &synrepo_dir);
-    assert!(matches!(outcome, ReconcileOutcome::LockConflict { .. }));
+    assert!(matches!(
+        outcome,
+        ReconcileOutcome::LockConflict { holder_pid } if holder_pid == foreign_pid
+    ));
+
+    child.kill().unwrap();
 }
 
 #[test]
@@ -63,7 +77,7 @@ fn persist_and_load_reconcile_state_roundtrip() {
     };
     persist_reconcile_state(&synrepo_dir, &ReconcileOutcome::Completed(summary), 3);
 
-    let state = load_reconcile_state(&synrepo_dir).unwrap();
+    let state = load_reconcile_state(&synrepo_dir).expect("must load reconcile state");
     assert_eq!(state.last_outcome, "completed");
     assert_eq!(state.files_discovered, Some(5));
     assert_eq!(state.symbols_extracted, Some(12));
@@ -79,7 +93,7 @@ fn persist_reconcile_state_records_failure_message() {
         0,
     );
 
-    let state = load_reconcile_state(&synrepo_dir).unwrap();
+    let state = load_reconcile_state(&synrepo_dir).expect("must load reconcile state");
     assert_eq!(state.last_outcome, "failed");
     assert_eq!(state.last_error.as_deref(), Some("disk full"));
 }
@@ -147,7 +161,7 @@ fn persist_reconcile_state_records_lock_conflict() {
         1,
     );
 
-    let state = load_reconcile_state(&synrepo_dir).unwrap();
+    let state = load_reconcile_state(&synrepo_dir).expect("must load reconcile state");
     assert_eq!(state.last_outcome, "lock-conflict");
     assert_eq!(state.triggering_events, 1);
 }

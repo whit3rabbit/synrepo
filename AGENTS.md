@@ -177,9 +177,13 @@ Stages 4–8:
 - `synrepo status [--json]` — enriched with export freshness and overlay cost summary.
 - `synrepo agent-setup` — now accepts `codex` and `windsurf` targets, plus `--regen` flag for idempotent updates.
 
+### Shipped risk assessment surface (change-risk-card-v1)
+
+- `synrepo change-risk <target> [--budget tiny|normal|deep] [--json]` — computes change risk assessment for a file or symbol target, aggregating drift score, co-change partners, and git hotspot signals.
+- `synrepo_change_risk` MCP tool — on-demand risk assessment via MCP protocol.
+
 ### Not yet implemented
 
-- `ChangeRiskCard` / `synrepo_change_risk`. All other card types and MCP tools are shipped.
 - `SymbolCard.last_change` now uses per-symbol `first_seen_rev`/`last_modified_rev` tracking via `src/pipeline/git_intelligence/symbol_revisions/` (shipped in `symbol-last-change-v1`).
 - Graph-level `CoChangesWith` edges are now emitted after each git-intelligence pass via `src/pipeline/git_intelligence/emit.rs` (shipped in `graph-cochange-edges-v1`).
 - Drift scoring (stage 7), split/merge detection (stage 6), and git rename fallback are now shipped (`structural-resilience-v1` + `structural-resilience-v2`). ArcSwap commit (stage 8) remains TODO.
@@ -220,7 +224,6 @@ Stages 4–8:
 | `max_file_size_bytes` | `1048576` (1 MB) | Files larger than this are skipped |
 | `redact_globs` | `["**/secrets/**", "**/*.env*", "**/*-private.md"]` | Files matching these are never indexed |
 | `retain_retired_revisions` | `10` | Compile revisions to keep retired observations before compaction deletes them |
-| `retain_retired_revisions` | `10` | Number of compile revisions to retain retired observations before compaction |
 
 ## Reference docs
 

@@ -1,7 +1,7 @@
-use std::path::Path;
 use crate::config::Config;
-use crate::pipeline::maintenance::MaintenancePlan;
 use crate::pipeline::diagnostics::RuntimeDiagnostics;
+use crate::pipeline::maintenance::MaintenancePlan;
+use std::path::Path;
 
 /// Shared state for repair surface evaluation.
 pub struct RepairContext<'a> {

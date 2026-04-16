@@ -231,8 +231,12 @@ impl OverlayStore for SqliteOverlayStore {
         super::cross_links::mark_promoted(&conn, from, to, kind, reviewer, graph_edge_id)
     }
 
-    fn compactable_commentary_stats(&self, policy: &crate::pipeline::maintenance::CompactPolicy) -> crate::Result<crate::pipeline::maintenance::CompactStats> {
-        let cutoff_str = crate::pipeline::maintenance::retention_cutoff(policy.commentary_retention_days())?;
+    fn compactable_commentary_stats(
+        &self,
+        policy: &crate::pipeline::maintenance::CompactPolicy,
+    ) -> crate::Result<crate::pipeline::maintenance::CompactStats> {
+        let cutoff_str =
+            crate::pipeline::maintenance::retention_cutoff(policy.commentary_retention_days())?;
 
         let conn = self.conn.lock();
         let count: usize = conn.query_row(
@@ -249,8 +253,12 @@ impl OverlayStore for SqliteOverlayStore {
         })
     }
 
-    fn compact_commentary(&mut self, policy: &crate::pipeline::maintenance::CompactPolicy) -> crate::Result<usize> {
-        let cutoff_str = crate::pipeline::maintenance::retention_cutoff(policy.commentary_retention_days())?;
+    fn compact_commentary(
+        &mut self,
+        policy: &crate::pipeline::maintenance::CompactPolicy,
+    ) -> crate::Result<usize> {
+        let cutoff_str =
+            crate::pipeline::maintenance::retention_cutoff(policy.commentary_retention_days())?;
 
         let conn = self.conn.lock();
         let deleted = conn.execute(
@@ -261,8 +269,12 @@ impl OverlayStore for SqliteOverlayStore {
         Ok(deleted)
     }
 
-    fn compactable_cross_link_stats(&self, policy: &crate::pipeline::maintenance::CompactPolicy) -> crate::Result<crate::pipeline::maintenance::CompactStats> {
-        let cutoff_str = crate::pipeline::maintenance::retention_cutoff(policy.audit_retention_days())?;
+    fn compactable_cross_link_stats(
+        &self,
+        policy: &crate::pipeline::maintenance::CompactPolicy,
+    ) -> crate::Result<crate::pipeline::maintenance::CompactStats> {
+        let cutoff_str =
+            crate::pipeline::maintenance::retention_cutoff(policy.audit_retention_days())?;
 
         let conn = self.conn.lock();
         let count: usize = conn.query_row(
@@ -279,8 +291,12 @@ impl OverlayStore for SqliteOverlayStore {
         })
     }
 
-    fn compact_cross_links(&mut self, policy: &crate::pipeline::maintenance::CompactPolicy) -> crate::Result<usize> {
-        let cutoff_str = crate::pipeline::maintenance::retention_cutoff(policy.audit_retention_days())?;
+    fn compact_cross_links(
+        &mut self,
+        policy: &crate::pipeline::maintenance::CompactPolicy,
+    ) -> crate::Result<usize> {
+        let cutoff_str =
+            crate::pipeline::maintenance::retention_cutoff(policy.audit_retention_days())?;
 
         let conn = self.conn.lock();
         // Delete old audit rows that are promoted or rejected.
@@ -294,10 +310,10 @@ impl OverlayStore for SqliteOverlayStore {
 
     fn cross_link_audit_count(&self) -> crate::Result<usize> {
         let conn = self.conn.lock();
-        Ok(conn.query_row(
-            "SELECT COUNT(*) FROM cross_link_audit",
-            [],
-            |row| row.get(0),
-        )?)
+        Ok(
+            conn.query_row("SELECT COUNT(*) FROM cross_link_audit", [], |row| {
+                row.get(0)
+            })?,
+        )
     }
 }

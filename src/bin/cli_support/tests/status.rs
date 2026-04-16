@@ -48,6 +48,30 @@ fn status_not_initialized_human() {
 }
 
 #[test]
+fn status_truly_uninitialized_json() {
+    let repo = tempdir().unwrap();
+    // No .synrepo directory created.
+    let out = status_output(repo.path(), true, false).unwrap();
+    let json: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
+    assert_eq!(json, serde_json::json!({ "initialized": false }));
+}
+
+#[test]
+fn status_truly_uninitialized_human() {
+    let repo = tempdir().unwrap();
+    // No .synrepo directory created.
+    let out = status_output(repo.path(), false, false).unwrap();
+    assert!(
+        out.contains("synrepo status: not initialized"),
+        "expected not-initialized banner, got: {out}"
+    );
+    assert!(
+        out.contains("Run `synrepo init`"),
+        "expected init hint, got: {out}"
+    );
+}
+
+#[test]
 fn status_reports_graph_counts_after_bootstrap() {
     let repo = tempdir().unwrap();
     seed_graph(repo.path());
@@ -259,4 +283,55 @@ fn status_next_step_routes_to_current_when_reconcile_completed() {
         text.contains("graph is current"),
         "expected `graph is current` next-step line, got: {text}"
     );
+}
+
+#[test]
+fn status_reports_corrupt_reconcile_state() {
+    let repo = tempdir().unwrap();
+    seed_graph(repo.path());
+    let synrepo_dir = Config::synrepo_dir(repo.path());
+    let state_dir = synrepo_dir.join("state");
+    std::fs::create_dir_all(&state_dir).unwrap();
+    std::fs::write(state_dir.join("reconcile-state.json"), b"not valid json").unwrap();
+
+    let text = status_output(repo.path(), false, false).unwrap();
+    assert!(text.contains("reconcile:    corrupt"), "got: {text}");
+
+    let json: serde_json::Value =
+        serde_json::from_str(status_output(repo.path(), true, false).unwrap().trim()).unwrap();
+    assert_eq!(json["reconcile_health"], "corrupt");
+}
+
+#[test]
+fn status_reports_corrupt_writer_lock() {
+    let repo = tempdir().unwrap();
+    seed_graph(repo.path());
+    let synrepo_dir = Config::synrepo_dir(repo.path());
+    let state_dir = synrepo_dir.join("state");
+    std::fs::create_dir_all(&state_dir).unwrap();
+    std::fs::write(state_dir.join("writer.lock"), b"not valid json").unwrap();
+
+    let text = status_output(repo.path(), false, false).unwrap();
+    assert!(text.contains("writer lock:  corrupt"), "got: {text}");
+
+    let json: serde_json::Value =
+        serde_json::from_str(status_output(repo.path(), true, false).unwrap().trim()).unwrap();
+    assert_eq!(json["writer_lock"], "corrupt");
+}
+
+#[test]
+fn status_reports_corrupt_watch_state() {
+    let repo = tempdir().unwrap();
+    seed_graph(repo.path());
+    let synrepo_dir = Config::synrepo_dir(repo.path());
+    let state_dir = synrepo_dir.join("state");
+    std::fs::create_dir_all(&state_dir).unwrap();
+    std::fs::write(state_dir.join("watch-daemon.json"), b"not valid json").unwrap();
+
+    let text = status_output(repo.path(), false, false).unwrap();
+    assert!(text.contains("watch:        corrupt"), "got: {text}");
+
+    let json: serde_json::Value =
+        serde_json::from_str(status_output(repo.path(), true, false).unwrap().trim()).unwrap();
+    assert!(json["watch"].as_str().unwrap().contains("corrupt"));
 }

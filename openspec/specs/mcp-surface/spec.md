@@ -174,6 +174,27 @@ synrepo SHALL expose a `synrepo_recent_activity(scope?, kinds?, limit?, since?)`
 - **THEN** the response contains only synrepo's own operational events (reconcile, repair, cross-link, overlay, hotspot)
 - **AND** no agent identity, prompt content, or inter-session interaction data appears in any response field
 
+### Requirement: Define synrepo_change_risk as an on-demand risk assessment tool
+synrepo SHALL expose a `synrepo_change_risk(target?, budget?)` MCP tool that returns a `ChangeRiskCard` for the specified target (file path or symbol name). The `target` parameter SHALL be required and accept a file path (e.g., "src/lib.rs") or a qualified symbol name (e.g., "synrepo::config::Config"). The `budget` parameter SHALL accept `"tiny"` (default), `"normal"`, or `"deep"` and affects which risk signals are computed (see cards spec for budget tier behavior). The tool SHALL return a JSON object containing fields: `target_name`, `target_kind`, `risk_level`, `risk_score`, and `risk_factors`.
+
+#### Scenario: Analyst requests risk assessment for a file
+- **WHEN** an analyst invokes `synrepo_change_risk` with `target: "src/lib.rs"` and `budget: "normal"`
+- **THEN** the tool returns a ChangeRiskCard with target kind "file"
+- **AND** includes drift score and co-change partner signals
+
+#### Scenario: Analyst requests risk assessment for a symbol
+- **WHEN** an analyst invokes `synrepo_change_risk` with `target: "synrepo::bootstrap::bootstrap"`
+- **THEN** the tool returns a ChangeRiskCard with target kind "symbol"
+- **AND** includes drift score and co-change partner signals
+
+#### Scenario: Missing target returns error
+- **WHEN** `synrepo_change_risk` is invoked with a non-existent target
+- **THEN** an error is returned indicating "target not found"
+
+#### Scenario: Tool appears in MCP tool list
+- **WHEN** an MCP client connects and retrieves the tool list
+- **THEN** `synrepo_change_risk` appears in the available tools
+
 ### Requirement: Expose synrepo_entrypoints as a task-first MCP tool
 synrepo SHALL expose a `synrepo_entrypoints(scope?, budget?)` MCP tool that returns an `EntryPointCard` for the requested scope. The `scope` parameter SHALL be an optional path prefix string; when absent, the compiler scans all indexed files. The `budget` parameter SHALL accept `"tiny"` (default), `"normal"`, or `"deep"`. Results SHALL be sorted by kind (binary first, then cli_command, http_handler, lib_root) then by file path within each kind. The result set SHALL be limited to 20 entries by default. The tool SHALL return a parseable JSON object and SHALL NOT raise an error when no entry points are found — it returns an empty `entry_points` list instead.
 

@@ -3,7 +3,9 @@ use serde::Deserialize;
 
 use crate::{core::ids::NodeId, surface::card::CardCompiler};
 
-use super::helpers::{attach_decision_cards, lift_commentary_text, parse_budget, with_mcp_compiler};
+use super::helpers::{
+    attach_decision_cards, lift_commentary_text, parse_budget, with_mcp_compiler,
+};
 use super::SynrepoState;
 
 /// Parameters for the `synrepo_card` tool.
@@ -81,6 +83,23 @@ pub struct TestSurfaceParams {
     pub budget: String,
 }
 
+/// Parameters for the `synrepo_change_risk` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ChangeRiskParams {
+    /// Target: file path or qualified symbol name.
+    pub target: String,
+    /// Budget tier: "tiny" (default), "normal", or "deep".
+    #[serde(default = "default_budget")]
+    pub budget: String,
+}
+
+/// Parameters for the `synrepo_refresh_commentary` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RefreshCommentaryParams {
+    /// Target: qualified symbol name or node ID.
+    pub target: String,
+}
+
 pub fn handle_card(state: &SynrepoState, target: String, budget: String) -> String {
     let budget = parse_budget(&budget);
     with_mcp_compiler(state, |compiler| {
@@ -93,13 +112,23 @@ pub fn handle_card(state: &SynrepoState, target: String, budget: String) -> Stri
                 let card = compiler.symbol_card(sym_id, budget)?;
                 let mut json_val = serde_json::to_value(&card)?;
                 lift_commentary_text(&mut json_val);
-                attach_decision_cards(&mut json_val, NodeId::Symbol(sym_id), compiler.graph(), budget)?;
+                attach_decision_cards(
+                    &mut json_val,
+                    NodeId::Symbol(sym_id),
+                    compiler.graph(),
+                    budget,
+                )?;
                 Ok(json_val)
             }
             NodeId::File(file_id) => {
                 let card = compiler.file_card(file_id, budget)?;
                 let mut json_val = serde_json::to_value(&card)?;
-                attach_decision_cards(&mut json_val, NodeId::File(file_id), compiler.graph(), budget)?;
+                attach_decision_cards(
+                    &mut json_val,
+                    NodeId::File(file_id),
+                    compiler.graph(),
+                    budget,
+                )?;
                 Ok(json_val)
             }
             NodeId::Concept(concept_id) => {
@@ -140,11 +169,8 @@ pub fn handle_public_api(state: &SynrepoState, path: String, budget: String) -> 
 pub fn handle_minimum_context(state: &SynrepoState, target: String, budget: String) -> String {
     let budget = parse_budget(&budget);
     with_mcp_compiler(state, |compiler| {
-        let response = crate::surface::card::neighborhood::resolve_neighborhood(
-            compiler,
-            &target,
-            budget,
-        )?;
+        let response =
+            crate::surface::card::neighborhood::resolve_neighborhood(compiler, &target, budget)?;
         Ok(serde_json::to_value(&response)?)
     })
 }
@@ -178,4 +204,40 @@ pub fn handle_test_surface(state: &SynrepoState, scope: String, budget: String) 
         let card = compiler.test_surface_card(&scope, budget)?;
         Ok(serde_json::to_value(&card)?)
     })
+}
+
+pub fn handle_change_risk(state: &SynrepoState, target: String, budget: String) -> String {
+    let budget = parse_budget(&budget);
+    with_mcp_compiler(state, |compiler| {
+        let node_id = compiler
+            .resolve_target(&target)?
+            .ok_or_else(|| anyhow::anyhow!("target not found: {target}"))?;
+
+        let card = compiler.change_risk_card(node_id, budget)?;
+        Ok(serde_json::to_value(&card)?)
+    })
+}
+
+pub fn handle_refresh_commentary(state: &SynrepoState, target: String) -> String {
+    use crate::pipeline::synthesis::claude::ClaudeCommentaryGenerator;
+    use serde_json::json;
+
+    let result = (|| {
+        let compiler = state.create_compiler().map_err(|e| anyhow::anyhow!(e))?;
+        let node_id = compiler
+            .resolve_target(&target)?
+            .ok_or_else(|| anyhow::anyhow!("target not found: {target}"))?;
+
+        let max_tokens = state.config.commentary_cost_limit;
+        let generator = ClaudeCommentaryGenerator::new_or_noop(max_tokens);
+
+        let text = compiler.refresh_commentary(node_id, &*generator)?;
+        Ok(json!({
+            "node_id": node_id.to_string(),
+            "commentary": text,
+            "status": if text.is_some() { "refreshed" } else { "skipped" }
+        }))
+    })();
+
+    super::helpers::render_result(result)
 }

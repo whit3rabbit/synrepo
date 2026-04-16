@@ -7,29 +7,48 @@
 
 use std::path::Path;
 
+use time::format_description::well_known::Rfc3339;
+use time::OffsetDateTime;
+
 use crate::config::Config;
 
 use super::{
-    watch::{load_reconcile_state, watch_service_status, ReconcileState, WatchServiceStatus},
-    writer::{current_ownership, WriterOwnership},
+    watch::{
+        load_reconcile_state, watch_service_status, ReconcileState, ReconcileStateError,
+        WatchServiceStatus,
+    },
+    writer::{current_ownership, WriterOwnership, WriterOwnershipError},
 };
 
-/// How fresh the last reconcile appears based on its recorded outcome.
+/// Maximum time since the last reconcile (in seconds) before it is considered stale.
+const RECONCILE_STALENESS_THRESHOLD_SECONDS: i64 = 3600;
+
+/// Reason for reconcile staleness.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ReconcileStaleness {
+    /// The last reconcile completed successfully, but it occurred too long ago.
+    Age {
+        /// RFC 3339 UTC timestamp of the last reconcile.
+        last_reconcile_at: String,
+    },
+    /// The last reconcile did not complete, or the outcome was not "completed".
+    Outcome(String),
+}
+
+/// How fresh the last reconcile appears based on its recorded outcome and timestamp.
 ///
-/// Phase 1: freshness is determined by the last outcome string only.
-/// Time-based staleness detection (e.g. "last reconcile was >1 hour ago")
-/// can be layered in once reconcile intervals are defined.
+/// Staleness is determined by either a non-completed outcome or an age
+/// exceeding RECONCILE_STALENESS_THRESHOLD_SECONDS.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ReconcileHealth {
-    /// The last reconcile completed successfully.
+    /// The last reconcile completed successfully and recently.
     Current,
-    /// The last reconcile did not complete, or the outcome was not "completed".
-    Stale {
-        /// Outcome string of the most recent attempted reconcile.
-        last_outcome: String,
-    },
+    /// The last reconcile is stale.
+    Stale(ReconcileStaleness),
     /// No reconcile state file exists; the system has never reconciled.
     Unknown,
+    /// The reconcile state file exists but is malformed.
+    Corrupt(String),
 }
 
 /// Current writer lock ownership status.
@@ -48,6 +67,8 @@ pub enum WriterStatus {
         /// PID recorded in the lock file.
         pid: u32,
     },
+    /// The lock file exists but is unreadable or malformed.
+    Corrupt(String),
 }
 
 /// Top-level operational diagnostics for a `.synrepo/` runtime.
@@ -73,10 +94,14 @@ impl RuntimeDiagnostics {
         out.push_str("Reconcile: ");
         match &self.reconcile_health {
             ReconcileHealth::Current => out.push_str("current\n"),
-            ReconcileHealth::Stale { last_outcome } => {
+            ReconcileHealth::Stale(ReconcileStaleness::Outcome(last_outcome)) => {
                 out.push_str(&format!("stale (last outcome: {last_outcome})\n"));
             }
+            ReconcileHealth::Stale(ReconcileStaleness::Age { .. }) => {
+                out.push_str("stale (over 1 hour old)\n");
+            }
             ReconcileHealth::Unknown => out.push_str("unknown (no reconcile state)\n"),
+            ReconcileHealth::Corrupt(e) => out.push_str(&format!("corrupt ({e})\n")),
         }
 
         out.push_str("Writer: ");
@@ -84,6 +109,7 @@ impl RuntimeDiagnostics {
             WriterStatus::Free => out.push_str("free\n"),
             WriterStatus::HeldBySelf => out.push_str("held by current process\n"),
             WriterStatus::HeldByOther { pid } => out.push_str(&format!("held by pid {pid}\n")),
+            WriterStatus::Corrupt(e) => out.push_str(&format!("corrupt ({e})\n")),
         }
 
         if let Some(state) = &self.last_reconcile {
@@ -113,7 +139,7 @@ impl RuntimeDiagnostics {
 /// is reported as `Unknown` or `Free` rather than returning an error.
 pub fn collect_diagnostics(synrepo_dir: &Path, config: &Config) -> RuntimeDiagnostics {
     let last_reconcile = load_reconcile_state(synrepo_dir);
-    let reconcile_health = compute_reconcile_health(last_reconcile.as_ref());
+    let reconcile_health = compute_reconcile_health(&last_reconcile, OffsetDateTime::now_utc());
     let watch_status = watch_service_status(synrepo_dir);
     let writer_status = compute_writer_status(synrepo_dir);
     let store_guidance = compute_store_guidance(synrepo_dir, config);
@@ -123,25 +149,41 @@ pub fn collect_diagnostics(synrepo_dir: &Path, config: &Config) -> RuntimeDiagno
         watch_status,
         writer_status,
         store_guidance,
-        last_reconcile,
+        last_reconcile: last_reconcile.ok(),
     }
 }
 
-fn compute_reconcile_health(state: Option<&ReconcileState>) -> ReconcileHealth {
-    match state {
-        None => ReconcileHealth::Unknown,
-        Some(s) if s.last_outcome == "completed" => ReconcileHealth::Current,
-        Some(s) => ReconcileHealth::Stale {
-            last_outcome: s.last_outcome.clone(),
-        },
+fn compute_reconcile_health(
+    state_result: &Result<ReconcileState, ReconcileStateError>,
+    now: OffsetDateTime,
+) -> ReconcileHealth {
+    match state_result {
+        Err(ReconcileStateError::NotFound) => ReconcileHealth::Unknown,
+        Err(ReconcileStateError::Malformed(e)) => ReconcileHealth::Corrupt(e.clone()),
+        Ok(s) if s.last_outcome == "completed" => {
+            let last_ts = OffsetDateTime::parse(&s.last_reconcile_at, &Rfc3339).ok();
+            let is_old = last_ts
+                .map(|ts| (now - ts).whole_seconds().abs() >= RECONCILE_STALENESS_THRESHOLD_SECONDS)
+                .unwrap_or(false);
+
+            if is_old {
+                ReconcileHealth::Stale(ReconcileStaleness::Age {
+                    last_reconcile_at: s.last_reconcile_at.clone(),
+                })
+            } else {
+                ReconcileHealth::Current
+            }
+        }
+        Ok(s) => ReconcileHealth::Stale(ReconcileStaleness::Outcome(s.last_outcome.clone())),
     }
 }
 
 fn compute_writer_status(synrepo_dir: &Path) -> WriterStatus {
     match current_ownership(synrepo_dir) {
-        None => WriterStatus::Free,
-        Some(WriterOwnership { pid, .. }) if pid == std::process::id() => WriterStatus::HeldBySelf,
-        Some(WriterOwnership { pid, .. }) => WriterStatus::HeldByOther { pid },
+        Err(WriterOwnershipError::NotFound) => WriterStatus::Free,
+        Err(WriterOwnershipError::Malformed(e)) => WriterStatus::Corrupt(e),
+        Ok(WriterOwnership { pid, .. }) if pid == std::process::id() => WriterStatus::HeldBySelf,
+        Ok(WriterOwnership { pid, .. }) => WriterStatus::HeldByOther { pid },
     }
 }
 
@@ -206,9 +248,10 @@ mod tests {
         );
 
         let diag = collect_diagnostics(&synrepo_dir, &Config::default());
+        let expected_outcome = "failed".to_string();
         assert!(
-            matches!(diag.reconcile_health, ReconcileHealth::Stale { .. }),
-            "expected Stale, got {:?}",
+            matches!(diag.reconcile_health, ReconcileHealth::Stale(ReconcileStaleness::Outcome(ref o)) if o == &expected_outcome),
+            "expected Stale(Outcome(failed)), got {:?}",
             diag.reconcile_health,
         );
     }
@@ -228,11 +271,54 @@ mod tests {
         assert!(
             matches!(
                 diag.reconcile_health,
-                ReconcileHealth::Stale { ref last_outcome } if last_outcome == "lock-conflict"
+                ReconcileHealth::Stale(ReconcileStaleness::Outcome(ref last_outcome)) if last_outcome == "lock-conflict"
             ),
-            "expected Stale(lock-conflict), got {:?}",
+            "expected Stale(Outcome(lock-conflict)), got {:?}",
             diag.reconcile_health,
         );
+    }
+
+    #[test]
+    fn compute_reconcile_health_shows_stale_when_completed_but_old() {
+        let state = ReconcileState {
+            last_reconcile_at: "2024-01-01T12:00:00Z".to_string(),
+            last_outcome: "completed".to_string(),
+            last_error: None,
+            triggering_events: 0,
+            files_discovered: Some(10),
+            symbols_extracted: Some(50),
+        };
+
+        // 2 hours later
+        let now = OffsetDateTime::parse("2024-01-01T14:00:00Z", &Rfc3339).unwrap();
+        let health = compute_reconcile_health(&Ok(state), now);
+
+        assert!(
+            matches!(
+                health,
+                ReconcileHealth::Stale(ReconcileStaleness::Age { .. })
+            ),
+            "expected Stale(Age), got {:?}",
+            health
+        );
+    }
+
+    #[test]
+    fn compute_reconcile_health_shows_current_when_completed_and_recent() {
+        let state = ReconcileState {
+            last_reconcile_at: "2024-01-01T12:00:00Z".to_string(),
+            last_outcome: "completed".to_string(),
+            last_error: None,
+            triggering_events: 0,
+            files_discovered: Some(10),
+            symbols_extracted: Some(50),
+        };
+
+        // 30 minutes later
+        let now = OffsetDateTime::parse("2024-01-01T12:30:00Z", &Rfc3339).unwrap();
+        let health = compute_reconcile_health(&Ok(state), now);
+
+        assert_eq!(health, ReconcileHealth::Current);
     }
 
     #[test]
@@ -306,5 +392,39 @@ mod tests {
         let rendered = diag.render();
         assert!(rendered.contains("files_discovered=10"));
         assert!(rendered.contains("symbols_extracted=30"));
+    }
+
+    #[test]
+    fn diagnostics_shows_corrupt_when_reconcile_state_is_malformed() {
+        let dir = tempdir().unwrap();
+        let synrepo_dir = dir.path().join(".synrepo");
+        let state_dir = synrepo_dir.join("state");
+        std::fs::create_dir_all(&state_dir).unwrap();
+        std::fs::write(state_dir.join("reconcile-state.json"), b"not valid json").unwrap();
+
+        let diag = collect_diagnostics(&synrepo_dir, &Config::default());
+        assert!(
+            matches!(diag.reconcile_health, ReconcileHealth::Corrupt(_)),
+            "expected Corrupt, got {:?}",
+            diag.reconcile_health,
+        );
+        assert!(diag.render().contains("corrupt"));
+    }
+
+    #[test]
+    fn diagnostics_shows_corrupt_when_writer_lock_is_malformed() {
+        let dir = tempdir().unwrap();
+        let synrepo_dir = dir.path().join(".synrepo");
+        let state_dir = synrepo_dir.join("state");
+        std::fs::create_dir_all(&state_dir).unwrap();
+        std::fs::write(state_dir.join("writer.lock"), b"not valid json").unwrap();
+
+        let diag = collect_diagnostics(&synrepo_dir, &Config::default());
+        assert!(
+            matches!(diag.writer_status, WriterStatus::Corrupt(_)),
+            "expected Corrupt, got {:?}",
+            diag.writer_status,
+        );
+        assert!(diag.render().contains("corrupt"));
     }
 }

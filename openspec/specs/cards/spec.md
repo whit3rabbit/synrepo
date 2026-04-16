@@ -119,6 +119,37 @@ synrepo SHALL apply the same `tiny` / `normal` / `deep` budget tier model to Dec
 - **THEN** the DecisionCard includes only title and governed node IDs
 - **AND** the decision body is omitted
 
+### Requirement: Define ChangeRiskCard as an on-demand risk assessment
+
+`ChangeRiskCard` SHALL be a specialized card type that assesses the risk of changing a specific file or symbol. It is computed on-demand via the `synrepo change-risk` CLI command or `synrepo_change_risk` MCP tool, NOT pre-computed in export. The card aggregates three signal categories:
+
+1. **Drift score** — from `edge_drift` table (Jaccard distance on structural fingerprints)
+2. **Co-change partners** — count of `CoChangesWith` edges connected to the target
+3. **Git hotspot score** — from git-intelligence payloads (recency, ownership, commit frequency)
+
+The card SHALL compute a weighted risk score and map it to a risk level: `low` (0.0–0.33), `medium` (0.34–0.66), or `high` (0.67–1.0).
+
+#### Scenario: Return ChangeRiskCard for a file target
+- **WHEN** `synrepo change-risk <file_path>` is invoked
+- **THEN** a ChangeRiskCard is returned containing the target name, target kind ("file"), risk level, risk score, and a list of risk factors
+- **AND** each factor includes the signal name, normalized value (0.0–1.0), and a description
+
+#### Scenario: Return ChangeRiskCard for a symbol target
+- **WHEN** `synrepo change-risk <symbol_name>` is invoked
+- **THEN** a ChangeRiskCard is returned containing the target name, target kind ("symbol"), risk level, risk score, and a list of risk factors
+
+#### Scenario: Budget tier affects data source availability
+- **WHEN** a ChangeRiskCard is requested at `tiny` budget
+- **THEN** only the drift score signal is computed
+- **WHEN** at `normal` budget
+- **THEN** drift score and co-change partners are included
+- **WHEN** at `deep` budget
+- **THEN** all three signals (drift, co-change, hotspot) are included
+
+#### Scenario: Missing target returns error
+- **WHEN** `synrepo change-risk <nonexistent_target>` is invoked
+- **THEN** an error is returned indicating the target was not found
+
 ### Requirement: Define FileCard git intelligence surfacing
 
 `FileCard` SHALL carry a `git_intelligence` field that exposes git-derived recency, hotspot touches, ownership hints, and co-change partners for the file. The field SHALL be absent at `tiny` budget. At `normal` and `deep` budget, the field SHALL be populated when a git context can be established for the repository; the payload SHALL carry a readiness status that distinguishes `ready` from degraded states. When git context cannot be established at all, the field SHALL be `null` rather than a synthetic degraded payload.

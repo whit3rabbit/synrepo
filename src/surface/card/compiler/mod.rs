@@ -28,8 +28,8 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 
 use super::{
-    Budget, CardCompiler, EntryPointCard, FileCard, FileRef, ModuleCard, PublicAPICard,
-    SourceStore, SymbolCard, SymbolRef,
+    Budget, CardCompiler, ChangeRiskCard, EntryPointCard, FileCard, FileRef, ModuleCard,
+    PublicAPICard, SourceStore, SymbolCard, SymbolRef,
 };
 use crate::{
     config::Config,
@@ -42,6 +42,7 @@ use crate::{
 use self::git_cache::GitCache;
 
 mod call_path;
+mod change_risk;
 mod entry_point;
 mod file;
 mod git_cache;
@@ -79,9 +80,6 @@ pub struct GraphCardCompiler {
     git_cache: GitCache,
     /// Optional overlay store for commentary retrieval and persistence.
     overlay: Option<Arc<Mutex<dyn OverlayStore>>>,
-    /// Optional generator invoked lazily at `Deep` budget when no overlay
-    /// entry yet exists for the target node.
-    generator: Option<Arc<dyn CommentaryGenerator>>,
 }
 
 impl GraphCardCompiler {
@@ -95,7 +93,6 @@ impl GraphCardCompiler {
             config: None,
             git_cache: GitCache::new(),
             overlay: None,
-            generator: None,
         }
     }
 
@@ -107,14 +104,9 @@ impl GraphCardCompiler {
         self
     }
 
-    /// Attach an optional overlay store and generator for commentary.
-    pub fn with_overlay(
-        mut self,
-        overlay: Option<Arc<Mutex<dyn OverlayStore>>>,
-        generator: Option<Arc<dyn CommentaryGenerator>>,
-    ) -> Self {
+    /// Attach an optional overlay store for commentary.
+    pub fn with_overlay(mut self, overlay: Option<Arc<Mutex<dyn OverlayStore>>>) -> Self {
         self.overlay = overlay;
-        self.generator = generator;
         self
     }
 
@@ -138,17 +130,75 @@ impl GraphCardCompiler {
         let config = self.config.as_ref()?;
         self.git_cache.resolve_path(repo_root, config, path)
     }
+
+    /// Explicitly refresh commentary for a node using the provided generator.
+    ///
+    /// This is the only path that writes to the overlay for commentary. It
+    /// compiles the target card at `Deep` budget to build context, calls
+    /// the generator, and persists the result. Returns the generated text
+    /// on success.
+    pub fn refresh_commentary(
+        &self,
+        id: NodeId,
+        generator: &dyn CommentaryGenerator,
+    ) -> crate::Result<Option<String>> {
+        let overlay = self.overlay.as_ref().ok_or_else(|| {
+            crate::Error::Other(anyhow::anyhow!("no overlay store configured for refresh"))
+        })?;
+
+        match id {
+            NodeId::Symbol(sym_id) => {
+                // Pin a graph snapshot to read the card context safely.
+                let (prompt, content_hash) =
+                    with_graph_read_snapshot(self.graph.as_ref(), |graph| {
+                        let card = symbol::symbol_card(
+                            symbol::SymbolCardContext {
+                                compiler: self,
+                                graph,
+                                repo_root: &self.repo_root,
+                                overlay: self.overlay.as_ref(),
+                            },
+                            sym_id,
+                            Budget::Deep,
+                        )?;
+
+                        let symbol = graph.get_symbol(sym_id)?.ok_or_else(|| {
+                            crate::Error::Other(anyhow::anyhow!("symbol {sym_id} not found"))
+                        })?;
+                        let file = graph.get_file(symbol.file_id)?.ok_or_else(|| {
+                            crate::Error::Other(anyhow::anyhow!(
+                                "file for symbol {sym_id} not found"
+                            ))
+                        })?;
+
+                        Ok((
+                            symbol::build_generation_context(&card),
+                            file.content_hash.clone(),
+                        ))
+                    })?;
+
+                match generator.generate(id, &prompt)? {
+                    Some(mut entry) => {
+                        // Fill in the source content hash so the entry is immediately Fresh.
+                        entry.provenance.source_content_hash = content_hash;
+                        let text = entry.text.clone();
+                        overlay.lock().insert_commentary(entry)?;
+                        Ok(Some(text))
+                    }
+                    None => Ok(None),
+                }
+            }
+            _ => {
+                tracing::debug!(node_id = %id, "commentary refresh requested for unsupported node kind");
+                Ok(None)
+            }
+        }
+    }
 }
 
 impl CardCompiler for GraphCardCompiler {
     fn symbol_card(&self, id: SymbolNodeId, budget: Budget) -> crate::Result<SymbolCard> {
         // Pin a single committed epoch on the graph for the whole compile.
-        // The overlay is intentionally NOT wrapped here: the Deep-budget
-        // commentary path may lazily write a freshly generated entry via
-        // `insert_commentary`, and mixing that write into an outer read
-        // snapshot would silently upgrade the snapshot to a write
-        // transaction. Overlay reads use per-statement auto-commit; any
-        // brief inconsistency is cosmetic rather than structural.
         with_graph_read_snapshot(self.graph.as_ref(), |graph| {
             symbol::symbol_card(
                 symbol::SymbolCardContext {
@@ -156,7 +206,6 @@ impl CardCompiler for GraphCardCompiler {
                     graph,
                     repo_root: &self.repo_root,
                     overlay: self.overlay.as_ref(),
-                    generator: self.generator.as_ref(),
                 },
                 id,
                 budget,
@@ -215,6 +264,12 @@ impl CardCompiler for GraphCardCompiler {
     fn resolve_target(&self, target: &str) -> crate::Result<Option<NodeId>> {
         with_graph_read_snapshot(self.graph.as_ref(), |graph| {
             resolve::resolve_target(graph, target)
+        })
+    }
+
+    fn change_risk_card(&self, target: NodeId, budget: Budget) -> crate::Result<ChangeRiskCard> {
+        with_graph_read_snapshot(self.graph.as_ref(), |_graph| {
+            change_risk::change_risk_card(self, target, budget)
         })
     }
 }

@@ -128,8 +128,10 @@ pub fn run_structural_compile(
     })
 }
 
+use serde::{Deserialize, Serialize};
+
 /// Summary of what one compile cycle produced.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct CompileSummary {
     /// Files discovered and classified.
     pub files_discovered: usize,

@@ -49,9 +49,11 @@ impl SynrepoState {
     /// The caller is responsible for holding the handle for the duration of
     /// a single tool request and then dropping it to release the SQLite
     /// connections and their associated snapshots.
-    pub fn create_compiler(&self) -> crate::Result<crate::surface::card::compiler::GraphCardCompiler> {
-        use crate::store::sqlite::SqliteGraphStore;
+    pub fn create_compiler(
+        &self,
+    ) -> crate::Result<crate::surface::card::compiler::GraphCardCompiler> {
         use crate::store::overlay::SqliteOverlayStore;
+        use crate::store::sqlite::SqliteGraphStore;
 
         let synrepo_dir = Config::synrepo_dir(&self.repo_root);
         let graph_dir = synrepo_dir.join("graph");
@@ -64,7 +66,7 @@ impl SynrepoState {
             .with_config(self.config.clone());
 
         if let Some(overlay) = overlay {
-            compiler = compiler.with_overlay(Some(Arc::new(Mutex::new(overlay))), None);
+            compiler = compiler.with_overlay(Some(Arc::new(Mutex::new(overlay))));
         }
 
         Ok(compiler)

@@ -171,9 +171,9 @@ fn sync_renders_report_only_and_repaired_distinctly() {
 
 #[test]
 fn sync_fails_fast_when_writer_lock_is_held() {
-    // New behavior: execute_sync acquires the lock at start and fails fast
-    // if another process holds it, rather than proceeding and handling the
-    // conflict internally.
+    // execute_sync acquires the lock at start and fails fast if another
+    // process holds it. We simulate a live foreign holder rather than
+    // acquiring via the current process (which would re-enter).
     let dir = tempdir().unwrap();
     let (repo, synrepo_dir) = setup_repo_for_sync(&dir);
 
@@ -182,8 +182,16 @@ fn sync_fails_fast_when_writer_lock_is_held() {
         &ReconcileOutcome::Failed("forced stale".to_string()),
         0,
     );
-    // Hold the lock - sync should fail immediately rather than proceed.
-    let _lock = acquire_writer_lock(&synrepo_dir).unwrap();
+
+    // Write a fake lock held by a live foreign process.
+    std::fs::create_dir_all(synrepo_dir.join("state")).unwrap();
+    let mut holder = std::process::Command::new("sleep")
+        .arg("30")
+        .spawn()
+        .expect("spawn sleep");
+    let holder_pid = holder.id();
+    let fake = serde_json::json!({"pid": holder_pid, "acquired_at": "2099-01-01T00:00:00Z"});
+    std::fs::write(synrepo_dir.join("state/writer.lock"), fake.to_string()).unwrap();
 
     let result = execute_sync(
         &repo,
@@ -191,6 +199,7 @@ fn sync_fails_fast_when_writer_lock_is_held() {
         &Config::default(),
         SyncOptions::default(),
     );
+    let _ = holder.kill();
 
     // Sync fails because it cannot acquire the writer lock.
     assert!(result.is_err());

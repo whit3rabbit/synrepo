@@ -7,10 +7,11 @@ use notify_debouncer_full::{
 
 use crate::pipeline::{
     watch::{
-        load_reconcile_state, request_watch_control, run_watch_service, WatchConfig,
-        WatchControlRequest, WatchControlResponse, WatchServiceMode, WatchServiceStatus,
+        load_reconcile_state, request_watch_control, run_watch_service, ReconcileOutcome,
+        WatchConfig, WatchControlRequest, WatchControlResponse, WatchServiceMode,
+        WatchServiceStatus,
     },
-    writer::acquire_writer_lock,
+    writer,
 };
 
 use super::{setup_test_repo, wait_for};
@@ -65,7 +66,7 @@ fn watch_service_handles_status_reconcile_and_stop() {
     assert!(matches!(status, WatchControlResponse::Status { .. }));
 
     let reconcile = request_watch_control(&synrepo_dir, WatchControlRequest::ReconcileNow).unwrap();
-    assert!(matches!(reconcile, WatchControlResponse::Status { .. }));
+    assert!(matches!(reconcile, WatchControlResponse::Reconcile { .. }));
 
     let stop = request_watch_control(&synrepo_dir, WatchControlRequest::Stop).unwrap();
     assert!(matches!(stop, WatchControlResponse::Ack { .. }));
@@ -91,30 +92,31 @@ fn watch_service_records_lock_conflict_when_writer_lock_is_held() {
     });
 
     wait_for(
-        || {
-            matches!(
-                super::super::watch_service_status(&synrepo_dir),
-                WatchServiceStatus::Running(_)
-            )
-        },
-        Duration::from_secs(3),
-    );
-    wait_for(
-        || load_reconcile_state(&synrepo_dir).is_some(),
+        || load_reconcile_state(&synrepo_dir).is_ok(),
         Duration::from_secs(3),
     );
 
-    let _lock = acquire_writer_lock(&synrepo_dir).unwrap();
+    // Use a foreign PID to avoid re-entrancy in the same process
+    let (mut child, foreign_pid) = super::live_foreign_pid();
+    let lock_path = crate::pipeline::writer::writer_lock_path(&synrepo_dir);
+    let owner = crate::pipeline::writer::WriterOwnership {
+        pid: foreign_pid,
+        acquired_at: crate::pipeline::writer::now_rfc3339(),
+    };
+    fs::write(&lock_path, serde_json::to_string(&owner).unwrap()).unwrap();
+
     let response = request_watch_control(&synrepo_dir, WatchControlRequest::ReconcileNow).unwrap();
     match response {
-        WatchControlResponse::Status { snapshot } => {
-            assert_eq!(
-                snapshot.last_reconcile_outcome.as_deref(),
-                Some("lock-conflict")
-            );
+        WatchControlResponse::Reconcile { outcome, .. } => {
+            assert_eq!(outcome.as_str(), "lock-conflict");
+            if let ReconcileOutcome::LockConflict { holder_pid } = outcome {
+                assert_eq!(holder_pid, foreign_pid);
+            }
         }
         other => panic!("unexpected control response: {:?}", other),
     }
+
+    child.kill().unwrap();
 
     let _ = request_watch_control(&synrepo_dir, WatchControlRequest::Stop);
     handle.join().unwrap();

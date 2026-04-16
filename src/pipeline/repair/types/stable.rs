@@ -62,6 +62,8 @@ pub enum DriftClass {
     Unsupported,
     /// Surface repair is blocked by a prerequisite condition.
     Blocked,
+    /// Surface state file is corrupted or unreadable.
+    Corrupted,
     /// A cross-link candidate points at an endpoint that no longer exists.
     /// Distinct from `Stale` (which the deterministic revalidator can fix)
     /// because source-deleted candidates require manual review or pruning.
@@ -80,6 +82,7 @@ impl DriftClass {
             Self::TrustConflict => "trust_conflict",
             Self::Unsupported => "unsupported",
             Self::Blocked => "blocked",
+            Self::Corrupted => "corrupted",
             Self::SourceDeleted => "source_deleted",
             Self::HighDriftEdge => "high_drift_edge",
         }

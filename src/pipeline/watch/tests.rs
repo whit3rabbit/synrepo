@@ -46,3 +46,14 @@ pub(super) fn dead_pid() -> u32 {
     child.wait().expect("wait for true");
     pid
 }
+
+pub(super) fn live_foreign_pid() -> (std::process::Child, u32) {
+    let child = Command::new("sleep")
+        .arg("10")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("spawn sleep");
+    let pid = child.id();
+    (child, pid)
+}

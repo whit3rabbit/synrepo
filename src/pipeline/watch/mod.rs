@@ -12,12 +12,13 @@ mod service;
 pub use control::{request_watch_control, WatchControlRequest, WatchControlResponse};
 pub use lease::{
     cleanup_stale_watch_artifacts, load_watch_state, watch_daemon_state_path, watch_service_status,
-    watch_socket_path, WatchDaemonError, WatchDaemonState, WatchServiceMode, WatchServiceStatus,
+    watch_socket_path, StateLoadError, WatchDaemonError, WatchDaemonState, WatchServiceMode,
+    WatchServiceStatus,
 };
 pub use reconcile::{
     emit_cochange_edges_pass, emit_symbol_revisions_pass, load_reconcile_state,
     persist_reconcile_state, reconcile_state_path, run_reconcile_pass, ReconcileOutcome,
-    ReconcileState,
+    ReconcileState, ReconcileStateError,
 };
 pub use service::{run_watch_loop, run_watch_service, WatchConfig};
 

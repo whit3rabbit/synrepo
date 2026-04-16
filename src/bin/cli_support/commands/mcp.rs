@@ -40,8 +40,10 @@ impl ServerHandler for SynrepoServer {
              roots (binaries, CLI commands, HTTP handlers, library entry points), \
              synrepo_module_card for directory-level summaries, \
              synrepo_public_api for exported symbols and public API surface of a directory, \
+             synrepo_change_risk to assess change risk from drift/co-change/hotspot signals, \
              synrepo_findings to see machine-authored relationship candidates, \
-             synrepo_recent_activity for bounded operational event history. \
+             synrepo_recent_activity for bounded operational event history, \
+             synrepo_refresh_commentary to generate or update LLM commentary for a symbol. \
              Low-level primitives: synrepo_node, synrepo_edges, synrepo_query, \
              synrepo_overlay, synrepo_provenance for direct graph and overlay access.",
         )
@@ -212,6 +214,28 @@ impl SynrepoServer {
         Parameters(params): Parameters<cards::TestSurfaceParams>,
     ) -> String {
         cards::handle_test_surface(&self.state, params.scope, params.budget)
+    }
+
+    #[tool(
+        name = "synrepo_change_risk",
+        description = "Return a change risk assessment for a symbol or file, aggregating drift score, co-change partners, and git hotspot data."
+    )]
+    async fn synrepo_change_risk(
+        &self,
+        Parameters(params): Parameters<cards::ChangeRiskParams>,
+    ) -> String {
+        cards::handle_change_risk(&self.state, params.target, params.budget)
+    }
+
+    #[tool(
+        name = "synrepo_refresh_commentary",
+        description = "Explicitly generate or refresh LLM-authored commentary for a symbol. Use when synrepo_card reports commentary_state: 'missing' or 'stale' and fresh prose is required."
+    )]
+    async fn synrepo_refresh_commentary(
+        &self,
+        Parameters(params): Parameters<cards::RefreshCommentaryParams>,
+    ) -> String {
+        cards::handle_refresh_commentary(&self.state, params.target)
     }
 
     #[tool(

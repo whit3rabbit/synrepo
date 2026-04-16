@@ -263,8 +263,8 @@ fn symbol_card_deep_with_fresh_commentary_reports_fresh_state() {
         })
         .unwrap();
 
-    let compiler = GraphCardCompiler::new(Box::new(graph), Some(repo.path()))
-        .with_overlay(Some(overlay), None);
+    let compiler =
+        GraphCardCompiler::new(Box::new(graph), Some(repo.path())).with_overlay(Some(overlay));
     let card = compiler.symbol_card(sym_id, Budget::Deep).unwrap();
 
     assert_eq!(card.commentary_state.as_deref(), Some("fresh"));
@@ -293,8 +293,8 @@ fn symbol_card_deep_with_stale_commentary_reports_stale_state() {
         })
         .unwrap();
 
-    let compiler = GraphCardCompiler::new(Box::new(graph), Some(repo.path()))
-        .with_overlay(Some(overlay), None);
+    let compiler =
+        GraphCardCompiler::new(Box::new(graph), Some(repo.path())).with_overlay(Some(overlay));
     let card = compiler.symbol_card(sym_id, Budget::Deep).unwrap();
 
     assert_eq!(card.commentary_state.as_deref(), Some("stale"));
@@ -305,13 +305,12 @@ fn symbol_card_deep_with_stale_commentary_reports_stale_state() {
 }
 
 #[test]
-fn symbol_card_deep_missing_commentary_with_noop_generator() {
+fn symbol_card_deep_missing_commentary_reports_missing() {
     let (repo, graph, sym_id) = fresh_symbol_fixture();
     let overlay = make_overlay_store(&repo);
-    let generator: Arc<dyn CommentaryGenerator> = Arc::new(NoOpGenerator);
 
-    let compiler = GraphCardCompiler::new(Box::new(graph), Some(repo.path()))
-        .with_overlay(Some(overlay), Some(generator));
+    let compiler =
+        GraphCardCompiler::new(Box::new(graph), Some(repo.path())).with_overlay(Some(overlay));
     let card = compiler.symbol_card(sym_id, Budget::Deep).unwrap();
 
     assert_eq!(card.commentary_state.as_deref(), Some("missing"));
@@ -323,8 +322,8 @@ fn symbol_card_tiny_and_normal_report_budget_withheld() {
     let (repo, graph, sym_id) = fresh_symbol_fixture();
     let overlay = make_overlay_store(&repo);
 
-    let compiler = GraphCardCompiler::new(Box::new(graph), Some(repo.path()))
-        .with_overlay(Some(overlay), None);
+    let compiler =
+        GraphCardCompiler::new(Box::new(graph), Some(repo.path())).with_overlay(Some(overlay));
 
     for budget in [Budget::Tiny, Budget::Normal] {
         let card = compiler.symbol_card(sym_id, budget).unwrap();
@@ -338,7 +337,7 @@ fn symbol_card_tiny_and_normal_report_budget_withheld() {
 }
 
 #[test]
-fn symbol_card_deep_with_generator_persists_new_entry() {
+fn refresh_commentary_persists_new_entry() {
     use crate::overlay::CommentaryEntry;
 
     struct AlwaysGenerate;
@@ -359,26 +358,50 @@ fn symbol_card_deep_with_generator_persists_new_entry() {
 
     let (repo, graph, sym_id) = fresh_symbol_fixture();
     let overlay = make_overlay_store(&repo);
-    let generator: Arc<dyn CommentaryGenerator> = Arc::new(AlwaysGenerate);
+    let generator = AlwaysGenerate;
 
     let compiler = GraphCardCompiler::new(Box::new(graph), Some(repo.path()))
-        .with_overlay(Some(overlay.clone()), Some(generator));
+        .with_overlay(Some(overlay.clone()));
+
+    // Verify it's missing initially.
     let card = compiler.symbol_card(sym_id, Budget::Deep).unwrap();
+    assert_eq!(card.commentary_state.as_deref(), Some("missing"));
 
+    // Explicitly refresh.
+    let text = compiler
+        .refresh_commentary(NodeId::Symbol(sym_id), &generator)
+        .unwrap();
+    assert_eq!(text.as_deref(), Some("Freshly generated."));
+
+    // Verify it's now fresh in the card.
+    let card = compiler.symbol_card(sym_id, Budget::Deep).unwrap();
     assert_eq!(card.commentary_state.as_deref(), Some("fresh"));
-    let commentary = card
-        .overlay_commentary
-        .expect("generated commentary present");
-    assert_eq!(commentary.text, "Freshly generated.");
+    assert_eq!(card.overlay_commentary.unwrap().text, "Freshly generated.");
+}
 
-    // Side effect: entry persisted to the overlay with the current hash.
-    let persisted = overlay
-        .lock()
-        .commentary_for(NodeId::Symbol(sym_id))
-        .unwrap()
-        .expect("entry persisted");
-    assert_eq!(persisted.text, "Freshly generated.");
-    assert!(!persisted.provenance.source_content_hash.is_empty());
+#[test]
+fn symbol_card_read_is_strictly_readonly() {
+    struct ExplodingGenerator;
+    impl CommentaryGenerator for ExplodingGenerator {
+        fn generate(
+            &self,
+            _node: NodeId,
+            _context: &str,
+        ) -> crate::Result<Option<CommentaryEntry>> {
+            panic!("generator must not be called during read");
+        }
+    }
+
+    let (repo, graph, sym_id) = fresh_symbol_fixture();
+    let overlay = make_overlay_store(&repo);
+
+    let compiler =
+        GraphCardCompiler::new(Box::new(graph), Some(repo.path())).with_overlay(Some(overlay));
+
+    // This must not panic because the compiler doesn't even have a generator anymore,
+    // and symbol_card is now strictly read-only.
+    let card = compiler.symbol_card(sym_id, Budget::Deep).unwrap();
+    assert_eq!(card.commentary_state.as_deref(), Some("missing"));
 }
 
 fn sample_proposed_link(
@@ -440,8 +463,8 @@ fn symbol_card_deep_with_fresh_high_tier_link() {
     );
     overlay.lock().insert_link(link).unwrap();
 
-    let compiler = GraphCardCompiler::new(Box::new(graph), Some(repo.path()))
-        .with_overlay(Some(overlay), None);
+    let compiler =
+        GraphCardCompiler::new(Box::new(graph), Some(repo.path())).with_overlay(Some(overlay));
     let card = compiler.symbol_card(sym_id, Budget::Deep).unwrap();
 
     assert_eq!(card.links_state.as_deref(), Some("present"));
@@ -475,8 +498,8 @@ fn symbol_card_deep_missing_links_state() {
     let (repo, graph, sym_id) = fresh_symbol_fixture();
     let overlay = make_overlay_store(&repo);
 
-    let compiler = GraphCardCompiler::new(Box::new(graph), Some(repo.path()))
-        .with_overlay(Some(overlay), None);
+    let compiler =
+        GraphCardCompiler::new(Box::new(graph), Some(repo.path())).with_overlay(Some(overlay));
     let card = compiler.symbol_card(sym_id, Budget::Deep).unwrap();
 
     assert_eq!(card.links_state.as_deref(), Some("missing"));
@@ -501,8 +524,8 @@ fn symbol_card_deep_filters_below_threshold_links() {
     );
     overlay.lock().insert_link(link).unwrap();
 
-    let compiler = GraphCardCompiler::new(Box::new(graph), Some(repo.path()))
-        .with_overlay(Some(overlay), None);
+    let compiler =
+        GraphCardCompiler::new(Box::new(graph), Some(repo.path())).with_overlay(Some(overlay));
     let card = compiler.symbol_card(sym_id, Budget::Deep).unwrap();
 
     // Since the only link is BelowThreshold, it's filtered out, making the state "missing"
@@ -529,8 +552,8 @@ fn symbol_card_deep_stale_link_preservation() {
     );
     overlay.lock().insert_link(link).unwrap();
 
-    let compiler = GraphCardCompiler::new(Box::new(graph), Some(repo.path()))
-        .with_overlay(Some(overlay), None);
+    let compiler =
+        GraphCardCompiler::new(Box::new(graph), Some(repo.path())).with_overlay(Some(overlay));
     let card = compiler.symbol_card(sym_id, Budget::Deep).unwrap();
 
     assert_eq!(card.links_state.as_deref(), Some("present"));

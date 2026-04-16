@@ -539,6 +539,84 @@ pub fn mark_promoted(
     Ok(())
 }
 
+/// Return all cross-link rows stuck in `pending_promotion` state.
+/// Used by the repair loop to resolve incomplete promotions after crashes.
+pub(super) fn pending_promotion_rows(conn: &Connection) -> crate::Result<Vec<PendingPromotionRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT from_node, to_node, kind, reviewer
+         FROM cross_links
+         WHERE state = 'pending_promotion'",
+    )?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(PendingPromotionRow {
+                from_node: row.get::<_, String>(0)?,
+                to_node: row.get::<_, String>(1)?,
+                kind: row.get::<_, String>(2)?,
+                reviewer: row.get::<_, Option<String>>(3)?,
+            })
+        })?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Reset a `pending_promotion` row back to `active` state. Used when crash
+/// recovery determines that the graph edge was never written (Phase 2 did not
+/// complete). The candidate can then be re-accepted.
+pub(super) fn reset_pending_to_active(
+    conn: &Connection,
+    from: NodeId,
+    to: NodeId,
+    kind: OverlayEdgeKind,
+) -> crate::Result<()> {
+    let from_key = from.to_string();
+    let to_key = to.to_string();
+    let kind_str = overlay_edge_kind_as_str(kind);
+    let prov: Option<(String, String, String)> = conn
+        .query_row(
+            "SELECT pass_id, model_identity, confidence_tier FROM cross_links
+             WHERE from_node = ?1 AND to_node = ?2 AND kind = ?3",
+            params![from_key, to_key, kind_str],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            },
+        )
+        .optional()?;
+    let Some((pass_id, model_identity, previous_tier)) = prov else {
+        return Err(crate::Error::Other(anyhow::anyhow!(
+            "reset_pending_to_active: no candidate for ({from_key}, {to_key}, {kind_str})"
+        )));
+    };
+
+    conn.execute(
+        "UPDATE cross_links
+         SET state = 'active', reviewer = NULL, promoted_at = NULL, graph_edge_id = NULL
+         WHERE from_node = ?1 AND to_node = ?2 AND kind = ?3",
+        params![from_key, to_key, kind_str],
+    )?;
+
+    append_event(
+        conn,
+        &AuditEvent {
+            from_node: &from_key,
+            to_node: &to_key,
+            kind: kind_str,
+            event_kind: "promotion_rolled_back",
+            reviewer: None,
+            previous_tier: Some(&previous_tier),
+            new_tier: Some(&previous_tier),
+            reason: Some("crash_recovery_no_edge"),
+            pass_id: &pass_id,
+            model_identity: &model_identity,
+        },
+    )?;
+    Ok(())
+}
+
 // ---------- shared helpers ----------
 
 fn row_to_overlay_link(row: &rusqlite::Row<'_>) -> rusqlite::Result<crate::Result<OverlayLink>> {
@@ -683,6 +761,21 @@ fn anyhow_err<E: std::fmt::Display>(e: E) -> crate::Error {
     crate::Error::Other(anyhow::anyhow!("{e}"))
 }
 
+/// A cross-link row stuck in `pending_promotion` state after a crash during
+/// the `links_accept` three-phase commit. Repair logic resolves these by
+/// checking whether the corresponding graph edge was written.
+#[derive(Clone, Debug)]
+pub struct PendingPromotionRow {
+    /// Source endpoint node ID (display form).
+    pub from_node: String,
+    /// Target endpoint node ID (display form).
+    pub to_node: String,
+    /// `OverlayEdgeKind` snake_case identifier.
+    pub kind: String,
+    /// Reviewer who initiated the promotion, if recorded.
+    pub reviewer: Option<String>,
+}
+
 /// Row-level snapshot used by the repair loop. Strings are the stored
 /// serialized forms — node IDs in display format and the tier/state enums'
 /// snake_case identifiers.
@@ -786,5 +879,22 @@ impl SqliteOverlayStore {
     ) -> crate::Result<()> {
         let conn = self.conn.lock();
         mark_promoted(&conn, from, to, kind, reviewer, graph_edge_id)
+    }
+
+    /// Return all cross-link rows stuck in `pending_promotion` state.
+    pub fn pending_promotion_rows(&self) -> crate::Result<Vec<PendingPromotionRow>> {
+        let conn = self.conn.lock();
+        pending_promotion_rows(&conn)
+    }
+
+    /// Reset a `pending_promotion` row back to `active` so it can be re-accepted.
+    pub fn reset_candidate_to_active(
+        &mut self,
+        from: NodeId,
+        to: NodeId,
+        kind: OverlayEdgeKind,
+    ) -> crate::Result<()> {
+        let conn = self.conn.lock();
+        reset_pending_to_active(&conn, from, to, kind)
     }
 }

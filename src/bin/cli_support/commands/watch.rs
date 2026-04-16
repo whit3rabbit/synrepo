@@ -35,6 +35,11 @@ pub(crate) fn watch(repo_root: &Path, daemon: bool) -> anyhow::Result<()> {
             cleanup_stale_watch_artifacts(&synrepo_dir)?;
         }
         WatchServiceStatus::Inactive => {}
+        WatchServiceStatus::Corrupt(e) => {
+            anyhow::bail!(
+                "watch service state is corrupt: {e}. Run `synrepo watch stop` to clean up."
+            );
+        }
     }
 
     if daemon {
@@ -95,6 +100,10 @@ pub(crate) fn watch_status(repo_root: &Path) -> anyhow::Result<()> {
             };
             render_watch_status_snapshot(&snapshot);
         }
+        WatchServiceStatus::Corrupt(e) => {
+            println!("  state:        corrupt ({e})");
+            println!("  next step:    run `synrepo watch stop` to clean corrupt artifacts");
+        }
     }
 
     Ok(())
@@ -127,7 +136,15 @@ pub(crate) fn watch_stop(repo_root: &Path) -> anyhow::Result<()> {
                 WatchControlResponse::Error { message } => {
                     Err(anyhow::anyhow!("failed to stop watch service: {message}"))
                 }
+                WatchControlResponse::Reconcile { .. } => Err(anyhow::anyhow!(
+                    "stop request returned a reconcile response instead of an acknowledgement"
+                )),
             }
+        }
+        WatchServiceStatus::Corrupt(e) => {
+            cleanup_stale_watch_artifacts(&synrepo_dir)?;
+            println!("Removed corrupt watch service artifacts: {e}");
+            Ok(())
         }
     }
 }
@@ -144,6 +161,10 @@ pub(super) fn ensure_watch_not_running(synrepo_dir: &Path, action: &str) -> anyh
             state.mode,
             state.pid
         )),
+        WatchServiceStatus::Corrupt(_) => {
+            cleanup_stale_watch_artifacts(synrepo_dir)?;
+            Ok(())
+        }
     }
 }
 
@@ -155,6 +176,10 @@ pub(super) fn active_watch_pid(synrepo_dir: &Path) -> anyhow::Result<Option<u32>
             Ok(None)
         }
         WatchServiceStatus::Running(state) => Ok(Some(state.pid)),
+        WatchServiceStatus::Corrupt(_) => {
+            cleanup_stale_watch_artifacts(synrepo_dir)?;
+            Ok(None)
+        }
     }
 }
 
@@ -259,6 +284,10 @@ fn wait_for_watch_shutdown(synrepo_dir: &Path) -> anyhow::Result<()> {
                 return Ok(());
             }
             WatchServiceStatus::Running(_) => thread::sleep(Duration::from_millis(50)),
+            WatchServiceStatus::Corrupt(_) => {
+                cleanup_stale_watch_artifacts(synrepo_dir)?;
+                return Ok(());
+            }
         }
     }
     anyhow::bail!("watch service did not stop in time")

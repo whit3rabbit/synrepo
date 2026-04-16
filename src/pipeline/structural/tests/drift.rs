@@ -11,6 +11,67 @@ use std::fs;
 use tempfile::tempdir;
 
 #[test]
+fn concept_to_code_edge_drifts_when_target_signature_changes() {
+    let repo = tempdir().unwrap();
+    let adr_dir = repo.path().join("docs/adr");
+    let src_dir = repo.path().join("src");
+    fs::create_dir_all(&adr_dir).unwrap();
+    fs::create_dir_all(&src_dir).unwrap();
+
+    // Create a code file with one function.
+    fs::write(src_dir.join("lib.rs"), "pub fn target() -> i32 { 42 }\n").unwrap();
+
+    // Create an ADR that governs the code file.
+    fs::write(
+        adr_dir.join("0001-use-sqlite.md"),
+        "---\ntitle: Use SQLite\nstatus: Accepted\ngoverns: [src/lib.rs]\n---\n\n## Decision\n\nUse SQLite.\n",
+    )
+    .unwrap();
+
+    let config = Config {
+        concept_directories: vec!["docs/adr".to_string()],
+        ..Config::default()
+    };
+    let mut graph = open_graph(&repo);
+
+    // First compile: establishes fingerprints.
+    let _ = super::super::run_structural_compile(repo.path(), &config, &mut graph).unwrap();
+
+    // Verify the Governs edge exists (Concept -> File).
+    let lib_file = graph.file_by_path("src/lib.rs").unwrap().unwrap();
+    let governs_edges = graph
+        .inbound(NodeId::File(lib_file.id), Some(EdgeKind::Governs))
+        .unwrap();
+    assert_eq!(governs_edges.len(), 1, "expected one Governs edge");
+    let edge_id = governs_edges[0].id;
+
+    // Now change the code file's signature (different function signature).
+    fs::write(
+        src_dir.join("lib.rs"),
+        "pub fn target() -> &'static str { \"changed\" }\n",
+    )
+    .unwrap();
+
+    // Second compile: computes drift against prior fingerprints.
+    let _ = super::super::run_structural_compile(repo.path(), &config, &mut graph).unwrap();
+
+    // Verify the Governs edge has drift: the code side changed signatures.
+    let revision = graph.latest_drift_revision().unwrap().unwrap();
+    let scores = graph.read_drift_scores(&revision).unwrap();
+
+    let edge_score = scores.iter().find(|(id, _)| *id == edge_id);
+    assert!(
+        edge_score.is_some(),
+        "Governs edge should have a drift score entry"
+    );
+    let (_, score) = edge_score.unwrap();
+    assert!(
+        *score > 0.0,
+        "concept-to-code edge should drift when target signature changes, got {score}"
+    );
+}
+
+#[test]
 fn drift_scoring_writes_scores_for_cross_file_edges() {
     let repo = tempdir().unwrap();
     fs::create_dir_all(repo.path().join("src")).unwrap();

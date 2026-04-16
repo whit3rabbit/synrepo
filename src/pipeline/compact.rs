@@ -13,6 +13,7 @@ use time::OffsetDateTime;
 
 use crate::config::Config;
 use crate::overlay::OverlayStore;
+use crate::pipeline::writer::{acquire_writer_lock, LockError};
 
 /// Load the last compaction timestamp from state file.
 pub fn load_last_compaction_timestamp(synrepo_dir: &Path) -> Option<OffsetDateTime> {
@@ -51,7 +52,10 @@ struct CompactState {
 
 /// Rotate the repair-log file: summarize old entries into a header line,
 /// preserve recent entries within the retention window.
-pub fn rotate_repair_log(synrepo_dir: &Path, policy: &crate::pipeline::maintenance::CompactPolicy) -> crate::Result<crate::pipeline::maintenance::CompactSummary> {
+pub fn rotate_repair_log(
+    synrepo_dir: &Path,
+    policy: &crate::pipeline::maintenance::CompactPolicy,
+) -> crate::Result<crate::pipeline::maintenance::CompactSummary> {
     let log_path = synrepo_dir.join("state/repair-log.jsonl");
     if !log_path.exists() {
         return Ok(crate::pipeline::maintenance::CompactSummary::default());
@@ -66,8 +70,10 @@ pub fn rotate_repair_log(synrepo_dir: &Path, policy: &crate::pipeline::maintenan
     // Single pass: collect recent entries and build summary counts simultaneously.
     let mut entries: Vec<String> = Vec::new();
     let mut summarized_count = 0;
-    let mut surface_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
-    let mut action_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    let mut surface_counts: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
+    let mut action_counts: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
 
     for line in reader.lines() {
         let line = line?;
@@ -78,7 +84,9 @@ pub fn rotate_repair_log(synrepo_dir: &Path, policy: &crate::pipeline::maintenan
         // Expected format: {"timestamp": "...", ...}
         if let Ok(entry) = serde_json::from_str::<serde_json::Value>(&line) {
             if let Some(ts) = entry.get("timestamp").and_then(|v| v.as_str()) {
-                if let Ok(dt) = OffsetDateTime::parse(ts, &time::format_description::well_known::Rfc3339) {
+                if let Ok(dt) =
+                    OffsetDateTime::parse(ts, &time::format_description::well_known::Rfc3339)
+                {
                     if dt < cutoff {
                         // Old entry - summarize it.
                         summarized_count += 1;
@@ -122,9 +130,11 @@ pub fn rotate_repair_log(synrepo_dir: &Path, policy: &crate::pipeline::maintenan
     }
     fs::rename(&tmp_path, &log_path)?;
 
-    let mut summary = crate::pipeline::maintenance::CompactSummary::default();
-    summary.repair_log_summarized = summarized_count;
-    summary.compaction_timestamp = OffsetDateTime::now_utc();
+    let summary = crate::pipeline::maintenance::CompactSummary {
+        repair_log_summarized: summarized_count,
+        compaction_timestamp: OffsetDateTime::now_utc(),
+        ..Default::default()
+    };
     Ok(summary)
 }
 
@@ -167,10 +177,10 @@ pub fn plan_compact(
     use crate::pipeline::maintenance::{CompactAction, CompactComponent, CompactStats};
 
     let mut actions = Vec::new();
-    let mut stats = CompactStats::default();
-
-    // Load last compaction timestamp.
-    stats.last_compaction_timestamp = load_last_compaction_timestamp(synrepo_dir);
+    let mut stats = CompactStats {
+        last_compaction_timestamp: load_last_compaction_timestamp(synrepo_dir),
+        ..CompactStats::default()
+    };
 
     // Query commentary compactability.
     let overlay_dir = synrepo_dir.join("overlay");
@@ -189,10 +199,16 @@ pub fn plan_compact(
 
     // Determine actions needed.
     if stats.compactable_commentary > 0 {
-        actions.push((CompactComponent::Commentary, CompactAction::CompactCommentary));
+        actions.push((
+            CompactComponent::Commentary,
+            CompactAction::CompactCommentary,
+        ));
     }
     if stats.compactable_cross_links > 0 {
-        actions.push((CompactComponent::CrossLinks, CompactAction::CompactCrossLinks));
+        actions.push((
+            CompactComponent::CrossLinks,
+            CompactAction::CompactCrossLinks,
+        ));
     }
 
     // Repair-log rotation.
@@ -213,11 +229,13 @@ pub fn plan_compact(
     let plan = crate::pipeline::maintenance::CompactPlan {
         actions: actions
             .into_iter()
-            .map(|(component, action)| crate::pipeline::maintenance::ComponentCompact {
-                component,
-                action,
-                reason: String::new(), // Will be filled during execution.
-            })
+            .map(
+                |(component, action)| crate::pipeline::maintenance::ComponentCompact {
+                    component,
+                    action,
+                    reason: String::new(), // Will be filled during execution.
+                },
+            )
             .collect(),
         estimated_stats: stats,
     };
@@ -233,22 +251,43 @@ pub fn execute_compact(
 ) -> crate::Result<crate::pipeline::maintenance::CompactSummary> {
     use crate::pipeline::maintenance::CompactComponent;
 
-    let mut summary = crate::pipeline::maintenance::CompactSummary::default();
-    summary.compaction_timestamp = OffsetDateTime::now_utc();
+    // Acquire the writer lock for the duration of the compaction.
+    let _lock = acquire_writer_lock(synrepo_dir).map_err(|err| match err {
+        LockError::HeldByOther { pid, .. } => anyhow::anyhow!(
+            "compact: writer lock held by pid {pid}; wait for it to finish or stop the watch daemon"
+        ),
+        LockError::Io { path, source } => anyhow::anyhow!(
+            "compact: could not acquire writer lock at {}: {source}",
+            path.display()
+        ),
+    })?;
+
+    let mut summary = crate::pipeline::maintenance::CompactSummary {
+        compaction_timestamp: OffsetDateTime::now_utc(),
+        ..Default::default()
+    };
 
     let overlay_dir = synrepo_dir.join("overlay");
+    let mut overlay_store =
+        match crate::store::overlay::SqliteOverlayStore::open_existing(&overlay_dir) {
+            Ok(store) => Some(store),
+            Err(e) => {
+                tracing::debug!(error = %e, "overlay store not available for compaction");
+                None
+            }
+        };
 
     for comp in &plan.actions {
         match comp.component {
             CompactComponent::Commentary => {
-                if let Ok(mut store) = crate::store::overlay::SqliteOverlayStore::open_existing(&overlay_dir) {
+                if let Some(ref mut store) = overlay_store {
                     if let Ok(count) = store.compact_commentary(&policy) {
                         summary.commentary_compacted = count;
                     }
                 }
             }
             CompactComponent::CrossLinks => {
-                if let Ok(mut store) = crate::store::overlay::SqliteOverlayStore::open_existing(&overlay_dir) {
+                if let Some(ref mut store) = overlay_store {
                     if let Ok(count) = store.compact_cross_links(&policy) {
                         summary.cross_links_compacted = count;
                     }
@@ -292,23 +331,116 @@ mod tests {
         let old_timestamp = now - time::Duration::days(60);
         let recent_timestamp = now - time::Duration::days(5);
 
-        let old_ts_str = old_timestamp.format(&time::format_description::well_known::Rfc3339).unwrap();
-        let recent_ts_str = recent_timestamp.format(&time::format_description::well_known::Rfc3339).unwrap();
+        let old_ts_str = old_timestamp
+            .format(&time::format_description::well_known::Rfc3339)
+            .unwrap();
+        let recent_ts_str = recent_timestamp
+            .format(&time::format_description::well_known::Rfc3339)
+            .unwrap();
 
-        fs::write(&log_path, format!(
-            r#"{{"timestamp":"{}","surface":"graph","action":"retire_edges"}}
+        fs::write(
+            &log_path,
+            format!(
+                r#"{{"timestamp":"{}","surface":"graph","action":"retire_edges"}}
 {{"timestamp":"{}","surface":"overlay","action":"prune_orphans"}}
 "#,
-            old_ts_str, recent_ts_str
-        )).unwrap();
+                old_ts_str, recent_ts_str
+            ),
+        )
+        .unwrap();
 
-        let summary = rotate_repair_log(&synrepo_dir, &crate::pipeline::maintenance::CompactPolicy::Default).unwrap();
+        let summary = rotate_repair_log(
+            &synrepo_dir,
+            &crate::pipeline::maintenance::CompactPolicy::Default,
+        )
+        .unwrap();
         assert_eq!(summary.repair_log_summarized, 1);
 
         // Verify new log has header and remaining entry.
         let content = fs::read_to_string(&log_path).unwrap();
         assert!(content.starts_with('#'), "should have summary header");
-        assert!(content.contains(&recent_ts_str), "should retain recent entry");
+        assert!(
+            content.contains(&recent_ts_str),
+            "should retain recent entry"
+        );
+    }
+
+    #[test]
+    fn rotate_repair_log_is_idempotent_on_already_compacted() {
+        let dir = tempdir().unwrap();
+        let synrepo_dir = dir.path().join(".synrepo");
+        let state_dir = synrepo_dir.join("state");
+        fs::create_dir_all(&state_dir).unwrap();
+
+        // Write an already-compacted log with header.
+        let log_path = state_dir.join("repair-log.jsonl");
+        let now = OffsetDateTime::now_utc();
+        let recent_timestamp = now - time::Duration::days(5);
+        let recent_ts_str = recent_timestamp
+            .format(&time::format_description::well_known::Rfc3339)
+            .unwrap();
+
+        fs::write(
+            &log_path,
+            format!(
+                "# compacted 5 entries, graph=2, overlay=3\n\
+{{\"timestamp\":\"{}\",\"surface\":\"overlay\",\"action\":\"prune_orphans\"}}\n",
+                recent_ts_str
+            ),
+        )
+        .unwrap();
+
+        // Running rotation again should be a no-op (no entries beyond retention).
+        let summary = rotate_repair_log(
+            &synrepo_dir,
+            &crate::pipeline::maintenance::CompactPolicy::Default,
+        )
+        .unwrap();
+        assert_eq!(summary.repair_log_summarized, 0);
+
+        // The header should still be there.
+        let content = fs::read_to_string(&log_path).unwrap();
+        assert!(
+            content.contains("compacted 5 entries"),
+            "should preserve existing summary"
+        );
+    }
+
+    #[test]
+    fn rotate_repair_log_uses_atomic_file_rewrite() {
+        let dir = tempdir().unwrap();
+        let synrepo_dir = dir.path().join(".synrepo");
+        let state_dir = synrepo_dir.join("state");
+        fs::create_dir_all(&state_dir).unwrap();
+
+        // Write a log with entries that need compaction.
+        let log_path = state_dir.join("repair-log.jsonl");
+        let now = OffsetDateTime::now_utc();
+        let old_timestamp = now - time::Duration::days(60);
+        let old_ts_str = old_timestamp
+            .format(&time::format_description::well_known::Rfc3339)
+            .unwrap();
+
+        fs::write(
+            &log_path,
+            format!(
+                r#"{{"timestamp":"{}","surface":"graph","action":"retire_edges"}}
+"#,
+                old_ts_str
+            ),
+        )
+        .unwrap();
+
+        // Run rotation - this should atomically rewrite the file.
+        let summary = rotate_repair_log(
+            &synrepo_dir,
+            &crate::pipeline::maintenance::CompactPolicy::Default,
+        )
+        .unwrap();
+        assert_eq!(summary.repair_log_summarized, 1);
+
+        // The original file is replaced (no temp file left behind).
+        assert!(!log_path.with_extension("jsonl.tmp").exists());
     }
 
     #[test]
@@ -321,8 +453,10 @@ mod tests {
         // Create a minimal graph db.
         let db_path = graph_dir.join("nodes.db");
         let conn = rusqlite::Connection::open(&db_path).unwrap();
-        conn.execute("CREATE TABLE IF NOT EXISTS nodes (id TEXT PRIMARY KEY)", []).unwrap();
-        conn.execute("INSERT INTO nodes (id) VALUES ('test')", []).unwrap();
+        conn.execute("CREATE TABLE IF NOT EXISTS nodes (id TEXT PRIMARY KEY)", [])
+            .unwrap();
+        conn.execute("INSERT INTO nodes (id) VALUES ('test')", [])
+            .unwrap();
         drop(conn);
 
         let result = wal_checkpoint(&synrepo_dir).unwrap();
@@ -335,8 +469,102 @@ mod tests {
         let synrepo_dir = dir.path().join(".synrepo");
         let config = Config::default();
 
-        let plan = plan_compact(&synrepo_dir, &config, crate::pipeline::maintenance::CompactPolicy::Default).unwrap();
+        let plan = plan_compact(
+            &synrepo_dir,
+            &config,
+            crate::pipeline::maintenance::CompactPolicy::Default,
+        )
+        .unwrap();
         // Just verify it doesn't panic and has actions.
         assert!(plan.actions.len() >= 1); // At least WAL checkpoint.
+    }
+
+    #[test]
+    fn execute_compact_full_pass() {
+        let dir = tempdir().unwrap();
+        let synrepo_dir = dir.path().join(".synrepo");
+
+        let overlay_dir = synrepo_dir.join("overlay");
+        let state_dir = synrepo_dir.join("state");
+        let graph_dir = synrepo_dir.join("graph");
+        fs::create_dir_all(&overlay_dir).unwrap();
+        fs::create_dir_all(&state_dir).unwrap();
+        fs::create_dir_all(&graph_dir).unwrap();
+
+        let graph_db = graph_dir.join("nodes.db");
+        let conn = rusqlite::Connection::open(&graph_db).unwrap();
+        conn.execute("CREATE TABLE IF NOT EXISTS nodes (id TEXT PRIMARY KEY)", [])
+            .unwrap();
+        conn.execute("INSERT INTO nodes (id) VALUES ('file_1')", [])
+            .unwrap();
+        conn.execute("INSERT INTO nodes (id) VALUES ('symbol_1')", [])
+            .unwrap();
+        drop(conn);
+
+        let mut store = crate::store::overlay::SqliteOverlayStore::open(&overlay_dir).unwrap();
+        let stale_node = crate::core::ids::NodeId::Symbol(crate::core::ids::SymbolNodeId(1));
+        let old_timestamp = OffsetDateTime::now_utc() - time::Duration::days(60);
+        store
+            .insert_commentary(crate::overlay::CommentaryEntry {
+                node_id: stale_node,
+                text: "Stale commentary".to_string(),
+                provenance: crate::overlay::CommentaryProvenance {
+                    source_content_hash: "h1".to_string(),
+                    pass_id: "test".to_string(),
+                    model_identity: "test".to_string(),
+                    generated_at: old_timestamp,
+                },
+            })
+            .unwrap();
+        store.commit().unwrap();
+
+        let log_path = state_dir.join("repair-log.jsonl");
+        let now = OffsetDateTime::now_utc();
+        let old_ts = now - time::Duration::days(60);
+        let old_ts_str = old_ts
+            .format(&time::format_description::well_known::Rfc3339)
+            .unwrap();
+        fs::write(
+            &log_path,
+            format!(
+                r#"{{"timestamp":"{}","surface":"graph","action":"retire_edges"}}
+"#,
+                old_ts_str
+            ),
+        )
+        .unwrap();
+
+        let conn = rusqlite::Connection::open(&graph_db).unwrap();
+        let pre_file_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM nodes", [], |row| row.get(0))
+            .unwrap();
+        drop(conn);
+
+        let config = Config::default();
+        let plan = plan_compact(
+            &synrepo_dir,
+            &config,
+            crate::pipeline::maintenance::CompactPolicy::Default,
+        )
+        .unwrap();
+        let summary = execute_compact(
+            &synrepo_dir,
+            &plan,
+            crate::pipeline::maintenance::CompactPolicy::Default,
+        )
+        .unwrap();
+
+        assert!(summary.commentary_compacted >= 1 || summary.repair_log_summarized >= 1);
+
+        let conn = rusqlite::Connection::open(&graph_db).unwrap();
+        let post_file_count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM nodes", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(
+            pre_file_count, post_file_count,
+            "graph rows must be preserved"
+        );
+
+        assert!(synrepo_dir.join("state/compact-state.json").exists());
     }
 }

@@ -200,16 +200,37 @@ pub(crate) fn links_accept(
         .find(|candidate| candidate.to == to && candidate.kind == kind);
 
     // If already promoted, this is a no-op replay.
+    // If stuck in pending_promotion, check whether Phase 2 completed.
     if matched.is_some() {
         let conn = rusqlite::Connection::open(SqliteOverlayStore::db_path(&overlay_dir))?;
         let state_str: String = conn.query_row(
             "SELECT state FROM cross_links WHERE from_node = ?1 AND to_node = ?2 AND kind = ?3",
-            [from.to_string(), to.to_string(), overlay_edge_kind_as_str(kind).to_string()],
+            [
+                from.to_string(),
+                to.to_string(),
+                overlay_edge_kind_as_str(kind).to_string(),
+            ],
             |row| row.get(0),
         )?;
         if state_str == "promoted" {
             println!("Candidate {candidate_id} is already promoted.");
             return Ok(());
+        }
+        if state_str == "pending_promotion" {
+            // Crash recovery: Phase 1 completed but Phase 3 may not have.
+            let edge_exists = graph
+                .outbound(from, Some(edge_kind))
+                .unwrap_or_default()
+                .iter()
+                .any(|e| e.to == to);
+            if edge_exists {
+                // Phase 2 completed; just finish Phase 3.
+                overlay.mark_candidate_promoted(from, to, kind, reviewer, &edge_id.to_string())?;
+                println!("Candidate {candidate_id} promotion completed (crash recovery).");
+                return Ok(());
+            }
+            // Phase 2 never ran; fall through to normal accept.
+            // mark_candidate_pending is idempotent for this state.
         }
     }
 

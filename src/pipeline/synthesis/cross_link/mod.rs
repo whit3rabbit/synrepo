@@ -7,6 +7,9 @@
 //! (`triage::candidate_pairs`) that bounds the work by repo size rather than
 //! LLM throughput. Confidence scoring is deterministic too; the LLM only
 //! produces the spans and the tier is derived from them.
+//!
+//! Optional semantic prefilter uses embedding similarity to catch pairs the
+//! deterministic prefilter missed.
 
 pub mod triage;
 
@@ -15,6 +18,26 @@ use crate::overlay::{
     classify_confidence, CitedSpan, ConfidenceThresholds, ConfidenceTier, OverlayEdgeKind,
     OverlayLink,
 };
+
+/// Source of a candidate pair during triage.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash)]
+pub enum TriageSource {
+    /// Determined via name/identifier token overlap (primary prefilter).
+    #[default]
+    Deterministic,
+    /// Rescued via embedding similarity (semantic prefilter).
+    Semantic,
+}
+
+impl TriageSource {
+    /// User-facing identifier.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            TriageSource::Deterministic => "deterministic",
+            TriageSource::Semantic => "semantic_triage",
+        }
+    }
+}
 
 /// Scope passed to a [`CrossLinkGenerator`]. Carries the candidate pairs the
 /// prefilter has already surfaced, so the generator does not traverse the
@@ -42,6 +65,8 @@ pub struct CandidatePair {
     /// observed edges. `0` means the endpoints share an incident edge;
     /// `u32::MAX` means unreachable (still allowed if name match is strong).
     pub graph_distance: u32,
+    /// How this pair was surfaced.
+    pub source: TriageSource,
 }
 
 /// LLM-agnostic boundary between the synthesis pipeline and a cross-link
@@ -182,6 +207,7 @@ mod tests {
                 to: NodeId::Symbol(SymbolNodeId(2)),
                 kind: OverlayEdgeKind::References,
                 graph_distance: 1,
+                source: TriageSource::Deterministic,
             }],
         };
         let out = NoOpCrossLinkGenerator.generate_candidates(&scope).unwrap();

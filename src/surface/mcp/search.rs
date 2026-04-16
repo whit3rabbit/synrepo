@@ -129,12 +129,8 @@ pub fn handle_change_impact(state: &SynrepoState, target: String) -> String {
                 .resolve_target(&target)?
                 .ok_or_else(|| anyhow::anyhow!("target not found: {target}"))?;
 
-            let imports_in = compiler
-                .graph()
-                .inbound(node_id, Some(EdgeKind::Imports))?;
-            let calls_in = compiler
-                .graph()
-                .inbound(node_id, Some(EdgeKind::Calls))?;
+            let imports_in = compiler.graph().inbound(node_id, Some(EdgeKind::Imports))?;
+            let calls_in = compiler.graph().inbound(node_id, Some(EdgeKind::Calls))?;
 
             let mut impacted_files: Vec<serde_json::Value> = Vec::new();
             let mut seen_files = HashSet::new();

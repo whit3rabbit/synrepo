@@ -305,7 +305,10 @@ pub fn handle_provenance(state: &SynrepoState, id: String) -> String {
     })
 }
 
-fn node_exists(compiler: &crate::surface::card::compiler::GraphCardCompiler, node_id: NodeId) -> anyhow::Result<()> {
+fn node_exists(
+    compiler: &crate::surface::card::compiler::GraphCardCompiler,
+    node_id: NodeId,
+) -> anyhow::Result<()> {
     let exists = match node_id {
         NodeId::File(id) => compiler.graph().get_file(id)?.is_some(),
         NodeId::Symbol(id) => compiler.graph().get_symbol(id)?.is_some(),

@@ -95,7 +95,7 @@ pub struct RecentActivityQuery {
 ///
 /// Returns `None` when no reconcile-state file exists.
 pub fn read_reconcile_event(synrepo_dir: &Path) -> Option<ActivityEntry> {
-    let state = load_reconcile_state(synrepo_dir)?;
+    let state = load_reconcile_state(synrepo_dir).ok()?;
     let payload = serde_json::json!({
         "outcome": state.last_outcome,
         "note": "single_entry",

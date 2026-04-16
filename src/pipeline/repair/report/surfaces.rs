@@ -1,4 +1,4 @@
-use crate::pipeline::diagnostics::{ReconcileHealth, WriterStatus};
+use crate::pipeline::diagnostics::{ReconcileHealth, ReconcileStaleness, WriterStatus};
 use crate::pipeline::export::load_manifest;
 use crate::pipeline::repair::{
     declared_links::check_declared_links, DriftClass, RepairAction, RepairFinding, RepairSurface,
@@ -33,6 +33,14 @@ impl SurfaceCheck for WriterLockCheck {
                 target_id: None,
                 recommended_action: RepairAction::None,
                 notes: None,
+            },
+            WriterStatus::Corrupt(e) => RepairFinding {
+                surface: self.surface(),
+                drift_class: DriftClass::Corrupted,
+                severity: Severity::Blocked,
+                target_id: None,
+                recommended_action: RepairAction::ManualReview,
+                notes: Some(format!("Writer lock file is corrupt: {e}. Remove .synrepo/state/writer.lock to recover.")),
             },
         };
         vec![finding]
@@ -110,11 +118,25 @@ impl SurfaceCheck for StructuralRefreshCheck {
                         .to_string(),
                 ),
             ),
-            ReconcileHealth::Stale { last_outcome } => (
+            ReconcileHealth::Stale(ReconcileStaleness::Outcome(last_outcome)) => (
                 DriftClass::Stale,
                 Severity::Actionable,
                 RepairAction::RunReconcile,
                 Some(format!("Last reconcile outcome: {last_outcome}")),
+            ),
+            ReconcileHealth::Stale(ReconcileStaleness::Age { .. }) => (
+                DriftClass::Stale,
+                Severity::Actionable,
+                RepairAction::RunReconcile,
+                Some("Last successful reconcile was over 1 hour ago.".to_string()),
+            ),
+            ReconcileHealth::Corrupt(e) => (
+                DriftClass::Corrupted,
+                Severity::Blocked,
+                RepairAction::ManualReview,
+                Some(format!(
+                    "Reconcile state file is corrupt: {e}. Remove .synrepo/state/reconcile-state.json to recover."
+                )),
             ),
         };
 
@@ -178,7 +200,8 @@ impl SurfaceCheck for ExportSurfaceCheck {
                 target_id: None,
                 recommended_action: RepairAction::None,
                 notes: Some(
-                    "Export directory has not been generated yet. Run `synrepo export`.".to_string(),
+                    "Export directory has not been generated yet. Run `synrepo export`."
+                        .to_string(),
                 ),
             }],
             Some(manifest) => {
@@ -440,12 +463,24 @@ fn drifted_cross_link_finding(row: DriftedCrossLink) -> RepairFinding {
             recommended_action: RepairAction::ManualReview,
             notes: Some("One or both endpoints are absent from the current graph.".to_string()),
         },
+        CrossLinkDrift::PendingPromotion => RepairFinding {
+            surface: RepairSurface::ProposedLinksOverlay,
+            drift_class: DriftClass::Stale,
+            severity: Severity::Actionable,
+            target_id: Some(target),
+            recommended_action: RepairAction::ManualReview,
+            notes: Some(
+                "Candidate stuck in pending_promotion after crash; run synrepo sync to resolve."
+                    .to_string(),
+            ),
+        },
     }
 }
 
 enum CrossLinkDrift {
     Stale,
     SourceDeleted,
+    PendingPromotion,
 }
 
 struct DriftedCrossLink {
@@ -467,8 +502,21 @@ fn scan_cross_links(synrepo_dir: &std::path::Path) -> crate::Result<CrossLinkSca
     use std::str::FromStr;
 
     let overlay = SqliteOverlayStore::open_existing(&synrepo_dir.join("overlay"))?;
+
+    // Surface pending_promotion rows as a distinct drift class.
+    let pending = overlay.pending_promotion_rows()?;
+    let mut drifted: Vec<DriftedCrossLink> = pending
+        .into_iter()
+        .map(|row| DriftedCrossLink {
+            from_node: row.from_node,
+            to_node: row.to_node,
+            kind: row.kind,
+            classification: CrossLinkDrift::PendingPromotion,
+        })
+        .collect();
+
     let rows = overlay.cross_link_hashes()?;
-    if rows.is_empty() {
+    if rows.is_empty() && drifted.is_empty() {
         return Ok(CrossLinkScan {
             total: 0,
             drifted: Vec::new(),
@@ -477,7 +525,6 @@ fn scan_cross_links(synrepo_dir: &std::path::Path) -> crate::Result<CrossLinkSca
 
     let graph = SqliteGraphStore::open_existing(&synrepo_dir.join("graph"))?;
 
-    let mut drifted = Vec::new();
     let total = rows.len();
     for row in rows {
         let from = NodeId::from_str(&row.from_node);

@@ -4,6 +4,97 @@ use std::fs;
 use tempfile::tempdir;
 
 #[test]
+fn git_rename_fallback_preserves_file_id_when_content_changes() {
+    let repo = tempdir().unwrap();
+    fs::create_dir_all(repo.path().join("src")).unwrap();
+
+    // Initialize git repo.
+    crate::pipeline::git::test_support::git(&repo, &["init"]);
+    crate::pipeline::git::test_support::git(&repo, &["config", "user.name", "test"]);
+    crate::pipeline::git::test_support::git(&repo, &["config", "user.email", "test@example.com"]);
+
+    // Create a file large enough that git rename detection (similarity-based)
+    // can identify it after a rename with minor content changes.
+    let original_content = "\
+/// Documentation for the original function.
+/// This comment makes the file large enough for rename detection.
+pub fn original_fn() -> i32 {
+    let x = 1;
+    let y = 2;
+    x + y
+}
+
+/// Documentation for the helper function.
+/// Another comment line for similarity matching.
+pub fn helper_fn() -> i32 {
+    42
+}
+";
+    fs::write(repo.path().join("src/old_name.rs"), original_content).unwrap();
+    crate::pipeline::git::test_support::git(&repo, &["add", "."]);
+    crate::pipeline::git::test_support::git(&repo, &["commit", "-m", "initial"]);
+
+    let config = Config::default();
+    let mut graph = open_graph(&repo);
+
+    let _ = super::super::run_structural_compile(repo.path(), &config, &mut graph).unwrap();
+    let file_before = graph.file_by_path("src/old_name.rs").unwrap().unwrap();
+    let file_id_before = file_before.id;
+
+    // Rename and change one return type (high similarity, different content hash).
+    let renamed_content = "\
+/// Documentation for the original function.
+/// This comment makes the file large enough for rename detection.
+pub fn original_fn() -> i64 {
+    let x = 1;
+    let y = 2;
+    x + y
+}
+
+/// Documentation for the helper function.
+/// Another comment line for similarity matching.
+pub fn helper_fn() -> i32 {
+    42
+}
+";
+    fs::remove_file(repo.path().join("src/old_name.rs")).unwrap();
+    fs::write(repo.path().join("src/new_name.rs"), renamed_content).unwrap();
+    crate::pipeline::git::test_support::git(&repo, &["add", "."]);
+    crate::pipeline::git::test_support::git(&repo, &["commit", "-m", "rename and modify"]);
+
+    let summary = super::super::run_structural_compile(repo.path(), &config, &mut graph).unwrap();
+
+    // Verify new file is in graph and old is gone.
+    let paths: Vec<_> = graph
+        .all_file_paths()
+        .unwrap()
+        .into_iter()
+        .map(|(p, _)| p)
+        .collect();
+    assert!(
+        paths.contains(&"src/new_name.rs".to_string()),
+        "renamed file should be in graph, got: {paths:?}"
+    );
+    assert!(
+        !paths.contains(&"src/old_name.rs".to_string()),
+        "old path should be gone"
+    );
+
+    // The identity cascade should have resolved at least one rename.
+    assert!(
+        summary.identities_resolved > 0,
+        "should have resolved at least one identity via git rename fallback"
+    );
+
+    // Verify FileNodeId was preserved.
+    let file_after = graph.file_by_path("src/new_name.rs").unwrap().unwrap();
+    assert_eq!(
+        file_id_before, file_after.id,
+        "FileNodeId should be preserved across git-detected rename"
+    );
+}
+
+#[test]
 fn file_split_produces_split_from_edges() {
     let repo = tempdir().unwrap();
     fs::create_dir_all(repo.path().join("src")).unwrap();

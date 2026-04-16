@@ -100,10 +100,14 @@ pub(crate) fn status_output(repo_root: &Path, json: bool, recent: bool) -> anyho
 
     match &diag.reconcile_health {
         ReconcileHealth::Current => writeln!(out, "  reconcile:    current").unwrap(),
-        ReconcileHealth::Stale { last_outcome } => {
-            writeln!(out, "  reconcile:    stale (last outcome: {last_outcome})").unwrap()
+        ReconcileHealth::Stale(synrepo::pipeline::diagnostics::ReconcileStaleness::Outcome(o)) => {
+            writeln!(out, "  reconcile:    stale (last outcome: {o})").unwrap()
         }
+        ReconcileHealth::Stale(synrepo::pipeline::diagnostics::ReconcileStaleness::Age {
+            ..
+        }) => writeln!(out, "  reconcile:    stale (over 1 hour old)").unwrap(),
         ReconcileHealth::Unknown => writeln!(out, "  reconcile:    unknown (never run)").unwrap(),
+        ReconcileHealth::Corrupt(e) => writeln!(out, "  reconcile:    corrupt ({e})").unwrap(),
     }
 
     if let Some(state) = &diag.last_reconcile {
@@ -143,6 +147,7 @@ pub(crate) fn status_output(repo_root: &Path, json: bool, recent: bool) -> anyho
         WriterStatus::HeldByOther { pid } => {
             writeln!(out, "  writer lock:  held by pid {pid}").unwrap()
         }
+        WriterStatus::Corrupt(e) => writeln!(out, "  writer lock:  corrupt ({e})").unwrap(),
     }
 
     for line in &diag.store_guidance {
@@ -191,6 +196,7 @@ pub(crate) fn status_output(repo_root: &Path, json: bool, recent: bool) -> anyho
     Ok(out)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn write_status_json(
     out: &mut String,
     config: &Config,
@@ -210,10 +216,16 @@ fn write_status_json(
         None => serde_json::Value::Null,
     };
 
-    let reconcile_health = match &diag.reconcile_health {
-        ReconcileHealth::Current => "current",
-        ReconcileHealth::Stale { .. } => "stale",
-        ReconcileHealth::Unknown => "unknown",
+    let (reconcile_health, reconcile_staleness_reason) = match &diag.reconcile_health {
+        ReconcileHealth::Current => ("current", None),
+        ReconcileHealth::Stale(synrepo::pipeline::diagnostics::ReconcileStaleness::Outcome(o)) => {
+            ("stale", Some(format!("outcome: {o}")))
+        }
+        ReconcileHealth::Stale(synrepo::pipeline::diagnostics::ReconcileStaleness::Age {
+            ..
+        }) => ("stale", Some("age".to_string())),
+        ReconcileHealth::Unknown => ("unknown", None),
+        ReconcileHealth::Corrupt(_) => ("corrupt", None),
     };
 
     let last_reconcile_at = diag
@@ -226,6 +238,7 @@ fn write_status_json(
         WriterStatus::Free => "free".to_string(),
         WriterStatus::HeldBySelf => "held_by_self".to_string(),
         WriterStatus::HeldByOther { pid } => format!("held_by_pid_{pid}"),
+        WriterStatus::Corrupt(_) => "corrupt".to_string(),
     };
 
     let watch = render_watch_summary(&diag.watch_status);
@@ -240,6 +253,7 @@ fn write_status_json(
         "mode": config.mode.to_string(),
         "graph": graph_json,
         "reconcile_health": reconcile_health,
+        "reconcile_staleness_reason": reconcile_staleness_reason,
         "last_reconcile_at": last_reconcile_at,
         "watch": watch,
         "writer_lock": writer_lock,
@@ -319,6 +333,7 @@ pub(super) fn render_watch_summary(status: &WatchServiceStatus) -> String {
             format!("stale lease from pid {}", state.pid)
         }
         WatchServiceStatus::Stale(None) => "stale watch artifacts".to_string(),
+        WatchServiceStatus::Corrupt(e) => format!("corrupt ({e})"),
     }
 }
 
@@ -385,11 +400,20 @@ fn next_step(diag: &RuntimeDiagnostics, graph_missing: bool) -> &'static str {
         (_, _, WatchServiceStatus::Running(_)) => {
             "watch service is active — use `synrepo watch status` for runtime details"
         }
+        (ReconcileHealth::Corrupt(_), _, _) => {
+            "reconcile state is corrupt — run `synrepo watch stop` to clean up and recover"
+        }
+        (_, WriterStatus::Corrupt(_), _) => {
+            "writer lock is corrupt — remove .synrepo/state/writer.lock to recover"
+        }
+        (_, _, WatchServiceStatus::Corrupt(_)) => {
+            "watch state is corrupt — run `synrepo watch stop` to clean up and recover"
+        }
         (_, WriterStatus::HeldByOther { .. }, _) => {
             "writer lock is held — wait for the other process or verify it is still alive"
         }
         (ReconcileHealth::Unknown, _, _) => "run `synrepo reconcile` to do the first graph pass",
-        (ReconcileHealth::Stale { .. }, _, _) => "run `synrepo reconcile` to refresh the graph",
+        (ReconcileHealth::Stale(_), _, _) => "run `synrepo reconcile` to refresh the graph",
         (ReconcileHealth::Current, _, _) => {
             "graph is current — use `synrepo graph query` or connect the MCP server"
         }

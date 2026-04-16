@@ -74,7 +74,7 @@ pub(super) fn stages_1_to_3(
         graph,
         discovered_paths,
         &existing_file_paths,
-        &rename_matched_old_paths,
+        &mut rename_matched_old_paths,
         discovered,
         &revision,
         &mut state.identities_resolved,
@@ -405,7 +405,7 @@ fn run_identity_cascade(
     graph: &mut dyn GraphStore,
     discovered_paths: &BTreeSet<String>,
     existing_file_paths: &[(String, FileNodeId)],
-    rename_matched_old_paths: &HashSet<String>,
+    rename_matched_old_paths: &mut HashSet<String>,
     _discovered: &[DiscoveredFile],
     revision: &str,
     identities_resolved: &mut usize,
@@ -466,6 +466,20 @@ fn run_identity_cascade(
     let resolutions =
         identity::resolve_identities(&disappeared, &new_files, graph, git_renames.as_ref())?;
     *identities_resolved += resolutions.len();
+
+    // Protect git-renamed old paths from deletion by delete_missing_files.
+    let git_rename_ids: HashSet<_> = resolutions
+        .iter()
+        .filter_map(|r| match r {
+            identity::IdentityResolution::GitRename { preserved_id, .. } => Some(*preserved_id),
+            _ => None,
+        })
+        .collect();
+    for old_file in &disappeared {
+        if git_rename_ids.contains(&old_file.id) {
+            rename_matched_old_paths.insert(old_file.path.clone());
+        }
+    }
 
     let edges = identity::persist_resolutions(&resolutions, graph, revision)?;
     Ok(edges)

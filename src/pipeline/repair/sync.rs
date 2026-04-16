@@ -84,7 +84,14 @@ pub fn execute_sync(
         }
     }
 
-    // 2. Optional cross-link generation pass
+    // 2. Resolve stuck pending_promotion rows before any generation pass.
+    if let Ok(count) = resolve_pending_promotions(synrepo_dir) {
+        if count > 0 {
+            actions_taken.push(format!("resolved {count} stuck pending_promotion row(s)"));
+        }
+    }
+
+    // 3. Optional cross-link generation pass
     if options.generate_cross_links || options.regenerate_cross_links {
         match run_cross_link_generation(
             action_context.repo_root,
@@ -565,4 +572,84 @@ fn blocked_reconcile_finding(finding: &RepairFinding, notes: String) -> RepairFi
     blocked.recommended_action = RepairAction::ManualReview;
     blocked.notes = Some(notes);
     blocked
+}
+
+/// Resolve cross-link rows stuck in `pending_promotion` state after a crash
+/// during the `links_accept` three-phase commit. For each stuck row:
+/// - If the corresponding graph edge exists, complete Phase 3 (mark promoted).
+/// - If no graph edge exists, roll back Phase 1 (reset to active).
+fn resolve_pending_promotions(synrepo_dir: &Path) -> crate::Result<usize> {
+    use crate::core::ids::NodeId;
+    use crate::overlay::OverlayEdgeKind;
+    use crate::pipeline::structural::derive_edge_id;
+    use crate::store::overlay::{parse_overlay_edge_kind, SqliteOverlayStore};
+    use crate::store::sqlite::SqliteGraphStore;
+    use crate::structure::graph::{EdgeKind, GraphStore};
+    use std::str::FromStr;
+
+    let overlay_dir = synrepo_dir.join("overlay");
+    let overlay_db = SqliteOverlayStore::db_path(&overlay_dir);
+    if !overlay_db.exists() {
+        return Ok(0);
+    }
+
+    let mut overlay = SqliteOverlayStore::open_existing(&overlay_dir)?;
+    let pending = overlay.pending_promotion_rows()?;
+    if pending.is_empty() {
+        return Ok(0);
+    }
+
+    let graph = SqliteGraphStore::open_existing(&synrepo_dir.join("graph"))?;
+    let mut resolved = 0usize;
+
+    for row in pending {
+        let Ok(from) = NodeId::from_str(&row.from_node) else {
+            tracing::warn!(
+                from = %row.from_node,
+                "pending_promotion row has unparseable from_node; skipping"
+            );
+            continue;
+        };
+        let Ok(to) = NodeId::from_str(&row.to_node) else {
+            tracing::warn!(
+                to = %row.to_node,
+                "pending_promotion row has unparseable to_node; skipping"
+            );
+            continue;
+        };
+        let Ok(overlay_kind) = parse_overlay_edge_kind(&row.kind) else {
+            tracing::warn!(kind = %row.kind, "pending_promotion row has unknown kind; skipping");
+            continue;
+        };
+
+        let edge_kind = match overlay_kind {
+            OverlayEdgeKind::References => EdgeKind::References,
+            OverlayEdgeKind::Governs => EdgeKind::Governs,
+            OverlayEdgeKind::DerivedFrom => EdgeKind::References,
+            OverlayEdgeKind::Mentions => EdgeKind::Mentions,
+        };
+
+        let edge_id = derive_edge_id(from, to, edge_kind);
+        let edge_exists = graph
+            .outbound(from, Some(edge_kind))
+            .unwrap_or_default()
+            .iter()
+            .any(|e| e.to == to);
+
+        if edge_exists {
+            let reviewer = row.reviewer.as_deref().unwrap_or("crash-recovery");
+            overlay.mark_candidate_promoted(
+                from,
+                to,
+                overlay_kind,
+                reviewer,
+                &edge_id.to_string(),
+            )?;
+        } else {
+            overlay.reset_candidate_to_active(from, to, overlay_kind)?;
+        }
+        resolved += 1;
+    }
+
+    Ok(resolved)
 }

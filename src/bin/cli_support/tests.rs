@@ -1,3 +1,5 @@
+mod change_risk;
+mod compact;
 mod graph;
 mod links;
 mod reconcile;

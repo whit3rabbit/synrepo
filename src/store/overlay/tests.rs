@@ -487,3 +487,88 @@ fn overlay_end_without_begin_is_noop() {
     store.end_read_snapshot().unwrap();
     store.end_read_snapshot().unwrap();
 }
+
+// ---------- compact tests ----------
+
+fn old_entry(node_id: NodeId, days_ago: i64) -> CommentaryEntry {
+    let old_timestamp = OffsetDateTime::now_utc() - time::Duration::days(days_ago);
+    CommentaryEntry {
+        node_id,
+        text: format!("Old commentary from {} days ago", days_ago),
+        provenance: CommentaryProvenance {
+            source_content_hash: "hash-old".to_string(),
+            pass_id: "commentary-v1".to_string(),
+            model_identity: "claude-sonnet-4-6".to_string(),
+            generated_at: old_timestamp,
+        },
+    }
+}
+
+fn fresh_entry(node_id: NodeId) -> CommentaryEntry {
+    CommentaryEntry {
+        node_id,
+        text: "Fresh commentary".to_string(),
+        provenance: CommentaryProvenance {
+            source_content_hash: "hash-fresh".to_string(),
+            pass_id: "commentary-v1".to_string(),
+            model_identity: "claude-sonnet-4-6".to_string(),
+            generated_at: OffsetDateTime::now_utc(),
+        },
+    }
+}
+
+#[test]
+fn compactable_commentary_stats_reflects_stale_vs_active() {
+    let dir = tempdir().unwrap();
+    let mut store = SqliteOverlayStore::open(dir.path()).unwrap();
+
+    let stale_node = NodeId::Symbol(SymbolNodeId(1));
+    let fresh_node = NodeId::Symbol(SymbolNodeId(2));
+
+    // Insert stale entry (60 days old).
+    store.insert_commentary(old_entry(stale_node, 60)).unwrap();
+    // Insert fresh entry (today).
+    store.insert_commentary(fresh_entry(fresh_node)).unwrap();
+
+    let policy = crate::pipeline::maintenance::CompactPolicy::Default;
+    let stats = store.compactable_commentary_stats(&policy).unwrap();
+
+    // Only the 60-day-old entry should be compactable under Default policy (30-day window).
+    assert_eq!(stats.compactable_commentary, 1);
+}
+
+#[test]
+fn compact_commentary_drops_only_stale_entries() {
+    let dir = tempdir().unwrap();
+    let mut store = SqliteOverlayStore::open(dir.path()).unwrap();
+
+    let stale_node = NodeId::Symbol(SymbolNodeId(1));
+    let fresh_node = NodeId::Symbol(SymbolNodeId(2));
+
+    store.insert_commentary(old_entry(stale_node, 60)).unwrap();
+    store.insert_commentary(fresh_entry(fresh_node)).unwrap();
+
+    let policy = crate::pipeline::maintenance::CompactPolicy::Default;
+    let deleted = store.compact_commentary(&policy).unwrap();
+
+    assert_eq!(deleted, 1);
+
+    // Verify stale entry is gone, fresh entry remains.
+    assert!(store.commentary_for(stale_node).unwrap().is_none());
+    assert!(store.commentary_for(fresh_node).unwrap().is_some());
+}
+
+#[test]
+fn compact_commentary_never_drops_active_entries() {
+    let dir = tempdir().unwrap();
+    let mut store = SqliteOverlayStore::open(dir.path()).unwrap();
+
+    let fresh_node = NodeId::Symbol(SymbolNodeId(1));
+    store.insert_commentary(fresh_entry(fresh_node)).unwrap();
+
+    let policy = crate::pipeline::maintenance::CompactPolicy::Aggressive;
+    let deleted = store.compact_commentary(&policy).unwrap();
+
+    assert_eq!(deleted, 0);
+    assert!(store.commentary_for(fresh_node).unwrap().is_some());
+}

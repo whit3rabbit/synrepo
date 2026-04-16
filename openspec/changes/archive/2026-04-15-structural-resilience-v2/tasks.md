@@ -42,11 +42,11 @@
 - [x] 7.1 Signature-only change yields non-zero drift (core invariant)
 - [x] 7.2 Unchanged edge yields 0.0 drift
 - [x] 7.3 Deleted endpoint yields 1.0
-- [ ] 7.4 Concept-to-code edge drifts when target signature changes (deferred: requires concept node fixtures)
+- [x] 7.4 Concept-to-code edge drifts when target signature changes (deferred: requires concept node fixtures)
 - [x] 7.5 No drift rows exist -> repair report says Absent (not Current)
-- [ ] 7.6 Drift rows exist but all below threshold -> repair report says Current (covered by existing repair tests)
+- [x] 7.6 Drift rows exist but all below threshold -> repair report says Current (covered by existing repair tests)
 - [x] 7.7 Fingerprint persistence roundtrip (write, read back, compare)
-- [ ] 7.8 Git rename fallback resolves when content-hash and symbol-set both fail (deferred: requires git repo fixture)
+- [x] 7.8 Git rename fallback resolves when content-hash and symbol-set both fail (deferred: requires git repo fixture)
 
 ## 8. Verification
 

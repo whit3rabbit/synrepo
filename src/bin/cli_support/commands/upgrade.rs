@@ -2,8 +2,11 @@ use std::path::Path;
 
 use synrepo::{
     config::Config,
+    pipeline::writer::{acquire_writer_lock, LockError},
     store::compatibility::{apply_runtime_actions, evaluate_runtime, CompatAction, StoreId},
 };
+
+use super::watch::ensure_watch_not_running;
 
 /// Print a dry-run compatibility plan or execute it with `--apply`.
 pub(crate) fn upgrade(repo_root: &Path, apply: bool) -> anyhow::Result<()> {
@@ -11,6 +14,7 @@ pub(crate) fn upgrade(repo_root: &Path, apply: bool) -> anyhow::Result<()> {
         anyhow::anyhow!("upgrade: not initialized — run `synrepo init` first ({e})")
     })?;
     let synrepo_dir = Config::synrepo_dir(repo_root);
+    ensure_watch_not_running(&synrepo_dir, "upgrade")?;
 
     let report = evaluate_runtime(&synrepo_dir, synrepo_dir.exists(), &config)
         .map_err(|e| anyhow::anyhow!("upgrade: compatibility evaluation failed: {e}"))?;
@@ -84,6 +88,17 @@ pub(crate) fn upgrade(repo_root: &Path, apply: bool) -> anyhow::Result<()> {
         return Ok(());
     }
 
+    // Acquire the writer lock for the duration of the upgrade.
+    let _lock = acquire_writer_lock(&synrepo_dir).map_err(|err| match err {
+        LockError::HeldByOther { pid, .. } => anyhow::anyhow!(
+            "upgrade: writer lock held by pid {pid}; wait for it to finish or stop the watch daemon"
+        ),
+        LockError::Io { path, source } => anyhow::anyhow!(
+            "upgrade: could not acquire writer lock at {}: {source}",
+            path.display()
+        ),
+    })?;
+
     apply_runtime_actions(&synrepo_dir, &report)
         .map_err(|e| anyhow::anyhow!("upgrade: failed to apply actions: {e}"))?;
 
@@ -100,8 +115,33 @@ pub(crate) fn upgrade(repo_root: &Path, apply: bool) -> anyhow::Result<()> {
         .any(|e| e.action == CompatAction::Rebuild);
     if needs_reconcile {
         println!("  Running structural reconcile to repopulate rebuilt stores...");
-        use synrepo::pipeline::watch::{persist_reconcile_state, run_reconcile_pass};
-        let outcome = run_reconcile_pass(repo_root, &config, &synrepo_dir);
+        use synrepo::pipeline::structural::run_structural_compile;
+        use synrepo::pipeline::watch::{
+            emit_cochange_edges_pass, emit_symbol_revisions_pass, persist_reconcile_state,
+            ReconcileOutcome,
+        };
+        use synrepo::store::sqlite::SqliteGraphStore;
+
+        let graph_dir = synrepo_dir.join("graph");
+        let mut graph = SqliteGraphStore::open(&graph_dir)?;
+
+        let outcome = match run_structural_compile(repo_root, &config, &mut graph) {
+            Ok(summary) => {
+                if let Err(err) = emit_cochange_edges_pass(repo_root, &config, &mut graph) {
+                    tracing::warn!(error = %err, "co-change edge emission failed; continuing");
+                }
+                if let Err(err) = emit_symbol_revisions_pass(repo_root, &config, &mut graph) {
+                    tracing::warn!(error = %err, "symbol revision derivation failed; continuing");
+                }
+                if let Err(err) = synrepo::substrate::build_index(&config, repo_root) {
+                    ReconcileOutcome::Failed(format!("index rebuild failed: {err}"))
+                } else {
+                    ReconcileOutcome::Completed(summary)
+                }
+            }
+            Err(err) => ReconcileOutcome::Failed(err.to_string()),
+        };
+
         persist_reconcile_state(&synrepo_dir, &outcome, 0);
         report_reconcile_outcome(outcome)?;
     }

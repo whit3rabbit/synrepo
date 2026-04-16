@@ -218,18 +218,26 @@ fn default_advisory_inputs() -> String {
 impl ConfigFingerprints {
     /// Derive fingerprints from a runtime configuration.
     pub(crate) fn from_config(config: &Config) -> Self {
+        // Index-sensitive fingerprints include semantic model when enabled.
+        let mut index_parts = vec![
+            format!("roots={}", config.roots.join("\u{1f}")),
+            format!("max_file_size_bytes={}", config.max_file_size_bytes),
+            format!("redact_globs={}", config.redact_globs.join("\u{1f}")),
+        ];
+        if config.enable_semantic_triage {
+            index_parts.push(format!("semantic_model={}", config.semantic_model));
+            index_parts.push(format!("embedding_dim={}", config.embedding_dim));
+        }
+
         Self {
-            index_inputs: fingerprint(&[
-                format!("roots={}", config.roots.join("\u{1f}")),
-                format!("max_file_size_bytes={}", config.max_file_size_bytes),
-                format!("redact_globs={}", config.redact_globs.join("\u{1f}")),
-            ]),
+            index_inputs: fingerprint(&index_parts),
             graph_inputs: fingerprint(&[format!(
                 "concept_directories={}",
                 config.concept_directories.join("\u{1f}")
             )]),
             history_inputs: fingerprint(&[format!("git_commit_depth={}", config.git_commit_depth)]),
             advisory_inputs: fingerprint(&[
+                format!("enable_semantic_triage={}", config.enable_semantic_triage),
                 format!(
                     "cross_link_high={:.4}",
                     config.cross_link_confidence_thresholds.high

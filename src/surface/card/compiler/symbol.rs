@@ -3,8 +3,7 @@ use std::sync::Arc;
 
 use crate::{
     core::ids::{NodeId, SymbolNodeId},
-    overlay::{CommentaryEntry, FreshnessState, OverlayStore},
-    pipeline::synthesis::CommentaryGenerator,
+    overlay::{FreshnessState, OverlayStore},
     structure::graph::GraphStore,
     surface::card::git::symbol_last_change_from_insights,
     surface::card::types::{Freshness, OverlayCommentary},
@@ -20,7 +19,6 @@ pub(super) struct SymbolCardContext<'a> {
     pub graph: &'a dyn GraphStore,
     pub repo_root: &'a Option<PathBuf>,
     pub overlay: Option<&'a Arc<parking_lot::Mutex<dyn OverlayStore>>>,
-    pub generator: Option<&'a Arc<dyn CommentaryGenerator>>,
 }
 
 pub(super) fn symbol_card(
@@ -133,58 +131,26 @@ fn resolve_commentary(
     ctx: &SymbolCardContext<'_>,
     node: NodeId,
     current_content_hash: &str,
-    card: &SymbolCard,
+    _card: &SymbolCard,
 ) -> crate::Result<(Option<String>, FreshnessState)> {
     let overlay = match ctx.overlay {
         Some(overlay) => overlay,
         None => return Ok((None, FreshnessState::Missing)),
     };
 
-    // Fast path: entry already exists.
+    // Card reads are strictly read-only: return existing entry if found,
+    // otherwise report missing.
     if let Some(entry) = overlay.lock().commentary_for(node)? {
         let state = crate::store::overlay::derive_freshness(&entry, current_content_hash);
         return Ok((Some(entry.text), state));
     }
 
-    // No entry yet. Ask the generator, if any.
-    let generator = match ctx.generator {
-        Some(g) => g,
-        None => return Ok((None, FreshnessState::Missing)),
-    };
-
-    let prompt = build_generation_context(card);
-    match generator.generate(node, &prompt) {
-        Ok(Some(mut entry)) => {
-            // The generator can't see the current content hash; fill it in
-            // here so the persisted entry is immediately `Fresh`.
-            entry.provenance.source_content_hash = current_content_hash.to_string();
-            persist_and_report(overlay, entry, current_content_hash)
-        }
-        Ok(None) => Ok((None, FreshnessState::Missing)),
-        Err(err) => {
-            tracing::warn!(error = %err, "commentary generation failed; reporting missing");
-            Ok((None, FreshnessState::Missing))
-        }
-    }
-}
-
-fn persist_and_report(
-    overlay: &Arc<parking_lot::Mutex<dyn OverlayStore>>,
-    entry: CommentaryEntry,
-    current_content_hash: &str,
-) -> crate::Result<(Option<String>, FreshnessState)> {
-    let text = entry.text.clone();
-    let state = crate::store::overlay::derive_freshness(&entry, current_content_hash);
-    if let Err(err) = overlay.lock().insert_commentary(entry) {
-        tracing::warn!(error = %err, "failed to persist freshly-generated commentary");
-        return Ok((Some(text), state));
-    }
-    Ok((Some(text), state))
+    Ok((None, FreshnessState::Missing))
 }
 
 /// Build the context string passed to the generator. Keeps the payload
 /// small: symbol identity, signature, and doc comment.
-fn build_generation_context(card: &SymbolCard) -> String {
+pub(crate) fn build_generation_context(card: &SymbolCard) -> String {
     let mut s = format!(
         "Symbol: {}\nQualified name: {}\nDefined at: {}\n",
         card.name, card.qualified_name, card.defined_at
