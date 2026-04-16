@@ -16,8 +16,20 @@ Entry point that launches an interactive wizard. No flags required; all options 
 |-------------|-------------|
 | `synrepo setup claude` | Setup for Claude Code |
 | `synrepo setup opencode` | Setup for OpenCode |
-| `synrepo setup codex` | Setup for Cursor/Codex |
-| `synrepo setup uninstall` | Remove synrepo integration |
+| `synrepo setup codex` | Setup for Codex CLI |
+| `synrepo setup cursor` | Setup for Cursor Agent |
+| `synrepo setup windsurf` | Setup for Windsurf |
+| `synrepo setup copilot` | Setup for GitHub Copilot |
+| `synrepo setup gemini` | Setup for Gemini CLI |
+| `synrepo setup goose` | Setup for Goose |
+| `synrepo setup kiro` | Setup for Kiro CLI |
+| `synrepo setup qwen` | Setup for Qwen Code |
+| `synrepo setup junie` | Setup for Junie |
+| `synrepo setup roo` | Setup for Roo Code |
+| `synrepo setup tabnine` | Setup for Tabnine CLI |
+| `synrepo setup trae` | Setup for Trae |
+| `synrepo setup uninstall` | Remove synrepo integration for a target |
+| `synrepo setup status` | Show setup status by target |
 
 ### Direct invocation shortcuts
 
@@ -145,6 +157,76 @@ ratatui provides:
 | Claude Code | `.mcp.json` (project or `~/.claude/`) | `.claude.md` (project root) |
 | OpenCode | `.mcp.json` | `.opencode.md` (project root) |
 | Cursor/Codex | `.mcp.json` | `.cursorrules` (project root) |
+
+### Requirement: Client Asset Locations
+
+The setup wizard SHALL model each supported integration as a target-specific asset layout rather than a single generic instruction file.
+
+Each target definition MUST include:
+- a stable target key
+- a command or skills destination directory
+- a file format and extension
+- an optional context file location
+- whether the target requires its own CLI
+- whether synrepo can auto-register MCP for that target
+
+#### Scenario: Installing Claude Code
+- **WHEN** installing for Claude Code
+- **THEN** synrepo writes skills under `.claude/skills/<skill-name>/SKILL.md`
+- **AND** writes or updates `CLAUDE.md`
+
+#### Scenario: Installing OpenCode
+- **WHEN** installing for OpenCode
+- **THEN** synrepo writes command files under `.opencode/command/`
+- **AND** writes or updates `AGENTS.md`
+
+#### Scenario: Installing Codex CLI
+- **WHEN** installing for Codex CLI
+- **THEN** synrepo writes skills under `.agents/skills/<skill-name>/SKILL.md`
+- **AND** writes or updates `AGENTS.md`
+
+#### Scenario: Installing Cursor Agent
+- **WHEN** installing for Cursor Agent
+- **THEN** synrepo writes skills under `.cursor/skills/<skill-name>/SKILL.md`
+- **AND** writes or updates `.cursor/rules/specify-rules.mdc`
+
+#### Scenario: Installing Windsurf
+- **WHEN** installing for Windsurf
+- **THEN** synrepo writes workflow files under `.windsurf/workflows/`
+- **AND** writes or updates `.windsurf/rules/specify-rules.md`
+
+#### Scenario: Installing GitHub Copilot
+- **WHEN** installing for GitHub Copilot
+- **THEN** synrepo writes agent files under `.github/agents/`
+- **AND** writes companion prompt files under `.github/prompts/`
+- **AND** writes or updates `.github/copilot-instructions.md`
+
+#### Scenario: Unsupported Automatic MCP Registration
+- **WHEN** a target does not have a supported synrepo MCP registration strategy
+- **THEN** the wizard still installs skills, commands, and context files
+- **AND** prints the one manual next step for MCP registration instead of guessing
+
+### Supported Targets and Asset Locations
+
+| Target | Requires CLI | Commands / Skills Location | Format | Context File | Auto MCP Registration |
+|---|---:|---|---|---|---:|
+| Claude Code | yes | `.claude/skills/<name>/SKILL.md` | markdown skill | `CLAUDE.md` | yes |
+| OpenCode | yes | `.opencode/command/*.md` | markdown | `AGENTS.md` | yes |
+| Codex CLI | yes | `.agents/skills/<name>/SKILL.md` | markdown skill | `AGENTS.md` | yes |
+| Cursor Agent | no | `.cursor/skills/<name>/SKILL.md` | markdown skill | `.cursor/rules/specify-rules.mdc` | no |
+| Windsurf | no | `.windsurf/workflows/*.md` | markdown | `.windsurf/rules/specify-rules.md` | no |
+| GitHub Copilot | no* | `.github/agents/*.agent.md` | markdown agent | `.github/copilot-instructions.md` | no |
+| Gemini CLI | yes | `.gemini/commands/*.toml` | toml | `GEMINI.md` | no |
+| Goose | yes | `.goose/recipes/*.yaml` | yaml | `AGENTS.md` | no |
+| Kiro CLI | yes | `.kiro/prompts/*.md` | markdown | `AGENTS.md` | no |
+| Qwen Code | yes | `.qwen/commands/*.md` | markdown | `QWEN.md` | no |
+| Junie | yes | `.junie/commands/*.md` | markdown | `.junie/AGENTS.md` | no |
+| Roo Code | no | `.roo/commands/*.md` | markdown | `.roo/rules/specify-rules.md` | no |
+| Tabnine CLI | yes | `.tabnine/agent/commands/*.toml` | toml | `TABNINE.md` | no |
+| Trae | no | `.trae/skills/<name>/SKILL.md` | markdown skill | `.trae/rules/project_rules.md` | no |
+| Generic | varies | user-provided directory | varies | none | no |
+
+\* Copilot's IDE integration does not require the CLI for install, though workflow dispatch may use the CLI separately.
 
 ### `.mcp.json` Injection Strategy
 
