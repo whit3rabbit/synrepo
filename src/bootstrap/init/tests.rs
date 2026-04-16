@@ -228,25 +228,34 @@ fn bootstrap_rerun_refreshes_graph_on_content_change() {
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn bootstrap_blocked_when_writer_lock_held() {
+    use crate::pipeline::writer::{
+        hold_writer_flock_with_ownership, writer_lock_path, WriterOwnership,
+    };
+
     let repo = tempdir().unwrap();
     let synrepo_dir = Config::synrepo_dir(repo.path());
-    // Write a fake lock held by a live foreign process so bootstrap sees a
-    // conflicting owner. Acquiring the lock in the current process would
-    // re-enter (same PID), so we simulate a foreign holder instead.
+    // Simulate a foreign writer by holding the kernel flock on a separate
+    // open file description (same-process, different fd — flock still blocks
+    // our later open+try_lock just like a separate process would) and stamp
+    // a live foreign PID into the ownership metadata for the error message.
     std::fs::create_dir_all(synrepo_dir.join("state")).unwrap();
-    let mut holder = std::process::Command::new("sleep")
+    let mut sleep_child = std::process::Command::new("sleep")
         .arg("30")
         .spawn()
         .expect("spawn sleep");
-    let holder_pid = holder.id();
-    let fake = serde_json::json!({"pid": holder_pid, "acquired_at": "2099-01-01T00:00:00Z"});
-    std::fs::write(synrepo_dir.join("state/writer.lock"), fake.to_string()).unwrap();
+    let holder_pid = sleep_child.id();
+    let ownership = WriterOwnership {
+        pid: holder_pid,
+        acquired_at: "2099-01-01T00:00:00Z".to_string(),
+    };
+    let _flock = hold_writer_flock_with_ownership(&writer_lock_path(&synrepo_dir), &ownership);
 
     let err = bootstrap(repo.path(), None).unwrap_err().to_string();
-    let _ = holder.kill();
-    let _ = holder.wait();
+    let _ = sleep_child.kill();
+    let _ = sleep_child.wait();
     assert!(
         err.contains("writer lock"),
         "expected 'writer lock' in error, got: {err}"

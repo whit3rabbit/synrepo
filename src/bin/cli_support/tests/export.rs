@@ -9,6 +9,8 @@ use std::fs;
 use synrepo::bootstrap::bootstrap;
 use synrepo::config::Config;
 use synrepo::pipeline::export::ExportFormat;
+#[cfg(unix)]
+use synrepo::pipeline::writer::spawn_and_reap_pid;
 use tempfile::tempdir;
 
 use crate::export;
@@ -26,17 +28,6 @@ fn write_watch_state(state_dir: &std::path::Path, pid: u32) {
         serde_json::to_string(&state).unwrap(),
     )
     .unwrap();
-}
-
-/// Spawn and reap a short-lived child so its PID is guaranteed-dead by the
-/// time we use it. Mirrors the helper in `pipeline/writer/tests.rs`.
-fn spawn_and_reap_pid() -> u32 {
-    let mut child = std::process::Command::new("true")
-        .spawn()
-        .expect("spawn true");
-    let pid = child.id();
-    let _ = child.wait();
-    pid
 }
 
 #[test]
@@ -64,6 +55,7 @@ fn export_blocked_when_watch_running() {
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn export_succeeds_after_stale_watch_cleanup() {
     let dir = tempdir().unwrap();

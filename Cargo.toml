@@ -46,6 +46,7 @@ walkdir = "2"
 ignore = "0.4"              # respects .gitignore / .git/info/exclude
 notify = "6"                # cross-platform file watcher for phase 2+
 notify-debouncer-full = "0.3"
+fs2 = "0.4"                 # cross-platform advisory file locking (flock / LockFileEx) for the writer lock
 
 # --- Git integration ---
 gix = { version = "0.81", default-features = false, features = ["sha1", "max-performance-safe", "revision", "blob-diff"] }
@@ -95,6 +96,11 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 ort = { version = "2.0.0-rc.12", optional = true, features = ["ndarray"] }
 tokenizers = { version = "0.22.2", optional = true }
 ndarray = { version = "0.17.2", optional = true }
+
+[target.'cfg(unix)'.dependencies]
+# Needed for O_CLOEXEC on the writer lock file open so child processes do not
+# inherit the advisory lock. Already a transitive dep.
+libc = "0.2"
 
 [features]
 default = []

@@ -138,8 +138,11 @@ fn reconcile_refreshes_the_search_index() {
     assert_eq!(new_matches.len(), 1, "updated file must be searchable");
 }
 
+#[cfg(unix)]
 #[test]
 fn reconcile_returns_lock_conflict_error_when_writer_busy() {
+    use synrepo::pipeline::writer::hold_writer_flock_with_ownership;
+
     let repo = tempdir().unwrap();
     std::fs::create_dir_all(repo.path().join("src")).unwrap();
     std::fs::write(repo.path().join("src/lib.rs"), "pub fn x() {}\n").unwrap();
@@ -149,15 +152,13 @@ fn reconcile_returns_lock_conflict_error_when_writer_busy() {
     std::fs::create_dir_all(synrepo_dir.join("state")).unwrap();
     let mut child = Command::new("sleep").arg("5").spawn().unwrap();
     let pid = child.id();
-    std::fs::write(
-        writer_lock_path(&synrepo_dir),
-        serde_json::to_string(&WriterOwnership {
-            pid,
-            acquired_at: "now".to_string(),
-        })
-        .unwrap(),
-    )
-    .unwrap();
+    let ownership = WriterOwnership {
+        pid,
+        acquired_at: "now".to_string(),
+    };
+    // Actually hold the kernel flock so reconcile's writer-lock acquire sees
+    // a real conflict; the JSON is there only for display.
+    let _flock = hold_writer_flock_with_ownership(&writer_lock_path(&synrepo_dir), &ownership);
 
     let err = super::super::commands::reconcile(repo.path()).unwrap_err();
     let msg = err.to_string();

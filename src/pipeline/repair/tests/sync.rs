@@ -172,11 +172,18 @@ fn sync_renders_report_only_and_repaired_distinctly() {
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn sync_fails_fast_when_writer_lock_is_held() {
-    // execute_sync acquires the lock at start and fails fast if another
-    // process holds it. We simulate a live foreign holder rather than
-    // acquiring via the current process (which would re-enter).
+    use crate::pipeline::writer::{
+        hold_writer_flock_with_ownership, writer_lock_path, WriterOwnership,
+    };
+
+    // execute_sync acquires the lock at start and fails fast when another
+    // file description holds the kernel flock. We simulate a foreign holder
+    // by taking the flock on a second file description (blocks our later
+    // open/try_lock the same way a separate process would) and stamping a
+    // live foreign PID into the ownership metadata for display.
     let dir = tempdir().unwrap();
     let (repo, synrepo_dir) = setup_repo_for_sync(&dir);
 
@@ -186,15 +193,16 @@ fn sync_fails_fast_when_writer_lock_is_held() {
         0,
     );
 
-    // Write a fake lock held by a live foreign process.
-    std::fs::create_dir_all(synrepo_dir.join("state")).unwrap();
-    let mut holder = std::process::Command::new("sleep")
+    let mut sleep_child = std::process::Command::new("sleep")
         .arg("30")
         .spawn()
         .expect("spawn sleep");
-    let holder_pid = holder.id();
-    let fake = serde_json::json!({"pid": holder_pid, "acquired_at": "2099-01-01T00:00:00Z"});
-    std::fs::write(synrepo_dir.join("state/writer.lock"), fake.to_string()).unwrap();
+    let holder_pid = sleep_child.id();
+    let ownership = WriterOwnership {
+        pid: holder_pid,
+        acquired_at: "2099-01-01T00:00:00Z".to_string(),
+    };
+    let _flock = hold_writer_flock_with_ownership(&writer_lock_path(&synrepo_dir), &ownership);
 
     let result = execute_sync(
         &repo,
@@ -202,10 +210,9 @@ fn sync_fails_fast_when_writer_lock_is_held() {
         &Config::default(),
         SyncOptions::default(),
     );
-    let _ = holder.kill();
-    let _ = holder.wait();
+    let _ = sleep_child.kill();
+    let _ = sleep_child.wait();
 
-    // Sync fails because it cannot acquire the writer lock.
     assert!(result.is_err());
     let err = result.unwrap_err().to_string();
     assert!(

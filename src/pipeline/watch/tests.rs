@@ -1,5 +1,3 @@
-#[cfg(unix)]
-use std::process::Command;
 use std::{
     fs,
     path::PathBuf,
@@ -9,6 +7,8 @@ use std::{
 
 use tempfile::{tempdir, TempDir};
 
+#[cfg(unix)]
+pub(super) use crate::pipeline::writer::{live_foreign_pid, spawn_and_reap_pid as dead_pid};
 use crate::{config::Config, store::compatibility::write_runtime_snapshot};
 
 mod daemon;
@@ -35,28 +35,4 @@ pub(super) fn wait_for(mut predicate: impl FnMut() -> bool, timeout: Duration) {
         thread::sleep(Duration::from_millis(25));
     }
     panic!("condition was not met within {:?}", timeout);
-}
-
-#[cfg(unix)]
-pub(super) fn dead_pid() -> u32 {
-    let mut child = Command::new("true")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .expect("spawn true");
-    let pid = child.id();
-    child.wait().expect("wait for true");
-    pid
-}
-
-#[cfg(unix)]
-pub(super) fn live_foreign_pid() -> (std::process::Child, u32) {
-    let child = Command::new("sleep")
-        .arg("10")
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .expect("spawn sleep");
-    let pid = child.id();
-    (child, pid)
 }

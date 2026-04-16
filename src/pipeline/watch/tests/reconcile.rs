@@ -34,7 +34,9 @@ fn reconcile_pass_completes_on_valid_repo() {
 fn reconcile_pass_returns_lock_conflict_when_lock_is_held() {
     let (_dir, repo, config, synrepo_dir) = setup_test_repo();
 
-    // Use a foreign PID to avoid re-entrancy in the same process
+    // Hold the kernel flock on a separate open file description (simulates a
+    // foreign writer) and stamp a live foreign PID into the ownership
+    // metadata so error reporting shows a recognizable holder PID.
     let (mut child, foreign_pid) = super::live_foreign_pid();
     let lock_path = crate::pipeline::writer::writer_lock_path(&synrepo_dir);
     fs::create_dir_all(lock_path.parent().unwrap()).unwrap();
@@ -42,7 +44,7 @@ fn reconcile_pass_returns_lock_conflict_when_lock_is_held() {
         pid: foreign_pid,
         acquired_at: crate::pipeline::writer::now_rfc3339(),
     };
-    fs::write(&lock_path, serde_json::to_string(&owner).unwrap()).unwrap();
+    let _flock = crate::pipeline::writer::hold_writer_flock_with_ownership(&lock_path, &owner);
 
     let outcome = run_reconcile_pass(&repo, &config, &synrepo_dir);
     assert!(matches!(

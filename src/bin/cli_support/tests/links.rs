@@ -118,14 +118,12 @@ fn links_list_default_limit_caps_at_50() {
     let from = NodeId::Concept(ConceptNodeId(1));
     insert_n_candidates(&mut overlay, from, 75);
 
-    let json =
-        super::super::commands::links_list_output(repo.path(), None, None, true).unwrap();
+    let json = super::super::commands::links_list_output(repo.path(), None, None, true).unwrap();
     let parsed: serde_json::Value = serde_json::from_str(json.trim()).unwrap();
     let arr = parsed.as_array().expect("expected JSON array");
     assert_eq!(arr.len(), 50, "default limit must cap JSON output at 50");
 
-    let text =
-        super::super::commands::links_list_output(repo.path(), None, None, false).unwrap();
+    let text = super::super::commands::links_list_output(repo.path(), None, None, false).unwrap();
     assert!(
         text.contains("Showing 50 candidates (capped at 50"),
         "default-cap path must surface the cap hint, got: {text}"
@@ -143,11 +141,14 @@ fn links_list_explicit_zero_returns_all() {
     let from = NodeId::Concept(ConceptNodeId(1));
     insert_n_candidates(&mut overlay, from, 75);
 
-    let json =
-        super::super::commands::links_list_output(repo.path(), None, Some(0), true).unwrap();
+    let json = super::super::commands::links_list_output(repo.path(), None, Some(0), true).unwrap();
     let parsed: serde_json::Value = serde_json::from_str(json.trim()).unwrap();
     let arr = parsed.as_array().expect("expected JSON array");
-    assert_eq!(arr.len(), 75, "--limit 0 must return every active candidate");
+    assert_eq!(
+        arr.len(),
+        75,
+        "--limit 0 must return every active candidate"
+    );
 
     let text =
         super::super::commands::links_list_output(repo.path(), None, Some(0), false).unwrap();
@@ -673,20 +674,27 @@ fn links_accept_blocked_when_watch_running() {
     let _ = child.wait();
 }
 
+#[cfg(unix)]
 #[test]
 fn links_accept_fails_on_lock_conflict() {
+    use synrepo::pipeline::writer::{
+        hold_writer_flock_with_ownership, writer_lock_path, WriterOwnership,
+    };
+
     let (repo, mut overlay, from, to) = setup_curated_link_env();
     overlay.insert_link(sample_link(from, to)).unwrap();
 
     let synrepo_dir = Config::synrepo_dir(repo.path());
-    // Simulate a live foreign holder; same-process acquisition would re-enter.
     std::fs::create_dir_all(synrepo_dir.join("state")).unwrap();
     let mut holder = std::process::Command::new("sleep")
         .arg("30")
         .spawn()
         .expect("spawn sleep");
-    let fake = serde_json::json!({"pid": holder.id(), "acquired_at": "2099-01-01T00:00:00Z"});
-    std::fs::write(synrepo_dir.join("state/writer.lock"), fake.to_string()).unwrap();
+    let ownership = WriterOwnership {
+        pid: holder.id(),
+        acquired_at: "2099-01-01T00:00:00Z".to_string(),
+    };
+    let _flock = hold_writer_flock_with_ownership(&writer_lock_path(&synrepo_dir), &ownership);
 
     let candidate_id = format_candidate_id(from, to, OverlayEdgeKind::References, "test-pass");
     let err = super::super::commands::links_accept(repo.path(), &candidate_id, Some("reviewer-a"))
@@ -700,20 +708,27 @@ fn links_accept_fails_on_lock_conflict() {
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn links_reject_fails_on_lock_conflict() {
+    use synrepo::pipeline::writer::{
+        hold_writer_flock_with_ownership, writer_lock_path, WriterOwnership,
+    };
+
     let (repo, mut overlay, from, to) = setup_curated_link_env();
     overlay.insert_link(sample_link(from, to)).unwrap();
 
     let synrepo_dir = Config::synrepo_dir(repo.path());
-    // Simulate a live foreign holder; same-process acquisition would re-enter.
     std::fs::create_dir_all(synrepo_dir.join("state")).unwrap();
     let mut holder = std::process::Command::new("sleep")
         .arg("30")
         .spawn()
         .expect("spawn sleep");
-    let fake = serde_json::json!({"pid": holder.id(), "acquired_at": "2099-01-01T00:00:00Z"});
-    std::fs::write(synrepo_dir.join("state/writer.lock"), fake.to_string()).unwrap();
+    let ownership = WriterOwnership {
+        pid: holder.id(),
+        acquired_at: "2099-01-01T00:00:00Z".to_string(),
+    };
+    let _flock = hold_writer_flock_with_ownership(&writer_lock_path(&synrepo_dir), &ownership);
 
     let candidate_id = format_candidate_id(from, to, OverlayEdgeKind::References, "test-pass");
     let err = super::super::commands::links_reject(repo.path(), &candidate_id, Some("reviewer-b"))

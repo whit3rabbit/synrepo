@@ -9,12 +9,16 @@
 //! 1. Any code path that mutates runtime state (graph, overlay, index) MUST
 //!    hold a `WriterLock` for the duration of the write and release it on
 //!    completion.
-//! 2. If the lock file records a live process PID, `acquire_writer_lock`
-//!    returns `Err(LockError::HeldByOther)` and the caller must not proceed.
-//! 3. A lock file from a terminated process is treated as stale and silently
-//!    replaced on the next acquisition attempt.
+//! 2. Mutual exclusion is enforced by a kernel advisory lock (`flock` on
+//!    Unix, `LockFileEx` on Windows) held on `.synrepo/state/writer.lock`.
+//!    If another live process holds the kernel lock, `acquire_writer_lock`
+//!    returns `Err(LockError::HeldByOther)`.
+//! 3. When the previous holder terminates, the kernel releases its flock
+//!    automatically, so there is no file-existence TOCTOU race and no
+//!    stale-file cleanup retry loop.
 //! 4. The lock is released when `WriterLock` is dropped; the Drop impl
-//!    removes the lock file.
+//!    drops the file handle (releasing the kernel flock) and removes the
+//!    on-disk file.
 //!
 //! ## Daemon handoff
 //!
@@ -36,8 +40,12 @@ use std::{
 pub(crate) use helpers::is_process_alive;
 pub(super) use helpers::now_rfc3339;
 use helpers::{
-    decrement_depth, read_ownership, read_ownership_with_retry, try_increment_depth,
-    write_lock_file,
+    decrement_depth, insert_initial_lock, open_and_try_lock, read_ownership,
+    read_ownership_with_retry, try_reenter, write_lock_file,
+};
+#[cfg(unix)]
+pub use helpers::{
+    hold_writer_flock_with_ownership, live_foreign_pid, spawn_and_reap_pid, TestFlockHolder,
 };
 use serde::{Deserialize, Serialize};
 
@@ -126,6 +134,10 @@ impl Drop for WriterLock {
             return;
         }
 
+        // `decrement_depth` already released the kernel flock. Remove the
+        // on-disk file so idle repos report NotFound, but only if it still
+        // carries our ownership record: tests and tooling sometimes replace
+        // the metadata, and that replacement must survive our drop.
         match read_ownership(&self.path) {
             Ok(owner) if owner == self.ownership => {
                 if let Err(e) = fs::remove_file(&self.path) {
@@ -159,12 +171,10 @@ impl Drop for WriterLock {
 /// is dropped. Returns `Err(LockError::HeldByOther)` when another live
 /// process holds the lock.
 ///
-/// Uses `O_CREAT|O_EXCL` semantics (`create_new`) for an atomic exclusive
-/// create: the OS guarantees only one caller wins the race, so two concurrent
-/// invocations cannot both believe they hold the lock.
-///
-/// A stale lock file from a terminated process is removed and the acquire
-/// is retried once without error.
+/// Mutual exclusion is provided by a kernel advisory lock (`flock` on Unix,
+/// `LockFileEx` on Windows). The kernel releases a dead holder's lock on
+/// process exit, so this function never needs to race on file-existence
+/// cleanup.
 pub fn acquire_writer_lock(synrepo_dir: &Path) -> Result<WriterLock, LockError> {
     let lock_path = writer_lock_path(synrepo_dir);
     let state_dir = synrepo_dir.join("state");
@@ -174,85 +184,64 @@ pub fn acquire_writer_lock(synrepo_dir: &Path) -> Result<WriterLock, LockError> 
         source,
     })?;
 
+    // Fast path: same thread already holds the lock — just bump the depth.
+    // Ownership is cached in the depth map, so no disk read here.
+    if let Some(ownership) = try_reenter(&lock_path)? {
+        return Ok(WriterLock {
+            path: lock_path,
+            ownership,
+        });
+    }
+
+    let Some(mut file) = open_and_try_lock(&lock_path)? else {
+        // Another fd holds the kernel flock. Read ownership JSON for a useful
+        // error message; retry briefly to ride out the window between a
+        // winner's flock acquire and its ownership write.
+        let pid = read_ownership_with_retry(&lock_path)
+            .map(|o| o.pid)
+            .unwrap_or(0);
+        // Our own pid here means a different thread in this process holds the
+        // flock on a non-registered fd (test shim or invariant violation);
+        // same-thread re-entry would have been served by try_reenter above.
+        if pid == std::process::id() {
+            return Err(LockError::WrongThread {
+                lock_path: lock_path.clone(),
+            });
+        }
+        return Err(LockError::HeldByOther {
+            pid,
+            lock_path: lock_path.clone(),
+        });
+    };
+
+    // Truncate any stale content from a dead prior holder, then stamp ours.
+    if let Err(source) = file.set_len(0) {
+        return Err(LockError::Io {
+            path: lock_path.clone(),
+            source,
+        });
+    }
+    use std::io::{Seek as _, SeekFrom};
+    if let Err(source) = file.seek(SeekFrom::Start(0)) {
+        return Err(LockError::Io {
+            path: lock_path.clone(),
+            source,
+        });
+    }
+
     let ownership = WriterOwnership {
         pid: std::process::id(),
         acquired_at: now_rfc3339(),
     };
     let json = serde_json::to_string(&ownership).expect("WriterOwnership serializes without error");
+    write_lock_file(&mut file, &lock_path, &json)?;
 
-    let mut cleared_stale = false;
-    loop {
-        match fs::OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .open(&lock_path)
-        {
-            Ok(mut f) => {
-                write_lock_file(&mut f, &lock_path, &json)?;
-                try_increment_depth(&lock_path)?;
-                return Ok(WriterLock {
-                    path: lock_path,
-                    ownership: ownership.clone(),
-                });
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                if let Ok(owner) = read_ownership(&lock_path) {
-                    if owner.pid == std::process::id() {
-                        try_increment_depth(&lock_path)?;
-                        return Ok(WriterLock {
-                            path: lock_path,
-                            ownership: owner,
-                        });
-                    }
-                }
+    insert_initial_lock(&lock_path, file, ownership.clone())?;
 
-                if cleared_stale {
-                    return Err(match read_ownership(&lock_path) {
-                        Ok(owner) => LockError::HeldByOther {
-                            pid: owner.pid,
-                            lock_path: lock_path.clone(),
-                        },
-                        Err(_) => LockError::Io {
-                            path: lock_path.clone(),
-                            source: e,
-                        },
-                    });
-                }
-                match read_ownership_with_retry(&lock_path) {
-                    Ok(owner) if owner.pid == std::process::id() => {
-                        try_increment_depth(&lock_path)?;
-                        return Ok(WriterLock {
-                            path: lock_path,
-                            ownership: owner,
-                        });
-                    }
-                    Ok(owner) if is_process_alive(owner.pid) => {
-                        return Err(LockError::HeldByOther {
-                            pid: owner.pid,
-                            lock_path: lock_path.clone(),
-                        });
-                    }
-                    _ => {
-                        if let Err(source) = fs::remove_file(&lock_path) {
-                            if source.kind() != std::io::ErrorKind::NotFound {
-                                return Err(LockError::Io {
-                                    path: lock_path.clone(),
-                                    source,
-                                });
-                            }
-                        }
-                        cleared_stale = true;
-                    }
-                }
-            }
-            Err(source) => {
-                return Err(LockError::Io {
-                    path: lock_path.clone(),
-                    source,
-                });
-            }
-        }
-    }
+    Ok(WriterLock {
+        path: lock_path,
+        ownership,
+    })
 }
 
 /// Unified write-admission entry point for mutating CLI operations.

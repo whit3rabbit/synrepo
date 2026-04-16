@@ -96,14 +96,16 @@ fn watch_service_records_lock_conflict_when_writer_lock_is_held() {
         Duration::from_secs(3),
     );
 
-    // Use a foreign PID to avoid re-entrancy in the same process
+    // Use a foreign PID to avoid re-entrancy in the same process. We also
+    // actually hold the kernel advisory lock on a separate file description
+    // so acquire_writer_lock sees a real conflict (not just stale metadata).
     let (mut child, foreign_pid) = super::live_foreign_pid();
     let lock_path = crate::pipeline::writer::writer_lock_path(&synrepo_dir);
     let owner = crate::pipeline::writer::WriterOwnership {
         pid: foreign_pid,
         acquired_at: crate::pipeline::writer::now_rfc3339(),
     };
-    fs::write(&lock_path, serde_json::to_string(&owner).unwrap()).unwrap();
+    let _flock = crate::pipeline::writer::hold_writer_flock_with_ownership(&lock_path, &owner);
 
     let response = request_watch_control(&synrepo_dir, WatchControlRequest::ReconcileNow).unwrap();
     match response {

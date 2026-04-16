@@ -1,8 +1,8 @@
 //! Internal helpers for the writer lock implementation.
 //!
-//! Contains re-entrancy tracking, file I/O, process liveness checks, and
-//! timestamp formatting. These are implementation details not exposed in the
-//! public API.
+//! Contains re-entrancy tracking, kernel advisory locking, file I/O, process
+//! liveness checks, and timestamp formatting. These are implementation details
+//! not exposed in the public API.
 
 use std::{
     collections::HashMap,
@@ -13,46 +13,83 @@ use std::{
     thread::ThreadId,
 };
 
+use fs2::FileExt;
+
 use super::{LockError, WriterOwnership, WriterOwnershipError};
 
 // ---- Re-entrancy tracking ----
+//
+// The open `File` that owns the kernel advisory lock is stored inside the
+// ReentrancyState entry, so it is only dropped (and the kernel flock released)
+// when the outermost `WriterLock` drops, regardless of the order in which
+// re-entrant guards go out of scope. The ownership record is cached here too
+// so re-entrant acquires don't re-read it from disk.
 
-/// Per-lock-path re-entrancy state: depth counter plus the owning thread.
 static LOCK_DEPTHS: OnceLock<Mutex<HashMap<PathBuf, ReentrancyState>>> = OnceLock::new();
 
 struct ReentrancyState {
     depth: usize,
     owner_thread: ThreadId,
+    /// Held for its Drop side-effect (releases the kernel flock). Never read.
+    #[allow(dead_code)]
+    file: fs::File,
+    ownership: WriterOwnership,
 }
 
 fn lock_depths() -> &'static Mutex<HashMap<PathBuf, ReentrancyState>> {
     LOCK_DEPTHS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// Increment depth for `lock_path` on the current thread.
-/// Returns `Err(LockError::WrongThread)` if a different thread already holds
-/// the lock for this path.
-pub(super) fn try_increment_depth(lock_path: &Path) -> Result<(), LockError> {
+/// If the current thread already holds the lock for `lock_path`, increment
+/// the depth and return `Ok(Some(ownership))`. Return `Ok(None)` if no entry
+/// exists. Return `Err(LockError::WrongThread)` if another thread holds it.
+pub(super) fn try_reenter(lock_path: &Path) -> Result<Option<WriterOwnership>, LockError> {
     let mut map = lock_depths().lock().unwrap();
     let current = std::thread::current().id();
-    match map.get(lock_path) {
-        Some(existing) if existing.owner_thread != current => {
-            return Err(LockError::WrongThread {
-                lock_path: lock_path.to_path_buf(),
-            });
+    match map.get_mut(lock_path) {
+        Some(entry) if entry.owner_thread == current => {
+            entry.depth += 1;
+            Ok(Some(entry.ownership.clone()))
         }
-        _ => {}
+        Some(_) => Err(LockError::WrongThread {
+            lock_path: lock_path.to_path_buf(),
+        }),
+        None => Ok(None),
     }
-    map.entry(lock_path.to_path_buf())
-        .and_modify(|e| e.depth += 1)
-        .or_insert(ReentrancyState {
+}
+
+/// Record the outermost lock acquisition for `lock_path`. Caller must already
+/// hold the kernel advisory lock on `file`.
+pub(super) fn insert_initial_lock(
+    lock_path: &Path,
+    file: fs::File,
+    ownership: WriterOwnership,
+) -> Result<(), LockError> {
+    let mut map = lock_depths().lock().unwrap();
+    let current = std::thread::current().id();
+    if map.contains_key(lock_path) {
+        // try_reenter is checked before we call this, so a hit here means the
+        // depth map is out of sync with the kernel flock state. Refuse rather
+        // than stomp the existing entry.
+        return Err(LockError::WrongThread {
+            lock_path: lock_path.to_path_buf(),
+        });
+    }
+    map.insert(
+        lock_path.to_path_buf(),
+        ReentrancyState {
             depth: 1,
             owner_thread: current,
-        });
+            file,
+            ownership,
+        },
+    );
     Ok(())
 }
 
 /// Decrement depth for `lock_path` and return the value *after* decrement.
+/// When depth reaches zero the entry is removed, which drops the stored
+/// `File` and releases the kernel advisory lock.
 pub(super) fn decrement_depth(lock_path: &Path) -> usize {
     let mut map = lock_depths().lock().unwrap();
     let Some(entry) = map.get_mut(lock_path) else {
@@ -64,6 +101,41 @@ pub(super) fn decrement_depth(lock_path: &Path) -> usize {
         map.remove(lock_path);
     }
     remaining
+}
+
+// ---- Kernel advisory locking ----
+
+/// Open (creating if needed) the lock file and attempt to acquire an
+/// exclusive non-blocking kernel advisory lock on it.
+///
+/// Returns `Ok(Some(file))` if we own the lock, `Ok(None)` if another
+/// process currently holds it, and `Err` for any other I/O failure.
+///
+/// On Unix the file is opened with `O_CLOEXEC` so child processes do not
+/// inherit the lock; `LockFileEx` on Windows is per-handle by default.
+pub(super) fn open_and_try_lock(lock_path: &Path) -> Result<Option<fs::File>, LockError> {
+    let mut opts = fs::OpenOptions::new();
+    opts.create(true).read(true).write(true);
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        opts.custom_flags(libc::O_CLOEXEC);
+    }
+
+    let file = opts.open(lock_path).map_err(|source| LockError::Io {
+        path: lock_path.to_path_buf(),
+        source,
+    })?;
+
+    match file.try_lock_exclusive() {
+        Ok(()) => Ok(Some(file)),
+        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => Ok(None),
+        Err(source) => Err(LockError::Io {
+            path: lock_path.to_path_buf(),
+            source,
+        }),
+    }
 }
 
 // ---- File I/O helpers ----
@@ -80,7 +152,8 @@ pub(super) fn read_ownership(lock_path: &Path) -> Result<WriterOwnership, Writer
 }
 
 /// Read ownership, retrying briefly on parse failure to ride out the narrow
-/// race between a concurrent `create_new` and its subsequent `write_all`.
+/// window where a concurrent flock winner has acquired the kernel lock but
+/// has not yet written its ownership metadata.
 pub(super) fn read_ownership_with_retry(
     lock_path: &Path,
 ) -> Result<WriterOwnership, WriterOwnershipError> {
@@ -163,10 +236,16 @@ pub fn now_rfc3339() -> String {
         .unwrap_or_else(|_| "unknown".to_string())
 }
 
-/// Spawn a short-lived child process and wait for it to exit, returning
-/// its (now-dead) PID. Used in tests to obtain a reliably dead PID.
-#[cfg(all(test, unix))]
-pub(in crate::pipeline::writer) fn spawn_and_reap_pid() -> u32 {
+// ---- Test-only helpers ----
+//
+// Exposed as `pub` + `#[doc(hidden)]` (not `#[cfg(test)]`) because binary-crate
+// tests compile against the library *without* `cfg(test)` and so cannot see
+// test-gated items. Doc-hidden keeps them out of the public rustdoc surface.
+
+/// Spawn a short-lived child and reap it, returning its (now-dead) PID.
+#[cfg(unix)]
+#[doc(hidden)]
+pub fn spawn_and_reap_pid() -> u32 {
     let mut child = std::process::Command::new("true")
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -175,4 +254,53 @@ pub(in crate::pipeline::writer) fn spawn_and_reap_pid() -> u32 {
     let pid = child.id();
     child.wait().expect("wait for child");
     pid
+}
+
+/// Spawn a long-sleeping child and return its (Child, live pid). The caller
+/// must keep the Child alive until the PID is no longer needed, and should
+/// kill/wait it to avoid leaked zombies (callers that rely on unwinding
+/// cleanup are fine — Child's Drop does not kill).
+#[cfg(unix)]
+#[doc(hidden)]
+pub fn live_foreign_pid() -> (std::process::Child, u32) {
+    let child = std::process::Command::new("sleep")
+        .arg("30")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("spawn sleep");
+    let pid = child.id();
+    (child, pid)
+}
+
+/// Guard returned by [`hold_writer_flock_with_ownership`]. Dropping it
+/// releases the kernel advisory lock held on its file descriptor.
+#[cfg(unix)]
+#[doc(hidden)]
+pub struct TestFlockHolder {
+    _file: fs::File,
+}
+
+/// Open the lock file on a separate fd, take the kernel advisory lock, and
+/// stamp ownership metadata. Used by tests to simulate a foreign writer:
+/// same-process, different open file description, which blocks
+/// `try_lock_exclusive` on any other fd exactly like a separate process would.
+#[cfg(unix)]
+#[doc(hidden)]
+pub fn hold_writer_flock_with_ownership(
+    lock_path: &Path,
+    ownership: &WriterOwnership,
+) -> TestFlockHolder {
+    if let Some(parent) = lock_path.parent() {
+        fs::create_dir_all(parent).expect("create state dir");
+    }
+    let mut file = open_and_try_lock(lock_path)
+        .expect("open+flock I/O must succeed in test")
+        .expect("flock must be free (nothing else holds it)");
+    file.set_len(0).expect("truncate");
+    use std::io::{Seek as _, SeekFrom};
+    file.seek(SeekFrom::Start(0)).expect("seek");
+    let json = serde_json::to_string(ownership).expect("serialize ownership");
+    write_lock_file(&mut file, lock_path, &json).expect("write ownership");
+    TestFlockHolder { _file: file }
 }

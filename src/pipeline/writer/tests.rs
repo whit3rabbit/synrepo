@@ -140,22 +140,37 @@ fn concurrent_acquire_from_threads_is_rejected() {
 }
 
 #[test]
-fn stale_lock_cleanup_reports_remove_failure() {
+fn lock_path_as_directory_surfaces_io_error() {
     let dir = tempdir().unwrap();
     let synrepo_dir = dir.path().join(".synrepo");
     std::fs::create_dir_all(synrepo_dir.join("state")).unwrap();
     std::fs::create_dir_all(writer_lock_path(&synrepo_dir)).unwrap();
 
-    let result = acquire_writer_lock(&synrepo_dir);
-    match result {
-        Err(LockError::Io { source, .. }) => {
-            assert_ne!(
-                source.kind(),
-                std::io::ErrorKind::AlreadyExists,
-                "cleanup failure should surface the real filesystem error"
-            );
+    match acquire_writer_lock(&synrepo_dir) {
+        Err(LockError::Io { .. }) => {}
+        other => panic!("expected Io error opening a directory as the lock file, got {other:?}"),
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn second_open_of_same_lock_file_blocks() {
+    use fs2::FileExt;
+
+    let dir = tempdir().unwrap();
+    let synrepo_dir = dir.path().join(".synrepo");
+    let _lock = acquire_writer_lock(&synrepo_dir).unwrap();
+
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(writer_lock_path(&synrepo_dir))
+        .unwrap();
+    match file.try_lock_exclusive() {
+        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
+        other => {
+            panic!("a second open of the held lock file should fail with WouldBlock, got {other:?}")
         }
-        other => panic!("expected Io cleanup failure, got {other:?}"),
     }
 }
 
