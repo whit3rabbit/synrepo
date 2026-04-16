@@ -69,7 +69,8 @@ pub fn load_embedding_index(
     let model_res = resolver.resolve(&config.semantic_model, synrepo_dir, config.embedding_dim)?;
 
     // Load the index with the model session restored
-    let index = index::FlatVecIndex::load_with_resolution(&index_path, config.embedding_dim, &model_res)?;
+    let index =
+        index::FlatVecIndex::load_with_resolution(&index_path, config.embedding_dim, &model_res)?;
 
     Ok(Some(index))
 }

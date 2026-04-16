@@ -3,15 +3,15 @@
 //! Handles model resolution (built-in, Hugging Face, local path),
 //! downloading, and inference using the `ort` and `tokenizers` crates.
 
-use std::path::{Path, PathBuf};
 use parking_lot::Mutex;
+use std::path::{Path, PathBuf};
 
 use crate::Result;
 
 #[cfg(feature = "semantic-triage")]
-use ort::value::Value;
-#[cfg(feature = "semantic-triage")]
 use ndarray::Array2;
+#[cfg(feature = "semantic-triage")]
+use ort::value::Value;
 
 /// Built-in model registry with explicit specs.
 const BUILTIN_MODELS: &[EmbeddingModelSpec] = &[
@@ -142,7 +142,7 @@ impl ModelResolver {
                 model_name: model_id.to_string(),
                 embedding_dim: declared_dim,
                 pooling: PoolingStrategy::Mean, // Default for custom models
-                normalize: true,              // Default for custom models
+                normalize: true,                // Default for custom models
                 downloaded: false,
             });
         }
@@ -273,9 +273,8 @@ pub struct EmbeddingSession {
 impl EmbeddingSession {
     /// Create a new session from a model resolution.
     pub fn new_from_resolution(res: &ModelResolution) -> Result<Self> {
-        let tokenizer = tokenizers::Tokenizer::from_file(&res.tokenizer_path).map_err(|e| {
-            crate::Error::Other(anyhow::anyhow!("Failed to load tokenizer: {}", e))
-        })?;
+        let tokenizer = tokenizers::Tokenizer::from_file(&res.tokenizer_path)
+            .map_err(|e| crate::Error::Other(anyhow::anyhow!("Failed to load tokenizer: {}", e)))?;
 
         let session = ort::session::Session::builder()
             .map_err(|e| crate::Error::Other(anyhow::anyhow!("Failed to create session: {}", e)))?
@@ -301,9 +300,10 @@ impl EmbeddingSession {
 
         for text in texts {
             // Tokenize
-            let encoding = self.tokenizer.encode(text.as_str(), true).map_err(|e| {
-                crate::Error::Other(anyhow::anyhow!("Tokenization failed: {}", e))
-            })?;
+            let encoding = self
+                .tokenizer
+                .encode(text.as_str(), true)
+                .map_err(|e| crate::Error::Other(anyhow::anyhow!("Tokenization failed: {}", e)))?;
 
             let input_ids = encoding.get_ids();
             let attention_mask = encoding.get_attention_mask();
@@ -311,12 +311,21 @@ impl EmbeddingSession {
             let seq_len = input_ids.len();
 
             // Convert to ndarray for ort
-            let input_ids_arr = Array2::from_shape_vec((1, seq_len), input_ids.iter().map(|&x| x as i64).collect())
-                .map_err(|e| crate::Error::Other(anyhow::anyhow!("Array shape error: {}", e)))?;
-            let attention_mask_arr = Array2::from_shape_vec((1, seq_len), attention_mask.iter().map(|&x| x as i64).collect())
-                .map_err(|e| crate::Error::Other(anyhow::anyhow!("Array shape error: {}", e)))?;
-            let type_ids_arr = Array2::from_shape_vec((1, seq_len), type_ids.iter().map(|&x| x as i64).collect())
-                .map_err(|e| crate::Error::Other(anyhow::anyhow!("Array shape error: {}", e)))?;
+            let input_ids_arr =
+                Array2::from_shape_vec((1, seq_len), input_ids.iter().map(|&x| x as i64).collect())
+                    .map_err(|e| {
+                        crate::Error::Other(anyhow::anyhow!("Array shape error: {}", e))
+                    })?;
+            let attention_mask_arr = Array2::from_shape_vec(
+                (1, seq_len),
+                attention_mask.iter().map(|&x| x as i64).collect(),
+            )
+            .map_err(|e| crate::Error::Other(anyhow::anyhow!("Array shape error: {}", e)))?;
+            let type_ids_arr =
+                Array2::from_shape_vec((1, seq_len), type_ids.iter().map(|&x| x as i64).collect())
+                    .map_err(|e| {
+                        crate::Error::Other(anyhow::anyhow!("Array shape error: {}", e))
+                    })?;
 
             // Run inference
             let inputs = ort::inputs![
@@ -326,21 +335,17 @@ impl EmbeddingSession {
             ];
 
             let mut session = self.session.lock();
-            let outputs = session.run(inputs).map_err(|e| {
-                crate::Error::Other(anyhow::anyhow!("Inference failed: {}", e))
-            })?;
+            let outputs = session
+                .run(inputs)
+                .map_err(|e| crate::Error::Other(anyhow::anyhow!("Inference failed: {}", e)))?;
 
             // Extract last_hidden_state
             let last_hidden_state = &outputs["last_hidden_state"];
 
             // Pooling
             let pooled = match self.pooling {
-                PoolingStrategy::Mean => {
-                    mean_pooling(last_hidden_state, attention_mask)
-                }
-                PoolingStrategy::Cls => {
-                    cls_pooling(last_hidden_state, self.dim as usize)
-                }
+                PoolingStrategy::Mean => mean_pooling(last_hidden_state, attention_mask),
+                PoolingStrategy::Cls => cls_pooling(last_hidden_state, self.dim as usize),
             };
 
             // Normalize
