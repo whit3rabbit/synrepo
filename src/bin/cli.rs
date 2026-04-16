@@ -102,8 +102,8 @@ fn main() -> anyhow::Result<()> {
                 watch(&repo_root, daemon)
             }
         }
-        Command::Links(LinksCommand::List { tier, json }) => {
-            links_list(&repo_root, tier.as_deref(), json)
+        Command::Links(LinksCommand::List { tier, limit, json }) => {
+            links_list(&repo_root, tier.as_deref(), limit, json)
         }
         Command::Links(LinksCommand::Review { limit, json }) => {
             links_review(&repo_root, limit, json)

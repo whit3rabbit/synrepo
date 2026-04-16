@@ -270,6 +270,9 @@ pub(crate) enum LinksCommand {
         /// Filter by confidence tier
         #[arg(long)]
         tier: Option<String>,
+        /// Maximum number of candidates to return (default 50; pass 0 to disable the cap).
+        #[arg(long)]
+        limit: Option<usize>,
         /// Emit JSON instead of human-readable output
         #[arg(long)]
         json: bool,

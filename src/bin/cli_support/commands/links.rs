@@ -45,18 +45,24 @@ fn parse_candidate_id(id: &str) -> anyhow::Result<ParsedCandidateId<'_>> {
     })
 }
 
+/// Default row cap applied to `links list` when `--limit` is not supplied.
+/// Pass `--limit 0` on the CLI to disable the cap and load every candidate.
+const LINKS_LIST_DEFAULT_LIMIT: usize = 50;
+
 pub(crate) fn links_list(
     repo_root: &Path,
     tier: Option<&str>,
+    limit: Option<usize>,
     json_output: bool,
 ) -> anyhow::Result<()> {
-    print!("{}", links_list_output(repo_root, tier, json_output)?);
+    print!("{}", links_list_output(repo_root, tier, limit, json_output)?);
     Ok(())
 }
 
 pub(crate) fn links_list_output(
     repo_root: &Path,
     tier: Option<&str>,
+    limit: Option<usize>,
     json_output: bool,
 ) -> anyhow::Result<String> {
     use std::fmt::Write as _;
@@ -66,14 +72,33 @@ pub(crate) fn links_list_output(
     let overlay = SqliteOverlayStore::open_existing(&overlay_dir)
         .map_err(|error| anyhow::anyhow!("Could not open overlay store: {error}"))?;
 
-    let candidates = overlay.all_candidates(tier)?;
+    // limit resolution:
+    //   None    → cap at LINKS_LIST_DEFAULT_LIMIT (push LIMIT into SQL)
+    //   Some(0) → opt out of the cap, load every active candidate
+    //   Some(n) → cap at n
+    let (candidates, applied_cap) = match limit {
+        None => (
+            overlay.candidates_limited(tier, LINKS_LIST_DEFAULT_LIMIT)?,
+            Some(LINKS_LIST_DEFAULT_LIMIT),
+        ),
+        Some(0) => (overlay.all_candidates(tier)?, None),
+        Some(n) => (overlay.candidates_limited(tier, n)?, Some(n)),
+    };
     let mut out = String::new();
     if json_output {
         writeln!(out, "{}", serde_json::to_string_pretty(&candidates)?).unwrap();
         return Ok(out);
     }
 
-    writeln!(out, "Found {} candidates.", candidates.len()).unwrap();
+    match applied_cap {
+        Some(cap) if candidates.len() == cap => writeln!(
+            out,
+            "Showing {} candidates (capped at {cap}; pass --limit 0 for all).",
+            candidates.len()
+        )
+        .unwrap(),
+        _ => writeln!(out, "Found {} candidates.", candidates.len()).unwrap(),
+    }
     for candidate in candidates {
         writeln!(
             out,
