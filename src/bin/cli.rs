@@ -47,7 +47,7 @@ fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Command::Init { mode } => init(&repo_root, mode.map(Into::into)),
-        Command::Status { json, recent } => status(&repo_root, json, recent),
+        Command::Status { json, recent, full } => status(&repo_root, json, recent, full),
         Command::AgentSetup { tool, force, regen } => agent_setup(&repo_root, tool, force, regen),
         Command::Setup { tool, force } => setup(&repo_root, tool, force),
         Command::Reconcile => reconcile(&repo_root),

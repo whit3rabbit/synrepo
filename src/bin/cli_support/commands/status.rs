@@ -14,15 +14,23 @@ use synrepo::{
 };
 
 /// Print operational health: mode, graph counts, reconcile status, and watch state.
-pub(crate) fn status(repo_root: &Path, json: bool, recent: bool) -> anyhow::Result<()> {
-    let rendered = status_output(repo_root, json, recent)?;
+pub(crate) fn status(repo_root: &Path, json: bool, recent: bool, full: bool) -> anyhow::Result<()> {
+    let rendered = status_output(repo_root, json, recent, full)?;
     print!("{rendered}");
     Ok(())
 }
 
 /// Render the status output as a String (test-friendly equivalent of `status`).
 /// Output is identical to what `status` prints, including trailing newlines.
-pub(crate) fn status_output(repo_root: &Path, json: bool, recent: bool) -> anyhow::Result<String> {
+///
+/// `full` enables the commentary freshness scan (O(commentary_rows × graph_lookup)).
+/// Default status leaves it off so the command stays cheap enough to run habitually.
+pub(crate) fn status_output(
+    repo_root: &Path,
+    json: bool,
+    recent: bool,
+    full: bool,
+) -> anyhow::Result<String> {
     let synrepo_dir = Config::synrepo_dir(repo_root);
     let mut out = String::new();
 
@@ -57,7 +65,13 @@ pub(crate) fn status_output(repo_root: &Path, json: bool, recent: bool) -> anyho
     };
 
     let export_freshness = export_freshness_summary(repo_root, &synrepo_dir, &config);
-    let overlay_cost = overlay_cost_summary(&synrepo_dir);
+    // Open the overlay once and share the handle: the default status path
+    // otherwise does two `SqliteOverlayStore::open_existing` calls in a row
+    // (one for overlay-cost, one for commentary coverage) on what is
+    // documented as "cheap enough to run habitually".
+    let overlay = open_status_overlay(&synrepo_dir);
+    let overlay_cost = overlay_cost_summary(&overlay);
+    let commentary = commentary_coverage(&synrepo_dir, full, &overlay);
     let last_compaction = load_last_compaction_timestamp(&synrepo_dir);
 
     let recent_entries: Option<Vec<ActivityEntry>> = if recent {
@@ -79,6 +93,7 @@ pub(crate) fn status_output(repo_root: &Path, json: bool, recent: bool) -> anyho
             graph_stats.as_ref(),
             &export_freshness,
             &overlay_cost,
+            &commentary,
             recent_entries.as_deref(),
             last_compaction.as_ref(),
         )?;
@@ -154,12 +169,7 @@ pub(crate) fn status_output(repo_root: &Path, json: bool, recent: bool) -> anyho
         writeln!(out, "  store:        {line}").unwrap();
     }
 
-    writeln!(
-        out,
-        "  commentary:   {}",
-        commentary_coverage_line(&synrepo_dir)
-    )
-    .unwrap();
+    writeln!(out, "  commentary:   {}", commentary.display).unwrap();
     writeln!(out, "  export:       {export_freshness}").unwrap();
     writeln!(out, "  overlay cost: {overlay_cost}").unwrap();
     if let Some(ts) = last_compaction {
@@ -204,6 +214,7 @@ fn write_status_json(
     graph_stats: Option<&synrepo::store::sqlite::PersistedGraphStats>,
     export_freshness: &str,
     overlay_cost: &str,
+    commentary: &CommentaryCoverage,
     recent_activity: Option<&[ActivityEntry]>,
     last_compaction: Option<&time::OffsetDateTime>,
 ) -> anyhow::Result<()> {
@@ -259,6 +270,10 @@ fn write_status_json(
         "writer_lock": writer_lock,
         "export_freshness": export_freshness,
         "overlay_cost_summary": overlay_cost,
+        "commentary_coverage": {
+            "total": commentary.total,
+            "fresh": commentary.fresh,
+        },
         "recent_activity": activity_json,
         "last_compaction_timestamp": last_compaction.map(|ts| ts.to_string()),
     });
@@ -291,18 +306,11 @@ fn export_freshness_summary(repo_root: &Path, synrepo_dir: &Path, config: &Confi
 }
 
 /// Describe overlay cost for status output. Scans on demand; no caching.
-fn overlay_cost_summary(synrepo_dir: &Path) -> String {
-    use synrepo::store::overlay::SqliteOverlayStore;
-
-    let overlay_dir = synrepo_dir.join("overlay");
-    let db = SqliteOverlayStore::db_path(&overlay_dir);
-    if !db.exists() {
-        return "no overlay (0 LLM calls)".to_string();
-    }
-
-    let overlay = match SqliteOverlayStore::open_existing(&overlay_dir) {
-        Ok(o) => o,
-        Err(e) => return format!("unavailable ({e})"),
+fn overlay_cost_summary(overlay: &OverlayHandle) -> String {
+    let overlay = match overlay {
+        OverlayHandle::NotInitialized => return "no overlay (0 LLM calls)".to_string(),
+        OverlayHandle::Unavailable(e) => return format!("unavailable ({e})"),
+        OverlayHandle::Open(store) => store,
     };
 
     // Surface query failures as "unavailable (...)" rather than collapsing to
@@ -346,34 +354,120 @@ pub(super) fn render_watch_summary(status: &WatchServiceStatus) -> String {
     }
 }
 
-fn commentary_coverage_line(synrepo_dir: &Path) -> String {
+/// Commentary freshness coverage.
+///
+/// `fresh: None` has two meanings: the cheap (`!full`) path deliberately
+/// skipped the O(N × graph_lookup) scan, or an error prevented computing it.
+/// Disambiguate via `display`, which carries the error text when present.
+pub(super) struct CommentaryCoverage {
+    pub(super) total: Option<usize>,
+    pub(super) fresh: Option<usize>,
+    pub(super) display: String,
+}
+
+impl CommentaryCoverage {
+    fn not_initialized() -> Self {
+        Self {
+            total: None,
+            fresh: None,
+            display: "not initialized".to_string(),
+        }
+    }
+
+    fn unavailable(reason: impl std::fmt::Display) -> Self {
+        Self {
+            total: None,
+            fresh: None,
+            display: format!("unavailable ({reason})"),
+        }
+    }
+}
+
+/// Shared overlay handle for status consumers, opened once per invocation.
+enum OverlayHandle {
+    NotInitialized,
+    Unavailable(String),
+    Open(synrepo::store::overlay::SqliteOverlayStore),
+}
+
+fn open_status_overlay(synrepo_dir: &Path) -> OverlayHandle {
+    use synrepo::store::overlay::SqliteOverlayStore;
+    let overlay_dir = synrepo_dir.join("overlay");
+    if !SqliteOverlayStore::db_path(&overlay_dir).exists() {
+        return OverlayHandle::NotInitialized;
+    }
+    match SqliteOverlayStore::open_existing(&overlay_dir) {
+        Ok(store) => OverlayHandle::Open(store),
+        Err(e) => OverlayHandle::Unavailable(e.to_string()),
+    }
+}
+
+/// Summarize commentary coverage. When `full` is false, avoids opening the
+/// graph store and reading every commentary row; returns only the row count.
+fn commentary_coverage(
+    synrepo_dir: &Path,
+    full: bool,
+    overlay: &OverlayHandle,
+) -> CommentaryCoverage {
+    let overlay = match overlay {
+        OverlayHandle::NotInitialized => return CommentaryCoverage::not_initialized(),
+        OverlayHandle::Unavailable(e) => return CommentaryCoverage::unavailable(e),
+        OverlayHandle::Open(store) => store,
+    };
+
+    if !full {
+        let total = match overlay.commentary_count() {
+            Ok(n) => n,
+            Err(error) => return CommentaryCoverage::unavailable(&error),
+        };
+        let display = if total == 0 {
+            "0 entries".to_string()
+        } else {
+            format!("{total} entries (run `synrepo status --full` for freshness)")
+        };
+        return CommentaryCoverage {
+            total: Some(total),
+            fresh: None,
+            display,
+        };
+    }
+
+    commentary_coverage_full(synrepo_dir, overlay)
+}
+
+/// Full freshness scan: walks every commentary row through a graph read
+/// snapshot and compares stored hashes against current content hashes.
+fn commentary_coverage_full(
+    synrepo_dir: &Path,
+    overlay: &synrepo::store::overlay::SqliteOverlayStore,
+) -> CommentaryCoverage {
     use std::str::FromStr;
     use synrepo::core::ids::NodeId;
     use synrepo::pipeline::repair::resolve_commentary_node;
-    use synrepo::store::overlay::SqliteOverlayStore;
     use synrepo::store::sqlite::SqliteGraphStore;
 
-    let overlay_dir = synrepo_dir.join("overlay");
-    let overlay_db = SqliteOverlayStore::db_path(&overlay_dir);
-    if !overlay_db.exists() {
-        return "not initialized".to_string();
-    }
-
-    let overlay = match SqliteOverlayStore::open_existing(&overlay_dir) {
-        Ok(store) => store,
-        Err(error) => return format!("unavailable ({error})"),
-    };
     let rows = match overlay.commentary_hashes() {
         Ok(rows) => rows,
-        Err(error) => return format!("unavailable ({error})"),
+        Err(error) => return CommentaryCoverage::unavailable(&error),
     };
     if rows.is_empty() {
-        return "0 entries".to_string();
+        return CommentaryCoverage {
+            total: Some(0),
+            fresh: Some(0),
+            display: "0 entries".to_string(),
+        };
     }
+    let total = rows.len();
 
     let graph = match SqliteGraphStore::open_existing(&synrepo_dir.join("graph")) {
         Ok(graph) => graph,
-        Err(_) => return format!("{} entries (graph unreadable)", rows.len()),
+        Err(_) => {
+            return CommentaryCoverage {
+                total: Some(total),
+                fresh: None,
+                display: format!("{total} entries (graph unreadable)"),
+            }
+        }
     };
 
     let fresh = synrepo::structure::graph::with_graph_read_snapshot(&graph, |graph| {
@@ -394,7 +488,11 @@ fn commentary_coverage_line(synrepo_dir: &Path) -> String {
     })
     .unwrap_or(0);
 
-    format!("{fresh} fresh / {} total nodes with commentary", rows.len())
+    CommentaryCoverage {
+        total: Some(total),
+        fresh: Some(fresh),
+        display: format!("{fresh} fresh / {total} total nodes with commentary"),
+    }
 }
 
 fn next_step(diag: &RuntimeDiagnostics, graph_missing: bool) -> &'static str {

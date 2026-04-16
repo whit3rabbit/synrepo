@@ -1,8 +1,10 @@
+mod agent_setup;
 mod change_risk;
 mod compact;
 mod export;
 mod graph;
 mod links;
+mod overlay_scale;
 mod reconcile;
 mod search;
 mod setup;

@@ -4,6 +4,11 @@ use synrepo::bootstrap::bootstrap;
 use synrepo::config::Config;
 use synrepo::core::ids::{ConceptNodeId, EdgeId, FileNodeId, SymbolNodeId};
 use synrepo::core::provenance::{CreatedBy, Provenance, SourceRef};
+use synrepo::overlay::{
+    CitedSpan, ConfidenceTier, CrossLinkProvenance, OverlayEdgeKind, OverlayEpistemic, OverlayLink,
+    OverlayStore,
+};
+use synrepo::store::overlay::SqliteOverlayStore;
 use synrepo::store::sqlite::SqliteGraphStore;
 use synrepo::structure::graph::{
     ConceptNode, EdgeKind, Epistemic, FileNode, GraphStore, SymbolKind, SymbolNode,
@@ -158,6 +163,54 @@ pub(super) fn seed_graph(repo_root: &std::path::Path) -> SeededGraphIds {
         file_id,
         symbol_id,
         concept_id,
+    }
+}
+
+/// Seed `n` synthetic cross-link candidates into the repo's overlay store.
+///
+/// Each row gets a unique `(from, to)` pair so `ON CONFLICT` upserts do not
+/// collapse them. Callers are responsible for `bootstrap()` if the test also
+/// needs a graph; the overlay directory is created on demand.
+pub(super) fn seed_overlay_candidates(repo_root: &std::path::Path, n: u64) {
+    let overlay_dir = Config::synrepo_dir(repo_root).join("overlay");
+    let mut overlay = SqliteOverlayStore::open(&overlay_dir).unwrap();
+
+    for i in 0..n {
+        let from = NodeId::Concept(ConceptNodeId(i + 1));
+        let to = NodeId::File(FileNodeId(i + 1 + 10_000));
+        let link = OverlayLink {
+            from,
+            to,
+            kind: OverlayEdgeKind::References,
+            epistemic: OverlayEpistemic::MachineAuthoredHighConf,
+            source_spans: vec![CitedSpan {
+                artifact: from,
+                normalized_text: "source".into(),
+                verified_at_offset: 0,
+                lcs_ratio: 1.0,
+            }],
+            target_spans: vec![CitedSpan {
+                artifact: to,
+                normalized_text: "target".into(),
+                verified_at_offset: 0,
+                lcs_ratio: 1.0,
+            }],
+            from_content_hash: format!("h-from-{i}"),
+            to_content_hash: format!("h-to-{i}"),
+            confidence_score: 0.5 + (i as f32 % 50.0) / 100.0,
+            confidence_tier: if i % 2 == 0 {
+                ConfidenceTier::High
+            } else {
+                ConfidenceTier::ReviewQueue
+            },
+            rationale: None,
+            provenance: CrossLinkProvenance {
+                pass_id: "scale-test".into(),
+                model_identity: "scale-test-model".into(),
+                generated_at: OffsetDateTime::UNIX_EPOCH,
+            },
+        };
+        overlay.insert_link(link).unwrap();
     }
 }
 

@@ -44,6 +44,11 @@ pub(crate) enum Command {
         /// Include recent operational activity (reconcile, repair, overlay events).
         #[arg(long)]
         recent: bool,
+        /// Include the commentary freshness scan. Slow: walks every commentary
+        /// row through a graph read snapshot. Default status skips it so the
+        /// command stays cheap enough to run habitually.
+        #[arg(long)]
+        full: bool,
     },
 
     /// Generate a thin integration shim for the specified agent CLI.
