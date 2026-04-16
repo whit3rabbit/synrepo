@@ -145,7 +145,7 @@ mod tests {
 
         // Test priority ordering via sort (ascending order)
         let mut sorted = items.clone();
-        sorted.sort_by(|a, b| a.priority.cmp(&b.priority));
+        sorted.sort_by_key(|a| a.priority);
 
         assert_eq!(sorted[0].priority, HandoffPriority::Low);
         assert_eq!(sorted[1].priority, HandoffPriority::Medium);
