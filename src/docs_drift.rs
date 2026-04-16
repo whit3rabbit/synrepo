@@ -85,6 +85,42 @@ mod tests {
         );
     }
 
+    #[test]
+    fn foundation_status_does_not_drift() {
+        let foundation = include_str!("../docs/FOUNDATION.md");
+
+        // These features are now clearly shipped or wired, so the doc should not
+        // claim they are "planned" or "hardcoded None".
+        let stale_markers = [
+            "FileCard.git_intelligence` is hardcoded `None`",
+            "| **ChangeRiskCard** | planned |",
+            "| **CallPathCard** | planned |",
+            "### Recent-activity surface *(planned)*",
+            "Pending: dedicated `synrepo compact`",
+        ];
+
+        for marker in &stale_markers {
+            assert!(
+                !foundation.contains(marker),
+                "FOUNDATION.md contains stale marker: '{}'. Update the doc to match current implementation.",
+                marker
+            );
+        }
+    }
+
+    #[test]
+    fn foundation_has_invariants_table() {
+        let foundation = include_str!("../docs/FOUNDATION.md");
+        assert!(
+            foundation.contains("## Hard invariants vs current fidelity"),
+            "FOUNDATION.md must maintain the Hard Invariants vs Current Fidelity table"
+        );
+        assert!(
+            foundation.contains("| **Separation** |"),
+            "Invariants table is missing the Separation row"
+        );
+    }
+
     fn collect_gix_offenders(
         src_root: &Path,
         guard_file: &Path,

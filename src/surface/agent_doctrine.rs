@@ -29,7 +29,7 @@ synrepo is a code-context compiler. When `.synrepo/` exists in the repo root, pr
 3. Use `normal` cards to understand a neighborhood.
 4. Use `deep` cards only before writing code, or when exact source or body details matter.
 
-Overlay commentary and proposed cross-links are advisory, labeled machine-authored, and freshness-sensitive. Treat stale labels as information, not as errors. Request fresh synthesis explicitly only when the task actually needs it.
+Overlay commentary and proposed cross-links are advisory, labeled machine-authored, and freshness-sensitive. Treat stale labels as information, not as errors. **Refresh is explicit**: every tool returns what is currently in the overlay. To get fresh commentary after a code change, you must call `synrepo_refresh_commentary(target)`.
 
 ### Do not
 
@@ -42,7 +42,7 @@ Overlay commentary and proposed cross-links are advisory, labeled machine-author
 
 - synrepo stores code facts and bounded operational memory. It is not a task tracker, not session memory, and not cross-session agent memory.
 - Any handoff or next-action list is a derived recommendation regenerated from repo state. External task systems own assignment, status, and collaboration.
-- Freshness is explicit. A stale label is information, not an error; it is not silently refreshed.
+- Freshness is explicit. A stale label is information, not an error; it is not silently refreshed on read.
 "
     };
 }

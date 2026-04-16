@@ -15,25 +15,42 @@ synrepo is a context compiler. It turns a repository into small, deterministic, 
 synrepo mcp [--repo <path>]
 ```
 
-It serves over stdio. After `synrepo init` populates the graph, the MCP server exposes eleven tools:
+It serves over stdio. After `synrepo init` populates the graph, the MCP server exposes **twenty-one tools** across three categories:
 
+### Task tools
 | Tool | What it does |
 | --- | --- |
 | `synrepo_overview` | Graph stats + mode; your first call per session |
 | `synrepo_card(target, budget?)` | SymbolCard or FileCard for a file path or symbol name |
 | `synrepo_search(query, limit?)` | Lexical n-gram search; returns `{path, line, content}` results |
 | `synrepo_where_to_edit(task, limit?)` | Search + ranked file cards for a task description |
-| `synrepo_change_impact(target)` | Approximate file-level inbound Imports+Calls edges showing what depends on target |
-| `synrepo_entrypoints(scope?, budget?)` | Heuristic entry-point detection: binaries, CLI commands, HTTP handlers, library roots |
-| `synrepo_module_card(path, budget?)` | Directory-level summary: files, nested modules, public symbol count |
-| `synrepo_public_api(path, budget?)` | Public API surface of a directory: exported symbols with kinds and signatures, public entry points, recently changed API at deep budget (Rust-only visibility detection in v1) |
-| `synrepo_minimum_context(target, budget?)` | Budget-bounded 1-hop neighborhood around a focal symbol or file: structural neighbors, governing decisions, co-change partners |
-| `synrepo_recent_activity(limit?, kinds?)` | Bounded operational event history (default limit 20) |
-| `synrepo_findings(node_id?)` | Machine-authored cross-link candidates with provenance and tier |
+| `synrepo_change_impact(target)` | Approximate inbound Imports+Calls showing what depends on target |
+| `synrepo_change_risk(target)` | Composite risk signal (beta): drift + co-change + hotspots |
+| `synrepo_call_path(target)` | Shortest path from entrypoints to target (file scope in v1) |
+| `synrepo_test_surface(scope)` | Test discovery via path-convention heuristics (beta) |
+| `synrepo_entrypoints(scope?, budget?)` | Heuristic entry-point detection: binaries, commands, handlers |
+| `synrepo_module_card(path, budget?)` | Directory-level summary: files, nested modules, public symbols |
+| `synrepo_public_api(path, budget?)` | Public surface: exported symbols with signatures (Rust-only visibility) |
+| `synrepo_minimum_context(target)` | Bounded 1-hop neighborhood around a focal symbol or file |
 
-**Current limitations:** `SymbolCard.callers` and `.callees` are empty — the graph emits file→symbol `Calls` edges, not symbol→symbol. Specialist tools (`synrepo_call_path`, `synrepo_test_surface`, `synrepo_explain`) are not yet implemented. `synrepo_public_api` visibility detection is Rust-specific; non-Rust directories return empty symbol lists.
+### Maintenance & Audit
+| Tool | What it does |
+| --- | --- |
+| `synrepo_refresh_commentary(target)` | Explicitly refresh LLM commentary for a symbol |
+| `synrepo_recent_activity(limit?, kinds?)` | Bounded operational history (beta) |
+| `synrepo_next_actions()` | Prioritized actionable items for human/agent review |
+| `synrepo_findings(node_id?)` | Machine-authored cross-link candidates with provenance |
 
-`SymbolCard.callers` and `.callees` are empty because the current graph emits file→symbol `Calls` edges, not symbol→symbol call edges. `synrepo_change_impact` is therefore a first-pass routing aid built from inbound `Imports` edges plus file→symbol `Calls` edges; overloaded names can produce false positives.
+### Low-level Primitives
+| Tool | What it does |
+| --- | --- |
+| `synrepo_node(id)` | Raw node metadata as JSON |
+| `synrepo_edges(id, direction?)` | Raw edge traversal |
+| `synrepo_query(query)` | Basic graph query interface |
+| `synrepo_overlay(id)` | Inspect raw overlay storage for a node |
+| `synrepo_provenance(id)` | Trace ownership for a node or edge |
+
+**Current limitations:** `SymbolCard.callers` and `.callees` are empty — the graph emits file→symbol `Calls` edges, not symbol→symbol. `synrepo_change_impact` and `synrepo_call_path` are routing aids built from these edges; overloaded names can produce false positives. `synrepo_public_api` visibility detection is Rust-specific; non-Rust repositories return empty symbol lists.
 
 **CLI is still the fallback** when the MCP server isn't running. See "Falling back when the MCP server isn't available" below.
 
@@ -62,7 +79,7 @@ It serves over stdio. After `synrepo init` populates the graph, the MCP server e
 3. Use `normal` cards to understand a neighborhood.
 4. Use `deep` cards only before writing code, or when exact source or body details matter.
 
-Overlay commentary and proposed cross-links are advisory, labeled machine-authored, and freshness-sensitive. Treat stale labels as information, not as errors. Request fresh synthesis explicitly only when the task actually needs it.
+Overlay commentary and proposed cross-links are advisory, labeled machine-authored, and freshness-sensitive. Treat stale labels as information, not as errors. **Refresh is explicit**: every tool returns what is currently in the overlay. To get fresh commentary after a code change, you must call `synrepo_refresh_commentary(target)`.
 
 ## Do not
 
@@ -75,7 +92,7 @@ Overlay commentary and proposed cross-links are advisory, labeled machine-author
 
 - synrepo stores code facts and bounded operational memory. It is not a task tracker, not session memory, and not cross-session agent memory.
 - Any handoff or next-action list is a derived recommendation regenerated from repo state. External task systems own assignment, status, and collaboration.
-- Freshness is explicit. A stale label is information, not an error; it is not silently refreshed.
+- Freshness is explicit. A stale label is information, not an error; it is not silently refreshed on read.
 
 ## The core mental model
 
@@ -85,7 +102,7 @@ There are two kinds of content in synrepo, and the distinction matters:
 
 - **Overlay content** — things the LLM proposed: cross-links between code and prose with cited evidence, natural-language commentary on top of structural cards, findings about contradictions. Tagged `source_store: overlay`, `epistemic_status: machine_authored_high_conf | machine_authored_low_conf`. **Treat overlay content as helpful context, not ground truth.** If overlay content contradicts graph content, ignore the overlay.
 
-The current shipped MCP surface is graph-first. Overlay-specific behavior is still a later phase, so treat overlay discussion here as architecture, not as a live tool contract.
+The current shipped MCP surface is graph-first. Overlay content is supplemental.
 
 ## The tools, ranked by how often you should reach for them
 
@@ -101,9 +118,11 @@ The current shipped MCP surface is graph-first. Overlay-specific behavior is sti
 
 **`synrepo_search(query, limit?)`** — Lexical n-gram search via syntext. This is the fallback when you cannot guess an exact symbol name or file path. Use it like grep: short queries, specific terms.
 
-### Planned later tools
+**`synrepo_change_risk(target)`** — Call this before editing a focal symbol. It aggregates structural drift, co-change, and hotspots.
 
-These are not part of the current MCP surface: `synrepo_call_path`, `synrepo_test_surface`, and `synrepo_explain`.
+### Specialized tools
+
+Reach for these when you have a specific routing or auditing question: `synrepo_call_path`, `synrepo_test_surface`, `synrepo_refresh_commentary`, `synrepo_recent_activity`.
 
 ### The low-level escape hatches
 
@@ -142,12 +161,8 @@ The three budget tiers are a deliberate three-step interaction pattern, not a si
 
 **Budget is preserved in every response.** Each card and neighborhood response includes a `budget` field so you can confirm which tier was served without inspecting field presence.
 
-## Freshness today
-
-The shipped MCP surface is graph-backed. Cards and neighborhoods reflect the most recently reconciled graph state. Overlay commentary and proposed cross-links carry their own freshness labels (fresh, stale, missing, budget_withheld); the contract for explicit freshness override at the MCP layer is not wired yet, so today freshness is observed, not requested.
-
-- **Graph-sourced fields are the current truth.** The server reads structural data from the graph; some planned card enrichments may not be populated for every node yet.
-- **Overlay freshness is reported but not refreshable through the MCP surface.** Use the CLI (`synrepo sync`, `synrepo links review`) when commentary or proposed-link freshness needs to change.
+- **Graph-sourced fields are the current truth.** The server reads structural data from the graph.
+- **Refresh is explicit.** Commentary and cross-links are refreshed via `synrepo_refresh_commentary` (MCP) or `synrepo sync` (CLI).
 
 ## Concrete examples
 
@@ -176,9 +191,7 @@ Good sequence:
 
 Don't use `synrepo_card` or `synrepo_where_to_edit` for this — it's a pure lexical question and `synrepo_search` is the right tool.
 
-## Anti-patterns to avoid
-
-**Don't invent tools that are not shipped.** The current MCP surface is the eleven tools listed in the table above. `synrepo_call_path`, `synrepo_test_surface`, and `synrepo_explain` are not shipped yet; for call-path or test-surface questions, fall back to CLI graph inspection (`synrepo graph query`, `synrepo node`) or targeted source reads.
+**Don't ignore the budget.** escalating to `deep` budget consumes 10-20x more tokens. Start with `tiny`.
 
 **Don't read the source file cold after getting a card.** The card probably already contains what you needed. If you find yourself doing `synrepo_card` followed by `Read` on the same file, either you needed `deep` budget on the card, or you needed something the card doesn't contain (rare), or you needed exact proof beyond the current card surface.
 

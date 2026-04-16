@@ -121,7 +121,7 @@ fn doctrine_block_covers_required_sections() {
     assert!(DOCTRINE_BLOCK.contains("`normal`"));
     assert!(DOCTRINE_BLOCK.contains("`deep`"));
     assert!(DOCTRINE_BLOCK.contains("not a task tracker"));
-    assert!(DOCTRINE_BLOCK.contains("Request fresh synthesis"));
+    assert!(DOCTRINE_BLOCK.contains("Refresh is explicit"));
 }
 
 /// SKILL.md duplicates doctrine prose (Markdown rendered tools cannot embed a
@@ -147,7 +147,7 @@ fn skill_md_includes_doctrine_lines_verbatim() {
         // Product-boundary bullets
         "synrepo stores code facts and bounded operational memory. It is not a task tracker, not session memory, and not cross-session agent memory.",
         "Any handoff or next-action list is a derived recommendation regenerated from repo state. External task systems own assignment, status, and collaboration.",
-        "Freshness is explicit. A stale label is information, not an error; it is not silently refreshed.",
+        "Freshness is explicit. A stale label is information, not an error; it is not silently refreshed on read.",
     ];
 
     let missing: Vec<&str> = required

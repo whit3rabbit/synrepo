@@ -2,8 +2,10 @@
 
 use std::path::Path;
 
-use synrepo::surface::handoffs::HandoffsRequest;
-use synrepo::surface::handoffs::{collect_handoffs, to_json as handoffs_to_json, to_markdown};
+use synrepo::config::Config;
+use synrepo::surface::handoffs::{
+    collect_handoffs, to_json as handoffs_to_json, to_markdown, HandoffsRequest,
+};
 
 /// Run the handoffs command.
 pub(crate) fn handoffs(
@@ -12,12 +14,13 @@ pub(crate) fn handoffs(
     since: Option<u32>,
     json: bool,
 ) -> anyhow::Result<()> {
+    let config = Config::load(repo_root)?;
     let request = HandoffsRequest {
         limit: limit.unwrap_or(20),
         since_days: since.unwrap_or(30),
     };
 
-    let items = collect_handoffs(repo_root, &request)?;
+    let items = collect_handoffs(repo_root, &config, &request)?;
 
     if json {
         println!("{}", handoffs_to_json(&items));

@@ -6,11 +6,11 @@ A context compiler for AI coding agents.
 
 ## What synrepo is
 
-synrepo precomputes a small, deterministic, queryable working set of facts about a software project and serves that working set to coding agents through an MCP server in tight, task-shaped, token-budgeted packets called *cards*. Today the strongest shipped signals are symbol definitions, import relationships, and approximate dependency hints that help an agent orient and route edits without stuffing huge file chunks into context. Higher-fidelity symbol-level call graphs, co-change links, and precise impact analysis are still follow-on work.
+synrepo precomputes a small, deterministic, queryable working set of facts about a software project and serves that working set to coding agents through an MCP server in tight, task-shaped, token-budgeted packets called *cards*. Today the strongest shipped signals are symbol definitions, import relationships, and approximate dependency hints, with **co-change links, git hotspots, and change impact analysis** now wired into the card surface. Higher-fidelity symbol-to-symbol call graphs and cross-language dependency proof remain follow-on work.
 
 Underneath, [syntext](https://github.com/whit3rabbit/syntext) provides deterministic lexical search; tree-sitter via per-language Rust crates provides structural parsing; sqlite holds the canonical graph of facts the parsers and git observed directly. An LLM is layered on top, strictly off the critical path, to compress long material into commentary and to propose cross-links between code and prose — but everything the LLM produces lives in a clearly separate **overlay store** that is queryable alongside the graph but is never part of it. The graph holds only what was directly observed. The overlay holds what was inferred, with provenance and confidence visible to agents that ask.
 
-The product wedge is concrete: **fewer blind reads, fewer wrong-file edits, lower token burn, faster orientation on unfamiliar code.** The graph is infrastructure. Cards are the product. In the current implementation, that value is strongest for orientation and first-pass routing, not exact blast-radius proof.
+The product wedge is concrete: **fewer blind reads, fewer wrong-file edits, lower token burn, faster orientation on unfamiliar code.** The graph is infrastructure. Cards are the product. In the current implementation, that value is strongest for orientation and first-pass routing; precise cross-file impact proof is partially shipped.
 
 ---
 
@@ -31,6 +31,19 @@ synrepo handles both with two modes selected at `synrepo init`:
 | Default card tier | `tiny` | `tiny` |
 
 The **hard invariant** survives in both modes: the synthesis layer never reads its own previous output as retrieval input. This is enforced physically (graph and overlay are separate sqlite stores) and reinforced at the retrieval layer (synthesis queries filter on `source_store = graph`). LLM-authored content sits in the overlay where agents can see it, but the synthesis pipeline cannot. The contamination guarantee is structural, not merely labeled.
+
+---
+
+## Hard invariants vs current fidelity
+
+| Topic | Hard invariant (Architecture) | Current fidelity (Implementation) |
+| --- | --- | --- |
+| **Separation** | Graph and overlay stores must stay physically separate. | Implemented via `nodes.db` and `overlay.db`. |
+| **Doctrine** | One obvious path: `tiny` → `normal` → `deep`. | Enforced in shims, docs, and MCP descriptions. |
+| **Synthesis** | LLM content is supplemental and strictly off the critical path. | Commentary is only fetched at `Deep` budget. |
+| **Background** | No magic background writes without user/agent opt-in. | Commentary refresh is an explicit requested operation. |
+| **Change Risk** | Signals must be derived from structural drift and co-change. | Shipped as a composite signal (beta fidelity). |
+| **Fills** | Empty concept dirs must not break code orientation. | Code-only mode is the benchmark default. |
 
 ---
 
@@ -67,7 +80,8 @@ Do-not rules, asserted uniformly across surfaces:
 - do not open large files first;
 - do not treat commentary as canonical;
 - do not trigger synthesis unless the task justifies it;
-- do not expect watch or background behavior unless explicitly enabled.
+- do not expect watch or background behavior unless explicitly enabled;
+- **explicit refresh required for fresh commentary**: tools return stale content with tag, never blocking for new synthesis.
 
 The existing context-budget protocol is the substrate for this doctrine; the doctrine makes the protocol visible at every entry point an agent can hit.
 
@@ -75,7 +89,7 @@ The existing context-budget protocol is the substrate for this doctrine; the doc
 
 Overlay and operational-history surfaces have an explicit lifecycle: create, mark stale, refresh on demand, compact, prune or expire. Semantic compression applies only to these soft surfaces — commentary, cross-link candidates, findings, and recent operational history. Canonical graph data is never compacted semantically and is never replaced by summaries.
 
-Retention rules live in the existing `Retention and compaction` table and are extended by the compaction milestone in the roadmap. The rule that stays constant: the graph is permanent for its current schema and cannot be collapsed into prose.
+Retention rules live in the existing `Retention and compaction` table. The **shipped `synrepo compact` command** enforces these rules by merging logs, rebuilding indexes, and pruning retired nodes older than the retention window. The rule that stays constant: the graph is permanent for its current schema and cannot be collapsed into prose.
 
 ### Workflow handoff as a derived surface
 
@@ -116,18 +130,18 @@ SymbolCard for `parse_query` (function)
 
 Every field comes from the graph, syntext, or git. Zero LLM involvement in the card itself. An agent that needs to understand `parse_query` reads this card (~120 tokens) instead of opening `src/parser/query.rs` and consuming the whole file (possibly 4000 tokens).
 
-synrepo compiles several card types. The full family below describes the product direction. As of 2026-04-13, the shipped set is `SymbolCard`, `FileCard`, `ModuleCard`, `EntryPointCard`, and `DecisionCard` (an improvement over the v4 "only SymbolCard and FileCard" snapshot). `CallPathCard`, `ChangeRiskCard`, `PublicAPICard`, and `TestSurfaceCard` remain planned. The connectivity and change-impact fields on shipped cards are still shallower than the target shape; the biggest gap is that `FileCard.git_intelligence` is hardcoded `None` at `src/surface/card/compiler/file.rs:81` despite Stage 5 computing the data. This is wiring laziness, not a design question, and `git-data-surfacing-v1` closes it.
+synrepo compiles several card types. The full family below describes the product direction. As of 2026-04-16, the shipped set is `SymbolCard`, `FileCard`, `ModuleCard`, `EntryPointCard`, `DecisionCard`, `ChangeRiskCard`, `CallPathCard`, and `TestSurfaceCard` (an improvement over the earlier v4 snapshot). `PublicAPICard` remains planned. The connectivity and change-impact fields on shipped cards are now wired; `FileCard.git_intelligence` is fully functional at `Normal` and `Deep` budget.
 
 | Card type | Status | Answers | Compiled from |
 | --- | --- | --- | --- |
 | **SymbolCard** | shipped | What is this function/class, and how is it connected? | tree-sitter symbol + graph edges; symbol-level call graph is approximate (name-based), not type-aware |
-| **FileCard** | shipped | What is in this file, what depends on it? | symbol list + import graph; `git_intelligence` field declared but currently hardcoded `None` (wiring laziness, tracked by git-data-surfacing-v1) |
+| **FileCard** | shipped | What is in this file, what depends on it? | symbol list + import graph + git history/hotspots |
 | **ModuleCard** | shipped | What does this directory do, what is its public surface? | aggregated file / symbol facts for one directory (no recursion into subdirectories) |
 | **EntryPointCard** | shipped | Where does execution start in this subsystem? | binary, cli_command, http_handler, and lib_root classification rules over the symbol graph |
-| **CallPathCard** | planned | How does control flow get from A to B? | shortest path in the call graph |
-| **ChangeRiskCard** | planned | What breaks if I modify this? | dependents + co-change + test coverage + drift |
+| **CallPathCard** | shipped | How does control flow get from A to B? | shortest path in the call graph (limited to file scope in v1) |
+| **ChangeRiskCard** | shipped | What breaks if I modify this? | dependents + co-change + drift + hotspot signals (beta fidelity) |
 | **PublicAPICard** | planned | What does this crate/module expose? | export list + visibility analysis + recent API changes |
-| **TestSurfaceCard** | planned | What tests constrain this symbol? | test files that import or assert against the symbol |
+| **TestSurfaceCard** | partially shipped | What tests constrain this symbol? | test files discovered via path-convention heuristics |
 | **DecisionCard** *(optional)* | shipped | Why was this built this way? | linked human-authored ADRs and inline `# DECISION:` markers |
 
 The first eight card types require zero LLM involvement and zero prose ingestion beyond docstrings and inline comments. They work on a brand-new repo with no documentation. They are the wedge.
@@ -196,9 +210,9 @@ LLM-authored content lives in `.synrepo/overlay/` with `epistemic_status` ∈ `{
 
 The overlay is queryable via MCP — `synrepo_card(target, deep)` returns structural card + overlay commentary (clearly labeled). The synthesis pipeline filters overlay content out of its retrieval inputs.
 
-### Recent-activity surface *(planned)*
+### Recent-activity surface
 
-A bounded lane for "what has synrepo done recently?" — not session memory, not agent-interaction history, not a replacement for `git log`. It surfaces *synrepo's own operational events* so an agent can orient without re-reading everything after a stale period.
+A bounded lane for "what has synrepo done recently?" — not session memory, not agent-interaction history, not a replacement for `git log`. It surfaces *synrepo's own operational events* so an agent can orient without re-reading everything after a stale period. **Shipped in v1 via `synrepo_recent_activity` tools and `status --recent`.**
 
 What it returns:
 
@@ -226,7 +240,7 @@ The data already exists: `.synrepo/state/reconcile-state.json`, `.synrepo/state/
 
 *Current shape.* `src/pipeline/synthesis/` defines two trait boundaries: `CommentaryGenerator` and `CrossLinkGenerator`. Default installs use `NoOpGenerator` and `NoOpCrossLinkGenerator` (both return empty results), so the product stays deterministic and LLM-free out of the box. Setting `SYNREPO_ANTHROPIC_API_KEY` swaps in `ClaudeCommentaryGenerator` and the Claude-backed cross-link generator. The trait boundary is a real improvement over the earlier "stub" posture: it lets an operator opt into synthesis without threading a new code path through the rest of the pipeline, and it keeps every test fixture LLM-free by default.
 
-Staleness is explicit. Every overlay entry carries the content hash of the sources it was generated from. If the sources have changed, the MCP surface marks the entry as `stale`. Agents can request fresh synthesis explicitly by passing `require_freshness=true` to the tool.
+Staleness is explicit. Every overlay entry carries the content hash of the sources it was generated from. If the sources have changed, the card response marks the entry as `stale`. Agents can request fresh synthesis explicitly via the `synrepo_refresh_commentary` tool. **The default behavior is non-blocking stale retrieval; lazy background synthesis is not part of the v1 contract to keep the read path deterministic.**
 
 ---
 
@@ -643,7 +657,7 @@ Subsystem benchmarks lie. The validation suite must include ugly repos: huge gen
 | `findings.md` | Append; archive monthly | Time |
 | `resolutions.log` | Rotate at 100 MB | Size |
 
-`synrepo compact` is a manual command (users or CI run it). It merges sqlite WAL, rebuilds indexes, drops orphaned rows, recomputes drift scores. Disk budget warning fires at 80% of cap; writes block at 100% until compact or cap raise.
+`synrepo compact` is a manual command (users or CI run it). **Shipped in v1.** It merges sqlite WAL, rebuilds indexes, drops orphaned rows, recomputes drift scores. Disk budget warning fires at 80% of cap; writes block at 100% until compact or cap raise.
 
 ---
 
@@ -663,7 +677,7 @@ The key principle: agent usefulness arrives at phase 2 with zero LLM involvement
 
 **Phase 5 — overlay cross-linking (partially shipped).** Shipped: graph-distance plus prose-identifier candidate triage (`src/pipeline/synthesis/cross_link/triage.rs`), two-stage Claude-backed LLM proposal, normalized fuzzy verification, confidence tiers, review queue, card surfacing at Deep tier, curated-mode promotion that creates `Governs` edges with `Epistemic::HumanDeclared`. Deferred: the embedding model (`all-MiniLM-L6-v2` via `ort`) is deliberately not shipped yet; the commented-out dependencies in `Cargo.toml` are a marker, not a gap. Embedding-based candidate generation becomes worth adding once the triage pass misses too many true candidates on larger repos.
 
-**Phase 6 — polish (in progress).** Shipped: `synrepo export`, `synrepo upgrade`, `synrepo status`, `synrepo agent-setup` across six agent targets. Pending: dedicated `synrepo compact`, long-tail language support beyond Go, PDF extraction, decision relevance decay signals.
+**Phase 6 — polish (shipped).** Shipped: `synrepo export`, `synrepo upgrade`, `synrepo status`, `synrepo agent-setup` across six agent targets, and dedicated `synrepo compact`. In progress: long-tail language support beyond Go, PDF extraction, decision relevance decay signals.
 
 Each phase produces something shippable. Phase 0 is a faster grep. Phase 1 is a static graph. **Phase 2 is the product.** Phase 4 adds prose. Phase 5 adds cross-linking. A reader who loses faith in the LLM parts after phase 2 still has a useful tool.
 

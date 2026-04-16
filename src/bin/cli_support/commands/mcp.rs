@@ -22,20 +22,12 @@ use serde::Deserialize;
 /// Parameters for the `synrepo_next_actions` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct NextActionsParams {
-    /// Maximum number of items to return. Defaults to 20, capped at 100.
-    #[serde(default = "default_next_actions_limit")]
+    /// Maximum number of items to return. Defaults to 20.
+    #[serde(default)]
     pub limit: Option<usize>,
     /// Only include items from the last N days. Defaults to 30.
-    #[serde(default = "default_next_actions_since")]
+    #[serde(default)]
     pub since_days: Option<u32>,
-}
-
-fn default_next_actions_limit() -> Option<usize> {
-    Some(20)
-}
-
-fn default_next_actions_since() -> Option<u32> {
-    Some(30)
 }
 
 #[derive(Clone)]
@@ -231,7 +223,7 @@ impl SynrepoServer {
 
     #[tool(
         name = "synrepo_test_surface",
-        description = "Return a TestSurfaceCard discovering test functions related to a file or directory scope. Uses path-convention heuristics to associate test files with source files. Default budget is tiny; escalate to normal for local understanding and deep only before edits."
+        description = "Return a TestSurfaceCard discovering test functions related to a file or directory scope (beta fidelity). Uses path-convention heuristics to associate test files with source files. Default budget is tiny; escalate to normal for local understanding and deep only before edits."
     )]
     async fn synrepo_test_surface(
         &self,
@@ -242,7 +234,7 @@ impl SynrepoServer {
 
     #[tool(
         name = "synrepo_change_risk",
-        description = "Return a change risk assessment for a symbol or file, aggregating drift score, co-change partners, and git hotspot data."
+        description = "Return a change risk assessment for a symbol or file (beta fidelity), aggregating drift score, co-change partners, and git hotspot data."
     )]
     async fn synrepo_change_risk(
         &self,
@@ -281,7 +273,7 @@ impl SynrepoServer {
 
     #[tool(
         name = "synrepo_recent_activity",
-        description = "Return bounded operational activity: reconcile outcomes, repair events, cross-link audit entries, commentary refreshes, and git hotspots. NOT a session-memory or agent-interaction log."
+        description = "Return bounded operational activity (beta fidelity): reconcile outcomes, repair events, cross-link audit entries, commentary refreshes, and git hotspots. NOT a session-memory or agent-interaction log."
     )]
     async fn synrepo_recent_activity(
         &self,
@@ -302,7 +294,7 @@ impl SynrepoServer {
             limit: params.limit.unwrap_or(20),
             since_days: params.since_days.unwrap_or(30),
         };
-        match collect_handoffs(&self.state.repo_root, &request) {
+        match collect_handoffs(&self.state.repo_root, &self.state.config, &request) {
             Ok(items) => handoffs_to_json(&items),
             Err(e) => serde_json::json!({
                 "error": e.to_string()

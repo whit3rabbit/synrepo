@@ -15,37 +15,39 @@ pub use types::{HandoffItem, HandoffPriority, HandoffSource, HandoffsRequest};
 
 use std::path::Path;
 
+use crate::config::Config;
+
 /// Collect handoffs from all sources, combine and prioritize them.
 pub fn collect_handoffs(
     repo_root: &Path,
+    config: &Config,
     request: &HandoffsRequest,
 ) -> crate::Result<Vec<HandoffItem>> {
     let synrepo_dir = repo_root.join(".synrepo");
-    let repair_log_path = synrepo_dir.join("state").join("repair-log.jsonl");
     let overlay_dir = synrepo_dir.join("overlay");
 
-    // Read from all three sources
-    let repair_items = read_repair_log(&repair_log_path, request.since_days).unwrap_or_default();
-    let cross_link_items =
-        read_pending_candidates(&overlay_dir, request.since_days).unwrap_or_default();
-    let hotspot_items =
-        read_hotspots(repo_root, request.since_days, request.limit).unwrap_or_default();
+    let repair_items = read_repair_log(&synrepo_dir, request.since_days)
+        .inspect_err(|e| tracing::warn!(error = %e, "handoffs: repair-log read failed"))
+        .unwrap_or_default();
+    let cross_link_items = read_pending_candidates(&overlay_dir)
+        .inspect_err(|e| tracing::warn!(error = %e, "handoffs: overlay candidates read failed"))
+        .unwrap_or_default();
+    let hotspot_items = read_hotspots(repo_root, config, request.limit)
+        .inspect_err(|e| tracing::warn!(error = %e, "handoffs: hotspot read failed"))
+        .unwrap_or_default();
 
-    // Combine all items
     let mut all_items: Vec<HandoffItem> = Vec::new();
     all_items.extend(repair_items);
     all_items.extend(cross_link_items);
     all_items.extend(hotspot_items);
 
-    // Sort by priority (handles severity, confidence, recency, and surface type ordering)
+    // Sort by priority descending, then structural sources before overlay.
     all_items.sort_by(|a, b| {
-        // Primary: priority (already implements Ord for severity ordering)
-        let priority_cmp = a.priority.cmp(&b.priority);
+        let priority_cmp = b.priority.cmp(&a.priority);
         if priority_cmp != std::cmp::Ordering::Equal {
             return priority_cmp;
         }
 
-        // Secondary: source type (structural before overlay)
         let a_is_structural = matches!(a.item_type, HandoffSource::Repair | HandoffSource::Hotspot);
         let b_is_structural = matches!(b.item_type, HandoffSource::Repair | HandoffSource::Hotspot);
         match (a_is_structural, b_is_structural) {
@@ -55,9 +57,7 @@ pub fn collect_handoffs(
         }
     });
 
-    // Apply limit
     all_items.truncate(request.limit);
-
     Ok(all_items)
 }
 
@@ -78,7 +78,6 @@ pub fn to_markdown(items: &[HandoffItem]) -> String {
             HandoffSource::CrossLink => "cross_link",
             HandoffSource::Hotspot => "hotspot",
         };
-        // Truncate long recommendations
         let rec = if item.recommendation.len() > 60 {
             format!("{}...", &item.recommendation[..57])
         } else {
@@ -143,14 +142,13 @@ mod tests {
             ),
         ];
 
-        // Test priority ordering via sort (ascending order)
-        let mut sorted = items.clone();
-        sorted.sort_by_key(|a| a.priority);
+        let mut sorted = items;
+        sorted.sort_by(|a, b| b.priority.cmp(&a.priority));
 
-        assert_eq!(sorted[0].priority, HandoffPriority::Low);
-        assert_eq!(sorted[1].priority, HandoffPriority::Medium);
-        assert_eq!(sorted[2].priority, HandoffPriority::High);
-        assert_eq!(sorted[3].priority, HandoffPriority::Critical);
+        assert_eq!(sorted[0].priority, HandoffPriority::Critical);
+        assert_eq!(sorted[1].priority, HandoffPriority::High);
+        assert_eq!(sorted[2].priority, HandoffPriority::Medium);
+        assert_eq!(sorted[3].priority, HandoffPriority::Low);
     }
 
     #[test]

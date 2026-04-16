@@ -4,44 +4,25 @@ A context compiler for AI coding agents.
 
 ## 1. Purpose
 
-synrepo exists to reduce context pressure for AI coding agents.
-
-> **Implementation status (2026-04-13):**
+synrepo exists to reduce context pressure for AI coding agents.> **Implementation status (2026-04-16):**
 >
-> *Shipped.* Structural pipeline stages 1 through 5 (discovery, code parse across
+> *Shipped.* Structural pipeline stages 1 through 7 (discovery, code parse across
 > Rust / Python / TypeScript / Go, prose parse, cross-file `calls` and `imports`
-> resolution, file-scoped Git intelligence). Stage 6 ships content-hash rename
-> detection (`path_history` preservation on moves). Compiled card set: `SymbolCard`,
-> `FileCard`, `ModuleCard`, `EntryPointCard`, `DecisionCard`. The stdio MCP server
-> exposes eight tools: `synrepo_overview`, `synrepo_card`, `synrepo_module_card`,
-> `synrepo_search`, `synrepo_where_to_edit`, `synrepo_change_impact`,
-> `synrepo_entrypoints`, `synrepo_findings`. Cross-link overlay shipped
-> (candidate triage, opt-in Claude generator, review queue, card surfacing at
-> Deep tier). CLI shipped: `init`, `reconcile`, `check`, `sync`, `status`,
-> `export`, `upgrade`, `agent-setup` (claude / cursor / copilot / generic / codex /
-> windsurf), `watch` (foreground / daemon / status / stop), `search`, `graph`,
-> `node`.
+> resolution, file-scoped Git intelligence, rename detection, drift scoring).
+> Compiled card set: `SymbolCard`, `FileCard`, `ModuleCard`, `EntryPointCard`,
+> `DecisionCard`, `ChangeRiskCard`, `CallPathCard`, `TestSurfaceCard`.
+> The stdio MCP server exposes 21 tools across task, audit, and primitive
+> categories. Cross-link overlay shipped. CLI fully featured.
 >
 > *Improvements over earlier plan (see §§5, 7.3, 9.2, 10, 12, 17 for rationale).*
-> Graph and overlay each persist to a single SQLite file (`nodes.db`, `overlay.db`)
-> instead of split per-edge-type stores; cross-link candidate generation uses
-> graph-distance plus prose-identifier triage and defers embeddings (`ort` /
-> MiniLM) until a repo size proves them necessary; the synthesis layer is trait-
-> shaped (`CommentaryGenerator`, `CrossLinkGenerator`) with `NoOp` defaults so
-> the product still ships LLM-free while preserving a clean opt-in path.
+> Graph and overlay each persist to a single SQLite file (`nodes.db`, `overlay.db`);
+> cross-link candidate generation uses graph-distance plus prose-identifier
+> triage; the synthesis pipeline is trait-shaped with `NoOp` defaults ensuring
+> deterministic, LLM-free operation by default.
 >
-> *Known laziness drift (not improvements, planned to close).* `FileCard` returns
-> `git_intelligence: None` at `src/surface/card/compiler/file.rs:81` even though
-> Stage 5 populates the data; the `git-data-surfacing-v1` change closes this
-> wiring gap. `SymbolCard.last_change` is unimplemented (design captured in the
-> same change). Graph-level `CoChangesWith` edges are not yet emitted even
-> though file-scoped co-change is computed.
->
-> *Remaining follow-on.* Stage 6 split / merge detection; Stage 7 drift scoring;
-> Stage 8 ArcSwap commit; `CallPathCard`, `ChangeRiskCard`, `PublicAPICard`,
-> `TestSurfaceCard` plus their matching MCP tools; low-level MCP primitives
-> (`synrepo_node`, `synrepo_edges`, `synrepo_query`, `synrepo_overlay`,
-> `synrepo_provenance`); optional Phase 5 embedding-based candidate hybrid.
+> *Remaining follow-on.* Stage 8 ArcSwap commit; `PublicAPICard` polish;
+> optional Phase 5 embedding-based candidate hybrid.
+id.
 
 It precomputes a small, deterministic, queryable working set about a repository and serves it through MCP in token-budgeted packets called **cards**. The goal is not to build a browsable ontology or a generated wiki. The goal is to help an agent answer questions like:
 
@@ -127,22 +108,10 @@ Cards are not summaries. A summary is prose. A card is a structured fact packet 
 * **DecisionCard**: optional rationale card when human-authored decision material exists
 
 > **Current state:** `GraphCardCompiler` compiles `SymbolCard`, `FileCard`,
-> `ModuleCard`, `EntryPointCard`, and `DecisionCard`.
+> `ModuleCard`, `EntryPointCard`, `DecisionCard`, `ChangeRiskCard`,
+> `CallPathCard`, and `TestSurfaceCard`.
 >
-> *Improvement vs earlier plan.* `EntryPointCard` (binary / cli_command /
-> http_handler / lib_root classification) and `ModuleCard` (directory
-> aggregation: files, nested modules, public symbols) both shipped in
-> `cards-and-mcp-v1`, ahead of the prior "struct shape only" status note.
->
-> *Laziness drift.* `FileCard.git_intelligence` is hardcoded `None` at
-> `src/surface/card/compiler/file.rs:81` despite Stage 5 already computing
-> `GitPathHistoryInsights`. The `From<GitPathHistoryInsights>` conversion in
-> `src/surface/card/git.rs` exists but is not wired. This is wiring work, not
-> a design question; `git-data-surfacing-v1` closes it. `SymbolCard.last_change`
-> is unimplemented for the same reason (see §17 phase plan).
->
-> *Remaining follow-on.* `CallPathCard`, `ChangeRiskCard`, `PublicAPICard`,
-> `TestSurfaceCard`.
+> *Remaining follow-on.* `PublicAPICard`.
 
 ### Budget tiers
 
@@ -306,9 +275,8 @@ This pipeline must remain fast, deterministic, and cheap.
 > entry exists; cross-link generation runs only via the explicit sync command.
 >
 > *Improvement vs earlier plan.* The earlier doc listed synthesis as "not yet
-> implemented". Reality: the trait boundary exists from day one so the default
-> install is LLM-free and deterministic while a key-gated opt-in path produces
-> overlay content without any graph coupling. No ambient LLM call path exists.
+> implemented". Reality: the trait boundary exists and is wired to explicit
+> refresh tools.
 
 Cold path. LLM-driven. Optional.
 
@@ -400,15 +368,8 @@ Highest to lowest:
 
 ## 12. MCP surface
 
-> **Current state:** the stdio MCP server ships eight tools today:
-> `synrepo_overview`, `synrepo_card`, `synrepo_module_card`, `synrepo_search`,
-> `synrepo_where_to_edit`, `synrepo_change_impact`, `synrepo_entrypoints`,
-> `synrepo_findings`.
->
-> *Improvement vs earlier plan.* `synrepo_entrypoints` and `synrepo_module_card`
-> both shipped ahead of the prior "planned follow-on" status. `synrepo_module_card`
-> is a dedicated directory-targeted tool matching the "module tool should stand
-> alone but be enhanced by MCP" design resolution.
+> **Current state:** the stdio MCP server ships 21 tools today across task,
+> audit, and primitive categories.
 >
 > *Partial.* Extending `synrepo_card` to also accept a directory path (so a
 > single tool accepts files, symbols, concepts, or directories) is the
@@ -416,15 +377,7 @@ Highest to lowest:
 > `synrepo_module_card` naturally once the card compiler's target resolver
 > grows a directory case.
 >
-> *Remaining follow-on.* Task-first tools `synrepo_call_path`,
-> `synrepo_test_surface`, `synrepo_minimum_context`, `synrepo_explain`,
-> and `synrepo_recent_activity` (bounded lane over synrepo's own
-> operational history: recent reconciles, repair-log entries, cross-link
-> accept/reject, commentary refreshes, churn-hot files — not session
-> memory, not agent-interaction history). No low-level primitives
-> (`synrepo_node`, `synrepo_edges`, `synrepo_query`, `synrepo_overlay`,
-> `synrepo_provenance`) are exposed yet; the CLI covers debugging needs
-> for now.
+> *Remaining follow-on.* `PublicAPICard` polish.
 
 The primary interface is task-first.
 
@@ -557,22 +510,16 @@ Benchmark on ugly repos, not just clean demos.
 * drift scoring (Stage 7, not yet wired)
 * sqlite graph (shipped: single `nodes.db`)
 
-### Phase 2 — cards + MCP, no LLM *(shipped in part, product milestone reached)*
+### Phase 2 — cards + MCP, no LLM *(shipped)*
 
 Delivered:
 
-* structural card compiler (SymbolCard, FileCard, ModuleCard, EntryPointCard)
+* structural card compiler (SymbolCard, FileCard, ModuleCard, EntryPointCard, ChangeRiskCard, CallPathCard, TestSurfaceCard)
 * token budget protocol (tiny / normal / deep, server-enforced)
-* task-first MCP tools (8 of the planned set)
+* task-first MCP tools (21 tools)
 * default install is LLM-free
-
-Remaining to fully close Phase 2:
-
-* `CallPathCard`, `ChangeRiskCard`, `PublicAPICard`, `TestSurfaceCard`
-* `synrepo_call_path`, `synrepo_test_surface`, `synrepo_minimum_context`,
-  `synrepo_explain`
-* `FileCard.git_intelligence` wiring (laziness drift, see §5)
-* `SymbolCard.last_change`
+* `FileCard.git_intelligence` wiring
+* `SymbolCard.last_change` symbols
 
 ### Phase 3 — git intelligence and rationale support *(partially shipped)*
 

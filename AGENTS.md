@@ -98,7 +98,7 @@ Node types: `FileNode` (content-hash identity), `SymbolNode` (tree-sitter extrac
 - `mode_inspect.rs` — auto vs curated mode detection via `inspect_repository_mode()`
 - Spec: `openspec/specs/bootstrap/spec.md`
 
-**Pipeline** (`src/pipeline/`) — `structural/` defines the 8-stage compile cycle. `mod.rs` owns transaction orchestration and `CompileSummary`; `stages.rs` owns stages 1–3 (discover → parse code → parse prose); `stage4.rs` owns cross-file edge resolution. Stage 5 (git mining) runs via `src/pipeline/git/` and `src/pipeline/git_intelligence/`. Stage 6 (identity cascade: content-hash, split, merge, git rename fallback, breakage) is wired. Stage 7 (drift scoring via Jaccard distance on persisted structural fingerprints) is wired and writes to the sidecar `edge_drift` and `file_fingerprints` tables. Stage 8 (ArcSwap commit) is not yet wired. `synthesis/` defines the `CommentaryGenerator` trait boundary with `stub.rs` (`NoOpGenerator`, default) and `claude.rs` (`ClaudeCommentaryGenerator`, reads `SYNREPO_ANTHROPIC_API_KEY`); called lazily by the card compiler at `Deep` budget when no overlay entry exists.
+**Pipeline** (`src/pipeline/`) — `structural/` defines the 8-stage compile cycle. `mod.rs` owns transaction orchestration and `CompileSummary`; `stages.rs` owns stages 1–3 (discover → parse code → parse prose); `stage4.rs` owns cross-file edge resolution. Stage 5 (git mining) runs via `src/pipeline/git/` and `src/pipeline/git_intelligence/`. Stage 6 (identity cascade: content-hash, split, merge, git rename fallback, breakage) is wired. Stage 7 (drift scoring via Jaccard distance on persisted structural fingerprints) is wired and writes to the sidecar `edge_drift` and `file_fingerprints` tables. Stage 8 (ArcSwap commit) is not yet wired. `synthesis/` defines the `CommentaryGenerator` trait boundary with `stub.rs` (`NoOpGenerator`, default) and `claude.rs` (`ClaudeCommentaryGenerator`, reads `SYNREPO_ANTHROPIC_API_KEY`); called explicitly via the the `synrepo_refresh_commentary` tool or sync repair actions.
 - `maintenance.rs` — storage-compatibility cleanup and compaction hooks; driven by `sync`.
 - `repair/` — `mod.rs` is a thin façade. `report.rs` builds the read-only drift view, `sync.rs` drives auto-repair, `cross_links.rs` runs the cross-link generation pass, `log.rs` appends JSONL resolution records, `declared_links.rs` verifies `Governs` targets, `commentary.rs` is the commentary-refresh repair action that calls the synthesis generator, and `types/` holds the stable enums plus report/log payload types.
 - `git_intelligence/` — `mod.rs` is a thin façade. `types.rs` defines the public Git-intelligence payloads, `analysis.rs` derives history/hotspot/ownership/co-change summaries, `emit.rs` emits `CoChangesWith` edges into the graph after each git pass, `symbol_revisions/` tracks per-symbol `first_seen_rev`/`last_modified_rev` via body-hash diffing, and `tests/` is split by status, history, path, and shared support helpers.
@@ -184,9 +184,7 @@ Stages 4–8:
 
 ### Not yet implemented
 
-- `SymbolCard.last_change` now uses per-symbol `first_seen_rev`/`last_modified_rev` tracking via `src/pipeline/git_intelligence/symbol_revisions/` (shipped in `symbol-last-change-v1`).
-- Graph-level `CoChangesWith` edges are now emitted after each git-intelligence pass via `src/pipeline/git_intelligence/emit.rs` (shipped in `graph-cochange-edges-v1`).
-- Drift scoring (stage 7), split/merge detection (stage 6), and git rename fallback are now shipped (`structural-resilience-v1` + `structural-resilience-v2`). ArcSwap commit (stage 8) remains TODO.
+- ArcSwap commit (stage 8) remains TODO.
 
 ## Gotchas
 
