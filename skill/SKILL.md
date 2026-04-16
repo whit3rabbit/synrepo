@@ -1,73 +1,87 @@
 ---
 name: synrepo
-description: Use synrepo when working in a repository that contains a .synrepo/ directory. synrepo precomputes structural facts about the codebase and serves them as small token-budgeted cards through an MCP server. Reach for synrepo tools BEFORE reading source files cold.
+description: Use synrepo in repositories with a .synrepo/ directory. Prefer synrepo cards and search before reading source files cold.
 ---
 
-# synrepo — skill for Claude Code
+# synrepo
 
-synrepo is a context compiler. It turns a repository into small, deterministic, task-shaped packets called **cards** that Claude can query through an MCP server instead of reading whole files.
+Use this skill only when the current repository contains a `.synrepo/` directory.
 
-## Cleanest Workflow (Binary First)
+synrepo is a context compiler. It exposes small structural cards and graph tools through MCP so you can orient, route edits, and estimate first-pass impact without opening large files first.
 
-The recommended setup for a new repository is:
+## Use when
 
-1.  **Install local binary**: Ensure `synrepo` is available in your PATH.
-2.  **Initialize and Config**: Run `synrepo setup claude` in the repository root. This runs `synrepo init`, writes instructions, and registers the project-scoped MCP server in `.mcp.json`.
-3.  **Handoff to Claude Code**: Claude Code will automatically detect the MCP server and instructions.
-4.  **Watch Mode (Optional)**: Run `synrepo watch --daemon` if you want background refresh as you edit.
+Use synrepo for:
+- orienting on an unfamiliar repo
+- finding where to edit
+- first-pass change impact
+- entrypoint discovery
+- test-surface discovery
+- high-level subsystem understanding
 
-## Current surface
+Do not use synrepo for:
+- tiny files you already need to edit directly
+- files already in working context
+- simple config or text files with no meaningful symbols
 
-After setup, the MCP server exposes **twenty-one tools** for repository traversal and inspection. Use `synrepo_search` to find node IDs (format: `file_0000000000000042`, `symbol_0000000000000024`) before calling card or investigation tools.
+## Default path
 
-### Primary Tools
-| Tool | What it does |
-| --- | --- |
-| `synrepo_overview` | Graph stats + mode; your first call per session |
-| `synrepo_card(target, budget?)` | SymbolCard or FileCard for orientation and navigation |
-| `synrepo_search(query)` | Lexical search across indexed files |
-| `synrepo_where_to_edit(task)` | Search-ranked file suggestions for a task description |
-| `synrepo_change_impact(target)` | Approximate inbound dependencies showing what depends on target |
-| `synrepo_change_risk(target)` | Composite risk signal (drift + co-change + hotspots) |
-
-## Agent doctrine
-
-synrepo is a code-context compiler. When `.synrepo/` exists in the repo root, prefer MCP tools (or the CLI fallback) over cold file reads for orientation and navigation.
-
-### Default path
-
-1. Start with search or entry-point discovery to find candidates.
+1. Start with `synrepo_overview`, `synrepo_search`, `synrepo_where_to_edit`, or `synrepo_entrypoints`.
 2. Use `tiny` cards to orient and route.
 3. Use `normal` cards to understand a neighborhood.
 4. Use `deep` cards only before writing code, or when exact source or body details matter.
 
-Overlay commentary and proposed cross-links are advisory, labeled machine-authored, and freshness-sensitive. Treat stale labels as information, not as errors. **Refresh is explicit**: every tool returns what is currently in the overlay. To get fresh commentary after a code change, you must call `synrepo_refresh_commentary(target)`.
+Rule of thumb: `tiny` to find, `normal` to understand, `deep` to write.
 
-### Do not
+## Trust model
+
+- Graph content is primary.
+- Overlay content is advisory.
+- If overlay and graph disagree, trust the graph.
+- Freshness is explicit. A stale label is information, not an error; it is not silently refreshed on read.
+
+## Do not
 
 - Do not open large files first. Start at `tiny` and escalate only when a specific field forces it.
 - Do not treat overlay commentary as canonical. It is advisory prose layered on structural cards.
 - Do not trigger synthesis (`--generate-cross-links`, deep commentary refresh) unless the task justifies the cost.
 - Do not expect watch or background behavior unless `synrepo watch` is explicitly running.
 
-### Product boundary
+## Core tools
 
-- synrepo stores code facts and bounded operational memory. It is not a task tracker, not session memory, and not cross-session agent memory.
-- Any handoff or next-action list is a derived recommendation regenerated from repo state. External task systems own assignment, status, and collaboration.
-- Freshness is explicit. A stale label is information, not an error; it is not silently refreshed on read.
+- `synrepo_overview()` — first call on an unfamiliar repo
+- `synrepo_card(target, budget?)` — card for a symbol or file
+- `synrepo_search(query, limit?)` — lexical search
+- `synrepo_where_to_edit(task, limit?)` — ranked edit candidates
+- `synrepo_change_impact(target)` — first-pass dependents
+- `synrepo_change_risk(target)` — composite risk signal
+- `synrepo_entrypoints(scope?, budget?)` — entrypoint discovery
+- `synrepo_test_surface(scope)` — test discovery
 
-## The core mental model
+## Budget protocol
 
-There are two kinds of content in synrepo, and the distinction matters:
+- `tiny`: orientation and routing
+- `normal`: interface and neighborhood
+- `deep`: exact source and implementation work
 
-- **Graph content** — facts that tree-sitter, git, or humans declared directly. Tagged `source_store: graph`. **Treat graph content as the primary source of truth.**
-- **Overlay content** — things the LLM proposed (advisory commentary, findings). Tagged `source_store: overlay`. **Treat overlay content as helpful context, not ground truth.**
+Default to `tiny`.
 
-## CLI fallback
+## Fallback
 
-If the MCP server is not running, use the CLI directly:
-- `synrepo status` — health and graph counts
-- `synrepo search <query>` — find symbols or files
-- `synrepo node <id>` — dump node metadata
-- `synrepo graph query "inbound <id>"` — reverse dependencies
-- `synrepo reconcile` — refresh the graph after source changes
+If MCP is unavailable, use the CLI:
+
+```bash
+synrepo status
+synrepo check
+synrepo search "term"
+synrepo graph stats
+synrepo reconcile
+synrepo sync
+```
+
+If neither MCP nor the CLI is available, fall back to normal file reading.
+
+## Product boundary
+
+synrepo stores code facts and bounded operational memory. It is not a task tracker, not session memory, and not cross-session agent memory.
+Any handoff or next-action list is a derived recommendation regenerated from repo state. External task systems own assignment, status, and collaboration.
