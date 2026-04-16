@@ -1,8 +1,15 @@
 //! Rendering helpers for export output: markdown and JSON.
+//!
+//! Output is streamed through `BufWriter` so peak memory scales with a single
+//! card, not the whole repo. Callers provide lazy iterators over compiled
+//! cards; this module opens the output files, writes per-card blocks, and
+//! returns the count of items rendered.
 
+use std::fs::File;
+use std::io::{BufWriter, Write};
 use std::path::Path;
 
-use serde_json::json;
+use serde::Serialize;
 
 use crate::surface::card::{FileCard, SymbolCard};
 
@@ -14,100 +21,169 @@ const GENERATED_HEADER: &str = "\
      To commit this file, pass --commit to suppress .gitignore insertion.
 -->\n\n";
 
-/// Write one markdown file per card type to `export_dir`.
-pub fn write_markdown(
+fn buf_writer(path: &Path) -> crate::Result<BufWriter<File>> {
+    Ok(BufWriter::new(File::create(path)?))
+}
+
+fn io_err<E: std::fmt::Display>(ctx: &str, err: E) -> crate::Error {
+    crate::Error::Other(anyhow::anyhow!("{ctx}: {err}"))
+}
+
+/// Stream one markdown file per card type to `export_dir`. Returns
+/// `(file_count, symbol_count, decision_count)` of items rendered.
+pub fn write_markdown<F, S, D>(
     export_dir: &Path,
-    file_cards: &[FileCard],
-    symbol_cards: &[SymbolCard],
-    decisions: &[ExportDecision],
-) -> crate::Result<()> {
-    write_files_md(export_dir, file_cards)?;
-    write_symbols_md(export_dir, symbol_cards)?;
-    write_decisions_md(export_dir, decisions)?;
-    Ok(())
+    files: F,
+    symbols: S,
+    decisions: D,
+) -> crate::Result<(usize, usize, usize)>
+where
+    F: IntoIterator<Item = FileCard>,
+    S: IntoIterator<Item = SymbolCard>,
+    D: IntoIterator<Item = ExportDecision>,
+{
+    let f = write_files_md(export_dir, files)?;
+    let s = write_symbols_md(export_dir, symbols)?;
+    let d = write_decisions_md(export_dir, decisions)?;
+    Ok((f, s, d))
 }
 
-fn write_files_md(export_dir: &Path, cards: &[FileCard]) -> crate::Result<()> {
-    let mut out = String::from(GENERATED_HEADER);
-    out.push_str("# Files\n\n");
+fn write_files_md<I>(export_dir: &Path, cards: I) -> crate::Result<usize>
+where
+    I: IntoIterator<Item = FileCard>,
+{
+    let mut w = buf_writer(&export_dir.join("files.md"))?;
+    w.write_all(GENERATED_HEADER.as_bytes())?;
+    w.write_all(b"# Files\n\n")?;
+    let mut count = 0usize;
     for card in cards {
-        out.push_str(&format!("## `{}`\n\n", card.path));
-        out.push_str(&format!("- **Symbols**: {}\n", card.symbols.len()));
-        out.push_str(&format!("- **Imports**: {}\n", card.imports.len()));
-        out.push_str(&format!("- **Imported by**: {}\n", card.imported_by.len()));
+        write!(w, "## `{}`\n\n", card.path)?;
+        writeln!(w, "- **Symbols**: {}", card.symbols.len())?;
+        writeln!(w, "- **Imports**: {}", card.imports.len())?;
+        writeln!(w, "- **Imported by**: {}", card.imported_by.len())?;
         if let Some(flag) = &card.drift_flag {
-            out.push_str(&format!("- **Drift**: {flag}\n"));
+            writeln!(w, "- **Drift**: {flag}")?;
         }
-        out.push('\n');
+        writeln!(w)?;
+        count += 1;
     }
-    std::fs::write(export_dir.join("files.md"), out.as_bytes())?;
-    Ok(())
+    w.flush()?;
+    Ok(count)
 }
 
-fn write_symbols_md(export_dir: &Path, cards: &[SymbolCard]) -> crate::Result<()> {
-    let mut out = String::from(GENERATED_HEADER);
-    out.push_str("# Symbols\n\n");
+fn write_symbols_md<I>(export_dir: &Path, cards: I) -> crate::Result<usize>
+where
+    I: IntoIterator<Item = SymbolCard>,
+{
+    let mut w = buf_writer(&export_dir.join("symbols.md"))?;
+    w.write_all(GENERATED_HEADER.as_bytes())?;
+    w.write_all(b"# Symbols\n\n")?;
+    let mut count = 0usize;
     for card in cards {
-        out.push_str(&format!("## `{}`\n\n", card.qualified_name));
-        out.push_str(&format!("- **Defined at**: `{}`\n", card.defined_at));
+        write!(w, "## `{}`\n\n", card.qualified_name)?;
+        writeln!(w, "- **Defined at**: `{}`", card.defined_at)?;
         if let Some(sig) = &card.signature {
-            out.push_str(&format!("- **Signature**: `{sig}`\n"));
+            writeln!(w, "- **Signature**: `{sig}`")?;
         }
         if let Some(doc) = &card.doc_comment {
-            let preview: String = doc.lines().next().unwrap_or_default().to_string();
+            let preview = doc.lines().next().unwrap_or_default();
             if !preview.is_empty() {
-                out.push_str(&format!("- **Doc**: {preview}\n"));
+                writeln!(w, "- **Doc**: {preview}")?;
             }
         }
-        out.push('\n');
+        writeln!(w)?;
+        count += 1;
     }
-    std::fs::write(export_dir.join("symbols.md"), out.as_bytes())?;
-    Ok(())
+    w.flush()?;
+    Ok(count)
 }
 
-fn write_decisions_md(export_dir: &Path, decisions: &[ExportDecision]) -> crate::Result<()> {
-    let mut out = String::from(GENERATED_HEADER);
-    out.push_str("# Decisions\n\n");
+fn write_decisions_md<I>(export_dir: &Path, decisions: I) -> crate::Result<usize>
+where
+    I: IntoIterator<Item = ExportDecision>,
+{
+    let mut w = buf_writer(&export_dir.join("decisions.md"))?;
+    w.write_all(GENERATED_HEADER.as_bytes())?;
+    w.write_all(b"# Decisions\n\n")?;
+    let mut count = 0usize;
     for d in decisions {
-        out.push_str(&format!("## {}\n\n", d.title));
-        out.push_str(&format!("- **Source**: `{}`\n", d.path));
+        writeln!(w, "## {}\n", d.title)?;
+        writeln!(w, "- **Source**: `{}`", d.path)?;
         if let Some(status) = &d.status {
-            out.push_str(&format!("- **Status**: {status}\n"));
+            writeln!(w, "- **Status**: {status}")?;
         }
         if let Some(summary) = &d.summary {
-            out.push_str(&format!("\n{summary}\n"));
+            writeln!(w, "\n{summary}")?;
         }
         if let Some(body) = &d.decision_body {
-            out.push_str(&format!("\n{body}\n"));
+            writeln!(w, "\n{body}")?;
         }
-        out.push('\n');
+        writeln!(w)?;
+        count += 1;
     }
-    std::fs::write(export_dir.join("decisions.md"), out.as_bytes())?;
-    Ok(())
+    w.flush()?;
+    Ok(count)
 }
 
-/// Write a single `index.json` with all card arrays keyed by type.
-/// Note: ChangeRiskCard is computed on-demand via `synrepo change-risk` CLI or
-/// MCP tool and is not pre-computed in exports (requires query against graph).
-pub fn write_json(
+/// Stream a single `index.json` to `export_dir`. Array brackets are emitted
+/// manually so each card is serialized one at a time; we never build the full
+/// document in memory.
+pub fn write_json<F, S, D>(
     export_dir: &Path,
-    file_cards: &[FileCard],
-    symbol_cards: &[SymbolCard],
-    decisions: &[ExportDecision],
-) -> crate::Result<()> {
-    let index = json!({
-        "generated_note": "Generated by `synrepo export`. Do not use as synthesis input.",
-        "change_risk": {
-            "available": true,
-            "usage": "Use `synrepo change-risk <target>` CLI or `synrepo_change_risk` MCP tool",
-            "note": "ChangeRiskCard is computed on-demand, not pre-computed in exports"
-        },
-        "files": file_cards,
-        "symbols": symbol_cards,
-        "decisions": decisions,
-    });
-    let json_str = serde_json::to_string_pretty(&index)
-        .map_err(|e| crate::Error::Other(anyhow::anyhow!("JSON serialization failed: {e}")))?;
-    std::fs::write(export_dir.join("index.json"), json_str.as_bytes())?;
-    Ok(())
+    files: F,
+    symbols: S,
+    decisions: D,
+) -> crate::Result<(usize, usize, usize)>
+where
+    F: IntoIterator<Item = FileCard>,
+    S: IntoIterator<Item = SymbolCard>,
+    D: IntoIterator<Item = ExportDecision>,
+{
+    let mut w = buf_writer(&export_dir.join("index.json"))?;
+    // Top-level object and scalar/object members written directly. The change_risk
+    // sub-object is fixed text; keeping it inline avoids another serializer call.
+    w.write_all(b"{\n")?;
+    w.write_all(
+        b"  \"generated_note\": \"Generated by `synrepo export`. Do not use as synthesis input.\",\n"
+    )?;
+    w.write_all(b"  \"change_risk\": {\n")?;
+    w.write_all(b"    \"available\": true,\n")?;
+    w.write_all(b"    \"usage\": \"Use `synrepo change-risk <target>` CLI or `synrepo_change_risk` MCP tool\",\n")?;
+    w.write_all(
+        b"    \"note\": \"ChangeRiskCard is computed on-demand, not pre-computed in exports\"\n",
+    )?;
+    w.write_all(b"  },\n")?;
+
+    let file_count = write_json_array(&mut w, "files", files)?;
+    w.write_all(b",\n")?;
+    let symbol_count = write_json_array(&mut w, "symbols", symbols)?;
+    w.write_all(b",\n")?;
+    let decision_count = write_json_array(&mut w, "decisions", decisions)?;
+    w.write_all(b"\n}\n")?;
+    w.flush()?;
+    Ok((file_count, symbol_count, decision_count))
+}
+
+fn write_json_array<W, I, T>(w: &mut W, key: &str, items: I) -> crate::Result<usize>
+where
+    W: Write,
+    I: IntoIterator<Item = T>,
+    T: Serialize,
+{
+    write!(w, "  \"{key}\": [")?;
+    let mut count = 0usize;
+    for item in items {
+        if count > 0 {
+            w.write_all(b",")?;
+        }
+        w.write_all(b"\n    ")?;
+        serde_json::to_writer(&mut *w, &item)
+            .map_err(|e| io_err("JSON serialization failed", e))?;
+        count += 1;
+    }
+    if count > 0 {
+        w.write_all(b"\n  ")?;
+    }
+    w.write_all(b"]")?;
+    Ok(count)
 }

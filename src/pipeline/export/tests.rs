@@ -1,8 +1,13 @@
 use std::fs;
 use tempfile::tempdir;
+use time::OffsetDateTime;
 
 use crate::config::Config;
+use crate::core::ids::FileNodeId;
+use crate::core::provenance::{CreatedBy, Provenance, SourceRef};
 use crate::pipeline::export::{load_manifest, write_exports, ExportFormat, MANIFEST_FILENAME};
+use crate::store::sqlite::SqliteGraphStore;
+use crate::structure::graph::{Epistemic, FileNode, GraphStore};
 use crate::surface::card::Budget;
 
 fn init_empty_graph(synrepo_dir: &std::path::Path) -> crate::Result<()> {
@@ -11,6 +16,42 @@ fn init_empty_graph(synrepo_dir: &std::path::Path) -> crate::Result<()> {
     // Open the store to trigger schema creation.
     let _ = crate::store::sqlite::SqliteGraphStore::open(&graph_dir)?;
     Ok(())
+}
+
+fn seed_files(synrepo_dir: &std::path::Path, count: usize) {
+    let graph_dir = synrepo_dir.join("graph");
+    fs::create_dir_all(&graph_dir).unwrap();
+    let mut graph = SqliteGraphStore::open(&graph_dir).unwrap();
+    graph.begin().unwrap();
+    for i in 0..count {
+        let path = format!("src/gen_{i:04}.rs");
+        let hash = format!("hash-{i}");
+        graph
+            .upsert_file(FileNode {
+                id: FileNodeId((i as u64) + 1),
+                path: path.clone(),
+                path_history: Vec::new(),
+                content_hash: hash.clone(),
+                size_bytes: 128,
+                language: Some("rust".to_string()),
+                inline_decisions: Vec::new(),
+                last_observed_rev: None,
+                epistemic: Epistemic::ParserObserved,
+                provenance: Provenance {
+                    created_at: OffsetDateTime::UNIX_EPOCH,
+                    source_revision: "rev".to_string(),
+                    created_by: CreatedBy::StructuralPipeline,
+                    pass: "parse".to_string(),
+                    source_artifacts: vec![SourceRef {
+                        file_id: None,
+                        path,
+                        content_hash: hash,
+                    }],
+                },
+            })
+            .unwrap();
+    }
+    graph.commit().unwrap();
 }
 
 #[test]
@@ -163,6 +204,86 @@ fn no_commit_flag_inserts_gitignore_entry() {
         gitignore.contains("test-export-gitignore"),
         "gitignore should contain export dir: {gitignore}"
     );
+}
+
+#[test]
+fn export_streams_large_file_set_without_batch_materialization() {
+    // Regression guard: with streaming, peak memory is one card at a time; this
+    // test asserts the render pipeline still completes and emits every card
+    // when the graph contains many files. Memory profiling is manual; the test
+    // value is catching accidental re-introduction of Vec<Card> materialization
+    // that would only surface at scale.
+    const N: usize = 100;
+    let repo = tempdir().unwrap();
+    let synrepo_dir = repo.path().join(".synrepo");
+    seed_files(&synrepo_dir, N);
+
+    let config = Config {
+        export_dir: "large-json".to_string(),
+        ..Config::default()
+    };
+
+    let result = write_exports(
+        repo.path(),
+        &synrepo_dir,
+        &config,
+        ExportFormat::Json,
+        Budget::Normal,
+        true,
+    )
+    .unwrap();
+
+    assert_eq!(result.file_count, N, "every seeded file must be rendered");
+
+    let raw = fs::read_to_string(repo.path().join("large-json").join("index.json")).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&raw).expect("JSON must round-trip");
+    let files = parsed
+        .get("files")
+        .and_then(|v| v.as_array())
+        .expect("files array");
+    assert_eq!(files.len(), N);
+}
+
+#[test]
+fn export_json_is_well_formed_with_empty_collections() {
+    // The manual array-bracket framing in render::write_json must still emit
+    // parseable JSON when every collection is empty (no stray commas, no
+    // open-but-never-closed brackets).
+    let repo = tempdir().unwrap();
+    let synrepo_dir = repo.path().join(".synrepo");
+    init_empty_graph(&synrepo_dir).unwrap();
+
+    let config = Config {
+        export_dir: "empty-json".to_string(),
+        ..Config::default()
+    };
+
+    write_exports(
+        repo.path(),
+        &synrepo_dir,
+        &config,
+        ExportFormat::Json,
+        Budget::Normal,
+        true,
+    )
+    .unwrap();
+
+    let raw = fs::read_to_string(repo.path().join("empty-json").join("index.json")).unwrap();
+    let parsed: serde_json::Value =
+        serde_json::from_str(&raw).expect("empty-export JSON must round-trip through serde_json");
+
+    let obj = parsed
+        .as_object()
+        .expect("top-level JSON must be an object");
+    assert!(obj.contains_key("generated_note"));
+    assert!(obj.contains_key("change_risk"));
+    for key in ["files", "symbols", "decisions"] {
+        let arr = obj
+            .get(key)
+            .and_then(|v| v.as_array())
+            .unwrap_or_else(|| panic!("{key} must be a JSON array"));
+        assert!(arr.is_empty(), "{key} must be empty for empty graph");
+    }
 }
 
 #[test]

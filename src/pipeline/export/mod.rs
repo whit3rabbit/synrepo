@@ -24,7 +24,7 @@ use crate::{
     pipeline::watch::load_reconcile_state,
     store::sqlite::SqliteGraphStore,
     structure::graph::with_graph_read_snapshot,
-    surface::card::{compiler::GraphCardCompiler, Budget, CardCompiler, FileCard, SymbolCard},
+    surface::card::{compiler::GraphCardCompiler, Budget, CardCompiler},
 };
 
 /// File written inside the export directory to track manifest freshness.
@@ -130,60 +130,61 @@ pub fn write_exports(
         Ok((file_ids, symbol_ids, concept_ids))
     })?;
 
-    // Compile file cards (each call opens its own snapshot).
-    let mut file_cards: Vec<FileCard> = Vec::with_capacity(file_ids.len());
-    for id in &file_ids {
-        match compiler.file_card(*id, budget) {
-            Ok(card) => file_cards.push(card),
-            Err(err) => {
-                tracing::warn!(id = ?id, error = %err, "export: skipping unreadable file card");
-            }
-        }
-    }
-
-    // Compile symbol cards.
-    let mut symbol_cards: Vec<SymbolCard> = Vec::with_capacity(symbol_ids.len());
-    for id in &symbol_ids {
-        match compiler.symbol_card(*id, budget) {
-            Ok(card) => symbol_cards.push(card),
-            Err(err) => {
-                tracing::warn!(id = ?id, error = %err, "export: skipping unreadable symbol card");
-            }
-        }
-    }
-
-    // Build decision records from concept nodes.
-    let mut decisions: Vec<ExportDecision> = Vec::new();
-    {
-        let graph2 = SqliteGraphStore::open_existing(&synrepo_dir.join("graph"))?;
-        for id in &concept_ids {
-            if let Ok(Some(concept)) = with_graph_read_snapshot(&graph2, |g| g.get_concept(*id)) {
-                decisions.push(ExportDecision {
-                    path: concept.path.clone(),
-                    title: concept.title.clone(),
-                    status: concept.status.clone(),
-                    summary: concept.summary.clone(),
-                    decision_body: concept.decision_body.clone(),
-                });
-            }
-        }
-    }
-
     let export_dir = repo_root.join(&config.export_dir);
     std::fs::create_dir_all(&export_dir)?;
 
-    let file_count = file_cards.len();
-    let symbol_count = symbol_cards.len();
-    let decision_count = decisions.len();
+    // Build lazy iterators. Each card is compiled under its own snapshot and
+    // dropped once rendered, so peak memory scales with a single card rather
+    // than the whole repo. Failures log a warning and are skipped.
+    let file_stream = file_ids.iter().filter_map(|id| {
+        compiler
+            .file_card(*id, budget)
+            .inspect_err(|err| {
+                tracing::warn!(
+                    id = ?id,
+                    error = %err,
+                    "export: skipping unreadable file card"
+                );
+            })
+            .ok()
+    });
+    let symbol_stream = symbol_ids.iter().filter_map(|id| {
+        compiler
+            .symbol_card(*id, budget)
+            .inspect_err(|err| {
+                tracing::warn!(
+                    id = ?id,
+                    error = %err,
+                    "export: skipping unreadable symbol card"
+                );
+            })
+            .ok()
+    });
 
-    match format {
+    // Decision records need a concept lookup; reuse a single store handle for
+    // all iterations rather than re-opening per concept.
+    let concept_graph = SqliteGraphStore::open_existing(&synrepo_dir.join("graph"))?;
+    let decision_stream = concept_ids.iter().filter_map(|id| {
+        with_graph_read_snapshot(&concept_graph, |g| g.get_concept(*id))
+            .ok()
+            .flatten()
+            .map(|concept| ExportDecision {
+                path: concept.path.clone(),
+                title: concept.title.clone(),
+                status: concept.status.clone(),
+                summary: concept.summary.clone(),
+                decision_body: concept.decision_body.clone(),
+            })
+    });
+
+    let (file_count, symbol_count, decision_count) = match format {
         ExportFormat::Markdown => {
-            render::write_markdown(&export_dir, &file_cards, &symbol_cards, &decisions)?;
+            render::write_markdown(&export_dir, file_stream, symbol_stream, decision_stream)?
         }
         ExportFormat::Json => {
-            render::write_json(&export_dir, &file_cards, &symbol_cards, &decisions)?;
+            render::write_json(&export_dir, file_stream, symbol_stream, decision_stream)?
         }
-    }
+    };
 
     // Manage .gitignore: append <export_dir>/ unless --commit is set.
     if !commit {
