@@ -107,8 +107,13 @@ fn truncate_text(text: &str, max_chars: usize) -> String {
     if text.len() <= max_chars {
         text.to_string()
     } else {
-        // Find a good break point
-        let trunc_at = &text[..max_chars.min(text.len())];
+        // Find a safe character-boundary break point
+        let end = text
+            .char_indices()
+            .nth(max_chars)
+            .map(|(i, _)| i)
+            .unwrap_or(text.len());
+        let trunc_at = &text[..end];
         if let Some(last_space) = trunc_at.rfind(' ') {
             trunc_at[..last_space].to_string()
         } else {
@@ -146,6 +151,15 @@ mod tests {
         let input = "hello world this is a test";
         let result = truncate_text(input, 11); // Should cut after "hello world"
         assert!(!result.ends_with('-'));
+    }
+
+    #[test]
+    fn truncate_text_multibyte_chars() {
+        // Multi-byte characters (accented, emoji) should not cause panic
+        let input = "hello café world 🎉 test";
+        let result = truncate_text(input, 8); // Should not panic
+        assert!(!result.is_empty());
+        assert!(result.len() <= 8 * 4); // Rough character expansion bound
     }
 
     // Chunk extraction tests - these would need a test graph implementation
