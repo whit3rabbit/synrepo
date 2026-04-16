@@ -246,6 +246,7 @@ fn bootstrap_blocked_when_writer_lock_held() {
 
     let err = bootstrap(repo.path(), None).unwrap_err().to_string();
     let _ = holder.kill();
+    let _ = holder.wait();
     assert!(
         err.contains("writer lock"),
         "expected 'writer lock' in error, got: {err}"

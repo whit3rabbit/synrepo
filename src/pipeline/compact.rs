@@ -476,7 +476,7 @@ mod tests {
         )
         .unwrap();
         // Just verify it doesn't panic and has actions.
-        assert!(plan.actions.len() >= 1); // At least WAL checkpoint.
+        assert!(!plan.actions.is_empty()); // At least WAL checkpoint.
     }
 
     #[test]

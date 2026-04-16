@@ -296,7 +296,7 @@ fn edge_drift_reports_no_high_drift_when_all_scores_below_threshold() {
     init_synrepo_with_completed_reconcile(&synrepo_dir);
 
     let graph_dir = synrepo_dir.join("graph");
-    let mut graph = crate::store::sqlite::SqliteGraphStore::open(&graph_dir).unwrap();
+    let graph = crate::store::sqlite::SqliteGraphStore::open(&graph_dir).unwrap();
 
     // Write drift scores that are non-zero but below the 0.7 high-drift threshold.
     let low_scores: Vec<(EdgeId, f32)> = vec![(EdgeId(1), 0.3), (EdgeId(2), 0.5)];
@@ -328,7 +328,7 @@ fn check_surfaces_pending_promotion_as_actionable() {
         CitedSpan, ConfidenceTier, CrossLinkProvenance, OverlayEdgeKind, OverlayEpistemic,
         OverlayLink, OverlayStore,
     };
-    use crate::pipeline::repair::{DriftClass, RepairAction};
+    use crate::pipeline::repair::DriftClass;
     use crate::store::overlay::SqliteOverlayStore;
     use crate::store::sqlite::SqliteGraphStore;
     use time::OffsetDateTime;

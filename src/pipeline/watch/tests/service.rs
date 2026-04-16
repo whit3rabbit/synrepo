@@ -5,13 +5,9 @@ use notify_debouncer_full::{
     DebouncedEvent,
 };
 
-use crate::pipeline::{
-    watch::{
-        load_reconcile_state, request_watch_control, run_watch_service, ReconcileOutcome,
-        WatchConfig, WatchControlRequest, WatchControlResponse, WatchServiceMode,
-        WatchServiceStatus,
-    },
-    writer,
+use crate::pipeline::watch::{
+    load_reconcile_state, request_watch_control, run_watch_service, ReconcileOutcome, WatchConfig,
+    WatchControlRequest, WatchControlResponse, WatchServiceMode, WatchServiceStatus,
 };
 
 use super::{setup_test_repo, wait_for};

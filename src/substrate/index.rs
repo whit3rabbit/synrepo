@@ -6,6 +6,7 @@
 use std::path::{Path, PathBuf};
 use syntext::index::{ExternalFileRecord, Index};
 use syntext::{Config as SyntextConfig, SearchOptions};
+use globset::Glob;
 
 /// Summary of a persisted substrate rebuild.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -51,6 +52,10 @@ pub fn search(
 
 /// Executes an exact lexical search against the current substrate index using
 /// explicit syntext search options.
+///
+/// If `options.path_filter` contains glob patterns, this function performs
+/// a two-stage match: it queries the index using the longest non-glob prefix
+/// of the filter, then refines the results using a glob matcher.
 pub fn search_with_options(
     config: &crate::config::Config,
     repo_root: &Path,
@@ -66,15 +71,79 @@ pub fn search_with_options(
         )));
     }
 
+    // Prepare glob matcher and index prefix if filter is present
+    let (prefix, matcher) = if let Some(filter) = &options.path_filter {
+        if contains_glob_chars(filter) {
+            let prefix = extract_non_glob_prefix(filter);
+            let glob = Glob::new(filter).map_err(|e| {
+                crate::Error::Other(anyhow::anyhow!(
+                    "invalid path filter glob `{}`: {}",
+                    filter,
+                    e
+                ))
+            })?;
+            (
+                if prefix.is_empty() { None } else { Some(prefix) },
+                Some(glob.compile_matcher()),
+            )
+        } else {
+            // No glob characters: treat as a simple directory/path prefix (legacy behavior)
+            (Some(filter.clone()), None)
+        }
+    } else {
+        (None, None)
+    };
+
+    // If we have a matcher, we must disable syntext's max_results during the
+    // index phase to ensure we don't truncate valid matches before post-filtering.
+    let effective_options = SearchOptions {
+        path_filter: prefix,
+        file_type: options.file_type.clone(),
+        exclude_type: options.exclude_type.clone(),
+        max_results: if matcher.is_some() {
+            None
+        } else {
+            options.max_results
+        },
+        case_insensitive: options.case_insensitive,
+    };
+
     let index = Index::open(syntext_config).map_err(map_index_error)?;
 
-    let results = index.search(query, options).map_err(|e| {
+    let mut results = index.search(query, &effective_options).map_err(|e| {
         crate::Error::Other(anyhow::anyhow!(
-            "substrate search failed for `{query}`: {e}"
+            "substrate search failed for `{}`: {}",
+            query,
+            e
         ))
     })?;
 
+    // Apply post-filtering if a glob was provided
+    if let Some(matcher) = matcher {
+        results.retain(|m| matcher.is_match(&m.path));
+        if let Some(limit) = options.max_results {
+            results.truncate(limit);
+        }
+    }
+
     Ok(results)
+}
+
+fn extract_non_glob_prefix(filter: &str) -> String {
+    let mut last_slash = 0;
+    for (i, c) in filter.char_indices() {
+        if c == '*' || c == '?' || c == '[' || c == '{' {
+            return filter[..last_slash].to_string();
+        }
+        if c == '/' {
+            last_slash = i + 1;
+        }
+    }
+    filter.to_string()
+}
+
+fn contains_glob_chars(s: &str) -> bool {
+    s.contains('*') || s.contains('?') || s.contains('[') || s.contains('{')
 }
 
 fn syntext_config(config: &crate::config::Config, repo_root: &Path) -> SyntextConfig {
@@ -204,5 +273,65 @@ mod tests {
 
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].path, Path::new("src/lib.rs"));
+    }
+
+    #[test]
+    fn search_with_options_respects_glob_filters() {
+        let repo = tempdir().unwrap();
+        fs::create_dir_all(repo.path().join(".synrepo/index")).unwrap();
+        fs::create_dir_all(repo.path().join("src")).unwrap();
+        fs::create_dir_all(repo.path().join("tests")).unwrap();
+
+        fs::write(
+            repo.path().join("src/lib.rs"),
+            "pub fn visible() { println!(\"token\"); }\n",
+        )
+        .unwrap();
+        fs::write(
+            repo.path().join("tests/lib_test.py"),
+            "def test_visible(): print(\"token\")\n",
+        )
+        .unwrap();
+
+        let config = Config::default();
+        build_index(&config, repo.path()).unwrap();
+
+        // 1. Matches both via prefix
+        let options_no_glob = SearchOptions {
+            path_filter: None,
+            ..SearchOptions::default()
+        };
+        let matches =
+            search_with_options(&config, repo.path(), "token", &options_no_glob).unwrap();
+        assert_eq!(matches.len(), 2);
+
+        // 2. Matches only .rs via glob
+        let options_glob = SearchOptions {
+            path_filter: Some("**/*.rs".to_string()),
+            ..SearchOptions::default()
+        };
+        let matches_glob =
+            search_with_options(&config, repo.path(), "token", &options_glob).unwrap();
+        assert_eq!(matches_glob.len(), 1);
+        assert_eq!(matches_glob[0].path, Path::new("src/lib.rs"));
+
+        // 3. Matches only tests/ via prefix + glob
+        let options_prefix_glob = SearchOptions {
+            path_filter: Some("tests/*.py".to_string()),
+            ..SearchOptions::default()
+        };
+        let matches_prefix_glob =
+            search_with_options(&config, repo.path(), "token", &options_prefix_glob).unwrap();
+        assert_eq!(matches_prefix_glob.len(), 1);
+        assert_eq!(matches_prefix_glob[0].path, Path::new("tests/lib_test.py"));
+    }
+
+    #[test]
+    fn test_extract_non_glob_prefix() {
+        assert_eq!(extract_non_glob_prefix("src/lib.rs"), "src/lib.rs");
+        assert_eq!(extract_non_glob_prefix("src/*.rs"), "src/");
+        assert_eq!(extract_non_glob_prefix("src/**/*.rs"), "src/");
+        assert_eq!(extract_non_glob_prefix("**/src/*.rs"), "");
+        assert_eq!(extract_non_glob_prefix("docs/"), "docs/");
     }
 }

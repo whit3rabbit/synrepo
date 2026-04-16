@@ -6,7 +6,7 @@ use crate::{
     overlay::{CommentaryEntry, CommentaryProvenance, OverlayStore},
     pipeline::{
         git::test_support::{git, init_commit},
-        synthesis::{CommentaryGenerator, NoOpGenerator},
+        synthesis::CommentaryGenerator,
     },
     store::{overlay::SqliteOverlayStore, sqlite::SqliteGraphStore},
     structure::graph::EdgeKind,
@@ -381,17 +381,6 @@ fn refresh_commentary_persists_new_entry() {
 
 #[test]
 fn symbol_card_read_is_strictly_readonly() {
-    struct ExplodingGenerator;
-    impl CommentaryGenerator for ExplodingGenerator {
-        fn generate(
-            &self,
-            _node: NodeId,
-            _context: &str,
-        ) -> crate::Result<Option<CommentaryEntry>> {
-            panic!("generator must not be called during read");
-        }
-    }
-
     let (repo, graph, sym_id) = fresh_symbol_fixture();
     let overlay = make_overlay_store(&repo);
 

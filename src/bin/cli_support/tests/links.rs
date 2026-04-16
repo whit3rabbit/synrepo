@@ -612,6 +612,7 @@ fn links_accept_fails_on_lock_conflict() {
     let err = super::super::commands::links_accept(repo.path(), &candidate_id, Some("reviewer-a"))
         .unwrap_err();
     let _ = holder.kill();
+    let _ = holder.wait();
 
     assert!(
         err.to_string().contains("writer lock held by pid"),
@@ -638,6 +639,7 @@ fn links_reject_fails_on_lock_conflict() {
     let err = super::super::commands::links_reject(repo.path(), &candidate_id, Some("reviewer-b"))
         .unwrap_err();
     let _ = holder.kill();
+    let _ = holder.wait();
 
     assert!(
         err.to_string().contains("writer lock held by pid"),

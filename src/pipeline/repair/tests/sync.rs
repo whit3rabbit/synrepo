@@ -6,10 +6,7 @@ use crate::pipeline::repair::{
 };
 use crate::{
     config::Config,
-    pipeline::{
-        watch::{persist_reconcile_state, ReconcileOutcome},
-        writer::acquire_writer_lock,
-    },
+    pipeline::watch::{persist_reconcile_state, ReconcileOutcome},
 };
 
 #[test]
@@ -200,6 +197,7 @@ fn sync_fails_fast_when_writer_lock_is_held() {
         SyncOptions::default(),
     );
     let _ = holder.kill();
+    let _ = holder.wait();
 
     // Sync fails because it cannot acquire the writer lock.
     assert!(result.is_err());

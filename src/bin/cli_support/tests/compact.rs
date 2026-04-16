@@ -20,7 +20,7 @@ fn compact_dry_run_library() {
     let plan = plan_compact(&synrepo_dir, &config, CompactPolicy::Default).unwrap();
 
     // Should return a plan.
-    assert!(plan.actions.len() >= 1);
+    assert!(!plan.actions.is_empty());
 
     // No state file created yet.
     let state_file = synrepo_dir.join("state/compact-state.json");
