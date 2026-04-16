@@ -29,6 +29,7 @@ fn reconcile_pass_completes_on_valid_repo() {
     }
 }
 
+#[cfg(unix)]
 #[test]
 fn reconcile_pass_returns_lock_conflict_when_lock_is_held() {
     let (_dir, repo, config, synrepo_dir) = setup_test_repo();

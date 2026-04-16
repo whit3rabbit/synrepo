@@ -5,7 +5,9 @@ use super::super::{
     watch_daemon_state_path, watch_service_status, watch_socket_path, WatchDaemonState,
     WatchServiceMode, WatchServiceStatus,
 };
-use super::{dead_pid, setup_test_repo};
+#[cfg(unix)]
+use super::dead_pid;
+use super::setup_test_repo;
 
 #[test]
 fn watch_lease_blocks_a_second_live_owner() {

@@ -1,6 +1,8 @@
 use tempfile::tempdir;
 
-use super::support::{setup_repo_for_sync, write_foreign_lock};
+use super::support::setup_repo_for_sync;
+#[cfg(unix)]
+use super::support::write_foreign_lock;
 use crate::pipeline::repair::{
     execute_sync, repair_log_path, RepairSurface, ResolutionLogEntry, SyncOptions, SyncOutcome,
 };
