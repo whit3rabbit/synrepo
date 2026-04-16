@@ -50,6 +50,23 @@ impl SymbolKind {
             SymbolKind::Export => "export",
         }
     }
+
+    /// Reverse of `as_str`: parse a stable snake_case label back to a `SymbolKind`.
+    pub fn from_label(label: &str) -> Option<Self> {
+        match label {
+            "function" => Some(SymbolKind::Function),
+            "method" => Some(SymbolKind::Method),
+            "class" => Some(SymbolKind::Class),
+            "trait" => Some(SymbolKind::Trait),
+            "type" => Some(SymbolKind::Type),
+            "type_def" => Some(SymbolKind::TypeDef),
+            "interface" => Some(SymbolKind::Interface),
+            "module" => Some(SymbolKind::Module),
+            "constant" => Some(SymbolKind::Constant),
+            "export" => Some(SymbolKind::Export),
+            _ => None,
+        }
+    }
 }
 
 /// A file node in the canonical graph.

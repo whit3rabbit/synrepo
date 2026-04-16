@@ -330,7 +330,23 @@ impl SurfaceCheck for ProposedLinksOverlayCheck {
                         severity: Severity::Actionable,
                         target_id: None,
                         recommended_action: RepairAction::None,
-                        notes: Some(format!("{} cross-link candidates are current.", scan.total)),
+                        notes: Some(format!(
+                            "{} cross-link candidates are current ({} pending promotion).",
+                            scan.total, scan.pending_promotion_count
+                        )),
+                    });
+                } else {
+                    // Add a summary note with state breakdown at the end when there are drift findings.
+                    out.push(RepairFinding {
+                        surface: self.surface(),
+                        drift_class: DriftClass::Current,
+                        severity: Severity::ReportOnly,
+                        target_id: None,
+                        recommended_action: RepairAction::None,
+                        notes: Some(format!(
+                            "State breakdown: {} total ({} active, {} pending promotion, {} promoted, {} rejected).",
+                            scan.total, scan.active_count, scan.pending_promotion_count, scan.promoted_count, scan.rejected_count
+                        )),
                     });
                 }
                 out
@@ -492,6 +508,10 @@ struct DriftedCrossLink {
 
 struct CrossLinkScan {
     total: usize,
+    active_count: usize,
+    pending_promotion_count: usize,
+    promoted_count: usize,
+    rejected_count: usize,
     drifted: Vec<DriftedCrossLink>,
 }
 
@@ -502,6 +522,10 @@ fn scan_cross_links(synrepo_dir: &std::path::Path) -> crate::Result<CrossLinkSca
     use std::str::FromStr;
 
     let overlay = SqliteOverlayStore::open_existing(&synrepo_dir.join("overlay"))?;
+
+    // Get state counts from the overlay.
+    let state_counts = overlay.cross_link_state_counts()?;
+    let pending_promotion_count = state_counts.pending_promotion;
 
     // Surface pending_promotion rows as a distinct drift class.
     let pending = overlay.pending_promotion_rows()?;
@@ -519,6 +543,10 @@ fn scan_cross_links(synrepo_dir: &std::path::Path) -> crate::Result<CrossLinkSca
     if rows.is_empty() && drifted.is_empty() {
         return Ok(CrossLinkScan {
             total: 0,
+            active_count: state_counts.active,
+            pending_promotion_count,
+            promoted_count: state_counts.promoted,
+            rejected_count: state_counts.rejected,
             drifted: Vec::new(),
         });
     }
@@ -557,7 +585,14 @@ fn scan_cross_links(synrepo_dir: &std::path::Path) -> crate::Result<CrossLinkSca
         });
     }
 
-    Ok(CrossLinkScan { total, drifted })
+    Ok(CrossLinkScan {
+        total,
+        active_count: state_counts.active,
+        pending_promotion_count,
+        promoted_count: state_counts.promoted,
+        rejected_count: state_counts.rejected,
+        drifted,
+    })
 }
 
 fn current_endpoint_hash(

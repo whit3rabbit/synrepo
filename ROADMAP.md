@@ -5,32 +5,21 @@
 
 ## Active OpenSpec Changes
 
-1 change remains active in `openspec/changes/`. It is grouped into 2 execution phases — each phase depends on the one before it. 7 changes have been archived.
+No changes are active. 8 changes have been archived.
 
-### Phase 1 — Structural Completion
+## Shipped Changes
 
-| Change | Purpose | Tracks | Status |
-|--------|---------|--------|--------|
-| [`graph-cochange-edges-v1`](openspec/changes/graph-cochange-edges-v1/) | Emit physical `CoChangesWith` graph edges from git history (kind defined but never produced today) | D, I | Shipped |
-| [`symbol-last-change-v1`](openspec/changes/symbol-last-change-v1/) | True symbol-level `last_change` tracking via `body_hash` transitions; upgrades `SymbolCard.last_change.granularity` from `file` → `symbol` | D, I | Shipped |
-| [`structural-resilience-v1`](openspec/changes/archive/2026-04-15-structural-resilience-v1/) | Stage 6 split/merge + Stage 7 drift scoring: **infrastructure shipped** (types, tables, wiring, repair surface). Semantics incomplete; see v2. | D | Shipped |
-| [`structural-resilience-v2`](openspec/changes/archive/2026-04-15-structural-resilience-v2/) | Finish drift scoring (Jaccard distance on persisted fingerprints, all-edge enumeration, concept edges), wire git rename fallback (cascade step 4), fix repair absent-vs-current | D | Shipped |
-| [`graph-lifecycle-v1`](openspec/changes/archive/2026-04-16-graph-lifecycle-v1/) | Stable identity + owned observations + soft retirement: replace destructive rebuild with scoped refresh, add compile revisions, compaction maintenance pass | D | **Shipped** |
-
-**Why first:** These fill the remaining data gaps in the graph. Phase 2 surfaces consume this data.
-
----
-
-### Phase 2 — Surface Expansion & Ops
-
-| Change | Purpose | Tracks | Status |
-|--------|---------|--------|--------|
-| [`specialist-cards-v1`](openspec/changes/specialist-cards-v1/) | `CallPathCard` + `synrepo_call_path`, `TestSurfaceCard` + `synrepo_test_surface` | E | Shipped |
-| [`semantic-triage-v1`](openspec/changes/semantic-triage-v1/) | ONNX/MiniLM embedding pre-filter for cross-link candidate generation (opt-in, feature-gated) | K | In progress |
-| [`change-risk-card-v1`](openspec/changes/archive/2026-04-16-change-risk-card-v1/) | `ChangeRiskCard` + `synrepo_change_risk` consuming drift scores, co-change edges, and hotspot data | M | **Shipped** |
-| [`storage-compaction-v1`](openspec/changes/archive/2026-04-15-storage-compaction-v1/) | `synrepo compact` command; policy-driven retention for overlay, repair-log, audit rows | H, L | **Shipped** |
-
-**Why second:** Consumes the enriched graph data from Phase 1. Specialist cards need co-change and drift; compaction needs the overlay to have aged enough to need it.
+| Change | Purpose | Tracks |
+|--------|---------|--------|
+| [`graph-cochange-edges-v1`](openspec/changes/archive/2026-04-15-graph-cochange-edges-v1/) | Emit physical `CoChangesWith` graph edges from git history | D, I |
+| [`symbol-last-change-v1`](openspec/changes/archive/2026-04-15-symbol-last-change-v1/) | True symbol-level `last_change` tracking via `body_hash` transitions | D, I |
+| [`structural-resilience-v1`](openspec/changes/archive/2026-04-15-structural-resilience-v1/) | Stage 6 split/merge + Stage 7 drift scoring infrastructure | D |
+| [`structural-resilience-v2`](openspec/changes/archive/2026-04-15-structural-resilience-v2/) | Finish drift scoring, wire git rename fallback, fix repair absent-vs-current | D |
+| [`graph-lifecycle-v1`](openspec/changes/archive/2026-04-16-graph-lifecycle-v1/) | Stable identity + owned observations + soft retirement | D |
+| [`specialist-cards-v1`](openspec/changes/archive/2026-04-15-specialist-cards-v1/) | `CallPathCard` + `TestSurfaceCard` | E |
+| [`semantic-triage-v1`](openspec/changes/archive/2026-04-16-semantic-triage-v1/) | ONNX/MiniLM embedding pre-filter for cross-link candidate generation | K |
+| [`change-risk-card-v1`](openspec/changes/archive/2026-04-16-change-risk-card-v1/) | `ChangeRiskCard` consuming drift scores, co-change edges, hotspots | M |
+| [`storage-compaction-v1`](openspec/changes/archive/2026-04-15-storage-compaction-v1/) | `synrepo compact` command; policy-driven retention | H, L |
 
 ---
 

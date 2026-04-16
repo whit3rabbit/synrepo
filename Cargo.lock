@@ -3566,6 +3566,7 @@ dependencies = [
  "criterion",
  "crossbeam-channel",
  "gix",
+ "globset",
  "hex",
  "ignore",
  "insta",

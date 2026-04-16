@@ -390,7 +390,7 @@ pub fn all_candidates(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::ids::{ConceptNodeId, FileNodeId, SymbolNodeId};
+    use crate::core::ids::{ConceptNodeId, EdgeId, FileNodeId, SymbolNodeId};
     use crate::core::provenance::Provenance;
 
     fn test_provenance() -> Provenance {
@@ -436,6 +436,15 @@ mod tests {
         fn insert_edge(&mut self, edge: Edge) -> crate::Result<()> {
             self.edges.push(edge);
             Ok(())
+        }
+        fn delete_edge(&mut self, id: EdgeId) -> crate::Result<()> {
+            self.edges.retain(|e| e.id != id);
+            Ok(())
+        }
+        fn delete_edges_by_kind(&mut self, kind: EdgeKind) -> crate::Result<usize> {
+            let before = self.edges.len();
+            self.edges.retain(|e| e.kind != kind);
+            Ok(before - self.edges.len())
         }
         fn delete_node(&mut self, _id: NodeId) -> crate::Result<()> {
             Ok(())

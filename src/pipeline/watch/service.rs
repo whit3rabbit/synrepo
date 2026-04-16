@@ -17,13 +17,13 @@ use notify_debouncer_full::{
 
 use crate::config::Config;
 
+#[cfg(unix)]
+use super::control::{read_control_request, write_control_response};
 use super::{
     control::{WatchControlRequest, WatchControlResponse},
     lease::{acquire_watch_daemon_lease, watch_socket_path, WatchServiceMode, WatchStateHandle},
     reconcile::{persist_reconcile_state, run_reconcile_pass},
 };
-#[cfg(unix)]
-use super::control::{read_control_request, write_control_response};
 
 /// Configuration for the watch and reconcile loop.
 #[derive(Clone, Debug)]

@@ -71,23 +71,23 @@ pub(super) fn call_path_card_impl(
 
 /// Find all entry point symbols in the graph.
 fn find_entry_points(graph: &dyn GraphStore) -> crate::Result<HashSet<SymbolNodeId>> {
-    let symbol_names = graph.all_symbol_names()?;
+    let symbols_summary = graph.all_symbols_summary()?;
     let file_paths = graph.all_file_paths()?;
 
     let path_map: HashMap<_, _> = file_paths.into_iter().map(|(p, id)| (id, p)).collect();
 
     let mut entry_points = HashSet::new();
 
-    for (sym_id, file_id, qname) in &symbol_names {
+    for (sym_id, file_id, qname, kind_label, _body_hash) in &symbols_summary {
         let Some(path) = path_map.get(file_id) else {
             continue;
         };
 
-        let Some(symbol) = graph.get_symbol(*sym_id)? else {
+        let Some(kind) = SymbolKind::from_label(kind_label) else {
             continue;
         };
 
-        if is_entry_point(qname, path, symbol.kind) {
+        if is_entry_point(qname, path, kind) {
             entry_points.insert(*sym_id);
         }
     }

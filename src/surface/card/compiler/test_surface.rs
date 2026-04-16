@@ -41,8 +41,12 @@ pub(super) fn test_surface_card_impl(
         }
 
         for test_file_path in test_files {
+            let Some(test_file_id) = path_map.get(&test_file_path).copied() else {
+                continue;
+            };
+
             // Get test symbols from the test file.
-            let test_symbols = find_test_symbols(graph, &test_file_path)?;
+            let test_symbols = find_test_symbols(graph, test_file_id)?;
 
             for symbol in test_symbols {
                 let association = compute_association(&symbol.kind, &test_file_path, source_path);
@@ -177,32 +181,15 @@ fn find_associated_test_files(
 }
 
 /// Find test symbols from a test file by name convention.
-fn find_test_symbols(graph: &dyn GraphStore, file_path: &str) -> crate::Result<Vec<SymbolNode>> {
-    // Find the file ID by path.
-    let file_paths = graph.all_file_paths()?;
-    let file_id = file_paths
-        .iter()
-        .find(|(p, _)| p == file_path)
-        .map(|(_, id)| *id);
-
-    let Some(file_id) = file_id else {
-        return Ok(vec![]);
-    };
-
-    // Get all symbols and filter by file_id and test naming convention.
-    let all_symbols = graph.all_symbol_names()?;
-    let mut test_symbols = Vec::new();
-
-    for (sym_id, sym_file_id, qname) in &all_symbols {
-        if *sym_file_id == file_id {
-            // Check if the symbol looks like a test by its name.
-            if is_test_symbol(qname) {
-                if let Some(symbol) = graph.get_symbol(*sym_id)? {
-                    test_symbols.push(symbol);
-                }
-            }
-        }
-    }
+fn find_test_symbols(
+    graph: &dyn GraphStore,
+    file_id: FileNodeId,
+) -> crate::Result<Vec<SymbolNode>> {
+    let all_symbols = graph.symbols_for_file(file_id)?;
+    let test_symbols = all_symbols
+        .into_iter()
+        .filter(|sym| is_test_symbol(&sym.qualified_name))
+        .collect();
 
     Ok(test_symbols)
 }

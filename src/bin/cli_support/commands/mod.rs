@@ -73,7 +73,11 @@ pub(crate) fn search_output(
         .unwrap();
     }
 
-    writeln!(out, "Found {} matches.", matches.len()).unwrap();
+    if matches.is_empty() {
+        writeln!(out, "No matches found for `{query}`.").unwrap();
+    } else {
+        writeln!(out, "Found {} matches.", matches.len()).unwrap();
+    }
     Ok(out)
 }
 

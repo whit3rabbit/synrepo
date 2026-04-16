@@ -36,10 +36,10 @@ pub(super) fn entry_point_card_impl(
         .map(|(path, id)| (id, path))
         .collect();
 
-    let symbol_names = graph.all_symbol_names()?;
+    let symbols_summary = graph.all_symbols_summary()?;
     let mut entry_points: Vec<EntryPoint> = Vec::new();
 
-    for (sym_id, file_id, qname) in &symbol_names {
+    for (sym_id, file_id, qname, kind_label, _body_hash) in &symbols_summary {
         let Some(path) = file_path_map.get(file_id) else {
             continue;
         };
@@ -51,12 +51,17 @@ pub(super) fn entry_point_card_impl(
             }
         }
 
-        // Load symbol to get kind and budget-sensitive fields.
-        let Some(symbol) = graph.get_symbol(*sym_id)? else {
+        let Some(sym_kind) = SymbolKind::from_label(kind_label) else {
             continue;
         };
 
-        let Some(kind) = classify_kind(qname, path, symbol.kind) else {
+        let Some(kind) = classify_kind(qname, path, sym_kind) else {
+            continue;
+        };
+
+        // Deferred load: only fetch full symbol for the small set that
+        // pass classification, to get budget-sensitive fields.
+        let Some(symbol) = graph.get_symbol(*sym_id)? else {
             continue;
         };
 

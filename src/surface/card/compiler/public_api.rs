@@ -14,12 +14,11 @@
 //! empty in v1. A dedicated `visibility` field on `SymbolNode` is the right
 //! long-term fix; deferred.
 
-use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::{
-    core::ids::{FileNodeId, NodeId},
-    structure::graph::{EdgeKind, GraphStore},
+    core::ids::FileNodeId,
+    structure::graph::GraphStore,
     surface::card::{
         git::symbol_last_change_from_insights,
         types::{PublicAPICard, PublicAPIEntry},
@@ -61,12 +60,6 @@ pub(super) fn public_api_card_impl(
     }
     direct_files.sort_by(|a, b| a.0.cmp(&b.0));
 
-    // Build a map from FileNodeId to path for location formatting.
-    let path_map: HashMap<FileNodeId, &str> = direct_files
-        .iter()
-        .map(|(p, id)| (*id, p.as_str()))
-        .collect();
-
     let include_git = budget != Budget::Tiny;
     let include_summary = budget == Budget::Deep;
     let now = now_unix();
@@ -81,15 +74,8 @@ pub(super) fn public_api_card_impl(
             None
         };
 
-        let defines = graph.outbound(NodeId::File(*file_id), Some(EdgeKind::Defines))?;
-        for edge in &defines {
-            let NodeId::Symbol(sym_id) = edge.to else {
-                continue;
-            };
-            let Some(sym) = graph.get_symbol(sym_id)? else {
-                continue;
-            };
-
+        let symbols = graph.symbols_for_file(*file_id)?;
+        for sym in &symbols {
             // Visibility filter: Rust `pub` prefix only.
             let sig = match &sym.signature {
                 Some(s) if s.starts_with("pub") => s.clone(),
@@ -103,17 +89,16 @@ pub(super) fn public_api_card_impl(
                 continue;
             }
 
-            let file_path_str = path_map.get(file_id).copied().unwrap_or("");
             let last_change = git_insights
                 .as_ref()
                 .and_then(|arc| symbol_last_change_from_insights(arc, include_summary, None));
 
             public_symbols.push(PublicAPIEntry {
-                id: sym_id,
+                id: sym.id,
                 name: sym.display_name.clone(),
                 kind: sym.kind,
                 signature: sig,
-                location: format!("{}:{}", file_path_str, sym.body_byte_range.0),
+                location: format!("{}:{}", file_path, sym.body_byte_range.0),
                 last_change,
             });
         }

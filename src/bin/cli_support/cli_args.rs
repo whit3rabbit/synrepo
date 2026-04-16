@@ -104,13 +104,13 @@ pub(crate) enum Command {
         /// Match case-insensitively.
         #[arg(short = 'i', long = "ignore-case")]
         ignore_case: bool,
-        /// Restrict to one file extension such as `rs` or `py`.
+        /// Restrict to a specific file extension (for example `rs`, `py`).
         #[arg(short = 't', long = "type")]
         file_type: Option<String>,
-        /// Exclude one file extension such as `js`.
+        /// Exclude a specific file extension (for example `js`).
         #[arg(short = 'T', long = "exclude-type")]
         exclude_type: Option<String>,
-        /// Restrict to paths matching a glob such as `src/` or `**/*.rs`.
+        /// Filter results by path pattern (for example `src/`, `**/*.rs`, `tests/*_test.py`).
         #[arg(short = 'g', long = "glob")]
         path_filter: Option<String>,
         /// Stop after this many matches.

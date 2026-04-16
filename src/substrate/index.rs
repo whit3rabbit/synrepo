@@ -3,10 +3,10 @@
 //! The corpus admitted to indexing is determined by `crate::substrate::discover`,
 //! while `syntext` provides the segment format and exact-search engine.
 
+use globset::Glob;
 use std::path::{Path, PathBuf};
 use syntext::index::{ExternalFileRecord, Index};
 use syntext::{Config as SyntextConfig, SearchOptions};
-use globset::Glob;
 
 /// Summary of a persisted substrate rebuild.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -83,7 +83,11 @@ pub fn search_with_options(
                 ))
             })?;
             (
-                if prefix.is_empty() { None } else { Some(prefix) },
+                if prefix.is_empty() {
+                    None
+                } else {
+                    Some(prefix)
+                },
                 Some(glob.compile_matcher()),
             )
         } else {
@@ -301,8 +305,7 @@ mod tests {
             path_filter: None,
             ..SearchOptions::default()
         };
-        let matches =
-            search_with_options(&config, repo.path(), "token", &options_no_glob).unwrap();
+        let matches = search_with_options(&config, repo.path(), "token", &options_no_glob).unwrap();
         assert_eq!(matches.len(), 2);
 
         // 2. Matches only .rs via glob

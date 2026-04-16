@@ -18,7 +18,7 @@ mod tests;
 
 pub use commentary::derive_freshness;
 pub use cross_link_audit::AuditRow;
-pub use cross_links::{CrossLinkHashRow, PendingPromotionRow};
+pub use cross_links::{CrossLinkHashRow, CrossLinkStateCounts, PendingPromotionRow};
 pub use findings::{
     candidate_pass_suffix, compare_score_desc, format_candidate_id, parse_cross_link_freshness,
     parse_overlay_edge_kind, CrossLinkFinding, FindingsFilter, CANDIDATE_ID_PASS_SUFFIX_LEN,

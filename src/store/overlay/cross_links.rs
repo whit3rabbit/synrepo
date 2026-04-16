@@ -776,6 +776,19 @@ pub struct PendingPromotionRow {
     pub reviewer: Option<String>,
 }
 
+/// Counts of cross-link rows by state. Used by status and repair surfaces.
+#[derive(Clone, Debug, Default)]
+pub struct CrossLinkStateCounts {
+    /// Number of rows in `active` state (awaiting review).
+    pub active: usize,
+    /// Number of rows in `pending_promotion` state (crash-recovery window).
+    pub pending_promotion: usize,
+    /// Number of rows in `promoted` state (written to graph).
+    pub promoted: usize,
+    /// Number of rows in `rejected` state (rejected by reviewer).
+    pub rejected: usize,
+}
+
 /// Row-level snapshot used by the repair loop. Strings are the stored
 /// serialized forms — node IDs in display format and the tier/state enums'
 /// snake_case identifiers.
@@ -885,6 +898,28 @@ impl SqliteOverlayStore {
     pub fn pending_promotion_rows(&self) -> crate::Result<Vec<PendingPromotionRow>> {
         let conn = self.conn.lock();
         pending_promotion_rows(&conn)
+    }
+
+    /// Return counts by state for the cross_links table.
+    pub fn cross_link_state_counts(&self) -> crate::Result<CrossLinkStateCounts> {
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare("SELECT state, COUNT(*) FROM cross_links GROUP BY state")?;
+        let mut counts = CrossLinkStateCounts::default();
+        for row in stmt.query_map([], |row| {
+            let state: String = row.get(0)?;
+            let count: usize = row.get(1)?;
+            Ok((state, count))
+        })? {
+            let (state, count) = row?;
+            match state.as_str() {
+                "active" => counts.active = count,
+                "pending_promotion" => counts.pending_promotion = count,
+                "promoted" => counts.promoted = count,
+                "rejected" => counts.rejected = count,
+                _ => {}
+            }
+        }
+        Ok(counts)
     }
 
     /// Reset a `pending_promotion` row back to `active` so it can be re-accepted.

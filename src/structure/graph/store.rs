@@ -41,7 +41,9 @@ pub trait GraphStore: Send + Sync {
     /// Used for full re-emit strategies where a category of edges is rebuilt
     /// from scratch each reconcile (e.g. CoChangesWith).
     fn delete_edges_by_kind(&mut self, _kind: EdgeKind) -> crate::Result<usize> {
-        Ok(0)
+        Err(crate::Error::Other(anyhow::anyhow!(
+            "delete_edges_by_kind is not implemented for this GraphStore backend"
+        )))
     }
 
     /// Delete a node and all incident edges. Used when a file disappears

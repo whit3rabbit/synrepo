@@ -95,8 +95,8 @@ fn search_case_insensitive_flag_changes_results() {
     )
     .unwrap();
     assert!(
-        sensitive.contains("Found 0 matches."),
-        "expected 0 matches with case_insensitive=false, got: {sensitive}"
+        sensitive.contains("No matches found for `tokenalpha`."),
+        "expected no matches message with case_insensitive=false, got: {sensitive}"
     );
 
     // Case-insensitive must hit all three files.
@@ -201,4 +201,35 @@ fn search_max_results_truncates_output() {
         out.contains("Found 2 matches."),
         "expected max_results=2 to truncate, got: {out}"
     );
+}
+
+#[test]
+fn search_glob_path_filter_matches_correct_files() {
+    let (_dir, repo) = three_file_repo();
+
+    // 1. Glob for .rs files
+    let out_rs = search_output(
+        &repo,
+        "TokenAlpha",
+        SearchOptions {
+            path_filter: Some("**/*.rs".into()),
+            ..SearchOptions::default()
+        },
+    )
+    .unwrap();
+    assert!(out_rs.contains("Found 1 matches."));
+    assert!(out_rs.contains("src/a.rs"));
+
+    // 2. Glob for src/ directory
+    let out_src = search_output(
+        &repo,
+        "TokenAlpha",
+        SearchOptions {
+            path_filter: Some("src/**/*.py".into()),
+            ..SearchOptions::default()
+        },
+    )
+    .unwrap();
+    assert!(out_src.contains("Found 1 matches."));
+    assert!(out_src.contains("src/c.py"));
 }

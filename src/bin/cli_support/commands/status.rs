@@ -317,9 +317,18 @@ fn overlay_cost_summary(synrepo_dir: &Path) -> String {
         Err(e) => return format!("unavailable (commentary count query failed: {e})"),
     };
     let total_calls = cross_link_gens + commentary_entries;
+    let pending_promotion = match overlay.cross_link_state_counts() {
+        Ok(counts) => counts.pending_promotion,
+        Err(e) => return format!("unavailable (cross-link state count query failed: {e})"),
+    };
 
     format!(
-        "{total_calls} LLM calls ({cross_link_gens} cross-link gen, {commentary_entries} commentary)"
+        "{total_calls} LLM calls ({cross_link_gens} cross-link gen, {commentary_entries} commentary){pending_promotion_str}",
+        pending_promotion_str = if pending_promotion > 0 {
+            format!(", {pending_promotion} pending promotion")
+        } else {
+            String::new()
+        }
     )
 }
 

@@ -5,11 +5,10 @@
 //! - Immediate subdirectory paths go into `nested_modules`.
 //! - Public symbols are populated at `Normal` and `Deep` budget.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use crate::{
-    core::ids::{FileNodeId, NodeId},
-    structure::graph::{EdgeKind, GraphStore},
+    structure::graph::GraphStore,
     surface::card::{types::ModuleCard, Budget, FileRef, SourceStore, SymbolRef},
 };
 
@@ -88,30 +87,19 @@ fn collect_symbols(
     files: &[FileRef],
     budget: Budget,
 ) -> crate::Result<(Vec<SymbolRef>, usize)> {
-    // Build a file-id → path map for location formatting.
-    let path_map: HashMap<FileNodeId, &str> =
-        files.iter().map(|f| (f.id, f.path.as_str())).collect();
-
     let mut public_symbols: Vec<SymbolRef> = Vec::new();
     let mut total: usize = 0;
 
     for file_ref in files {
-        let defines = graph.outbound(NodeId::File(file_ref.id), Some(EdgeKind::Defines))?;
-        for edge in &defines {
-            let NodeId::Symbol(sym_id) = edge.to else {
-                continue;
-            };
-            total += 1;
-            // Only materialise symbol details at Normal+ budget.
-            if budget != Budget::Tiny {
-                if let Some(sym) = graph.get_symbol(sym_id)? {
-                    let file_path = path_map.get(&file_ref.id).copied().unwrap_or("");
-                    public_symbols.push(SymbolRef {
-                        id: sym_id,
-                        qualified_name: sym.qualified_name.clone(),
-                        location: format!("{}:{}", file_path, sym.body_byte_range.0),
-                    });
-                }
+        let symbols = graph.symbols_for_file(file_ref.id)?;
+        total += symbols.len();
+        if budget != Budget::Tiny {
+            for sym in &symbols {
+                public_symbols.push(SymbolRef {
+                    id: sym.id,
+                    qualified_name: sym.qualified_name.clone(),
+                    location: format!("{}:{}", file_ref.path, sym.body_byte_range.0),
+                });
             }
         }
     }

@@ -19,26 +19,23 @@ pub(super) fn file_card(
         .get_file(id)?
         .ok_or_else(|| crate::Error::Other(anyhow::anyhow!("file {id} not found")))?;
 
-    // Symbols defined in this file via Defines edges.
-    let defines = graph.outbound(NodeId::File(id), Some(EdgeKind::Defines))?;
+    // Symbols defined in this file.
+    let all_symbols = graph.symbols_for_file(id)?;
 
     let symbol_limit = match budget {
         Budget::Tiny => 10,
         _ => usize::MAX,
     };
 
-    let mut symbols: Vec<SymbolRef> = Vec::new();
-    for edge in defines.iter().take(symbol_limit) {
-        if let NodeId::Symbol(sym_id) = edge.to {
-            if let Some(sym) = graph.get_symbol(sym_id)? {
-                symbols.push(SymbolRef {
-                    id: sym_id,
-                    qualified_name: sym.qualified_name.clone(),
-                    location: format!("{}:{}", file.path, sym.body_byte_range.0),
-                });
-            }
-        }
-    }
+    let symbols: Vec<SymbolRef> = all_symbols
+        .iter()
+        .take(symbol_limit)
+        .map(|sym| SymbolRef {
+            id: sym.id,
+            qualified_name: sym.qualified_name.clone(),
+            location: format!("{}:{}", file.path, sym.body_byte_range.0),
+        })
+        .collect();
 
     // Files that import this file (inbound Imports edges).
     let inbound_imports = graph.inbound(NodeId::File(id), Some(EdgeKind::Imports))?;
