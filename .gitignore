@@ -17,6 +17,7 @@ __MACOSX
 !.gitignore
 !.agent/
 !.agents/
+!.github/
 
 # syntext
 .syntext/
