@@ -93,6 +93,7 @@ impl Drop for WatchGuard {
     }
 }
 
+#[cfg(unix)]
 #[test]
 fn foreground_watch_reports_status_and_stops_cleanly() {
     let repo = init_repo();
@@ -110,6 +111,7 @@ fn foreground_watch_reports_status_and_stops_cleanly() {
     }
 }
 
+#[cfg(unix)]
 #[test]
 fn daemon_watch_delegates_reconcile_and_surfaces_status() {
     let repo = init_repo();
@@ -123,6 +125,7 @@ fn daemon_watch_delegates_reconcile_and_surfaces_status() {
     assert!(status.contains("watch:        daemon mode"));
 }
 
+#[cfg(unix)]
 #[test]
 fn sync_fails_fast_while_watch_service_is_active() {
     let repo = init_repo();
