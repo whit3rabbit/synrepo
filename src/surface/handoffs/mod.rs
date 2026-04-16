@@ -143,7 +143,7 @@ mod tests {
         ];
 
         let mut sorted = items;
-        sorted.sort_by(|a, b| b.priority.cmp(&a.priority));
+        sorted.sort_by_key(|b| std::cmp::Reverse(b.priority));
 
         assert_eq!(sorted[0].priority, HandoffPriority::Critical);
         assert_eq!(sorted[1].priority, HandoffPriority::High);

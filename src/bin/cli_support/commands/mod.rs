@@ -11,6 +11,7 @@ mod handoffs;
 mod links;
 pub(crate) mod mcp;
 mod repair;
+mod setup;
 mod status;
 mod upgrade;
 mod watch;
@@ -26,6 +27,7 @@ pub(crate) use links::{findings, links_accept, links_list, links_reject, links_r
 pub(crate) use links::{findings_output, links_list_output, links_review_output};
 pub(crate) use mcp::run_mcp_server;
 pub(crate) use repair::{check, reconcile, sync};
+pub(crate) use setup::setup;
 pub(crate) use status::status;
 #[cfg(test)]
 #[allow(unused_imports)]

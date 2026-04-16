@@ -1,3 +1,7 @@
+// All helpers and tests in this file use the watch daemon, which requires Unix
+// sockets and is only supported on unix platforms.
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))]
+
 use std::{
     fs,
     path::{Path, PathBuf},

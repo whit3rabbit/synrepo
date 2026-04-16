@@ -1,78 +1,40 @@
 ---
 name: synrepo
-description: Use synrepo when working in a repository that contains a .synrepo/ directory. synrepo precomputes structural facts about the codebase and serves them as small token-budgeted cards through an MCP server. Reach for synrepo tools BEFORE reading source files cold. Cards are usually 10-20x smaller than the files they describe while containing the information you actually need for orientation, routing, and first-pass change impact assessment.
+description: Use synrepo when working in a repository that contains a .synrepo/ directory. synrepo precomputes structural facts about the codebase and serves them as small token-budgeted cards through an MCP server. Reach for synrepo tools BEFORE reading source files cold.
 ---
 
-# synrepo — skill for Claude
+# synrepo — skill for Claude Code
 
-synrepo is a context compiler. It turns a repository into small, deterministic, task-shaped packets called **cards** that Claude can query through an MCP server instead of reading whole files. A card for a function is roughly 180 tokens; the file containing the function might be 4000. Over a coding session this matters: fewer tokens means more room for the actual task.
+synrepo is a context compiler. It turns a repository into small, deterministic, task-shaped packets called **cards** that Claude can query through an MCP server instead of reading whole files.
+
+## Cleanest Workflow (Binary First)
+
+The recommended setup for a new repository is:
+
+1.  **Install local binary**: Ensure `synrepo` is available in your PATH.
+2.  **Initialize and Config**: Run `synrepo setup claude` in the repository root. This runs `synrepo init`, writes instructions, and registers the project-scoped MCP server in `.mcp.json`.
+3.  **Handoff to Claude Code**: Claude Code will automatically detect the MCP server and instructions.
+4.  **Watch Mode (Optional)**: Run `synrepo watch --daemon` if you want background refresh as you edit.
 
 ## Current surface
 
-**The MCP server is shipped.** Start it with:
+After setup, the MCP server exposes **twenty-one tools** for repository traversal and inspection. Use `synrepo_search` to find node IDs (format: `file_0000000000000042`, `symbol_0000000000000024`) before calling card or investigation tools.
 
-```
-synrepo mcp [--repo <path>]
-```
-
-It serves over stdio. After `synrepo init` populates the graph, the MCP server exposes **twenty-one tools** across three categories:
-
-### Task tools
+### Primary Tools
 | Tool | What it does |
 | --- | --- |
 | `synrepo_overview` | Graph stats + mode; your first call per session |
-| `synrepo_card(target, budget?)` | SymbolCard or FileCard for a file path or symbol name |
-| `synrepo_search(query, limit?)` | Lexical n-gram search; returns `{path, line, content}` results |
-| `synrepo_where_to_edit(task, limit?)` | Search + ranked file cards for a task description |
-| `synrepo_change_impact(target)` | Approximate inbound Imports+Calls showing what depends on target |
-| `synrepo_change_risk(target)` | Composite risk signal (beta): drift + co-change + hotspots |
-| `synrepo_call_path(target)` | Shortest path from entrypoints to target (file scope in v1) |
-| `synrepo_test_surface(scope)` | Test discovery via path-convention heuristics (beta) |
-| `synrepo_entrypoints(scope?, budget?)` | Heuristic entry-point detection: binaries, commands, handlers |
-| `synrepo_module_card(path, budget?)` | Directory-level summary: files, nested modules, public symbols |
-| `synrepo_public_api(path, budget?)` | Public surface: exported symbols with signatures (Rust-only visibility) |
-| `synrepo_minimum_context(target)` | Bounded 1-hop neighborhood around a focal symbol or file |
+| `synrepo_card(target, budget?)` | SymbolCard or FileCard for orientation and navigation |
+| `synrepo_search(query)` | Lexical search across indexed files |
+| `synrepo_where_to_edit(task)` | Search-ranked file suggestions for a task description |
+| `synrepo_change_impact(target)` | Approximate inbound dependencies showing what depends on target |
+| `synrepo_change_risk(target)` | Composite risk signal (drift + co-change + hotspots) |
 
-### Maintenance & Audit
-| Tool | What it does |
-| --- | --- |
-| `synrepo_refresh_commentary(target)` | Explicitly refresh LLM commentary for a symbol |
-| `synrepo_recent_activity(limit?, kinds?)` | Bounded operational history (beta) |
-| `synrepo_next_actions()` | Prioritized actionable items for human/agent review |
-| `synrepo_findings(node_id?)` | Machine-authored cross-link candidates with provenance |
+## Agent doctrine
 
-### Low-level Primitives
-| Tool | What it does |
-| --- | --- |
-| `synrepo_node(id)` | Raw node metadata as JSON |
-| `synrepo_edges(id, direction?)` | Raw edge traversal |
-| `synrepo_query(query)` | Basic graph query interface |
-| `synrepo_overlay(id)` | Inspect raw overlay storage for a node |
-| `synrepo_provenance(id)` | Trace ownership for a node or edge |
+synrepo is a code-context compiler. When `.synrepo/` exists in the repo root, prefer MCP tools (or the CLI fallback) over cold file reads for orientation and navigation.
 
-**Current limitations:** `SymbolCard.callers` and `.callees` are empty — the graph emits file→symbol `Calls` edges, not symbol→symbol. `synrepo_change_impact` and `synrepo_call_path` are routing aids built from these edges; overloaded names can produce false positives. `synrepo_public_api` visibility detection is Rust-specific; non-Rust repositories return empty symbol lists.
-
-**CLI is still the fallback** when the MCP server isn't running. See "Falling back when the MCP server isn't available" below.
-
-## When to use synrepo
-
-**Check first.** If the current working directory contains a `.synrepo/` folder, synrepo is available and you should prefer it over cold file reads for orientation and navigation. If there is no `.synrepo/` folder, this skill does not apply — fall back to normal file reading.
-
-**Always try synrepo before reading a file cold** when you are:
-- Orienting on an unfamiliar codebase
-- Looking for where a feature lives
-- Getting a first-pass view of what might break if you change something
-- Tracing how two pieces of code are connected at a high level
-- Finding the test surface for a symbol you're about to modify
-- Trying to understand a subsystem at a high level
-
-**Don't use synrepo for:**
-- Tiny files you're actively editing (just read them)
-- Files you already have in your working context from previous tool calls
-- Config files or simple text files that don't have symbols
-- Tasks where you've already seen the relevant source
-
-## Default path
+### Default path
 
 1. Start with search or entry-point discovery to find candidates.
 2. Use `tiny` cards to orient and route.
@@ -81,14 +43,14 @@ It serves over stdio. After `synrepo init` populates the graph, the MCP server e
 
 Overlay commentary and proposed cross-links are advisory, labeled machine-authored, and freshness-sensitive. Treat stale labels as information, not as errors. **Refresh is explicit**: every tool returns what is currently in the overlay. To get fresh commentary after a code change, you must call `synrepo_refresh_commentary(target)`.
 
-## Do not
+### Do not
 
 - Do not open large files first. Start at `tiny` and escalate only when a specific field forces it.
 - Do not treat overlay commentary as canonical. It is advisory prose layered on structural cards.
 - Do not trigger synthesis (`--generate-cross-links`, deep commentary refresh) unless the task justifies the cost.
 - Do not expect watch or background behavior unless `synrepo watch` is explicitly running.
 
-## Product boundary
+### Product boundary
 
 - synrepo stores code facts and bounded operational memory. It is not a task tracker, not session memory, and not cross-session agent memory.
 - Any handoff or next-action list is a derived recommendation regenerated from repo state. External task systems own assignment, status, and collaboration.
@@ -98,161 +60,14 @@ Overlay commentary and proposed cross-links are advisory, labeled machine-author
 
 There are two kinds of content in synrepo, and the distinction matters:
 
-- **Graph content** — facts that tree-sitter, git, or humans declared directly. Examples: "this function is defined at line 142," "this file imports that module," "this ADR frontmatter declares it governs `auth/middleware.rs`." Tagged `source_store: graph`, `epistemic_status: parser_observed | human_declared | git_observed`. **Treat graph content as the primary source of truth, but remember some current relationship surfaces are still approximate, especially change-impact hints built from file→symbol call resolution.**
+- **Graph content** — facts that tree-sitter, git, or humans declared directly. Tagged `source_store: graph`. **Treat graph content as the primary source of truth.**
+- **Overlay content** — things the LLM proposed (advisory commentary, findings). Tagged `source_store: overlay`. **Treat overlay content as helpful context, not ground truth.**
 
-- **Overlay content** — things the LLM proposed: cross-links between code and prose with cited evidence, natural-language commentary on top of structural cards, findings about contradictions. Tagged `source_store: overlay`, `epistemic_status: machine_authored_high_conf | machine_authored_low_conf`. **Treat overlay content as helpful context, not ground truth.** If overlay content contradicts graph content, ignore the overlay.
+## CLI fallback
 
-The current shipped MCP surface is graph-first. Overlay content is supplemental.
-
-## The tools, ranked by how often you should reach for them
-
-### The everyday tools
-
-**`synrepo_overview()`** — Your first call on an unfamiliar project. Returns repository mode plus graph counts and edge counts. Use it once per session to confirm what kind of graph is available before drilling in.
-
-**`synrepo_card(target, budget?)`** — Get a card for a specific symbol or file. Prefer this over reading the file cold when you need to understand what something is and how it is connected. Today this returns `SymbolCard` or `FileCard`.
-
-**`synrepo_where_to_edit(task, limit?)`** — Ask this when the user gives you a task and you do not know which files are relevant. It returns a small set of `FileCard` suggestions derived from lexical matches plus graph lookup.
-
-**`synrepo_change_impact(target)`** — Call this before you modify a file or symbol that may have dependents. Today it returns a first-pass list of impacted files discovered through inbound `Imports` and file→symbol `Calls` edges, plus a total count. Treat it as orientation and routing help, not exact blast-radius proof.
-
-**`synrepo_search(query, limit?)`** — Lexical n-gram search via syntext. This is the fallback when you cannot guess an exact symbol name or file path. Use it like grep: short queries, specific terms.
-
-**`synrepo_change_risk(target)`** — Call this before editing a focal symbol. It aggregates structural drift, co-change, and hotspots.
-
-### Specialized tools
-
-Reach for these when you have a specific routing or auditing question: `synrepo_call_path`, `synrepo_test_surface`, `synrepo_refresh_commentary`, `synrepo_recent_activity`.
-
-### The low-level escape hatches
-
-There is no MCP-side escape hatch yet. When the task-shaped MCP tools are not enough, drop to the CLI:
-
-- `synrepo node <id>` — raw node metadata as JSON
-- `synrepo graph query "inbound <id>"` / `"outbound <id> [edge_kind]"` — raw edge traversal
-- `synrepo graph stats` — node and edge counts
-- `synrepo findings [--node <id>] [--freshness <state>]` — overlay audit details
-
-## The budget protocol
-
-Every card-returning tool takes a `budget` parameter. Default is `tiny`. You should almost always start with `tiny` and escalate only when you need more.
-
-| Budget | Roughly | When to use |
-| --- | --- | --- |
-| `tiny` (default) | ~200 tokens per card, ~1k total | Orientation, routing, "which files matter," "is this the right file" |
-| `normal` | ~500 per card, ~3k total | You've narrowed in on a specific symbol and need to understand its interface and behavior |
-| `deep` | ~2k per card, ~10k total | You are about to write code that depends on the exact source, or you need the full text of a function body |
-
-**Rule of thumb:** `tiny` to find, `normal` to understand, `deep` to write.
-
-If you find yourself repeatedly escalating from `tiny` to `normal` on the same targets, the `tiny` tier wasn't what you needed — adjust and request `normal` directly next time in the session.
-
-## Budget Escalation
-
-The three budget tiers are a deliberate three-step interaction pattern, not a size knob. Always start at `tiny` or `normal` to orient, then escalate only when a specific field forces it.
-
-**Decision rule:**
-
-1. Start with `tiny` for any unfamiliar symbol or file. The response includes name, location, edge counts, and co-change state — enough to decide relevance.
-2. Escalate to `normal` when you have confirmed relevance and need the interface: signature, doc comment, neighbor summaries, co-change partners.
-3. Escalate to `deep` only when you must read or write the implementation. `deep` adds source body, full overlay commentary, and full neighbor cards.
-
-**Do not default to `deep`.** Deep reads consume 10-15x more tokens than `tiny`. A pattern of `synrepo_card(target, budget: "deep")` on first contact is wasteful; use `tiny` first.
-
-**Budget is preserved in every response.** Each card and neighborhood response includes a `budget` field so you can confirm which tier was served without inspecting field presence.
-
-- **Graph-sourced fields are the current truth.** The server reads structural data from the graph.
-- **Refresh is explicit.** Commentary and cross-links are refreshed via `synrepo_refresh_commentary` (MCP) or `synrepo sync` (CLI).
-
-## Concrete examples
-
-### Example 1: User asks "Add rate limiting to all API endpoints"
-
-Good sequence:
-1. `synrepo_overview()` — orient on an unfamiliar project
-2. `synrepo_where_to_edit(task: "add rate limiting to all API endpoints", limit: 5)` — get ranked file candidates
-3. `synrepo_card(target: "middleware/auth.ts", budget: "normal")` — understand the existing middleware chain before adding to it
-4. `synrepo_change_impact(target: "middleware/auth.ts")` — get a first-pass blast radius before opening files
-5. `synrepo_card(target: "middleware/auth.ts", budget: "deep")` — now get the full source because you're about to modify it
-
-Note: this stays within the shipped five-tool surface and gets you to the real source only after narrowing the target.
-
-### Example 2: User asks "What does parse_query do?"
-
-Good sequence:
-1. `synrepo_card(target: "parse_query", budget: "normal")` — done
-
-That's it. One tool call, ~500 tokens, answer includes the current structural fields that are actually compiled, usually signature, doc comment, and identity/location. Don't escalate to `deep` unless the user specifically asks for the implementation.
-
-### Example 3: User asks "Find everywhere we call fetch()"
-
-Good sequence:
-1. `synrepo_search("fetch(")` — lexical search via syntext, returns file paths and snippets
-
-Don't use `synrepo_card` or `synrepo_where_to_edit` for this — it's a pure lexical question and `synrepo_search` is the right tool.
-
-**Don't ignore the budget.** escalating to `deep` budget consumes 10-20x more tokens. Start with `tiny`.
-
-**Don't read the source file cold after getting a card.** The card probably already contains what you needed. If you find yourself doing `synrepo_card` followed by `Read` on the same file, either you needed `deep` budget on the card, or you needed something the card doesn't contain (rare), or you needed exact proof beyond the current card surface.
-
-**Don't trust overlay content over graph content.** If an overlay commentary says "this function uses JWT" and the graph shows the function doesn't import any JWT library, the overlay is wrong. The graph is always right about what the code currently is.
-
-## What synrepo is NOT
-
-- **Not a documentation wiki.** There is no `wiki/` directory by default. Cards are compiled from live graph data, not stored prose.
-- **Not a vector search product.** Embeddings exist only as a candidate generator for the cross-linking layer. All retrieval the agent uses is structural or lexical.
-- **Not a summary generator.** Cards are structured records, not prose. If you need prose explanation, that is still a later surface.
-- **Not a replacement for reading source.** It is a way to avoid reading source *unnecessarily*. When you genuinely need to see the implementation, escalate to `deep` budget or read the file directly.
-
-## Health checking and repair
-
-Two new commands are available for detecting and repairing stale surfaces:
-
-**`synrepo check [--json]`** — Read-only drift report. Runs without acquiring the writer lock. Each named surface (storage, graph currency, writer lock, declared links, overlay gaps) gets one finding with a drift class, severity, and recommended action. Use this in CI to detect drift without mutating state. Exits non-zero when actionable or blocked findings are present.
-
-```
-synrepo check          # human-readable report
-synrepo check --json   # machine-readable JSON (one RepairReport object)
-```
-
-**`synrepo sync [--json]`** — Targeted repair. Runs storage maintenance for stale stores and a structural reconcile for stale graph state. Report-only and unsupported findings (overlay, exports, stale rationale) are surfaced but left untouched. Appends one JSONL line to `.synrepo/state/repair-log.jsonl` after each run.
-
-```
-synrepo sync           # repair + human-readable summary
-synrepo sync --json    # repair + JSON summary
-```
-
-The resolution log at `.synrepo/state/repair-log.jsonl` records every sync run: timestamp, scope, findings, actions taken, and outcome. Use it to audit what was detected and repaired across a session or CI run.
-
-## Falling back when the MCP server isn't available
-
-If the MCP server is not running in your environment, use the CLI directly.
-
-```
-# Check health before anything else
-synrepo status
-synrepo check          # drift report across all repair surfaces
-
-# Find a symbol or file name
-synrepo search "parse_query"
-
-# Dump a node's metadata (replace the ID with output from search or graph stats)
-synrepo node symbol_0000000000000024
-
-# See what depends on a node (outbound = what this node depends on)
-synrepo graph query "inbound symbol_0000000000000024"
-synrepo graph query "outbound symbol_0000000000000024 defines"
-
-# See overall graph counts
-synrepo graph stats
-
-# Refresh the graph if sources changed
-synrepo reconcile      # one-shot structural refresh
-synrepo sync           # targeted repair (maintenance + reconcile as needed)
-```
-
-Each CLI call pays startup cost (~100ms), so batch your queries where possible. Use `synrepo search` first to find node IDs, then use `synrepo node` and `synrepo graph query` to explore from there.
-
-The `synrepo_*` tools listed above are the current preferred interface when the MCP server is running. The CLI is the escape hatch for environments where it is not.
-
-If neither the MCP server nor the CLI is available, fall back to normal file reading — this skill does not apply.
+If the MCP server is not running, use the CLI directly:
+- `synrepo status` — health and graph counts
+- `synrepo search <query>` — find symbols or files
+- `synrepo node <id>` — dump node metadata
+- `synrepo graph query "inbound <id>"` — reverse dependencies
+- `synrepo reconcile` — refresh the graph after source changes

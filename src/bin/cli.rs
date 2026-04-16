@@ -27,7 +27,7 @@ use cli_support::commands::report_reconcile_outcome;
 use cli_support::commands::{
     agent_setup, change_risk, check, compact, export, findings, graph_query, graph_stats, handoffs,
     init, links_accept, links_list, links_reject, links_review, node, reconcile, run_mcp_server,
-    search, status, sync, upgrade, watch, watch_internal, watch_status, watch_stop,
+    search, setup, status, sync, upgrade, watch, watch_internal, watch_status, watch_stop,
 };
 
 fn main() -> anyhow::Result<()> {
@@ -48,6 +48,7 @@ fn main() -> anyhow::Result<()> {
         Command::Init { mode } => init(&repo_root, mode.map(Into::into)),
         Command::Status { json, recent } => status(&repo_root, json, recent),
         Command::AgentSetup { tool, force, regen } => agent_setup(&repo_root, tool, force, regen),
+        Command::Setup { tool, force } => setup(&repo_root, tool, force),
         Command::Reconcile => reconcile(&repo_root),
         Command::Check { json } => check(&repo_root, json),
         Command::Sync {

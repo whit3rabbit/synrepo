@@ -51,6 +51,8 @@ pub(crate) enum Command {
     /// Writes a named fragment file and prints the one-line include instruction.
     /// Never modifies existing configuration files. Use `--force` to overwrite,
     /// or `--regen` to compare and overwrite only if the content has changed.
+    ///
+    /// For a full onboarding flow (init + shim + MCP registration), use `synrepo setup`.
     AgentSetup {
         /// Target agent CLI.
         tool: AgentTool,
@@ -60,6 +62,19 @@ pub(crate) enum Command {
         /// Compare existing file against the current template; overwrite if different.
         #[arg(long)]
         regen: bool,
+    },
+
+    /// full onboarding flow for a specific agent client.
+    ///
+    /// This is the recommended first-run command. It runs `synrepo init`,
+    /// writes the client-specific instructions or shim, and registers the
+    /// synrepo MCP server in the project's local configuration (where supported).
+    Setup {
+        /// Target client to set up.
+        tool: AgentTool,
+        /// Force re-initialization and overwrite existing configs.
+        #[arg(long)]
+        force: bool,
     },
 
     /// Run a structural compile pass against the current repository state.

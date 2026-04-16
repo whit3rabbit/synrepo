@@ -9,6 +9,7 @@ fn test_display_name() {
     assert_eq!(AgentTool::Generic.display_name(), "generic (AGENTS.md)");
     assert_eq!(AgentTool::Codex.display_name(), "Codex CLI");
     assert_eq!(AgentTool::Windsurf.display_name(), "Windsurf");
+    assert_eq!(AgentTool::OpenCode.display_name(), "OpenCode");
 }
 
 #[test]
@@ -38,6 +39,10 @@ fn test_output_path() {
         AgentTool::Windsurf.output_path(repo_root),
         repo_root.join(".windsurf").join("rules").join("synrepo.md")
     );
+    assert_eq!(
+        AgentTool::OpenCode.output_path(repo_root),
+        repo_root.join("AGENTS.md")
+    );
 }
 
 #[test]
@@ -60,6 +65,9 @@ fn test_include_instruction() {
     assert!(AgentTool::Windsurf
         .include_instruction()
         .contains(".windsurf/rules/synrepo.md"));
+    assert!(AgentTool::OpenCode
+        .include_instruction()
+        .contains("AGENTS.md"));
 }
 
 #[test]
@@ -78,6 +86,9 @@ fn test_shim_content_framing() {
     assert!(AgentTool::Windsurf
         .shim_content()
         .starts_with("# synrepo\n"));
+    assert!(AgentTool::OpenCode
+        .shim_content()
+        .starts_with("# synrepo context (OpenCode)"));
 }
 
 /// Guard against runaway edits to the doctrine block.
@@ -102,6 +113,7 @@ fn every_shim_embeds_doctrine_block() {
         AgentTool::Generic,
         AgentTool::Codex,
         AgentTool::Windsurf,
+        AgentTool::OpenCode,
     ] {
         assert!(
             tool.shim_content().contains(DOCTRINE_BLOCK),

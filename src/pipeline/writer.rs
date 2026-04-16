@@ -391,7 +391,7 @@ pub(super) fn now_rfc3339() -> String {
 
 /// Spawn a short-lived child process and wait for it to exit, returning
 /// its (now-dead) PID. Used in tests to obtain a reliably dead PID.
-#[cfg(test)]
+#[cfg(all(test, unix))]
 fn spawn_and_reap_pid() -> u32 {
     let mut child = std::process::Command::new("true")
         .stdout(std::process::Stdio::null())

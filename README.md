@@ -18,11 +18,25 @@
 
 ## Quick Start
 
+The cleanest workflow to get `synrepo` running is:
+
+1.  **Install the binary**: Ensure `synrepo` is in your PATH.
+2.  **Run setup**: In your repository root, run:
+    ```bash
+    synrepo setup claude    # or cursor, codex, opencode, etc.
+    ```
+    This runs `init`, writes client-specific instructions, and registers the project-scoped MCP server where possible.
+3.  **Use the agent**: Your agent (e.g., Claude Code, Cursor) will now load synrepo context via MCP.
+4.  **Watch (Optional)**: If you want background refresh as you edit:
+    ```bash
+    synrepo watch --daemon
+    ```
+
+For low-level inspection:
 ```bash
-cargo run -- init
-cargo run -- status
-cargo run -- search "query"
-cargo run -- graph stats
+synrepo status
+synrepo search "query"
+synrepo graph stats
 ```
 
 ## How synrepo compares

@@ -256,3 +256,45 @@ synrepo findings                       # findings report
 ```
 "
 );
+
+pub(crate) const OPENCODE_SHIM: &str = concat!(
+    "\
+# synrepo context (OpenCode)
+
+synrepo precomputes a structural graph of this codebase from tree-sitter parsing and git history.
+
+",
+    doctrine_block!(),
+    "
+## MCP tools (primary interface)
+
+OpenCode supports these tools when the synrepo MCP server is registered in `opencode.json`:
+
+- `synrepo_card target=<id> budget=<tiny|normal|deep>` — structured card for a file or symbol.
+- `synrepo_search query=<text>` — lexical search.
+- `synrepo_overview` — graph counts and mode summary.
+- `synrepo_where_to_edit task=<description>` — file suggestions for a task.
+- `synrepo_change_impact target=<id>` — first-pass reverse dependencies.
+- `synrepo_minimum_context target=<id> budget=<...>` — budget-bounded 1-hop neighborhood.
+- `synrepo_entrypoints` — entry-point discovery.
+- `synrepo_findings [node_id=<id>]` — operator-facing cross-link findings.
+- `synrepo_recent_activity` — bounded synrepo operational events.
+
+Use `synrepo_search` to find node IDs (format: `file_0000000000000042`, `symbol_0000000000000024`).
+
+## CLI fallback
+
+```bash
+synrepo status                                   # health check
+synrepo status --recent                          # bounded operational history
+synrepo search <query>                           # lexical search
+synrepo node <id>                                # node metadata as JSON
+synrepo graph query \"inbound <node_id>\"          # reverse dependencies
+synrepo graph query \"outbound <node_id>\"         # forward dependencies
+synrepo graph stats                              # node and edge counts
+synrepo reconcile                                # refresh graph
+synrepo links list                               # cross-link candidates
+synrepo findings                                 # findings report
+```
+"
+);

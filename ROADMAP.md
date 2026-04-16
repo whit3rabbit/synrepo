@@ -8,6 +8,7 @@
 | Change | Purpose | Status |
 |--------|---------|--------|
 | [`workflow-handoffs-v1`](openspec/changes/workflow-handoffs-v1/) | Derived `synrepo_next_actions` MCP tool + `synrepo handoffs` CLI; reads repair report, overlay candidates, git hotspots — no new mutable store | In progress |
+| `onboarding-overhaul-v1` | `synrepo setup <client>` command, OpenCode support, and clean binary-first workflow | Shipped |
 
 ---
 

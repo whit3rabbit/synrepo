@@ -14,7 +14,9 @@ mod shims;
 #[cfg(test)]
 mod tests;
 
-use shims::{CLAUDE_SHIM, CODEX_SHIM, COPILOT_SHIM, CURSOR_SHIM, GENERIC_SHIM, WINDSURF_SHIM};
+use shims::{
+    CLAUDE_SHIM, CODEX_SHIM, COPILOT_SHIM, CURSOR_SHIM, GENERIC_SHIM, OPENCODE_SHIM, WINDSURF_SHIM,
+};
 
 /// Agent CLI target for shim generation.
 #[derive(Clone, Copy, Debug, clap::ValueEnum)]
@@ -31,6 +33,8 @@ pub(crate) enum AgentTool {
     Codex,
     /// Windsurf — writes `.windsurf/rules/synrepo.md`
     Windsurf,
+    /// OpenCode — writes `AGENTS.md`
+    OpenCode,
 }
 
 impl AgentTool {
@@ -43,6 +47,7 @@ impl AgentTool {
             AgentTool::Generic => "generic (AGENTS.md)",
             AgentTool::Codex => "Codex CLI",
             AgentTool::Windsurf => "Windsurf",
+            AgentTool::OpenCode => "OpenCode",
         }
     }
 
@@ -55,6 +60,7 @@ impl AgentTool {
             AgentTool::Generic => repo_root.join("synrepo-agents.md"),
             AgentTool::Codex => repo_root.join(".codex").join("instructions.md"),
             AgentTool::Windsurf => repo_root.join(".windsurf").join("rules").join("synrepo.md"),
+            AgentTool::OpenCode => repo_root.join("AGENTS.md"),
         }
     }
 
@@ -80,6 +86,7 @@ impl AgentTool {
             AgentTool::Windsurf => {
                 "Windsurf loads `.windsurf/rules/synrepo.md` as a project rule automatically."
             }
+            AgentTool::OpenCode => "OpenCode loads `AGENTS.md` as a project rule automatically.",
         }
     }
 
@@ -92,6 +99,7 @@ impl AgentTool {
             AgentTool::Generic => GENERIC_SHIM,
             AgentTool::Codex => CODEX_SHIM,
             AgentTool::Windsurf => WINDSURF_SHIM,
+            AgentTool::OpenCode => OPENCODE_SHIM,
         }
     }
 }

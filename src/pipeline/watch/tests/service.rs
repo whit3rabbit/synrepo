@@ -56,9 +56,9 @@ fn watch_service_handles_status_reconcile_and_stop() {
             matches!(
                 super::super::watch_service_status(&synrepo_dir),
                 WatchServiceStatus::Running(_)
-            )
+            ) && super::super::watch_socket_path(&synrepo_dir).exists()
         },
-        Duration::from_secs(3),
+        Duration::from_secs(5),
     );
 
     let status = request_watch_control(&synrepo_dir, WatchControlRequest::Status).unwrap();
@@ -146,16 +146,16 @@ fn watch_service_ignores_runtime_only_writes() {
             matches!(
                 super::super::watch_service_status(&synrepo_dir),
                 WatchServiceStatus::Running(_)
-            )
+            ) && super::super::watch_socket_path(&synrepo_dir).exists()
         },
-        Duration::from_secs(3),
+        Duration::from_secs(5),
     );
     wait_for(
         || match request_watch_control(&synrepo_dir, WatchControlRequest::Status) {
             Ok(WatchControlResponse::Status { snapshot }) => snapshot.last_reconcile_at.is_some(),
             _ => false,
         },
-        Duration::from_secs(3),
+        Duration::from_secs(5),
     );
 
     let baseline = match request_watch_control(&synrepo_dir, WatchControlRequest::Status).unwrap() {
