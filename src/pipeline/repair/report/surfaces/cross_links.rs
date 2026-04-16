@@ -1,6 +1,4 @@
-use crate::pipeline::repair::{
-    DriftClass, RepairAction, RepairFinding, RepairSurface, Severity,
-};
+use crate::pipeline::repair::{DriftClass, RepairAction, RepairFinding, RepairSurface, Severity};
 
 use super::{RepairContext, SurfaceCheck};
 

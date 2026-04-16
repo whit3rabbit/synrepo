@@ -55,7 +55,10 @@ pub(crate) fn links_list(
     limit: Option<usize>,
     json_output: bool,
 ) -> anyhow::Result<()> {
-    print!("{}", links_list_output(repo_root, tier, limit, json_output)?);
+    print!(
+        "{}",
+        links_list_output(repo_root, tier, limit, json_output)?
+    );
     Ok(())
 }
 
