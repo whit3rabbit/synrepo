@@ -11,7 +11,8 @@ use crate::core::ids::{FileNodeId, NodeId, SymbolNodeId};
 
 pub mod compiler;
 pub mod decision;
-mod git;
+/// Git-derived intelligence types for cards.
+pub mod git;
 pub use compiler::neighborhood;
 mod types;
 
