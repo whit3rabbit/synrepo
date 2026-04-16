@@ -3,6 +3,7 @@ use std::path::Path;
 use synrepo::{
     config::Config,
     pipeline::export::{write_exports, ExportFormat},
+    pipeline::writer::{acquire_write_admission, map_lock_error},
     surface::card::Budget,
 };
 
@@ -17,6 +18,13 @@ pub(crate) fn export(
     let mut config = Config::load(repo_root)
         .map_err(|e| anyhow::anyhow!("export: not initialized — run `synrepo init` first ({e})"))?;
     let synrepo_dir = Config::synrepo_dir(repo_root);
+
+    // Hold the writer lock for the full duration: prevents the graph epoch
+    // from advancing mid-export and producing a manifest inconsistent with
+    // the rendered cards, and blocks concurrent writers that could leave
+    // partial output in the export directory or .gitignore.
+    let _writer_lock = acquire_write_admission(&synrepo_dir, "export")
+        .map_err(|err| map_lock_error("export", err))?;
 
     if let Some(out_dir) = out {
         config.export_dir = out_dir;
