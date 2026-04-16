@@ -16,7 +16,6 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 
 use crate::config::Config;
-use crate::overlay::OverlayStore;
 use crate::surface::card::compiler::GraphCardCompiler;
 
 pub mod audit;
@@ -29,27 +28,47 @@ mod findings;
 
 /// Shared read-only state held across all MCP tool invocations.
 ///
-/// Note on concurrency: `SqliteGraphStore` holds a single connection and a
-/// re-entrant `snapshot_depth` counter. The counter is safe for nested
-/// calls on one logical request (a handler wraps its body and
-/// `GraphCardCompiler` wraps each internal method) but NOT for two
-/// concurrent requests sharing the same store handle. The MCP transport
-/// must serialise tool invocations at the request boundary so
-/// `begin_read_snapshot`/`end_read_snapshot` always returns to depth 0
-/// between requests; otherwise concurrent requests piggyback on one
-/// another's snapshot epoch and the open transaction never commits,
-/// growing the WAL unbounded under load. The binary-side `SynrepoServer`
-/// owns a `tokio::sync::Mutex` for that purpose; this library type stays
-/// synchronous.
+/// In previous versions, this held a single shared `GraphCardCompiler`.
+/// However, `SqliteGraphStore` is not safe for concurrent requests sharing
+/// one handle because of its re-entrant `snapshot_depth` counter.
+///
+/// We now store the paths and configuration needed to instantiate a fresh,
+/// request-local compiler for every tool invocation. This allows multiple
+/// concurrent tool requests to hold independent read snapshots in WAL mode,
+/// preventing "snapshot piggybacking" and unbounded WAL growth.
 pub struct SynrepoState {
-    /// The card compiler, which owns the graph store handle.
-    pub compiler: GraphCardCompiler,
     /// Runtime configuration loaded from `.synrepo/config.toml`.
     pub config: Config,
     /// Absolute path to the repository root.
     pub repo_root: PathBuf,
-    /// Overlay store handle shared with the compiler.
-    pub overlay: Arc<Mutex<dyn OverlayStore>>,
+}
+
+impl SynrepoState {
+    /// Create a fresh, request-local compiler.
+    ///
+    /// The caller is responsible for holding the handle for the duration of
+    /// a single tool request and then dropping it to release the SQLite
+    /// connections and their associated snapshots.
+    pub fn create_compiler(&self) -> crate::Result<crate::surface::card::compiler::GraphCardCompiler> {
+        use crate::store::sqlite::SqliteGraphStore;
+        use crate::store::overlay::SqliteOverlayStore;
+
+        let synrepo_dir = Config::synrepo_dir(&self.repo_root);
+        let graph_dir = synrepo_dir.join("graph");
+        let overlay_dir = synrepo_dir.join("overlay");
+
+        let graph = SqliteGraphStore::open_existing(&graph_dir)?;
+        let overlay = SqliteOverlayStore::open_existing(&overlay_dir).ok();
+
+        let mut compiler = GraphCardCompiler::new(Box::new(graph), Some(self.repo_root.clone()))
+            .with_config(self.config.clone());
+
+        if let Some(overlay) = overlay {
+            compiler = compiler.with_overlay(Some(Arc::new(Mutex::new(overlay))), None);
+        }
+
+        Ok(compiler)
+    }
 }
 
 const _: () = {

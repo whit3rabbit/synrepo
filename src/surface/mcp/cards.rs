@@ -3,9 +3,7 @@ use serde::Deserialize;
 
 use crate::{core::ids::NodeId, surface::card::CardCompiler};
 
-use super::helpers::{
-    attach_decision_cards, lift_commentary_text, parse_budget, render_result, with_graph_snapshot,
-};
+use super::helpers::{attach_decision_cards, lift_commentary_text, parse_budget, with_mcp_compiler};
 use super::SynrepoState;
 
 /// Parameters for the `synrepo_card` tool.
@@ -85,98 +83,77 @@ pub struct TestSurfaceParams {
 
 pub fn handle_card(state: &SynrepoState, target: String, budget: String) -> String {
     let budget = parse_budget(&budget);
-    let result = with_graph_snapshot(state.compiler.graph(), || {
-        let node_id = state
-            .compiler
+    with_mcp_compiler(state, |compiler| {
+        let node_id = compiler
             .resolve_target(&target)?
             .ok_or_else(|| anyhow::anyhow!("target not found: {target}"))?;
 
         match node_id {
             NodeId::Symbol(sym_id) => {
-                let card = state.compiler.symbol_card(sym_id, budget)?;
+                let card = compiler.symbol_card(sym_id, budget)?;
                 let mut json_val = serde_json::to_value(&card)?;
                 lift_commentary_text(&mut json_val);
-                attach_decision_cards(
-                    &mut json_val,
-                    NodeId::Symbol(sym_id),
-                    state.compiler.graph(),
-                    budget,
-                )?;
+                attach_decision_cards(&mut json_val, NodeId::Symbol(sym_id), compiler.graph(), budget)?;
                 Ok(json_val)
             }
             NodeId::File(file_id) => {
-                let card = state.compiler.file_card(file_id, budget)?;
+                let card = compiler.file_card(file_id, budget)?;
                 let mut json_val = serde_json::to_value(&card)?;
-                attach_decision_cards(
-                    &mut json_val,
-                    NodeId::File(file_id),
-                    state.compiler.graph(),
-                    budget,
-                )?;
+                attach_decision_cards(&mut json_val, NodeId::File(file_id), compiler.graph(), budget)?;
                 Ok(json_val)
             }
             NodeId::Concept(concept_id) => {
-                let concept = state
-                    .compiler
+                let concept = compiler
                     .graph()
                     .get_concept(concept_id)?
                     .ok_or_else(|| anyhow::anyhow!("concept not found"))?;
                 Ok(serde_json::to_value(&concept)?)
             }
         }
-    });
-    render_result(result)
+    })
 }
 
 pub fn handle_entrypoints(state: &SynrepoState, scope: Option<String>, budget: String) -> String {
     let budget = parse_budget(&budget);
-    let result: anyhow::Result<serde_json::Value> =
-        with_graph_snapshot(state.compiler.graph(), || {
-            let card = state.compiler.entry_point_card(scope.as_deref(), budget)?;
-            Ok(serde_json::to_value(&card)?)
-        });
-    render_result(result)
+    with_mcp_compiler(state, |compiler| {
+        let card = compiler.entry_point_card(scope.as_deref(), budget)?;
+        Ok(serde_json::to_value(&card)?)
+    })
 }
 
 pub fn handle_module_card(state: &SynrepoState, path: String, budget: String) -> String {
     let budget = parse_budget(&budget);
-    let result: anyhow::Result<serde_json::Value> =
-        with_graph_snapshot(state.compiler.graph(), || {
-            let card = state.compiler.module_card(&path, budget)?;
-            Ok(serde_json::to_value(&card)?)
-        });
-    render_result(result)
+    with_mcp_compiler(state, |compiler| {
+        let card = compiler.module_card(&path, budget)?;
+        Ok(serde_json::to_value(&card)?)
+    })
 }
 
 pub fn handle_public_api(state: &SynrepoState, path: String, budget: String) -> String {
     let budget = parse_budget(&budget);
-    let result: anyhow::Result<serde_json::Value> =
-        with_graph_snapshot(state.compiler.graph(), || {
-            let card = state.compiler.public_api_card(&path, budget)?;
-            Ok(serde_json::to_value(&card)?)
-        });
-    render_result(result)
+    with_mcp_compiler(state, |compiler| {
+        let card = compiler.public_api_card(&path, budget)?;
+        Ok(serde_json::to_value(&card)?)
+    })
 }
 
 pub fn handle_minimum_context(state: &SynrepoState, target: String, budget: String) -> String {
     let budget = parse_budget(&budget);
-    let result = with_graph_snapshot(state.compiler.graph(), || {
+    with_mcp_compiler(state, |compiler| {
         let response = crate::surface::card::neighborhood::resolve_neighborhood(
-            &state.compiler,
+            compiler,
             &target,
             budget,
         )?;
         Ok(serde_json::to_value(&response)?)
-    });
-    render_result(result)
+    })
 }
 
 pub fn handle_call_path(state: &SynrepoState, target: String, budget: String) -> String {
     let budget = parse_budget(&budget);
-    let result = with_graph_snapshot(state.compiler.graph(), || {
+    with_mcp_compiler(state, |compiler| {
         // Resolve target to a symbol node ID.
-        let node_id = state
-            .compiler
+        let node_id = compiler
             .resolve_target(&target)?
             .ok_or_else(|| anyhow::anyhow!("target not found: {target}"))?;
 
@@ -190,17 +167,15 @@ pub fn handle_call_path(state: &SynrepoState, target: String, budget: String) ->
             }
         };
 
-        let card = state.compiler.call_path_card(sym_id, budget)?;
+        let card = compiler.call_path_card(sym_id, budget)?;
         Ok(serde_json::to_value(&card)?)
-    });
-    render_result(result)
+    })
 }
 
 pub fn handle_test_surface(state: &SynrepoState, scope: String, budget: String) -> String {
     let budget = parse_budget(&budget);
-    let result = with_graph_snapshot(state.compiler.graph(), || {
-        let card = state.compiler.test_surface_card(&scope, budget)?;
+    with_mcp_compiler(state, |compiler| {
+        let card = compiler.test_surface_card(&scope, budget)?;
         Ok(serde_json::to_value(&card)?)
-    });
-    render_result(result)
+    })
 }

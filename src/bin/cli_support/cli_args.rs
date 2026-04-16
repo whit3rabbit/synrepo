@@ -7,6 +7,7 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use synrepo::config::Mode;
 use synrepo::pipeline::export::ExportFormat;
+use synrepo::pipeline::maintenance::CompactPolicy;
 
 use super::agent_shims::AgentTool;
 
@@ -150,6 +151,21 @@ pub(crate) enum Command {
         apply: bool,
     },
 
+    /// Compact overlay, state, and index stores to reclaim disk space.
+    ///
+    /// Dry-run by default: prints a plan (compactable counts by component) and exits.
+    /// Pass `--apply` to execute the compaction actions: compact stale commentary,
+    /// summarize old cross-link audit rows, rotate the repair-log, run WAL checkpoint,
+    /// and optionally rebuild the index.
+    Compact {
+        /// Execute the compaction actions instead of printing a dry-run plan.
+        #[arg(long)]
+        apply: bool,
+        /// Retention policy preset (default, aggressive, audit_heavy).
+        #[arg(long, value_enum, default_value = "default")]
+        policy: CompactPolicyArg,
+    },
+
     /// Generate export files (markdown or JSON snapshots) in the configured export directory.
     ///
     /// Produces `synrepo-context/` (or the configured directory) with rendered card output.
@@ -283,6 +299,23 @@ impl From<ModeArg> for Mode {
         match mode {
             ModeArg::Auto => Mode::Auto,
             ModeArg::Curated => Mode::Curated,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+pub(crate) enum CompactPolicyArg {
+    Default,
+    Aggressive,
+    AuditHeavy,
+}
+
+impl From<CompactPolicyArg> for CompactPolicy {
+    fn from(arg: CompactPolicyArg) -> Self {
+        match arg {
+            CompactPolicyArg::Default => CompactPolicy::Default,
+            CompactPolicyArg::Aggressive => CompactPolicy::Aggressive,
+            CompactPolicyArg::AuditHeavy => CompactPolicy::AuditHeavy,
         }
     }
 }

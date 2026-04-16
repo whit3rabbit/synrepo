@@ -4,6 +4,7 @@ use std::path::Path;
 use synrepo::{
     config::Config,
     pipeline::{
+        compact::load_last_compaction_timestamp,
         diagnostics::{collect_diagnostics, ReconcileHealth, RuntimeDiagnostics, WriterStatus},
         export::load_manifest,
         recent_activity::{read_recent_activity, ActivityEntry, RecentActivityQuery},
@@ -57,6 +58,7 @@ pub(crate) fn status_output(repo_root: &Path, json: bool, recent: bool) -> anyho
 
     let export_freshness = export_freshness_summary(repo_root, &synrepo_dir, &config);
     let overlay_cost = overlay_cost_summary(&synrepo_dir);
+    let last_compaction = load_last_compaction_timestamp(&synrepo_dir);
 
     let recent_entries: Option<Vec<ActivityEntry>> = if recent {
         let query = RecentActivityQuery {
@@ -78,6 +80,7 @@ pub(crate) fn status_output(repo_root: &Path, json: bool, recent: bool) -> anyho
             &export_freshness,
             &overlay_cost,
             recent_entries.as_deref(),
+            last_compaction.as_ref(),
         )?;
         return Ok(out);
     }
@@ -154,6 +157,11 @@ pub(crate) fn status_output(repo_root: &Path, json: bool, recent: bool) -> anyho
     .unwrap();
     writeln!(out, "  export:       {export_freshness}").unwrap();
     writeln!(out, "  overlay cost: {overlay_cost}").unwrap();
+    if let Some(ts) = last_compaction {
+        writeln!(out, "  last compact:  {}", ts).unwrap();
+    } else {
+        writeln!(out, "  last compact:  never").unwrap();
+    }
     writeln!(
         out,
         "  next step:    {}",
@@ -191,6 +199,7 @@ fn write_status_json(
     export_freshness: &str,
     overlay_cost: &str,
     recent_activity: Option<&[ActivityEntry]>,
+    last_compaction: Option<&time::OffsetDateTime>,
 ) -> anyhow::Result<()> {
     let graph_json = match graph_stats {
         Some(stats) => serde_json::json!({
@@ -237,6 +246,7 @@ fn write_status_json(
         "export_freshness": export_freshness,
         "overlay_cost_summary": overlay_cost,
         "recent_activity": activity_json,
+        "last_compaction_timestamp": last_compaction.map(|ts| ts.to_string()),
     });
 
     writeln!(out, "{}", serde_json::to_string_pretty(&output)?).unwrap();

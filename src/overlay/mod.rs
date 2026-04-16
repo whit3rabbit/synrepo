@@ -8,11 +8,13 @@
 //! output as retrieval input. This is enforced both physically (overlay
 //! lives in a separate sqlite database from the graph) and at the retrieval
 //! layer (synthesis queries filter on `source_store = "graph"`).
+//!
 
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::core::ids::NodeId;
+use crate::pipeline::maintenance::{CompactPolicy, CompactStats};
 
 /// Epistemic origin of an overlay entry. These variants cannot appear in
 /// the canonical graph — the type system enforces the boundary.
@@ -146,6 +148,8 @@ pub struct CrossLinkProvenance {
 pub enum CrossLinkState {
     /// Candidate is active (either awaiting review or surfaced at `High` tier).
     Active,
+    /// Candidate is in the mid-promotion window (atomicity bridge).
+    PendingPromotion,
     /// Candidate has been promoted into the graph as a `HumanDeclared` edge.
     Promoted,
     /// Candidate has been rejected by a reviewer; excluded from surfacing.
@@ -157,6 +161,7 @@ impl CrossLinkState {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Active => "active",
+            Self::PendingPromotion => "pending_promotion",
             Self::Promoted => "promoted",
             Self::Rejected => "rejected",
         }
@@ -362,6 +367,17 @@ pub trait OverlayStore: Send + Sync {
         reviewer: &str,
     ) -> crate::Result<()>;
 
+    /// Mark a candidate as pending promotion. This acts as an atomicity bridge:
+    /// if the process crashes after this but before `mark_candidate_promoted`,
+    /// the system can detect the inconsistent state.
+    fn mark_candidate_pending(
+        &mut self,
+        from: NodeId,
+        to: NodeId,
+        kind: OverlayEdgeKind,
+        reviewer: &str,
+    ) -> crate::Result<()>;
+
     /// Mark a candidate as promoted into the graph.
     fn mark_candidate_promoted(
         &mut self,
@@ -371,6 +387,21 @@ pub trait OverlayStore: Send + Sync {
         reviewer: &str,
         graph_edge_id: &str,
     ) -> crate::Result<()>;
+
+    /// Return compactable statistics for commentary entries older than policy retention.
+    fn compactable_commentary_stats(&self, policy: &CompactPolicy) -> crate::Result<CompactStats>;
+
+    /// Compact stale commentary entries, returning count deleted.
+    fn compact_commentary(&mut self, policy: &CompactPolicy) -> crate::Result<usize>;
+
+    /// Return compactable statistics for cross-link audit rows older than policy retention.
+    fn compactable_cross_link_stats(&self, policy: &CompactPolicy) -> crate::Result<CompactStats>;
+
+    /// Compact old cross-link audit rows, returning count deleted/summarized.
+    fn compact_cross_links(&mut self, policy: &CompactPolicy) -> crate::Result<usize>;
+
+    /// Return the count of audit rows in the cross_link_audit table.
+    fn cross_link_audit_count(&self) -> crate::Result<usize>;
 
     /// Open a read snapshot on this store. Reads through this handle
     /// observe a single committed epoch until `end_read_snapshot` is

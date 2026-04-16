@@ -15,7 +15,7 @@
 | [`symbol-last-change-v1`](openspec/changes/symbol-last-change-v1/) | True symbol-level `last_change` tracking via `body_hash` transitions; upgrades `SymbolCard.last_change.granularity` from `file` → `symbol` | D, I | Shipped |
 | [`structural-resilience-v1`](openspec/changes/archive/2026-04-15-structural-resilience-v1/) | Stage 6 split/merge + Stage 7 drift scoring: **infrastructure shipped** (types, tables, wiring, repair surface). Semantics incomplete; see v2. | D | Shipped |
 | [`structural-resilience-v2`](openspec/changes/structural-resilience-v2/) | Finish drift scoring (Jaccard distance on persisted fingerprints, all-edge enumeration, concept edges), wire git rename fallback (cascade step 4), fix repair absent-vs-current | D | Shipped |
-| [`graph-lifecycle-v1`](openspec/changes/graph-lifecycle-v1/) | Stable identity + owned observations + soft retirement: replace destructive rebuild with scoped refresh, add compile revisions, compaction maintenance pass | D | In progress |
+| [`graph-lifecycle-v1`](openspec/changes/graph-lifecycle-v1/) | Stable identity + owned observations + soft retirement: replace destructive rebuild with scoped refresh, add compile revisions, compaction maintenance pass | D | **Shipped** |
 
 **Why first:** These fill the remaining data gaps in the graph. Phase 2 surfaces consume this data.
 

@@ -133,11 +133,7 @@ fn verify_spans(source_text: &str, spans: &[CitedSpan]) -> Option<Vec<CitedSpan>
         .collect()
 }
 
-fn verify_span(
-    source_text: &str,
-    normalized_source: &str,
-    span: &CitedSpan,
-) -> Option<CitedSpan> {
+fn verify_span(source_text: &str, normalized_source: &str, span: &CitedSpan) -> Option<CitedSpan> {
     let normalized_span = normalize_text(&span.normalized_text);
     if normalized_span.is_empty() {
         return None;

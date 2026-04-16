@@ -25,9 +25,9 @@ use cli_support::cli_args::{Cli, Command, GraphCommand, LinksCommand, WatchComma
 #[cfg(test)]
 use cli_support::commands::report_reconcile_outcome;
 use cli_support::commands::{
-    agent_setup, check, export, findings, graph_query, graph_stats, init, links_accept, links_list,
-    links_reject, links_review, node, reconcile, run_mcp_server, search, status, sync, upgrade,
-    watch, watch_internal, watch_status, watch_stop,
+    agent_setup, check, compact, export, findings, graph_query, graph_stats, init, links_accept,
+    links_list, links_reject, links_review, node, reconcile, run_mcp_server, search, status, sync,
+    upgrade, watch, watch_internal, watch_status, watch_stop,
 };
 
 fn main() -> anyhow::Result<()> {
@@ -115,6 +115,7 @@ fn main() -> anyhow::Result<()> {
             reviewer,
         }) => links_reject(&repo_root, &candidate_id, reviewer.as_deref()),
         Command::Upgrade { apply } => upgrade(&repo_root, apply),
+        Command::Compact { apply, policy } => compact(&repo_root, apply, policy.into()),
         Command::Export {
             format,
             deep,

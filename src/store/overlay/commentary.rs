@@ -208,6 +208,17 @@ impl OverlayStore for SqliteOverlayStore {
         super::cross_links::mark_rejected(&conn, from, to, kind, reviewer)
     }
 
+    fn mark_candidate_pending(
+        &mut self,
+        from: NodeId,
+        to: NodeId,
+        kind: crate::overlay::OverlayEdgeKind,
+        reviewer: &str,
+    ) -> crate::Result<()> {
+        let conn = self.conn.lock();
+        super::cross_links::mark_pending(&conn, from, to, kind, reviewer)
+    }
+
     fn mark_candidate_promoted(
         &mut self,
         from: NodeId,
@@ -218,5 +229,75 @@ impl OverlayStore for SqliteOverlayStore {
     ) -> crate::Result<()> {
         let conn = self.conn.lock();
         super::cross_links::mark_promoted(&conn, from, to, kind, reviewer, graph_edge_id)
+    }
+
+    fn compactable_commentary_stats(&self, policy: &crate::pipeline::maintenance::CompactPolicy) -> crate::Result<crate::pipeline::maintenance::CompactStats> {
+        let cutoff_str = crate::pipeline::maintenance::retention_cutoff(policy.commentary_retention_days())?;
+
+        let conn = self.conn.lock();
+        let count: usize = conn.query_row(
+            "SELECT COUNT(*) FROM commentary WHERE generated_at < ?1",
+            params![cutoff_str],
+            |row| row.get(0),
+        )?;
+
+        Ok(crate::pipeline::maintenance::CompactStats {
+            compactable_commentary: count,
+            compactable_cross_links: 0,
+            repair_log_entries_beyond_window: 0,
+            last_compaction_timestamp: None,
+        })
+    }
+
+    fn compact_commentary(&mut self, policy: &crate::pipeline::maintenance::CompactPolicy) -> crate::Result<usize> {
+        let cutoff_str = crate::pipeline::maintenance::retention_cutoff(policy.commentary_retention_days())?;
+
+        let conn = self.conn.lock();
+        let deleted = conn.execute(
+            "DELETE FROM commentary WHERE generated_at < ?1",
+            params![cutoff_str],
+        )?;
+
+        Ok(deleted)
+    }
+
+    fn compactable_cross_link_stats(&self, policy: &crate::pipeline::maintenance::CompactPolicy) -> crate::Result<crate::pipeline::maintenance::CompactStats> {
+        let cutoff_str = crate::pipeline::maintenance::retention_cutoff(policy.audit_retention_days())?;
+
+        let conn = self.conn.lock();
+        let count: usize = conn.query_row(
+            "SELECT COUNT(*) FROM cross_link_audit WHERE state IN ('promoted', 'rejected') AND event_at < ?1",
+            params![cutoff_str],
+            |row| row.get(0),
+        )?;
+
+        Ok(crate::pipeline::maintenance::CompactStats {
+            compactable_commentary: 0,
+            compactable_cross_links: count,
+            repair_log_entries_beyond_window: 0,
+            last_compaction_timestamp: None,
+        })
+    }
+
+    fn compact_cross_links(&mut self, policy: &crate::pipeline::maintenance::CompactPolicy) -> crate::Result<usize> {
+        let cutoff_str = crate::pipeline::maintenance::retention_cutoff(policy.audit_retention_days())?;
+
+        let conn = self.conn.lock();
+        // Delete old audit rows that are promoted or rejected.
+        let deleted = conn.execute(
+            "DELETE FROM cross_link_audit WHERE state IN ('promoted', 'rejected') AND event_at < ?1",
+            params![cutoff_str],
+        )?;
+
+        Ok(deleted)
+    }
+
+    fn cross_link_audit_count(&self) -> crate::Result<usize> {
+        let conn = self.conn.lock();
+        Ok(conn.query_row(
+            "SELECT COUNT(*) FROM cross_link_audit",
+            [],
+            |row| row.get(0),
+        )?)
     }
 }

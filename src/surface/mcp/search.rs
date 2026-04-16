@@ -93,7 +93,8 @@ pub fn handle_where_to_edit(state: &SynrepoState, task: String, limit: u32) -> S
     let result: anyhow::Result<serde_json::Value> = (|| {
         let matches = crate::substrate::search(&state.config, &state.repo_root, &task)?;
 
-        with_graph_snapshot(state.compiler.graph(), || {
+        let compiler = state.create_compiler().map_err(|e| anyhow::anyhow!(e))?;
+        with_graph_snapshot(compiler.graph(), || {
             let mut seen = HashSet::new();
             let mut cards = Vec::new();
 
@@ -104,8 +105,8 @@ pub fn handle_where_to_edit(state: &SynrepoState, task: String, limit: u32) -> S
                 }
                 seen.insert(path.clone());
 
-                if let Some(file) = state.compiler.graph().file_by_path(&path)? {
-                    let card = state.compiler.file_card(file.id, Budget::Tiny)?;
+                if let Some(file) = compiler.graph().file_by_path(&path)? {
+                    let card = compiler.file_card(file.id, Budget::Tiny)?;
                     cards.push(serde_json::to_value(&card)?);
                 }
 
@@ -121,19 +122,17 @@ pub fn handle_where_to_edit(state: &SynrepoState, task: String, limit: u32) -> S
 }
 
 pub fn handle_change_impact(state: &SynrepoState, target: String) -> String {
-    let result: anyhow::Result<serde_json::Value> =
-        with_graph_snapshot(state.compiler.graph(), || {
-            let node_id = state
-                .compiler
+    let result = (|| {
+        let compiler = state.create_compiler().map_err(|e| anyhow::anyhow!(e))?;
+        with_graph_snapshot(compiler.graph(), || {
+            let node_id = compiler
                 .resolve_target(&target)?
                 .ok_or_else(|| anyhow::anyhow!("target not found: {target}"))?;
 
-            let imports_in = state
-                .compiler
+            let imports_in = compiler
                 .graph()
                 .inbound(node_id, Some(EdgeKind::Imports))?;
-            let calls_in = state
-                .compiler
+            let calls_in = compiler
                 .graph()
                 .inbound(node_id, Some(EdgeKind::Calls))?;
 
@@ -144,7 +143,7 @@ pub fn handle_change_impact(state: &SynrepoState, target: String) -> String {
                 let file_id = match edge.from {
                     NodeId::File(id) => id,
                     NodeId::Symbol(sym_id) => {
-                        if let Some(sym) = state.compiler.graph().get_symbol(sym_id)? {
+                        if let Some(sym) = compiler.graph().get_symbol(sym_id)? {
                             sym.file_id
                         } else {
                             continue;
@@ -154,7 +153,7 @@ pub fn handle_change_impact(state: &SynrepoState, target: String) -> String {
                 };
 
                 if seen_files.insert(file_id) {
-                    if let Some(file) = state.compiler.graph().get_file(file_id)? {
+                    if let Some(file) = compiler.graph().get_file(file_id)? {
                         impacted_files.push(json!({
                             "path": file.path,
                             "edge_kind": edge.kind.as_str(),
@@ -168,6 +167,7 @@ pub fn handle_change_impact(state: &SynrepoState, target: String) -> String {
                 "impacted_files": impacted_files,
                 "total": impacted_files.len(),
             }))
-        });
+        })
+    })();
     render_result(result)
 }

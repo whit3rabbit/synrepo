@@ -421,9 +421,65 @@ pub(super) fn mark_rejected(
     Ok(())
 }
 
+/// Mark a candidate as pending promotion (atomicity bridge).
+pub fn mark_pending(
+    conn: &Connection,
+    from: NodeId,
+    to: NodeId,
+    kind: OverlayEdgeKind,
+    reviewer: &str,
+) -> crate::Result<()> {
+    let from_key = from.to_string();
+    let to_key = to.to_string();
+    let kind_str = overlay_edge_kind_as_str(kind);
+    let prov: Option<(String, String, String)> = conn
+        .query_row(
+            "SELECT pass_id, model_identity, confidence_tier FROM cross_links
+             WHERE from_node = ?1 AND to_node = ?2 AND kind = ?3",
+            params![from_key, to_key, kind_str],
+            |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            },
+        )
+        .optional()?;
+    let Some((pass_id, model_identity, previous_tier)) = prov else {
+        return Err(crate::Error::Other(anyhow::anyhow!(
+            "mark_pending: no candidate for ({from_key}, {to_key}, {kind_str})"
+        )));
+    };
+
+    conn.execute(
+        "UPDATE cross_links
+         SET state = 'pending_promotion', reviewer = ?1
+         WHERE from_node = ?2 AND to_node = ?3 AND kind = ?4",
+        params![reviewer, from_key, to_key, kind_str],
+    )?;
+
+    append_event(
+        conn,
+        &AuditEvent {
+            from_node: &from_key,
+            to_node: &to_key,
+            kind: kind_str,
+            event_kind: "pending_promotion",
+            reviewer: Some(reviewer),
+            previous_tier: Some(&previous_tier),
+            new_tier: Some(&previous_tier),
+            reason: None,
+            pass_id: &pass_id,
+            model_identity: &model_identity,
+        },
+    )?;
+    Ok(())
+}
+
 /// Mark a candidate as promoted into the graph. Records the reviewer and
 /// back-references the resulting graph edge identifier.
-pub(super) fn mark_promoted(
+pub fn mark_promoted(
     conn: &Connection,
     from: NodeId,
     to: NodeId,
@@ -616,6 +672,7 @@ pub(super) fn parse_state(s: &str) -> crate::Result<CrossLinkState> {
         "active" => Ok(CrossLinkState::Active),
         "promoted" => Ok(CrossLinkState::Promoted),
         "rejected" => Ok(CrossLinkState::Rejected),
+        "pending_promotion" => Ok(CrossLinkState::PendingPromotion),
         other => Err(crate::Error::Other(anyhow::anyhow!(
             "invalid cross-link state: {other}"
         ))),
@@ -706,8 +763,19 @@ impl SqliteOverlayStore {
         mark_rejected(&conn, from, to, kind, reviewer)
     }
 
+    /// Mark a candidate as pending promotion (atomicity bridge).
+    pub fn mark_candidate_pending(
+        &mut self,
+        from: NodeId,
+        to: NodeId,
+        kind: OverlayEdgeKind,
+        reviewer: &str,
+    ) -> crate::Result<()> {
+        let conn = self.conn.lock();
+        mark_pending(&conn, from, to, kind, reviewer)
+    }
+
     /// Mark a candidate as promoted into the graph. The graph-side write is
-    /// the caller's responsibility; this only records the overlay-side state.
     pub fn mark_candidate_promoted(
         &mut self,
         from: NodeId,

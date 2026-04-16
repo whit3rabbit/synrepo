@@ -16,10 +16,12 @@
 //!   writer ownership, and stale runtime state.
 //! - `maintenance` — maintenance hooks that consume the storage-compatibility
 //!   contract for cleanup and compaction behavior.
+//! - `compact` — compaction operations for overlay, state, and index stores.
 //! - `git_intelligence` — the deterministic entry point for future
 //!   history-derived routing and change-risk enrichment.
 //! - `synthesis` — LLM-driven overlay pipeline (phase 4+).
 
+pub mod compact;
 pub mod diagnostics;
 pub mod export;
 pub mod git;

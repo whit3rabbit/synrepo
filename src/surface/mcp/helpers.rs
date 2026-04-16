@@ -4,6 +4,8 @@ use crate::{
     surface::card::{Budget, DecisionCard, Freshness},
 };
 
+use super::SynrepoState;
+
 /// Hold a read snapshot across the whole handler body.
 ///
 /// The graph snapshot methods are re-entrant, so wrapping here composes
@@ -18,6 +20,25 @@ pub fn with_graph_snapshot<R>(
     let out = f();
     let _ = graph.end_read_snapshot();
     out
+}
+
+/// Execute an MCP tool handler with a fresh, request-local compiler.
+///
+/// Encapsulates the per-request store connection and snapshot isolation.
+/// The result is rendered to a JSON string via [`render_result`].
+pub fn with_mcp_compiler<R>(
+    state: &SynrepoState,
+    f: impl FnOnce(&crate::surface::card::compiler::GraphCardCompiler) -> anyhow::Result<R>,
+) -> String
+where
+    R: serde::Serialize,
+{
+    let result = (|| {
+        let compiler = state.create_compiler().map_err(|e| anyhow::anyhow!(e))?;
+        let val = with_graph_snapshot(compiler.graph(), || f(&compiler))?;
+        Ok(serde_json::to_value(val)?)
+    })();
+    render_result(result)
 }
 
 pub fn parse_budget(s: &str) -> Budget {

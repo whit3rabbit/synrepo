@@ -2,9 +2,9 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::{core::ids::NodeId, structure::graph::EdgeKind};
+use crate::{core::ids::NodeId, overlay::OverlayStore, structure::graph::EdgeKind};
 
-use super::helpers::{render_result, with_graph_snapshot};
+use super::helpers::{render_result, with_mcp_compiler};
 use super::SynrepoState;
 
 /// Parameters for the `synrepo_node` tool.
@@ -105,49 +105,46 @@ enum QueryDirection {
 }
 
 pub fn handle_node(state: &SynrepoState, id: String) -> String {
-    let result: anyhow::Result<serde_json::Value> = (|| {
-        let node_id = parse_node_id(&id)?;
+    let node_id = match parse_node_id(&id) {
+        Ok(id) => id,
+        Err(e) => return render_result(Err(e)),
+    };
 
-        with_graph_snapshot(state.compiler.graph(), || match node_id {
-            NodeId::File(file_id) => {
-                let node = state
-                    .compiler
-                    .graph()
-                    .get_file(file_id)?
-                    .ok_or_else(|| anyhow::anyhow!("node not found: {id}"))?;
-                Ok(json!({
-                    "node_id": id,
-                    "node_type": "file",
-                    "node": node,
-                }))
-            }
-            NodeId::Symbol(symbol_id) => {
-                let node = state
-                    .compiler
-                    .graph()
-                    .get_symbol(symbol_id)?
-                    .ok_or_else(|| anyhow::anyhow!("node not found: {id}"))?;
-                Ok(json!({
-                    "node_id": id,
-                    "node_type": "symbol",
-                    "node": node,
-                }))
-            }
-            NodeId::Concept(concept_id) => {
-                let node = state
-                    .compiler
-                    .graph()
-                    .get_concept(concept_id)?
-                    .ok_or_else(|| anyhow::anyhow!("node not found: {id}"))?;
-                Ok(json!({
-                    "node_id": id,
-                    "node_type": "concept",
-                    "node": node,
-                }))
-            }
-        })
-    })();
-    render_result(result)
+    with_mcp_compiler(state, |compiler| match node_id {
+        NodeId::File(file_id) => {
+            let node = compiler
+                .graph()
+                .get_file(file_id)?
+                .ok_or_else(|| anyhow::anyhow!("node not found: {id}"))?;
+            Ok(json!({
+                "node_id": id,
+                "node_type": "file",
+                "node": node,
+            }))
+        }
+        NodeId::Symbol(symbol_id) => {
+            let node = compiler
+                .graph()
+                .get_symbol(symbol_id)?
+                .ok_or_else(|| anyhow::anyhow!("node not found: {id}"))?;
+            Ok(json!({
+                "node_id": id,
+                "node_type": "symbol",
+                "node": node,
+            }))
+        }
+        NodeId::Concept(concept_id) => {
+            let node = compiler
+                .graph()
+                .get_concept(concept_id)?
+                .ok_or_else(|| anyhow::anyhow!("node not found: {id}"))?;
+            Ok(json!({
+                "node_id": id,
+                "node_type": "concept",
+                "node": node,
+            }))
+        }
+    })
 }
 
 pub fn handle_edges(
@@ -156,29 +153,28 @@ pub fn handle_edges(
     direction: String,
     edge_types: Option<Vec<String>>,
 ) -> String {
-    let result: anyhow::Result<serde_json::Value> = (|| {
-        let node_id = parse_node_id(&id)?;
-        node_exists(state, node_id)?;
+    let node_id = match parse_node_id(&id) {
+        Ok(id) => id,
+        Err(e) => return render_result(Err(e)),
+    };
+
+    with_mcp_compiler(state, |compiler| {
+        node_exists(compiler, node_id)?;
 
         let parsed_kinds = edge_types
             .as_deref()
             .map(parse_edge_kind_list)
             .transpose()?;
 
-        // Push a single-kind filter into the store; for multi-kind, fetch all
-        // and filter in-memory because the store API takes Option<EdgeKind>.
         let store_filter = parsed_kinds.as_deref().and_then(|k| match k {
             [single] => Some(*single),
             _ => None,
         });
 
-        let edges = with_graph_snapshot(state.compiler.graph(), || {
-            let edges = match direction.as_str() {
-                "inbound" => state.compiler.graph().inbound(node_id, store_filter)?,
-                _ => state.compiler.graph().outbound(node_id, store_filter)?,
-            };
-            Ok(edges)
-        })?;
+        let edges = match direction.as_str() {
+            "inbound" => compiler.graph().inbound(node_id, store_filter)?,
+            _ => compiler.graph().outbound(node_id, store_filter)?,
+        };
 
         let filtered: Vec<serde_json::Value> = match parsed_kinds.as_deref() {
             Some(kinds) if kinds.len() > 1 => edges
@@ -194,21 +190,20 @@ pub fn handle_edges(
             "direction": direction,
             "edges": filtered,
         }))
-    })();
-    render_result(result)
+    })
 }
 
 pub fn handle_query(state: &SynrepoState, query: String) -> String {
-    let result: anyhow::Result<serde_json::Value> = (|| {
-        let (direction, node_id, edge_kind) = parse_graph_query(&query)?;
+    let (direction, node_id, edge_kind) = match parse_graph_query(&query) {
+        Ok(res) => res,
+        Err(e) => return render_result(Err(e)),
+    };
 
-        let edges = with_graph_snapshot(state.compiler.graph(), || {
-            let edges = match direction {
-                QueryDirection::Outbound => state.compiler.graph().outbound(node_id, edge_kind)?,
-                QueryDirection::Inbound => state.compiler.graph().inbound(node_id, edge_kind)?,
-            };
-            Ok(edges)
-        })?;
+    with_mcp_compiler(state, |compiler| {
+        let edges = match direction {
+            QueryDirection::Outbound => compiler.graph().outbound(node_id, edge_kind)?,
+            QueryDirection::Inbound => compiler.graph().inbound(node_id, edge_kind)?,
+        };
 
         let rendered: Vec<serde_json::Value> =
             edges.into_iter().map(|e| serialize_edge(&e)).collect();
@@ -224,16 +219,21 @@ pub fn handle_query(state: &SynrepoState, query: String) -> String {
             "edge_kind": edge_kind.map(|k| k.as_str().to_string()),
             "edges": rendered,
         }))
-    })();
-    render_result(result)
+    })
 }
 
 pub fn handle_overlay(state: &SynrepoState, id: String) -> String {
-    let result: anyhow::Result<serde_json::Value> = (|| {
-        let node_id = parse_node_id(&id)?;
-        with_graph_snapshot(state.compiler.graph(), || node_exists(state, node_id))?;
+    let node_id = match parse_node_id(&id) {
+        Ok(id) => id,
+        Err(e) => return render_result(Err(e)),
+    };
 
-        let overlay = state.overlay.lock();
+    with_mcp_compiler(state, |compiler| {
+        node_exists(compiler, node_id)?;
+
+        let synrepo_dir = crate::config::Config::synrepo_dir(&state.repo_root);
+        let overlay_dir = synrepo_dir.join("overlay");
+        let overlay = crate::store::overlay::SqliteOverlayStore::open_existing(&overlay_dir)?;
 
         let commentary = overlay.commentary_for(node_id)?;
         let links = overlay.links_for(node_id)?;
@@ -248,74 +248,68 @@ pub fn handle_overlay(state: &SynrepoState, id: String) -> String {
                 "links": links,
             }
         }))
-    })();
-    render_result(result)
+    })
 }
 
 pub fn handle_provenance(state: &SynrepoState, id: String) -> String {
-    let result: anyhow::Result<serde_json::Value> = (|| {
-        let node_id = parse_node_id(&id)?;
+    let node_id = match parse_node_id(&id) {
+        Ok(id) => id,
+        Err(e) => return render_result(Err(e)),
+    };
 
-        let (provenance, edges) = with_graph_snapshot(state.compiler.graph(), || {
-            let prov = match node_id {
-                NodeId::File(file_id) => state
-                    .compiler
-                    .graph()
-                    .get_file(file_id)?
-                    .ok_or_else(|| anyhow::anyhow!("node not found: {id}"))
-                    .map(|n| n.provenance),
-                NodeId::Symbol(symbol_id) => state
-                    .compiler
-                    .graph()
-                    .get_symbol(symbol_id)?
-                    .ok_or_else(|| anyhow::anyhow!("node not found: {id}"))
-                    .map(|n| n.provenance),
-                NodeId::Concept(concept_id) => state
-                    .compiler
-                    .graph()
-                    .get_concept(concept_id)?
-                    .ok_or_else(|| anyhow::anyhow!("node not found: {id}"))
-                    .map(|n| n.provenance),
-            }?;
+    with_mcp_compiler(state, |compiler| {
+        let provenance = match node_id {
+            NodeId::File(file_id) => compiler
+                .graph()
+                .get_file(file_id)?
+                .ok_or_else(|| anyhow::anyhow!("node not found: {id}"))
+                .map(|n| n.provenance),
+            NodeId::Symbol(symbol_id) => compiler
+                .graph()
+                .get_symbol(symbol_id)?
+                .ok_or_else(|| anyhow::anyhow!("node not found: {id}"))
+                .map(|n| n.provenance),
+            NodeId::Concept(concept_id) => compiler
+                .graph()
+                .get_concept(concept_id)?
+                .ok_or_else(|| anyhow::anyhow!("node not found: {id}"))
+                .map(|n| n.provenance),
+        }?;
 
-            let outbound = state.compiler.graph().outbound(node_id, None)?;
-            let inbound = state.compiler.graph().inbound(node_id, None)?;
+        let outbound = compiler.graph().outbound(node_id, None)?;
+        let inbound = compiler.graph().inbound(node_id, None)?;
 
-            let mut all_edges: Vec<serde_json::Value> = Vec::new();
-            for e in outbound {
-                all_edges.push(json!({
-                    "direction": "outbound",
-                    "peer": e.to.to_string(),
-                    "edge_kind": e.kind.as_str(),
-                    "provenance": e.provenance,
-                }));
-            }
-            for e in inbound {
-                all_edges.push(json!({
-                    "direction": "inbound",
-                    "peer": e.from.to_string(),
-                    "edge_kind": e.kind.as_str(),
-                    "provenance": e.provenance,
-                }));
-            }
-
-            Ok((prov, all_edges))
-        })?;
+        let mut all_edges: Vec<serde_json::Value> = Vec::new();
+        for e in outbound {
+            all_edges.push(json!({
+                "direction": "outbound",
+                "peer": e.to.to_string(),
+                "edge_kind": e.kind.as_str(),
+                "provenance": e.provenance,
+            }));
+        }
+        for e in inbound {
+            all_edges.push(json!({
+                "direction": "inbound",
+                "peer": e.from.to_string(),
+                "edge_kind": e.kind.as_str(),
+                "provenance": e.provenance,
+            }));
+        }
 
         Ok(json!({
             "node_id": id,
             "provenance": provenance,
-            "edges": edges,
+            "edges": all_edges,
         }))
-    })();
-    render_result(result)
+    })
 }
 
-fn node_exists(state: &SynrepoState, node_id: NodeId) -> anyhow::Result<()> {
+fn node_exists(compiler: &crate::surface::card::compiler::GraphCardCompiler, node_id: NodeId) -> anyhow::Result<()> {
     let exists = match node_id {
-        NodeId::File(id) => state.compiler.graph().get_file(id)?.is_some(),
-        NodeId::Symbol(id) => state.compiler.graph().get_symbol(id)?.is_some(),
-        NodeId::Concept(id) => state.compiler.graph().get_concept(id)?.is_some(),
+        NodeId::File(id) => compiler.graph().get_file(id)?.is_some(),
+        NodeId::Symbol(id) => compiler.graph().get_symbol(id)?.is_some(),
+        NodeId::Concept(id) => compiler.graph().get_concept(id)?.is_some(),
     };
     if !exists {
         anyhow::bail!("node not found: {node_id}");

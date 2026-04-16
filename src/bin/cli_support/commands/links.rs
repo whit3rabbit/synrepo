@@ -193,6 +193,30 @@ pub(crate) fn links_accept(
 
     use synrepo::structure::graph::{Edge, GraphStore};
     let edge_id = synrepo::pipeline::structural::derive_edge_id(from, to, edge_kind);
+
+    let matched = overlay
+        .links_for(from)?
+        .into_iter()
+        .find(|candidate| candidate.to == to && candidate.kind == kind);
+
+    // If already promoted, this is a no-op replay.
+    if matched.is_some() {
+        let conn = rusqlite::Connection::open(SqliteOverlayStore::db_path(&overlay_dir))?;
+        let state_str: String = conn.query_row(
+            "SELECT state FROM cross_links WHERE from_node = ?1 AND to_node = ?2 AND kind = ?3",
+            [from.to_string(), to.to_string(), overlay_edge_kind_as_str(kind).to_string()],
+            |row| row.get(0),
+        )?;
+        if state_str == "promoted" {
+            println!("Candidate {candidate_id} is already promoted.");
+            return Ok(());
+        }
+    }
+
+    // Phase 1: Mark as pending in overlay to bridge the atomicity gap.
+    overlay.mark_candidate_pending(from, to, kind, reviewer)?;
+
+    // Phase 2: Insert into graph.
     graph.insert_edge(Edge {
         id: edge_id,
         from,
@@ -212,23 +236,20 @@ pub(crate) fn links_accept(
         },
     })?;
 
-    // Compensation only: a crash between `insert_edge` and
-    // `mark_candidate_promoted` still leaves the overlay candidate `active`.
-    // Full two-phase safety requires a `pending_promotion` state, deferred.
-    if let Err(overlay_err) =
-        overlay.mark_candidate_promoted(from, to, kind, reviewer, &edge_id.to_string())
-    {
-        match graph.delete_edge(edge_id) {
-            Ok(()) => anyhow::bail!(
-                "links accept failed: overlay write failed ({overlay_err}); graph edge was rolled back"
-            ),
-            Err(delete_err) => anyhow::bail!(
-                "links accept failed and stores may be inconsistent: overlay write failed ({overlay_err}); graph edge {edge_id} could not be rolled back ({delete_err}). Inspect `.synrepo/` manually."
-            ),
-        }
-    }
+    // Phase 3: Finalize in overlay.
+    overlay.mark_candidate_promoted(from, to, kind, reviewer, &edge_id.to_string())?;
+
     println!("Candidate {candidate_id} accepted and written to graph.");
     Ok(())
+}
+
+fn overlay_edge_kind_as_str(k: synrepo::overlay::OverlayEdgeKind) -> &'static str {
+    match k {
+        synrepo::overlay::OverlayEdgeKind::References => "references",
+        synrepo::overlay::OverlayEdgeKind::Governs => "governs",
+        synrepo::overlay::OverlayEdgeKind::DerivedFrom => "derived_from",
+        synrepo::overlay::OverlayEdgeKind::Mentions => "mentions",
+    }
 }
 
 fn ensure_candidate_exists(

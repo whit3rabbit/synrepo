@@ -239,7 +239,11 @@ fn retired_edge_endpoint_gone_scores_full_drift() {
     fs::create_dir_all(repo.path().join("src")).unwrap();
 
     // Two files: a.rs defines a function, b.rs calls it.
-    fs::write(repo.path().join("src/a.rs"), "pub fn target() -> i32 { 42 }\n").unwrap();
+    fs::write(
+        repo.path().join("src/a.rs"),
+        "pub fn target() -> i32 { 42 }\n",
+    )
+    .unwrap();
     fs::write(
         repo.path().join("src/b.rs"),
         "pub use a::target;\npub fn call() -> i32 { target() }\n",

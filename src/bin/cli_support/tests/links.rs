@@ -489,3 +489,43 @@ fn links_accept_blocked_when_watch_running() {
     let _ = child.kill();
     let _ = child.wait();
 }
+
+#[test]
+fn links_accept_fails_on_lock_conflict() {
+    use synrepo::pipeline::writer::acquire_writer_lock;
+
+    let (repo, mut overlay, from, to) = setup_curated_link_env();
+    overlay.insert_link(sample_link(from, to)).unwrap();
+
+    let synrepo_dir = Config::synrepo_dir(repo.path());
+    let _lock = acquire_writer_lock(&synrepo_dir).unwrap();
+
+    let candidate_id = format_candidate_id(from, to, OverlayEdgeKind::References, "test-pass");
+    let err = super::super::commands::links_accept(repo.path(), &candidate_id, Some("reviewer-a"))
+        .unwrap_err();
+
+    assert!(
+        err.to_string().contains("writer lock held by pid"),
+        "expected lock conflict error, got: {err}"
+    );
+}
+
+#[test]
+fn links_reject_fails_on_lock_conflict() {
+    use synrepo::pipeline::writer::acquire_writer_lock;
+
+    let (repo, mut overlay, from, to) = setup_curated_link_env();
+    overlay.insert_link(sample_link(from, to)).unwrap();
+
+    let synrepo_dir = Config::synrepo_dir(repo.path());
+    let _lock = acquire_writer_lock(&synrepo_dir).unwrap();
+
+    let candidate_id = format_candidate_id(from, to, OverlayEdgeKind::References, "test-pass");
+    let err = super::super::commands::links_reject(repo.path(), &candidate_id, Some("reviewer-b"))
+        .unwrap_err();
+
+    assert!(
+        err.to_string().contains("writer lock held by pid"),
+        "expected lock conflict error, got: {err}"
+    );
+}

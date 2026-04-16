@@ -5,6 +5,7 @@ use synrepo::{config::Config, store::compatibility::StoreId};
 use super::graph::{check_store_ready, graph_query_output, graph_stats_output, node_output};
 
 mod basic;
+mod compact;
 mod export;
 mod links;
 pub(crate) mod mcp;
@@ -14,6 +15,7 @@ mod upgrade;
 mod watch;
 
 pub(crate) use basic::{agent_setup, init};
+pub(crate) use compact::compact;
 pub(crate) use export::export;
 pub(crate) use links::{findings, links_accept, links_list, links_reject, links_review};
 #[cfg(test)]

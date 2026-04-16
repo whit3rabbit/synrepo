@@ -4,7 +4,6 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Context as _;
-use parking_lot::Mutex;
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::{ServerCapabilities, ServerInfo},
@@ -13,22 +12,12 @@ use rmcp::{
     ServerHandler, ServiceExt as _,
 };
 use synrepo::config::Config;
-use synrepo::overlay::OverlayStore;
-use synrepo::pipeline::synthesis::{ClaudeCommentaryGenerator, CommentaryGenerator};
-use synrepo::store::{overlay::SqliteOverlayStore, sqlite::SqliteGraphStore};
-use synrepo::surface::card::compiler::GraphCardCompiler;
 use synrepo::surface::mcp::{audit, cards, primitives, search, SynrepoState};
 
 #[derive(Clone)]
 struct SynrepoServer {
     state: Arc<SynrepoState>,
     tool_router: ToolRouter<Self>,
-    /// Serialises tool invocations against the shared graph snapshot. See
-    /// the doc comment on `SynrepoState` and on
-    /// `SqliteGraphStore::snapshot_depth` for the underlying invariant.
-    /// Lives on the binary side so the library stays synchronous (no
-    /// `tokio` dep on the lib).
-    request_serializer: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl SynrepoServer {
@@ -36,7 +25,6 @@ impl SynrepoServer {
         Self {
             state: Arc::new(state),
             tool_router: Self::tool_router(),
-            request_serializer: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
 }
@@ -67,7 +55,6 @@ impl SynrepoServer {
         description = "Return a structured card describing a file or symbol. Default budget is tiny; escalate to normal for local understanding and deep only before edits."
     )]
     async fn synrepo_card(&self, Parameters(params): Parameters<cards::CardParams>) -> String {
-        let _guard = self.request_serializer.lock().await;
         cards::handle_card(&self.state, params.target, params.budget)
     }
 
@@ -76,7 +63,6 @@ impl SynrepoServer {
         description = "Search the repository using lexical queries."
     )]
     async fn synrepo_search(&self, Parameters(params): Parameters<search::SearchParams>) -> String {
-        let _guard = self.request_serializer.lock().await;
         search::handle_search(&self.state, params.query, params.limit)
     }
 
@@ -85,7 +71,6 @@ impl SynrepoServer {
         description = "Return a high-level overview of the repository graph state."
     )]
     async fn synrepo_overview(&self) -> String {
-        let _guard = self.request_serializer.lock().await;
         search::handle_overview(&self.state)
     }
 
@@ -94,7 +79,6 @@ impl SynrepoServer {
         description = "Look up a graph node by display ID. Returns full stored metadata as JSON."
     )]
     async fn synrepo_node(&self, Parameters(params): Parameters<primitives::NodeParams>) -> String {
-        let _guard = self.request_serializer.lock().await;
         primitives::handle_node(&self.state, params.id)
     }
 
@@ -106,7 +90,6 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<primitives::EdgesParams>,
     ) -> String {
-        let _guard = self.request_serializer.lock().await;
         primitives::handle_edges(&self.state, params.id, params.direction, params.edge_types)
     }
 
@@ -118,7 +101,6 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<primitives::QueryParams>,
     ) -> String {
-        let _guard = self.request_serializer.lock().await;
         primitives::handle_query(&self.state, params.query)
     }
 
@@ -130,7 +112,6 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<primitives::OverlayParams>,
     ) -> String {
-        let _guard = self.request_serializer.lock().await;
         primitives::handle_overlay(&self.state, params.id)
     }
 
@@ -142,7 +123,6 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<primitives::ProvenanceParams>,
     ) -> String {
-        let _guard = self.request_serializer.lock().await;
         primitives::handle_provenance(&self.state, params.id)
     }
 
@@ -154,7 +134,6 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<search::WhereToEditParams>,
     ) -> String {
-        let _guard = self.request_serializer.lock().await;
         search::handle_where_to_edit(&self.state, params.task, params.limit)
     }
 
@@ -166,7 +145,6 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<search::ChangeImpactParams>,
     ) -> String {
-        let _guard = self.request_serializer.lock().await;
         search::handle_change_impact(&self.state, params.target)
     }
 
@@ -178,7 +156,6 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<cards::EntrypointsParams>,
     ) -> String {
-        let _guard = self.request_serializer.lock().await;
         cards::handle_entrypoints(&self.state, params.scope, params.budget)
     }
 
@@ -190,7 +167,6 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<cards::ModuleCardParams>,
     ) -> String {
-        let _guard = self.request_serializer.lock().await;
         cards::handle_module_card(&self.state, params.path, params.budget)
     }
 
@@ -202,7 +178,6 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<cards::PublicAPICardParams>,
     ) -> String {
-        let _guard = self.request_serializer.lock().await;
         cards::handle_public_api(&self.state, params.path, params.budget)
     }
 
@@ -214,7 +189,6 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<cards::MinimumContextParams>,
     ) -> String {
-        let _guard = self.request_serializer.lock().await;
         cards::handle_minimum_context(&self.state, params.target, params.budget)
     }
 
@@ -226,7 +200,6 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<cards::CallPathParams>,
     ) -> String {
-        let _guard = self.request_serializer.lock().await;
         cards::handle_call_path(&self.state, params.target, params.budget)
     }
 
@@ -238,7 +211,6 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<cards::TestSurfaceParams>,
     ) -> String {
-        let _guard = self.request_serializer.lock().await;
         cards::handle_test_surface(&self.state, params.scope, params.budget)
     }
 
@@ -250,7 +222,6 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<audit::FindingsParams>,
     ) -> String {
-        let _guard = self.request_serializer.lock().await;
         audit::handle_findings(
             &self.state.repo_root,
             params.node_id,
@@ -268,7 +239,6 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<audit::RecentActivityParams>,
     ) -> String {
-        let _guard = self.request_serializer.lock().await;
         audit::handle_recent_activity(&self.state, params.kinds, params.limit, params.since)
     }
 }
@@ -291,32 +261,9 @@ async fn serve(repo_root: &Path) -> anyhow::Result<()> {
         )
     })?;
 
-    let synrepo_dir = Config::synrepo_dir(repo_root);
-    let graph_dir = synrepo_dir.join("graph");
-    let graph = SqliteGraphStore::open_existing(&graph_dir).with_context(|| {
-        format!(
-            "Graph store not found at {} — run `synrepo init` first",
-            graph_dir.display()
-        )
-    })?;
-
-    let overlay_dir = synrepo_dir.join("overlay");
-    let overlay_store = SqliteOverlayStore::open(&overlay_dir)
-        .with_context(|| format!("Failed to open overlay store at {}", overlay_dir.display()))?;
-    let overlay: Arc<Mutex<dyn OverlayStore>> = Arc::new(Mutex::new(overlay_store));
-
-    let boxed_generator = ClaudeCommentaryGenerator::new_or_noop(config.commentary_cost_limit);
-    let generator: Arc<dyn CommentaryGenerator> = Arc::from(boxed_generator);
-
-    let compiler = GraphCardCompiler::new(Box::new(graph), Some(repo_root.to_path_buf()))
-        .with_config(config.clone())
-        .with_overlay(Some(overlay.clone()), Some(generator));
-
     let state = SynrepoState {
-        compiler,
         config,
         repo_root: repo_root.to_path_buf(),
-        overlay,
     };
 
     let server = SynrepoServer::new(state);
