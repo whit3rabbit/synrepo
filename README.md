@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/whit3rabbit/synrepo/actions/workflows/ci.yml/badge.svg)](https://github.com/whit3rabbit/synrepo/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/synrepo.svg)](https://crates.io/crates/synrepo)
+[![Built With Ratatui](https://img.shields.io/badge/Built_With_Ratatui-000?logo=ratatui&logoColor=fff)](https://ratatui.rs/)
 
 > WIP: `synrepo` is an in-progress context compiler for AI coding agents. It builds a deterministic local index and graph for a repository so agents can search, inspect structure, and make better edits with less blind file reading.
 
