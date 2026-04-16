@@ -18,6 +18,7 @@ fn watch_lease_blocks_a_second_live_owner() {
     assert!(error.to_string().contains("already running"));
 }
 
+#[cfg(unix)]
 #[test]
 fn watch_lease_replaces_stale_owner() {
     let (_dir, _repo, _config, synrepo_dir) = setup_test_repo();
@@ -48,6 +49,7 @@ fn watch_lease_replaces_stale_owner() {
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn cleanup_stale_watch_artifacts_removes_dead_state_and_socket() {
     let (_dir, _repo, _config, synrepo_dir) = setup_test_repo();

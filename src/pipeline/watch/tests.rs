@@ -36,6 +36,7 @@ pub(super) fn wait_for(mut predicate: impl FnMut() -> bool, timeout: Duration) {
     panic!("condition was not met within {:?}", timeout);
 }
 
+#[cfg(unix)]
 pub(super) fn dead_pid() -> u32 {
     let mut child = Command::new("true")
         .stdout(std::process::Stdio::null())
@@ -47,6 +48,7 @@ pub(super) fn dead_pid() -> u32 {
     pid
 }
 
+#[cfg(unix)]
 pub(super) fn live_foreign_pid() -> (std::process::Child, u32) {
     let child = Command::new("sleep")
         .arg("10")

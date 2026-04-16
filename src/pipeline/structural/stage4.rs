@@ -153,7 +153,15 @@ fn resolve_import_ref(module_ref: &str, importing_file: &str) -> Option<String> 
         let dir = Path::new(importing_file).parent()?;
         let joined = dir.join(module_ref);
         let normalized = normalize_path(&joined);
-        let base = normalized.to_str()?;
+        let base_owned;
+        // Graph paths use forward slashes on all platforms; Path::join uses the
+        // OS separator on Windows, so normalize before matching.
+        let base = if cfg!(windows) {
+            base_owned = normalized.to_str()?.replace('\\', "/");
+            base_owned.as_str()
+        } else {
+            normalized.to_str()?
+        };
 
         // Try bare path + common extensions
         for ext in &["ts", "tsx", "js", "jsx", "mts", "cts"] {

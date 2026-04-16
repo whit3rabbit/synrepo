@@ -30,6 +30,7 @@ fn filter_repo_events_ignores_synrepo_only_bursts() {
     assert_eq!(filtered[0].paths[0], repo.join("src/lib.rs"));
 }
 
+#[cfg(unix)]
 #[test]
 fn watch_service_handles_status_reconcile_and_stop() {
     let (_dir, repo, config, synrepo_dir) = setup_test_repo();
@@ -69,6 +70,7 @@ fn watch_service_handles_status_reconcile_and_stop() {
     handle.join().unwrap();
 }
 
+#[cfg(unix)]
 #[test]
 fn watch_service_records_lock_conflict_when_writer_lock_is_held() {
     let (_dir, repo, config, synrepo_dir) = setup_test_repo();
@@ -118,6 +120,7 @@ fn watch_service_records_lock_conflict_when_writer_lock_is_held() {
     handle.join().unwrap();
 }
 
+#[cfg(unix)]
 #[test]
 fn watch_service_ignores_runtime_only_writes() {
     let (_dir, repo, config, synrepo_dir) = setup_test_repo();

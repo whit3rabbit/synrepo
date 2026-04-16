@@ -63,6 +63,7 @@ fn re_entrant_acquire_success() {
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn stale_lock_from_dead_pid_is_replaced() {
     let dir = tempdir().unwrap();

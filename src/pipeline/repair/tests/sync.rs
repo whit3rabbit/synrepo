@@ -102,6 +102,10 @@ fn sync_places_unsupported_surfaces_in_report_only() {
     );
 }
 
+// PID 42 is inaccessible (EPERM) on unix, so `is_process_alive` returns false
+// and the lock is treated as stale. On Windows the conservative fallback always
+// returns true, so execute_sync cannot acquire the lock and returns Err instead.
+#[cfg(unix)]
 #[test]
 fn sync_sets_partial_outcome_when_blocked_findings_present() {
     let dir = tempdir().unwrap();
