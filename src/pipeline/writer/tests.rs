@@ -1,3 +1,4 @@
+use super::helpers::spawn_and_reap_pid;
 use super::*;
 use tempfile::tempdir;
 
@@ -110,7 +111,7 @@ fn malformed_lock_file_is_replaced() {
 }
 
 #[test]
-fn concurrent_acquire_from_threads_succeeds_due_to_reentrancy() {
+fn concurrent_acquire_from_threads_is_rejected() {
     use std::sync::Arc;
 
     let dir = tempdir().unwrap();
@@ -125,8 +126,17 @@ fn concurrent_acquire_from_threads_succeeds_due_to_reentrancy() {
     let r1 = h1.join().unwrap();
     let r2 = h2.join().unwrap();
 
-    assert!(r1.is_ok(), "Thread 1 should succeed");
-    assert!(r2.is_ok(), "Thread 2 should succeed (re-entrant)");
+    // Exactly one thread must succeed and one must fail with WrongThread.
+    let ok_count = [&r1, &r2].iter().filter(|r| r.is_ok()).count();
+    assert_eq!(ok_count, 1, "exactly one thread should hold the lock");
+    let wrong_thread_count = [&r1, &r2]
+        .iter()
+        .filter(|r| matches!(r, Err(LockError::WrongThread { .. })))
+        .count();
+    assert_eq!(
+        wrong_thread_count, 1,
+        "the other thread should get WrongThread"
+    );
 }
 
 #[test]
@@ -171,4 +181,70 @@ fn drop_does_not_remove_replaced_lock_file() {
         owner, replacement,
         "drop must not delete a replacement lock"
     );
+}
+
+/// Write admission is rejected while a live watch owner holds the repo.
+#[test]
+fn write_admission_blocked_when_watch_running() {
+    use crate::pipeline::watch::WatchDaemonState;
+    use crate::pipeline::watch::WatchServiceMode;
+
+    let dir = tempdir().unwrap();
+    let synrepo_dir = dir.path().join(".synrepo");
+    let state_dir = synrepo_dir.join("state");
+    std::fs::create_dir_all(&state_dir).unwrap();
+
+    // Write a valid watch-daemon.json with the current PID (which is alive).
+    let watch_state = WatchDaemonState {
+        pid: std::process::id(),
+        started_at: "2026-01-01T00:00:00Z".to_string(),
+        mode: WatchServiceMode::Daemon,
+        socket_path: synrepo_dir
+            .join("state")
+            .join("watch.sock")
+            .display()
+            .to_string(),
+        last_event_at: None,
+        last_reconcile_at: None,
+        last_reconcile_outcome: None,
+        last_error: None,
+        last_triggering_events: None,
+    };
+    let state_path = state_dir.join("watch-daemon.json");
+    std::fs::write(&state_path, serde_json::to_string(&watch_state).unwrap()).unwrap();
+
+    let result = acquire_write_admission(&synrepo_dir, "test_op");
+    assert!(
+        matches!(result, Err(LockError::WatchOwned { .. })),
+        "expected WatchOwned error when watch is active, got {result:?}"
+    );
+}
+
+/// Write admission succeeds after a stale watch state file is cleaned up.
+#[test]
+fn write_admission_succeeds_after_stale_watch_cleanup() {
+    let dir = tempdir().unwrap();
+    let synrepo_dir = dir.path().join(".synrepo");
+    let state_dir = synrepo_dir.join("state");
+    std::fs::create_dir_all(&state_dir).unwrap();
+
+    // Write a watch-daemon.json with a dead PID.
+    let dead_pid = spawn_and_reap_pid();
+    let state_path = state_dir.join("watch-daemon.json");
+    std::fs::write(
+        &state_path,
+        serde_json::to_string(&serde_json::json!({
+            "pid": dead_pid,
+            "started_at": "2026-01-01T00:00:00Z",
+            "mode": "daemon",
+            "socket_path": "/tmp/nonexistent.sock",
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+
+    // acquire_write_admission should clean up the stale state and succeed.
+    let lock = acquire_write_admission(&synrepo_dir, "test_op").unwrap();
+    assert!(lock.path().exists());
+    drop(lock);
 }
