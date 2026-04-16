@@ -463,16 +463,14 @@ fn record_reconcile_attempt(
             ));
             repaired.push(finding.clone());
         }
-        #[cfg(test)]
-        ReconcileOutcome::LockConflict { holder_pid: _ } => {
-            // This arm is only reachable in tests; production calls hold the lock.
-            unreachable!("LockConflict cannot occur when lock is already held")
-        }
-        #[cfg(not(test))]
-        ReconcileOutcome::LockConflict { .. } => {
-            // Unreachable in production because execute_sync holds the writer lock.
-            // This arm exists for exhaustiveness.
-            unreachable!("LockConflict cannot occur when lock is already held")
+        ReconcileOutcome::LockConflict { holder_pid } => {
+            // Should not happen: execute_sync holds the writer lock before calling us.
+            debug_assert!(false, "LockConflict should not occur when lock is already held");
+            let message = format!(
+                "unexpected lock conflict with PID {holder_pid} while holding writer lock"
+            );
+            tracing::error!(%message);
+            blocked.push(blocked_reconcile_finding(finding, message));
         }
         ReconcileOutcome::Failed(message) => {
             actions_taken.push(format!(

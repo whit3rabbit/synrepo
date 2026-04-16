@@ -10,6 +10,28 @@
 
 **synrepo is not a session-memory tool or a task tracker. It is a context compiler for coding agents that need a durable, inspectable understanding of the repository itself.**
 
+## Installation
+
+**macOS (Homebrew)**
+
+    brew install whit3rabbit/tap/synrepo
+
+**macOS and Linux (script)**
+
+    curl -fsSL https://raw.githubusercontent.com/whit3rabbit/synrepo/main/scripts/install.sh | sh
+
+Install a specific version:
+
+    curl -fsSL https://raw.githubusercontent.com/whit3rabbit/synrepo/main/scripts/install.sh | INSTALL_VERSION=0.1.0 sh
+
+**Any platform with Cargo**
+
+    cargo install synrepo
+
+**Direct download**
+
+Binaries for Linux (amd64, arm64), macOS (arm64, x86_64), and Windows (amd64) are available on the [releases page](https://github.com/whit3rabbit/synrepo/releases).
+
 ## What Exists Today
 
 - CLI commands for `init`, `status`, `reconcile`, `check`, `sync`, `search`, `graph`, and `node`
@@ -21,10 +43,10 @@
 
 The cleanest workflow to get `synrepo` running is:
 
-1.  **Install the binary**: Ensure `synrepo` is in your PATH.
+1.  **Install synrepo**: See [Installation](#installation) above.
 2.  **Run setup**: In your repository root, run:
     ```bash
-    synrepo setup claude    # or cursor, codex, opencode, etc.
+    synrepo setup  # This setups for claude, cursor, codex, opencode, etc.
     ```
     This runs `init`, writes client-specific instructions, and registers the project-scoped MCP server where possible.
 3.  **Use the agent**: Your agent (e.g., Claude Code, Cursor) will now load synrepo context via MCP.

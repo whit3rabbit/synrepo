@@ -120,9 +120,9 @@ fn truncate_text(text: &str, max_chars: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::ids::{ConceptNodeId, FileNodeId, SymbolNodeId};
+    use crate::core::ids::{FileNodeId, SymbolNodeId};
     use crate::core::provenance::Provenance;
-    use crate::structure::graph::{ConceptNode, Epistemic, FileNode, SymbolKind, SymbolNode};
+    use crate::structure::graph::{Epistemic, SymbolKind, SymbolNode};
 
     fn test_provenance() -> Provenance {
         Provenance::structural("chunk-test", "rev", Vec::new())

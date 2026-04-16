@@ -3,8 +3,8 @@
 use std::collections::HashMap;
 
 use crate::{
-    core::ids::FileNodeId,
-    structure::graph::{GraphStore, SymbolKind, SymbolNode},
+    core::ids::{FileNodeId, NodeId},
+    structure::graph::{EdgeKind, GraphStore, SymbolKind, SymbolNode},
     surface::card::{
         types::{TestAssociation, TestEntry, TestSurfaceCard},
         Budget, SourceStore,
@@ -92,7 +92,21 @@ pub(super) fn test_surface_card_impl(
                             s.clone()
                         }
                     });
-                    // TODO: Add covers field from Calls edges at Deep budget.
+                    // Add covers field from Calls edges at Deep budget.
+                    let calls =
+                        graph.outbound(NodeId::Symbol(entry.symbol_id), Some(EdgeKind::Calls));
+                    entry.covers = calls.ok().map(|edges| {
+                        edges
+                            .iter()
+                            .filter_map(|e| {
+                                if let NodeId::Symbol(to_id) = e.to {
+                                    Some(to_id)
+                                } else {
+                                    None
+                                }
+                            })
+                            .collect()
+                    });
                 }
                 entry
             })

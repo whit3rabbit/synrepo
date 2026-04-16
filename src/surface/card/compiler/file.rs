@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use crate::{
     core::ids::{FileNodeId, NodeId},
-    structure::graph::{EdgeKind, GraphStore},
+    structure::graph::{Edge, EdgeKind, GraphStore},
     surface::card::git::FileGitIntelligence,
 };
 
@@ -37,37 +37,45 @@ pub(super) fn file_card(
         })
         .collect();
 
-    // Files that import this file (inbound Imports edges).
-    let inbound_imports = graph.inbound(NodeId::File(id), Some(EdgeKind::Imports))?;
+    // imported_by, imports, and outbound_imports (for co_changes filtering) — all
+    // truncated at Tiny budget per progressive disclosure contract.
+    let (imported_by, imports, outbound_imports): (Vec<FileRef>, Vec<FileRef>, Vec<Edge>) =
+        match budget {
+            Budget::Tiny => (vec![], vec![], vec![]),
+            Budget::Normal | Budget::Deep => {
+                // Files that import this file (inbound Imports edges).
+                let inbound_imports = graph.inbound(NodeId::File(id), Some(EdgeKind::Imports))?;
 
-    let mut imported_by: Vec<FileRef> = Vec::new();
-    for edge in &inbound_imports {
-        if let NodeId::File(from_id) = edge.from {
-            if let Some(from_file) = graph.get_file(from_id)? {
-                imported_by.push(FileRef {
-                    id: from_id,
-                    path: from_file.path.clone(),
-                });
+                let mut imported_by = Vec::new();
+                for edge in &inbound_imports {
+                    if let NodeId::File(from_id) = edge.from {
+                        if let Some(from_file) = graph.get_file(from_id)? {
+                            imported_by.push(FileRef {
+                                id: from_id,
+                                path: from_file.path.clone(),
+                            });
+                        }
+                    }
+                }
+
+                // Files this file imports (outbound Imports edges).
+                let outbound_imports = graph.outbound(NodeId::File(id), Some(EdgeKind::Imports))?;
+
+                let mut imports = Vec::new();
+                for edge in &outbound_imports {
+                    if let NodeId::File(to_id) = edge.to {
+                        if let Some(to_file) = graph.get_file(to_id)? {
+                            imports.push(FileRef {
+                                id: to_id,
+                                path: to_file.path.clone(),
+                            });
+                        }
+                    }
+                }
+
+                (imported_by, imports, outbound_imports)
             }
-        }
-    }
-
-    // Files this file imports (outbound Imports edges).
-    let outbound_imports = graph.outbound(NodeId::File(id), Some(EdgeKind::Imports))?;
-
-    let mut imports: Vec<FileRef> = Vec::new();
-    for edge in &outbound_imports {
-        if let NodeId::File(to_id) = edge.to {
-            if let Some(to_file) = graph.get_file(to_id)? {
-                imports.push(FileRef {
-                    id: to_id,
-                    path: to_file.path.clone(),
-                });
-            }
-        }
-    }
-
-    // TODO: truncate imported_by/imports for Tiny budget (symbol_limit already handles symbols)
+        };
 
     let git_intelligence = match budget {
         Budget::Tiny => None,

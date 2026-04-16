@@ -247,12 +247,8 @@ pub fn semantic_candidates(
         return Ok(Vec::new());
     }
 
-    // Check if we can embed queries (session must be loaded)
-    let has_session = index.embed_text("test").is_ok();
-    if !has_session {
-        tracing::warn!("Embedding session not available, skipping semantic prefilter");
-        return Ok(Vec::new());
-    }
+    // embed_text() will now return a hard error if the session is missing or fails,
+    // which propagates up. This ensures that enabled semantic triage is strict.
 
     let threshold = config.semantic_similarity_threshold as f32;
 
@@ -284,10 +280,8 @@ pub fn semantic_candidates(
     let mut out = Vec::new();
 
     for (concept_id, concept_text) in &concept_texts {
-        // Embed the concept text
-        let Ok(query_vector) = index.embed_text(concept_text) else {
-            continue;
-        };
+        // Embed the concept text (propagates errors in strict mode)
+        let query_vector = index.embed_text(concept_text)?;
 
         // Query for top matches (more than needed for distance filtering)
         let top_matches = index.query(&query_vector, 20);

@@ -2,13 +2,11 @@
 //!
 //! This module provides:
 //! - Chunk extraction from graph symbols and prose concepts
-//! - Embedding model resolution and downloading
-//! - ONNX inference using `ort`
-//! - Flat vector index with cosine similarity search
+//! - Embedding model resolution and downloading (global cache)
+//! - ONNX inference using `ort` and `tokenizers`
+//! - Flat vector index with dot-product similarity search
 //!
 //! All functionality is gated behind the `semantic-triage` feature flag.
-//!
-//! Spec: `openspec/changes/semantic-triage-v1/specs/semantic-triage/spec.md`
 
 #[cfg(feature = "semantic-triage")]
 pub mod chunk;
@@ -28,7 +26,7 @@ use crate::config::Config;
 use crate::Result;
 
 #[cfg(feature = "semantic-triage")]
-use crate::structure::graph::{with_graph_read_snapshot, GraphStore};
+use crate::structure::graph::GraphStore;
 
 /// Build the embedding index for a graph store if semantic triage is enabled.
 #[cfg(feature = "semantic-triage")]
@@ -46,7 +44,8 @@ pub fn build_embedding_index<G: GraphStore>(
 }
 
 /// Load an existing embedding index for query-time use.
-/// Returns None if semantic triage is not enabled or index doesn't exist.
+/// Returns None if semantic triage is not enabled.
+/// If enabled but the index or model is missing/invalid, returns an Error (strict policy).
 #[cfg(feature = "semantic-triage")]
 pub fn load_embedding_index(
     config: &Config,
@@ -56,21 +55,21 @@ pub fn load_embedding_index(
         return Ok(None);
     }
 
-    let vectors_dir = synrepo_dir.join("index/vectors");
-    let index_path = vectors_dir.join("index.bin");
-    let model_path = vectors_dir.join("model.onnx");
-
+    let index_path = synrepo_dir.join("index/vectors/index.bin");
     if !index_path.exists() {
-        return Ok(None);
+        // If config is enabled but index is missing, it's an error in strict mode
+        return Err(crate::Error::Other(anyhow::anyhow!(
+            "Semantic triage is enabled but embedding index is missing at {}. Run 'synrepo reconcile' to build it.",
+            index_path.display()
+        )));
     }
 
-    // Load the index with the model for query-time embedding
-    let index = if model_path.exists() {
-        index::FlatVecIndex::load_with_model_path(&index_path, config.embedding_dim, &model_path)?
-    } else {
-        // Model not present, load without session (can't embed queries)
-        index::FlatVecIndex::load(&index_path, config.embedding_dim)?
-    };
+    // Resolve the model from global cache (strict failure if missing/invalid)
+    let resolver = ModelResolver::new();
+    let model_res = resolver.resolve(&config.semantic_model, synrepo_dir, config.embedding_dim)?;
+
+    // Load the index with the model session restored
+    let index = index::FlatVecIndex::load_with_resolution(&index_path, config.embedding_dim, &model_res)?;
 
     Ok(Some(index))
 }
@@ -86,31 +85,15 @@ fn build_index_with_config<G: GraphStore>(
 
     let index_path = vectors_dir.join("index.bin");
 
-    // Try to load existing index
-    if index_path.exists() {
-        match index::FlatVecIndex::load(&index_path, config.embedding_dim) {
-            Ok(index) => {
-                tracing::info!(
-                    "Loaded existing embedding index with {} chunks",
-                    index.len()
-                );
-                return Ok(index);
-            }
-            Err(e) => {
-                tracing::warn!(error = %e, "Failed to load existing index, rebuilding");
-            }
-        }
-    }
-
-    // Resolve and load the model
+    // Resolve and load the model (shared global cache)
     let resolver = ModelResolver::new();
-    let model = resolver.resolve(&config.semantic_model, &vectors_dir, config.embedding_dim)?;
+    let model = resolver.resolve(&config.semantic_model, synrepo_dir, config.embedding_dim)?;
 
     // Extract chunks from the graph
     let chunks = chunk::extract_chunks(graph)?;
 
-    // Build embeddings for all chunks
-    let index = index::FlatVecIndex::build(chunks, model, &vectors_dir)?;
+    // Build embeddings for all chunks (performs real inference and normalization)
+    let index = index::FlatVecIndex::build(chunks, model)?;
 
     // Save to disk
     index.save(&index_path)?;
