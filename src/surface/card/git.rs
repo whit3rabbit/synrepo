@@ -195,7 +195,11 @@ pub(crate) fn symbol_last_change_from_insights(
     if let Some(target_rev) = last_modified_rev {
         if matches!(insights.status.readiness, GitIntelligenceReadiness::Ready) {
             if let Some(commit) = insights.commits.iter().find(|c| c.revision == target_rev) {
-                return Some(build_last_change(commit, include_summary, LastChangeGranularity::Symbol));
+                return Some(build_last_change(
+                    commit,
+                    include_summary,
+                    LastChangeGranularity::Symbol,
+                ));
             }
         }
     }

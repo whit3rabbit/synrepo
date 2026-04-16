@@ -1,6 +1,7 @@
 //! Sqlite-backed canonical graph store.
 
 mod codec;
+mod lifecycle;
 mod ops;
 mod schema;
 

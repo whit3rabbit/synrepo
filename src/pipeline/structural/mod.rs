@@ -24,18 +24,18 @@
 //! (`pipeline::writer`). This function should remain stateless and
 //! re-entrant so the reconcile path can call it safely on any event burst.
 //!
-//! ## Replacement contract
+//! ## Observation lifecycle
 //!
-//! Each compile run replaces stale facts for the producer-owned slice:
-//! - File nodes with changed content are deleted (cascading to their symbols
-//!   and edges) and re-inserted, keeping the original stable ID.
+//! Each compile run refreshes the producer-owned observation slice:
+//! - File nodes with changed content are upserted (preserving FileNodeId),
+//!   their symbols are diffed, and stale symbols/edges are soft-retired.
 //! - File nodes whose paths have disappeared from the discovered set are
-//!   deleted.
+//!   physically deleted (cascade).
 //! - Concept nodes whose paths have disappeared are deleted.
 //! - The run is idempotent, unchanged files are skipped entirely.
 
 mod ids;
-pub use ids::derive_edge_id;
+pub use crate::structure::graph::derive_edge_id;
 
 mod provenance;
 mod stage4;
@@ -46,7 +46,11 @@ mod tests;
 
 use std::{collections::BTreeSet, path::Path, time::Instant};
 
-use crate::{config::Config, structure::graph::GraphStore, substrate};
+use crate::{
+    config::Config,
+    structure::{drift, graph::GraphStore},
+    substrate,
+};
 
 use stages::stages_1_to_3;
 
@@ -72,9 +76,24 @@ pub fn run_structural_compile(
     // SQLite read-your-own-writes: stage 4's symbol/file queries see the nodes
     // inserted by stages 1–3 on the same connection without an intermediate commit.
     // On any error in any stage, rollback leaves the graph in its prior state.
+    // Allocate a compile revision for observation-window tracking.
+    // Falls back to None for test stores that don't implement it.
+    let compile_rev = match graph.next_compile_revision() {
+        Ok(0) => None, // test store default
+        Ok(rev) => Some(rev),
+        Err(_) => None,
+    };
+
     graph.begin()?;
     let (txn, stage4_edges) = match (|| -> crate::Result<_> {
-        let txn = stages_1_to_3(repo_root, config, graph, &discovered, &discovered_paths)?;
+        let txn = stages_1_to_3(
+            repo_root,
+            config,
+            graph,
+            &discovered,
+            &discovered_paths,
+            compile_rev,
+        )?;
         let edges =
             stage4::run_cross_file_resolution(graph, &txn.cross_file_pending, &txn.revision)?;
         Ok((txn, edges))
@@ -87,6 +106,16 @@ pub fn run_structural_compile(
     };
     graph.commit()?;
 
+    // Stage 7: drift scoring (runs outside the main transaction since it
+    // only writes to the sidecar edge_drift table, not the graph itself).
+    let drift_scored = match drift::run_drift_scoring(graph, &txn.revision) {
+        Ok(count) => count,
+        Err(e) => {
+            tracing::warn!(error = %e, "stage 7 drift scoring failed; continuing");
+            0
+        }
+    };
+
     Ok(CompileSummary {
         files_discovered,
         files_parsed: txn.files_parsed,
@@ -94,6 +123,7 @@ pub fn run_structural_compile(
         edges_added: txn.edges_added + stage4_edges,
         concept_nodes_emitted: txn.concept_nodes_emitted,
         identities_resolved: txn.identities_resolved,
+        drift_scored,
         elapsed_ms: start.elapsed().as_millis() as u64,
     })
 }
@@ -113,6 +143,8 @@ pub struct CompileSummary {
     pub concept_nodes_emitted: usize,
     /// Identity resolutions performed (phase-1+).
     pub identities_resolved: usize,
+    /// Edges that received a non-zero drift score this cycle.
+    pub drift_scored: usize,
     /// Wall-clock time in milliseconds.
     pub elapsed_ms: u64,
 }

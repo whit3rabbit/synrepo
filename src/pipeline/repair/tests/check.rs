@@ -255,3 +255,33 @@ fn check_report_serializes_to_valid_json() {
         "report must include at least 6 surfaces"
     );
 }
+
+#[test]
+fn edge_drift_surface_appears_in_report_when_graph_exists() {
+    use crate::pipeline::repair::DriftClass;
+    let dir = tempdir().unwrap();
+    let synrepo_dir = dir.path().join(".synrepo");
+    init_synrepo_with_completed_reconcile(&synrepo_dir);
+
+    // Create a minimal graph store so the edge_drift finding can query it.
+    let graph_dir = synrepo_dir.join("graph");
+    let graph = crate::store::sqlite::SqliteGraphStore::open(&graph_dir).unwrap();
+    // The graph is empty with no drift scores -> Absent (not yet assessed).
+    drop(graph);
+
+    let report = build_repair_report(&synrepo_dir, &Config::default());
+    let drift_findings: Vec<_> = report
+        .findings
+        .iter()
+        .filter(|f| f.surface == RepairSurface::EdgeDrift)
+        .collect();
+    assert!(
+        !drift_findings.is_empty(),
+        "edge_drift surface must appear in report"
+    );
+    assert_eq!(
+        drift_findings[0].drift_class,
+        DriftClass::Absent,
+        "empty graph with no drift scores should report Absent, not Current"
+    );
+}

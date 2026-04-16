@@ -42,6 +42,8 @@ fn make_symbol(id: u64, file_id: u64, qname: &str, body_hash: &str) -> SymbolNod
         doc_comment: None,
         first_seen_rev: None,
         last_modified_rev: None,
+        last_observed_rev: None,
+        retired_at_rev: None,
         epistemic: Epistemic::ParserObserved,
         provenance: test_provenance(),
     }
@@ -65,6 +67,7 @@ fn setup_graph() -> (
             size_bytes: 100,
             language: Some("rust".to_string()),
             inline_decisions: vec![],
+            last_observed_rev: None,
             epistemic: Epistemic::ParserObserved,
             provenance: test_provenance(),
         })

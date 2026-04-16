@@ -76,6 +76,7 @@ fn seed_graph(graph: &mut SqliteGraphStore) {
             size_bytes: 64,
             language: Some("markdown".to_string()),
             inline_decisions: Vec::new(),
+            last_observed_rev: None,
             epistemic: Epistemic::ParserObserved,
             provenance: sample_provenance("docs/adr/0001-auth.md", "doc-hash"),
         })
@@ -89,6 +90,7 @@ fn seed_graph(graph: &mut SqliteGraphStore) {
             size_bytes: 64,
             language: Some("rust".to_string()),
             inline_decisions: Vec::new(),
+            last_observed_rev: None,
             epistemic: Epistemic::ParserObserved,
             provenance: sample_provenance("src/lib.rs", "code-hash"),
         })
@@ -106,6 +108,8 @@ fn seed_graph(graph: &mut SqliteGraphStore) {
             doc_comment: None,
             first_seen_rev: None,
             last_modified_rev: None,
+            last_observed_rev: None,
+            retired_at_rev: None,
             epistemic: Epistemic::ParserObserved,
             provenance: sample_provenance("src/lib.rs", "code-hash"),
         })
@@ -119,6 +123,7 @@ fn seed_graph(graph: &mut SqliteGraphStore) {
             summary: Some("auth flow".to_string()),
             status: None,
             decision_body: None,
+            last_observed_rev: None,
             epistemic: Epistemic::HumanDeclared,
             provenance: sample_provenance("docs/adr/0001-auth.md", "doc-hash"),
         })

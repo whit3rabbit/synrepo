@@ -337,6 +337,7 @@ mod tests {
             size_bytes: 0,
             language: Some("rust".into()),
             inline_decisions: Vec::new(),
+            last_observed_rev: None,
             epistemic: Epistemic::ParserObserved,
             provenance: test_provenance(),
         }
@@ -355,6 +356,8 @@ mod tests {
             doc_comment: None,
             first_seen_rev: None,
             last_modified_rev: None,
+            last_observed_rev: None,
+            retired_at_rev: None,
             epistemic: Epistemic::ParserObserved,
             provenance: test_provenance(),
         }
@@ -369,6 +372,7 @@ mod tests {
             summary: None,
             status: None,
             decision_body: body.map(|s| s.into()),
+            last_observed_rev: None,
             epistemic: Epistemic::HumanDeclared,
             provenance: test_provenance(),
         }
@@ -380,6 +384,9 @@ mod tests {
             from,
             to,
             kind,
+            owner_file_id: None,
+            last_observed_rev: None,
+            retired_at_rev: None,
             epistemic: Epistemic::ParserObserved,
             drift_score: 0.0,
             provenance: test_provenance(),

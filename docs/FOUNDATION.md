@@ -220,7 +220,7 @@ The data already exists: `.synrepo/state/reconcile-state.json`, `.synrepo/state/
 
 ## The two pipelines
 
-**Structural pipeline (hot path, no LLM).** Runs on every change, synchronously, seconds even on thousand-file refactors. Walks the configured roots, parses code via tree-sitter, parses prose via the Markdown parser, mines git history, computes derived structural facts (reachability, dead code, hidden coupling, drift scores), commits to sqlite and syntext. That's the whole critical path — no cascade budget, no deferral, no nightly queue. A 1,000-file refactor gets its graph updated in a few seconds of tree-sitter plus the graph write. Agents never read stale structural state.
+**Structural pipeline (hot path, no LLM).** Runs on every change, synchronously, seconds even on thousand-file refactors. Walks the configured roots, parses code via tree-sitter, parses prose via the Markdown parser, mines git history, computes derived structural facts (reachability, dead code, hidden coupling, drift scores), commits to sqlite and syntext. Changed files are upserted in place (preserving stable node identity), and stale observations are soft-retired rather than cascade-deleted, so drift scoring and provenance remain coherent across revisions. That's the whole critical path — no cascade budget, no deferral, no nightly queue. A 1,000-file refactor gets its graph updated in a few seconds of tree-sitter plus the graph write. Agents never read stale structural state.
 
 **Synthesis pipeline (cold path, LLM-driven, lazy).** Never blocks the structural pipeline. Never blocks MCP queries. Runs in three triggering modes: on-demand (an MCP tool asked for commentary or a card at `deep` tier), background (low-priority worker regenerating overlay during idle time), or explicit (the user ran `synrepo sync --generate-cross-links`). Produces card commentary, proposes cross-links, runs lint. Everything it produces goes into the overlay. Input never includes other overlay content, enforced at the retrieval layer.
 
@@ -297,15 +297,21 @@ Cited-evidence verification is a strong improvement over "the target node exists
 
 AST-based rename detection as the primary mechanism, with content hash and `git log --follow` as fallbacks. This is the single most important correctness problem: if file node identity breaks, every inbound edge breaks and the graph rots.
 
-**File identity.** When the structural pipeline detects a file disappearance and one or more new files in the same compile cycle, it runs the rename-detection cascade:
+**File identity.** `FileNodeId` is stable across both renames and in-place content edits. A content-hash change advances the `content_hash` version field on the file node without triggering node deletion. Symbols and edges that are no longer emitted after a content change are soft-retired (marked with `retired_at_rev`) rather than cascade-deleted, preserving cross-revision continuity for drift scoring and provenance.
+
+When the structural pipeline detects a file disappearance and one or more new files in the same compile cycle, it runs the rename-detection cascade:
 
 1. **AST symbol-set match.** For each new file, compute the set of `(qualified_name, body_hash)` tuples for its top-level symbols. If a disappeared file's symbol set overlaps substantially (threshold configurable), treat it as a rename: preserve the file node ID, append the new path to path history, log the rename. Catches simple renames cleanly.
-2. **Symbol-set split.** If a disappeared file's symbols are split across multiple new files (e.g. `auth.rs` → `jwt.rs` + `session.rs`), split the file node. The original retains its ID and points to the largest-overlap new file; a new node is created for the other with `split_from` provenance edges. Refactors heal automatically when there's structural evidence.
-3. **Symbol-set merge.** Symmetric: multiple disappeared files' symbols all in one new file → new node with `merged_from` edges.
+2. **Symbol-set split.** If a disappeared file's symbols are split across multiple new files (e.g. `auth.rs` -> `jwt.rs` + `session.rs`), split the file node. The original retains its ID and points to the largest-overlap new file; a new node is created for the other with `split_from` provenance edges. Refactors heal automatically when there's structural evidence.
+3. **Symbol-set merge.** Symmetric: multiple disappeared files' symbols all in one new file -> new node with `merged_from` edges.
 4. **Git rename fallback.** When symbol evidence is inconclusive (config files, heavily refactored files), fall back to `git log --follow`.
 5. **Accept breakage as last resort.** When neither symbol nor git evidence connects an old file to a new one, treat it as delete + add. Log a finding. The system is designed to tolerate this gracefully: broken edges become candidates for the next synthesis pass.
 
+Physical deletion is reserved for files genuinely absent from the repository after the identity cascade, and for the compaction maintenance pass that removes retired observations older than the configured retention window (`retain_retired_revisions`, default 10 compile revisions).
+
 **Symbol identity.** `(file_node_id, qualified_name, kind, body_hash)`. A body rewrite updates the hash but keeps the node ID. A name change is detected via AST-match within-file.
+
+**Observation lifecycle.** Every parser-emitted symbol and edge carries an `owner_file_id` (the file whose parse pass produced it) and observation-window fields (`last_observed_rev`, `retired_at_rev`). Recompiling a file retires only observations owned by that file that were not re-emitted, leaving observations owned by other files untouched. Human-declared facts (`Epistemic::HumanDeclared`) are never retired by a parser pass. Retired observations remain physically present and visible to drift scoring until compacted.
 
 This is much stronger than a git-only approach but it is not bedrock. Pathological refactors (path moves + symbol renames + body rewrites in one commit) will still defeat it. The system degrades gracefully: broken edges become findings, the synthesis pipeline can re-propose them lazily.
 

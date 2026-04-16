@@ -71,6 +71,10 @@ pub struct FileNode {
     /// line comments. Empty when no markers are present.
     #[serde(default)]
     pub inline_decisions: Vec<String>,
+    /// Compile revision at which this file was last observed by the structural
+    /// compile. `None` for rows written before the graph-lifecycle-v1 migration.
+    #[serde(default)]
+    pub last_observed_rev: Option<u64>,
     /// Epistemic origin (always `ParserObserved` for files).
     pub epistemic: Epistemic,
     /// Provenance metadata.
@@ -106,6 +110,14 @@ pub struct SymbolNode {
     /// current value. `None` when no transition was found in the window.
     #[serde(default)]
     pub last_modified_rev: Option<String>,
+    /// Compile revision at which this symbol was last observed by the
+    /// structural compile. `None` for pre-migration rows.
+    #[serde(default)]
+    pub last_observed_rev: Option<u64>,
+    /// Compile revision at which this symbol stopped being emitted by its
+    /// owning file's parse pass. `None` while the symbol is active.
+    #[serde(default)]
+    pub retired_at_rev: Option<u64>,
     /// Epistemic origin (always `ParserObserved` for symbols).
     pub epistemic: Epistemic,
     /// Provenance metadata.
@@ -133,6 +145,10 @@ pub struct ConceptNode {
     /// if no such heading is found). Present only for ADR-style documents.
     #[serde(default)]
     pub decision_body: Option<String>,
+    /// Compile revision at which this concept was last observed by the
+    /// structural compile. `None` for pre-migration rows.
+    #[serde(default)]
+    pub last_observed_rev: Option<u64>,
     /// Epistemic origin (always `HumanDeclared` for concept nodes).
     pub epistemic: Epistemic,
     /// Provenance metadata.

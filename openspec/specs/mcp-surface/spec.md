@@ -237,3 +237,25 @@ synrepo SHALL include a single, consistent escalation-default sentence in the `d
 - **WHEN** a contributor edits the escalation sentence in one tool description directly
 - **THEN** the compiled tool descriptions diverge from the shared constant
 - **AND** the shims test or a dedicated MCP description test fails, blocking the change
+
+### Requirement: Expose synrepo_call_path as a call-path tracing tool
+synrepo SHALL expose `synrepo_call_path(target, budget?)` as an MCP tool that returns a `CallPathCard` tracing execution paths from entry points to a target symbol. The tool SHALL accept parameters: `target` (symbol node ID or qualified name, required), `budget` (`tiny`, `normal`, `deep`, default `tiny`). Uses backward BFS over `Calls` edges with depth budget (8 at tiny/normal, 12 at deep).
+
+#### Scenario: Tool registration appears in MCP capabilities
+- **WHEN** an MCP client connects and enumerates available tools
+- **THEN** `synrepo_call_path` appears in the tool list
+
+#### Scenario: Return paths from entry points to target
+- **WHEN** an agent invokes `synrepo_call_path` with a target symbol that has callers
+- **THEN** the response includes a `CallPathCard` with paths from entry points to the target
+
+### Requirement: Expose synrepo_test_surface as a test discovery tool
+synrepo SHALL expose `synrepo_test_surface(scope, budget?)` as an MCP tool that returns a `TestSurfaceCard` discovering test functions related to a scope. The tool SHALL accept parameters: `scope` (file path or directory, required), `budget` (`tiny`, `normal`, `deep`, default `tiny`). Uses path-convention heuristics to associate test files with source files.
+
+#### Scenario: Tool registration appears in MCP capabilities
+- **WHEN** an MCP client connects and enumerates available tools
+- **THEN** `synrepo_test_surface` appears in the tool list
+
+#### Scenario: Return test entries for a scope
+- **WHEN** an agent invokes `synrepo_test_surface` with a file path that has associated tests
+- **THEN** the response includes a `TestSurfaceCard` with `TestEntry` records

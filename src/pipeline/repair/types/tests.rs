@@ -25,6 +25,11 @@ fn repair_surface_stable_identifiers() {
         "proposed_links_overlay"
     );
     assert_eq!(RepairSurface::ExportSurface.as_str(), "export_surface");
+    assert_eq!(RepairSurface::EdgeDrift.as_str(), "edge_drift");
+    assert_eq!(
+        RepairSurface::RetiredObservations.as_str(),
+        "retired_observations"
+    );
 }
 
 #[test]
@@ -36,6 +41,7 @@ fn drift_class_stable_identifiers() {
     assert_eq!(DriftClass::Unsupported.as_str(), "unsupported");
     assert_eq!(DriftClass::Blocked.as_str(), "blocked");
     assert_eq!(DriftClass::SourceDeleted.as_str(), "source_deleted");
+    assert_eq!(DriftClass::HighDriftEdge.as_str(), "high_drift_edge");
 }
 
 #[test]
@@ -66,6 +72,7 @@ fn repair_action_stable_identifiers() {
         RepairAction::RegenerateExports.as_str(),
         "regenerate_exports"
     );
+    assert_eq!(RepairAction::CompactRetired.as_str(), "compact_retired");
 }
 
 #[test]

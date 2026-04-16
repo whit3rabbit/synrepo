@@ -170,7 +170,10 @@ fn sync_renders_report_only_and_repaired_distinctly() {
 }
 
 #[test]
-fn sync_does_not_report_structural_refresh_as_repaired_when_reconcile_hits_lock_conflict() {
+fn sync_fails_fast_when_writer_lock_is_held() {
+    // New behavior: execute_sync acquires the lock at start and fails fast
+    // if another process holds it, rather than proceeding and handling the
+    // conflict internally.
     let dir = tempdir().unwrap();
     let (repo, synrepo_dir) = setup_repo_for_sync(&dir);
 
@@ -179,35 +182,23 @@ fn sync_does_not_report_structural_refresh_as_repaired_when_reconcile_hits_lock_
         &ReconcileOutcome::Failed("forced stale".to_string()),
         0,
     );
+    // Hold the lock - sync should fail immediately rather than proceed.
     let _lock = acquire_writer_lock(&synrepo_dir).unwrap();
 
-    let summary = execute_sync(
+    let result = execute_sync(
         &repo,
         &synrepo_dir,
         &Config::default(),
         SyncOptions::default(),
-    )
-    .unwrap();
-
-    assert!(
-        !summary
-            .repaired
-            .iter()
-            .any(|finding| finding.surface == RepairSurface::StructuralRefresh),
-        "lock-conflicted reconcile must not be counted as repaired"
-    );
-    assert!(
-        summary
-            .blocked
-            .iter()
-            .any(|finding| finding.surface == RepairSurface::StructuralRefresh),
-        "structural refresh should be blocked when reconcile cannot acquire the lock"
     );
 
-    let log_content = std::fs::read_to_string(repair_log_path(&synrepo_dir)).unwrap();
-    let decoded: ResolutionLogEntry =
-        serde_json::from_str(log_content.lines().next().unwrap()).unwrap();
-    assert_eq!(decoded.outcome, SyncOutcome::Partial);
+    // Sync fails because it cannot acquire the writer lock.
+    assert!(result.is_err());
+    let err = result.unwrap_err().to_string();
+    assert!(
+        err.contains("writer lock held by pid"),
+        "expected lock-held error, got: {err}"
+    );
 }
 
 #[test]

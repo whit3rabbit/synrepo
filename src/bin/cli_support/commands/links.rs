@@ -4,6 +4,7 @@ use synrepo::{
     config::{Config, Mode},
     core::ids::NodeId,
     overlay::{OverlayEdgeKind, OverlayStore},
+    pipeline::writer::{acquire_writer_lock, LockError},
     store::overlay::{
         candidate_pass_suffix, compare_score_desc, format_candidate_id, parse_cross_link_freshness,
         parse_overlay_edge_kind, FindingsFilter, SqliteOverlayStore,
@@ -161,6 +162,16 @@ pub(crate) fn links_accept(
     let synrepo_dir = Config::synrepo_dir(repo_root);
     ensure_watch_not_running(&synrepo_dir, "links accept")?;
 
+    let _writer_lock = acquire_writer_lock(&synrepo_dir).map_err(|err| match err {
+        LockError::HeldByOther { pid, .. } => anyhow::anyhow!(
+            "links accept: writer lock held by pid {pid}; wait for it to finish or stop the watch daemon"
+        ),
+        LockError::Io { path, source } => anyhow::anyhow!(
+            "links accept: could not acquire writer lock at {}: {source}",
+            path.display()
+        ),
+    })?;
+
     let overlay_dir = synrepo_dir.join("overlay");
     let mut overlay = SqliteOverlayStore::open_existing(&overlay_dir)
         .map_err(|error| anyhow::anyhow!("Could not open overlay store: {error}"))?;
@@ -187,6 +198,9 @@ pub(crate) fn links_accept(
         from,
         to,
         kind: edge_kind,
+        owner_file_id: None,
+        last_observed_rev: None,
+        retired_at_rev: None,
         epistemic: Epistemic::HumanDeclared,
         drift_score: 0.0,
         provenance: synrepo::core::provenance::Provenance {
@@ -260,6 +274,16 @@ pub(crate) fn links_reject(
     }
     let synrepo_dir = Config::synrepo_dir(repo_root);
     ensure_watch_not_running(&synrepo_dir, "links reject")?;
+
+    let _writer_lock = acquire_writer_lock(&synrepo_dir).map_err(|err| match err {
+        LockError::HeldByOther { pid, .. } => anyhow::anyhow!(
+            "links reject: writer lock held by pid {pid}; wait for it to finish or stop the watch daemon"
+        ),
+        LockError::Io { path, source } => anyhow::anyhow!(
+            "links reject: could not acquire writer lock at {}: {source}",
+            path.display()
+        ),
+    })?;
 
     let overlay_dir = synrepo_dir.join("overlay");
     let mut overlay = SqliteOverlayStore::open_existing(&overlay_dir)

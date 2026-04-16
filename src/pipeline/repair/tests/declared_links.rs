@@ -42,6 +42,7 @@ fn check_declared_links_detects_dangling_governs_target() {
         summary: None,
         status: None,
         decision_body: None,
+        last_observed_rev: None,
         epistemic: Epistemic::HumanDeclared,
         provenance: provenance.clone(),
     };
@@ -54,6 +55,9 @@ fn check_declared_links_detects_dangling_governs_target() {
             from: NodeId::Concept(concept_id),
             to: NodeId::File(ghost_file_id),
             kind: EdgeKind::Governs,
+            owner_file_id: None,
+            last_observed_rev: None,
+            retired_at_rev: None,
             epistemic: Epistemic::HumanDeclared,
             drift_score: 0.0,
             provenance,

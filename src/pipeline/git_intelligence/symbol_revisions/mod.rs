@@ -37,20 +37,19 @@ pub fn derive_symbol_revisions(
     let id_to_path: HashMap<_, _> = file_paths.iter().map(|(p, id)| (id, p.clone())).collect();
 
     // Load all current symbols grouped by file path, keyed by (qualified_name, kind).
-    let symbol_names = graph.all_symbol_names()?;
+    // all_symbols_summary returns (id, file_id, qname, kind_label, body_hash) in a
+    // single batch query, avoiding the previous N+1 pattern of calling get_symbol per row.
+    let symbol_summary = graph.all_symbols_summary()?;
     let mut current_by_file: HashMap<String, HashMap<SymbolKey, (u64, String)>> = HashMap::new();
-    for (sym_id, file_id, _qname) in &symbol_names {
+    for (sym_id, file_id, qname, kind_label, body_hash) in &symbol_summary {
         let Some(path) = id_to_path.get(&file_id) else {
             continue;
         };
-        let Ok(Some(sym)) = graph.get_symbol(*sym_id) else {
-            continue;
-        };
-        let key = (sym.qualified_name.clone(), sym.kind.as_str().to_string());
+        let key = (qname.clone(), kind_label.clone());
         current_by_file
             .entry(path.clone())
             .or_default()
-            .insert(key, (sym_id.0, sym.body_hash.clone()));
+            .insert(key, (sym_id.0, body_hash.clone()));
     }
 
     for (file_path, current_hashes) in &current_by_file {
@@ -66,9 +65,9 @@ pub fn derive_symbol_revisions(
         // - last_modified_rev: the *newest* commit where body_hash differs from
         //   the current value (first such assignment wins).
         let repo = match crate::pipeline::git::open_repo(repo_root) {
-        Ok(r) => r,
-        Err(_) => return Ok(()),
-    };
+            Ok(r) => r,
+            Err(_) => return Ok(()),
+        };
 
         let mut first_seen: HashMap<SymbolKey, String> = HashMap::new();
         let mut last_modified: HashMap<SymbolKey, String> = HashMap::new();

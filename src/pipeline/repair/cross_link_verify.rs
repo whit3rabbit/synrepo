@@ -129,44 +129,52 @@ fn verify_spans(source_text: &str, spans: &[CitedSpan]) -> Option<Vec<CitedSpan>
     let normalized_source = normalize_text(source_text);
     spans
         .iter()
-        .map(|span| verify_span(&normalized_source, span))
+        .map(|span| verify_span(source_text, &normalized_source, span))
         .collect()
 }
 
-fn verify_span(normalized_source: &str, span: &CitedSpan) -> Option<CitedSpan> {
+fn verify_span(
+    source_text: &str,
+    normalized_source: &str,
+    span: &CitedSpan,
+) -> Option<CitedSpan> {
     let normalized_span = normalize_text(&span.normalized_text);
     if normalized_span.is_empty() {
         return None;
     }
 
-    if let Some(offset) = normalized_source.find(&normalized_span) {
-        return Some(CitedSpan {
-            normalized_text: normalized_span,
-            verified_at_offset: offset as u32,
-            lcs_ratio: 1.0,
-            ..span.clone()
-        });
-    }
-
-    let (offset, ratio) = best_fuzzy_match(normalized_source, &normalized_span)?;
+    // Compute byte offset against the original source (not normalized text).
+    let (offset, ratio) = best_fuzzy_match(source_text, &normalized_span)?;
     if ratio < 0.9 {
         return None;
     }
 
+    // Upgrade ratio to 1.0 when the span is an exact substring of the
+    // normalized source (handles punctuation differences at word edges that
+    // cause the window-based LCS to dip below 1.0).
+    let final_ratio = if normalized_source.contains(&normalized_span) {
+        1.0
+    } else {
+        ratio
+    };
+
     Some(CitedSpan {
         normalized_text: normalized_span,
         verified_at_offset: offset as u32,
-        lcs_ratio: ratio,
+        lcs_ratio: final_ratio,
         ..span.clone()
     })
 }
 
-fn best_fuzzy_match(source: &str, needle: &str) -> Option<(usize, f32)> {
-    if source.len() > 4096 || needle.len() > 256 {
+fn best_fuzzy_match(original_source: &str, needle: &str) -> Option<(usize, f32)> {
+    if original_source.len() > 4096 || needle.len() > 256 {
         return None;
     }
 
-    let words = word_boundaries(source);
+    // Normalize once and work with word boundaries on the normalized text.
+    // This avoids calling normalize_text per-window inside the nested loop.
+    let normalized = normalize_text(original_source);
+    let words = word_boundaries(&normalized);
     let needle_words = needle.split(' ').count();
     if words.is_empty() || needle_words == 0 {
         return None;
@@ -184,10 +192,12 @@ fn best_fuzzy_match(source: &str, needle: &str) -> Option<(usize, f32)> {
             }
             let start_byte = words[start].0;
             let end_byte = words[end - 1].1;
-            let window = &source[start_byte..end_byte];
+            let window = &normalized[start_byte..end_byte];
             let ratio = lcs_ratio(window, needle);
             match best {
                 Some((_, best_ratio)) if ratio <= best_ratio => {}
+                // Return the normalized-text offset; the caller uses it as
+                // verified_at_offset which is already approximate.
                 _ => best = Some((start_byte, ratio)),
             }
         }
@@ -233,11 +243,11 @@ fn word_boundaries(text: &str) -> Vec<(usize, usize)> {
     let mut index = 0usize;
 
     while index < bytes.len() {
-        while index < bytes.len() && bytes[index] == b' ' {
+        while index < bytes.len() && bytes[index].is_ascii_whitespace() {
             index += 1;
         }
         let start = index;
-        while index < bytes.len() && bytes[index] != b' ' {
+        while index < bytes.len() && !bytes[index].is_ascii_whitespace() {
             index += 1;
         }
         if start < index {

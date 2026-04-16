@@ -219,6 +219,30 @@ impl SynrepoServer {
     }
 
     #[tool(
+        name = "synrepo_call_path",
+        description = "Return a CallPathCard tracing execution paths from entry points to a target symbol using backward BFS over Calls edges. Use to understand how to reach a function from binary/CLI/HTTP entry points. Default budget is tiny; escalate to normal for local understanding and deep only before edits."
+    )]
+    async fn synrepo_call_path(
+        &self,
+        Parameters(params): Parameters<cards::CallPathParams>,
+    ) -> String {
+        let _guard = self.request_serializer.lock().await;
+        cards::handle_call_path(&self.state, params.target, params.budget)
+    }
+
+    #[tool(
+        name = "synrepo_test_surface",
+        description = "Return a TestSurfaceCard discovering test functions related to a file or directory scope. Uses path-convention heuristics to associate test files with source files. Default budget is tiny; escalate to normal for local understanding and deep only before edits."
+    )]
+    async fn synrepo_test_surface(
+        &self,
+        Parameters(params): Parameters<cards::TestSurfaceParams>,
+    ) -> String {
+        let _guard = self.request_serializer.lock().await;
+        cards::handle_test_surface(&self.state, params.scope, params.budget)
+    }
+
+    #[tool(
         name = "synrepo_findings",
         description = "List operator-facing cross-link findings with provenance, tier, score, freshness, and endpoint IDs."
     )]

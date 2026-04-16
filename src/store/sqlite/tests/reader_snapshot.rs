@@ -21,6 +21,7 @@ fn make_file(id: u64, path: &str) -> FileNode {
         size_bytes: 1,
         language: Some("rust".to_string()),
         inline_decisions: Vec::new(),
+        last_observed_rev: None,
         epistemic: Epistemic::ParserObserved,
         provenance: sample_provenance("parse_code", path),
     }
@@ -39,6 +40,8 @@ fn make_symbol(id: u64, file_id: FileNodeId, qname: &str) -> SymbolNode {
         doc_comment: None,
         first_seen_rev: None,
         last_modified_rev: None,
+        last_observed_rev: None,
+        retired_at_rev: None,
         epistemic: Epistemic::ParserObserved,
         provenance: sample_provenance("parse_code", "src/lib.rs"),
     }

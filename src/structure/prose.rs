@@ -73,6 +73,7 @@ pub fn extract_concept(
             summary,
             status,
             decision_body,
+            last_observed_rev: None,
             epistemic: Epistemic::HumanDeclared,
             provenance,
         },

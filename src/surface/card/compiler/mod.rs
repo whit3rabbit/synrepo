@@ -41,6 +41,7 @@ use crate::{
 
 use self::git_cache::GitCache;
 
+mod call_path;
 mod entry_point;
 mod file;
 mod git_cache;
@@ -51,6 +52,7 @@ pub mod neighborhood;
 mod public_api;
 mod resolve;
 mod symbol;
+mod test_surface;
 
 #[cfg(test)]
 mod test_support;
@@ -187,6 +189,26 @@ impl CardCompiler for GraphCardCompiler {
     fn public_api_card(&self, path: &str, budget: Budget) -> crate::Result<PublicAPICard> {
         with_graph_read_snapshot(self.graph.as_ref(), |graph| {
             public_api::public_api_card_impl(self, graph, path, budget)
+        })
+    }
+
+    fn call_path_card(
+        &self,
+        target: SymbolNodeId,
+        budget: Budget,
+    ) -> crate::Result<super::CallPathCard> {
+        with_graph_read_snapshot(self.graph.as_ref(), |graph| {
+            call_path::call_path_card_impl(graph, target, budget)
+        })
+    }
+
+    fn test_surface_card(
+        &self,
+        scope: &str,
+        budget: Budget,
+    ) -> crate::Result<super::TestSurfaceCard> {
+        with_graph_read_snapshot(self.graph.as_ref(), |graph| {
+            test_surface::test_surface_card_impl(graph, scope, budget)
         })
     }
 

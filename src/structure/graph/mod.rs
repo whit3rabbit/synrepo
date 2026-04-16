@@ -7,7 +7,7 @@ mod epistemic;
 mod node;
 mod store;
 
-pub use edge::{Edge, EdgeKind};
+pub use edge::{derive_edge_id, Edge, EdgeKind};
 pub use epistemic::Epistemic;
 pub use node::{concept_source_path_allowed, ConceptNode, FileNode, SymbolKind, SymbolNode};
-pub use store::{with_graph_read_snapshot, GraphStore};
+pub use store::{with_graph_read_snapshot, CompactionSummary, GraphStore};

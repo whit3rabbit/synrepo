@@ -6,7 +6,7 @@
 
 mod control;
 mod lease;
-mod reconcile;
+pub(crate) mod reconcile;
 mod service;
 
 pub use control::{request_watch_control, WatchControlRequest, WatchControlResponse};
@@ -15,8 +15,9 @@ pub use lease::{
     watch_socket_path, WatchDaemonError, WatchDaemonState, WatchServiceMode, WatchServiceStatus,
 };
 pub use reconcile::{
-    emit_cochange_edges_pass, load_reconcile_state, persist_reconcile_state, reconcile_state_path,
-    run_reconcile_pass, ReconcileOutcome, ReconcileState,
+    emit_cochange_edges_pass, emit_symbol_revisions_pass, load_reconcile_state,
+    persist_reconcile_state, reconcile_state_path, run_reconcile_pass, ReconcileOutcome,
+    ReconcileState,
 };
 pub use service::{run_watch_loop, run_watch_service, WatchConfig};
 

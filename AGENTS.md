@@ -79,8 +79,8 @@ Files must stay under 400 lines; split into sub-modules before they grow past th
 - `graph/` — node types (`FileNode`, `SymbolNode`, `ConceptNode`), `EdgeKind`, `SymbolKind`, `Epistemic` (invariant comment in `epistemic.rs`), `GraphStore` trait
 - `parse.rs` — tree-sitter parsers for Rust, Python, TypeScript/TSX; extracts `ExtractedSymbol` and `ExtractedEdge` records
 - `prose.rs` — markdown concept extractor; produces `ConceptNode` from human-authored files in concept directories
-- `identity.rs` — rename detection scaffold (TODO phase-1)
-- `drift.rs` — per-edge drift score scaffold (TODO phase-1)
+- `identity.rs` — rename detection cascade (5 steps: content-hash, split, merge, git rename, breakage)
+- `drift.rs` — per-edge drift scoring via Jaccard distance on persisted structural fingerprints
 - `rationale.rs` — inline `// DECISION:` marker extraction from code files; results stored on `FileNode.inline_decisions`; cannot produce `ConceptNode` (invariant 7)
 - Spec: `openspec/specs/graph/spec.md`
 
@@ -98,10 +98,10 @@ Node types: `FileNode` (content-hash identity), `SymbolNode` (tree-sitter extrac
 - `mode_inspect.rs` — auto vs curated mode detection via `inspect_repository_mode()`
 - Spec: `openspec/specs/bootstrap/spec.md`
 
-**Pipeline** (`src/pipeline/`) — `structural/` defines the 8-stage compile cycle. `mod.rs` owns transaction orchestration and `CompileSummary`; `stages.rs` owns stages 1–3 (discover → parse code → parse prose); `stage4.rs` owns cross-file edge resolution. Stage 5 (git mining) runs via `src/pipeline/git/` and `src/pipeline/git_intelligence/`. Stages 6 (identity cascade, partially wired), 7 (drift scoring), and 8 (ArcSwap commit) are not yet wired end-to-end. `synthesis/` defines the `CommentaryGenerator` trait boundary with `stub.rs` (`NoOpGenerator`, default) and `claude.rs` (`ClaudeCommentaryGenerator`, reads `SYNREPO_ANTHROPIC_API_KEY`); called lazily by the card compiler at `Deep` budget when no overlay entry exists.
+**Pipeline** (`src/pipeline/`) — `structural/` defines the 8-stage compile cycle. `mod.rs` owns transaction orchestration and `CompileSummary`; `stages.rs` owns stages 1–3 (discover → parse code → parse prose); `stage4.rs` owns cross-file edge resolution. Stage 5 (git mining) runs via `src/pipeline/git/` and `src/pipeline/git_intelligence/`. Stage 6 (identity cascade: content-hash, split, merge, git rename fallback, breakage) is wired. Stage 7 (drift scoring via Jaccard distance on persisted structural fingerprints) is wired and writes to the sidecar `edge_drift` and `file_fingerprints` tables. Stage 8 (ArcSwap commit) is not yet wired. `synthesis/` defines the `CommentaryGenerator` trait boundary with `stub.rs` (`NoOpGenerator`, default) and `claude.rs` (`ClaudeCommentaryGenerator`, reads `SYNREPO_ANTHROPIC_API_KEY`); called lazily by the card compiler at `Deep` budget when no overlay entry exists.
 - `maintenance.rs` — storage-compatibility cleanup and compaction hooks; driven by `sync`.
 - `repair/` — `mod.rs` is a thin façade. `report.rs` builds the read-only drift view, `sync.rs` drives auto-repair, `cross_links.rs` runs the cross-link generation pass, `log.rs` appends JSONL resolution records, `declared_links.rs` verifies `Governs` targets, `commentary.rs` is the commentary-refresh repair action that calls the synthesis generator, and `types/` holds the stable enums plus report/log payload types.
-- `git_intelligence/` — `mod.rs` is a thin façade. `types.rs` defines the public Git-intelligence payloads, `analysis.rs` derives history/hotspot/ownership/co-change summaries, and `tests/` is split by status, history, path, and shared support helpers.
+- `git_intelligence/` — `mod.rs` is a thin façade. `types.rs` defines the public Git-intelligence payloads, `analysis.rs` derives history/hotspot/ownership/co-change summaries, `emit.rs` emits `CoChangesWith` edges into the graph after each git pass, `symbol_revisions/` tracks per-symbol `first_seen_rev`/`last_modified_rev` via body-hash diffing, and `tests/` is split by status, history, path, and shared support helpers.
 - `watch/` — reconcile backstop, watch lease/control plane, and watch loop production logic; tests live in `src/pipeline/watch/tests.rs`.
 - `writer.rs` — single-writer lock production logic; tests live in `src/pipeline/writer/tests.rs`.
 - Spec: `openspec/specs/foundation/spec.md`
@@ -161,8 +161,8 @@ Stages 1–3 run on every `synrepo init`:
 Stages 4–8:
 4. Cross-file edge resolution (`calls`, `imports`, `inherits`, `references`) — **implemented** in `cards-and-mcp-v1`: name-based approximate resolution via tree-sitter call/import queries + post-parse name lookup pass in `src/pipeline/structural/stage4.rs`
 5. Git mining (co-change, ownership, hotspots, recent file history) — **implemented** in `git-intelligence-v1`: deterministic first-parent history sampling via `src/pipeline/git/` and `src/pipeline/git_intelligence/`, surfaced today through file-facing outputs and node inspection
-6. Identity cascade (rename detection) — **partially implemented**: content-hash based rename detection wired; split/merge detection still TODO
-7. Drift scoring — TODO stub
+6. Identity cascade (rename detection) — **implemented**: content-hash rename, split/merge detection, git rename fallback all wired
+7. Drift scoring — **implemented**: Jaccard distance on persisted structural fingerprints, sidecar `edge_drift` and `file_fingerprints` tables, all-edge enumeration
 8. ArcSwap commit — TODO stub
 
 ### Overlay and audit surfaces
@@ -180,19 +180,20 @@ Stages 4–8:
 ### Not yet implemented
 
 - `CallPathCard`, `ChangeRiskCard`, `TestSurfaceCard`; specialist MCP tools (`synrepo_call_path`, `synrepo_test_surface`, `synrepo_change_risk`). `EntryPointCard`, `ModuleCard`, and `PublicAPICard` are shipped.
-- Graph-level `CoChangesWith` edges (kind defined, never emitted). `SymbolCard.last_change` projects the containing file's newest commit with `granularity: file`; true per-symbol body-hash tracking is staged in `symbol-last-change-v1`.
-- Drift scoring (stage 7), ArcSwap commit (stage 8), split/merge detection (stage 6 partial)
+- `SymbolCard.last_change` now uses per-symbol `first_seen_rev`/`last_modified_rev` tracking via `src/pipeline/git_intelligence/symbol_revisions/` (shipped in `symbol-last-change-v1`).
+- Graph-level `CoChangesWith` edges are now emitted after each git-intelligence pass via `src/pipeline/git_intelligence/emit.rs` (shipped in `graph-cochange-edges-v1`).
+- Drift scoring (stage 7), split/merge detection (stage 6), and git rename fallback are now shipped (`structural-resilience-v1` + `structural-resilience-v2`). ArcSwap commit (stage 8) remains TODO.
 
 ## Gotchas
 
 - **`src/bin/cli_support/agent_shims/` is a sub-module directory** — the canonical agent-doctrine text lives in `doctrine.rs` as a `doctrine_block!()` macro that every shim in `shims.rs` embeds via `concat!`. Edits to shim copy that touch escalation rules, do-not rules, or the product-boundary paragraph MUST go through `doctrine_block!`; the byte-identical test in `tests.rs` (`every_shim_embeds_doctrine_block`) enforces this. The escalation-line source-scan test reads `src/bin/cli_support/commands/mcp.rs` — do not move the MCP tool registration out of that file without updating the test path. Edit target-specific sections (tool list framing, CLI fallback examples, file paths) directly in `shims.rs`.
-- **`src/structure/parse/extract/` is a sub-module directory** (`mod.rs` ~388 lines, `qualname.rs` ~59 lines) — do not add more code to `mod.rs` without splitting further. Current watchlist (sorted): `src/pipeline/git/mod.rs` (357, approaching the 400 limit), `src/bin/cli_support/cli_args.rs` (288), `src/pipeline/structural/stages.rs` (345), `src/surface/mcp/primitives.rs` (330), `src/structure/prose.rs` (324), `src/store/compatibility/evaluate/mod.rs` (312), `src/pipeline/diagnostics.rs` (306), `src/bin/cli_support/commands/mcp.rs` (304). Re-check before adding to any of them.
+- **`src/structure/parse/extract/` is a sub-module directory** (`mod.rs` ~388 lines, `qualname.rs` ~59 lines) — do not add more code to `mod.rs` without splitting further. Current watchlist (sorted): `src/pipeline/git/mod.rs` (378, **22 lines from limit — split soon**), `src/bin/cli_support/cli_args.rs` (288), `src/pipeline/structural/stages.rs` (347), `src/surface/mcp/primitives.rs` (330), `src/structure/prose.rs` (324), `src/store/compatibility/evaluate/mod.rs` (320), `src/pipeline/diagnostics.rs` (310), `src/bin/cli_support/commands/mcp.rs` (302). Re-check before adding to any of them.
 - **`signature` and `doc_comment` are populated** by `src/structure/parse/extract/mod.rs` for Rust (`///` line comments, declaration up to `{`/`;`), Python (docstring, `def` line up to `:`), and TypeScript/TSX (JSDoc `/** */`, declaration up to `{`). These fields are safe to use in all three languages.
-- **Stage 4 cross-file edges are now emitted**: `Calls` (file→symbol, approximate name resolution) and `Imports` (file→file, relative path resolution) edges are produced by `run_structural_compile`. `Inherits`, `References`, `CoChangesWith`, `Mentions` are not yet emitted. `SplitFrom` and `MergedFrom` edge kinds are defined but not yet produced.
+- **Stage 4 cross-file edges are now emitted**: `Calls` (file→symbol, approximate name resolution) and `Imports` (file→file, relative path resolution) edges are produced by `run_structural_compile`. `Inherits`, `References`, `Mentions` are not yet emitted. `CoChangesWith` is emitted by stage 5 via `git_intelligence/emit.rs`, not stage 4. `SplitFrom` and `MergedFrom` edge kinds are defined but not yet produced.
 - **`criterion` is present in `Cargo.toml`**, but the documented test workflow still centers on `proptest` and `insta`. Use `criterion` only for explicit benchmark work.
 - **`.synrepo/graph/nodes.db`** is the actual SQLite file. Code that opens the graph store uses `SqliteGraphStore::open(&graph_dir)` where `graph_dir` is `.synrepo/graph/`; the `nodes.db` name is internal to `src/store/sqlite/mod.rs`.
 - **Compatibility blocks on version mismatch**: if `.synrepo/` contains a graph store whose recorded format version is newer than the current binary understands, `synrepo init` and all graph commands will error. Run `synrepo upgrade` to see recovery steps; for a full reset, remove `.synrepo/` and run `synrepo init`.
-- **Git history mining uses `gix`** (not `git2`). The current slice ships deterministic first-parent history sampling, degraded-history handling, hotspots, ownership hints, and file-scoped co-change summaries. Graph-level `CoChangesWith` edges and symbol-level last-change summaries are still future work.
+- **Git history mining uses `gix`** (not `git2`). The history collector in `pipeline/git/mod.rs` disables rewrite tracking for performance. The rename fallback in `pipeline/git/renames.rs` enables it separately for the identity cascade step 4. Both use the `gix` crate; all gix usage is centralized under `src/pipeline/git/`.
 - **`notify` and `notify-debouncer-full` are in `Cargo.toml`** and are used by the shipped watch runtime in `src/pipeline/watch/service.rs`. The service runs both `synrepo watch` foreground mode and `synrepo watch --daemon`, with `.synrepo/` self-event suppression and startup reconcile before steady-state watching.
 - **`concept_directories` config defaults**: `docs/concepts`, `docs/adr`, `docs/decisions`. Adding a fourth directory (e.g. `architecture/decisions`) requires a config-sensitive compatibility check — changing this field triggers a graph advisory in the compat report.
 - **File rename detection is implemented (content-hash matching).** When a file is moved to a new path with the same content, the structural compile detects the rename, preserves the `FileNodeId`, and records the old path in `path_history`. Caveat: split/merge detection is still TODO — a single file split into two will still produce orphaned nodes until split detection is wired.
@@ -225,7 +226,7 @@ Stages 4–8:
 
 `openspec/specs/` holds enduring domain specs (stable intended behavior). `openspec/changes/<name>/` holds active work: `proposal.md`, `design.md`, `tasks.md`, and optional delta specs.
 
-Active changes: `symbol-last-change-v1`, `structural-resilience-v1`, `specialist-cards-v1`, `semantic-triage-v1`, `storage-compaction-v1`
+Active changes: `graph-lifecycle-v1`, `structural-resilience-v2`, `specialist-cards-v1`, `semantic-triage-v1`, `storage-compaction-v1`
 
 Archived completed changes are in `openspec/changes/archive/`.
 

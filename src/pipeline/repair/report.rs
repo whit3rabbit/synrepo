@@ -48,6 +48,7 @@ pub(super) fn assemble_repair_report(
         config,
         diag.last_reconcile.as_ref(),
     ));
+    findings.extend(edge_drift_findings(synrepo_dir).unwrap_or_default());
     findings.extend(proposed_links_overlay_findings(synrepo_dir));
     findings.extend(unsupported_surface_findings());
 
@@ -387,6 +388,92 @@ struct DriftedCrossLink {
     to_node: String,
     kind: String,
     classification: CrossLinkDrift,
+}
+
+/// Build findings for edges with high drift scores.
+fn edge_drift_findings(synrepo_dir: &Path) -> crate::Result<Vec<RepairFinding>> {
+    use crate::store::sqlite::SqliteGraphStore;
+    use crate::structure::graph::GraphStore;
+
+    let graph_dir = synrepo_dir.join("graph");
+    let Ok(graph) = SqliteGraphStore::open_existing(&graph_dir) else {
+        return Ok(vec![RepairFinding {
+            surface: RepairSurface::EdgeDrift,
+            drift_class: DriftClass::Absent,
+            severity: Severity::Unsupported,
+            target_id: None,
+            recommended_action: RepairAction::None,
+            notes: Some("graph store not materialized; edge drift check skipped".to_string()),
+        }]);
+    };
+
+    // Use the latest revision actually recorded in edge_drift rather than
+    // attempting to infer it from file provenance. File provenance revisions
+    // reflect when each file was *last parsed*, not the current pipeline run,
+    // so a find_map across files would grab an arbitrarily stale revision for
+    // unchanged files — causing read_drift_scores to return 0 rows because the
+    // compiler truncates scores older than the current revision.
+    let Some(revision) = graph.latest_drift_revision()? else {
+        return Ok(vec![RepairFinding {
+            surface: RepairSurface::EdgeDrift,
+            drift_class: DriftClass::Absent,
+            severity: Severity::Unsupported,
+            target_id: None,
+            recommended_action: RepairAction::None,
+            notes: Some(
+                "no drift assessment performed yet; run a structural compile first".to_string(),
+            ),
+        }]);
+    };
+
+    let scores = match graph.read_drift_scores(&revision) {
+        Ok(scores) => scores,
+        Err(_) => return Ok(Vec::new()),
+    };
+
+    if scores.is_empty() {
+        return Ok(vec![RepairFinding {
+            surface: RepairSurface::EdgeDrift,
+            drift_class: DriftClass::Current,
+            severity: Severity::Actionable,
+            target_id: None,
+            recommended_action: RepairAction::None,
+            notes: Some("no drifted edges detected".to_string()),
+        }]);
+    }
+
+    let high_drift: Vec<_> = scores.iter().filter(|(_, score)| *score >= 0.7).collect();
+    let dead_edges: Vec<_> = scores
+        .iter()
+        .filter(|(_, score)| (*score - 1.0).abs() < f32::EPSILON)
+        .collect();
+
+    let mut findings = Vec::new();
+
+    if !high_drift.is_empty() {
+        findings.push(RepairFinding {
+            surface: RepairSurface::EdgeDrift,
+            drift_class: DriftClass::HighDriftEdge,
+            severity: if dead_edges.is_empty() {
+                Severity::ReportOnly
+            } else {
+                Severity::Actionable
+            },
+            target_id: None,
+            recommended_action: if dead_edges.is_empty() {
+                RepairAction::ManualReview
+            } else {
+                RepairAction::RunReconcile
+            },
+            notes: Some(format!(
+                "{} edges at drift >= 0.7 ({} at 1.0, prunable)",
+                high_drift.len(),
+                dead_edges.len(),
+            )),
+        });
+    }
+
+    Ok(findings)
 }
 
 struct CrossLinkScan {

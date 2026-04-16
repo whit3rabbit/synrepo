@@ -140,7 +140,7 @@ pub fn emit_cochange_edges_pass(
 /// Derive per-symbol `first_seen_rev` and `last_modified_rev` from body-hash
 /// transitions in sampled git history. Runs in its own transaction so a
 /// failure does not affect the structural compile or co-change emission.
-fn emit_symbol_revisions_pass(
+pub fn emit_symbol_revisions_pass(
     repo_root: &Path,
     config: &Config,
     graph: &mut dyn crate::structure::graph::GraphStore,

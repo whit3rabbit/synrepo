@@ -343,9 +343,48 @@ pub fn watch_socket_path(synrepo_dir: &Path) -> PathBuf {
     let canonical = fs::canonicalize(synrepo_dir).unwrap_or_else(|_| synrepo_dir.to_path_buf());
     let digest = blake3::hash(canonical.to_string_lossy().as_bytes());
     let hex = hex::encode(digest.as_bytes());
-    // 16 hex chars = 64 bits of collision resistance, plenty for a
-    // per-user/per-repo namespacing of socket files.
-    std::env::temp_dir().join(format!("synrepo-{}.sock", &hex[..16]))
+
+    // Use a user-owned directory to prevent /tmp-based pre-creation or
+    // permission-denial attacks. Prefers $HOME/.cache/synrepo-run/ or
+    // $XDG_RUNTIME_DIR/synrepo/, falling back to a per-user/per-process
+    // subdirectory in temp_dir() with 0700 permissions.
+    let socket_dir = user_socket_dir();
+    socket_dir.join(format!("{}.sock", &hex[..16]))
+}
+
+fn user_socket_dir() -> PathBuf {
+    // 1. $HOME/.cache/synrepo-run/ (Standard persistent user cache)
+    if let Ok(home) = std::env::var("HOME") {
+        let dir = PathBuf::from(home).join(".cache").join("synrepo-run");
+        if fs::create_dir_all(&dir).is_ok() {
+            return dir;
+        }
+    }
+
+    // 2. $XDG_RUNTIME_DIR/synrepo/ (Standard Unix runtime dir)
+    if let Ok(runtime) = std::env::var("XDG_RUNTIME_DIR") {
+        let dir = PathBuf::from(runtime).join("synrepo");
+        if fs::create_dir_all(&dir).is_ok() {
+            return dir;
+        }
+    }
+
+    // 3. Fallback: temp_dir() with a user-bound name and 0700 permissions.
+    let username = std::env::var("USER")
+        .or_else(|_| std::env::var("LOGNAME"))
+        .unwrap_or_else(|_| "unknown".to_string());
+    let dir = std::env::temp_dir().join(format!("synrepo-run-{}", username));
+
+    fs::create_dir_all(&dir).ok();
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        // Ensure the directory is only accessible by the current user.
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).ok();
+    }
+
+    dir
 }
 
 pub(super) fn persist_watch_state_at(

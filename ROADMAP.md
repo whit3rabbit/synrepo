@@ -5,15 +5,17 @@
 
 ## Active OpenSpec Changes
 
-6 changes are staged in `openspec/changes/`. They are grouped into 2 execution phases — each phase depends on the one before it.
+8 changes are staged in `openspec/changes/`. They are grouped into 2 execution phases — each phase depends on the one before it.
 
 ### Phase 1 — Structural Completion
 
-| Change | Purpose | Tracks |
-|--------|---------|--------|
-| [`graph-cochange-edges-v1`](openspec/changes/graph-cochange-edges-v1/) | Emit physical `CoChangesWith` graph edges from git history (kind defined but never produced today) | D, I |
-| [`symbol-last-change-v1`](openspec/changes/symbol-last-change-v1/) | True symbol-level `last_change` tracking via `body_hash` transitions; upgrades `SymbolCard.last_change.granularity` from `file` → `symbol` | D, I |
-| [`structural-resilience-v1`](openspec/changes/structural-resilience-v1/) | Stage 6 split/merge detection (`SplitFrom`/`MergedFrom` edges) and Stage 7 drift scoring | D |
+| Change | Purpose | Tracks | Status |
+|--------|---------|--------|--------|
+| [`graph-cochange-edges-v1`](openspec/changes/graph-cochange-edges-v1/) | Emit physical `CoChangesWith` graph edges from git history (kind defined but never produced today) | D, I | Shipped |
+| [`symbol-last-change-v1`](openspec/changes/symbol-last-change-v1/) | True symbol-level `last_change` tracking via `body_hash` transitions; upgrades `SymbolCard.last_change.granularity` from `file` → `symbol` | D, I | Shipped |
+| [`structural-resilience-v1`](openspec/changes/archive/2026-04-15-structural-resilience-v1/) | Stage 6 split/merge + Stage 7 drift scoring: **infrastructure shipped** (types, tables, wiring, repair surface). Semantics incomplete; see v2. | D | Shipped |
+| [`structural-resilience-v2`](openspec/changes/structural-resilience-v2/) | Finish drift scoring (Jaccard distance on persisted fingerprints, all-edge enumeration, concept edges), wire git rename fallback (cascade step 4), fix repair absent-vs-current | D | Shipped |
+| [`graph-lifecycle-v1`](openspec/changes/graph-lifecycle-v1/) | Stable identity + owned observations + soft retirement: replace destructive rebuild with scoped refresh, add compile revisions, compaction maintenance pass | D | In progress |
 
 **Why first:** These fill the remaining data gaps in the graph. Phase 2 surfaces consume this data.
 
@@ -21,11 +23,11 @@
 
 ### Phase 2 — Surface Expansion & Ops
 
-| Change | Purpose | Tracks |
-|--------|---------|--------|
-| [`specialist-cards-v1`](openspec/changes/specialist-cards-v1/) | `CallPathCard` + `synrepo_call_path`, `TestSurfaceCard` + `synrepo_test_surface` | E |
-| [`semantic-triage-v1`](openspec/changes/semantic-triage-v1/) | ONNX/MiniLM embedding pre-filter for cross-link candidate generation (opt-in, feature-gated) | K |
-| [`storage-compaction-v1`](openspec/changes/storage-compaction-v1/) | `synrepo compact` command; policy-driven retention for overlay, repair-log, audit rows | H, L |
+| Change | Purpose | Tracks | Status |
+|--------|---------|--------|--------|
+| [`specialist-cards-v1`](openspec/changes/specialist-cards-v1/) | `CallPathCard` + `synrepo_call_path`, `TestSurfaceCard` + `synrepo_test_surface` | E | Shipped |
+| [`semantic-triage-v1`](openspec/changes/semantic-triage-v1/) | ONNX/MiniLM embedding pre-filter for cross-link candidate generation (opt-in, feature-gated) | K | In progress |
+| [`storage-compaction-v1`](openspec/changes/storage-compaction-v1/) | `synrepo compact` command; policy-driven retention for overlay, repair-log, audit rows | H, L | In progress |
 
 **Why second:** Consumes the enriched graph data from Phase 1. Specialist cards need co-change and drift; compaction needs the overlay to have aged enough to need it.
 
@@ -48,18 +50,26 @@ These are tracked by the active changes above but worth calling out:
 
 | Pipeline stage | Status | Change |
 |----------------|--------|--------|
-| Stage 6 — Identity cascade (split/merge) | Scaffold only | `structural-resilience-v1` |
-| Stage 7 — Drift scoring | Scaffold only | `structural-resilience-v1` |
 | Stage 8 — ArcSwap commit | TODO stub | Not yet assigned |
-| `CoChangesWith` edges | Kind defined, never emitted | `graph-cochange-edges-v1` |
-| Symbol-level `last_change` | File-level proxy today | `symbol-last-change-v1` |
+
+## Shipped Cards & MCP Tools
+
+| Surface | Status | Change |
+|---------|--------|--------|
+| `SymbolCard` / `synrepo_card` | Shipped | - |
+| `FileCard` / `synrepo_card` (file target) | Shipped | - |
+| `ModuleCard` / `synrepo_module_card` | Shipped | - |
+| `EntryPointCard` / `synrepo_entrypoints` | Shipped | - |
+| `PublicAPICard` / `synrepo_public_api` | Shipped | - |
+| `DecisionCard` | Shipped | - |
+| `MinimumContextCard` / `synrepo_minimum_context` | Shipped | - |
+| `CallPathCard` / `synrepo_call_path` | Shipped | `specialist-cards-v1` |
+| `TestSurfaceCard` / `synrepo_test_surface` | Shipped | `specialist-cards-v1` |
 
 ## Not Yet Shipped Cards & MCP Tools
 
 | Surface | Status | Change |
 |---------|--------|--------|
-| `CallPathCard` / `synrepo_call_path` | Not started | `specialist-cards-v1` |
-| `TestSurfaceCard` / `synrepo_test_surface` | Not started | `specialist-cards-v1` |
 | `ChangeRiskCard` / `synrepo_change_risk` | Not started | `change-risk-card-v1` (future) |
 | `synrepo_explain` | Not started | Unassigned |
 

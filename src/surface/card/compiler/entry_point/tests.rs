@@ -128,6 +128,29 @@ fn http_handler_rule_does_not_match_plain_function() {
 }
 
 #[test]
+fn http_handler_rule_does_not_match_struct_in_router_path() {
+    let repo = tempdir().unwrap();
+    fs::create_dir_all(repo.path().join("src/router")).unwrap();
+    // A struct in a router path should NOT be HttpHandler.
+    fs::write(
+        repo.path().join("src/router/utils.rs"),
+        "pub struct Config {}\n",
+    )
+    .unwrap();
+
+    let graph = bootstrap(&repo);
+    let compiler = GraphCardCompiler::new(Box::new(graph), Some(repo.path()));
+    let card = compiler.entry_point_card(None, Budget::Tiny).unwrap();
+
+    assert!(
+        card.entry_points
+            .iter()
+            .all(|e| e.kind != EntryPointKind::HttpHandler),
+        "struct in router path must not be HttpHandler"
+    );
+}
+
+#[test]
 fn lib_root_rule_matches_function_in_lib_rs() {
     let repo = tempdir().unwrap();
     fs::create_dir_all(repo.path().join("src")).unwrap();

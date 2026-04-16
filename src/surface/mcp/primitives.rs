@@ -65,7 +65,10 @@ fn parse_edge_kind_list(edge_types: &[String]) -> anyhow::Result<Vec<EdgeKind>> 
     edge_types
         .iter()
         .map(|s| {
-            s.parse::<EdgeKind>()
+            // Normalise to lowercase so both "Defines" (TitleCase, as shown in the
+            // JSON schema doc) and "defines" (snake_case) are accepted.
+            s.to_lowercase()
+                .parse::<EdgeKind>()
                 .map_err(|e| anyhow::anyhow!("invalid edge type `{s}`: {e}"))
         })
         .collect()
@@ -87,7 +90,10 @@ fn parse_graph_query(query: &str) -> anyhow::Result<(QueryDirection, NodeId, Opt
     };
 
     let node_id = parts[1].parse::<NodeId>()?;
-    let edge_kind = parts.get(2).map(|k| k.parse::<EdgeKind>()).transpose()?;
+    let edge_kind = parts
+        .get(2)
+        .map(|k| k.to_lowercase().parse::<EdgeKind>())
+        .transpose()?;
 
     Ok((direction, node_id, edge_kind))
 }

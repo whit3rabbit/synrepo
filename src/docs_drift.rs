@@ -74,10 +74,14 @@ mod tests {
         let mut offenders = Vec::new();
         collect_gix_offenders(&src_root, &guard_file, &mut offenders);
 
-        assert_eq!(
-            offenders,
-            vec![src_root.join("pipeline/git/mod.rs")],
-            "direct gix usage must stay centralized in src/pipeline/git/mod.rs"
+        let git_dir = src_root.join("pipeline/git");
+        let outside: Vec<_> = offenders
+            .iter()
+            .filter(|o| !o.starts_with(&git_dir))
+            .collect();
+        assert!(
+            outside.is_empty(),
+            "direct gix usage must stay centralized in src/pipeline/git/; files outside: {outside:?}"
         );
     }
 

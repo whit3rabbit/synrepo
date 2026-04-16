@@ -63,6 +63,26 @@ pub struct MinimumContextParams {
     pub budget: String,
 }
 
+/// Parameters for the `synrepo_call_path` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CallPathParams {
+    /// Target symbol: node ID (e.g. "symbol_0000000000000024") or qualified name.
+    pub target: String,
+    /// Budget tier: "tiny" (default), "normal", or "deep".
+    #[serde(default = "default_budget")]
+    pub budget: String,
+}
+
+/// Parameters for the `synrepo_test_surface` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct TestSurfaceParams {
+    /// Scope: file path or directory to find tests for.
+    pub scope: String,
+    /// Budget tier: "tiny" (default), "normal", or "deep".
+    #[serde(default = "default_budget")]
+    pub budget: String,
+}
+
 pub fn handle_card(state: &SynrepoState, target: String, budget: String) -> String {
     let budget = parse_budget(&budget);
     let result = with_graph_snapshot(state.compiler.graph(), || {
@@ -147,6 +167,40 @@ pub fn handle_minimum_context(state: &SynrepoState, target: String, budget: Stri
             budget,
         )?;
         Ok(serde_json::to_value(&response)?)
+    });
+    render_result(result)
+}
+
+pub fn handle_call_path(state: &SynrepoState, target: String, budget: String) -> String {
+    let budget = parse_budget(&budget);
+    let result = with_graph_snapshot(state.compiler.graph(), || {
+        // Resolve target to a symbol node ID.
+        let node_id = state
+            .compiler
+            .resolve_target(&target)?
+            .ok_or_else(|| anyhow::anyhow!("target not found: {target}"))?;
+
+        let sym_id = match node_id {
+            NodeId::Symbol(sym_id) => sym_id,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "target must be a symbol, got: {:?}",
+                    node_id
+                ))
+            }
+        };
+
+        let card = state.compiler.call_path_card(sym_id, budget)?;
+        Ok(serde_json::to_value(&card)?)
+    });
+    render_result(result)
+}
+
+pub fn handle_test_surface(state: &SynrepoState, scope: String, budget: String) -> String {
+    let budget = parse_budget(&budget);
+    let result = with_graph_snapshot(state.compiler.graph(), || {
+        let card = state.compiler.test_surface_card(&scope, budget)?;
+        Ok(serde_json::to_value(&card)?)
     });
     render_result(result)
 }

@@ -212,3 +212,52 @@ A `PublicAPICard` SHALL aggregate the exported API surface of a directory: publi
 #### Scenario: Non-Rust directory returns empty public_symbols
 - **WHEN** a `PublicAPICard` is requested for a directory containing only Python, TypeScript, or Go files
 - **THEN** `public_symbols` is empty and `public_symbol_count` is zero (v1 limitation; visibility detection is Rust-specific)
+
+### Requirement: Define CallPathCard
+
+synrepo SHALL define `CallPathCard` as a graph-derived card that traces execution paths from entry points to a target symbol using backward BFS over `Calls` edges. All path data SHALL be sourced exclusively from the graph (`source_store: "graph"`). No LLM involvement and no overlay content SHALL appear in a `CallPathCard`. When no path is found, the card SHALL return an empty path list rather than a spurious result.
+
+#### Scenario: Compile a CallPathCard for a reachable symbol
+- **WHEN** `call_path_card(target, budget)` is called on a symbol that has at least one `Calls` edge chain leading to an entry point
+- **THEN** the returned card includes at least one `CallPath` entry
+- **AND** each `CallPath` lists `CallPathEdge` records from the entry point symbol to the target
+- **AND** `source_store` is `"graph"`
+
+#### Scenario: Compile a CallPathCard for an unreachable symbol
+- **WHEN** `call_path_card(target, budget)` is called on a symbol with no `Calls` edges leading to any entry point within the depth budget
+- **THEN** the returned card has an empty `paths` list
+- **AND** `paths_omitted` is 0
+
+#### Scenario: Path truncation due to depth limit
+- **WHEN** the shortest path from an entry point to the target exceeds the depth budget (8 hops at normal/tiny, 12 at deep)
+- **THEN** the card includes a truncated path with `truncated: true` on the final `CallPathEdge`
+
+#### Scenario: Path deduplication
+- **WHEN** there are more than 3 distinct paths from an entry point to a target
+- **THEN** the card includes at most 3 paths for that (entry, target) pair
+- **AND** the count of omitted paths is recorded in `paths_omitted`
+
+### Requirement: Define TestSurfaceCard
+
+synrepo SHALL define `TestSurfaceCard` as a graph-derived card that discovers test functions related to a given scope (file path or directory). All test data SHALL be sourced exclusively from the graph (`source_store: "graph"`). No LLM involvement and no overlay content SHALL appear in a `TestSurfaceCard`. When no tests are found, the card SHALL return an empty `tests` list rather than a spurious result.
+
+#### Scenario: Compile a TestSurfaceCard for a file with associated tests
+- **WHEN** `test_surface_card(scope, budget)` is called on a file that has test files associated by path convention
+- **THEN** the returned card includes at least one `TestEntry` record
+- **AND** each `TestEntry` includes the test symbol's node ID, qualified name, and containing file path
+- **AND** `source_store` is `"graph"`
+
+#### Scenario: Compile a TestSurfaceCard when no tests exist
+- **WHEN** `test_surface_card(scope, budget)` is called and no test files match any association rule for the given scope
+- **THEN** the returned card has an empty `tests` list
+- **AND** no error is raised
+
+#### Scenario: Test discovery via path convention
+- **WHEN** a source file has test files matching sibling patterns (`*_test.rs`, `test_*.py`, `*.test.ts`, `*.spec.ts`), parallel test directory (`tests/<stem>`), or nested test module (`tests/`, `__tests__/`)
+- **THEN** test symbols from those files are included as `TestEntry` records
+- **AND** `association` is set to `"path_convention"`, `"symbol_kind"`, or `"both"` based on which signals matched
+
+#### Scenario: Tiny budget returns counts only
+- **WHEN** a `TestSurfaceCard` is requested at `tiny` budget
+- **THEN** the card includes only `test_file_count` and `test_symbol_count`
+- **AND** individual `TestEntry` records are omitted

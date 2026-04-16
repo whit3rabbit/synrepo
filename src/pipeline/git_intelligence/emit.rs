@@ -56,6 +56,9 @@ pub fn emit_cochange_edges(
             from: NodeId::File(*left_id),
             to: NodeId::File(*right_id),
             kind: EdgeKind::CoChangesWith,
+            owner_file_id: None,
+            last_observed_rev: None,
+            retired_at_rev: None,
             epistemic: Epistemic::GitObserved,
             drift_score: 0.0,
             provenance: Provenance {
@@ -129,6 +132,7 @@ mod tests {
             size_bytes: 10,
             language: Some("rust".to_string()),
             inline_decisions: vec![],
+            last_observed_rev: None,
             epistemic: Epistemic::ParserObserved,
             provenance: Provenance::structural("test", "rev1", vec![]),
         };
@@ -140,6 +144,7 @@ mod tests {
             size_bytes: 10,
             language: Some("rust".to_string()),
             inline_decisions: vec![],
+            last_observed_rev: None,
             epistemic: Epistemic::ParserObserved,
             provenance: Provenance::structural("test", "rev1", vec![]),
         };
@@ -183,6 +188,7 @@ mod tests {
             size_bytes: 10,
             language: Some("rust".to_string()),
             inline_decisions: vec![],
+            last_observed_rev: None,
             epistemic: Epistemic::ParserObserved,
             provenance: Provenance::structural("test", "rev1", vec![]),
         };
@@ -194,6 +200,7 @@ mod tests {
             size_bytes: 10,
             language: Some("rust".to_string()),
             inline_decisions: vec![],
+            last_observed_rev: None,
             epistemic: Epistemic::ParserObserved,
             provenance: Provenance::structural("test", "rev1", vec![]),
         };
@@ -229,6 +236,7 @@ mod tests {
             size_bytes: 10,
             language: Some("rust".to_string()),
             inline_decisions: vec![],
+            last_observed_rev: None,
             epistemic: Epistemic::ParserObserved,
             provenance: Provenance::structural("test", "rev1", vec![]),
         };

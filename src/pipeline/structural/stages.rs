@@ -9,13 +9,13 @@ use super::{
 use crate::{
     config::Config,
     core::ids::{FileNodeId, NodeId},
-    pipeline::git::GitRepositorySnapshot,
+    pipeline::git::{detect_recent_renames, open_repo, GitRepositorySnapshot},
     structure::{
         graph::{
             concept_source_path_allowed, Edge, EdgeKind, Epistemic, FileNode, GraphStore,
             SymbolNode,
         },
-        parse, prose, rationale,
+        identity, parse, prose, rationale,
     },
     substrate::{DiscoveredFile, FileClass},
 };
@@ -36,6 +36,7 @@ pub(super) fn stages_1_to_3(
     graph: &mut dyn GraphStore,
     discovered: &[DiscoveredFile],
     discovered_paths: &BTreeSet<String>,
+    compile_rev: Option<u64>,
 ) -> crate::Result<StagesTxnResult> {
     let existing_file_paths = graph.all_file_paths()?;
     let disappeared_by_hash =
@@ -63,8 +64,24 @@ pub(super) fn stages_1_to_3(
         &disappeared_by_hash,
         &mut rename_matched_old_paths,
         &mut state,
+        compile_rev,
     )?;
     process_markdown_concepts(graph, config, discovered, &revision, &mut state)?;
+
+    // Stage 6: identity cascade. Before deleting disappeared files, attempt
+    // symbol-set matching and git rename detection for splits and merges.
+    let identity_edges = run_identity_cascade(
+        graph,
+        discovered_paths,
+        &existing_file_paths,
+        &rename_matched_old_paths,
+        discovered,
+        &revision,
+        &mut state.identities_resolved,
+        repo_root,
+    )?;
+    state.edges_added += identity_edges;
+
     delete_missing_files(
         graph,
         discovered_paths,
@@ -140,6 +157,7 @@ fn process_supported_code_files(
     disappeared_by_hash: &HashMap<String, FileNode>,
     rename_matched_old_paths: &mut HashSet<String>,
     state: &mut StageState,
+    compile_rev: Option<u64>,
 ) -> crate::Result<()> {
     for file in discovered {
         if !matches!(file.class, FileClass::SupportedCode { .. }) {
@@ -153,13 +171,22 @@ fn process_supported_code_files(
 
         let content_hash = hex::encode(blake3::hash(&content).as_bytes());
         let existing = graph.file_by_path(&file.relative_path)?;
+        let is_content_change = existing
+            .as_ref()
+            .is_some_and(|n| n.content_hash != content_hash);
 
-        if let Some(ref file_node) = existing {
-            if file_node.content_hash == content_hash {
-                continue;
-            }
-            graph.delete_node(NodeId::File(file_node.id))?;
+        if existing.is_some() && !is_content_change {
+            continue;
         }
+
+        // Collect prior symbols/edges for this file so we can diff after parsing.
+        // Only needed when the file already exists and its content changed.
+        let prior_symbols: Vec<SymbolNode> = if is_content_change {
+            let fid = existing.as_ref().unwrap().id;
+            graph.symbols_for_file(fid)?
+        } else {
+            Vec::new()
+        };
 
         let file_id = resolve_file_id(
             existing.as_ref(),
@@ -175,6 +202,7 @@ fn process_supported_code_files(
         };
         let inline_decisions = rationale::extract_inline_decisions(&content, &file.class);
 
+        // Upsert file node: preserves FileNodeId, advances content_hash.
         graph.upsert_file(FileNode {
             id: file_id,
             path: file.relative_path.clone(),
@@ -190,10 +218,15 @@ fn process_supported_code_files(
             size_bytes: file.size_bytes,
             language,
             inline_decisions,
+            last_observed_rev: compile_rev,
             epistemic: Epistemic::ParserObserved,
             provenance: make_provenance("discover", revision, &file.relative_path, &content_hash),
         })?;
         state.file_map.insert(file.relative_path.clone(), file_id);
+
+        // Track which symbol IDs are emitted this pass so we can retire the rest.
+        let mut emitted_symbol_ids = HashSet::new();
+        let mut emitted_edge_ids = HashSet::new();
 
         if let Some(parsed) = parse::parse_file(file.absolute_path.as_path(), &content)? {
             if !parsed.symbols.is_empty() {
@@ -220,24 +253,32 @@ fn process_supported_code_files(
                         doc_comment: symbol.doc_comment.clone(),
                         first_seen_rev: None,
                         last_modified_rev: None,
+                        last_observed_rev: compile_rev,
+                        retired_at_rev: None,
                         epistemic: Epistemic::ParserObserved,
                         provenance: provenance.clone(),
                     })?;
 
+                    let edge_id = derive_edge_id(
+                        NodeId::File(file_id),
+                        NodeId::Symbol(symbol_id),
+                        EdgeKind::Defines,
+                    );
                     graph.insert_edge(Edge {
-                        id: derive_edge_id(
-                            NodeId::File(file_id),
-                            NodeId::Symbol(symbol_id),
-                            EdgeKind::Defines,
-                        ),
+                        id: edge_id,
                         from: NodeId::File(file_id),
                         to: NodeId::Symbol(symbol_id),
                         kind: EdgeKind::Defines,
+                        owner_file_id: Some(file_id),
+                        last_observed_rev: compile_rev,
+                        retired_at_rev: None,
                         epistemic: Epistemic::ParserObserved,
                         drift_score: 0.0,
                         provenance,
                     })?;
 
+                    emitted_symbol_ids.insert(symbol_id);
+                    emitted_edge_ids.insert(edge_id);
                     state.symbols_extracted += 1;
                     state.edges_added += 1;
                 }
@@ -249,6 +290,26 @@ fn process_supported_code_files(
                     call_refs: parsed.call_refs,
                     import_refs: parsed.import_refs,
                 });
+            }
+        }
+
+        // Retire symbols that were previously active for this file but
+        // not re-emitted in the current parse pass.
+        if is_content_change {
+            if let Some(rev) = compile_rev {
+                for prior in &prior_symbols {
+                    if !emitted_symbol_ids.contains(&prior.id) {
+                        graph.retire_symbol(prior.id, rev)?;
+                    }
+                }
+                // Retire parser-owned edges from this file that were not re-emitted.
+                for prior_edge in &graph.edges_owned_by(file_id)? {
+                    if prior_edge.epistemic == Epistemic::ParserObserved
+                        && !emitted_edge_ids.contains(&prior_edge.id)
+                    {
+                        graph.retire_edge(prior_edge.id, rev)?;
+                    }
+                }
             }
         }
     }
@@ -309,6 +370,9 @@ fn process_markdown_concepts(
                         from,
                         to,
                         kind: EdgeKind::Governs,
+                        owner_file_id: None,
+                        last_observed_rev: None,
+                        retired_at_rev: None,
                         epistemic: Epistemic::HumanDeclared,
                         drift_score: 0.0,
                         provenance: make_provenance(
@@ -330,6 +394,81 @@ fn process_markdown_concepts(
         }
     }
     Ok(())
+}
+
+/// Stage 6: run the identity cascade (split/merge/git-rename detection) for
+/// files that disappeared but were not matched by content-hash rename.
+///
+/// Returns the number of SplitFrom/MergedFrom edges written.
+#[allow(clippy::too_many_arguments)]
+fn run_identity_cascade(
+    graph: &mut dyn GraphStore,
+    discovered_paths: &BTreeSet<String>,
+    existing_file_paths: &[(String, FileNodeId)],
+    rename_matched_old_paths: &HashSet<String>,
+    _discovered: &[DiscoveredFile],
+    revision: &str,
+    identities_resolved: &mut usize,
+    repo_root: &Path,
+) -> crate::Result<usize> {
+    // Collect disappeared files not already matched by content-hash rename.
+    let mut disappeared = Vec::new();
+    for (path, _) in existing_file_paths {
+        if !discovered_paths.contains(path) && !rename_matched_old_paths.contains(path) {
+            if let Some(node) = graph.file_by_path(path)? {
+                disappeared.push(node);
+            }
+        }
+    }
+
+    if disappeared.is_empty() {
+        return Ok(0);
+    }
+
+    // Collect new files (paths that weren't in existing but are in discovered).
+    let existing_path_set: HashSet<&str> = existing_file_paths
+        .iter()
+        .map(|(p, _)| p.as_str())
+        .collect();
+    let mut new_files = Vec::new();
+    for path in discovered_paths
+        .iter()
+        .filter(|p| !existing_path_set.contains(p.as_str()))
+    {
+        if let Some(node) = graph.file_by_path(path)? {
+            new_files.push(node);
+        }
+    }
+
+    if new_files.is_empty() {
+        return Ok(0);
+    }
+
+    // Attempt git rename detection for use as step 4 fallback.
+    let git_renames = match open_repo(repo_root) {
+        Ok(repo) => match detect_recent_renames(&repo) {
+            Ok(renames) => {
+                let map = HashMap::<String, String>::from_iter(renames);
+                if map.is_empty() {
+                    None
+                } else {
+                    Some(map)
+                }
+            }
+            Err(e) => {
+                tracing::debug!(error = %e, "git rename detection failed; skipping step 4");
+                None
+            }
+        },
+        Err(_) => None,
+    };
+
+    let resolutions =
+        identity::resolve_identities(&disappeared, &new_files, graph, git_renames.as_ref())?;
+    *identities_resolved += resolutions.len();
+
+    let edges = identity::persist_resolutions(&resolutions, graph, revision)?;
+    Ok(edges)
 }
 
 fn delete_missing_files(

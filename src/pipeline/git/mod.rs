@@ -13,8 +13,12 @@ use serde::{Deserialize, Serialize};
 #[cfg(test)]
 pub(crate) mod test_support;
 
+mod renames;
+
 #[cfg(test)]
 mod tests;
+
+pub use renames::detect_recent_renames;
 
 /// A snapshot of repository Git state relevant to deterministic pipeline work.
 #[derive(Clone, Debug, Eq, PartialEq)]

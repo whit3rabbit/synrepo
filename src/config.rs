@@ -83,6 +83,12 @@ pub struct Config {
     /// revalidate_links` re-derives the tier for each stored candidate.
     #[serde(default)]
     pub cross_link_confidence_thresholds: CrossLinkConfidenceThresholds,
+
+    /// Number of compile revisions to retain retired observations before
+    /// compaction physically deletes them. Compaction runs during `sync`
+    /// and `upgrade --apply`, never during the hot reconcile path.
+    #[serde(default = "default_retain_retired_revisions")]
+    pub retain_retired_revisions: u64,
 }
 
 /// TOML-friendly mirror of `overlay::ConfidenceThresholds`. Lives in this
@@ -174,6 +180,10 @@ fn default_export_dir() -> String {
     "synrepo-context".to_string()
 }
 
+fn default_retain_retired_revisions() -> u64 {
+    10
+}
+
 impl std::fmt::Display for Mode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -196,6 +206,7 @@ impl Default for Config {
             cross_link_cost_limit: default_cross_link_cost_limit(),
             cross_link_confidence_thresholds: CrossLinkConfidenceThresholds::default(),
             export_dir: default_export_dir(),
+            retain_retired_revisions: default_retain_retired_revisions(),
         }
     }
 }

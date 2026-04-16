@@ -22,6 +22,10 @@ pub enum RepairSurface {
     ProposedLinksOverlay,
     /// Export directory freshness tracked via the export manifest.
     ExportSurface,
+    /// Graph edges whose drift score indicates structural divergence.
+    EdgeDrift,
+    /// Retired graph observations awaiting compaction.
+    RetiredObservations,
 }
 
 impl RepairSurface {
@@ -36,6 +40,8 @@ impl RepairSurface {
             Self::CommentaryOverlayEntries => "commentary_overlay_entries",
             Self::ProposedLinksOverlay => "proposed_links_overlay",
             Self::ExportSurface => "export_surface",
+            Self::EdgeDrift => "edge_drift",
+            Self::RetiredObservations => "retired_observations",
         }
     }
 }
@@ -60,6 +66,8 @@ pub enum DriftClass {
     /// Distinct from `Stale` (which the deterministic revalidator can fix)
     /// because source-deleted candidates require manual review or pruning.
     SourceDeleted,
+    /// A graph edge has a high drift score indicating structural divergence.
+    HighDriftEdge,
 }
 
 impl DriftClass {
@@ -73,6 +81,7 @@ impl DriftClass {
             Self::Unsupported => "unsupported",
             Self::Blocked => "blocked",
             Self::SourceDeleted => "source_deleted",
+            Self::HighDriftEdge => "high_drift_edge",
         }
     }
 }
@@ -127,6 +136,9 @@ pub enum RepairAction {
     RevalidateLinks,
     /// Re-run `write_exports` to refresh the stale export directory.
     RegenerateExports,
+    /// Run compaction to physically delete retired observations older than
+    /// the configured retention window.
+    CompactRetired,
 }
 
 impl RepairAction {
@@ -142,6 +154,7 @@ impl RepairAction {
             Self::RefreshCommentary => "refresh_commentary",
             Self::RevalidateLinks => "revalidate_links",
             Self::RegenerateExports => "regenerate_exports",
+            Self::CompactRetired => "compact_retired",
         }
     }
 }

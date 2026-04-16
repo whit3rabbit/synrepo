@@ -140,7 +140,9 @@ pub(super) fn classify_kind(qname: &str, path: &str, kind: SymbolKind) -> Option
     let has_handler_prefix =
         name.starts_with("handle_") || name.starts_with("serve_") || name.starts_with("route_");
     let has_handler_path = path_has_segment(path, &["handler", "route", "router"]);
-    if has_handler_prefix || has_handler_path {
+    let is_executable_item = matches!(kind, SymbolKind::Function | SymbolKind::Method);
+
+    if has_handler_prefix || (has_handler_path && is_executable_item) {
         return Some(EntryPointKind::HttpHandler);
     }
 

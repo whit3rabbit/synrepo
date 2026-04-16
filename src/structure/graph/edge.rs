@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::{error::Error, fmt, str::FromStr};
 
-use crate::core::ids::{EdgeId, NodeId};
+use crate::core::ids::{EdgeId, FileNodeId, NodeId};
 use crate::core::provenance::Provenance;
 
 use super::epistemic::Epistemic;
@@ -93,6 +93,19 @@ impl FromStr for EdgeKind {
     }
 }
 
+/// Derive a stable `EdgeId` from `(from_node, to_node, kind)`.
+pub fn derive_edge_id(from: NodeId, to: NodeId, kind: EdgeKind) -> EdgeId {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(from.to_string().as_bytes());
+    hasher.update(to.to_string().as_bytes());
+    hasher.update(kind.as_str().as_bytes());
+    EdgeId(u64::from_le_bytes(
+        hasher.finalize().as_bytes()[..8]
+            .try_into()
+            .expect("blake3 output is 32 bytes"),
+    ))
+}
+
 /// A graph edge.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Edge {
@@ -106,9 +119,23 @@ pub struct Edge {
     pub kind: EdgeKind,
     /// Epistemic origin.
     pub epistemic: Epistemic,
-    /// Drift score in [0.0, 1.0]; 0 means fresh, 1 means maximally drifted.
-    /// Updated by the structural pipeline on every commit.
+    /// Drift score in [0.0, 1.0]. Always 0.0 at edge creation time.
+    /// The canonical drift score is stored in the sidecar `edge_drift` table,
+    /// keyed by `(edge_id, revision)`. This field exists for serialization
+    /// compatibility but is not kept current in memory.
     pub drift_score: f32,
+    /// The file whose parse pass produced this edge. `None` for human-declared
+    /// edges and pre-migration rows.
+    #[serde(default)]
+    pub owner_file_id: Option<FileNodeId>,
+    /// Compile revision at which this edge was last observed. `None` for
+    /// pre-migration rows.
+    #[serde(default)]
+    pub last_observed_rev: Option<u64>,
+    /// Compile revision at which this edge stopped being emitted. `None`
+    /// while the edge is active.
+    #[serde(default)]
+    pub retired_at_rev: Option<u64>,
     /// Provenance metadata.
     pub provenance: Provenance,
 }

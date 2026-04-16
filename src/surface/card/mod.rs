@@ -31,8 +31,9 @@ pub use git::{
     SymbolLastChange,
 };
 pub use types::{
-    EntryPoint, EntryPointCard, EntryPointKind, FileCard, FileRef, Freshness, ModuleCard,
-    OverlayCommentary, PublicAPICard, PublicAPIEntry, SymbolCard, SymbolRef,
+    CallPath, CallPathCard, CallPathEdge, EntryPoint, EntryPointCard, EntryPointKind, FileCard,
+    FileRef, Freshness, ModuleCard, OverlayCommentary, PublicAPICard, PublicAPIEntry, SymbolCard,
+    SymbolRef, TestAssociation, TestEntry, TestSurfaceCard,
 };
 
 /// Context budget tier for a card request.
@@ -111,6 +112,18 @@ pub trait CardCompiler {
     /// In v1, visibility detection is Rust-specific; non-Rust directories return
     /// an empty symbol list.
     fn public_api_card(&self, path: &str, budget: Budget) -> crate::Result<PublicAPICard>;
+
+    /// Compile a CallPathCard tracing paths from entry points to a target symbol.
+    ///
+    /// Uses backward BFS over `Calls` edges to find paths from entry points
+    /// to the target. Returns an empty `paths` list when no path exists.
+    fn call_path_card(&self, target: SymbolNodeId, budget: Budget) -> crate::Result<CallPathCard>;
+
+    /// Compile a TestSurfaceCard discovering tests related to a file or directory.
+    ///
+    /// Uses path-convention heuristics to associate test files with source files.
+    /// Returns an empty `tests` list when no tests are found.
+    fn test_surface_card(&self, scope: &str, budget: Budget) -> crate::Result<TestSurfaceCard>;
 
     /// Resolve a human-readable target string (a path, a qualified name,
     /// or a symbol name) to a NodeId for card compilation.
