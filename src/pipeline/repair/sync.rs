@@ -7,7 +7,7 @@ use crate::{
     pipeline::{
         maintenance::{execute_maintenance, plan_maintenance},
         watch::{persist_reconcile_state, ReconcileOutcome},
-        writer::{acquire_writer_lock, now_rfc3339, LockError},
+        writer::{acquire_write_admission, map_lock_error, now_rfc3339},
     },
 };
 
@@ -35,24 +35,19 @@ pub fn execute_sync(
     config: &Config,
     options: SyncOptions,
 ) -> crate::Result<SyncSummary> {
-    // Acquire the writer lock for the full sync duration. Any mutating
-    // sub-step (maintenance, edge prune, commentary, structural compile)
-    // is now covered without each step needing its own independent lock
-    // acquisition — which would create re-entrant deadlocks for steps that
-    // internally call run_reconcile_pass.
-    let _writer_lock = acquire_writer_lock(synrepo_dir).map_err(|err| match err {
-        LockError::HeldByOther { pid, .. } => anyhow::anyhow!(
-            "sync: writer lock held by pid {pid}; wait for it to finish or stop the watch daemon"
-        ),
-        LockError::Io { path, source } => anyhow::anyhow!(
-            "sync: could not acquire writer lock at {}: {source}",
-            path.display()
-        ),
-    })?;
-
-    let now = now_rfc3339();
+    // Plan and report are read-only; compute them before acquiring the lock
+    // to reduce the critical-section duration.
     let maint_plan = plan_maintenance(synrepo_dir, config);
     let report = assemble_repair_report(synrepo_dir, config, &maint_plan);
+
+    // Acquire write admission for the mutation phase only. Any mutating
+    // sub-step (maintenance, edge prune, commentary, structural compile)
+    // is covered without each step needing its own independent lock
+    // acquisition.
+    let _writer_lock =
+        acquire_write_admission(synrepo_dir, "sync").map_err(|err| map_lock_error("sync", err))?;
+
+    let now = now_rfc3339();
 
     let mut repaired: Vec<RepairFinding> = Vec::new();
     let mut report_only: Vec<RepairFinding> = Vec::new();
@@ -465,10 +460,12 @@ fn record_reconcile_attempt(
         }
         ReconcileOutcome::LockConflict { holder_pid } => {
             // Should not happen: execute_sync holds the writer lock before calling us.
-            debug_assert!(false, "LockConflict should not occur when lock is already held");
-            let message = format!(
-                "unexpected lock conflict with PID {holder_pid} while holding writer lock"
+            debug_assert!(
+                false,
+                "LockConflict should not occur when lock is already held"
             );
+            let message =
+                format!("unexpected lock conflict with PID {holder_pid} while holding writer lock");
             tracing::error!(%message);
             blocked.push(blocked_reconcile_finding(finding, message));
         }

@@ -60,12 +60,21 @@ pub fn bootstrap(
             "Bootstrap blocked: writer lock held by pid {pid}. \
              Wait for that process to finish, then rerun `synrepo init`."
         ),
-        LockError::Io { path, source } => {
-            anyhow::anyhow!(
-                "Failed to acquire writer lock at {}: {source}",
-                path.display()
-            )
-        }
+        LockError::WatchOwned { watch_pid } => anyhow::anyhow!(
+            "Bootstrap blocked: watch service is active (pid {watch_pid}); \
+             run `synrepo watch stop` before re-running `synrepo init`."
+        ),
+        LockError::WrongThread { .. } => anyhow::anyhow!(
+            "Bootstrap blocked: writer lock already held by another thread in this process."
+        ),
+        LockError::Malformed { lock_path, detail } => anyhow::anyhow!(
+            "Bootstrap blocked: writer lock at {} is malformed ({detail}); remove the file and rerun `synrepo init`.",
+            lock_path.display()
+        ),
+        LockError::Io { path, source } => anyhow::anyhow!(
+            "Failed to acquire writer lock at {}: {source}",
+            path.display()
+        ),
     })?;
 
     let layout_changed = compatibility::ensure_runtime_layout(&synrepo_dir)?;

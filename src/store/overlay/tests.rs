@@ -572,3 +572,43 @@ fn compact_commentary_never_drops_active_entries() {
     assert_eq!(deleted, 0);
     assert!(store.commentary_for(fresh_node).unwrap().is_some());
 }
+
+/// Verify that `candidates_limited` applies the limit at the SQL layer
+/// and returns fewer rows than `all_candidates` when the corpus exceeds the limit.
+#[test]
+fn candidates_limited_applies_sql_side_limit() {
+    let dir = tempdir().unwrap();
+    let mut store = SqliteOverlayStore::open(dir.path()).unwrap();
+
+    // Insert 10 cross-link candidates with varying scores.
+    for i in 0..10u64 {
+        let from = NodeId::Concept(ConceptNodeId(i));
+        let to = NodeId::Symbol(SymbolNodeId(100 + i));
+        let mut link = sample_link(from, to, "h-from", "h-to");
+        link.confidence_score = 0.5 + (i as f32 * 0.04); // 0.50 .. 0.86
+        link.confidence_tier = if i < 5 {
+            ConfidenceTier::ReviewQueue
+        } else {
+            ConfidenceTier::High
+        };
+        store.insert_link(link).unwrap();
+    }
+
+    // all_candidates returns all 10.
+    let all = store.all_candidates(None).unwrap();
+    assert_eq!(all.len(), 10);
+
+    // candidates_limited with limit=3 returns exactly 3, ordered by score DESC.
+    let limited = store.candidates_limited(None, 3).unwrap();
+    assert_eq!(limited.len(), 3);
+    // Highest scores should be first (0.86, 0.82, 0.78).
+    assert!(limited[0].confidence_score > limited[1].confidence_score);
+    assert!(limited[1].confidence_score > limited[2].confidence_score);
+
+    // Filter by tier: review_queue has 5 entries.
+    let review_all = store.all_candidates(Some("review_queue")).unwrap();
+    assert_eq!(review_all.len(), 5);
+
+    let review_limited = store.candidates_limited(Some("review_queue"), 2).unwrap();
+    assert_eq!(review_limited.len(), 2);
+}

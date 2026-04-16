@@ -162,6 +162,32 @@ pub(super) fn all_candidates(
     mapped.into_iter().collect()
 }
 
+/// Retrieve active candidates filtered by tier, with SQL-side limit applied
+/// before materialization. Use this instead of `all_candidates` + `truncate`
+/// to avoid loading the full candidate set when only a bounded page is needed.
+pub(super) fn candidates_limited(
+    conn: &Connection,
+    tier: Option<&str>,
+    limit: usize,
+) -> crate::Result<Vec<OverlayLink>> {
+    let mut stmt = conn.prepare(
+        "SELECT from_node, to_node, kind, epistemic,
+                source_spans_json, target_spans_json,
+                from_content_hash, to_content_hash,
+                confidence_score, confidence_tier, rationale,
+                pass_id, model_identity, generated_at
+         FROM cross_links
+         WHERE state = 'active' AND (?1 IS NULL OR confidence_tier = ?1)
+         ORDER BY confidence_score DESC, generated_at DESC
+         LIMIT ?2",
+    )?;
+
+    let mapped = stmt
+        .query_map(params![tier, limit], row_to_overlay_link)?
+        .collect::<std::result::Result<Vec<_>, _>>()?;
+    mapped.into_iter().collect()
+}
+
 /// Count cross-link rows currently stored.
 pub(super) fn count(conn: &Connection) -> crate::Result<usize> {
     Ok(
@@ -827,6 +853,17 @@ impl SqliteOverlayStore {
     pub fn all_candidates(&self, tier: Option<&str>) -> crate::Result<Vec<OverlayLink>> {
         let conn = self.conn.lock();
         all_candidates(&conn, tier)
+    }
+
+    /// Retrieve active candidates with SQL-side limit applied before
+    /// materialization. Use when only a bounded page is needed.
+    pub fn candidates_limited(
+        &self,
+        tier: Option<&str>,
+        limit: usize,
+    ) -> crate::Result<Vec<OverlayLink>> {
+        let conn = self.conn.lock();
+        candidates_limited(&conn, tier, limit)
     }
 
     /// Refresh stored endpoint hashes for a candidate after a successful

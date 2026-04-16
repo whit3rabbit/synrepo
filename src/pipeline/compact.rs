@@ -13,7 +13,7 @@ use time::OffsetDateTime;
 
 use crate::config::Config;
 use crate::overlay::OverlayStore;
-use crate::pipeline::writer::{acquire_writer_lock, LockError};
+use crate::pipeline::writer::{acquire_write_admission, map_lock_error};
 
 /// Load the last compaction timestamp from state file.
 pub fn load_last_compaction_timestamp(synrepo_dir: &Path) -> Option<OffsetDateTime> {
@@ -251,16 +251,9 @@ pub fn execute_compact(
 ) -> crate::Result<crate::pipeline::maintenance::CompactSummary> {
     use crate::pipeline::maintenance::CompactComponent;
 
-    // Acquire the writer lock for the duration of the compaction.
-    let _lock = acquire_writer_lock(synrepo_dir).map_err(|err| match err {
-        LockError::HeldByOther { pid, .. } => anyhow::anyhow!(
-            "compact: writer lock held by pid {pid}; wait for it to finish or stop the watch daemon"
-        ),
-        LockError::Io { path, source } => anyhow::anyhow!(
-            "compact: could not acquire writer lock at {}: {source}",
-            path.display()
-        ),
-    })?;
+    // Acquire write admission for the duration of the compaction.
+    let _lock = acquire_write_admission(synrepo_dir, "compact")
+        .map_err(|err| map_lock_error("compact", err))?;
 
     let mut summary = crate::pipeline::maintenance::CompactSummary {
         compaction_timestamp: OffsetDateTime::now_utc(),
