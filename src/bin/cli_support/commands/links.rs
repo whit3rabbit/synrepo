@@ -4,16 +4,14 @@ use synrepo::{
     config::{Config, Mode},
     core::ids::NodeId,
     overlay::{OverlayEdgeKind, OverlayStore},
-    pipeline::writer::{acquire_writer_lock, LockError},
+    pipeline::writer::{acquire_write_admission, map_lock_error},
     store::overlay::{
-        candidate_pass_suffix, compare_score_desc, format_candidate_id, parse_cross_link_freshness,
+        candidate_pass_suffix, format_candidate_id, parse_cross_link_freshness,
         parse_overlay_edge_kind, FindingsFilter, SqliteOverlayStore,
     },
     store::sqlite::SqliteGraphStore,
     structure::graph::Epistemic,
 };
-
-use super::watch::ensure_watch_not_running;
 
 /// A candidate ID parsed into its endpoint triple plus optional revision suffix.
 /// `pass_suffix` is `None` for the legacy 3-part form (`from::to::kind`) emitted
@@ -115,13 +113,10 @@ pub(crate) fn links_review_output(
     let overlay = SqliteOverlayStore::open_existing(&overlay_dir)
         .map_err(|error| anyhow::anyhow!("Could not open overlay store: {error}"))?;
 
-    let mut candidates = overlay.all_candidates(Some("review_queue"))?;
-    candidates
-        .sort_by(|left, right| compare_score_desc(left.confidence_score, right.confidence_score));
-
-    if let Some(limit) = limit {
-        candidates.truncate(limit);
-    }
+    let candidates = match limit {
+        Some(limit) => overlay.candidates_limited(Some("review_queue"), limit)?,
+        None => overlay.all_candidates(Some("review_queue"))?,
+    };
 
     let mut out = String::new();
     if json_output {
@@ -160,17 +155,9 @@ pub(crate) fn links_accept(
         anyhow::bail!("Rejecting: `links accept` is only available in `curated` mode.");
     }
     let synrepo_dir = Config::synrepo_dir(repo_root);
-    ensure_watch_not_running(&synrepo_dir, "links accept")?;
 
-    let _writer_lock = acquire_writer_lock(&synrepo_dir).map_err(|err| match err {
-        LockError::HeldByOther { pid, .. } => anyhow::anyhow!(
-            "links accept: writer lock held by pid {pid}; wait for it to finish or stop the watch daemon"
-        ),
-        LockError::Io { path, source } => anyhow::anyhow!(
-            "links accept: could not acquire writer lock at {}: {source}",
-            path.display()
-        ),
-    })?;
+    let _writer_lock = acquire_write_admission(&synrepo_dir, "links accept")
+        .map_err(|err| map_lock_error("links accept", err))?;
 
     let overlay_dir = synrepo_dir.join("overlay");
     let mut overlay = SqliteOverlayStore::open_existing(&overlay_dir)
@@ -315,17 +302,9 @@ pub(crate) fn links_reject(
         anyhow::bail!("Rejecting: `links reject` is only available in `curated` mode.");
     }
     let synrepo_dir = Config::synrepo_dir(repo_root);
-    ensure_watch_not_running(&synrepo_dir, "links reject")?;
 
-    let _writer_lock = acquire_writer_lock(&synrepo_dir).map_err(|err| match err {
-        LockError::HeldByOther { pid, .. } => anyhow::anyhow!(
-            "links reject: writer lock held by pid {pid}; wait for it to finish or stop the watch daemon"
-        ),
-        LockError::Io { path, source } => anyhow::anyhow!(
-            "links reject: could not acquire writer lock at {}: {source}",
-            path.display()
-        ),
-    })?;
+    let _writer_lock = acquire_write_admission(&synrepo_dir, "links reject")
+        .map_err(|err| map_lock_error("links reject", err))?;
 
     let overlay_dir = synrepo_dir.join("overlay");
     let mut overlay = SqliteOverlayStore::open_existing(&overlay_dir)

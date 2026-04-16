@@ -2,11 +2,9 @@ use std::path::Path;
 
 use synrepo::{
     config::Config,
-    pipeline::writer::{acquire_writer_lock, LockError},
+    pipeline::writer::{acquire_write_admission, map_lock_error},
     store::compatibility::{apply_runtime_actions, evaluate_runtime, CompatAction, StoreId},
 };
-
-use super::watch::ensure_watch_not_running;
 
 /// Print a dry-run compatibility plan or execute it with `--apply`.
 pub(crate) fn upgrade(repo_root: &Path, apply: bool) -> anyhow::Result<()> {
@@ -14,7 +12,6 @@ pub(crate) fn upgrade(repo_root: &Path, apply: bool) -> anyhow::Result<()> {
         anyhow::anyhow!("upgrade: not initialized — run `synrepo init` first ({e})")
     })?;
     let synrepo_dir = Config::synrepo_dir(repo_root);
-    ensure_watch_not_running(&synrepo_dir, "upgrade")?;
 
     let report = evaluate_runtime(&synrepo_dir, synrepo_dir.exists(), &config)
         .map_err(|e| anyhow::anyhow!("upgrade: compatibility evaluation failed: {e}"))?;
@@ -88,16 +85,8 @@ pub(crate) fn upgrade(repo_root: &Path, apply: bool) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    // Acquire the writer lock for the duration of the upgrade.
-    let _lock = acquire_writer_lock(&synrepo_dir).map_err(|err| match err {
-        LockError::HeldByOther { pid, .. } => anyhow::anyhow!(
-            "upgrade: writer lock held by pid {pid}; wait for it to finish or stop the watch daemon"
-        ),
-        LockError::Io { path, source } => anyhow::anyhow!(
-            "upgrade: could not acquire writer lock at {}: {source}",
-            path.display()
-        ),
-    })?;
+    let _lock = acquire_write_admission(&synrepo_dir, "upgrade")
+        .map_err(|err| map_lock_error("upgrade", err))?;
 
     apply_runtime_actions(&synrepo_dir, &report)
         .map_err(|e| anyhow::anyhow!("upgrade: failed to apply actions: {e}"))?;

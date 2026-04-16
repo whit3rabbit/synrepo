@@ -8,8 +8,6 @@ use synrepo::{
     },
 };
 
-use super::watch::ensure_watch_not_running;
-
 /// Report drift across all repair surfaces. Read-only; never mutates state.
 pub(crate) fn check(repo_root: &Path, json_output: bool) -> anyhow::Result<()> {
     let config = Config::load(repo_root).map_err(|error| {
@@ -48,7 +46,6 @@ pub(crate) fn sync(
         anyhow::anyhow!("sync: not initialized — run `synrepo init` first ({error})")
     })?;
     let synrepo_dir = Config::synrepo_dir(repo_root);
-    ensure_watch_not_running(&synrepo_dir, "sync")?;
 
     let options = SyncOptions {
         generate_cross_links,

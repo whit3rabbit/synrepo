@@ -6,10 +6,8 @@ use synrepo::config::Config;
 use synrepo::pipeline::maintenance::CompactPolicy;
 use synrepo::pipeline::{
     compact::{execute_compact, plan_compact},
-    writer::{acquire_writer_lock, LockError},
+    writer::{acquire_write_admission, map_lock_error},
 };
-
-use super::watch::ensure_watch_not_running;
 
 /// Print a dry-run compaction plan or execute it with `--apply`.
 pub(crate) fn compact(repo_root: &Path, apply: bool, policy: CompactPolicy) -> anyhow::Result<()> {
@@ -17,7 +15,6 @@ pub(crate) fn compact(repo_root: &Path, apply: bool, policy: CompactPolicy) -> a
         anyhow::anyhow!("compact: not initialized — run `synrepo init` first ({e})")
     })?;
     let synrepo_dir = Config::synrepo_dir(repo_root);
-    ensure_watch_not_running(&synrepo_dir, "compact")?;
 
     // Plan compaction.
     let plan = plan_compact(&synrepo_dir, &config, policy)
@@ -51,17 +48,10 @@ pub(crate) fn compact(repo_root: &Path, apply: bool, policy: CompactPolicy) -> a
         return Ok(());
     }
 
-    // Execute compaction.
+    // Execute compaction under unified write admission.
     println!("\nExecuting compaction...");
-    let _lock = acquire_writer_lock(&synrepo_dir).map_err(|err| match err {
-        LockError::HeldByOther { pid, .. } => anyhow::anyhow!(
-            "compact: writer lock held by pid {pid}; wait for it to finish or stop the watch daemon"
-        ),
-        LockError::Io { path, source } => anyhow::anyhow!(
-            "compact: could not acquire writer lock at {}: {source}",
-            path.display()
-        ),
-    })?;
+    let _lock = acquire_write_admission(&synrepo_dir, "compact")
+        .map_err(|err| map_lock_error("compact", err))?;
     let summary = execute_compact(&synrepo_dir, &plan, policy)
         .map_err(|e| anyhow::anyhow!("compact: failed to execute: {e}"))?;
 

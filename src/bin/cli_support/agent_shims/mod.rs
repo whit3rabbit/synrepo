@@ -15,7 +15,9 @@ mod shims;
 mod tests;
 
 use shims::{
-    CLAUDE_SHIM, CODEX_SHIM, COPILOT_SHIM, CURSOR_SHIM, GENERIC_SHIM, OPENCODE_SHIM, WINDSURF_SHIM,
+    CLAUDE_SHIM, CODEX_SHIM, COPILOT_SHIM, CURSOR_SHIM, GEMINI_SHIM, GENERIC_SHIM, GOOSE_SHIM,
+    JUNIE_SHIM, KIRO_SHIM, OPENCODE_SHIM, QWEN_SHIM, ROO_SHIM, TABNINE_SHIM, TRAE_SHIM,
+    WINDSURF_SHIM,
 };
 
 /// Agent CLI target for shim generation.
@@ -35,6 +37,22 @@ pub(crate) enum AgentTool {
     Windsurf,
     /// OpenCode — writes `AGENTS.md`
     OpenCode,
+    /// Google Gemini CLI — writes `.gemini/commands/synrepo.toml`
+    Gemini,
+    /// Goose — writes `.goose/recipes/synrepo.yaml`
+    Goose,
+    /// Kiro CLI — writes `.kiro/prompts/synrepo.md`
+    Kiro,
+    /// Qwen Code — writes `.qwen/commands/synrepo.md`
+    Qwen,
+    /// Junie — writes `.junie/commands/synrepo.md`
+    Junie,
+    /// Roo Code — writes `.roo/commands/synrepo.md`
+    Roo,
+    /// Tabnine CLI — writes `.tabnine/agent/commands/synrepo.toml`
+    Tabnine,
+    /// Trae — writes `.trae/skills/synrepo/SKILL.md`
+    Trae,
 }
 
 impl AgentTool {
@@ -48,6 +66,14 @@ impl AgentTool {
             AgentTool::Codex => "Codex CLI",
             AgentTool::Windsurf => "Windsurf",
             AgentTool::OpenCode => "OpenCode",
+            AgentTool::Gemini => "Gemini CLI",
+            AgentTool::Goose => "Goose",
+            AgentTool::Kiro => "Kiro CLI",
+            AgentTool::Qwen => "Qwen Code",
+            AgentTool::Junie => "Junie",
+            AgentTool::Roo => "Roo Code",
+            AgentTool::Tabnine => "Tabnine CLI",
+            AgentTool::Trae => "Trae",
         }
     }
 
@@ -61,6 +87,28 @@ impl AgentTool {
             AgentTool::Codex => repo_root.join(".codex").join("instructions.md"),
             AgentTool::Windsurf => repo_root.join(".windsurf").join("rules").join("synrepo.md"),
             AgentTool::OpenCode => repo_root.join("AGENTS.md"),
+            AgentTool::Gemini => repo_root
+                .join(".gemini")
+                .join("commands")
+                .join("synrepo.toml"),
+            AgentTool::Goose => repo_root
+                .join(".goose")
+                .join("recipes")
+                .join("synrepo.yaml"),
+            AgentTool::Kiro => repo_root.join(".kiro").join("prompts").join("synrepo.md"),
+            AgentTool::Qwen => repo_root.join(".qwen").join("commands").join("synrepo.md"),
+            AgentTool::Junie => repo_root.join(".junie").join("commands").join("synrepo.md"),
+            AgentTool::Roo => repo_root.join(".roo").join("commands").join("synrepo.md"),
+            AgentTool::Tabnine => repo_root
+                .join(".tabnine")
+                .join("agent")
+                .join("commands")
+                .join("synrepo.toml"),
+            AgentTool::Trae => repo_root
+                .join(".trae")
+                .join("skills")
+                .join("synrepo")
+                .join("SKILL.md"),
         }
     }
 
@@ -87,6 +135,28 @@ impl AgentTool {
                 "Windsurf loads `.windsurf/rules/synrepo.md` as a project rule automatically."
             }
             AgentTool::OpenCode => "OpenCode loads `AGENTS.md` as a project rule automatically.",
+            AgentTool::Gemini => {
+                "Write the synrepo config manually: create `.gemini/commands/synrepo.toml`."
+            }
+            AgentTool::Goose => {
+                "Write the synrepo config manually: create `.goose/recipes/synrepo.yaml`."
+            }
+            AgentTool::Kiro => "Kiro loads `.kiro/prompts/synrepo.md` as a prompt automatically.",
+            AgentTool::Qwen => {
+                "Write the synrepo config manually: create `.qwen/commands/synrepo.md`."
+            }
+            AgentTool::Junie => {
+                "Write the synrepo config manually: create `.junie/commands/synrepo.md`."
+            }
+            AgentTool::Roo => {
+                "Write the synrepo config manually: create `.roo/commands/synrepo.md`."
+            }
+            AgentTool::Tabnine => {
+                "Write the synrepo config manually: create `.tabnine/agent/commands/synrepo.toml`."
+            }
+            AgentTool::Trae => {
+                "Trae loads `.trae/skills/synrepo/SKILL.md` as a skill automatically."
+            }
         }
     }
 
@@ -100,6 +170,14 @@ impl AgentTool {
             AgentTool::Codex => CODEX_SHIM,
             AgentTool::Windsurf => WINDSURF_SHIM,
             AgentTool::OpenCode => OPENCODE_SHIM,
+            AgentTool::Gemini => GEMINI_SHIM,
+            AgentTool::Goose => GOOSE_SHIM,
+            AgentTool::Kiro => KIRO_SHIM,
+            AgentTool::Qwen => QWEN_SHIM,
+            AgentTool::Junie => JUNIE_SHIM,
+            AgentTool::Roo => ROO_SHIM,
+            AgentTool::Tabnine => TABNINE_SHIM,
+            AgentTool::Trae => TRAE_SHIM,
         }
     }
 }

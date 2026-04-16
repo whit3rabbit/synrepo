@@ -298,3 +298,80 @@ synrepo findings                                 # findings report
 ```
 "
 );
+
+/// Shim content for new targets that don't have automatic MCP registration.
+/// These use basic markdown with the synrepo doctrine embedded.
+macro_rules! define_basic_shim {
+    ($name:ident, $title:expr) => {
+        pub(crate) const $name: &str = concat!(
+            $title,
+            "
+
+synrepo precomputes a structural graph of this codebase from tree-sitter parsing and git history.
+
+",
+            doctrine_block!(),
+            "
+
+## Using synrepo
+
+- Run `synrepo init` to initialize the graph.
+- Use `synrepo status` to check operational health.
+- Use `synrepo search <query>` to find symbols and files.
+- Use `synrepo node <id>` to inspect node metadata.
+- Use `synrepo graph query \"outbound <node_id>\"` to see dependencies.
+- Use `synrepo graph query \"inbound <node_id>\"` to see dependents.
+
+For full MCP tool support, register the synrepo MCP server in your client configuration.
+"
+        );
+    };
+}
+
+define_basic_shim!(
+    GEMINI_SHIM,
+    "# synrepo context (Gemini CLI)
+"
+);
+
+define_basic_shim!(
+    GOOSE_SHIM,
+    "# synrepo context (Goose)
+"
+);
+
+define_basic_shim!(
+    KIRO_SHIM,
+    "# synrepo context (Kiro CLI)
+"
+);
+
+define_basic_shim!(
+    QWEN_SHIM,
+    "# synrepo context (Qwen Code)
+"
+);
+
+define_basic_shim!(
+    JUNIE_SHIM,
+    "# synrepo context (Junie)
+"
+);
+
+define_basic_shim!(
+    ROO_SHIM,
+    "# synrepo context (Roo Code)
+"
+);
+
+define_basic_shim!(
+    TABNINE_SHIM,
+    "# synrepo context (Tabnine CLI)
+"
+);
+
+define_basic_shim!(
+    TRAE_SHIM,
+    "# synrepo context (Trae)
+"
+);

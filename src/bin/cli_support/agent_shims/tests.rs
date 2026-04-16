@@ -10,6 +10,14 @@ fn test_display_name() {
     assert_eq!(AgentTool::Codex.display_name(), "Codex CLI");
     assert_eq!(AgentTool::Windsurf.display_name(), "Windsurf");
     assert_eq!(AgentTool::OpenCode.display_name(), "OpenCode");
+    assert_eq!(AgentTool::Gemini.display_name(), "Gemini CLI");
+    assert_eq!(AgentTool::Goose.display_name(), "Goose");
+    assert_eq!(AgentTool::Kiro.display_name(), "Kiro CLI");
+    assert_eq!(AgentTool::Qwen.display_name(), "Qwen Code");
+    assert_eq!(AgentTool::Junie.display_name(), "Junie");
+    assert_eq!(AgentTool::Roo.display_name(), "Roo Code");
+    assert_eq!(AgentTool::Tabnine.display_name(), "Tabnine CLI");
+    assert_eq!(AgentTool::Trae.display_name(), "Trae");
 }
 
 #[test]
@@ -43,6 +51,52 @@ fn test_output_path() {
         AgentTool::OpenCode.output_path(repo_root),
         repo_root.join("AGENTS.md")
     );
+    assert_eq!(
+        AgentTool::Gemini.output_path(repo_root),
+        repo_root
+            .join(".gemini")
+            .join("commands")
+            .join("synrepo.toml")
+    );
+    assert_eq!(
+        AgentTool::Goose.output_path(repo_root),
+        repo_root
+            .join(".goose")
+            .join("recipes")
+            .join("synrepo.yaml")
+    );
+    assert_eq!(
+        AgentTool::Kiro.output_path(repo_root),
+        repo_root.join(".kiro").join("prompts").join("synrepo.md")
+    );
+    assert_eq!(
+        AgentTool::Qwen.output_path(repo_root),
+        repo_root.join(".qwen").join("commands").join("synrepo.md")
+    );
+    assert_eq!(
+        AgentTool::Junie.output_path(repo_root),
+        repo_root.join(".junie").join("commands").join("synrepo.md")
+    );
+    assert_eq!(
+        AgentTool::Roo.output_path(repo_root),
+        repo_root.join(".roo").join("commands").join("synrepo.md")
+    );
+    assert_eq!(
+        AgentTool::Tabnine.output_path(repo_root),
+        repo_root
+            .join(".tabnine")
+            .join("agent")
+            .join("commands")
+            .join("synrepo.toml")
+    );
+    assert_eq!(
+        AgentTool::Trae.output_path(repo_root),
+        repo_root
+            .join(".trae")
+            .join("skills")
+            .join("synrepo")
+            .join("SKILL.md")
+    );
 }
 
 #[test]
@@ -68,6 +122,16 @@ fn test_include_instruction() {
     assert!(AgentTool::OpenCode
         .include_instruction()
         .contains("AGENTS.md"));
+    // New targets have manual instructions
+    assert!(AgentTool::Gemini
+        .include_instruction()
+        .contains(".gemini/commands/synrepo.toml"));
+    assert!(AgentTool::Goose
+        .include_instruction()
+        .contains(".goose/recipes/synrepo.yaml"));
+    assert!(AgentTool::Trae
+        .include_instruction()
+        .contains(".trae/skills/synrepo/SKILL.md"));
 }
 
 #[test]
@@ -114,6 +178,14 @@ fn every_shim_embeds_doctrine_block() {
         AgentTool::Codex,
         AgentTool::Windsurf,
         AgentTool::OpenCode,
+        AgentTool::Gemini,
+        AgentTool::Goose,
+        AgentTool::Kiro,
+        AgentTool::Qwen,
+        AgentTool::Junie,
+        AgentTool::Roo,
+        AgentTool::Tabnine,
+        AgentTool::Trae,
     ] {
         assert!(
             tool.shim_content().contains(DOCTRINE_BLOCK),

@@ -576,7 +576,7 @@ fn links_accept_blocked_when_watch_running() {
     let err = super::super::commands::links_accept(repo.path(), &candidate_id, None).unwrap_err();
     assert!(
         err.to_string()
-            .contains("unavailable while watch service is active"),
+            .contains("links accept: watch service is active"),
         "expected watch-service guard error, got: {err}"
     );
 
@@ -585,7 +585,7 @@ fn links_accept_blocked_when_watch_running() {
     assert!(
         reject_err
             .to_string()
-            .contains("unavailable while watch service is active"),
+            .contains("links reject: watch service is active"),
         "expected watch-service guard error from reject, got: {reject_err}"
     );
 
