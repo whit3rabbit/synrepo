@@ -28,6 +28,8 @@ pub(crate) use links::{findings_output, links_list_output, links_review_output};
 pub(crate) use mcp::run_mcp_server;
 pub(crate) use repair::{check, reconcile, sync};
 pub(crate) use setup::setup;
+#[cfg(test)]
+pub(crate) use setup::{setup_claude_mcp, setup_codex_mcp, setup_opencode_mcp};
 pub(crate) use status::status;
 #[cfg(test)]
 #[allow(unused_imports)]

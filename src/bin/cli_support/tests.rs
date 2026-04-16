@@ -5,6 +5,7 @@ mod graph;
 mod links;
 mod reconcile;
 mod search;
+mod setup;
 mod status;
 mod support;
 mod upgrade;
