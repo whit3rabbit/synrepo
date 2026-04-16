@@ -1,3 +1,9 @@
+// The watch service uses Unix sockets and is only active on unix platforms.
+// On Windows the top-level function returns an unsupported error immediately,
+// leaving all service/lease helpers as dead code.  Suppress the lint rather
+// than gating every item individually.
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))]
+
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -65,9 +71,9 @@ pub fn run_watch_service(
     #[cfg(not(unix))]
     {
         let _ = (repo_root, config, watch_config, synrepo_dir, mode);
-        return Err(crate::Error::Other(anyhow::anyhow!(
+        Err(crate::Error::Other(anyhow::anyhow!(
             "watch daemon service is only supported on unix-like platforms"
-        )));
+        )))
     }
 
     #[cfg(unix)]

@@ -1,3 +1,5 @@
+#![cfg_attr(not(unix), allow(unused_imports, dead_code))]
+
 use std::{fs, thread, time::Duration};
 
 use notify_debouncer_full::{

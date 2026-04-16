@@ -1,7 +1,8 @@
+#[cfg(unix)]
+use std::process::Command;
 use std::{
     fs,
     path::PathBuf,
-    process::Command,
     thread,
     time::{Duration, Instant},
 };

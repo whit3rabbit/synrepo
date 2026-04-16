@@ -1,3 +1,5 @@
+#![cfg_attr(not(unix), allow(unused_imports))]
+
 use std::{fs, path::PathBuf};
 
 use super::super::{

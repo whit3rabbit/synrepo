@@ -1,3 +1,6 @@
+// Lease management is only active on unix (watch daemon requires Unix sockets).
+#![cfg_attr(not(unix), allow(dead_code, unused_imports))]
+
 use std::{
     fs,
     io::Write as _,

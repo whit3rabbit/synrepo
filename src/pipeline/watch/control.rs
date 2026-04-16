@@ -1,8 +1,12 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(unix)]
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use super::lease::{watch_socket_path, WatchDaemonError, WatchDaemonState};
+#[cfg(unix)]
+use super::lease::watch_socket_path;
+use super::lease::{WatchDaemonError, WatchDaemonState};
 use super::reconcile::ReconcileOutcome;
 
 /// Control message sent over the per-repo watch socket.
