@@ -2,10 +2,155 @@ mod docs;
 mod qualname;
 
 use std::path::Path;
+use std::sync::OnceLock;
 
 use tree_sitter::StreamingIterator as _;
 
 use super::{ExtractedCallRef, ExtractedImportRef, ExtractedSymbol, Language, ParseOutput};
+
+/// Cached definition query with capture indices for "item" and "name".
+struct DefinitionQuery {
+    query: Box<tree_sitter::Query>,
+    item_idx: u32,
+    name_idx: u32,
+}
+
+/// Cached single-capture query (call or import).
+struct SingleCaptureQuery {
+    query: Box<tree_sitter::Query>,
+    capture_idx: u32,
+}
+
+// Single source of truth for "every language we compile queries for".
+// Adding a variant to `Language` and listing it here is the only step
+// needed to extend the cache; the three init fns below iterate this slice.
+const LANGUAGES: &[Language] = &[
+    Language::Rust,
+    Language::Python,
+    Language::TypeScript,
+    Language::Tsx,
+    Language::Go,
+];
+
+/// Global caches for compiled tree-sitter queries.
+/// Each query is compiled once per language and reused across all file parses.
+static DEFINITION_QUERIES: OnceLock<Vec<Option<DefinitionQuery>>> = OnceLock::new();
+static CALL_QUERIES: OnceLock<Vec<Option<SingleCaptureQuery>>> = OnceLock::new();
+static IMPORT_QUERIES: OnceLock<Vec<Option<SingleCaptureQuery>>> = OnceLock::new();
+
+/// Initialize all definition queries for all languages.
+fn init_definition_queries() -> Vec<Option<DefinitionQuery>> {
+    let mut cache: Vec<Option<DefinitionQuery>> = (0..LANGUAGES.len()).map(|_| None).collect();
+    for &lang in LANGUAGES {
+        let ts_lang = lang.tree_sitter_language();
+        let query_text = lang.definition_query();
+        match tree_sitter::Query::new(&ts_lang, query_text) {
+            Ok(query) => {
+                let capture_names = query.capture_names();
+                let item_idx = capture_names
+                    .iter()
+                    .position(|n| *n == "item")
+                    .map(|i| i as u32);
+                let name_idx = capture_names
+                    .iter()
+                    .position(|n| *n == "name")
+                    .map(|i| i as u32);
+                if let (Some(item_idx), Some(name_idx)) = (item_idx, name_idx) {
+                    cache[lang as usize] = Some(DefinitionQuery {
+                        query: Box::new(query),
+                        item_idx,
+                        name_idx,
+                    });
+                }
+            }
+            Err(e) => {
+                // Query compilation failure - leave as None, callers will handle.
+                tracing::warn!(?lang, error = %e, "failed to compile definition query");
+            }
+        }
+    }
+    cache
+}
+
+/// Initialize all call queries for all languages.
+fn init_call_queries() -> Vec<Option<SingleCaptureQuery>> {
+    let mut cache: Vec<Option<SingleCaptureQuery>> = (0..LANGUAGES.len()).map(|_| None).collect();
+    for &lang in LANGUAGES {
+        let ts_lang = lang.tree_sitter_language();
+        let query_text = lang.call_query();
+        match tree_sitter::Query::new(&ts_lang, query_text) {
+            Ok(query) => {
+                let capture_names = query.capture_names();
+                let capture_idx = capture_names
+                    .iter()
+                    .position(|n| *n == "callee")
+                    .map(|i| i as u32);
+                if let Some(capture_idx) = capture_idx {
+                    cache[lang as usize] = Some(SingleCaptureQuery {
+                        query: Box::new(query),
+                        capture_idx,
+                    });
+                }
+            }
+            Err(e) => {
+                tracing::warn!(?lang, error = %e, "failed to compile call query");
+            }
+        }
+    }
+    cache
+}
+
+/// Initialize all import queries for all languages.
+fn init_import_queries() -> Vec<Option<SingleCaptureQuery>> {
+    let mut cache: Vec<Option<SingleCaptureQuery>> = (0..LANGUAGES.len()).map(|_| None).collect();
+    for &lang in LANGUAGES {
+        let ts_lang = lang.tree_sitter_language();
+        let query_text = lang.import_query();
+        match tree_sitter::Query::new(&ts_lang, query_text) {
+            Ok(query) => {
+                let capture_names = query.capture_names();
+                let capture_idx = capture_names
+                    .iter()
+                    .position(|n| *n == "import_ref")
+                    .map(|i| i as u32);
+                if let Some(capture_idx) = capture_idx {
+                    cache[lang as usize] = Some(SingleCaptureQuery {
+                        query: Box::new(query),
+                        capture_idx,
+                    });
+                }
+            }
+            Err(e) => {
+                tracing::warn!(?lang, error = %e, "failed to compile import query");
+            }
+        }
+    }
+    cache
+}
+
+/// Get the cached definition query for a language.
+fn get_definition_query(language: Language) -> Option<&'static DefinitionQuery> {
+    DEFINITION_QUERIES
+        .get_or_init(init_definition_queries)
+        .get(language as usize)?
+        .as_ref()
+}
+
+/// Get the cached call query for a language.
+fn get_call_query(language: Language) -> Option<&'static SingleCaptureQuery> {
+    CALL_QUERIES
+        .get_or_init(init_call_queries)
+        .get(language as usize)?
+        .as_ref()
+}
+
+/// Get the cached import query for a language.
+fn get_import_query(language: Language) -> Option<&'static SingleCaptureQuery> {
+    IMPORT_QUERIES
+        .get_or_init(init_import_queries)
+        .get(language as usize)?
+        .as_ref()
+}
 
 /// Parse a source file and extract symbols and within-file edges.
 ///
@@ -41,24 +186,8 @@ pub fn parse_file(path: &Path, content: &[u8]) -> crate::Result<Option<ParseOutp
         }));
     };
 
-    let query =
-        tree_sitter::Query::new(&ts_language, language.definition_query()).map_err(|error| {
-            crate::Error::Parse {
-                path: path.display().to_string(),
-                message: format!("query compilation failed: {error}"),
-            }
-        })?;
-
-    let capture_names = query.capture_names();
-    let item_idx = capture_names
-        .iter()
-        .position(|name| *name == "item")
-        .map(|idx| idx as u32);
-    let name_idx = capture_names
-        .iter()
-        .position(|name| *name == "name")
-        .map(|idx| idx as u32);
-    let (Some(item_idx), Some(name_idx)) = (item_idx, name_idx) else {
+    // Use cached definition query instead of compiling per-file
+    let Some(def_query) = get_definition_query(language) else {
         return Ok(Some(ParseOutput {
             language,
             symbols: vec![],
@@ -68,8 +197,10 @@ pub fn parse_file(path: &Path, content: &[u8]) -> crate::Result<Option<ParseOutp
         }));
     };
 
+    let (item_idx, name_idx) = (def_query.item_idx, def_query.name_idx);
+
     let mut cursor = tree_sitter::QueryCursor::new();
-    let mut cursor_matches = cursor.matches(&query, tree.root_node(), content);
+    let mut cursor_matches = cursor.matches(&def_query.query, tree.root_node(), content);
     let mut symbols = Vec::new();
 
     while let Some(query_match) = cursor_matches.next() {
@@ -111,8 +242,8 @@ pub fn parse_file(path: &Path, content: &[u8]) -> crate::Result<Option<ParseOutp
         });
     }
 
-    let call_refs = extract_call_refs(language, &ts_language, &tree, content, path)?;
-    let import_refs = extract_import_refs(language, &ts_language, &tree, content, path)?;
+    let call_refs = extract_call_refs(language, &tree, content)?;
+    let import_refs = extract_import_refs(language, &tree, content)?;
 
     Ok(Some(ParseOutput {
         language,
@@ -126,29 +257,17 @@ pub fn parse_file(path: &Path, content: &[u8]) -> crate::Result<Option<ParseOutp
 /// Extract call-site references from a parsed file for stage-4 resolution.
 fn extract_call_refs(
     language: Language,
-    ts_language: &tree_sitter::Language,
     tree: &tree_sitter::Tree,
     content: &[u8],
-    path: &Path,
 ) -> crate::Result<Vec<ExtractedCallRef>> {
-    let query = tree_sitter::Query::new(ts_language, language.call_query()).map_err(|e| {
-        crate::Error::Parse {
-            path: path.display().to_string(),
-            message: format!("call query compilation failed: {e}"),
-        }
-    })?;
-
-    let capture_names = query.capture_names();
-    let callee_idx = capture_names
-        .iter()
-        .position(|n| *n == "callee")
-        .map(|i| i as u32);
-    let Some(callee_idx) = callee_idx else {
+    // Use cached call query
+    let Some(call_query) = get_call_query(language) else {
         return Ok(vec![]);
     };
 
+    let callee_idx = call_query.capture_idx;
     let mut cursor = tree_sitter::QueryCursor::new();
-    let mut matches = cursor.matches(&query, tree.root_node(), content);
+    let mut matches = cursor.matches(&call_query.query, tree.root_node(), content);
     let mut refs = Vec::new();
 
     while let Some(m) = matches.next() {
@@ -166,29 +285,17 @@ fn extract_call_refs(
 /// Extract import/use references from a parsed file for stage-4 resolution.
 fn extract_import_refs(
     language: Language,
-    ts_language: &tree_sitter::Language,
     tree: &tree_sitter::Tree,
     content: &[u8],
-    path: &Path,
 ) -> crate::Result<Vec<ExtractedImportRef>> {
-    let query = tree_sitter::Query::new(ts_language, language.import_query()).map_err(|e| {
-        crate::Error::Parse {
-            path: path.display().to_string(),
-            message: format!("import query compilation failed: {e}"),
-        }
-    })?;
-
-    let capture_names = query.capture_names();
-    let ref_idx = capture_names
-        .iter()
-        .position(|n| *n == "import_ref")
-        .map(|i| i as u32);
-    let Some(ref_idx) = ref_idx else {
+    // Use cached import query
+    let Some(import_query) = get_import_query(language) else {
         return Ok(vec![]);
     };
 
+    let ref_idx = import_query.capture_idx;
     let mut cursor = tree_sitter::QueryCursor::new();
-    let mut matches = cursor.matches(&query, tree.root_node(), content);
+    let mut matches = cursor.matches(&import_query.query, tree.root_node(), content);
     let mut refs = Vec::new();
 
     while let Some(m) = matches.next() {

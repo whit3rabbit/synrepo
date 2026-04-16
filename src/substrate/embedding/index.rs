@@ -4,7 +4,7 @@
 //! Vectors are pre-normalized during index build.
 
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::{BufReader, BufWriter, Read, Write};
 
 use super::chunk::{ChunkId, EmbeddingChunk, EmbeddingChunkSource};
 use super::model::{EmbeddingSession, ModelResolution};
@@ -141,7 +141,7 @@ impl FlatVecIndex {
 
     /// Save the index to disk.
     pub fn save(&self, path: &std::path::Path) -> crate::Result<()> {
-        let mut file = File::create(path)?;
+        let mut file = BufWriter::new(File::create(path)?);
 
         // Write version and metadata length
         file.write_all(&INDEX_FORMAT_VERSION.to_le_bytes())?;
@@ -174,12 +174,15 @@ impl FlatVecIndex {
             file.write_all(&v.to_le_bytes())?;
         }
 
+        // Explicit flush so a disk-full / IO failure during the final buffered
+        // write surfaces here; BufWriter::drop swallows flush errors.
+        file.flush()?;
         Ok(())
     }
 
     /// Load the index from disk.
     pub fn load(path: &std::path::Path, expected_dim: u16) -> crate::Result<Self> {
-        let mut file = File::open(path)?;
+        let mut file = BufReader::new(File::open(path)?);
         let mut buf4 = [0u8; 4];
         let mut buf2 = [0u8; 2];
 
