@@ -100,7 +100,7 @@ Node types: `FileNode` (content-hash identity), `SymbolNode` (tree-sitter extrac
 
 **Pipeline** (`src/pipeline/`) — `structural/` defines the 8-stage compile cycle. `mod.rs` owns transaction orchestration and `CompileSummary`; `stages.rs` owns stages 1–3 (discover → parse code → parse prose); `stage4.rs` owns cross-file edge resolution. Stage 5 (git mining) runs via `src/pipeline/git/` and `src/pipeline/git_intelligence/`. Stage 6 (identity cascade: content-hash, split, merge, git rename fallback, breakage) is wired. Stage 7 (drift scoring via Jaccard distance on persisted structural fingerprints) is wired and writes to the sidecar `edge_drift` and `file_fingerprints` tables. Stage 8 (ArcSwap commit) is not yet wired. `synthesis/` defines the `CommentaryGenerator` trait boundary with `stub.rs` (`NoOpGenerator`, default) and `claude.rs` (`ClaudeCommentaryGenerator`, reads `SYNREPO_ANTHROPIC_API_KEY`); called explicitly via the the `synrepo_refresh_commentary` tool or sync repair actions.
 - `maintenance.rs` — storage-compatibility cleanup and compaction hooks; driven by `sync`.
-- `repair/` — `mod.rs` is a thin façade. `report/` holds the drift-report builder with `surfaces/` (10 `SurfaceCheck` implementations split into `mod.rs`, `commentary.rs`, `cross_links.rs`, `drift.rs`). `sync.rs` drives auto-repair, `cross_links.rs` runs the cross-link generation pass, `log.rs` appends JSONL resolution records, `declared_links.rs` verifies `Governs` targets, `commentary.rs` is the commentary-refresh repair action that calls the synthesis generator, and `types/` holds the stable enums plus report/log payload types.
+- `repair/` — `mod.rs` is a thin façade. `report/` holds the drift-report builder with `surfaces/` (10 `SurfaceCheck` implementations split into `mod.rs`, `commentary.rs`, `cross_links.rs`, `drift.rs`, `rationale.rs`). `sync.rs` drives auto-repair, `cross_links.rs` runs the cross-link generation pass, `log.rs` appends JSONL resolution records, `declared_links.rs` verifies `Governs` targets, `commentary.rs` is the commentary-refresh repair action that calls the synthesis generator, and `types/` holds the stable enums plus report/log payload types.
 - `git_intelligence/` — `mod.rs` is a thin façade. `types.rs` defines the public Git-intelligence payloads, `analysis.rs` derives history/hotspot/ownership/co-change summaries, `emit.rs` emits `CoChangesWith` edges into the graph after each git pass, `symbol_revisions/` tracks per-symbol `first_seen_rev`/`last_modified_rev` via body-hash diffing, and `tests/` is split by status, history, path, and shared support helpers.
 - `watch/` — reconcile backstop, watch lease/control plane, and watch loop production logic; tests live in `src/pipeline/watch/tests.rs`.
 - `writer.rs` — single-writer lock production logic; tests live in `src/pipeline/writer/tests.rs`.
@@ -189,23 +189,24 @@ Stages 4–8:
 ## Gotchas
 
 - **`src/bin/cli_support/agent_shims/` is a sub-module directory** — the canonical agent-doctrine text lives in `doctrine.rs` as a `doctrine_block!()` macro that every shim in `shims.rs` embeds via `concat!`. Edits to shim copy that touch escalation rules, do-not rules, or the product-boundary paragraph MUST go through `doctrine_block!`; the byte-identical test in `tests.rs` (`every_shim_embeds_doctrine_block`) enforces this. The escalation-line source-scan test reads `src/bin/cli_support/commands/mcp.rs` — do not move the MCP tool registration out of that file without updating the test path. Edit target-specific sections (tool list framing, CLI fallback examples, file paths) directly in `shims.rs`.
-- **`src/structure/parse/extract/` is a sub-module directory** (`mod.rs` ~388 lines, `qualname.rs` ~59 lines) — do not add more code to `mod.rs` without splitting further. **Over-limit (split before adding):**
+- **`src/structure/parse/extract/` is a sub-module directory** (`mod.rs` ~318 lines, `qualname.rs` ~59 lines) — do not add more code to `mod.rs` without splitting further. **Over-limit (split before adding):**
+  - `src/bin/cli_support/tests/links.rs` (1111) — test file, split urgently
   - `src/store/overlay/cross_links.rs` (972) — split into cross_links/ submodule
   - `src/surface/card/compiler/neighborhood.rs` (688) — split into neighborhood/ submodule
-  - `src/pipeline/repair/sync.rs` (661)
   - `src/pipeline/synthesis/cross_link/triage.rs` (651)
-  - `src/bin/cli_support/tests/links.rs` (645) — test file, consider splitting
+  - `src/pipeline/repair/sync.rs` (650)
   - `src/pipeline/maintenance.rs` (622)
+  - `src/bin/cli_support/commands/status.rs` (622)
   - `src/store/overlay/tests.rs` (614) — test file
   - `src/store/sqlite/ops.rs` (590)
-  - `src/pipeline/compact.rs` (574)
-  - `src/bin/cli_support/commands/status.rs` (528)
+  - `src/substrate/embedding/index.rs` (571)
+  - `src/pipeline/compact.rs` (563)
+  - `src/bin/cli_support/commands/links.rs` (542)
+  - `src/pipeline/diagnostics.rs` (534)
   - `src/structure/identity.rs` (517)
   - `src/pipeline/structural/stages.rs` (500)
-  - `src/substrate/embedding/index.rs` (495)
-  - `src/surface/card/types.rs` (476)
-  - `src/pipeline/watch/lease.rs` (462)
-  **Watchlist (approaching limit):** `src/surface/card/git.rs` (446), `src/substrate/embedding/model.rs` (434), `src/pipeline/diagnostics.rs` (430), `src/bin/cli_support/commands/links.rs` (418), `src/pipeline/recent_activity/mod.rs` (364), `src/bin/cli_support/cli_args.rs` (361), `src/surface/card/compiler/call_path.rs` (358), `src/structure/graph/store.rs` (349), `src/config.rs` (345)
+  - `src/pipeline/watch/lease.rs` (460)
+  **Watchlist (approaching limit):** `src/surface/card/git.rs` (446), `src/pipeline/recent_activity/mod.rs` (364), `src/bin/cli_support/cli_args.rs` (369), `src/surface/card/compiler/call_path.rs` (358), `src/structure/graph/store.rs` (349), `src/config.rs` (345)
 - **`signature` and `doc_comment` are populated** by `src/structure/parse/extract/mod.rs` for Rust (`///` line comments, declaration up to `{`/`;`), Python (docstring, `def` line up to `:`), and TypeScript/TSX (JSDoc `/** */`, declaration up to `{`). These fields are safe to use in all three languages.
 - **Stage 4 cross-file edges are now emitted**: `Calls` (file→symbol, approximate name resolution) and `Imports` (file→file, relative path resolution) edges are produced by `run_structural_compile`. `Inherits`, `References`, `Mentions` are not yet emitted. `CoChangesWith` is emitted by stage 5 via `git_intelligence/emit.rs`, not stage 4. `SplitFrom` and `MergedFrom` are emitted by stage 6 (identity cascade) for split/merge cases.
 - **`all_edges()` excludes retired edges.** Use `all_edges()` for drift scoring and card compilation (both only care about active edges). If you need to include retired edges (e.g. for compaction enumeration), query the `edges` table directly without the `retired_at_rev IS NULL` filter.
@@ -252,7 +253,7 @@ Stages 4–8:
 
 `openspec/specs/` holds enduring domain specs (stable intended behavior). `openspec/changes/<name>/` holds active work: `proposal.md`, `design.md`, `tasks.md`, and optional delta specs.
 
-Active changes: `graph-lifecycle-v1`, `structural-resilience-v2`, `semantic-triage-v1`, `storage-compaction-v1`
+Active changes: none (all current work is archived under `openspec/changes/archive/`).
 
 Archived completed changes are in `openspec/changes/archive/`.
 
