@@ -4,8 +4,6 @@
 [![crates.io](https://img.shields.io/crates/v/synrepo.svg)](https://crates.io/crates/synrepo)
 [![Built With Ratatui](https://img.shields.io/badge/Built_With_Ratatui-000?logo=ratatui&logoColor=fff)](https://ratatui.rs/)
 
-> WIP: `synrepo` is an in-progress context compiler for AI coding agents. It builds a deterministic local index and graph for a repository so agents can search, inspect structure, and make better edits with less blind file reading.
-
 `synrepo` is a Rust workspace with a CLI and an MCP server. The project is built around a few hard boundaries: parser-observed facts live in the graph, machine-authored output belongs in a separate overlay, and the user-facing product is small task-shaped context instead of dumping large files into prompts.
 
 **synrepo is not a session-memory tool or a task tracker. It is a context compiler for coding agents that need a durable, inspectable understanding of the repository itself.**
@@ -40,6 +38,22 @@ Binaries for Linux (amd64, arm64), macOS (arm64, x86_64), and Windows (amd64) ar
 - Git-intelligence surfacing (history, hotspots, ownership, co-change) and change-risk assessment
 - A watch service (`synrepo watch [--daemon]`) that keeps `.synrepo/` fresh as files change
 - An MCP server (`synrepo mcp`) exposing 16 read-only tools for agent-facing repository context
+
+## Supported Languages
+
+Structural extraction is wired for five languages. Parser output (symbols, call sites, imports) lands in the graph; stage-4 resolution promotes call and import references into cross-file edges where the language's contract allows.
+
+| Language | Extensions | Symbols extracted | Signature + docs | Import resolution (stage 4) |
+|---|---|---|---|---|
+| Rust | `.rs` | `fn`, `struct`, `enum`, `trait`, `type`, `mod`, `const`, `static`, `impl` methods | Yes (`///` line comments) | Phase-1: `use` paths not resolved to files |
+| Python | `.py` | `def`, `class`, methods, nested defs | Yes (docstring) | Dotted imports resolve to `a/b.py` |
+| TypeScript | `.ts` | `function`, `class`, methods, `interface`, `type` alias | Yes (JSDoc `/** */`) | Relative paths resolve to target files |
+| TSX | `.tsx` | same as TypeScript, plus JSX-bearing components | Yes (JSDoc `/** */`) | Relative paths resolve to target files |
+| Go | `.go` | `func`, methods, `struct`, `interface` | No | Phase-1: imports not resolved to files |
+
+Markdown concept extraction runs separately on the directories in `concept_directories` (defaults: `docs/concepts/`, `docs/adr/`, `docs/decisions/`).
+
+Adding a new language requires a `tree-sitter-<lang>` grammar crate and co-located updates across the `Language` enum (query strings, extension map, pattern-index → `SymbolKind` table) plus a registered parser fixture. The parser test suite fails loudly if any surface is missed.
 
 ## Quick Start
 
@@ -88,8 +102,6 @@ These projects overlap, but they are not doing the same job.
 - **claude-mem** is primarily a **session memory system**
 - **beads** is primarily a **task/work memory system**
 - **synrepo** is primarily a **repository understanding system**
-
-That distinction matters.
 
 If the problem is **"help the agent remember prior sessions"**, tools like claude-mem have the cleaner story.
 

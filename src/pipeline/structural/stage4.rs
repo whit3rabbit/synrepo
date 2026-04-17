@@ -107,8 +107,10 @@ pub fn run_cross_file_resolution(
 
         // Imports edges: file → imported file
         for import_ref in &item.import_refs {
-            let resolved = resolve_import_ref(&import_ref.module_ref, &item.file_path);
-            let target_id = resolved.as_deref().and_then(|p| file_index.get(p)).copied();
+            let candidates = resolve_import_ref(&import_ref.module_ref, &item.file_path);
+            let target_id = candidates
+                .into_iter()
+                .find_map(|p| file_index.get(&p).copied());
 
             if let Some(target_id) = target_id {
                 if target_id == item.file_id {
@@ -141,42 +143,52 @@ pub fn run_cross_file_resolution(
 
 /// Attempt to resolve a module reference to a repo-relative file path.
 ///
-/// Returns `Some(path)` when the reference can be resolved to a known
-/// convention; returns `None` for unresolvable references (skipped silently).
-fn resolve_import_ref(module_ref: &str, importing_file: &str) -> Option<String> {
+/// Returns all potential candidate paths since the actual extension is missing.
+/// Handles TypeScript/JavaScript relative imports and Python dotted imports.
+fn resolve_import_ref(module_ref: &str, importing_file: &str) -> Vec<String> {
     if module_ref.is_empty() {
-        return None;
+        return vec![];
     }
 
     // TypeScript / JavaScript relative imports: ./foo  ../bar/baz
     if module_ref.starts_with("./") || module_ref.starts_with("../") {
-        let dir = Path::new(importing_file).parent()?;
+        let Some(dir) = Path::new(importing_file).parent() else {
+            return vec![];
+        };
         let joined = dir.join(module_ref);
         let normalized = normalize_path(&joined);
         let base_owned;
         // Graph paths use forward slashes on all platforms; Path::join uses the
         // OS separator on Windows, so normalize before matching.
         let base = if cfg!(windows) {
-            base_owned = normalized.to_str()?.replace('\\', "/");
+            let Some(norm) = normalized.to_str() else {
+                return vec![];
+            };
+            base_owned = norm.replace('\\', "/");
             base_owned.as_str()
         } else {
-            normalized.to_str()?
+            let Some(norm) = normalized.to_str() else {
+                return vec![];
+            };
+            norm
         };
 
+        let mut candidates = Vec::new();
         // Try bare path + common extensions
         for ext in &["ts", "tsx", "js", "jsx", "mts", "cts"] {
             let candidate = format!("{base}.{ext}");
             if !candidate.contains("..") {
-                return Some(candidate);
+                candidates.push(candidate);
             }
         }
         // Try index file inside the directory
         for ext in &["ts", "tsx", "js"] {
             let candidate = format!("{base}/index.{ext}");
             if !candidate.contains("..") {
-                return Some(candidate);
+                candidates.push(candidate);
             }
         }
+        return candidates;
     }
 
     // Python dotted import: foo.bar → foo/bar.py
@@ -189,10 +201,10 @@ fn resolve_import_ref(module_ref: &str, importing_file: &str) -> Option<String> 
     {
         let slash_path = module_ref.replace('.', "/");
         let candidate = format!("{slash_path}.py");
-        return Some(candidate);
+        return vec![candidate];
     }
 
-    None
+    vec![]
 }
 
 /// Resolve `..` and `.` components in `path` without touching the filesystem.

@@ -49,6 +49,7 @@ cargo run -- node <node_id>        # dump a node's metadata as JSON
 cargo run -- mcp                   # start MCP server over stdio
 cargo run -- mcp --repo <path>     # start MCP server for a specific repo
 RUST_LOG=debug cargo run -- <cmd>  # enable tracing output
+openspec status --change <name> --json  # artifact/task completion check; isComplete=true when archivable
 ```
 
 Node IDs in display format: `file_0000000000000042`, `symbol_0000000000000024`, `concept_0000000000000099`.
@@ -230,6 +231,9 @@ Stages 4–8:
 - **`fs2` is a direct dep** providing cross-platform advisory locking (`FileExt::try_lock_exclusive` → `flock` on Unix, `LockFileEx` on Windows). `libc` is a `[target.'cfg(unix)'.dependencies]` dep used only for `O_CLOEXEC` on the writer lock fd.
 - **`bootstrap()` signature**: `synrepo::bootstrap::bootstrap(repo_root: &Path, mode: Option<Mode>)` — two args only. Does not accept a pre-built `Config` or `synrepo_dir`; it derives both internally.
 - **`cargo build --workspace` does not imply `cargo test` will compile**: test-scoped code (`#[cfg(test)]` and `mod tests`) only compiles under `cargo test` / `cargo check --tests` / `cargo clippy --all-targets`. A pre-existing test-only compile error in an unrelated module will surface there, not in `cargo build`. When verifying focused work against in-tree WIP, isolate the WIP (temporary rename or stash) before running tests to confirm your own work.
+- **`make check` has known parallel-run flakes**: `tui::actions::tests::reconcile_now_*`, `cli_support::tests::links::accept::*`, and `bootstrap::init::tests::bootstrap_rerun_refreshes_graph_on_content_change` intermittently fail when the full suite runs in parallel (writer-lock contention). All pass in isolation — re-run the failing test by name before treating it as a real regression.
+- **Test fixtures that create multiple files must not share byte-identical content.** `FileNodeId` is content-hashed for new files (see invariant 3), so two files with the same bytes collapse to the same node and one overwrites the other. Differentiate with a leading comment or distinct body when a test needs multiple files (canonical example: `src/a.rs` and `src/b.rs` in `pipeline::structural::tests::edges`).
+- **Adding a new `Language` variant is surface-enforced.** See the "Adding a new language" section below. Tests fail loud if any required surface is missed.
 
 ## Config fields (`src/config.rs`)
 
@@ -242,6 +246,44 @@ Stages 4–8:
 | `max_file_size_bytes` | `1048576` (1 MB) | Files larger than this are skipped |
 | `redact_globs` | `["**/secrets/**", "**/*.env*", "**/*-private.md"]` | Files matching these are never indexed |
 | `retain_retired_revisions` | `10` | Compile revisions to keep retired observations before compaction deletes them |
+
+## Adding a new language
+
+Structural parsing currently supports Rust, Python, TypeScript, TSX, and Go. Adding a new language is surface-enforced: validation and fixture tests compile-break or fail loud if any required update is missed. Parser invariants are documented in the `src/structure/parse/mod.rs` module doc.
+
+### Files you MUST touch
+
+1. **`Cargo.toml`** — add the grammar crate: `tree-sitter-<lang> = "<version>"`. Follow the version style of existing entries.
+2. **`src/structure/parse/language.rs`** — the single source of truth for per-language metadata. Update, in order:
+   - `pub enum Language { … }` — add the variant.
+   - `Language::supported()` — append the variant to the slice. Validation and fixture tests iterate this.
+   - `Language::display_name()` — lowercase label used in diagnostics (`"rust"`, `"python"`, …).
+   - `Language::from_extension()` — map the file extension(s) to the variant.
+   - `Language::tree_sitter_language()` — wire `tree_sitter_<lang>::LANGUAGE.into()`.
+   - `Language::definition_query()` — return a `&'static str` holding the tree-sitter query. Must expose `@item` (the node) and `@name` (the identifier) captures. Add a `const <LANG>_DEFINITION_QUERY: &str = r#" … "#;` above the match.
+   - `Language::call_query()` — must expose a `@callee` capture. Add `const <LANG>_CALL_QUERY` the same way.
+   - `Language::import_query()` — must expose an `@import_ref` capture. Add `const <LANG>_IMPORT_QUERY` the same way.
+   - `Language::kind_map()` — return a `&'static [SymbolKind]` whose length equals the definition query's `pattern_count()`. Each index maps a query pattern to a `SymbolKind`. Add `const <LANG>_KIND_MAP` above and include a comment block enumerating which pattern index maps to which kind.
+3. **`src/structure/parse/fixture_tests.rs`** — add an entry to the `FIXTURES` table with representative source, expected `(symbol_name, SymbolKind)` pairs, and expected `import_refs`. The `fixtures_cover_every_supported_language` test will fail until this is present.
+
+### Files you PROBABLY need to touch
+
+4. **`src/structure/parse/extract/docs.rs`** — add `match` arms for the new variant in `extract_doc_comment` and `extract_signature` if you want doc-comment and signature extraction. Without this, the new language gets `None` for both (Go is the current example of an unwired language here).
+5. **`src/pipeline/structural/stage4.rs::resolve_import_ref`** — if you want cross-file `Imports` edges resolved for this language, extend the path/extension dispatch. Without this, `import_refs` are still captured by the parser but stage 4 silently skips resolution (phase-1 boundary; Rust and Go sit here today).
+
+### Tests you SHOULD add
+
+6. **`src/structure/parse/validation_tests.rs`** — add the variant's kind map pin to the per-language pin test. The compile/capture-presence tests iterate `Language::supported()` automatically, so they cover the new language without edits.
+7. **`src/structure/parse/qualname_tests.rs`** — add an edge-case test for the language's fragile qualname constructs (nested scopes, impl-style blocks, class expressions, etc.).
+8. **`src/structure/parse/refs_tests.rs`** — add positive `call_refs`/`import_refs` tests and negative tests for intentionally unsupported forms.
+9. **`src/structure/parse/malformed_tests.rs`** — add a malformed-source test and extend `empty_input_returns_some_with_no_symbols_per_language` to cover the new extension.
+10. **`src/pipeline/structural/tests/edges.rs`** — if you wired stage-4 resolution in step 5, add an import-resolution contract test.
+
+### Verification
+
+- `cargo test --lib structure::parse::` — full parse-layer test suite.
+- `cargo test --lib pipeline::structural::tests::edges::` — stage-4 integration tests.
+- A broken query capture name fails `validation_tests` with a message naming the language, the query role (definition/call/import), and the missing capture — use this as your feedback loop.
 
 ## Reference docs
 

@@ -4,12 +4,51 @@
 //! `ExtractedEdge` records consumed by the structural compile pipeline.
 //! Within-file edges are returned, cross-file resolution is deferred to
 //! pipeline stage 4 (not part of this initial producer set).
+//!
+//! ## Parser invariants (enforced in tests)
+//!
+//! 1. **Query compile contract.** Every `Language` variant in
+//!    `Language::supported()` must have a `definition_query`, `call_query`,
+//!    and `import_query` that compile against its grammar, and each must
+//!    expose the required capture names (`item`/`name`, `callee`,
+//!    `import_ref`). See the `validation_tests` module.
+//! 2. **Pattern-index mapping.** `Language::kind_map()` pins
+//!    pattern-index → `SymbolKind`. The table's length must equal the
+//!    compiled definition query's `pattern_count()`, and every index must
+//!    have an explicit slot — runtime keeps a `SymbolKind::Function`
+//!    fallback for forward-compatibility, but tests pin the full mapping
+//!    so drift fails CI loud.
+//! 3. **Malformed-source semantics.** `parse_file` follows this contract:
+//!    - Unsupported extension → `Ok(None)`.
+//!    - Supported extension, tree-sitter parse fails outright → returns
+//!      `Ok(Some(ParseOutput))` with empty symbol/edge/refs vectors.
+//!    - Supported extension, syntactically malformed source → returns
+//!      `Ok(Some(ParseOutput))` with deterministic best-effort extraction.
+//!    - Empty input → returns `Ok(Some(ParseOutput))` with no symbols.
+//!
+//!    Runtime never panics on bad input and never escalates malformed
+//!    user source to a hard error.
+//! 4. **Stage-4-facing outputs.** `ParseOutput.call_refs` and
+//!    `ParseOutput.import_refs` are first-class tested outputs. Stage 4
+//!    treats unresolved entries as silent skips, so parser tests assert
+//!    these fields directly rather than relying on downstream edge
+//!    emission to surface regressions.
 
 mod extract;
 mod language;
 
 #[cfg(test)]
+mod fixture_tests;
+#[cfg(test)]
+mod malformed_tests;
+#[cfg(test)]
+mod qualname_tests;
+#[cfg(test)]
+mod refs_tests;
+#[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod validation_tests;
 
 use crate::structure::graph::{EdgeKind, SymbolKind};
 

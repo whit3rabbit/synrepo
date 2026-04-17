@@ -16,6 +16,33 @@ pub enum Language {
 }
 
 impl Language {
+    /// Enumerate every supported `Language` variant.
+    ///
+    /// This is the single source of truth for "which languages have a wired
+    /// tree-sitter grammar". Validation tests iterate this slice, so adding a
+    /// new variant without updating this list fails CI compile (match in
+    /// `display_name` is exhaustive) or flushes coverage gaps (fixture test).
+    pub fn supported() -> &'static [Language] {
+        &[
+            Language::Rust,
+            Language::Python,
+            Language::TypeScript,
+            Language::Tsx,
+            Language::Go,
+        ]
+    }
+
+    /// Stable lowercase label for diagnostics and test messages.
+    pub fn display_name(self) -> &'static str {
+        match self {
+            Language::Rust => "rust",
+            Language::Python => "python",
+            Language::TypeScript => "typescript",
+            Language::Tsx => "tsx",
+            Language::Go => "go",
+        }
+    }
+
     /// Resolve a file extension to a `Language`, if supported.
     pub fn from_extension(ext: &str) -> Option<Language> {
         match ext {
@@ -48,25 +75,30 @@ impl Language {
         }
     }
 
-    pub(super) fn kind_for_pattern(self, pattern_index: usize) -> SymbolKind {
+    /// Return the fixed pattern-index → `SymbolKind` table for this language.
+    ///
+    /// Exposed so validation tests can assert the table's length matches the
+    /// compiled definition query's `pattern_count()` and that every slot has
+    /// an explicit assignment. Runtime still uses the length-checked
+    /// `kind_for_pattern()` below, which keeps the `SymbolKind::Function`
+    /// fallback for forward-compatibility with untested grammar patterns.
+    pub(super) fn kind_map(self) -> &'static [SymbolKind] {
         match self {
-            Language::Rust => RUST_KIND_MAP
-                .get(pattern_index)
-                .copied()
-                .unwrap_or(SymbolKind::Function),
-            Language::Python => PYTHON_KIND_MAP
-                .get(pattern_index)
-                .copied()
-                .unwrap_or(SymbolKind::Function),
-            Language::TypeScript | Language::Tsx => TS_KIND_MAP
-                .get(pattern_index)
-                .copied()
-                .unwrap_or(SymbolKind::Function),
-            Language::Go => GO_KIND_MAP
-                .get(pattern_index)
-                .copied()
-                .unwrap_or(SymbolKind::Function),
+            Language::Rust => RUST_KIND_MAP,
+            Language::Python => PYTHON_KIND_MAP,
+            Language::TypeScript | Language::Tsx => TS_KIND_MAP,
+            Language::Go => GO_KIND_MAP,
         }
+    }
+
+    pub(super) fn kind_for_pattern(self, pattern_index: usize) -> SymbolKind {
+        // Runtime kept permissive (test suite pins the exact mapping so drift
+        // fails CI loud). See parse-hardening-tree-sitter design.md Decision 4
+        // for why this does not panic on an unknown pattern index.
+        self.kind_map()
+            .get(pattern_index)
+            .copied()
+            .unwrap_or(SymbolKind::Function)
     }
 
     /// Tree-sitter query that captures callee names at call sites.

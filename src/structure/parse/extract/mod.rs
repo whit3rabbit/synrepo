@@ -21,16 +21,15 @@ struct SingleCaptureQuery {
     capture_idx: u32,
 }
 
-// Single source of truth for "every language we compile queries for".
-// Adding a variant to `Language` and listing it here is the only step
-// needed to extend the cache; the three init fns below iterate this slice.
-const LANGUAGES: &[Language] = &[
-    Language::Rust,
-    Language::Python,
-    Language::TypeScript,
-    Language::Tsx,
-    Language::Go,
-];
+// Single source of truth lives on `Language::supported()`. The query cache
+// sizes itself to the enum's discriminant range (5 variants today) so
+// `cache[lang as usize]` remains a direct index. Adding a `Language` variant
+// requires updating `Language::supported()` and extending each per-language
+// `match` arm in `language.rs`; validation tests iterate `supported()` and
+// fail CI if a new variant is missing coverage.
+fn supported_languages() -> &'static [Language] {
+    Language::supported()
+}
 
 /// Global caches for compiled tree-sitter queries.
 /// Each query is compiled once per language and reused across all file parses.
@@ -40,8 +39,9 @@ static IMPORT_QUERIES: OnceLock<Vec<Option<SingleCaptureQuery>>> = OnceLock::new
 
 /// Initialize all definition queries for all languages.
 fn init_definition_queries() -> Vec<Option<DefinitionQuery>> {
-    let mut cache: Vec<Option<DefinitionQuery>> = (0..LANGUAGES.len()).map(|_| None).collect();
-    for &lang in LANGUAGES {
+    let languages = supported_languages();
+    let mut cache: Vec<Option<DefinitionQuery>> = (0..languages.len()).map(|_| None).collect();
+    for &lang in languages {
         let ts_lang = lang.tree_sitter_language();
         let query_text = lang.definition_query();
         match tree_sitter::Query::new(&ts_lang, query_text) {
@@ -74,8 +74,9 @@ fn init_definition_queries() -> Vec<Option<DefinitionQuery>> {
 
 /// Initialize all call queries for all languages.
 fn init_call_queries() -> Vec<Option<SingleCaptureQuery>> {
-    let mut cache: Vec<Option<SingleCaptureQuery>> = (0..LANGUAGES.len()).map(|_| None).collect();
-    for &lang in LANGUAGES {
+    let languages = supported_languages();
+    let mut cache: Vec<Option<SingleCaptureQuery>> = (0..languages.len()).map(|_| None).collect();
+    for &lang in languages {
         let ts_lang = lang.tree_sitter_language();
         let query_text = lang.call_query();
         match tree_sitter::Query::new(&ts_lang, query_text) {
@@ -102,8 +103,9 @@ fn init_call_queries() -> Vec<Option<SingleCaptureQuery>> {
 
 /// Initialize all import queries for all languages.
 fn init_import_queries() -> Vec<Option<SingleCaptureQuery>> {
-    let mut cache: Vec<Option<SingleCaptureQuery>> = (0..LANGUAGES.len()).map(|_| None).collect();
-    for &lang in LANGUAGES {
+    let languages = supported_languages();
+    let mut cache: Vec<Option<SingleCaptureQuery>> = (0..languages.len()).map(|_| None).collect();
+    for &lang in languages {
         let ts_lang = lang.tree_sitter_language();
         let query_text = lang.import_query();
         match tree_sitter::Query::new(&ts_lang, query_text) {
