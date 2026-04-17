@@ -167,12 +167,13 @@ pub(super) fn read_ownership(lock_path: &Path) -> Result<WriterOwnership, Writer
 
 /// Read ownership, retrying briefly on parse failure to ride out the narrow
 /// window where a concurrent flock winner has acquired the kernel lock but
-/// has not yet written its ownership metadata.
+/// has not yet written its ownership metadata. The total wait is sized to
+/// cover thread-scheduling jitter on slow Windows CI runners.
 pub(super) fn read_ownership_with_retry(
     lock_path: &Path,
 ) -> Result<WriterOwnership, WriterOwnershipError> {
-    const RETRIES: u32 = 5;
-    const BACKOFF_MS: u64 = 1;
+    const RETRIES: u32 = 50;
+    const BACKOFF_MS: u64 = 5;
     for _ in 0..RETRIES {
         if let Ok(owner) = read_ownership(lock_path) {
             return Ok(owner);
