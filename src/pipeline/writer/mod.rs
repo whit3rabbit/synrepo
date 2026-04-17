@@ -41,7 +41,7 @@ pub(crate) use helpers::is_process_alive;
 pub(super) use helpers::now_rfc3339;
 use helpers::{
     decrement_depth, insert_initial_lock, open_and_try_lock, read_ownership,
-    read_ownership_with_retry, try_reenter, write_lock_file,
+    read_ownership_with_retry, try_reenter, write_lock_metadata,
 };
 #[cfg(unix)]
 pub use helpers::{
@@ -193,7 +193,7 @@ pub fn acquire_writer_lock(synrepo_dir: &Path) -> Result<WriterLock, LockError> 
         });
     }
 
-    let Some(mut file) = open_and_try_lock(&lock_path)? else {
+    let Some(file) = open_and_try_lock(&lock_path)? else {
         // Another fd holds the kernel flock. Read ownership JSON for a useful
         // error message; retry briefly to ride out the window between a
         // winner's flock acquire and its ownership write.
@@ -214,27 +214,15 @@ pub fn acquire_writer_lock(synrepo_dir: &Path) -> Result<WriterLock, LockError> 
         });
     };
 
-    // Truncate any stale content from a dead prior holder, then stamp ours.
-    if let Err(source) = file.set_len(0) {
-        return Err(LockError::Io {
-            path: lock_path.clone(),
-            source,
-        });
-    }
-    use std::io::{Seek as _, SeekFrom};
-    if let Err(source) = file.seek(SeekFrom::Start(0)) {
-        return Err(LockError::Io {
-            path: lock_path.clone(),
-            source,
-        });
-    }
-
+    // Stamp ownership metadata. `fs::write` truncates any stale content from a
+    // prior (dead) holder. The metadata file is distinct from the flocked
+    // sentinel that `open_and_try_lock` returned, so this is a plain write.
     let ownership = WriterOwnership {
         pid: std::process::id(),
         acquired_at: now_rfc3339(),
     };
     let json = serde_json::to_string(&ownership).expect("WriterOwnership serializes without error");
-    write_lock_file(&mut file, &lock_path, &json)?;
+    write_lock_metadata(&lock_path, &json)?;
 
     insert_initial_lock(&lock_path, file, ownership.clone())?;
 

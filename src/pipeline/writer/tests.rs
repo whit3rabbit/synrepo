@@ -162,15 +162,17 @@ fn second_open_of_same_lock_file_blocks() {
     let synrepo_dir = dir.path().join(".synrepo");
     let _lock = acquire_writer_lock(&synrepo_dir).unwrap();
 
+    // The kernel flock lives on the sentinel file, not the metadata file.
+    let sentinel = super::helpers::sentinel_path(&writer_lock_path(&synrepo_dir));
     let file = std::fs::OpenOptions::new()
         .read(true)
         .write(true)
-        .open(writer_lock_path(&synrepo_dir))
+        .open(&sentinel)
         .unwrap();
     match file.try_lock_exclusive() {
         Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {}
         other => {
-            panic!("a second open of the held lock file should fail with WouldBlock, got {other:?}")
+            panic!("a second open of the held sentinel file should fail with WouldBlock, got {other:?}")
         }
     }
 }

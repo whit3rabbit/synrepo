@@ -7,7 +7,6 @@
 use std::{
     collections::HashMap,
     fs,
-    io::Write as _,
     path::{Path, PathBuf},
     sync::{Mutex, OnceLock},
     thread::ThreadId,
@@ -105,15 +104,30 @@ pub(super) fn decrement_depth(lock_path: &Path) -> usize {
 
 // ---- Kernel advisory locking ----
 
-/// Open (creating if needed) the lock file and attempt to acquire an
-/// exclusive non-blocking kernel advisory lock on it.
+// The kernel flock lives on a private sentinel file (`writer.lock.flock`)
+// instead of the ownership-metadata file (`writer.lock`) itself. Windows
+// `LockFileEx` is a byte-range lock that blocks reads from other handles
+// (POSIX flock does not), so sharing one file for both roles makes the
+// ownership record unreadable from another process while the lock is held.
+// Splitting the two keeps the metadata freely readable on every platform.
+
+/// Compute the sentinel path for a given metadata lock path.
+pub(super) fn sentinel_path(lock_path: &Path) -> PathBuf {
+    let mut p = lock_path.as_os_str().to_os_string();
+    p.push(".flock");
+    PathBuf::from(p)
+}
+
+/// Open (creating if needed) the sentinel file for `lock_path` and attempt
+/// to acquire an exclusive non-blocking kernel advisory lock on it.
 ///
 /// Returns `Ok(Some(file))` if we own the lock, `Ok(None)` if another
-/// process currently holds it, and `Err` for any other I/O failure.
+/// handle currently holds it, and `Err` for any other I/O failure.
 ///
 /// On Unix the file is opened with `O_CLOEXEC` so child processes do not
 /// inherit the lock; `LockFileEx` on Windows is per-handle by default.
 pub(super) fn open_and_try_lock(lock_path: &Path) -> Result<Option<fs::File>, LockError> {
+    let sentinel = sentinel_path(lock_path);
     let mut opts = fs::OpenOptions::new();
     opts.create(true).read(true).write(true);
 
@@ -123,8 +137,8 @@ pub(super) fn open_and_try_lock(lock_path: &Path) -> Result<Option<fs::File>, Lo
         opts.custom_flags(libc::O_CLOEXEC);
     }
 
-    let file = opts.open(lock_path).map_err(|source| LockError::Io {
-        path: lock_path.to_path_buf(),
+    let file = opts.open(&sentinel).map_err(|source| LockError::Io {
+        path: sentinel.clone(),
         source,
     })?;
 
@@ -132,7 +146,7 @@ pub(super) fn open_and_try_lock(lock_path: &Path) -> Result<Option<fs::File>, Lo
         Ok(()) => Ok(Some(file)),
         Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => Ok(None),
         Err(source) => Err(LockError::Io {
-            path: lock_path.to_path_buf(),
+            path: sentinel,
             source,
         }),
     }
@@ -168,27 +182,17 @@ pub(super) fn read_ownership_with_retry(
     read_ownership(lock_path)
 }
 
-pub(super) fn write_lock_file(
-    file: &mut fs::File,
-    lock_path: &Path,
-    json: &str,
-) -> Result<(), LockError> {
-    if let Err(source) = file.write_all(json.as_bytes()) {
+/// Write ownership JSON to the metadata lock file. The metadata file is
+/// separate from the kernel-flocked sentinel, so this is a plain truncating
+/// write with no file-handle coordination.
+pub(super) fn write_lock_metadata(lock_path: &Path, json: &str) -> Result<(), LockError> {
+    if let Err(source) = fs::write(lock_path, json.as_bytes()) {
         cleanup_partial_lock_file(lock_path);
         return Err(LockError::Io {
             path: lock_path.to_path_buf(),
             source,
         });
     }
-
-    if let Err(source) = file.sync_all() {
-        cleanup_partial_lock_file(lock_path);
-        return Err(LockError::Io {
-            path: lock_path.to_path_buf(),
-            source,
-        });
-    }
-
     Ok(())
 }
 
@@ -281,8 +285,8 @@ pub struct TestFlockHolder {
     _file: fs::File,
 }
 
-/// Open the lock file on a separate fd, take the kernel advisory lock, and
-/// stamp ownership metadata. Used by tests to simulate a foreign writer:
+/// Open the sentinel file on a separate fd, take the kernel advisory lock,
+/// and stamp ownership metadata. Used by tests to simulate a foreign writer:
 /// same-process, different open file description, which blocks
 /// `try_lock_exclusive` on any other fd exactly like a separate process would.
 #[cfg(unix)]
@@ -294,13 +298,10 @@ pub fn hold_writer_flock_with_ownership(
     if let Some(parent) = lock_path.parent() {
         fs::create_dir_all(parent).expect("create state dir");
     }
-    let mut file = open_and_try_lock(lock_path)
+    let file = open_and_try_lock(lock_path)
         .expect("open+flock I/O must succeed in test")
         .expect("flock must be free (nothing else holds it)");
-    file.set_len(0).expect("truncate");
-    use std::io::{Seek as _, SeekFrom};
-    file.seek(SeekFrom::Start(0)).expect("seek");
     let json = serde_json::to_string(ownership).expect("serialize ownership");
-    write_lock_file(&mut file, lock_path, &json).expect("write ownership");
+    write_lock_metadata(lock_path, &json).expect("write ownership");
     TestFlockHolder { _file: file }
 }
