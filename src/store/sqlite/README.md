@@ -1,0 +1,94 @@
+# synrepo canonical graph store (sqlite)
+
+SQLite backend for `GraphStore`. Holds the canonical, parser-observed graph: files, symbols, concepts, edges, plus sidecar tables for drift scoring and compile-revision tracking.
+
+On-disk location: `.synrepo/graph/nodes.db` (the `nodes.db` filename is internal to this module; callers pass the `.synrepo/graph/` directory to `SqliteGraphStore::open`).
+
+## Where things live
+
+| Concern | Location |
+|---------|----------|
+| Public type, open/open_existing, stats | `mod.rs` |
+| PRAGMAs, `CREATE TABLE`, additive `ALTER` migrations | `schema.rs` |
+| JSON row encode/decode, enum label encode | `codec.rs` |
+| Compile-revision allocation, retirement, compaction | `lifecycle.rs` |
+| `GraphStore` trait impl, method dispatch | `ops/mod.rs` |
+| Node CRUD (file, symbol, concept) | `ops/nodes.rs` |
+| Edge CRUD and traversal (outbound, inbound, all) | `ops/edges.rs` |
+| `BEGIN`/`COMMIT` and re-entrant read snapshots | `ops/transactions.rs` |
+| `all_file_paths`, `all_symbol_names`, summaries | `ops/lists.rs` |
+| Drift scores and file fingerprints | `ops/drift.rs` |
+| Cascade delete of nodes and their edges | `ops/helpers.rs` |
+| Tests (deletion, persistence, snapshot, retirement) | `tests/` |
+
+Overlay store is in a sibling module (`src/store/overlay/`) and a physically separate database. Overlay never mixes with graph.
+
+## Schema
+
+PRAGMAs set once at open time (see `schema.rs`):
+
+- `journal_mode = WAL`
+- `synchronous = NORMAL`
+- `foreign_keys = ON`
+- `busy_timeout = 5000` (load-bearing: readers can hold a snapshot across a writer commit; this keeps transient WAL checkpoint contention from surfacing `SQLITE_BUSY`)
+
+Base tables:
+
+| Table | Key columns | Notes |
+|-------|-------------|-------|
+| `files` | `id PK`, `path UNIQUE`, `last_observed_rev`, `data` | `data` is the JSON-encoded `FileNode`. |
+| `symbols` | `id PK`, `file_id`, `qualified_name`, `kind`, `first_seen_rev`, `last_modified_rev`, `last_observed_rev`, `retired_at_rev`, `data` | `idx_symbols_file_id` on `file_id`. |
+| `concepts` | `id PK`, `path UNIQUE`, `last_observed_rev`, `data` | Only populated from human-authored markdown (invariant 7). |
+| `edges` | `id PK`, `from_node_id`, `to_node_id`, `kind`, `owner_file_id`, `last_observed_rev`, `retired_at_rev`, `data` | Indexes on `(from_node_id, kind)` and `(to_node_id, kind)`. |
+| `edge_drift` | `(edge_id, revision) PK`, `drift_score` | `WITHOUT ROWID`. |
+| `file_fingerprints` | `(file_node_id, revision) PK`, `fingerprint` | `WITHOUT ROWID`. |
+| `compile_revisions` | `revision_id PK`, `created_at`, `file_count`, `symbol_count` | Monotonic counter for the observation window. |
+
+Node and edge identifiers are stored twice: as typed integer columns for fast lookup and inside the JSON `data` blob for round-trip serde. `from_node_id` / `to_node_id` are stored as display strings (`file_0000...`, `sym_0000...`, `concept_0000...`) to support heterogeneous edge endpoints in one column.
+
+The JSON blob is the source of truth for structured node/edge content; scalar columns exist only for filtering, joins, and indexing.
+
+## Migrations
+
+Schema changes are append-only. New columns are added via `ALTER TABLE ... ADD COLUMN` in the `migratables` list in `schema.rs`; duplicate-column errors are swallowed so the list is idempotent on repeat opens.
+
+Breaking shape changes go through `src/store/compatibility/` (version gate + `synrepo upgrade`). Do not rewrite base-table DDL in place.
+
+## Observation lifecycle
+
+Every mutation runs inside a compile revision allocated by `next_compile_revision_impl`. On re-observation:
+
+1. Re-upserting a file/symbol/edge advances `last_observed_rev`.
+2. A symbol or edge not re-emitted in the current pass is marked `retired_at_rev = <current_rev>` (soft delete).
+3. A previously retired observation that re-appears has `retired_at_rev` cleared and `last_observed_rev` advanced.
+4. `compact_retired(older_than_rev)` physically deletes retired rows whose retirement predates the cutoff and prunes `edge_drift` / `file_fingerprints` keyed by string revisions older than the cutoff. Driven by `retain_retired_revisions` (default 10) during `synrepo sync` and `synrepo upgrade --apply`.
+
+`all_edges()` (and `active_edges()`, `outbound`, `inbound`, `symbols_for_file`, `edges_owned_by`) filter `retired_at_rev IS NULL`. Consumers that need retired rows (compaction enumeration) must query the `edges` table directly.
+
+## Transactions and snapshots
+
+Two lanes:
+
+- **Writer** (`begin` / `commit` / `rollback`, `&mut self`): a standard `BEGIN DEFERRED`. `run_structural_compile` wraps stages 1-4 in one transaction; stage 4 reads uncommitted nodes via read-your-own-writes on the same connection.
+- **Reader snapshot** (`begin_read_snapshot` / `end_read_snapshot`, `&self`): re-entrant depth counter guards a single `BEGIN DEFERRED`. Only the outermost begin opens the snapshot; only the outermost end commits. Nested snapshots inside an MCP handler and its `GraphCardCompiler` methods share the same committed epoch. `BEGIN DEFERRED` pins the epoch on the first `SELECT`, not at begin.
+
+Writer and reader lanes must not interleave on the same handle. Cross-store writes go through the writer lock in `src/pipeline/writer/` (kernel advisory `flock` via `fs2`, not this module).
+
+## Invariants enforced here
+
+- `retired_at_rev IS NULL` filter on all list/traversal reads.
+- JSON columns are the source of truth; typed columns mirror.
+- `ConceptNode` upserts do not carry a machine-authored origin; the graph's `Epistemic` cannot hold a machine variant (invariant 1). Upserts accept whatever `ConceptNode` serialization the caller produced; the type boundary is enforced upstream in `src/structure/graph/`.
+- ID encoding for edge endpoints uses `printf('sym_%016x', id)` to match `SymbolNodeId::to_string()` byte-for-byte. Do not change either side in isolation; the cascade delete in `ops/helpers.rs::delete_node_inner` relies on the match.
+
+## Tests
+
+Unit tests live under `tests/`:
+
+- `persistence.rs` — upsert/get round-trips, JSON round-trip fidelity.
+- `deletion.rs` — cascade deletes for files, symbols, concepts.
+- `retirement.rs` — retire/unretire/compact end-to-end, drift/fingerprint pruning.
+- `reader_snapshot.rs` — re-entrant depth counter behaviour.
+- `support.rs` — shared fixtures.
+
+Run a focused subset with `cargo test -p synrepo store::sqlite::tests::<name>`.

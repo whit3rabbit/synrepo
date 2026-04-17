@@ -82,7 +82,7 @@ fn stale_rationale_reports_current_when_no_concept_nodes() {
     init_synrepo_with_completed_reconcile(&synrepo_dir);
 
     let graph_dir = synrepo_dir.join("graph");
-    let graph = SqliteGraphStore::open(&graph_dir).unwrap();
+    let mut graph = SqliteGraphStore::open(&graph_dir).unwrap();
     let scores: Vec<(EdgeId, f32)> = vec![(EdgeId(1), 0.2)];
     graph.write_drift_scores(&scores, "rev001").unwrap();
     drop(graph);

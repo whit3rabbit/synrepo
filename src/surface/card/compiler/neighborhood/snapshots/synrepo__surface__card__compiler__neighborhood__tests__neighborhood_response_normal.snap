@@ -1,6 +1,6 @@
 ---
 source: src/surface/card/compiler/neighborhood/tests.rs
-expression: deep
+expression: normal
 ---
 {
   "focal_card": {
@@ -21,8 +21,8 @@ expression: deep
       }
     ]
   },
-  "neighbors": [],
-  "neighbor_summaries": null,
+  "neighbors": null,
+  "neighbor_summaries": [],
   "decision_cards": null,
   "co_change_partners": [],
   "co_change_state": "missing",
@@ -32,5 +32,5 @@ expression: deep
     "governs_count": 0,
     "co_change_count": 0
   },
-  "budget": "deep"
+  "budget": "normal"
 }

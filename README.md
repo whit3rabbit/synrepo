@@ -22,7 +22,7 @@
 
 Install a specific version:
 
-    curl -fsSL https://raw.githubusercontent.com/whit3rabbit/synrepo/main/scripts/install.sh | INSTALL_VERSION=0.1.0 sh
+    curl -fsSL https://raw.githubusercontent.com/whit3rabbit/synrepo/main/scripts/install.sh | INSTALL_VERSION=0.0.1 sh
 
 **Any platform with Cargo**
 
@@ -34,10 +34,12 @@ Binaries for Linux (amd64, arm64), macOS (arm64, x86_64), and Windows (amd64) ar
 
 ## What Exists Today
 
-- CLI commands for `init`, `status`, `reconcile`, `check`, `sync`, `search`, `graph`, and `node`
-- A persisted `.synrepo/` workspace with lexical index, graph store, config, and operational state
-- Structural extraction for files, symbols, markdown concepts, and some cross-file edges
-- An MCP server (`synrepo mcp`) for agent-facing repository context
+- CLI commands for `init`, `setup`, `status`, `reconcile`, `check`, `sync`, `search`, `graph`, `node`, `change-risk`, `watch`, `links`, `findings`, `handoffs`, `export`, `upgrade`, `compact`, `agent-setup`, and `mcp`
+- A persisted `.synrepo/` workspace with lexical index, graph store, overlay store, config, and operational state
+- Structural extraction for files, symbols, markdown concepts, and cross-file edges (Rust, Python, TypeScript/TSX, Go)
+- Git-intelligence surfacing (history, hotspots, ownership, co-change) and change-risk assessment
+- A watch service (`synrepo watch [--daemon]`) that keeps `.synrepo/` fresh as files change
+- An MCP server (`synrepo mcp`) exposing 16 read-only tools for agent-facing repository context
 
 ## Quick Start
 
@@ -46,7 +48,7 @@ The cleanest workflow to get `synrepo` running is:
 1.  **Install synrepo**: See [Installation](#installation) above.
 2.  **Run setup**: In your repository root, run:
     ```bash
-    synrepo setup  # This setups for claude, cursor, codex, opencode, etc.
+    synrepo setup <agent>  # claude, cursor, codex, copilot, generic, windsurf, open-code, gemini, goose, kiro, qwen, junie, roo, tabnine, trae
     ```
     This runs `init`, writes client-specific instructions, and registers the project-scoped MCP server where possible.
 3.  **Use the agent**: Your agent (e.g., Claude Code, Cursor) will now load synrepo context via MCP.
@@ -57,9 +59,12 @@ The cleanest workflow to get `synrepo` running is:
 
 For low-level inspection:
 ```bash
-synrepo status
-synrepo search "query"
-synrepo graph stats
+synrepo status              # operational health: mode, counts, last reconcile, lock, export freshness
+synrepo search "query"      # lexical search via the syntext index
+synrepo graph stats         # node/edge counts
+synrepo node <node_id>      # dump a node's metadata as JSON (e.g. file_0000000000000042)
+synrepo check               # read-only drift report across repair surfaces
+synrepo change-risk <target>  # risk assessment for a file or symbol
 ```
 
 ## How synrepo compares

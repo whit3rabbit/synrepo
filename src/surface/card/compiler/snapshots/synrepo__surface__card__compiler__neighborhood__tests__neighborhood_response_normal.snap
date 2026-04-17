@@ -1,5 +1,5 @@
 ---
-source: src/surface/card/compiler/neighborhood.rs
+source: src/surface/card/compiler/neighborhood/tests.rs
 expression: normal
 ---
 {

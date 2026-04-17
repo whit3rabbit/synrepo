@@ -286,13 +286,14 @@ fn edge_drift_surface_appears_in_report_when_graph_exists() {
 fn edge_drift_reports_no_high_drift_when_all_scores_below_threshold() {
     use crate::core::ids::EdgeId;
     use crate::pipeline::repair::DriftClass;
+    use crate::structure::graph::GraphStore;
 
     let dir = tempdir().unwrap();
     let synrepo_dir = dir.path().join(".synrepo");
     init_synrepo_with_completed_reconcile(&synrepo_dir);
 
     let graph_dir = synrepo_dir.join("graph");
-    let graph = crate::store::sqlite::SqliteGraphStore::open(&graph_dir).unwrap();
+    let mut graph = crate::store::sqlite::SqliteGraphStore::open(&graph_dir).unwrap();
 
     // Write drift scores that are non-zero but below the 0.7 high-drift threshold.
     let low_scores: Vec<(EdgeId, f32)> = vec![(EdgeId(1), 0.3), (EdgeId(2), 0.5)];

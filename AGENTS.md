@@ -190,15 +190,14 @@ Stages 4–8:
 
 - **`src/bin/cli_support/agent_shims/` is a sub-module directory** — the canonical agent-doctrine text lives in `doctrine.rs` as a `doctrine_block!()` macro that every shim in `shims.rs` embeds via `concat!`. Edits to shim copy that touch escalation rules, do-not rules, or the product-boundary paragraph MUST go through `doctrine_block!`; the byte-identical test in `tests.rs` (`every_shim_embeds_doctrine_block`) enforces this. The escalation-line source-scan test reads `src/bin/cli_support/commands/mcp.rs` — do not move the MCP tool registration out of that file without updating the test path. Edit target-specific sections (tool list framing, CLI fallback examples, file paths) directly in `shims.rs`.
 - **`src/structure/parse/extract/` is a sub-module directory** (`mod.rs` ~318 lines, `qualname.rs` ~59 lines) — do not add more code to `mod.rs` without splitting further. **Over-limit (split before adding):**
-  - `src/bin/cli_support/tests/links.rs` (1111) — test file, split urgently
   - `src/store/overlay/cross_links.rs` (972) — split into cross_links/ submodule
-  - `src/surface/card/compiler/neighborhood.rs` (688) — split into neighborhood/ submodule
+  - `src/surface/card/compiler/neighborhood/` (refactored from 688-line single file)
   - `src/pipeline/synthesis/cross_link/triage.rs` (651)
   - `src/pipeline/repair/sync.rs` (650)
   - `src/pipeline/maintenance.rs` (622)
   - `src/bin/cli_support/commands/status.rs` (622)
   - `src/store/overlay/tests.rs` (614) — test file
-  - `src/store/sqlite/ops.rs` (590)
+  - `src/store/sqlite/ops/` (refactored from 590-line single file)
   - `src/substrate/embedding/index.rs` (571)
   - `src/pipeline/compact.rs` (563)
   - `src/bin/cli_support/commands/links.rs` (542)

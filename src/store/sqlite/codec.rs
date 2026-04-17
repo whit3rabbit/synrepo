@@ -1,7 +1,7 @@
 use rusqlite::{Connection, OptionalExtension};
 use serde::{de::DeserializeOwned, Serialize};
 
-pub(super) fn load_row<T, P>(conn: &Connection, sql: &str, params: P) -> crate::Result<Option<T>>
+pub(crate) fn load_row<T, P>(conn: &Connection, sql: &str, params: P) -> crate::Result<Option<T>>
 where
     T: DeserializeOwned,
     P: rusqlite::Params,
@@ -13,7 +13,7 @@ where
         .transpose()
 }
 
-pub(super) fn load_rows<T, P>(conn: &Connection, sql: &str, params: P) -> crate::Result<Vec<T>>
+pub(crate) fn load_rows<T, P>(conn: &Connection, sql: &str, params: P) -> crate::Result<Vec<T>>
 where
     T: DeserializeOwned,
     P: rusqlite::Params,
@@ -26,7 +26,7 @@ where
     rows.into_iter().map(|json| decode_json(&json)).collect()
 }
 
-pub(super) fn encode_json<T: Serialize>(value: &T) -> crate::Result<String> {
+pub(crate) fn encode_json<T: Serialize>(value: &T) -> crate::Result<String> {
     serde_json::to_string(value).map_err(|error| {
         crate::Error::Other(anyhow::anyhow!("failed to encode graph row: {error}"))
     })
@@ -38,7 +38,7 @@ fn decode_json<T: DeserializeOwned>(json: &str) -> crate::Result<T> {
     })
 }
 
-pub(super) fn encode_label<T: Serialize>(value: &T) -> crate::Result<String> {
+pub(crate) fn encode_label<T: Serialize>(value: &T) -> crate::Result<String> {
     let json = serde_json::to_value(value).map_err(|error| {
         crate::Error::Other(anyhow::anyhow!("failed to encode graph label: {error}"))
     })?;

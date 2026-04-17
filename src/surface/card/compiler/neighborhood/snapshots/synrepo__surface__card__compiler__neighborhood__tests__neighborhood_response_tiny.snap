@@ -1,6 +1,6 @@
 ---
 source: src/surface/card/compiler/neighborhood/tests.rs
-expression: deep
+expression: tiny
 ---
 {
   "focal_card": {
@@ -21,10 +21,10 @@ expression: deep
       }
     ]
   },
-  "neighbors": [],
+  "neighbors": null,
   "neighbor_summaries": null,
   "decision_cards": null,
-  "co_change_partners": [],
+  "co_change_partners": null,
   "co_change_state": "missing",
   "edge_counts": {
     "outbound_calls_count": 0,
@@ -32,5 +32,5 @@ expression: deep
     "governs_count": 0,
     "co_change_count": 0
   },
-  "budget": "deep"
+  "budget": "tiny"
 }
