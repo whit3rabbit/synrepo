@@ -68,25 +68,67 @@ pub(super) fn init_schema(conn: &Connection) -> crate::Result<()> {
     )?;
 
     // Additive migrations: duplicate-column errors are silently ignored.
-    let migratables = [
-        // symbol-last-change-v1
-        "ALTER TABLE symbols ADD COLUMN first_seen_rev TEXT NULL",
-        "ALTER TABLE symbols ADD COLUMN last_modified_rev TEXT NULL",
-        // graph-lifecycle-v1: observation-window columns
-        "ALTER TABLE files ADD COLUMN last_observed_rev INTEGER NULL",
-        "ALTER TABLE symbols ADD COLUMN last_observed_rev INTEGER NULL",
-        "ALTER TABLE symbols ADD COLUMN retired_at_rev INTEGER NULL",
-        "ALTER TABLE edges ADD COLUMN owner_file_id INTEGER NULL",
-        "ALTER TABLE edges ADD COLUMN last_observed_rev INTEGER NULL",
-        "ALTER TABLE edges ADD COLUMN retired_at_rev INTEGER NULL",
-        "ALTER TABLE concepts ADD COLUMN last_observed_rev INTEGER NULL",
+    let migratables = vec![
+        (
+            "symbols",
+            "first_seen_rev",
+            "ALTER TABLE symbols ADD COLUMN first_seen_rev TEXT NULL",
+        ),
+        (
+            "symbols",
+            "last_modified_rev",
+            "ALTER TABLE symbols ADD COLUMN last_modified_rev TEXT NULL",
+        ),
+        (
+            "files",
+            "last_observed_rev",
+            "ALTER TABLE files ADD COLUMN last_observed_rev INTEGER NULL",
+        ),
+        (
+            "symbols",
+            "last_observed_rev",
+            "ALTER TABLE symbols ADD COLUMN last_observed_rev INTEGER NULL",
+        ),
+        (
+            "symbols",
+            "retired_at_rev",
+            "ALTER TABLE symbols ADD COLUMN retired_at_rev INTEGER NULL",
+        ),
+        (
+            "edges",
+            "owner_file_id",
+            "ALTER TABLE edges ADD COLUMN owner_file_id INTEGER NULL",
+        ),
+        (
+            "edges",
+            "last_observed_rev",
+            "ALTER TABLE edges ADD COLUMN last_observed_rev INTEGER NULL",
+        ),
+        (
+            "edges",
+            "retired_at_rev",
+            "ALTER TABLE edges ADD COLUMN retired_at_rev INTEGER NULL",
+        ),
+        (
+            "concepts",
+            "last_observed_rev",
+            "ALTER TABLE concepts ADD COLUMN last_observed_rev INTEGER NULL",
+        ),
     ];
-    for sql in &migratables {
-        // sqlite3_stricmp-based match for the specific "duplicate column" error.
-        match conn.execute_batch(sql) {
-            Ok(()) => {}
-            Err(err) if err.to_string().contains("duplicate column") => {}
-            Err(err) => return Err(err.into()),
+
+    for (table, column, sql) in migratables {
+        let mut stmt = conn.prepare(&format!("PRAGMA table_info({})", table))?;
+        let mut has_column = false;
+        let mut rows = stmt.query([])?;
+        while let Some(row) = rows.next()? {
+            let name: String = row.get(1)?;
+            if name == column {
+                has_column = true;
+                break;
+            }
+        }
+        if !has_column {
+            conn.execute_batch(sql)?;
         }
     }
 

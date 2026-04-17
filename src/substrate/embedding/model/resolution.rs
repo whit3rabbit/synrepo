@@ -241,13 +241,14 @@ impl ModelResolver {
             )));
         }
 
-        let bytes = response.bytes().map_err(|e| {
-            crate::Error::Other(anyhow::anyhow!("Failed to read download response: {}", e))
+        let temp_path = dest.with_extension("tmp");
+        let mut file = std::fs::File::create(&temp_path).map_err(|e| {
+            crate::Error::Other(anyhow::anyhow!("Failed to create temp file: {}", e))
         })?;
 
-        let temp_path = dest.with_extension("tmp");
-        std::fs::write(&temp_path, &bytes).map_err(|e| {
-            crate::Error::Other(anyhow::anyhow!("Failed to write temp file: {}", e))
+        let mut response = response;
+        response.copy_to(&mut file).map_err(|e| {
+            crate::Error::Other(anyhow::anyhow!("Failed to read download response: {}", e))
         })?;
 
         std::fs::rename(&temp_path, dest).map_err(|e| {

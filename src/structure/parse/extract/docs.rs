@@ -111,10 +111,18 @@ pub(super) fn extract_signature(
     source: &[u8],
     language: Language,
 ) -> Option<String> {
+    let offset = item_node.start_byte();
     let text = node_text(item_node, source);
     let sig = match language {
-        Language::Rust => {
-            let end = text.find(['{', ';']).unwrap_or(text.len());
+        Language::Rust | Language::Go => {
+            let end_byte = if let Some(body) = item_node.child_by_field_name("body") {
+                body.start_byte()
+            } else if let Some(block) = item_node.child_by_field_name("block") {
+                block.start_byte()
+            } else {
+                offset + text.find(['{', ';']).unwrap_or(text.len())
+            };
+            let end = end_byte.saturating_sub(offset).min(text.len());
             collapse_ws(&text[..end])
         }
         Language::Python => {
@@ -137,7 +145,6 @@ pub(super) fn extract_signature(
             collapse_ws(&text[..end])
         }
         Language::TypeScript | Language::Tsx => {
-            // Arrow functions: take only the LHS up to `=`.
             if matches!(
                 item_node.kind(),
                 "variable_declaration" | "lexical_declaration"
@@ -146,13 +153,12 @@ pub(super) fn extract_signature(
                     return Some(collapse_ws(&text[..p]));
                 }
             }
-            let end = text.find('{').unwrap_or(text.len());
-            collapse_ws(&text[..end])
-        }
-        Language::Go => {
-            // For functions, methods, structs, and interfaces: take up to the
-            // opening `{`. For constants/variables: take the full text.
-            let end = text.find('{').unwrap_or(text.len());
+            let end_byte = if let Some(body) = item_node.child_by_field_name("body") {
+                body.start_byte()
+            } else {
+                offset + text.find('{').unwrap_or(text.len())
+            };
+            let end = end_byte.saturating_sub(offset).min(text.len());
             collapse_ws(&text[..end])
         }
     };
@@ -182,22 +188,28 @@ fn collapse_ws(s: &str) -> String {
 
 fn strip_python_quotes(raw: &str) -> Option<String> {
     let r = raw.trim();
-    let c = if (r.starts_with("\"\"\"") && r.ends_with("\"\"\""))
-        || (r.starts_with("'''") && r.ends_with("'''"))
-    {
-        // REVIEW NOTE: the `r.len() < 6` early return guards the slice
-        // below. `starts_with` + `ends_with` on the same 3-byte prefix both
-        // match when `r == "\"\"\""` (len 3), so without this check the
-        // slice `r[3..r.len() - 3]` would underflow and panic. Do not
-        // remove.
-        if r.len() < 6 {
-            return None;
-        }
-        r[3..r.len() - 3].trim().to_string()
-    } else if r.len() >= 2
-        && ((r.starts_with('"') && r.ends_with('"')) || (r.starts_with('\'') && r.ends_with('\'')))
-    {
-        r[1..r.len() - 1].to_string()
+    let c = if r.starts_with("\"\"\"") && r.ends_with("\"\"\"") && r.len() >= 6 {
+        r.strip_prefix("\"\"\"")
+            .and_then(|s| s.strip_suffix("\"\"\""))
+            .unwrap()
+            .trim()
+            .to_string()
+    } else if r.starts_with("'''") && r.ends_with("'''") && r.len() >= 6 {
+        r.strip_prefix("'''")
+            .and_then(|s| s.strip_suffix("'''"))
+            .unwrap()
+            .trim()
+            .to_string()
+    } else if r.starts_with('"') && r.ends_with('"') && r.len() >= 2 {
+        r.strip_prefix('"')
+            .and_then(|s| s.strip_suffix('"'))
+            .unwrap()
+            .to_string()
+    } else if r.starts_with('\'') && r.ends_with('\'') && r.len() >= 2 {
+        r.strip_prefix('\'')
+            .and_then(|s| s.strip_suffix('\''))
+            .unwrap()
+            .to_string()
     } else {
         return None;
     };

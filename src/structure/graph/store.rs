@@ -336,14 +336,28 @@ pub struct CompactionSummary {
 /// accidentally leak an open transaction on the error path. An end-failure
 /// is swallowed on purpose; the snapshot does not outlive this stack frame,
 /// and surfacing an end-failure would mask the caller's original error.
+struct SnapshotGuard<'a>(&'a dyn GraphStore);
+
+impl<'a> Drop for SnapshotGuard<'a> {
+    fn drop(&mut self) {
+        if let Err(err) = self.0.end_read_snapshot() {
+            tracing::debug!(error = %err, "end_read_snapshot failed; ignoring");
+        }
+    }
+}
+
+/// Run `f` against `graph` with a read snapshot held for its duration.
+///
+/// Pairs `begin_read_snapshot` and `end_read_snapshot` structurally: the
+/// snapshot is always ended, even if `f` panics or returns `Err`, so callers cannot
+/// accidentally leak an open transaction on the error path. An end-failure
+/// is swallowed on purpose; the snapshot does not outlive this stack frame,
+/// and surfacing an end-failure would mask the caller's original error.
 pub fn with_graph_read_snapshot<F, R>(graph: &dyn GraphStore, f: F) -> crate::Result<R>
 where
     F: FnOnce(&dyn GraphStore) -> crate::Result<R>,
 {
     graph.begin_read_snapshot()?;
-    let result = f(graph);
-    if let Err(err) = graph.end_read_snapshot() {
-        tracing::debug!(error = %err, "end_read_snapshot failed; ignoring");
-    }
-    result
+    let _guard = SnapshotGuard(graph);
+    f(graph)
 }

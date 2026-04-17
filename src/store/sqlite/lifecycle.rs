@@ -125,11 +125,19 @@ impl SqliteGraphStore {
         let conn = self.conn.lock();
         let rev = older_than_rev as i64;
 
+        // Cascade delete edges that point to/from symbols we are about to delete
+        let cascading_edges_removed = conn.execute(
+            "DELETE FROM edges WHERE 
+             from_node_id IN (SELECT printf('sym_%016x', id) FROM symbols WHERE retired_at_rev IS NOT NULL AND retired_at_rev < ?1)
+             OR to_node_id IN (SELECT printf('sym_%016x', id) FROM symbols WHERE retired_at_rev IS NOT NULL AND retired_at_rev < ?1)",
+            params![rev],
+        )?;
+
         let symbols_removed = conn.execute(
             "DELETE FROM symbols WHERE retired_at_rev IS NOT NULL AND retired_at_rev < ?1",
             params![rev],
         )?;
-        let edges_removed = conn.execute(
+        let explicit_edges_removed = conn.execute(
             "DELETE FROM edges WHERE retired_at_rev IS NOT NULL AND retired_at_rev < ?1",
             params![rev],
         )?;
@@ -151,7 +159,7 @@ impl SqliteGraphStore {
 
         Ok(CompactionSummary {
             symbols_removed,
-            edges_removed,
+            edges_removed: explicit_edges_removed + cascading_edges_removed,
             revisions_removed,
         })
     }

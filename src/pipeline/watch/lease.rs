@@ -388,13 +388,36 @@ fn user_socket_dir() -> PathBuf {
         .unwrap_or_else(|_| "unknown".to_string());
     let dir = std::env::temp_dir().join(format!("synrepo-run-{}", username));
 
-    fs::create_dir_all(&dir).ok();
+    if let Err(e) = fs::create_dir_all(&dir) {
+        tracing::debug!("Failed to create fallback socket dir: {}", e);
+    }
 
     #[cfg(unix)]
     {
+        use std::os::unix::fs::MetadataExt;
         use std::os::unix::fs::PermissionsExt;
+
         // Ensure the directory is only accessible by the current user.
-        fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).ok();
+        if let Ok(meta) = fs::metadata(&dir) {
+            let get_current_uid = || -> Option<u32> {
+                let output = std::process::Command::new("id").arg("-u").output().ok()?;
+                let stdout = std::str::from_utf8(&output.stdout).ok()?.trim();
+                stdout.parse::<u32>().ok()
+            };
+
+            if Some(meta.uid()) != get_current_uid() {
+                panic!(
+                    "Security violation: watch socket directory {} exists but is owned by UID {}. \
+                     This indicates a potential privilege escalation attempt.",
+                    dir.display(),
+                    meta.uid()
+                );
+            }
+        }
+
+        if let Err(e) = fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)) {
+            tracing::debug!("Failed to set permissions on fallback socket dir: {}", e);
+        }
     }
 
     dir

@@ -376,7 +376,7 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
         return 0.0;
     }
     let dot = dot_product(a, b);
-    dot / (a_norm * b_norm)
+    dot / f32::max(a_norm * b_norm, f32::EPSILON)
 }
 
 /// Wrapper around `f32` that implements `Ord` for use in `BinaryHeap`.
