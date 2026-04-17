@@ -9,8 +9,6 @@ use std::fs;
 use synrepo::bootstrap::bootstrap;
 use synrepo::config::Config;
 use synrepo::pipeline::export::ExportFormat;
-#[cfg(not(unix))]
-use synrepo::pipeline::writer::spawn_and_reap_pid;
 #[cfg(unix)]
 use synrepo::pipeline::writer::{
     hold_writer_flock_with_ownership, live_foreign_pid, spawn_and_reap_pid, writer_lock_path,
@@ -18,7 +16,9 @@ use synrepo::pipeline::writer::{
 };
 use tempfile::tempdir;
 
-use crate::{export, sync};
+use crate::export;
+#[cfg(unix)]
+use crate::sync;
 
 fn write_watch_state(state_dir: &std::path::Path, pid: u32) {
     fs::create_dir_all(state_dir).unwrap();

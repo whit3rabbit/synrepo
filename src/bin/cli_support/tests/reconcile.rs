@@ -1,7 +1,9 @@
+#[cfg(unix)]
 use std::process::Command;
 
 use synrepo::bootstrap::bootstrap;
 use synrepo::config::Config;
+#[cfg(unix)]
 use synrepo::pipeline::writer::{writer_lock_path, WriterOwnership};
 use tempfile::tempdir;
 

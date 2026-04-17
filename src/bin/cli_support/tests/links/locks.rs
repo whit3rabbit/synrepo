@@ -1,3 +1,5 @@
+#![cfg(unix)]
+
 use synrepo::config::Config;
 use synrepo::core::ids::NodeId;
 use synrepo::overlay::{OverlayEdgeKind, OverlayStore};
@@ -7,6 +9,7 @@ use tempfile::tempdir;
 use super::support::seed_graph;
 use super::{commands, sample_link, setup_curated_link_env, write_curated_mode};
 
+#[cfg(unix)]
 #[test]
 fn links_accept_blocked_when_watch_running() {
     use std::process::Command;

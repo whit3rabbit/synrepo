@@ -1,3 +1,4 @@
+#[cfg(unix)]
 use super::helpers::spawn_and_reap_pid;
 use super::*;
 use tempfile::tempdir;
@@ -236,6 +237,7 @@ fn write_admission_blocked_when_watch_running() {
 }
 
 /// Write admission succeeds after a stale watch state file is cleaned up.
+#[cfg(unix)]
 #[test]
 fn write_admission_succeeds_after_stale_watch_cleanup() {
     let dir = tempdir().unwrap();
