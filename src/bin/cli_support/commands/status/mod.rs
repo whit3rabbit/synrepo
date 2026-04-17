@@ -1,9 +1,8 @@
 //! Status command implementation.
-//! @modified Refactored from 628-line single file into status/ submodule directory
+//!
+//! Pure formatter over `synrepo::surface::status_snapshot::StatusSnapshot`.
 
-mod export;
 mod helpers;
-mod overlay;
 
 pub(crate) use helpers::render_watch_summary;
 
@@ -11,15 +10,10 @@ use std::fmt::Write;
 use std::path::Path;
 
 use synrepo::{
-    config::Config,
-    pipeline::{
-        compact::load_last_compaction_timestamp,
-        diagnostics::{
-            collect_diagnostics, EmbeddingHealth, ReconcileHealth, RuntimeDiagnostics, WriterStatus,
-        },
-        recent_activity::{read_recent_activity, ActivityEntry, RecentActivityQuery},
+    pipeline::diagnostics::{EmbeddingHealth, ReconcileHealth, WriterStatus},
+    surface::status_snapshot::{
+        build_status_snapshot, CommentaryCoverage, RepairAuditState, StatusOptions, StatusSnapshot,
     },
-    store::sqlite::SqliteGraphStore,
 };
 
 /// Print operational health: mode, graph counts, reconcile status, and watch state.
@@ -29,88 +23,47 @@ pub(crate) fn status(repo_root: &Path, json: bool, recent: bool, full: bool) -> 
     Ok(())
 }
 
-/// Render the status output as a String (test-friendly equivalent of `status`).
-/// Output is identical to what `status` prints, including trailing newlines.
-///
-/// `full` enables the commentary freshness scan (O(commentary_rows × graph_lookup)).
-/// Default status leaves it off so the command stays cheap enough to run habitually.
+/// Render the status output as a String. Used by `cli.rs` for the non-TTY
+/// fallback under bare `synrepo` on a ready repo, and by tests.
 pub(crate) fn status_output(
     repo_root: &Path,
     json: bool,
     recent: bool,
     full: bool,
 ) -> anyhow::Result<String> {
-    let synrepo_dir = Config::synrepo_dir(repo_root);
+    let snapshot = build_status_snapshot(repo_root, StatusOptions { recent, full });
     let mut out = String::new();
-
-    let config = match Config::load(repo_root) {
-        Ok(config) => config,
-        Err(_) => {
-            if json {
-                writeln!(out, "{{\"initialized\":false}}").unwrap();
-            } else {
-                writeln!(out, "synrepo status: not initialized").unwrap();
-                writeln!(
-                    out,
-                    "  Run `synrepo init` to create .synrepo/ and populate the graph."
-                )
-                .unwrap();
-            }
-            return Ok(out);
-        }
-    };
-
-    let diag = collect_diagnostics(&synrepo_dir, &config);
-    let graph_stats = {
-        let graph_dir = synrepo_dir.join("graph");
-        SqliteGraphStore::open_existing(&graph_dir)
-            .ok()
-            .and_then(|store| {
-                synrepo::structure::graph::with_graph_read_snapshot(&store, |_graph| {
-                    store.persisted_stats()
-                })
-                .ok()
-            })
-    };
-
-    let export_freshness = export::export_freshness_summary(repo_root, &synrepo_dir, &config);
-    let overlay = overlay::open_status_overlay(&synrepo_dir);
-    let overlay_cost = overlay::overlay_cost_summary(&overlay);
-    let commentary = overlay::commentary_coverage(&synrepo_dir, full, &overlay);
-    let last_compaction = load_last_compaction_timestamp(&synrepo_dir);
-    let repair_audit = helpers::load_repair_audit_state(&synrepo_dir);
-
-    let recent_entries: Option<Vec<ActivityEntry>> = if recent {
-        let query = RecentActivityQuery {
-            kinds: None,
-            limit: 20,
-            since: None,
-        };
-        read_recent_activity(&synrepo_dir, repo_root, &config, query).ok()
-    } else {
-        None
-    };
-
     if json {
-        write_status_json(
-            &mut out,
-            &config,
-            &diag,
-            graph_stats.as_ref(),
-            &export_freshness,
-            &overlay_cost,
-            &commentary,
-            recent_entries.as_deref(),
-            last_compaction.as_ref(),
-            &repair_audit,
-        )?;
-        return Ok(out);
+        write_status_json(&mut out, &snapshot)?;
+    } else {
+        write_status_text(&mut out, &snapshot);
     }
+    Ok(out)
+}
+
+fn write_status_text(out: &mut String, snapshot: &StatusSnapshot) {
+    if !snapshot.initialized {
+        writeln!(out, "synrepo status: not initialized").unwrap();
+        writeln!(
+            out,
+            "  Run `synrepo init` to create .synrepo/ and populate the graph."
+        )
+        .unwrap();
+        return;
+    }
+    let config = snapshot
+        .config
+        .as_ref()
+        .expect("initialized implies config loaded");
+    let diag = snapshot
+        .diagnostics
+        .as_ref()
+        .expect("initialized implies diagnostics present");
 
     writeln!(out, "synrepo status").unwrap();
     writeln!(out, "  mode:         {}", config.mode).unwrap();
 
-    match &graph_stats {
+    match &snapshot.graph_stats {
         Some(stats) => writeln!(
             out,
             "  graph:        {} files  {} symbols  {} concepts",
@@ -176,9 +129,14 @@ pub(crate) fn status_output(
         writeln!(out, "  store:        {line}").unwrap();
     }
 
-    writeln!(out, "  commentary:   {}", commentary.display).unwrap();
-    writeln!(out, "  export:       {export_freshness}").unwrap();
-    writeln!(out, "  overlay cost: {overlay_cost}").unwrap();
+    writeln!(
+        out,
+        "  commentary:   {}",
+        snapshot.commentary_coverage.display
+    )
+    .unwrap();
+    writeln!(out, "  export:       {}", snapshot.export_freshness).unwrap();
+    writeln!(out, "  overlay cost: {}", snapshot.overlay_cost_summary).unwrap();
     match &diag.embedding_health {
         EmbeddingHealth::Disabled => {}
         EmbeddingHealth::Available { model, dim, chunks } => {
@@ -192,7 +150,7 @@ pub(crate) fn status_output(
             writeln!(out, "  embedding:    degraded ({reason})").unwrap();
         }
     }
-    if let Some(ts) = last_compaction {
+    if let Some(ts) = snapshot.last_compaction {
         writeln!(out, "  last compact:  {}", ts).unwrap();
     } else {
         writeln!(out, "  last compact:  never").unwrap();
@@ -200,17 +158,17 @@ pub(crate) fn status_output(
     writeln!(
         out,
         "  repair audit: {}",
-        helpers::render_repair_audit(&repair_audit)
+        helpers::render_repair_audit(&snapshot.repair_audit)
     )
     .unwrap();
     writeln!(
         out,
         "  next step:    {}",
-        helpers::next_step(&diag, graph_stats.is_none())
+        helpers::next_step(diag, snapshot.graph_stats.is_none())
     )
     .unwrap();
 
-    if let Some(entries) = &recent_entries {
+    if let Some(entries) = &snapshot.recent_activity {
         writeln!(out).unwrap();
         writeln!(out, "recent activity:").unwrap();
         if entries.is_empty() {
@@ -229,23 +187,23 @@ pub(crate) fn status_output(
             }
         }
     }
-    Ok(out)
 }
 
-#[allow(clippy::too_many_arguments)]
-fn write_status_json(
-    out: &mut String,
-    config: &Config,
-    diag: &RuntimeDiagnostics,
-    graph_stats: Option<&synrepo::store::sqlite::PersistedGraphStats>,
-    export_freshness: &str,
-    overlay_cost: &str,
-    commentary: &overlay::CommentaryCoverage,
-    recent_activity: Option<&[ActivityEntry]>,
-    last_compaction: Option<&time::OffsetDateTime>,
-    repair_audit: &helpers::RepairAuditState,
-) -> anyhow::Result<()> {
-    let graph_json = match graph_stats {
+fn write_status_json(out: &mut String, snapshot: &StatusSnapshot) -> anyhow::Result<()> {
+    if !snapshot.initialized {
+        writeln!(out, "{{\"initialized\":false}}").unwrap();
+        return Ok(());
+    }
+    let config = snapshot
+        .config
+        .as_ref()
+        .expect("initialized implies config loaded");
+    let diag = snapshot
+        .diagnostics
+        .as_ref()
+        .expect("initialized implies diagnostics present");
+
+    let graph_json = match &snapshot.graph_stats {
         Some(stats) => serde_json::json!({
             "file_nodes": stats.file_nodes,
             "symbol_nodes": stats.symbol_nodes,
@@ -281,24 +239,13 @@ fn write_status_json(
 
     let watch = helpers::render_watch_summary(&diag.watch_status);
 
-    let activity_json: serde_json::Value = match recent_activity {
+    let activity_json: serde_json::Value = match snapshot.recent_activity.as_deref() {
         Some(entries) => serde_json::to_value(entries).unwrap_or(serde_json::Value::Null),
         None => serde_json::Value::Null,
     };
 
-    let repair_audit_json = match repair_audit {
-        helpers::RepairAuditState::Ok => serde_json::json!({ "status": "ok" }),
-        helpers::RepairAuditState::Unavailable {
-            last_failure_at,
-            last_failure_reason,
-        } => {
-            serde_json::json!({
-                "status": "unavailable",
-                "last_failure_at": last_failure_at,
-                "last_failure_reason": last_failure_reason,
-            })
-        }
-    };
+    let repair_audit_json = repair_audit_json(&snapshot.repair_audit);
+    let commentary_json = commentary_json(&snapshot.commentary_coverage);
 
     let output = serde_json::json!({
         "initialized": true,
@@ -309,8 +256,8 @@ fn write_status_json(
         "last_reconcile_at": last_reconcile_at,
         "watch": watch,
         "writer_lock": writer_lock,
-        "export_freshness": export_freshness,
-        "overlay_cost_summary": overlay_cost,
+        "export_freshness": snapshot.export_freshness,
+        "overlay_cost_summary": snapshot.overlay_cost_summary,
         "embedding_health": match &diag.embedding_health {
             EmbeddingHealth::Disabled => serde_json::json!({"status": "disabled"}),
             EmbeddingHealth::Available { model, dim, chunks } => serde_json::json!({
@@ -324,15 +271,33 @@ fn write_status_json(
                 "reason": reason,
             }),
         },
-        "commentary_coverage": {
-            "total": commentary.total,
-            "fresh": commentary.fresh,
-        },
+        "commentary_coverage": commentary_json,
         "recent_activity": activity_json,
-        "last_compaction_timestamp": last_compaction.map(|ts| ts.to_string()),
+        "last_compaction_timestamp": snapshot.last_compaction.map(|ts| ts.to_string()),
         "repair_audit": repair_audit_json,
     });
 
     writeln!(out, "{}", serde_json::to_string_pretty(&output)?).unwrap();
     Ok(())
+}
+
+fn commentary_json(coverage: &CommentaryCoverage) -> serde_json::Value {
+    serde_json::json!({
+        "total": coverage.total,
+        "fresh": coverage.fresh,
+    })
+}
+
+fn repair_audit_json(state: &RepairAuditState) -> serde_json::Value {
+    match state {
+        RepairAuditState::Ok => serde_json::json!({ "status": "ok" }),
+        RepairAuditState::Unavailable {
+            last_failure_at,
+            last_failure_reason,
+        } => serde_json::json!({
+            "status": "unavailable",
+            "last_failure_at": last_failure_at,
+            "last_failure_reason": last_failure_reason,
+        }),
+    }
 }

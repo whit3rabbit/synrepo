@@ -393,34 +393,104 @@ fn user_socket_dir() -> PathBuf {
     }
 
     #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        use std::os::unix::fs::PermissionsExt;
+    harden_fallback_socket_dir(&dir);
 
-        // Ensure the directory is only accessible by the current user.
-        if let Ok(meta) = fs::metadata(&dir) {
-            let get_current_uid = || -> Option<u32> {
-                let output = std::process::Command::new("id").arg("-u").output().ok()?;
-                let stdout = std::str::from_utf8(&output.stdout).ok()?.trim();
-                stdout.parse::<u32>().ok()
-            };
+    dir
+}
 
-            if Some(meta.uid()) != get_current_uid() {
-                panic!(
-                    "Security violation: watch socket directory {} exists but is owned by UID {}. \
-                     This indicates a potential privilege escalation attempt.",
-                    dir.display(),
-                    meta.uid()
-                );
-            }
+/// Refuse symlinks, refuse foreign-owned directories, then chmod 0700.
+///
+/// Split out of `user_socket_dir` so regression tests can exercise it
+/// directly against a crafted path without racing on process env vars.
+///
+/// Panics on symlink or foreign ownership — the `/tmp` fallback is a
+/// security boundary and silently continuing would let an attacker redirect
+/// or chmod victim-owned directories.
+#[cfg(unix)]
+fn harden_fallback_socket_dir(dir: &Path) {
+    use std::os::unix::fs::MetadataExt;
+    use std::os::unix::fs::PermissionsExt;
+
+    // `fs::metadata` and `fs::set_permissions` both follow symlinks, so
+    // without this check an attacker on a shared host could pre-create
+    // `/tmp/synrepo-run-<victim>` as a symlink to a victim-owned directory
+    // and watch the daemon chmod that directory to 0700.
+    // `symlink_metadata` reports the link itself, not its target.
+    match fs::symlink_metadata(dir) {
+        Ok(meta) if meta.file_type().is_symlink() => {
+            panic!(
+                "Security violation: watch socket directory {} is a symlink; \
+                 refusing to chmod or bind through it.",
+                dir.display()
+            );
         }
-
-        if let Err(e) = fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)) {
-            tracing::debug!("Failed to set permissions on fallback socket dir: {}", e);
+        Ok(_) => {}
+        Err(e) => {
+            tracing::debug!("Failed to stat fallback socket dir: {}", e);
+            return;
         }
     }
 
-    dir
+    if let Ok(meta) = fs::metadata(dir) {
+        let get_current_uid = || -> Option<u32> {
+            let output = std::process::Command::new("id").arg("-u").output().ok()?;
+            let stdout = std::str::from_utf8(&output.stdout).ok()?.trim();
+            stdout.parse::<u32>().ok()
+        };
+
+        if Some(meta.uid()) != get_current_uid() {
+            panic!(
+                "Security violation: watch socket directory {} exists but is owned by UID {}. \
+                 This indicates a potential privilege escalation attempt.",
+                dir.display(),
+                meta.uid()
+            );
+        }
+    }
+
+    if let Err(e) = fs::set_permissions(dir, fs::Permissions::from_mode(0o700)) {
+        tracing::debug!("Failed to set permissions on fallback socket dir: {}", e);
+    }
+}
+
+#[cfg(all(test, unix))]
+mod lease_security_tests {
+    use super::harden_fallback_socket_dir;
+    use std::fs;
+    use std::os::unix::fs::symlink;
+    use tempfile::tempdir;
+
+    #[test]
+    fn harden_refuses_symlinks() {
+        let outer = tempdir().unwrap();
+        // Real directory the attacker wants to attack via symlink.
+        let target = outer.path().join("victim-dir");
+        fs::create_dir_all(&target).unwrap();
+        // Attacker-controlled symlink in a writable location.
+        let link = outer.path().join("synrepo-run-victim");
+        symlink(&target, &link).unwrap();
+
+        let link_path = link.clone();
+        let result = std::panic::catch_unwind(|| harden_fallback_socket_dir(&link_path));
+        assert!(
+            result.is_err(),
+            "harden_fallback_socket_dir must panic on a symlink"
+        );
+
+        // Target's mode must NOT have been changed to 0o700. Since we created
+        // `target` with the process default (typically 0o755), a successful
+        // attack would have chmod'd it. Just assert the target still exists.
+        assert!(target.exists());
+    }
+
+    #[test]
+    fn harden_accepts_real_directory_owned_by_current_user() {
+        let outer = tempdir().unwrap();
+        let dir = outer.path().join("synrepo-run-self");
+        fs::create_dir_all(&dir).unwrap();
+        // Must not panic — real directory, owned by us.
+        harden_fallback_socket_dir(&dir);
+    }
 }
 
 pub(super) fn persist_watch_state_at(

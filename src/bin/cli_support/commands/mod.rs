@@ -31,12 +31,13 @@ pub(crate) use links::{
 pub(crate) use mcp::run_mcp_server;
 pub(crate) use repair::{check, reconcile, sync};
 pub(crate) use setup::setup;
+pub(crate) use setup::{step_apply_integration, step_init};
 #[cfg(test)]
-pub(crate) use setup::{setup_claude_mcp, setup_codex_mcp, setup_opencode_mcp};
-pub(crate) use status::status;
-#[cfg(test)]
-#[allow(unused_imports)]
-pub(crate) use status::status_output;
+pub(crate) use setup::{
+    setup_claude_mcp, setup_codex_mcp, setup_opencode_mcp, step_register_mcp, step_write_shim,
+    StepOutcome,
+};
+pub(crate) use status::{status, status_output};
 #[cfg(test)]
 pub(crate) use upgrade::report_reconcile_outcome;
 pub(crate) use upgrade::upgrade;

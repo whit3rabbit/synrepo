@@ -2,6 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::core::path_safety::{has_windows_prefix_component, looks_like_unc};
 use crate::Result;
 
 use super::{get_global_cache_dir, ModelResolution, PoolingStrategy};
@@ -78,6 +79,19 @@ impl ModelResolver {
         // since absolute paths contain `/` which would match the HF heuristic).
         let onnx_path = PathBuf::from(model_id);
         if onnx_path.is_absolute() && model_id.ends_with(".onnx") {
+            // Refuse UNC / verbatim / device prefixes before touching the
+            // filesystem. On Windows these trigger remote SMB auth (leaking
+            // NTLM hashes) and would otherwise hand an attacker-chosen ORT
+            // graph to the embedding runtime. The string-level `looks_like_unc`
+            // check belt-and-braces the same rejection on every platform —
+            // on Unix `Path::is_absolute` returns false for `\\host\share`,
+            // but we still want to refuse it consistently.
+            if has_windows_prefix_component(&onnx_path) || looks_like_unc(model_id) {
+                return Err(crate::Error::Config(format!(
+                    "semantic_model '{}' uses a UNC or device path; refusing to load",
+                    model_id
+                )));
+            }
             let tokenizer_path = onnx_path.with_file_name("tokenizer.json");
             if !tokenizer_path.exists() {
                 return Err(crate::Error::Config(format!(
@@ -315,6 +329,37 @@ mod tests {
         assert!(
             err.to_string().contains("384") || err.to_string().contains("embedding_dim"),
             "Expected dimension mismatch error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn resolve_rejects_unc_style_slash_path() {
+        // `//attacker/share/m.onnx` is absolute on Unix and on Windows, so
+        // it hits the local-ONNX branch; the UNC check must reject it before
+        // any filesystem probe that could leak NTLM or load a foreign ORT
+        // graph.
+        let resolver = ModelResolver::new();
+        let err = resolver
+            .resolve("//attacker/share/m.onnx", Path::new("."), 384)
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("UNC") || msg.contains("device"),
+            "Expected UNC/device rejection, got: {msg}"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn resolve_rejects_backslash_unc_path() {
+        let resolver = ModelResolver::new();
+        let err = resolver
+            .resolve(r"\\attacker\share\m.onnx", Path::new("."), 384)
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("UNC") || msg.contains("device"),
+            "Expected UNC/device rejection, got: {msg}"
         );
     }
 }

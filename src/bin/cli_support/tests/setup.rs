@@ -13,7 +13,11 @@
 use std::fs;
 use tempfile::tempdir;
 
-use crate::cli_support::commands::{setup_claude_mcp, setup_codex_mcp, setup_opencode_mcp};
+use crate::cli_support::agent_shims::AgentTool;
+use crate::cli_support::commands::{
+    setup_claude_mcp, setup_codex_mcp, setup_opencode_mcp, step_apply_integration, step_init,
+    step_register_mcp, step_write_shim, StepOutcome,
+};
 
 // ---------- Claude: .mcp.json ----------
 
@@ -334,4 +338,98 @@ fn codex_setup_leaves_no_leftover_temp_files() {
     assert!(final_toml.contains("synrepo"));
     // Parsing must succeed — a truncated write would produce invalid TOML.
     let _: toml_edit::DocumentMut = final_toml.parse().unwrap();
+}
+
+// ---------- Decomposed step helpers (Phase 7) ----------
+
+#[test]
+fn step_init_runs_init_on_empty_repo() {
+    let dir = tempdir().unwrap();
+    let outcome = step_init(dir.path(), None, false).unwrap();
+    assert_eq!(outcome, StepOutcome::Applied);
+    assert!(dir.path().join(".synrepo/config.toml").exists());
+}
+
+#[test]
+fn step_init_skips_when_already_initialized() {
+    let dir = tempdir().unwrap();
+    step_init(dir.path(), None, false).unwrap();
+
+    // Re-running without force must be an AlreadyCurrent no-op.
+    let again = step_init(dir.path(), None, false).unwrap();
+    assert_eq!(again, StepOutcome::AlreadyCurrent);
+}
+
+#[test]
+fn step_register_mcp_claude_registers_then_idempotent() {
+    let dir = tempdir().unwrap();
+    let first = step_register_mcp(dir.path(), AgentTool::Claude).unwrap();
+    assert_eq!(first, StepOutcome::Applied);
+    assert!(dir.path().join(".mcp.json").exists());
+
+    let second = step_register_mcp(dir.path(), AgentTool::Claude).unwrap();
+    assert_eq!(second, StepOutcome::AlreadyCurrent);
+}
+
+#[test]
+fn step_register_mcp_not_automated_for_cursor() {
+    let dir = tempdir().unwrap();
+    let outcome = step_register_mcp(dir.path(), AgentTool::Cursor).unwrap();
+    assert_eq!(outcome, StepOutcome::NotAutomated);
+    assert!(!dir.path().join(".mcp.json").exists());
+}
+
+#[test]
+fn step_write_shim_writes_claude_shim() {
+    let dir = tempdir().unwrap();
+    let outcome = step_write_shim(dir.path(), AgentTool::Claude, false).unwrap();
+    assert_eq!(outcome, StepOutcome::Applied);
+    assert!(AgentTool::Claude.output_path(dir.path()).exists());
+}
+
+#[test]
+fn step_apply_integration_writes_shim_and_registers_mcp() {
+    let dir = tempdir().unwrap();
+    let outcome = step_apply_integration(dir.path(), AgentTool::Claude, false).unwrap();
+    assert_eq!(outcome, StepOutcome::Applied);
+    assert!(AgentTool::Claude.output_path(dir.path()).exists());
+    assert!(dir.path().join(".mcp.json").exists());
+}
+
+#[test]
+fn step_apply_integration_rerun_is_idempotent() {
+    let dir = tempdir().unwrap();
+    step_apply_integration(dir.path(), AgentTool::Claude, false).unwrap();
+    let mcp_first = fs::read(dir.path().join(".mcp.json")).unwrap();
+    let shim_first = fs::read(AgentTool::Claude.output_path(dir.path())).unwrap();
+
+    step_apply_integration(dir.path(), AgentTool::Claude, false).unwrap();
+
+    let mcp_second = fs::read(dir.path().join(".mcp.json")).unwrap();
+    let shim_second = fs::read(AgentTool::Claude.output_path(dir.path())).unwrap();
+    assert_eq!(mcp_first, mcp_second, "MCP config must be byte-identical");
+    assert_eq!(shim_first, shim_second, "shim must be byte-identical");
+}
+
+#[test]
+fn step_apply_integration_not_automated_for_cursor_still_writes_shim() {
+    let dir = tempdir().unwrap();
+    let outcome = step_apply_integration(dir.path(), AgentTool::Cursor, false).unwrap();
+    // Shim write is Applied; MCP registration is NotAutomated. Composite
+    // precedence prefers shim Applied outcome.
+    assert_eq!(outcome, StepOutcome::Applied);
+    assert!(AgentTool::Cursor.output_path(dir.path()).exists());
+    assert!(!dir.path().join(".mcp.json").exists());
+}
+
+// Phase 10.3: init failure must surface as Err so the wizard's plan executor
+// can report it instead of silently continuing to the next step. Simulate the
+// failure by placing a regular file at the `.synrepo` path and forcing init —
+// mkdir(`.synrepo`) fails because the path already exists as a non-directory.
+#[test]
+fn step_init_surfaces_error_when_synrepo_path_is_blocked() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join(".synrepo"), "blocker").unwrap();
+    let err = step_init(dir.path(), None, true);
+    assert!(err.is_err(), "expected Err from blocked init, got {err:?}");
 }

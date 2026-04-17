@@ -1,6 +1,7 @@
 mod agent_setup;
 mod change_risk;
 mod compact;
+mod dashboard_parity;
 mod export;
 mod graph;
 mod links;

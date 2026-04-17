@@ -20,8 +20,14 @@ pub(crate) struct Cli {
     #[arg(long, global = true)]
     pub(crate) repo: Option<PathBuf>,
 
+    /// Disable colored / styled TUI rendering. Applies to the dashboard and
+    /// first-run wizards. Honored by the bare-`synrepo` entrypoint as well.
+    #[arg(long, global = true)]
+    pub(crate) no_color: bool,
+
+    /// Subcommand. Omit to run the smart entrypoint (runtime probe + router).
     #[command(subcommand)]
-    pub(crate) command: Command,
+    pub(crate) command: Option<Command>,
 }
 
 #[derive(Subcommand)]
@@ -164,6 +170,11 @@ pub(crate) enum Command {
         /// Start the watcher as a detached daemon.
         #[arg(long)]
         daemon: bool,
+        /// Force plain log-line output in the foreground instead of hosting
+        /// the live-mode dashboard. Non-TTY stdout (pipes, redirects, CI)
+        /// already auto-falls-back to plain logs.
+        #[arg(long)]
+        no_ui: bool,
         /// Optional watch control subcommand.
         #[command(subcommand)]
         command: Option<WatchCommand>,
@@ -251,6 +262,13 @@ pub(crate) enum Command {
 
     #[command(name = "watch-internal", hide = true)]
     WatchInternal,
+
+    /// Open the operator dashboard.
+    ///
+    /// Explicit alias for bare `synrepo` on a ready repo. Exits non-zero with
+    /// a pointer to the correct subcommand when the repo is uninitialized or
+    /// partial, instead of routing to the setup or repair wizard.
+    Dashboard,
 
     /// Start the MCP server over stdio.
     ///

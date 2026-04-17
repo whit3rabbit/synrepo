@@ -65,10 +65,22 @@ fn parse_edge_kind_list(edge_types: &[String]) -> anyhow::Result<Vec<EdgeKind>> 
     edge_types
         .iter()
         .map(|s| {
-            // Normalise to lowercase so both "Defines" (TitleCase, as shown in the
-            // JSON schema doc) and "defines" (snake_case) are accepted.
-            s.to_lowercase()
+            if let Ok(kind) = s.parse::<EdgeKind>() {
+                return Ok(kind);
+            }
+
+            let mut snake = String::new();
+            for (i, c) in s.chars().enumerate() {
+                if c.is_uppercase() && i > 0 && !s.chars().nth(i - 1).unwrap_or('_').is_uppercase()
+                {
+                    snake.push('_');
+                }
+                snake.push(c.to_ascii_lowercase());
+            }
+
+            snake
                 .parse::<EdgeKind>()
+                .or_else(|_| s.to_lowercase().parse::<EdgeKind>())
                 .map_err(|e| anyhow::anyhow!("invalid edge type `{s}`: {e}"))
         })
         .collect()

@@ -45,6 +45,7 @@ pub mod store;
 pub mod structure;
 pub mod substrate;
 pub mod surface;
+pub mod tui;
 
 pub use crate::core::ids::{ConceptNodeId, EdgeId, FileNodeId, NodeId, SymbolNodeId};
 pub use error::{Error, Result};

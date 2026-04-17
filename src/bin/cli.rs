@@ -1,33 +1,34 @@
 //! synrepo CLI entry point.
 //!
-//! Phase 0/1 subcommands:
-//! - `synrepo mcp`, start MCP server over stdio
-//! - `synrepo init [--mode auto|curated]`, create `.synrepo/` in the current repo
-//! - `synrepo status`, print operational health: mode, graph counts, last reconcile, lock state
-//! - `synrepo agent-setup <tool>`, generate a thin integration shim for claude/cursor/copilot/generic
-//! - `synrepo reconcile`, run a structural compile pass without full re-bootstrap
-//! - `synrepo check`, read-only drift report across all repair surfaces
-//! - `synrepo sync`, repair auto-fixable drift surfaces and log the outcome
-//! - `synrepo watch [--daemon]`, keep `.synrepo/` fresh for the current repo
-//! - `synrepo search <query>`, lexical search against the persisted index
-//! - `synrepo graph query "<direction> <node_id> [edge_kind]"`, narrow graph traversal query
-//! - `synrepo node <id>`, dump a node's metadata
+//! Bare `synrepo` (no subcommand) runs a read-only runtime probe and routes
+//! the user to the dashboard, guided setup, or guided repair wizard based on
+//! classification. All explicit subcommands (`init`, `status`, `watch`,
+//! `sync`, `export`, `mcp`, and friends) behave exactly as before.
 //!
 //! All non-trivial logic lives in the library crate or local support modules.
 
 mod cli_support;
 
+use std::path::Path;
+
 use clap::Parser;
+use synrepo::bootstrap::runtime_probe::{probe, Missing, RoutingDecision};
+use synrepo::tui::{
+    run_dashboard, run_live_watch_dashboard, run_repair_wizard, run_setup_wizard, stdout_is_tty,
+    RepairPlan, RepairWizardOutcome, SetupPlan, SetupWizardOutcome, TuiOptions, TuiOutcome,
+};
 use syntext::SearchOptions;
 use tracing_subscriber::EnvFilter;
 
 use cli_support::cli_args::{Cli, Command, GraphCommand, LinksCommand, WatchCommand};
 #[cfg(test)]
 use cli_support::commands::report_reconcile_outcome;
+use cli_support::agent_shims::AgentTool;
 use cli_support::commands::{
     agent_setup, change_risk, check, compact, export, findings, graph_query, graph_stats, handoffs,
     init, links_accept, links_list, links_reject, links_review, node, reconcile, run_mcp_server,
-    search, setup, status, sync, upgrade, watch, watch_internal, watch_status, watch_stop,
+    search, setup, status, status_output, step_apply_integration, step_init, sync, upgrade, watch,
+    watch_internal, watch_status, watch_stop,
 };
 
 fn main() -> anyhow::Result<()> {
@@ -45,19 +46,238 @@ fn main() -> anyhow::Result<()> {
             .map_err(|e| anyhow::anyhow!("cannot determine working directory: {e}"))?,
     };
 
+    let tui_opts = TuiOptions {
+        no_color: cli.no_color,
+    };
+
     match cli.command {
-        Command::Init { mode } => init(&repo_root, mode.map(Into::into)),
-        Command::Status { json, recent, full } => status(&repo_root, json, recent, full),
-        Command::AgentSetup { tool, force, regen } => agent_setup(&repo_root, tool, force, regen),
-        Command::Setup { tool, force } => setup(&repo_root, tool, force),
-        Command::Reconcile => reconcile(&repo_root),
-        Command::Check { json } => check(&repo_root, json),
+        None => run_bare_entrypoint(&repo_root, tui_opts),
+        Some(cmd) => dispatch(cmd, &repo_root, tui_opts),
+    }
+}
+
+/// Bare `synrepo`: probe, route, and run the appropriate TUI entrypoint.
+fn run_bare_entrypoint(repo_root: &Path, opts: TuiOptions) -> anyhow::Result<()> {
+    let report = probe(repo_root);
+    let decision = RoutingDecision::from_report(&report);
+    let is_tty = stdout_is_tty();
+
+    match decision {
+        RoutingDecision::OpenDashboard { integration } => {
+            if !is_tty {
+                print!("{}", bare_ready_summary(repo_root)?);
+                return Ok(());
+            }
+            match run_dashboard(repo_root, integration, opts)? {
+                TuiOutcome::Exited => Ok(()),
+                TuiOutcome::NonTtyFallback => {
+                    print!("{}", bare_ready_summary(repo_root)?);
+                    Ok(())
+                }
+                _ => Ok(()),
+            }
+        }
+        RoutingDecision::OpenSetup => {
+            if !is_tty {
+                eprint!("{}", bare_uninitialized_fallback());
+                std::process::exit(2);
+            }
+            match run_setup_wizard(repo_root, opts)? {
+                SetupWizardOutcome::Completed { plan } => execute_setup_plan(repo_root, plan),
+                SetupWizardOutcome::Cancelled => {
+                    println!("setup wizard cancelled; no changes applied.");
+                    Ok(())
+                }
+                SetupWizardOutcome::NonTty => {
+                    eprint!("{}", bare_uninitialized_fallback());
+                    std::process::exit(2);
+                }
+            }
+        }
+        RoutingDecision::OpenRepair { missing } => {
+            if !is_tty {
+                eprint!("{}", bare_partial_fallback(&missing));
+                std::process::exit(2);
+            }
+            match run_repair_wizard(repo_root, missing, opts)? {
+                RepairWizardOutcome::Completed { plan } => execute_repair_plan(repo_root, plan),
+                RepairWizardOutcome::Cancelled => {
+                    println!("repair wizard cancelled; no changes applied.");
+                    Ok(())
+                }
+                RepairWizardOutcome::NonTty => {
+                    eprint!("{}", bare_partial_fallback(&[]));
+                    std::process::exit(2);
+                }
+            }
+        }
+    }
+}
+
+/// Non-TTY plain-text summary printed when bare `synrepo` runs on a ready
+/// repo behind a pipe or redirect. Mirrors the key lines from `synrepo status`.
+fn bare_ready_summary(repo_root: &Path) -> anyhow::Result<String> {
+    status_output(repo_root, false, false, false)
+}
+
+/// Execute a completed [`SetupPlan`] after the TUI alt-screen has been torn
+/// down. All file-system writes happen here, not inside the library.
+fn execute_setup_plan(repo_root: &Path, plan: SetupPlan) -> anyhow::Result<()> {
+    println!("synrepo setup: applying plan.");
+    step_init(repo_root, Some(plan.mode), false)?;
+    if let Some(target) = plan.target {
+        let tool = AgentTool::from_target_kind(target);
+        step_apply_integration(repo_root, tool, false)?;
+    }
+    if plan.reconcile_after {
+        // Only run a reconcile pass if init didn't already build the graph.
+        // `step_init` is idempotent so this avoids wasted work; when init is
+        // fresh it already emits the first pass internally.
+        let state_path = repo_root
+            .join(".synrepo")
+            .join("state")
+            .join("reconcile-state.json");
+        if !state_path.exists() {
+            println!("  Running first reconcile pass...");
+            reconcile(repo_root)?;
+        }
+    }
+    println!("Setup complete.");
+    Ok(())
+}
+
+/// Execute a completed [`RepairPlan`] after the TUI alt-screen has been torn
+/// down. Actions run in order: write config, upgrade-apply, reconcile, shim.
+/// Per Task 11.4 the probe is re-run between mutating steps so later steps
+/// see fresh state and a transient success transitions cleanly to the
+/// dashboard on the next bare-`synrepo` run.
+fn execute_repair_plan(repo_root: &Path, plan: RepairPlan) -> anyhow::Result<()> {
+    if plan.is_empty() {
+        println!("synrepo repair: plan empty, nothing to do.");
+        return Ok(());
+    }
+    println!("synrepo repair: applying plan.");
+    if plan.write_config {
+        println!("  Writing default config.toml...");
+        // `step_init` with force=false is idempotent on an existing repo and
+        // creates `.synrepo/config.toml` if missing. It is the canonical path
+        // for config bootstrap.
+        step_init(repo_root, None, false)?;
+        let _ = probe(repo_root);
+    }
+    if plan.run_upgrade_apply {
+        println!("  Running `synrepo upgrade --apply`...");
+        upgrade(repo_root, true)?;
+        let _ = probe(repo_root);
+    }
+    if plan.run_reconcile {
+        println!("  Running reconcile pass...");
+        reconcile(repo_root)?;
+        let _ = probe(repo_root);
+    }
+    if let Some(target) = plan.write_shim_for {
+        let tool = AgentTool::from_target_kind(target);
+        println!("  Writing shim for {tool:?}...");
+        step_apply_integration(repo_root, tool, false)?;
+    }
+    println!("Repair complete.");
+    Ok(())
+}
+
+fn bare_uninitialized_fallback() -> String {
+    "\
+synrepo: this repository is not initialized.
+Run `synrepo init` to create .synrepo/ and populate the graph.
+"
+    .to_string()
+}
+
+fn bare_partial_fallback(missing: &[Missing]) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::new();
+    writeln!(
+        out,
+        "synrepo: this repository has a partial .synrepo/ install."
+    )
+    .unwrap();
+    if !missing.is_empty() {
+        writeln!(out, "Missing or blocked components:").unwrap();
+        for m in missing {
+            writeln!(out, "  - {}", missing_label(m)).unwrap();
+        }
+    }
+    writeln!(
+        out,
+        "Run `synrepo status` for detail or `synrepo upgrade` for compat actions."
+    )
+    .unwrap();
+    out
+}
+
+fn missing_label(m: &Missing) -> String {
+    match m {
+        Missing::ConfigFile => ".synrepo/config.toml missing".to_string(),
+        Missing::ConfigUnreadable { detail } => format!("config.toml unreadable: {detail}"),
+        Missing::GraphStore => ".synrepo/graph/ missing or empty".to_string(),
+        Missing::CompatBlocked { guidance } => {
+            if let Some(first) = guidance.first() {
+                format!("store compat action required: {first}")
+            } else {
+                "store compat action required".to_string()
+            }
+        }
+        Missing::CompatEvaluationFailed { detail } => format!("compat evaluation failed: {detail}"),
+    }
+}
+
+/// Explicit `synrepo dashboard`: probe, but exit non-zero on non-ready state
+/// instead of routing to a wizard. Keeps scripted invocations deterministic.
+fn run_dashboard_command(repo_root: &Path, opts: TuiOptions) -> anyhow::Result<()> {
+    let report = probe(repo_root);
+    let decision = RoutingDecision::from_report(&report);
+    match decision {
+        RoutingDecision::OpenDashboard { integration } => {
+            if !stdout_is_tty() {
+                print!("{}", bare_ready_summary(repo_root)?);
+                return Ok(());
+            }
+            run_dashboard(repo_root, integration, opts)?;
+            Ok(())
+        }
+        RoutingDecision::OpenSetup => {
+            eprintln!(
+                "synrepo dashboard: repository is uninitialized. Run `synrepo` (bare) or `synrepo init` to set up."
+            );
+            std::process::exit(2);
+        }
+        RoutingDecision::OpenRepair { missing } => {
+            eprintln!(
+                "synrepo dashboard: repository has a partial install. Run `synrepo` (bare) to open the repair wizard, or `synrepo status` to inspect."
+            );
+            for m in &missing {
+                eprintln!("  - {}", missing_label(m));
+            }
+            std::process::exit(2);
+        }
+    }
+}
+
+/// Dispatch an explicit subcommand. Behavior for each branch is unchanged
+/// from prior releases.
+fn dispatch(command: Command, repo_root: &Path, tui_opts: TuiOptions) -> anyhow::Result<()> {
+    match command {
+        Command::Init { mode } => init(repo_root, mode.map(Into::into)),
+        Command::Status { json, recent, full } => status(repo_root, json, recent, full),
+        Command::AgentSetup { tool, force, regen } => agent_setup(repo_root, tool, force, regen),
+        Command::Setup { tool, force } => setup(repo_root, tool, force),
+        Command::Reconcile => reconcile(repo_root),
+        Command::Check { json } => check(repo_root, json),
         Command::Sync {
             json,
             generate_cross_links,
             regenerate_cross_links,
         } => sync(
-            &repo_root,
+            repo_root,
             json,
             generate_cross_links,
             regenerate_cross_links,
@@ -70,7 +290,7 @@ fn main() -> anyhow::Result<()> {
             path_filter,
             max_results,
         } => search(
-            &repo_root,
+            repo_root,
             &query,
             SearchOptions {
                 path_filter,
@@ -80,10 +300,14 @@ fn main() -> anyhow::Result<()> {
                 case_insensitive: ignore_case,
             },
         ),
-        Command::Graph(GraphCommand::Query { q }) => graph_query(&repo_root, &q),
-        Command::Graph(GraphCommand::Stats) => graph_stats(&repo_root),
-        Command::Node { id } => node(&repo_root, &id),
-        Command::Watch { daemon, command } => {
+        Command::Graph(GraphCommand::Query { q }) => graph_query(repo_root, &q),
+        Command::Graph(GraphCommand::Stats) => graph_stats(repo_root),
+        Command::Node { id } => node(repo_root, &id),
+        Command::Watch {
+            daemon,
+            no_ui,
+            command,
+        } => {
             if let Some(subcmd) = command {
                 if daemon {
                     anyhow::bail!(
@@ -95,35 +319,49 @@ fn main() -> anyhow::Result<()> {
                     );
                 }
                 match subcmd {
-                    WatchCommand::Status => watch_status(&repo_root),
-                    WatchCommand::Stop => watch_stop(&repo_root),
+                    WatchCommand::Status => watch_status(repo_root),
+                    WatchCommand::Stop => watch_stop(repo_root),
                 }
+            } else if daemon {
+                watch(repo_root, true)
+            } else if no_ui || !stdout_is_tty() {
+                // Explicit opt-out OR non-TTY stdout: plain log lines. Mirrors
+                // pre-dashboard foreground-watch behavior so piped invocations
+                // like `synrepo watch > watch.log` keep working.
+                watch(repo_root, false)
             } else {
-                watch(&repo_root, daemon)
+                // Foreground + TTY + no opt-out = dashboard live mode.
+                match run_live_watch_dashboard(repo_root, tui_opts) {
+                    Ok(_) => Ok(()),
+                    // The dashboard live mode entry point bails until Phase
+                    // 8/5.5 wires it; fall back to prior foreground behavior
+                    // so the command stays functional during rollout.
+                    Err(_) => watch(repo_root, false),
+                }
             }
         }
         Command::Links(LinksCommand::List { tier, limit, json }) => {
-            links_list(&repo_root, tier.as_deref(), limit, json)
+            links_list(repo_root, tier.as_deref(), limit, json)
         }
         Command::Links(LinksCommand::Review { limit, json }) => {
-            links_review(&repo_root, limit, json)
+            links_review(repo_root, limit, json)
         }
         Command::Links(LinksCommand::Accept {
             candidate_id,
             reviewer,
-        }) => links_accept(&repo_root, &candidate_id, reviewer.as_deref()),
+        }) => links_accept(repo_root, &candidate_id, reviewer.as_deref()),
         Command::Links(LinksCommand::Reject {
             candidate_id,
             reviewer,
-        }) => links_reject(&repo_root, &candidate_id, reviewer.as_deref()),
-        Command::Upgrade { apply } => upgrade(&repo_root, apply),
-        Command::Compact { apply, policy } => compact(&repo_root, apply, policy.into()),
+        }) => links_reject(repo_root, &candidate_id, reviewer.as_deref()),
+        Command::Upgrade { apply } => upgrade(repo_root, apply),
+        Command::Compact { apply, policy } => compact(repo_root, apply, policy.into()),
         Command::Export {
             format,
             deep,
             commit,
             out,
-        } => export(&repo_root, format.into(), deep, commit, out),
+        } => export(repo_root, format.into(), deep, commit, out),
         Command::Findings {
             node,
             kind,
@@ -131,7 +369,7 @@ fn main() -> anyhow::Result<()> {
             limit,
             json,
         } => findings(
-            &repo_root,
+            repo_root,
             node.as_deref(),
             kind.as_deref(),
             freshness.as_deref(),
@@ -142,9 +380,10 @@ fn main() -> anyhow::Result<()> {
             target,
             budget,
             json,
-        } => change_risk(&repo_root, &target, budget.as_deref(), json),
-        Command::Handoffs { limit, since, json } => handoffs(&repo_root, limit, since, json),
-        Command::WatchInternal => watch_internal(&repo_root),
-        Command::Mcp => run_mcp_server(&repo_root),
+        } => change_risk(repo_root, &target, budget.as_deref(), json),
+        Command::Handoffs { limit, since, json } => handoffs(repo_root, limit, since, json),
+        Command::WatchInternal => watch_internal(repo_root),
+        Command::Dashboard => run_dashboard_command(repo_root, tui_opts),
+        Command::Mcp => run_mcp_server(repo_root),
     }
 }

@@ -2,6 +2,7 @@ use std::path::Path;
 
 use crate::{
     core::ids::NodeId,
+    core::path_safety::safe_join_in_repo,
     overlay::{CitedSpan, OverlayLink},
     store::sqlite::SqliteGraphStore,
     structure::graph::GraphStore,
@@ -117,7 +118,12 @@ fn load_endpoint_text(
 }
 
 fn read_repo_file(repo_root: &Path, relative_path: &str) -> crate::Result<Option<String>> {
-    let path = repo_root.join(relative_path);
+    // `relative_path` is attacker-controlled if nodes.db was shipped in the
+    // clone. Reject absolute paths and `..` traversals so we never resolve
+    // outside the repo.
+    let Some(path) = safe_join_in_repo(repo_root, relative_path) else {
+        return Ok(None);
+    };
     match std::fs::read_to_string(&path) {
         Ok(text) => Ok(Some(text)),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -256,7 +262,9 @@ fn word_boundaries(text: &str) -> Vec<(usize, usize)> {
 
 #[cfg(test)]
 mod tests {
-    use super::{lcs_ratio, normalize_text, word_boundaries};
+    use super::{lcs_ratio, normalize_text, read_repo_file, word_boundaries};
+    use std::fs;
+    use tempfile::tempdir;
 
     #[test]
     fn normalize_text_collapses_whitespace() {
@@ -271,5 +279,26 @@ mod tests {
     #[test]
     fn word_boundaries_track_byte_ranges() {
         assert_eq!(word_boundaries("alpha beta"), vec![(0, 5), (6, 10)]);
+    }
+
+    #[test]
+    fn read_repo_file_refuses_traversal_from_poisoned_db() {
+        let outer = tempdir().unwrap();
+        let repo = outer.path().join("repo");
+        fs::create_dir_all(&repo).unwrap();
+        fs::write(outer.path().join("secret.txt"), b"exfil").unwrap();
+
+        // Treated as "nothing to verify" rather than an error, matching the
+        // NotFound branch. The sibling must NOT be read.
+        assert!(matches!(read_repo_file(&repo, "../secret.txt"), Ok(None)));
+    }
+
+    #[test]
+    fn read_repo_file_refuses_absolute_path_from_poisoned_db() {
+        let repo = tempdir().unwrap();
+        assert!(matches!(
+            read_repo_file(repo.path(), "/etc/passwd"),
+            Ok(None)
+        ));
     }
 }

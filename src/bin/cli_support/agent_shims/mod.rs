@@ -56,6 +56,21 @@ pub(crate) enum AgentTool {
 }
 
 impl AgentTool {
+    /// Translate an [`AgentTargetKind`] from the library probe into the
+    /// binary's wider [`AgentTool`] enum. Used by the setup wizard when
+    /// executing its plan — the library offers the observationally-detectable
+    /// subset, and the binary owns the full shim roster.
+    pub(crate) fn from_target_kind(kind: synrepo::bootstrap::runtime_probe::AgentTargetKind) -> Self {
+        use synrepo::bootstrap::runtime_probe::AgentTargetKind;
+        match kind {
+            AgentTargetKind::Claude => AgentTool::Claude,
+            AgentTargetKind::Cursor => AgentTool::Cursor,
+            AgentTargetKind::Codex => AgentTool::Codex,
+            AgentTargetKind::Copilot => AgentTool::Copilot,
+            AgentTargetKind::Windsurf => AgentTool::Windsurf,
+        }
+    }
+
     /// Human-readable name for display.
     pub(crate) fn display_name(self) -> &'static str {
         match self {

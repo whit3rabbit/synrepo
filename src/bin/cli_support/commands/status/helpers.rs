@@ -1,23 +1,10 @@
-//! Helper functions for status output.
+//! CLI-side render helpers for the status command. Data-computing code lives
+//! in `synrepo::surface::status_snapshot`.
 
-use std::path::Path;
-
-use synrepo::pipeline::{
-    diagnostics::RuntimeDiagnostics,
-    repair::{read_repair_log_degraded_marker, RepairLogDegraded},
-    watch::WatchServiceStatus,
+use synrepo::{
+    pipeline::{diagnostics::RuntimeDiagnostics, watch::WatchServiceStatus},
+    surface::status_snapshot::RepairAuditState,
 };
-
-/// Sticky-marker state for the repair audit log. `Ok` means the last write
-/// succeeded (or no attempt has been made yet); `Unavailable` means a prior
-/// `append_resolution_log` failed and the marker has not been cleared.
-pub enum RepairAuditState {
-    Ok,
-    Unavailable {
-        last_failure_at: String,
-        last_failure_reason: String,
-    },
-}
 
 pub fn render_watch_summary(status: &WatchServiceStatus) -> String {
     match status {
@@ -30,23 +17,6 @@ pub fn render_watch_summary(status: &WatchServiceStatus) -> String {
         }
         WatchServiceStatus::Stale(None) => "stale watch artifacts".to_string(),
         WatchServiceStatus::Corrupt(e) => format!("corrupt ({e})"),
-    }
-}
-
-pub fn load_repair_audit_state(synrepo_dir: &Path) -> RepairAuditState {
-    match read_repair_log_degraded_marker(synrepo_dir) {
-        Ok(None) => RepairAuditState::Ok,
-        Ok(Some(RepairLogDegraded {
-            last_failure_at,
-            last_failure_reason,
-        })) => RepairAuditState::Unavailable {
-            last_failure_at,
-            last_failure_reason,
-        },
-        Err(e) => RepairAuditState::Unavailable {
-            last_failure_at: String::new(),
-            last_failure_reason: format!("marker read failed: {e}"),
-        },
     }
 }
 

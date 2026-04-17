@@ -21,6 +21,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     config::Config,
+    core::path_safety::safe_join_in_repo,
     pipeline::watch::load_reconcile_state,
     store::sqlite::SqliteGraphStore,
     structure::graph::with_graph_read_snapshot,
@@ -130,7 +131,15 @@ pub fn write_exports(
         Ok((file_ids, symbol_ids, concept_ids))
     })?;
 
-    let export_dir = repo_root.join(&config.export_dir);
+    // `config.export_dir` travels inside the repo and is attacker-controlled;
+    // reject absolute paths and `..` traversal so `create_dir_all` and the
+    // subsequent writes cannot escape the repo.
+    let Some(export_dir) = safe_join_in_repo(repo_root, &config.export_dir) else {
+        return Err(crate::Error::Config(format!(
+            "export_dir '{}' must be a relative path inside the repo",
+            config.export_dir
+        )));
+    };
     std::fs::create_dir_all(&export_dir)?;
 
     // Build lazy iterators. Each card is compiled under its own snapshot and
@@ -230,7 +239,8 @@ impl ExportFormat {
 
 /// Load the export manifest from the export directory, if it exists.
 pub fn load_manifest(repo_root: &Path, config: &Config) -> Option<ExportManifest> {
-    let path = repo_root.join(&config.export_dir).join(MANIFEST_FILENAME);
+    let export_dir = safe_join_in_repo(repo_root, &config.export_dir)?;
+    let path = export_dir.join(MANIFEST_FILENAME);
     let text = std::fs::read_to_string(path).ok()?;
     serde_json::from_str(&text).ok()
 }

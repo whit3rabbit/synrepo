@@ -72,6 +72,13 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # --- CLI ---
 clap = { version = "4", features = ["derive"] }
 
+# --- TUI (runtime dashboard) ---
+# Pure-Rust terminal UI stack used by the interactive dashboard and setup/repair wizards.
+# Crossterm provides cross-platform terminal control (raw mode, alt screen, events);
+# ratatui is the widget/layout library built on top of it.
+ratatui = "0.29"
+crossterm = "0.28"
+
 # --- MCP server (used by `synrepo mcp` subcommand) ---
 rmcp = { version = "1.4.0", features = ["transport-io"] }
 tokio = { version = "1", features = ["full"] }

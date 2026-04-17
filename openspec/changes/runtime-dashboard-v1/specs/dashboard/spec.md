@@ -1,0 +1,172 @@
+## ADDED Requirements
+
+### Requirement: Provide a smart no-subcommand entry experience
+synrepo SHALL define a smart entry experience so that invoking the binary with no subcommand runs the runtime probe and routes the user to the dashboard, setup wizard, or repair wizard. All existing explicit subcommands SHALL continue to work unchanged, and an explicit `synrepo dashboard` subcommand SHALL be available.
+
+#### Scenario: Bare invocation on a ready repository
+- **WHEN** a user runs `synrepo` in a repository the probe classifies as `ready`
+- **THEN** the dashboard opens
+- **AND** existing subcommands such as `synrepo status` behave exactly as before
+
+#### Scenario: Bare invocation on an uninitialized repository
+- **WHEN** a user runs `synrepo` in a directory the probe classifies as `uninitialized`
+- **THEN** the setup wizard opens
+
+#### Scenario: Bare invocation on a partial repository
+- **WHEN** a user runs `synrepo` in a directory the probe classifies as `partial`
+- **THEN** the repair wizard opens with the structured list of missing components
+- **AND** existing `.synrepo/` state is preserved
+
+#### Scenario: Explicit dashboard alias
+- **WHEN** a user runs `synrepo dashboard`
+- **THEN** the command runs the runtime probe and opens the dashboard on `ready` state
+- **AND** on non-ready state the command exits non-zero with a message directing the user to `synrepo` (bare) or the corresponding wizard command
+
+#### Scenario: Non-TTY fallback
+- **WHEN** bare `synrepo` is invoked and stdout is not a TTY or `--no-color` is set and the terminal cannot host a TUI
+- **THEN** the binary prints a concise text status summary and exits zero
+- **AND** it does not enter the TUI alternate screen
+
+### Requirement: Dashboard supports live and poll modes
+synrepo's dashboard SHALL support two modes. In **poll mode** (entered via bare `synrepo` or `synrepo dashboard`) the dashboard does not host a watch service in-process and periodically refreshes the shared status snapshot. In **live mode** (entered via `synrepo watch` in the foreground, without `--daemon` and without an explicit opt-out flag) the dashboard hosts the watch service in-process and streams its events into the log pane in real time.
+
+#### Scenario: Bare invocation opens poll mode
+- **WHEN** a user runs bare `synrepo` or `synrepo dashboard` on a ready repository
+- **THEN** the dashboard opens in poll mode
+- **AND** no watch service is started in this process
+
+#### Scenario: Foreground watch opens live mode
+- **WHEN** a user runs `synrepo watch` in a TTY without `--daemon` and without an explicit opt-out of the TUI
+- **THEN** the dashboard opens in live mode
+- **AND** the watch service runs in-process in the same code path as prior foreground-watch behavior
+- **AND** watch events stream into the dashboard log pane
+
+#### Scenario: Stop-watch in live mode exits the app
+- **WHEN** a user invokes the stop-watch action while the dashboard is in live mode
+- **THEN** the watch service stops and the dashboard process exits
+- **AND** the dashboard does not silently transition to poll mode while claiming a watch is running
+
+#### Scenario: Non-TTY foreground watch falls back to plain logs
+- **WHEN** `synrepo watch` is invoked without `--daemon` but stdout is not a TTY (pipe, redirect, CI)
+- **THEN** the watch service runs with plain log-line output and does not enter the TUI alternate screen
+
+### Requirement: Define the dashboard operator surface
+synrepo SHALL define a terminal dashboard that presents operational state for a single repository in a dark theme and provides quick actions that reuse existing control-plane primitives.
+
+#### Scenario: Header surfaces operational identity
+- **WHEN** the dashboard opens
+- **THEN** the header displays the repo path, mode (`auto` or `curated`), watch state, reconcile health, writer-lock state, and MCP readiness
+
+#### Scenario: Main panes surface actionable state
+- **WHEN** the dashboard opens
+- **THEN** the layout includes panes for system health, recent activity, next actions or handoffs, quick actions, and an event or notification log
+
+#### Scenario: Quick actions reuse control-plane primitives
+- **WHEN** the user invokes a quick action for start watch, stop watch, reconcile now, refresh, open setup or repair flow, or open agent-integration flow
+- **THEN** the action dispatches to the existing watch-control, reconcile, and setup primitives
+- **AND** the action acquires the writer lock through the existing mechanism rather than bypassing it
+
+#### Scenario: Lock conflict surfaced, not swallowed
+- **WHEN** a quick action fails to acquire the writer lock or encounters a watch-ownership conflict
+- **THEN** the log pane records the conflict with a structured entry naming the owner PID and lease state
+- **AND** the dashboard remains usable
+
+### Requirement: Dashboard consumes the shared status snapshot
+synrepo SHALL define a structured status snapshot consumed by both the `synrepo status` renderer and the dashboard, so the dashboard is a viewer over already-computed state and does not duplicate status logic.
+
+#### Scenario: Single source of truth
+- **WHEN** the dashboard renders health, activity, reconcile, export freshness, overlay cost, and writer-lock state
+- **THEN** it reads from the same snapshot struct used by the `synrepo status` formatter
+- **AND** adding a new field to the snapshot surfaces it in both renderers
+
+### Requirement: Dashboard MUST NOT host the stdio MCP server
+synrepo's dashboard process SHALL NOT launch the stdio MCP server in-process. The dashboard SHALL only report MCP readiness and surface registration instructions for external agent clients.
+
+#### Scenario: MCP readiness reporting
+- **WHEN** the dashboard is open
+- **THEN** the header reports whether `synrepo mcp --repo <path>` registration is present for the configured agent target
+- **AND** the dashboard does not bind stdin or stdout to an MCP transport while it is rendering
+
+### Requirement: Provide a guided setup wizard
+synrepo SHALL provide a guided setup wizard that runs when the runtime probe classifies the repo as `uninitialized`. The wizard SHALL follow a defined arc (splash, mode, agent target, confirm, run, land-in-dashboard), SHALL call decomposed setup steps (initialize runtime, write agent shim, register MCP, apply integration), and SHALL NOT write any file-system state before the explicit "Confirm + run" step. Bare `synrepo` on a fresh repo SHALL enter the wizard directly without an intermediate "Do you want to set up?" confirmation.
+
+#### Scenario: Enter the wizard from bare invocation on a fresh repo
+- **WHEN** a user runs bare `synrepo` in a directory the probe classifies as `uninitialized` and stdout is a TTY
+- **THEN** the wizard opens directly at the splash step
+- **AND** the user is not shown a separate "Do you want to set up synrepo?" prompt before the wizard begins
+
+#### Scenario: Complete a fresh setup
+- **WHEN** the wizard opens on an uninitialized repository
+- **THEN** the user proceeds through splash, mode selection, agent-target selection (including a first-class "Skip" option), and a plan-confirmation step before any writes occur
+- **AND** the wizard runs init, writes the chosen shim if any, registers MCP for the chosen target if any, performs a first reconcile, and transitions to the dashboard with a one-shot welcome message
+
+#### Scenario: Cancel setup before any writes
+- **WHEN** the user cancels the setup wizard at or before the "Confirm + run" step
+- **THEN** no `.synrepo/` content is created
+- **AND** the binary exits zero
+
+#### Scenario: Cancel setup mid-run
+- **WHEN** the user cancels the setup wizard after confirm while a step is executing
+- **THEN** any partial on-disk state is left in place for later recovery
+- **AND** the next bare `synrepo` invocation routes to the repair wizard based on the probe classification
+
+#### Scenario: Pre-select agent target from observational signals
+- **WHEN** the wizard reaches the agent-target step in a repository (or home directory) that contains hints for one or more supported targets
+- **THEN** the wizard pre-highlights the first detected target in detection order
+- **AND** the user can override the pre-selection or choose "Skip"
+
+### Requirement: Non-TTY first-run must not prompt
+synrepo SHALL NOT enter the interactive setup wizard when bare `synrepo` is invoked on an uninitialized or partial repository and stdout is not a TTY. The binary SHALL instead print a short message naming the explicit subcommand to run and exit non-zero.
+
+#### Scenario: Bare invocation on a fresh repo with piped output
+- **WHEN** a user runs `synrepo | tee log` in a directory the probe classifies as `uninitialized`
+- **THEN** the binary prints a message directing the user to run `synrepo init` explicitly
+- **AND** it exits non-zero without entering the TUI alternate screen
+
+#### Scenario: Bare invocation on a partial repo with piped output
+- **WHEN** a user runs bare `synrepo` in a directory the probe classifies as `partial` and stdout is not a TTY
+- **THEN** the binary prints a short summary of the missing components and a pointer to `synrepo status` or `synrepo upgrade`
+- **AND** it exits non-zero
+
+### Requirement: Provide a guided repair wizard
+synrepo SHALL provide a guided repair wizard that runs when the runtime probe classifies the repo as `partial`. The wizard SHALL list exactly the missing or blocked components, SHALL repair them in place, and SHALL NOT destroy or reinitialize existing `.synrepo/` state without explicit user confirmation. The repair wizard SHALL NOT re-prompt for mode selection or replay the first-run splash; it SHALL jump directly to the missing-components list.
+
+#### Scenario: Repair a missing config
+- **WHEN** the wizard opens on a repo where `.synrepo/` exists but `config.toml` is missing
+- **THEN** the wizard offers to write a default config and run a reconcile
+- **AND** accepting the offer leaves existing store data intact
+
+#### Scenario: Repair a compat-blocked store
+- **WHEN** the wizard opens on a repo where the storage compatibility evaluation requires action (rebuild, migrate, or invalidate)
+- **THEN** the wizard surfaces the compatibility plan and defers to the existing `synrepo upgrade --apply` flow
+- **AND** it does not invoke any action without explicit user confirmation
+
+#### Scenario: Complete repair and transition
+- **WHEN** all listed components have been repaired
+- **THEN** the wizard re-runs the runtime probe
+- **AND** on `ready` classification it transitions to the dashboard
+
+### Requirement: Provide an agent-integration completion flow
+synrepo SHALL surface an agent-integration completion flow when the runtime probe classifies runtime as `ready` but agent integration as `absent` or `partial`. The flow SHALL NOT block core repo operation and SHALL be launchable from the dashboard.
+
+#### Scenario: Ready repo with no agent shim
+- **WHEN** the dashboard opens and no shim exists for any supported target
+- **THEN** the dashboard header shows agent integration as incomplete
+- **AND** a quick action opens the integration flow that offers to write a shim and register MCP for the selected target
+
+#### Scenario: Ready repo with shim but no MCP registration
+- **WHEN** the dashboard opens and a shim exists but MCP registration is missing
+- **THEN** the integration flow offers to complete MCP registration only
+- **AND** the existing shim file is not overwritten
+
+### Requirement: Ship one built-in dark theme with a plain-terminal escape
+synrepo's dashboard SHALL ship exactly one built-in dark palette in v1, with a single `--no-color` escape that disables all styling for plain or non-ANSI terminals.
+
+#### Scenario: Default rendering
+- **WHEN** the dashboard is opened in a color-capable terminal without `--no-color`
+- **THEN** the dark palette is applied with distinct colors for healthy, stale or warning, blocked or error, active watch, and agent or MCP accents
+
+#### Scenario: Plain terminal rendering
+- **WHEN** the dashboard is opened with `--no-color` or in a terminal that does not support ANSI color
+- **THEN** all output renders without color codes
+- **AND** semantic distinctions (healthy vs. stale vs. blocked) are preserved via text labels or glyphs
