@@ -520,3 +520,117 @@ fn status_default_with_1000_commentary_rows_completes_quickly() {
         "default status must stay cheap with 1000 commentary rows, took {elapsed:?}"
     );
 }
+
+/// Planting `repair-log-degraded.flag` must cause both JSON and human status
+/// output to surface the degraded audit signal. A healthy baseline (no marker)
+/// must report `ok` and NOT leak the failure phrasing.
+#[test]
+fn status_reports_repair_audit_degraded_when_marker_present() {
+    use synrepo::pipeline::repair::repair_log_degraded_marker_path;
+
+    let repo = tempdir().unwrap();
+    seed_graph(repo.path());
+    let synrepo_dir = Config::synrepo_dir(repo.path());
+
+    // Baseline: no marker -> ok in both surfaces.
+    let json_before: serde_json::Value = serde_json::from_str(
+        status_output(repo.path(), true, false, false)
+            .unwrap()
+            .trim(),
+    )
+    .unwrap();
+    assert_eq!(
+        json_before["repair_audit"]["status"], "ok",
+        "baseline must report ok, got: {json_before}"
+    );
+
+    let text_before = status_output(repo.path(), false, false, false).unwrap();
+    assert!(
+        text_before.contains("repair audit: ok"),
+        "baseline human output must report ok, got: {text_before}"
+    );
+    assert!(
+        !text_before.contains("unavailable"),
+        "baseline must not mention unavailable, got: {text_before}"
+    );
+
+    // Plant a degraded marker with a known failure reason and timestamp.
+    let marker_path = repair_log_degraded_marker_path(&synrepo_dir);
+    std::fs::create_dir_all(marker_path.parent().unwrap()).unwrap();
+    std::fs::write(
+        &marker_path,
+        r#"{"last_failure_at":"2099-01-01T00:00:00Z","last_failure_reason":"open failed: test injection"}"#,
+    )
+    .unwrap();
+
+    let json_after: serde_json::Value = serde_json::from_str(
+        status_output(repo.path(), true, false, false)
+            .unwrap()
+            .trim(),
+    )
+    .unwrap();
+    assert_eq!(
+        json_after["repair_audit"]["status"], "unavailable",
+        "marker must flip status to unavailable, got: {json_after}"
+    );
+    assert_eq!(
+        json_after["repair_audit"]["last_failure_at"], "2099-01-01T00:00:00Z",
+        "last_failure_at must be surfaced verbatim, got: {json_after}"
+    );
+    assert_eq!(
+        json_after["repair_audit"]["last_failure_reason"], "open failed: test injection",
+        "last_failure_reason must be surfaced verbatim, got: {json_after}"
+    );
+
+    let text_after = status_output(repo.path(), false, false, false).unwrap();
+    assert!(
+        text_after.contains("repair audit: unavailable"),
+        "marker must flip human output to unavailable, got: {text_after}"
+    );
+    assert!(
+        text_after.contains("2099-01-01T00:00:00Z"),
+        "human output must include the failure timestamp, got: {text_after}"
+    );
+    assert!(
+        text_after.contains("open failed: test injection"),
+        "human output must include the failure reason, got: {text_after}"
+    );
+}
+
+/// A successful `append_resolution_log` call must clear a previously planted
+/// marker. This locks in the sticky semantics: marker is only present while a
+/// genuine degradation is outstanding.
+#[test]
+fn append_resolution_log_clears_degraded_marker_on_success() {
+    use synrepo::pipeline::repair::{
+        append_resolution_log, repair_log_degraded_marker_path, ResolutionLogEntry, SyncOutcome,
+    };
+    use time::format_description::well_known::Rfc3339;
+
+    let repo = tempdir().unwrap();
+    let synrepo_dir = Config::synrepo_dir(repo.path());
+    std::fs::create_dir_all(synrepo_dir.join("state")).unwrap();
+
+    let marker_path = repair_log_degraded_marker_path(&synrepo_dir);
+    std::fs::write(
+        &marker_path,
+        r#"{"last_failure_at":"","last_failure_reason":"stale"}"#,
+    )
+    .unwrap();
+    assert!(marker_path.exists(), "marker must exist before the test");
+
+    let entry = ResolutionLogEntry {
+        synced_at: OffsetDateTime::now_utc().format(&Rfc3339).unwrap(),
+        source_revision: None,
+        requested_scope: vec![],
+        findings_considered: vec![],
+        actions_taken: vec![],
+        outcome: SyncOutcome::Completed,
+    };
+    append_resolution_log(&synrepo_dir, &entry);
+
+    assert!(
+        !marker_path.exists(),
+        "successful append must clear the degraded marker"
+    );
+}

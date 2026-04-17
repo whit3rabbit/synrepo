@@ -305,30 +305,28 @@ pub fn watch_service_status(synrepo_dir: &Path) -> WatchServiceStatus {
 }
 
 /// Remove stale watch-service artifacts left behind by a dead process.
+///
+/// Also sweeps an orphan control socket when no state file exists: a daemon
+/// that died after `bind()` but before `watch-daemon.json` was written leaves
+/// the socket behind, and without this pass the next `synrepo watch` fails
+/// with "Address already in use".
 pub fn cleanup_stale_watch_artifacts(synrepo_dir: &Path) -> Result<bool, WatchDaemonError> {
     match watch_service_status(synrepo_dir) {
-        WatchServiceStatus::Inactive | WatchServiceStatus::Running(_) => Ok(false),
+        WatchServiceStatus::Running(_) => Ok(false),
+        WatchServiceStatus::Inactive => remove_ignore_missing(watch_socket_path(synrepo_dir)),
         WatchServiceStatus::Stale(_) | WatchServiceStatus::Corrupt(_) => {
-            let state_path = watch_daemon_state_path(synrepo_dir);
-            let socket_path = watch_socket_path(synrepo_dir);
-            if let Err(source) = fs::remove_file(&state_path) {
-                if source.kind() != std::io::ErrorKind::NotFound {
-                    return Err(WatchDaemonError::Io {
-                        path: state_path,
-                        source,
-                    });
-                }
-            }
-            if let Err(source) = fs::remove_file(&socket_path) {
-                if source.kind() != std::io::ErrorKind::NotFound {
-                    return Err(WatchDaemonError::Io {
-                        path: socket_path,
-                        source,
-                    });
-                }
-            }
+            remove_ignore_missing(watch_daemon_state_path(synrepo_dir))?;
+            remove_ignore_missing(watch_socket_path(synrepo_dir))?;
             Ok(true)
         }
+    }
+}
+
+fn remove_ignore_missing(path: PathBuf) -> Result<bool, WatchDaemonError> {
+    match fs::remove_file(&path) {
+        Ok(()) => Ok(true),
+        Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(source) => Err(WatchDaemonError::Io { path, source }),
     }
 }
 

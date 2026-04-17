@@ -78,7 +78,7 @@ fn sync_repairs_stale_reconcile_and_writes_resolution_log() {
 }
 
 #[test]
-fn sync_places_unsupported_surfaces_in_report_only() {
+fn sync_routes_report_only_surfaces_correctly() {
     let dir = tempdir().unwrap();
     let (repo, synrepo_dir) = setup_repo_for_sync(&dir);
 
@@ -90,7 +90,9 @@ fn sync_places_unsupported_surfaces_in_report_only() {
     )
     .unwrap();
     let report_only_surfaces: Vec<_> = summary.report_only.iter().map(|f| f.surface).collect();
-    // StaleRationale is Unsupported so it routes to report_only.
+    // StaleRationale is implemented and always emits a ReportOnly finding
+    // (human-authored rationale can never be auto-repaired). In a repo with
+    // no drift it routes to report_only with DriftClass::Current or Absent.
     assert!(
         report_only_surfaces.contains(&RepairSurface::StaleRationale),
         "stale_rationale must be in report_only, got: {:?}",

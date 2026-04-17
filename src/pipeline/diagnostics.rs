@@ -71,6 +71,24 @@ pub enum WriterStatus {
     Corrupt(String),
 }
 
+/// Embedding subsystem health.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum EmbeddingHealth {
+    /// Semantic triage is not enabled.
+    Disabled,
+    /// The embedding index and model cache are available.
+    Available {
+        /// Configured model name.
+        model: String,
+        /// Embedding vector dimension.
+        dim: u16,
+        /// Number of chunks in the index.
+        chunks: usize,
+    },
+    /// The index or model is missing or corrupted.
+    Degraded(String),
+}
+
 /// Top-level operational diagnostics for a `.synrepo/` runtime.
 #[derive(Clone, Debug)]
 pub struct RuntimeDiagnostics {
@@ -84,6 +102,8 @@ pub struct RuntimeDiagnostics {
     pub store_guidance: Vec<String>,
     /// Raw reconcile state, if present.
     pub last_reconcile: Option<ReconcileState>,
+    /// Embedding subsystem health.
+    pub embedding_health: EmbeddingHealth,
 }
 
 impl RuntimeDiagnostics {
@@ -128,6 +148,19 @@ impl RuntimeDiagnostics {
             out.push_str(&format!("Store: {line}\n"));
         }
 
+        match &self.embedding_health {
+            EmbeddingHealth::Disabled => {}
+            EmbeddingHealth::Available { model, dim, chunks } => {
+                out.push_str(&format!(
+                    "Embedding: available (model={}, dim={}, chunks={})\n",
+                    model, dim, chunks
+                ));
+            }
+            EmbeddingHealth::Degraded(reason) => {
+                out.push_str(&format!("Embedding: degraded ({reason})\n"));
+            }
+        }
+
         out
     }
 }
@@ -143,6 +176,7 @@ pub fn collect_diagnostics(synrepo_dir: &Path, config: &Config) -> RuntimeDiagno
     let watch_status = watch_service_status(synrepo_dir);
     let writer_status = compute_writer_status(synrepo_dir);
     let store_guidance = compute_store_guidance(synrepo_dir, config);
+    let embedding_health = compute_embedding_health(synrepo_dir, config);
 
     RuntimeDiagnostics {
         reconcile_health,
@@ -150,6 +184,7 @@ pub fn collect_diagnostics(synrepo_dir: &Path, config: &Config) -> RuntimeDiagno
         writer_status,
         store_guidance,
         last_reconcile: last_reconcile.ok(),
+        embedding_health,
     }
 }
 
@@ -192,6 +227,56 @@ fn compute_store_guidance(synrepo_dir: &Path, config: &Config) -> Vec<String> {
     match crate::store::compatibility::evaluate_runtime(synrepo_dir, runtime_exists, config) {
         Ok(report) => report.guidance_lines(),
         Err(err) => vec![format!("could not evaluate storage compatibility: {err}")],
+    }
+}
+
+#[cfg(feature = "semantic-triage")]
+fn compute_embedding_health(synrepo_dir: &Path, config: &Config) -> EmbeddingHealth {
+    if !config.enable_semantic_triage {
+        return EmbeddingHealth::Disabled;
+    }
+
+    let index_path = synrepo_dir.join("index/vectors/index.bin");
+    if !index_path.exists() {
+        return EmbeddingHealth::Degraded(
+            "embedding index missing; run `synrepo reconcile` to build it".to_string(),
+        );
+    }
+
+    match crate::substrate::embedding::index::FlatVecIndex::load(&index_path, config.embedding_dim)
+    {
+        Ok(index) => {
+            let model_cached = crate::substrate::embedding::model::get_global_cache_dir()
+                .ok()
+                .map(|d| d.join(config.semantic_model.replace('/', "--")))
+                .is_some_and(|d| d.join("model.onnx").exists());
+
+            if !model_cached {
+                return EmbeddingHealth::Degraded(format!(
+                    "model '{}' not cached locally; will be downloaded on next use",
+                    config.semantic_model
+                ));
+            }
+
+            EmbeddingHealth::Available {
+                model: config.semantic_model.clone(),
+                dim: config.embedding_dim,
+                chunks: index.len(),
+            }
+        }
+        Err(e) => EmbeddingHealth::Degraded(format!("index load failed: {e}")),
+    }
+}
+
+#[cfg(not(feature = "semantic-triage"))]
+fn compute_embedding_health(_synrepo_dir: &Path, config: &Config) -> EmbeddingHealth {
+    if config.enable_semantic_triage {
+        // Config says enabled but the feature is not compiled in.
+        EmbeddingHealth::Degraded(
+            "semantic triage enabled in config but not compiled in (rebuild with --features semantic-triage)".to_string(),
+        )
+    } else {
+        EmbeddingHealth::Disabled
     }
 }
 
@@ -426,5 +511,30 @@ mod tests {
             diag.writer_status,
         );
         assert!(diag.render().contains("corrupt"));
+    }
+
+    #[test]
+    fn embedding_health_disabled_when_triage_off() {
+        let dir = tempdir().unwrap();
+        let synrepo_dir = dir.path().join(".synrepo");
+        let diag = collect_diagnostics(&synrepo_dir, &Config::default());
+        assert_eq!(diag.embedding_health, EmbeddingHealth::Disabled);
+    }
+
+    #[cfg(feature = "semantic-triage")]
+    #[test]
+    fn embedding_health_degraded_when_enabled_but_no_index() {
+        let dir = tempdir().unwrap();
+        let synrepo_dir = dir.path().join(".synrepo");
+        let config = Config {
+            enable_semantic_triage: true,
+            ..Config::default()
+        };
+        let diag = collect_diagnostics(&synrepo_dir, &config);
+        assert!(
+            matches!(diag.embedding_health, EmbeddingHealth::Degraded(_)),
+            "expected Degraded, got {:?}",
+            diag.embedding_health
+        );
     }
 }

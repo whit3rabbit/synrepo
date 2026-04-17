@@ -77,27 +77,24 @@ fn check_reports_blocked_drift_when_writer_lock_held_by_foreign_pid() {
 }
 
 #[test]
-fn check_reports_unsupported_surfaces_explicitly() {
+fn check_reports_stale_rationale_when_no_drift_assessment() {
+    use crate::pipeline::repair::{DriftClass, RepairAction};
+
     let dir = tempdir().unwrap();
     let synrepo_dir = dir.path().join(".synrepo");
     init_synrepo(&synrepo_dir);
 
     let report = build_repair_report(&synrepo_dir, &Config::default());
 
-    {
-        let surface = RepairSurface::StaleRationale;
-        let finding = report
-            .findings
-            .iter()
-            .find(|f| f.surface == surface)
-            .unwrap_or_else(|| panic!("{} must be in report", surface.as_str()));
-        assert_eq!(
-            finding.severity,
-            Severity::Unsupported,
-            "{} must be reported as Unsupported",
-            surface.as_str()
-        );
-    }
+    let finding = report
+        .findings
+        .iter()
+        .find(|f| f.surface == RepairSurface::StaleRationale)
+        .expect("stale_rationale must be in report");
+    // Graph not materialized yet: Absent / ReportOnly / NotSupported action.
+    assert_eq!(finding.drift_class, DriftClass::Absent);
+    assert_eq!(finding.severity, Severity::ReportOnly);
+    assert_eq!(finding.recommended_action, RepairAction::None);
 
     // ExportSurface is now implemented; no manifest means Absent/ReportOnly.
     let export_finding = report
@@ -105,7 +102,6 @@ fn check_reports_unsupported_surfaces_explicitly() {
         .iter()
         .find(|f| f.surface == RepairSurface::ExportSurface)
         .expect("ExportSurface must be in report");
-    use crate::pipeline::repair::{DriftClass, RepairAction};
     assert_eq!(export_finding.drift_class, DriftClass::Absent);
     assert_eq!(export_finding.recommended_action, RepairAction::None);
     assert_eq!(export_finding.severity, Severity::ReportOnly);

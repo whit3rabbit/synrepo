@@ -79,3 +79,56 @@ const _: () = {
         _assert_send_sync::<SynrepoState>();
     }
 };
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{fs, sync::Arc, thread};
+
+    // Regression guard: a shared `SqliteGraphStore` across threads aliases
+    // the per-compiler re-entrant snapshot counter and surfaces as
+    // "transaction within a transaction" errors or JSON `error` payloads.
+    #[test]
+    fn state_supports_concurrent_tool_calls() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = dir.path();
+        fs::create_dir_all(repo.join("src")).unwrap();
+        fs::write(
+            repo.join("src/lib.rs"),
+            "pub fn first() {}\npub fn second() {}\n",
+        )
+        .unwrap();
+        crate::bootstrap::bootstrap(repo, None).unwrap();
+
+        let state = Arc::new(SynrepoState {
+            config: Config::load(repo).unwrap(),
+            repo_root: repo.to_path_buf(),
+        });
+
+        let mut handles = Vec::new();
+        for _ in 0..8 {
+            let state = Arc::clone(&state);
+            handles.push(thread::spawn(move || {
+                let out = super::cards::handle_entrypoints(&state, None, "tiny".to_string());
+                let val: serde_json::Value =
+                    serde_json::from_str(&out).expect("handler returned valid json");
+                assert!(
+                    val.get("error").is_none(),
+                    "concurrent handler returned error: {}",
+                    out
+                );
+                out
+            }));
+        }
+
+        let outputs: Vec<String> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+
+        let first = &outputs[0];
+        for (i, out) in outputs.iter().enumerate().skip(1) {
+            assert_eq!(
+                first, out,
+                "concurrent handler {i} returned a different payload",
+            );
+        }
+    }
+}

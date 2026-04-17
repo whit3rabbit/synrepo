@@ -1,3 +1,5 @@
+use std::fs;
+
 use tempfile::tempdir;
 
 use synrepo::bootstrap::bootstrap;
@@ -93,6 +95,54 @@ fn upgrade_apply_with_blocking_store_returns_error() {
     assert!(
         msg.contains("manual intervention") || msg.contains("blocked"),
         "error message must describe manual intervention, got: {msg}"
+    );
+    drop(dir);
+}
+
+/// `upgrade --apply` funnels through `acquire_write_admission` whenever it
+/// has work to do, so a live watch-daemon lease must make it refuse rather
+/// than reconciling in parallel with the watch service. This pins the
+/// cross-command contention invariant for the upgrade path; the
+/// export/sync counterparts live in tests/export.rs.
+#[test]
+fn upgrade_apply_blocked_when_watch_running() {
+    let (dir, repo) = setup_bootstrapped_repo();
+    let synrepo_dir = Config::synrepo_dir(&repo);
+
+    // Force a Rebuild action so upgrade actually enters the admission gate;
+    // same technique as upgrade_apply_rebuild_runs_reconcile_and_persists_completed_state.
+    let updated = Config {
+        roots: vec!["src".to_string()],
+        ..Config::load(&repo).unwrap()
+    };
+    fs::write(
+        synrepo_dir.join("config.toml"),
+        toml::to_string_pretty(&updated).unwrap(),
+    )
+    .unwrap();
+
+    // Plant a live watch-daemon lease. The current process PID is guaranteed
+    // to be alive for the duration of the test, so ensure_watch_not_running
+    // sees Running rather than Stale.
+    let state_dir = synrepo_dir.join("state");
+    fs::create_dir_all(&state_dir).unwrap();
+    let state = serde_json::json!({
+        "pid": std::process::id(),
+        "started_at": "2026-01-01T00:00:00Z",
+        "mode": "daemon",
+        "socket_path": state_dir.join("watch.sock").display().to_string(),
+    });
+    fs::write(
+        state_dir.join("watch-daemon.json"),
+        serde_json::to_string(&state).unwrap(),
+    )
+    .unwrap();
+
+    let err = upgrade(&repo, true).unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("watch service is active"),
+        "expected watch-active message from upgrade, got: {msg}"
     );
     drop(dir);
 }

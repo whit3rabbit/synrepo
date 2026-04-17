@@ -1,6 +1,7 @@
 mod commentary;
 mod cross_links;
 mod drift;
+mod rationale;
 
 use crate::pipeline::diagnostics::{ReconcileHealth, ReconcileStaleness, WriterStatus};
 use crate::pipeline::export::load_manifest;
@@ -14,6 +15,7 @@ use super::{RepairContext, SurfaceCheck};
 pub use commentary::CommentaryOverlayCheck;
 pub use cross_links::ProposedLinksOverlayCheck;
 pub use drift::{EdgeDriftCheck, RetiredObservationsCheck};
+pub use rationale::StaleRationaleCheck;
 
 pub struct WriterLockCheck;
 
@@ -168,25 +170,6 @@ impl SurfaceCheck for DeclaredLinksCheck {
 
     fn evaluate(&self, ctx: &RepairContext) -> Vec<RepairFinding> {
         vec![check_declared_links(ctx.synrepo_dir)]
-    }
-}
-
-pub struct UnsupportedSurfaceCheck;
-
-impl SurfaceCheck for UnsupportedSurfaceCheck {
-    fn surface(&self) -> RepairSurface {
-        RepairSurface::StaleRationale
-    }
-
-    fn evaluate(&self, _ctx: &RepairContext) -> Vec<RepairFinding> {
-        vec![RepairFinding {
-            surface: self.surface(),
-            drift_class: DriftClass::Unsupported,
-            severity: Severity::Unsupported,
-            target_id: None,
-            recommended_action: RepairAction::NotSupported,
-            notes: Some("Rationale drift scoring is not yet implemented.".to_string()),
-        }]
     }
 }
 

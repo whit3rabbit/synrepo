@@ -5,9 +5,12 @@ use synrepo::{
     config::Config,
     pipeline::{
         compact::load_last_compaction_timestamp,
-        diagnostics::{collect_diagnostics, ReconcileHealth, RuntimeDiagnostics, WriterStatus},
+        diagnostics::{
+            collect_diagnostics, EmbeddingHealth, ReconcileHealth, RuntimeDiagnostics, WriterStatus,
+        },
         export::load_manifest,
         recent_activity::{read_recent_activity, ActivityEntry, RecentActivityQuery},
+        repair::{read_repair_log_degraded_marker, RepairLogDegraded},
         watch::WatchServiceStatus,
     },
     store::sqlite::SqliteGraphStore,
@@ -73,6 +76,7 @@ pub(crate) fn status_output(
     let overlay_cost = overlay_cost_summary(&overlay);
     let commentary = commentary_coverage(&synrepo_dir, full, &overlay);
     let last_compaction = load_last_compaction_timestamp(&synrepo_dir);
+    let repair_audit = load_repair_audit_state(&synrepo_dir);
 
     let recent_entries: Option<Vec<ActivityEntry>> = if recent {
         let query = RecentActivityQuery {
@@ -96,6 +100,7 @@ pub(crate) fn status_output(
             &commentary,
             recent_entries.as_deref(),
             last_compaction.as_ref(),
+            &repair_audit,
         )?;
         return Ok(out);
     }
@@ -172,11 +177,30 @@ pub(crate) fn status_output(
     writeln!(out, "  commentary:   {}", commentary.display).unwrap();
     writeln!(out, "  export:       {export_freshness}").unwrap();
     writeln!(out, "  overlay cost: {overlay_cost}").unwrap();
+    match &diag.embedding_health {
+        EmbeddingHealth::Disabled => {}
+        EmbeddingHealth::Available { model, dim, chunks } => {
+            writeln!(
+                out,
+                "  embedding:    available ({model}, {dim}d, {chunks} chunks)"
+            )
+            .unwrap();
+        }
+        EmbeddingHealth::Degraded(reason) => {
+            writeln!(out, "  embedding:    degraded ({reason})").unwrap();
+        }
+    }
     if let Some(ts) = last_compaction {
         writeln!(out, "  last compact:  {}", ts).unwrap();
     } else {
         writeln!(out, "  last compact:  never").unwrap();
     }
+    writeln!(
+        out,
+        "  repair audit: {}",
+        render_repair_audit(&repair_audit)
+    )
+    .unwrap();
     writeln!(
         out,
         "  next step:    {}",
@@ -217,6 +241,7 @@ fn write_status_json(
     commentary: &CommentaryCoverage,
     recent_activity: Option<&[ActivityEntry]>,
     last_compaction: Option<&time::OffsetDateTime>,
+    repair_audit: &RepairAuditState,
 ) -> anyhow::Result<()> {
     let graph_json = match graph_stats {
         Some(stats) => serde_json::json!({
@@ -259,6 +284,20 @@ fn write_status_json(
         None => serde_json::Value::Null,
     };
 
+    let repair_audit_json = match repair_audit {
+        RepairAuditState::Ok => serde_json::json!({ "status": "ok" }),
+        RepairAuditState::Unavailable {
+            last_failure_at,
+            last_failure_reason,
+        } => {
+            serde_json::json!({
+                "status": "unavailable",
+                "last_failure_at": last_failure_at,
+                "last_failure_reason": last_failure_reason,
+            })
+        }
+    };
+
     let output = serde_json::json!({
         "initialized": true,
         "mode": config.mode.to_string(),
@@ -270,12 +309,26 @@ fn write_status_json(
         "writer_lock": writer_lock,
         "export_freshness": export_freshness,
         "overlay_cost_summary": overlay_cost,
+        "embedding_health": match &diag.embedding_health {
+            EmbeddingHealth::Disabled => serde_json::json!({"status": "disabled"}),
+            EmbeddingHealth::Available { model, dim, chunks } => serde_json::json!({
+                "status": "available",
+                "model": model,
+                "dim": dim,
+                "chunks": chunks,
+            }),
+            EmbeddingHealth::Degraded(reason) => serde_json::json!({
+                "status": "degraded",
+                "reason": reason,
+            }),
+        },
         "commentary_coverage": {
             "total": commentary.total,
             "fresh": commentary.fresh,
         },
         "recent_activity": activity_json,
         "last_compaction_timestamp": last_compaction.map(|ts| ts.to_string()),
+        "repair_audit": repair_audit_json,
     });
 
     writeln!(out, "{}", serde_json::to_string_pretty(&output)?).unwrap();
@@ -492,6 +545,53 @@ fn commentary_coverage_full(
         total: Some(total),
         fresh: Some(fresh),
         display: format!("{fresh} fresh / {total} total nodes with commentary"),
+    }
+}
+
+/// Sticky-marker state for the repair audit log. `Ok` means the last write
+/// succeeded (or no attempt has been made yet); `Unavailable` means a prior
+/// `append_resolution_log` failed and the marker has not been cleared.
+enum RepairAuditState {
+    Ok,
+    Unavailable {
+        last_failure_at: String,
+        last_failure_reason: String,
+    },
+}
+
+fn load_repair_audit_state(synrepo_dir: &Path) -> RepairAuditState {
+    match read_repair_log_degraded_marker(synrepo_dir) {
+        Ok(None) => RepairAuditState::Ok,
+        Ok(Some(RepairLogDegraded {
+            last_failure_at,
+            last_failure_reason,
+        })) => RepairAuditState::Unavailable {
+            last_failure_at,
+            last_failure_reason,
+        },
+        // Marker path unreadable: surface as unavailable with a synthetic
+        // reason so the operator still sees a signal. Collapsing to "ok"
+        // here would mask the exact class of failure we want visible.
+        Err(e) => RepairAuditState::Unavailable {
+            last_failure_at: String::new(),
+            last_failure_reason: format!("marker read failed: {e}"),
+        },
+    }
+}
+
+fn render_repair_audit(state: &RepairAuditState) -> String {
+    match state {
+        RepairAuditState::Ok => "ok".to_string(),
+        RepairAuditState::Unavailable {
+            last_failure_at,
+            last_failure_reason,
+        } => {
+            if last_failure_at.is_empty() {
+                format!("unavailable ({last_failure_reason})")
+            } else {
+                format!("unavailable (last failure at {last_failure_at}: {last_failure_reason})")
+            }
+        }
     }
 }
 

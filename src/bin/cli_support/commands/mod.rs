@@ -24,7 +24,10 @@ pub(crate) use export::export;
 pub(crate) use handoffs::handoffs;
 pub(crate) use links::{findings, links_accept, links_list, links_reject, links_review};
 #[cfg(test)]
-pub(crate) use links::{findings_output, links_list_output, links_review_output};
+pub(crate) use links::{
+    findings_output, links_accept_commit, links_list_output, links_review_output, CommitArgs,
+    LinksCommitStore, RealLinksStore,
+};
 pub(crate) use mcp::run_mcp_server;
 pub(crate) use repair::{check, reconcile, sync};
 pub(crate) use setup::setup;

@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Context};
 use serde_json::{json, Value};
 use std::fs;
+use std::io::Write as _;
 use std::path::Path;
 use toml_edit::{DocumentMut, Item, Table, Value as TomlValue};
 
@@ -102,7 +103,45 @@ fn write_json_config(path: &Path, value: &Value) -> anyhow::Result<()> {
     let mut out = serde_json::to_string_pretty(value)
         .with_context(|| format!("failed to serialize {}", path.display()))?;
     out.push('\n');
-    fs::write(path, out).with_context(|| format!("failed to write {}", path.display()))?;
+    write_atomic(path, out.as_bytes())
+}
+
+/// Sibling temp file + fsync + rename. `fs::write`'s O_TRUNC can leave a
+/// zero-length target behind on crash; rename-in-place cannot.
+fn write_atomic(path: &Path, contents: &[u8]) -> anyhow::Result<()> {
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let file_name = path
+        .file_name()
+        .ok_or_else(|| anyhow!("invalid target path {}", path.display()))?
+        .to_string_lossy();
+    let tmp = parent.join(format!(
+        ".{}.tmp.{}.{}",
+        file_name,
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0),
+    ));
+    {
+        let mut file = fs::File::create(&tmp)
+            .with_context(|| format!("failed to open temp file {}", tmp.display()))?;
+        file.write_all(contents)
+            .with_context(|| format!("failed to write temp file {}", tmp.display()))?;
+        file.sync_all()
+            .with_context(|| format!("failed to fsync temp file {}", tmp.display()))?;
+    }
+    fs::rename(&tmp, path).map_err(|e| {
+        let _ = fs::remove_file(&tmp);
+        anyhow!(
+            "failed to rename {} -> {}: {e}",
+            tmp.display(),
+            path.display()
+        )
+    })?;
     Ok(())
 }
 
@@ -212,8 +251,7 @@ pub(crate) fn setup_codex_mcp(repo_root: &Path) -> anyhow::Result<()> {
 
     mcp_table.insert("synrepo", Item::Value(TomlValue::from(CODEX_SYNREPO_VALUE)));
 
-    fs::write(&config_path, doc.to_string())
-        .with_context(|| format!("failed to write {}", config_path.display()))?;
+    write_atomic(&config_path, doc.to_string().as_bytes())?;
     println!("  Registered MCP server in .codex/config.toml");
     Ok(())
 }

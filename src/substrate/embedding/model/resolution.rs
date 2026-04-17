@@ -1,17 +1,10 @@
-//! Embedding model resolution and ONNX inference.
-//!
-//! Handles model resolution (built-in, Hugging Face, local path),
-//! downloading, and inference using the `ort` and `tokenizers` crates.
+//! Model resolution: built-in registry, HuggingFace download, local path lookup.
 
-use parking_lot::Mutex;
 use std::path::{Path, PathBuf};
 
 use crate::Result;
 
-#[cfg(feature = "semantic-triage")]
-use ndarray::Array2;
-#[cfg(feature = "semantic-triage")]
-use ort::value::Value;
+use super::{get_global_cache_dir, ModelResolution, PoolingStrategy};
 
 /// Built-in model registry with explicit specs.
 const BUILTIN_MODELS: &[EmbeddingModelSpec] = &[
@@ -52,52 +45,12 @@ struct EmbeddingModelSpec {
     normalize: bool,
 }
 
-/// Supported pooling strategies for transformer outputs.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PoolingStrategy {
-    /// Average pooling over the sequence dimension (honoring attention mask).
-    Mean,
-    /// Use the [CLS] token output (first vector in sequence).
-    Cls,
-}
-
-/// Result of resolving an embedding model.
-#[derive(Clone, Debug)]
-pub struct ModelResolution {
-    /// Path to the ONNX model file.
-    pub model_path: PathBuf,
-    /// Path to the tokenizer.json file.
-    pub tokenizer_path: PathBuf,
-    /// Name of the model (for metadata).
-    pub model_name: String,
-    /// Expected output dimension.
-    pub embedding_dim: u16,
-    /// Pooling strategy to use.
-    pub pooling: PoolingStrategy,
-    /// Whether to L2 normalize the output.
-    pub normalize: bool,
-    /// Whether the model was downloaded (vs. already present).
-    pub downloaded: bool,
-}
-
-/// Get the global model cache directory (~/.cache/synrepo/models).
-pub fn get_global_cache_dir() -> Result<PathBuf> {
-    let base = if let Ok(xdg) = std::env::var("XDG_CACHE_HOME") {
-        PathBuf::from(xdg)
-    } else if let Ok(home) = std::env::var("HOME") {
-        PathBuf::from(home).join(".cache")
-    } else {
-        return Err(crate::Error::Other(anyhow::anyhow!(
-            "Could not determine global cache directory ($HOME not set)"
-        )));
-    };
-    Ok(base.join("synrepo/models"))
-}
-
 /// Model resolver for embedding models.
+#[derive(Default)]
 pub struct ModelResolver;
 
 impl ModelResolver {
+    /// Create a new model resolver.
     pub fn new() -> Self {
         Self
     }
@@ -121,12 +74,8 @@ impl ModelResolver {
             }
         }
 
-        // Check if it's a Hugging Face model ID (contains `/`)
-        if model_id.contains('/') {
-            return self.resolve_huggingface(model_id, &model_cache_dir, declared_dim);
-        }
-
-        // Check if it's an absolute path to a .onnx file
+        // Check if it's an absolute path to a .onnx file (check before HF,
+        // since absolute paths contain `/` which would match the HF heuristic).
         let onnx_path = PathBuf::from(model_id);
         if onnx_path.is_absolute() && model_id.ends_with(".onnx") {
             let tokenizer_path = onnx_path.with_file_name("tokenizer.json");
@@ -136,6 +85,13 @@ impl ModelResolver {
                     model_id
                 )));
             }
+            tracing::warn!(
+                model = model_id,
+                pooling = "mean",
+                normalize = true,
+                "Using default pooling=mean and normalize=true for custom local model. \
+                 If this model expects CLS pooling, set semantic_pooling in config."
+            );
             return Ok(ModelResolution {
                 model_path: onnx_path,
                 tokenizer_path,
@@ -145,6 +101,11 @@ impl ModelResolver {
                 normalize: true,                // Default for custom models
                 downloaded: false,
             });
+        }
+
+        // Check if it's a Hugging Face model ID (contains `/` but not an absolute path).
+        if model_id.contains('/') {
+            return self.resolve_huggingface(model_id, &model_cache_dir, declared_dim);
         }
 
         Err(crate::Error::Config(format!(
@@ -219,6 +180,14 @@ impl ModelResolver {
             downloaded = true;
         }
 
+        tracing::warn!(
+            model = model_id,
+            pooling = "mean",
+            normalize = true,
+            "Assuming mean pooling and L2 normalization for Hugging Face model. \
+             sentence-transformers models typically use mean pooling, but verify for non-st models."
+        );
+
         Ok(ModelResolution {
             model_path,
             tokenizer_path,
@@ -231,6 +200,35 @@ impl ModelResolver {
     }
 
     fn download_file(&self, url: &str, dest: &Path) -> Result<()> {
+        // Acquire advisory lock to prevent concurrent download corruption.
+        let lock_path = dest.with_extension("download.lock");
+        let lock_file = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .read(true)
+            .write(true)
+            .open(&lock_path)
+            .map_err(|e| {
+                crate::Error::Other(anyhow::anyhow!(
+                    "Failed to open download lock at {}: {}",
+                    lock_path.display(),
+                    e
+                ))
+            })?;
+
+        fs2::FileExt::lock_exclusive(&lock_file).map_err(|e| {
+            crate::Error::Other(anyhow::anyhow!(
+                "Failed to acquire download lock at {}: {}",
+                lock_path.display(),
+                e
+            ))
+        })?;
+
+        // Double-check: another process may have completed the download while we waited.
+        if dest.exists() {
+            return Ok(());
+        }
+
         let response = reqwest::blocking::get(url).map_err(|e| {
             crate::Error::Other(anyhow::anyhow!("Failed to download model artifact: {}", e))
         })?;
@@ -260,159 +258,6 @@ impl ModelResolver {
     }
 }
 
-/// ONNX inference session wrapper with tokenizer support.
-#[derive(Debug)]
-pub struct EmbeddingSession {
-    dim: u16,
-    pooling: PoolingStrategy,
-    normalize: bool,
-    tokenizer: tokenizers::Tokenizer,
-    session: Mutex<ort::session::Session>,
-}
-
-impl EmbeddingSession {
-    /// Create a new session from a model resolution.
-    pub fn new_from_resolution(res: &ModelResolution) -> Result<Self> {
-        let tokenizer = tokenizers::Tokenizer::from_file(&res.tokenizer_path)
-            .map_err(|e| crate::Error::Other(anyhow::anyhow!("Failed to load tokenizer: {}", e)))?;
-
-        let session = ort::session::Session::builder()
-            .map_err(|e| crate::Error::Other(anyhow::anyhow!("Failed to create session: {}", e)))?
-            .commit_from_file(&res.model_path)
-            .map_err(|e| crate::Error::Other(anyhow::anyhow!("Failed to load model: {}", e)))?;
-
-        Ok(Self {
-            dim: res.embedding_dim,
-            pooling: res.pooling,
-            normalize: res.normalize,
-            tokenizer,
-            session: Mutex::new(session),
-        })
-    }
-
-    /// Run inference on a batch of texts.
-    pub fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
-        if texts.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let mut results = Vec::with_capacity(texts.len());
-
-        for text in texts {
-            // Tokenize
-            let encoding = self
-                .tokenizer
-                .encode(text.as_str(), true)
-                .map_err(|e| crate::Error::Other(anyhow::anyhow!("Tokenization failed: {}", e)))?;
-
-            let input_ids = encoding.get_ids();
-            let attention_mask = encoding.get_attention_mask();
-            let type_ids = encoding.get_type_ids();
-            let seq_len = input_ids.len();
-
-            // Convert to ndarray for ort
-            let input_ids_arr =
-                Array2::from_shape_vec((1, seq_len), input_ids.iter().map(|&x| x as i64).collect())
-                    .map_err(|e| {
-                        crate::Error::Other(anyhow::anyhow!("Array shape error: {}", e))
-                    })?;
-            let attention_mask_arr = Array2::from_shape_vec(
-                (1, seq_len),
-                attention_mask.iter().map(|&x| x as i64).collect(),
-            )
-            .map_err(|e| crate::Error::Other(anyhow::anyhow!("Array shape error: {}", e)))?;
-            let type_ids_arr =
-                Array2::from_shape_vec((1, seq_len), type_ids.iter().map(|&x| x as i64).collect())
-                    .map_err(|e| {
-                        crate::Error::Other(anyhow::anyhow!("Array shape error: {}", e))
-                    })?;
-
-            // Run inference
-            let inputs = ort::inputs![
-                "input_ids" => Value::from_array(input_ids_arr).map_err(|e| crate::Error::Other(e.into()))?,
-                "attention_mask" => Value::from_array(attention_mask_arr).map_err(|e| crate::Error::Other(e.into()))?,
-                "token_type_ids" => Value::from_array(type_ids_arr).map_err(|e| crate::Error::Other(e.into()))?,
-            ];
-
-            let mut session = self.session.lock();
-            let outputs = session
-                .run(inputs)
-                .map_err(|e| crate::Error::Other(anyhow::anyhow!("Inference failed: {}", e)))?;
-
-            // Extract last_hidden_state
-            let last_hidden_state = &outputs["last_hidden_state"];
-
-            // Pooling
-            let pooled = match self.pooling {
-                PoolingStrategy::Mean => mean_pooling(last_hidden_state, attention_mask),
-                PoolingStrategy::Cls => cls_pooling(last_hidden_state, self.dim as usize),
-            };
-
-            // Normalize
-            let final_vec = if self.normalize {
-                normalize(pooled)
-            } else {
-                pooled
-            };
-
-            results.push(final_vec);
-        }
-
-        Ok(results)
-    }
-
-    /// Get the embedding dimension.
-    pub fn embedding_dim(&self) -> u16 {
-        self.dim
-    }
-}
-
-fn mean_pooling(last_hidden_state: &Value, attention_mask: &[u32]) -> Vec<f32> {
-    let (shape, data) = last_hidden_state.try_extract_tensor::<f32>().unwrap();
-    let seq_len = shape[1] as usize;
-    let dim = shape[2] as usize;
-
-    let mut sum = vec![0.0f32; dim];
-    let mut count = 0.0f32;
-
-    for i in 0..seq_len {
-        if i < attention_mask.len() && attention_mask[i] == 1 {
-            count += 1.0;
-            for j in 0..dim {
-                sum[j] += data[i * dim + j];
-            }
-        }
-    }
-
-    if count > 0.0 {
-        for val in sum.iter_mut() {
-            *val /= count;
-        }
-    }
-
-    sum
-}
-
-fn cls_pooling(last_hidden_state: &Value, dim: usize) -> Vec<f32> {
-    let (_shape, data) = last_hidden_state.try_extract_tensor::<f32>().unwrap();
-    let mut cls = vec![0.0f32; dim];
-    // CLS is the first vector in the sequence (index 0)
-    for i in 0..dim {
-        cls[i] = data[i];
-    }
-    cls
-}
-
-fn normalize(mut v: Vec<f32>) -> Vec<f32> {
-    let norm = v.iter().map(|x| x * x).sum::<f32>().sqrt();
-    if norm > 1e-10 {
-        for val in v.iter_mut() {
-            *val /= norm;
-        }
-    }
-    v
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -428,7 +273,47 @@ mod tests {
             Err(crate::Error::Io(_)) => {}
             Err(e) if e.to_string().contains("HOME") => {}
             Err(e) if e.to_string().contains("Download failed") => {}
+            Err(e) if e.to_string().contains("download lock") => {}
             Err(e) => panic!("Unexpected error: {}", e),
         }
+    }
+
+    #[test]
+    fn resolve_bad_onnx_path_returns_error() {
+        let resolver = ModelResolver::new();
+        let result = resolver.resolve("/nonexistent/path/model.onnx", Path::new("."), 384);
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("tokenizer") || err.to_string().contains("missing"),
+            "Expected clear error about missing tokenizer, got: {err}"
+        );
+    }
+
+    #[test]
+    fn resolve_onnx_without_tokenizer_returns_config_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let onnx_path = dir.path().join("model.onnx");
+        std::fs::write(&onnx_path, b"fake onnx").unwrap();
+        // tokenizer.json deliberately not created
+        let resolver = ModelResolver::new();
+        let result = resolver.resolve(onnx_path.to_str().unwrap(), Path::new("."), 384);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("tokenizer"),
+            "Expected tokenizer mention in error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn resolve_builtin_wrong_dim_returns_config_error() {
+        let resolver = ModelResolver::new();
+        let result = resolver.resolve("all-MiniLM-L6-v2", Path::new("."), 999);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("384") || err.to_string().contains("embedding_dim"),
+            "Expected dimension mismatch error, got: {err}"
+        );
     }
 }

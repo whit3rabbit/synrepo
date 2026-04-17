@@ -288,3 +288,50 @@ fn codex_rejects_non_table_mcp() {
     let err = setup_codex_mcp(dir.path()).expect_err("must error on non-table mcp");
     assert!(err.to_string().contains("not a table"));
 }
+
+// ---------- Atomic write semantics ----------
+//
+// Config edits go through a tempfile + rename so a crash or ENOSPC mid-write
+// can never leave a truncated config behind. These tests pin that invariant
+// by confirming no leftover temp files remain after a successful run, and
+// that the rename lands an intact, parseable result.
+
+#[test]
+fn claude_setup_leaves_no_leftover_temp_files() {
+    let dir = tempdir().unwrap();
+    setup_claude_mcp(dir.path()).unwrap();
+
+    // The atomic writer names temps `.<filename>.tmp.<pid>.<nanos>`.
+    for entry in fs::read_dir(dir.path()).unwrap() {
+        let entry = entry.unwrap();
+        let name = entry.file_name().to_string_lossy().into_owned();
+        assert!(
+            !name.contains(".tmp."),
+            "atomic write left a temp file behind: {name}"
+        );
+    }
+    let final_json = fs::read_to_string(dir.path().join(".mcp.json")).unwrap();
+    // Must be parseable JSON with the expected entry, not a truncated blob.
+    let parsed: serde_json::Value = serde_json::from_str(&final_json).unwrap();
+    assert!(parsed["mcpServers"]["synrepo"].is_object());
+}
+
+#[test]
+fn codex_setup_leaves_no_leftover_temp_files() {
+    let dir = tempdir().unwrap();
+    setup_codex_mcp(dir.path()).unwrap();
+
+    let codex_dir = dir.path().join(".codex");
+    for entry in fs::read_dir(&codex_dir).unwrap() {
+        let entry = entry.unwrap();
+        let name = entry.file_name().to_string_lossy().into_owned();
+        assert!(
+            !name.contains(".tmp."),
+            "atomic write left a temp file behind: {name}"
+        );
+    }
+    let final_toml = fs::read_to_string(codex_dir.join("config.toml")).unwrap();
+    assert!(final_toml.contains("synrepo"));
+    // Parsing must succeed — a truncated write would produce invalid TOML.
+    let _: toml_edit::DocumentMut = final_toml.parse().unwrap();
+}

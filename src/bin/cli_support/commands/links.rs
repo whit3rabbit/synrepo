@@ -2,7 +2,7 @@ use std::path::Path;
 
 use synrepo::{
     config::{Config, Mode},
-    core::ids::NodeId,
+    core::ids::{EdgeId, NodeId},
     overlay::{OverlayEdgeKind, OverlayStore},
     pipeline::writer::{acquire_write_admission, map_lock_error},
     store::overlay::{
@@ -10,8 +10,135 @@ use synrepo::{
         parse_overlay_edge_kind, FindingsFilter, SqliteOverlayStore,
     },
     store::sqlite::SqliteGraphStore,
-    structure::graph::Epistemic,
+    structure::graph::{Edge, Epistemic, GraphStore},
 };
+
+/// Narrow surface so fault-injection tests can inject failures with a
+/// 4-method wrapper instead of a full `GraphStore` / `OverlayStore` mock.
+pub(crate) trait LinksCommitStore {
+    fn mark_pending(
+        &mut self,
+        from: NodeId,
+        to: NodeId,
+        kind: OverlayEdgeKind,
+        reviewer: &str,
+    ) -> anyhow::Result<()>;
+
+    fn insert_edge(&mut self, edge: Edge) -> anyhow::Result<()>;
+
+    fn mark_promoted(
+        &mut self,
+        from: NodeId,
+        to: NodeId,
+        kind: OverlayEdgeKind,
+        reviewer: &str,
+        edge_id: &str,
+    ) -> anyhow::Result<()>;
+
+    fn delete_edge(&mut self, edge_id: EdgeId) -> anyhow::Result<()>;
+}
+
+pub(crate) struct RealLinksStore<'a> {
+    pub graph: &'a mut SqliteGraphStore,
+    pub overlay: &'a mut SqliteOverlayStore,
+}
+
+impl LinksCommitStore for RealLinksStore<'_> {
+    fn mark_pending(
+        &mut self,
+        from: NodeId,
+        to: NodeId,
+        kind: OverlayEdgeKind,
+        reviewer: &str,
+    ) -> anyhow::Result<()> {
+        self.overlay
+            .mark_candidate_pending(from, to, kind, reviewer)
+            .map_err(Into::into)
+    }
+
+    fn insert_edge(&mut self, edge: Edge) -> anyhow::Result<()> {
+        self.graph.insert_edge(edge).map_err(Into::into)
+    }
+
+    fn mark_promoted(
+        &mut self,
+        from: NodeId,
+        to: NodeId,
+        kind: OverlayEdgeKind,
+        reviewer: &str,
+        edge_id: &str,
+    ) -> anyhow::Result<()> {
+        self.overlay
+            .mark_candidate_promoted(from, to, kind, reviewer, edge_id)
+            .map_err(Into::into)
+    }
+
+    fn delete_edge(&mut self, edge_id: EdgeId) -> anyhow::Result<()> {
+        self.graph.delete_edge(edge_id).map_err(Into::into)
+    }
+}
+
+pub(crate) struct CommitArgs<'a> {
+    pub from: NodeId,
+    pub to: NodeId,
+    pub kind: OverlayEdgeKind,
+    pub edge_kind: synrepo::structure::graph::EdgeKind,
+    pub edge_id: EdgeId,
+    pub reviewer: &'a str,
+}
+
+/// Phase 1 (overlay pending) → Phase 2 (graph edge) → Phase 3 (overlay
+/// promoted). On Phase 3 failure, compensate by deleting the graph edge;
+/// surface the original overlay error verbatim so callers see the root cause,
+/// not the compensation path.
+pub(crate) fn links_accept_commit(
+    store: &mut dyn LinksCommitStore,
+    args: &CommitArgs<'_>,
+) -> anyhow::Result<()> {
+    store.mark_pending(args.from, args.to, args.kind, args.reviewer)?;
+    store.insert_edge(build_curated_edge(args))?;
+
+    if let Err(overlay_err) = store.mark_promoted(
+        args.from,
+        args.to,
+        args.kind,
+        args.reviewer,
+        &args.edge_id.to_string(),
+    ) {
+        if let Err(compensation_err) = store.delete_edge(args.edge_id) {
+            tracing::error!(
+                overlay_err = %overlay_err,
+                compensation_err = %compensation_err,
+                "links accept: overlay finalize failed AND graph compensation failed; overlay and graph are inconsistent"
+            );
+        }
+        return Err(anyhow::anyhow!(
+            "overlay finalize failed after graph insert: {overlay_err}"
+        ));
+    }
+    Ok(())
+}
+
+fn build_curated_edge(args: &CommitArgs<'_>) -> Edge {
+    Edge {
+        id: args.edge_id,
+        from: args.from,
+        to: args.to,
+        kind: args.edge_kind,
+        owner_file_id: None,
+        last_observed_rev: None,
+        retired_at_rev: None,
+        epistemic: Epistemic::HumanDeclared,
+        drift_score: 0.0,
+        provenance: synrepo::core::provenance::Provenance {
+            created_at: time::OffsetDateTime::now_utc(),
+            source_revision: "curated_workflow".to_string(),
+            created_by: synrepo::core::provenance::CreatedBy::Human,
+            pass: format!("links_accept:{}", args.reviewer),
+            source_artifacts: vec![],
+        },
+    }
+}
 
 /// A candidate ID parsed into its endpoint triple plus optional revision suffix.
 /// `pass_suffix` is `None` for the legacy 3-part form (`from::to::kind`) emitted
@@ -205,8 +332,6 @@ pub(crate) fn links_accept(
         OverlayEdgeKind::DerivedFrom => synrepo::structure::graph::EdgeKind::References,
         OverlayEdgeKind::Mentions => synrepo::structure::graph::EdgeKind::Mentions,
     };
-
-    use synrepo::structure::graph::{Edge, GraphStore};
     let edge_id = synrepo::pipeline::structural::derive_edge_id(from, to, edge_kind);
 
     let matched = overlay
@@ -233,9 +358,12 @@ pub(crate) fn links_accept(
         }
         if state_str == "pending_promotion" {
             // Crash recovery: Phase 1 completed but Phase 3 may not have.
+            // Distinguish "edge absent" from "graph unreadable": a read error here
+            // must not be collapsed into "Phase 2 never ran", which would re-execute
+            // an insert on top of an unreadable store.
             let edge_exists = graph
                 .outbound(from, Some(edge_kind))
-                .unwrap_or_default()
+                .map_err(|e| anyhow::anyhow!("graph read failed during promotion recovery: {e}"))?
                 .iter()
                 .any(|e| e.to == to);
             if edge_exists {
@@ -249,31 +377,21 @@ pub(crate) fn links_accept(
         }
     }
 
-    // Phase 1: Mark as pending in overlay to bridge the atomicity gap.
-    overlay.mark_candidate_pending(from, to, kind, reviewer)?;
-
-    // Phase 2: Insert into graph.
-    graph.insert_edge(Edge {
-        id: edge_id,
-        from,
-        to,
-        kind: edge_kind,
-        owner_file_id: None,
-        last_observed_rev: None,
-        retired_at_rev: None,
-        epistemic: Epistemic::HumanDeclared,
-        drift_score: 0.0,
-        provenance: synrepo::core::provenance::Provenance {
-            created_at: time::OffsetDateTime::now_utc(),
-            source_revision: "curated_workflow".to_string(),
-            created_by: synrepo::core::provenance::CreatedBy::Human,
-            pass: format!("links_accept:{reviewer}"),
-            source_artifacts: vec![],
+    let mut store = RealLinksStore {
+        graph: &mut graph,
+        overlay: &mut overlay,
+    };
+    links_accept_commit(
+        &mut store,
+        &CommitArgs {
+            from,
+            to,
+            kind,
+            edge_kind,
+            edge_id,
+            reviewer,
         },
-    })?;
-
-    // Phase 3: Finalize in overlay.
-    overlay.mark_candidate_promoted(from, to, kind, reviewer, &edge_id.to_string())?;
+    )?;
 
     println!("Candidate {candidate_id} accepted and written to graph.");
     Ok(())

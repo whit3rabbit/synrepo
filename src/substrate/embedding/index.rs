@@ -31,6 +31,11 @@ pub struct FlatVecIndex {
 }
 
 impl Clone for FlatVecIndex {
+    /// Clone the index data (chunks and vectors) but **not** the embedding session.
+    ///
+    /// A cloned index cannot call `embed_text()`. Use `load_with_resolution()`
+    /// to load an index with a restored session, or call `embed_text()` only
+    /// on the original index.
     fn clone(&self) -> Self {
         Self {
             dim: self.dim,
@@ -116,7 +121,11 @@ impl FlatVecIndex {
     /// Used for query-time embedding during semantic triage.
     pub fn embed_text(&self, text: &str) -> crate::Result<Vec<f32>> {
         let session = self.session.as_ref().ok_or_else(|| {
-            crate::Error::Other(anyhow::anyhow!("Embedding session not available"))
+            crate::Error::Other(anyhow::anyhow!(
+                "Embedding session not available. Cloned indices cannot embed text; \
+                 use load_with_resolution() to restore the session, or call embed_text() \
+                 on the original (non-cloned) index"
+            ))
         })?;
         let vectors = session.embed(&[text.to_string()])?;
         vectors
@@ -437,11 +446,75 @@ mod tests {
 
         let loaded = FlatVecIndex::load(&path, 384)?;
         assert_eq!(loaded.format_version, INDEX_FORMAT_VERSION);
-        assert_eq!(loaded.normalized, true);
+        assert!(loaded.normalized);
         assert_eq!(loaded.model_name, "test-model");
         assert_eq!(loaded.len(), 1);
 
         Ok(())
+    }
+
+    #[test]
+    fn load_rejects_mismatched_expected_dim() -> crate::Result<()> {
+        let index = FlatVecIndex {
+            dim: 384,
+            model_name: "test-model".into(),
+            format_version: INDEX_FORMAT_VERSION,
+            normalized: true,
+            chunks: vec![],
+            vectors: vec![],
+            session: None,
+        };
+        let temp_dir = tempfile::tempdir()?;
+        let path = temp_dir.path().join("index.bin");
+        index.save(&path)?;
+
+        let err = FlatVecIndex::load(&path, 768).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("does not match expected"),
+            "expected dim-mismatch error, got: {msg}"
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn embed_text_fails_when_session_missing() {
+        let index = FlatVecIndex {
+            dim: 4,
+            model_name: "test".into(),
+            format_version: INDEX_FORMAT_VERSION,
+            normalized: true,
+            chunks: vec![],
+            vectors: vec![],
+            session: None,
+        };
+        let err = index.embed_text("any query").unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("cloned") || msg.contains("load_with_resolution"),
+            "expected error explaining clone-loses-session contract, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn clone_drops_session_and_disables_embed_text() {
+        let index = FlatVecIndex {
+            dim: 4,
+            model_name: "test".into(),
+            format_version: INDEX_FORMAT_VERSION,
+            normalized: true,
+            chunks: vec![],
+            vectors: vec![],
+            session: None,
+        };
+        let cloned = index.clone();
+        assert!(cloned.session.is_none());
+        let err = cloned.embed_text("q").unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("cloned") || msg.contains("load_with_resolution"),
+            "expected error explaining clone-loses-session contract, got: {msg}"
+        );
     }
 
     /// Verify bounded top-k returns the same results as brute-force full sort.

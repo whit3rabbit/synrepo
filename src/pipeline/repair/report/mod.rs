@@ -61,7 +61,7 @@ pub(super) fn assemble_repair_report(
         &surfaces::EdgeDriftCheck,
         &surfaces::RetiredObservationsCheck,
         &surfaces::ProposedLinksOverlayCheck,
-        &surfaces::UnsupportedSurfaceCheck,
+        &surfaces::StaleRationaleCheck,
     ];
 
     for check in checks {
