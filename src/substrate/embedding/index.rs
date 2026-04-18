@@ -36,25 +36,6 @@ pub struct FlatVecIndex {
     session: Option<EmbeddingSession>,
 }
 
-impl Clone for FlatVecIndex {
-    /// Clone the index data (chunks and vectors) but **not** the embedding session.
-    ///
-    /// A cloned index cannot call `embed_text()`. Use `load_with_resolution()`
-    /// to load an index with a restored session, or call `embed_text()` only
-    /// on the original index.
-    fn clone(&self) -> Self {
-        Self {
-            dim: self.dim,
-            model_name: self.model_name.clone(),
-            format_version: self.format_version,
-            normalized: self.normalized,
-            chunks: self.chunks.clone(),
-            vectors: self.vectors.clone(),
-            session: None, // Don't clone the session
-        }
-    }
-}
-
 impl std::fmt::Debug for FlatVecIndex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("FlatVecIndex")
@@ -128,9 +109,7 @@ impl FlatVecIndex {
     pub fn embed_text(&self, text: &str) -> crate::Result<Vec<f32>> {
         let session = self.session.as_ref().ok_or_else(|| {
             crate::Error::Other(anyhow::anyhow!(
-                "Embedding session not available. Cloned indices cannot embed text; \
-                 use load_with_resolution() to restore the session, or call embed_text() \
-                 on the original (non-cloned) index"
+                "Embedding session not available. Use load_with_resolution() to restore a session."
             ))
         })?;
         let vectors = session.embed(&[text.to_string()])?;
@@ -497,29 +476,8 @@ mod tests {
         let err = index.embed_text("any query").unwrap_err();
         let msg = err.to_string();
         assert!(
-            msg.contains("cloned") || msg.contains("load_with_resolution"),
-            "expected error explaining clone-loses-session contract, got: {msg}"
-        );
-    }
-
-    #[test]
-    fn clone_drops_session_and_disables_embed_text() {
-        let index = FlatVecIndex {
-            dim: 4,
-            model_name: "test".into(),
-            format_version: INDEX_FORMAT_VERSION,
-            normalized: true,
-            chunks: vec![],
-            vectors: vec![],
-            session: None,
-        };
-        let cloned = index.clone();
-        assert!(cloned.session.is_none());
-        let err = cloned.embed_text("q").unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains("cloned") || msg.contains("load_with_resolution"),
-            "expected error explaining clone-loses-session contract, got: {msg}"
+            msg.contains("load_with_resolution"),
+            "expected error explaining session requirement, got: {msg}"
         );
     }
 

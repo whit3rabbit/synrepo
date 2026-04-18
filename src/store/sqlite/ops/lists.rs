@@ -67,14 +67,11 @@ pub fn all_symbol_names(
 }
 
 /// Get all active symbol summaries (ID, file ID, name, kind, body_hash).
-/// Uses json_extract to avoid full deserialization.
+/// body_hash is now a dedicated, indexed column.
 pub fn all_symbols_summary(store: &SqliteGraphStore) -> crate::Result<Vec<SymbolSummary>> {
     let conn = store.conn.lock();
-    // body_hash is stored inside the JSON `data` blob, not a dedicated column.
-    // json_extract avoids a full deserialization while staying in one query.
     let mut stmt = conn.prepare_cached(
-        "SELECT id, file_id, qualified_name, kind, \
-         json_extract(data, '$.body_hash') FROM symbols WHERE retired_at_rev IS NULL ORDER BY id",
+        "SELECT id, file_id, qualified_name, kind, body_hash FROM symbols WHERE retired_at_rev IS NULL ORDER BY id",
     )?;
     let rows = stmt
         .query_map([], |row| {

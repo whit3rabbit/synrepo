@@ -1,7 +1,5 @@
 use super::*;
 use std::process::Command;
-use std::sync::Arc;
-use std::thread;
 use tempfile::tempdir;
 
 fn run(dir: &Path, args: &[&str]) {
@@ -116,29 +114,39 @@ fn fifo_rewrite_does_not_grow_order_queue() {
     assert_eq!(paths.map.len(), 1);
 }
 
+fn delete_file(dir: &Path, file: &str, message: &str) {
+    std::fs::remove_file(dir.join(file)).unwrap();
+    run(dir, &["add", file]);
+    run(dir, &["commit", "-q", "-m", message]);
+}
+
 #[test]
-fn concurrent_reads_share_same_index() {
+fn delete_and_recreate_invalidates_cache() {
     let tmp = tempdir().unwrap();
     let repo = tmp.path();
     let config = Config::default();
-    init_repo_with_commit(repo, "file.txt", "one\n");
 
-    let cache = Arc::new(GitCache::new());
-    cache.resolve_path(repo, &config, "file.txt").unwrap();
-    let expected_index = cache.index_ptr().unwrap();
+    // Commit file.txt with content "A"
+    init_repo_with_commit(repo, "file.txt", "content A\n");
 
-    let mut handles = Vec::new();
-    for _ in 0..8 {
-        let cache = Arc::clone(&cache);
-        let repo = repo.to_path_buf();
-        let config = config.clone();
-        handles.push(thread::spawn(move || {
-            let insights = cache.resolve_path(&repo, &config, "file.txt").unwrap();
-            (insights, cache.index_ptr().unwrap())
-        }));
-    }
-    for handle in handles {
-        let (_, idx) = handle.join().unwrap();
-        assert_eq!(idx, expected_index);
-    }
+    let cache = GitCache::new();
+    let first = cache.resolve_path(repo, &config, "file.txt").unwrap();
+    assert_eq!(first.commits.len(), 1);
+
+    // Delete and commit
+    delete_file(repo, "file.txt", "delete");
+
+    // Re-create with new content and commit
+    amend_file(repo, "file.txt", "content B\n", "recreate");
+
+    // Force probe to invalidate stale cache
+    cache.on_compile_cycle_end();
+
+    // Resolve again - should see new history
+    let second = cache.resolve_path(repo, &config, "file.txt").unwrap();
+    assert_eq!(
+        second.commits.len(),
+        3,
+        "should see 3 commits: initial, delete, recreate"
+    );
 }

@@ -40,7 +40,7 @@ use std::{
 pub(crate) use helpers::is_process_alive;
 pub(super) use helpers::now_rfc3339;
 use helpers::{
-    decrement_depth, insert_initial_lock, open_and_try_lock, read_ownership,
+    decrement_depth, insert_initial_lock, open_and_try_lock_with_retry, read_ownership,
     read_ownership_with_retry, try_reenter, write_lock_metadata,
 };
 #[cfg(unix)]
@@ -193,7 +193,7 @@ pub fn acquire_writer_lock(synrepo_dir: &Path) -> Result<WriterLock, LockError> 
         });
     }
 
-    let Some(file) = open_and_try_lock(&lock_path)? else {
+    let Some(file) = open_and_try_lock_with_retry(&lock_path)? else {
         // Another fd holds the kernel flock. Read ownership JSON for a useful
         // error message; retry briefly to ride out the window between a
         // winner's flock acquire and its ownership write.

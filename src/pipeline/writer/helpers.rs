@@ -152,6 +152,29 @@ pub(super) fn open_and_try_lock(lock_path: &Path) -> Result<Option<fs::File>, Lo
     }
 }
 
+/// Same as [`open_and_try_lock`] but retries briefly on `WouldBlock`.
+///
+/// On macOS under heavy parallel load, `close(fd)` can return before the
+/// kernel has propagated the flock release to a concurrently-opening fd. A
+/// short backoff distinguishes that transient state from genuine contention
+/// with a live holder; the kernel path is otherwise unchanged.
+pub(super) fn open_and_try_lock_with_retry(
+    lock_path: &Path,
+) -> Result<Option<fs::File>, LockError> {
+    if let Some(file) = open_and_try_lock(lock_path)? {
+        return Ok(Some(file));
+    }
+    const RETRIES: u32 = 20;
+    const BACKOFF_MS: u64 = 5;
+    for _ in 0..RETRIES {
+        std::thread::sleep(std::time::Duration::from_millis(BACKOFF_MS));
+        if let Some(file) = open_and_try_lock(lock_path)? {
+            return Ok(Some(file));
+        }
+    }
+    Ok(None)
+}
+
 // ---- File I/O helpers ----
 
 pub(super) fn read_ownership(lock_path: &Path) -> Result<WriterOwnership, WriterOwnershipError> {

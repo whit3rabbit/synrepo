@@ -123,6 +123,7 @@ Node types: `FileNode` (content-hash identity), `SymbolNode` (tree-sitter extrac
 
 **Storage layout:**
 - `.synrepo/graph/nodes.db` — canonical SQLite graph store (the file is named `nodes.db`)
+- `.synrepo/graph/nodes.db` — symbols table includes `body_hash` column (indexed) alongside JSON blob
 - `.synrepo/overlay/` — overlay SQLite store (never mixed with graph)
 - `.synrepo/index/` — syntext lexical index
 - `.synrepo/config.toml` — runtime config (`Config` struct in `src/config.rs`)
@@ -240,6 +241,7 @@ Stages 4–8:
 - **Commentary freshness is computed in two places**: `src/bin/cli_support/commands/status.rs::commentary_coverage_full` (status `--full`) and `src/pipeline/repair/report/surfaces/commentary.rs::scan_commentary_staleness` (repair surface). Both walk `commentary_hashes()` against `resolve_commentary_node`. The repair version is `pub(super) struct CommentaryScan { total, stale }`; unifying requires promoting it to `pub` in the repair module.
 - **Persisted state-struct fields need `#[serde(alias = "old_name")]` on rename.** `WatchDaemonState`, `WriterOwnership`, and reconcile-state structs are serialized to `.synrepo/state/*.json` by live daemons — renaming a `pub` field without the alias leaves existing JSON files unparseable after an upgrade.
 - **Writer lock is a kernel advisory lock (`flock`/`LockFileEx` via `fs2`), not file existence.** Tests that only stamp JSON into `.synrepo/state/writer.lock` do NOT exercise contention. To simulate a foreign holder, call `synrepo::pipeline::writer::hold_writer_flock_with_ownership(lock_path, &WriterOwnership { pid, acquired_at })` which takes the flock on a separate fd. Dead-PID / live-foreign-PID helpers: `writer::spawn_and_reap_pid()` and `writer::live_foreign_pid() -> (Child, u32)`. Do not re-implement these.
+- **Writer-lock acquire retries briefly on `WouldBlock`** via `open_and_try_lock_with_retry` in `src/pipeline/writer/helpers.rs` (20 × 5 ms). Under heavy parallel load macOS can delay flock release propagation across fds, so a plain `try_lock_exclusive` returns `WouldBlock` even when no live holder exists. Do not flatten this back to `open_and_try_lock` at the acquire site — it will reintroduce the mutation-test flake.
 - **`fs2` is a direct dep** providing cross-platform advisory locking (`FileExt::try_lock_exclusive` → `flock` on Unix, `LockFileEx` on Windows). `libc` is a `[target.'cfg(unix)'.dependencies]` dep used only for `O_CLOEXEC` on the writer lock fd.
 - **`bootstrap()` signature**: `synrepo::bootstrap::bootstrap(repo_root: &Path, mode: Option<Mode>)` — two args only. Does not accept a pre-built `Config` or `synrepo_dir`; it derives both internally.
 - **`cargo build --workspace` does not imply `cargo test` will compile**: test-scoped code (`#[cfg(test)]` and `mod tests`) only compiles under `cargo test` / `cargo check --tests` / `cargo clippy --all-targets`. A pre-existing test-only compile error in an unrelated module will surface there, not in `cargo build`. When verifying focused work against in-tree WIP, isolate the WIP (temporary rename or stash) before running tests to confirm your own work.

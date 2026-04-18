@@ -199,7 +199,7 @@ impl GraphCardCompiler {
 impl CardCompiler for GraphCardCompiler {
     fn symbol_card(&self, id: SymbolNodeId, budget: Budget) -> crate::Result<SymbolCard> {
         // Pin a single committed epoch on the graph for the whole compile.
-        with_graph_read_snapshot(self.graph.as_ref(), |graph| {
+        let result = with_graph_read_snapshot(self.graph.as_ref(), |graph| {
             symbol::symbol_card(
                 symbol::SymbolCardContext {
                     compiler: self,
@@ -210,13 +210,18 @@ impl CardCompiler for GraphCardCompiler {
                 id,
                 budget,
             )
-        })
+        });
+        // Force HEAD probe on the next compile to handle commits between card builds.
+        self.git_cache.on_compile_cycle_end();
+        result
     }
 
     fn file_card(&self, id: FileNodeId, budget: Budget) -> crate::Result<FileCard> {
-        with_graph_read_snapshot(self.graph.as_ref(), |graph| {
+        let result = with_graph_read_snapshot(self.graph.as_ref(), |graph| {
             file::file_card(self, graph, id, budget)
-        })
+        });
+        self.git_cache.on_compile_cycle_end();
+        result
     }
 
     fn entry_point_card(
@@ -224,21 +229,27 @@ impl CardCompiler for GraphCardCompiler {
         scope: Option<&str>,
         budget: Budget,
     ) -> crate::Result<EntryPointCard> {
-        with_graph_read_snapshot(self.graph.as_ref(), |graph| {
+        let result = with_graph_read_snapshot(self.graph.as_ref(), |graph| {
             entry_point::entry_point_card_impl(graph, scope, budget)
-        })
+        });
+        self.git_cache.on_compile_cycle_end();
+        result
     }
 
     fn module_card(&self, path: &str, budget: Budget) -> crate::Result<ModuleCard> {
-        with_graph_read_snapshot(self.graph.as_ref(), |graph| {
+        let result = with_graph_read_snapshot(self.graph.as_ref(), |graph| {
             module::module_card_impl(graph, path, budget)
-        })
+        });
+        self.git_cache.on_compile_cycle_end();
+        result
     }
 
     fn public_api_card(&self, path: &str, budget: Budget) -> crate::Result<PublicAPICard> {
-        with_graph_read_snapshot(self.graph.as_ref(), |graph| {
+        let result = with_graph_read_snapshot(self.graph.as_ref(), |graph| {
             public_api::public_api_card_impl(self, graph, path, budget)
-        })
+        });
+        self.git_cache.on_compile_cycle_end();
+        result
     }
 
     fn call_path_card(
@@ -246,9 +257,11 @@ impl CardCompiler for GraphCardCompiler {
         target: SymbolNodeId,
         budget: Budget,
     ) -> crate::Result<super::CallPathCard> {
-        with_graph_read_snapshot(self.graph.as_ref(), |graph| {
+        let result = with_graph_read_snapshot(self.graph.as_ref(), |graph| {
             call_path::call_path_card_impl(graph, target, budget)
-        })
+        });
+        self.git_cache.on_compile_cycle_end();
+        result
     }
 
     fn test_surface_card(
@@ -256,20 +269,26 @@ impl CardCompiler for GraphCardCompiler {
         scope: &str,
         budget: Budget,
     ) -> crate::Result<super::TestSurfaceCard> {
-        with_graph_read_snapshot(self.graph.as_ref(), |graph| {
+        let result = with_graph_read_snapshot(self.graph.as_ref(), |graph| {
             test_surface::test_surface_card_impl(graph, scope, budget)
-        })
+        });
+        self.git_cache.on_compile_cycle_end();
+        result
     }
 
     fn resolve_target(&self, target: &str) -> crate::Result<Option<NodeId>> {
-        with_graph_read_snapshot(self.graph.as_ref(), |graph| {
+        let result = with_graph_read_snapshot(self.graph.as_ref(), |graph| {
             resolve::resolve_target(graph, target)
-        })
+        });
+        self.git_cache.on_compile_cycle_end();
+        result
     }
 
     fn change_risk_card(&self, target: NodeId, budget: Budget) -> crate::Result<ChangeRiskCard> {
-        with_graph_read_snapshot(self.graph.as_ref(), |_graph| {
+        let result = with_graph_read_snapshot(self.graph.as_ref(), |_graph| {
             change_risk::change_risk_card(self, target, budget)
-        })
+        });
+        self.git_cache.on_compile_cycle_end();
+        result
     }
 }

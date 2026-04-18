@@ -38,24 +38,26 @@ pub fn upsert_symbol(store: &mut SqliteGraphStore, node: SymbolNode) -> crate::R
     let id = node.id.to_string();
     let file_id = node.file_id.to_string();
     let qualified_name = node.qualified_name;
+    let body_hash = node.body_hash;
     let first_seen_rev = &node.first_seen_rev;
     let last_modified_rev = &node.last_modified_rev;
     let last_obs = node.last_observed_rev.map(|r| r as i64);
     let retired = node.retired_at_rev.map(|r| r as i64);
 
     store.conn.lock().execute(
-        "INSERT INTO symbols (id, file_id, qualified_name, kind, first_seen_rev, last_modified_rev, last_observed_rev, retired_at_rev, data)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+        "INSERT INTO symbols (id, file_id, qualified_name, kind, body_hash, first_seen_rev, last_modified_rev, last_observed_rev, retired_at_rev, data)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
          ON CONFLICT(id) DO UPDATE SET
              file_id = excluded.file_id,
              qualified_name = excluded.qualified_name,
              kind = excluded.kind,
+             body_hash = excluded.body_hash,
              first_seen_rev = excluded.first_seen_rev,
              last_modified_rev = excluded.last_modified_rev,
              last_observed_rev = excluded.last_observed_rev,
              retired_at_rev = excluded.retired_at_rev,
              data = excluded.data",
-        params![id, file_id, qualified_name, kind, first_seen_rev, last_modified_rev, last_obs, retired, data],
+        params![id, file_id, qualified_name, kind, body_hash, first_seen_rev, last_modified_rev, last_obs, retired, data],
     )?;
     Ok(())
 }

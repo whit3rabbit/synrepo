@@ -1,9 +1,13 @@
-//! Per-compiler cache of git-intelligence results with HEAD-change invalidation.
+//! Per-compiler cache of file-scoped git-intelligence projections.
 //!
-//! Key design choices:
-//! - One `GitHistoryIndex` per HEAD generation (bulk amortisation).
-//! - 500 ms debounced HEAD probing (collapses bulk export traffic).
-//! - FIFO-bounded path memo with `RwLock` read-fast-path.
+//! Invariants:
+//! 1. One `GitHistoryIndex` per HEAD SHA; rebuilt from scratch on SHA change.
+//! 2. HEAD is re-probed at most every 500 ms (debounce). The probe may be
+//!    forced at compile-cycle boundaries via `on_compile_cycle_end`.
+//! 3. A SHA change clears the per-path memo before the next lookup.
+//! 4. A `GitIntelligenceReadiness::Degraded { RepositoryUnavailable }`
+//!    result during initialize latches the cache to `Inner::Unavailable`;
+//!    subsequent lookups short-circuit to `None`.
 
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
@@ -151,6 +155,20 @@ impl GitCache {
             last_head_check, ..
         } = &mut *guard
         {
+            *last_head_check = Instant::now() - HEAD_PROBE_DEBOUNCE - Duration::from_millis(1);
+        }
+    }
+
+    /// Force the next `resolve_path` call to re-probe HEAD, bypassing the
+    /// debounce. Call this at compile-cycle boundaries to close the narrow
+    /// window where a commit happens between card compiles in the same session.
+    pub(super) fn on_compile_cycle_end(&self) {
+        let mut guard = self.inner.write();
+        if let Inner::Ready {
+            last_head_check, ..
+        } = &mut *guard
+        {
+            tracing::debug!("forcing HEAD probe on compile-cycle end");
             *last_head_check = Instant::now() - HEAD_PROBE_DEBOUNCE - Duration::from_millis(1);
         }
     }

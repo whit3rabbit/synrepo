@@ -114,6 +114,11 @@ pub(super) fn init_schema(conn: &Connection) -> crate::Result<()> {
             "last_observed_rev",
             "ALTER TABLE concepts ADD COLUMN last_observed_rev INTEGER NULL",
         ),
+        (
+            "symbols",
+            "body_hash",
+            "ALTER TABLE symbols ADD COLUMN body_hash TEXT NULL",
+        ),
     ];
 
     for (table, column, sql) in migratables {
@@ -131,6 +136,14 @@ pub(super) fn init_schema(conn: &Connection) -> crate::Result<()> {
             conn.execute_batch(sql)?;
         }
     }
+
+    // Index on body_hash for future filter/join queries.
+    conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_symbols_body_hash ON symbols(body_hash)")?;
+
+    // Backfill body_hash from the JSON blob for existing rows.
+    conn.execute_batch(
+        "UPDATE symbols SET body_hash = json_extract(data, '$.body_hash') WHERE body_hash IS NULL",
+    )?;
 
     Ok(())
 }
