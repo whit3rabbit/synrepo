@@ -97,17 +97,19 @@ impl AgentTool {
     /// fails the build until it is explicitly placed in a tier.
     pub(crate) fn automation_tier(self) -> AutomationTier {
         match self {
-            AgentTool::Claude | AgentTool::Codex | AgentTool::OpenCode => AutomationTier::Automated,
-            AgentTool::Cursor
-            | AgentTool::Copilot
-            | AgentTool::Generic
+            AgentTool::Claude
+            | AgentTool::Codex
+            | AgentTool::OpenCode
+            | AgentTool::Cursor
             | AgentTool::Windsurf
+            | AgentTool::Roo => AutomationTier::Automated,
+            AgentTool::Copilot
+            | AgentTool::Generic
             | AgentTool::Gemini
             | AgentTool::Goose
             | AgentTool::Kiro
             | AgentTool::Qwen
             | AgentTool::Junie
-            | AgentTool::Roo
             | AgentTool::Tabnine
             | AgentTool::Trae => AutomationTier::ShimOnly,
         }
@@ -176,7 +178,7 @@ impl AgentTool {
                 "Add `@.claude/synrepo-context.md` to your CLAUDE.md to include this context."
             }
             AgentTool::Cursor => {
-                "The rule fragment is in `.cursor/synrepo.mdc`. Enable it in your Cursor rules."
+                "The MCP server is registered in .cursor/mcp.json. The rule fragment is in .cursor/synrepo.mdc — enable it in your Cursor rules."
             }
             AgentTool::Copilot => {
                 "Paste the contents of `synrepo-copilot-instructions.md` into \
@@ -189,7 +191,7 @@ impl AgentTool {
                 "Codex CLI loads `.codex/instructions.md` automatically from the project root."
             }
             AgentTool::Windsurf => {
-                "Windsurf loads `.windsurf/rules/synrepo.md` as a project rule automatically."
+                "Windsurf loads .windsurf/rules/synrepo.md as a project rule automatically. The MCP server is registered in .windsurf/mcp.json."
             }
             AgentTool::OpenCode => "OpenCode loads `AGENTS.md` as a project rule automatically.",
             AgentTool::Gemini => {
@@ -206,7 +208,7 @@ impl AgentTool {
                 "Write the synrepo config manually: create `.junie/commands/synrepo.md`."
             }
             AgentTool::Roo => {
-                "Write the synrepo config manually: create `.roo/commands/synrepo.md`."
+                "Roo Code loads .roo/commands/synrepo.md automatically. The MCP server is registered in .roo/mcp.json."
             }
             AgentTool::Tabnine => {
                 "Write the synrepo config manually: create `.tabnine/agent/commands/synrepo.toml`."

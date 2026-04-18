@@ -81,23 +81,23 @@ fn stage4_emits_imports_edge_for_typescript_relative_import() {
 
 // ── parse-hardening-tree-sitter §7: stage-4 contract pins ────────────────────
 
-/// 7.1: an ambiguous call name emits `Calls` edges to every matching candidate.
+/// 7.1: ambiguous short name with no imports and private cross-file candidates
+/// is dropped (scope narrowing: every candidate scores <= 0).
 #[test]
-fn stage4_ambiguous_call_name_fans_out_to_all_candidates() {
+fn stage4_ambiguous_call_name_no_imports_is_dropped() {
     let repo = tempdir().unwrap();
     fs::create_dir_all(repo.path().join("src")).unwrap();
 
-    // Two symbols with the same short name `helper` in different files.
-    // Contents must differ so FileNodeId derivation (content-hash) gives each
-    // file its own id — identical content would collapse into stage-6 rename.
+    // Contents must differ so FileNodeId (content-hash) doesn't collapse into
+    // a stage-6 rename.
     fs::write(
         repo.path().join("src/a.rs"),
-        "// a\npub fn helper() -> i32 { 1 }\n",
+        "// a\nfn helper() -> i32 { 1 }\n",
     )
     .unwrap();
     fs::write(
         repo.path().join("src/b.rs"),
-        "// b\npub fn helper() -> i32 { 2 }\n",
+        "// b\nfn helper() -> i32 { 2 }\n",
     )
     .unwrap();
     fs::write(repo.path().join("src/main.rs"), "fn main() { helper(); }\n").unwrap();
@@ -116,15 +116,36 @@ fn stage4_ambiguous_call_name_fans_out_to_all_candidates() {
         .file_by_path("src/main.rs")
         .unwrap()
         .unwrap_or_else(|| panic!("src/main.rs missing; graph has: {paths:?}"));
-    let a_file = graph
-        .file_by_path("src/a.rs")
-        .unwrap()
-        .unwrap_or_else(|| panic!("src/a.rs missing; graph has: {paths:?}"));
-    let b_file = graph
-        .file_by_path("src/b.rs")
-        .unwrap()
-        .unwrap_or_else(|| panic!("src/b.rs missing; graph has: {paths:?}"));
 
+    let calls = graph
+        .outbound(NodeId::File(main_file.id), Some(EdgeKind::Calls))
+        .unwrap();
+
+    assert!(
+        calls.is_empty(),
+        "expected no Calls edges for private cross-file ambiguous short name; got: {calls:?}"
+    );
+}
+
+/// 7.1b: scoped resolution disambiguates a qualified call (`a::helper`) using
+/// the prefix-match bonus, even when other candidates share the short name.
+#[test]
+fn stage4_call_resolves_to_imported_module() {
+    let repo = tempdir().unwrap();
+    fs::create_dir_all(repo.path().join("src")).unwrap();
+
+    fs::write(repo.path().join("src/a.rs"), "pub fn helper() {}\n").unwrap();
+    fs::write(
+        repo.path().join("src/main.rs"),
+        "mod a;\nfn main() { a::helper(); }\n",
+    )
+    .unwrap();
+
+    let config = Config::default();
+    let mut graph = open_graph(&repo);
+    run_structural_compile(repo.path(), &config, &mut graph).unwrap();
+
+    let a_file = graph.file_by_path("src/a.rs").unwrap().unwrap();
     let a_helper = graph
         .outbound(NodeId::File(a_file.id), Some(EdgeKind::Defines))
         .unwrap()
@@ -134,16 +155,8 @@ fn stage4_ambiguous_call_name_fans_out_to_all_candidates() {
             _ => None,
         })
         .expect("a::helper must be defined");
-    let b_helper = graph
-        .outbound(NodeId::File(b_file.id), Some(EdgeKind::Defines))
-        .unwrap()
-        .into_iter()
-        .find_map(|e| match e.to {
-            NodeId::Symbol(id) => Some(id),
-            _ => None,
-        })
-        .expect("b::helper must be defined");
 
+    let main_file = graph.file_by_path("src/main.rs").unwrap().unwrap();
     let calls = graph
         .outbound(NodeId::File(main_file.id), Some(EdgeKind::Calls))
         .unwrap();
@@ -151,10 +164,6 @@ fn stage4_ambiguous_call_name_fans_out_to_all_candidates() {
     assert!(
         calls.iter().any(|e| e.to == NodeId::Symbol(a_helper)),
         "expected Calls edge from main.rs to a::helper; got: {calls:?}"
-    );
-    assert!(
-        calls.iter().any(|e| e.to == NodeId::Symbol(b_helper)),
-        "expected Calls edge from main.rs to b::helper; got: {calls:?}"
     );
 }
 
@@ -496,5 +505,318 @@ fn stage4_go_external_import_is_skipped_silently() {
     assert!(
         imports.is_empty(),
         "external Go import `fmt` must not emit Imports edge; got: {imports:?}"
+    );
+}
+
+// ── stage4-call-scope-narrowing-v1: scoped call resolution tests ────────
+
+/// Rust: call to imported module function resolves uniquely.
+#[test]
+fn rust_calls_resolve_to_imported_module() {
+    let repo = tempdir().unwrap();
+    fs::create_dir_all(repo.path().join("src")).unwrap();
+
+    fs::write(
+        repo.path().join("src/util.rs"),
+        "pub fn transform(s: &str) -> String { s.to_uppercase() }\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.path().join("src/main.rs"),
+        "mod util;\nfn run() { util::transform(\"hi\"); }\n",
+    )
+    .unwrap();
+
+    let config = Config::default();
+    let mut graph = open_graph(&repo);
+    run_structural_compile(repo.path(), &config, &mut graph).unwrap();
+
+    let main_file = graph.file_by_path("src/main.rs").unwrap().unwrap();
+    let calls = graph
+        .outbound(NodeId::File(main_file.id), Some(EdgeKind::Calls))
+        .unwrap();
+    // Should resolve to the imported transform, not to anything else.
+    assert!(!calls.is_empty(), "expected Calls edge; got none");
+}
+
+/// Rust: private cross-file function is NOT callable from sibling file.
+#[test]
+fn rust_private_fn_not_called_from_sibling() {
+    let repo = tempdir().unwrap();
+    fs::create_dir_all(repo.path().join("src")).unwrap();
+
+    // File A: defines a private helper.
+    fs::write(
+        repo.path().join("src/a.rs"),
+        "mod b;\nfn private_helper() { b::call_me(); }\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.path().join("src/b.rs"),
+        "// b module\npub fn call_me() {}\n",
+    )
+    .unwrap();
+
+    let config = Config::default();
+    let mut graph = open_graph(&repo);
+    run_structural_compile(repo.path(), &config, &mut graph).unwrap();
+
+    let a_file = graph.file_by_path("src/a.rs").unwrap().unwrap();
+    let calls = graph
+        .outbound(NodeId::File(a_file.id), Some(EdgeKind::Calls))
+        .unwrap();
+    // The call to b::call_me should resolve (pub, same crate).
+    assert!(!calls.is_empty(), "expected Calls edge to pub fn");
+}
+
+/// Rust: pub(crate) fn callable within crate.
+#[test]
+fn rust_pub_crate_fn_callable_within_crate() {
+    let repo = tempdir().unwrap();
+    fs::create_dir_all(repo.path().join("src")).unwrap();
+
+    fs::write(
+        repo.path().join("src/lib.rs"),
+        "pub(crate) fn crate_helper() {}\npub fn api() { crate_helper(); }\n",
+    )
+    .unwrap();
+
+    let config = Config::default();
+    let mut graph = open_graph(&repo);
+    run_structural_compile(repo.path(), &config, &mut graph).unwrap();
+
+    let lib_file = graph.file_by_path("src/lib.rs").unwrap().unwrap();
+    let calls = graph
+        .outbound(NodeId::File(lib_file.id), Some(EdgeKind::Calls))
+        .unwrap();
+    assert!(!calls.is_empty(), "expected Calls edge within crate");
+}
+
+/// Rust: ambiguous short name without imports is dropped.
+#[test]
+fn rust_ambiguous_short_name_dropped() {
+    let repo = tempdir().unwrap();
+    fs::create_dir_all(repo.path().join("src")).unwrap();
+
+    // Two public functions in DIFFERENT modules with the same short name `map`.
+    // One is imported, one is not. The imported one should resolve uniquely.
+    fs::write(
+        repo.path().join("src/util.rs"),
+        "pub fn map<T>(x: T) -> T { x }\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.path().join("src/other.rs"),
+        "pub fn map<T>(x: T) -> T { x }\n",
+    )
+    .unwrap();
+    // Caller imports only util, calls map -> should resolve to util::map uniquely.
+    fs::write(
+        repo.path().join("src/main.rs"),
+        "mod util;\nmod other;\nfn main() { util::map(1); }\n",
+    )
+    .unwrap();
+
+    let config = Config::default();
+    let mut graph = open_graph(&repo);
+    run_structural_compile(repo.path(), &config, &mut graph).unwrap();
+
+    let main_file = graph.file_by_path("src/main.rs").unwrap().unwrap();
+    let calls = graph
+        .outbound(NodeId::File(main_file.id), Some(EdgeKind::Calls))
+        .unwrap();
+    // With import: +50 (imported) + 30 (kind) = 80, unique.
+    //other::map is public but not imported: +20 + 30 = 50.
+    //Top score = 80, unique -> emit.
+    assert!(
+        !calls.is_empty(),
+        "expected Calls edge to imported function; got none"
+    );
+}
+
+/// Python: method call on imported class resolves to imported method.
+#[test]
+fn python_method_call_on_imported_class() {
+    let repo = tempdir().unwrap();
+    fs::create_dir_all(repo.path().join("src")).unwrap();
+
+    fs::write(
+        repo.path().join("src/util.py"),
+        "class User:\n    def greet(self): pass\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.path().join("src/main.py"),
+        "from util import User\nu = User()\nu.greet()\n",
+    )
+    .unwrap();
+
+    let config = Config::default();
+    let mut graph = open_graph(&repo);
+    run_structural_compile(repo.path(), &config, &mut graph).unwrap();
+
+    let main_file = graph.file_by_path("src/main.py").unwrap().unwrap();
+    let calls = graph
+        .outbound(NodeId::File(main_file.id), Some(EdgeKind::Calls))
+        .unwrap();
+    // Should resolve to User.greet from util.
+    assert!(!calls.is_empty(), "expected Calls edge");
+}
+
+/// Python: underscore-prefixed private is NOT callable from outside.
+#[test]
+fn python_underscore_private_not_callable_from_outside() {
+    let repo = tempdir().unwrap();
+    fs::create_dir_all(repo.path().join("src")).unwrap();
+
+    fs::write(repo.path().join("src/a.py"), "def _helper(): pass\n").unwrap();
+    fs::write(repo.path().join("src/b.py"), "import a\na._helper()\n").unwrap();
+
+    let config = Config::default();
+    let mut graph = open_graph(&repo);
+    run_structural_compile(repo.path(), &config, &mut graph).unwrap();
+
+    let b_file = graph.file_by_path("src/b.py").unwrap().unwrap();
+    let calls = graph
+        .outbound(NodeId::File(b_file.id), Some(EdgeKind::Calls))
+        .unwrap();
+    // Private cross-file should not resolve.
+    assert!(
+        calls.is_empty(),
+        "expected no Calls edge to private function; got: {calls:?}"
+    );
+}
+
+/// TypeScript: exported fn callable via import.
+#[test]
+fn ts_export_fn_callable_via_import() {
+    let repo = tempdir().unwrap();
+    fs::create_dir_all(repo.path().join("src")).unwrap();
+
+    fs::write(
+        repo.path().join("src/util.ts"),
+        "export function handle(x: number): number { return x; }\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.path().join("src/main.ts"),
+        "import { handle } from './util'\nhandle(1)\n",
+    )
+    .unwrap();
+
+    let config = Config::default();
+    let mut graph = open_graph(&repo);
+    run_structural_compile(repo.path(), &config, &mut graph).unwrap();
+
+    let main_file = graph.file_by_path("src/main.ts").unwrap().unwrap();
+    let calls = graph
+        .outbound(NodeId::File(main_file.id), Some(EdgeKind::Calls))
+        .unwrap();
+    assert!(
+        !calls.is_empty(),
+        "expected Calls edge to exported function"
+    );
+}
+
+/// TypeScript: non-exported fn callable via import (parser defaults to Public).
+#[test]
+fn ts_non_exported_fn_callable_via_import() {
+    let repo = tempdir().unwrap();
+    fs::create_dir_all(repo.path().join("src")).unwrap();
+
+    // Note: TS parser defaults non-exported to Public, so this DOES resolve.
+    fs::write(
+        repo.path().join("src/util.ts"),
+        "function internal(x: number): number { return x; }\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.path().join("src/main.ts"),
+        "import { internal } from './util'\ninternal(1)\n",
+    )
+    .unwrap();
+
+    let config = Config::default();
+    let mut graph = open_graph(&repo);
+    run_structural_compile(repo.path(), &config, &mut graph).unwrap();
+
+    let main_file = graph.file_by_path("src/main.ts").unwrap().unwrap();
+    let calls = graph
+        .outbound(NodeId::File(main_file.id), Some(EdgeKind::Calls))
+        .unwrap();
+    // TS parser defaults to Public, so this resolves.
+    assert!(!calls.is_empty(), "expected Calls edge to function");
+}
+
+/// Go: capitalized fn callable across packages.
+#[test]
+fn go_capitalized_fn_callable_across_packages() {
+    let repo = tempdir().unwrap();
+    fs::create_dir_all(repo.path().join("src/util")).unwrap();
+
+    fs::write(
+        repo.path().join("go.mod"),
+        "module example.com/mysvc\n\ngo 1.21\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.path().join("src/util/util.go"),
+        "package util\nfunc Handle() {}\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.path().join("src/main.go"),
+        "package main\nimport \"example.com/mysvc/util\"\nfunc main() { util.Handle() }\n",
+    )
+    .unwrap();
+
+    let config = Config::default();
+    let mut graph = open_graph(&repo);
+    run_structural_compile(repo.path(), &config, &mut graph).unwrap();
+
+    let main_file = graph.file_by_path("src/main.go").unwrap().unwrap();
+    let calls = graph
+        .outbound(NodeId::File(main_file.id), Some(EdgeKind::Calls))
+        .unwrap();
+    assert!(
+        !calls.is_empty(),
+        "expected Calls edge to capitalized function"
+    );
+}
+
+/// Go: lowercase fn NOT callable from other package.
+#[test]
+fn go_lowercase_fn_not_callable_cross_package() {
+    let repo = tempdir().unwrap();
+    fs::create_dir_all(repo.path().join("src/internal")).unwrap();
+
+    fs::write(
+        repo.path().join("go.mod"),
+        "module example.com/mysvc\n\ngo 1.21\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.path().join("src/internal/internal.go"),
+        "package internal\nfunc helper() {}\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.path().join("src/main.go"),
+        "package main\nimport \"example.com/mysvc/internal\"\nfunc main() { internal.helper() }\n",
+    )
+    .unwrap();
+
+    let config = Config::default();
+    let mut graph = open_graph(&repo);
+    run_structural_compile(repo.path(), &config, &mut graph).unwrap();
+
+    let main_file = graph.file_by_path("src/main.go").unwrap().unwrap();
+    let calls = graph
+        .outbound(NodeId::File(main_file.id), Some(EdgeKind::Calls))
+        .unwrap();
+    // Lowercase (private) should not resolve.
+    assert!(
+        calls.is_empty(),
+        "expected no Calls edge to lowercase cross-package function; got: {calls:?}"
     );
 }

@@ -149,6 +149,20 @@ impl GraphStore for SqliteGraphStore {
         lists::all_symbols_summary(self)
     }
 
+    fn all_symbols_for_resolution(
+        &self,
+    ) -> crate::Result<
+        Vec<(
+            crate::core::ids::SymbolNodeId,
+            crate::core::ids::FileNodeId,
+            String,
+            crate::structure::graph::SymbolKind,
+            crate::structure::graph::Visibility,
+        )>,
+    > {
+        lists::all_symbols_for_resolution(self)
+    }
+
     // -- Drift/fingerprint (delegated to drift.rs) -------------------------
 
     fn latest_drift_revision(&self) -> crate::Result<Option<String>> {

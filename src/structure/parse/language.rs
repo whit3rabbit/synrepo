@@ -128,6 +128,19 @@ impl Language {
             Language::Go => GO_IMPORT_QUERY,
         }
     }
+
+    /// Call mode map: pattern index → CallMode (Free or Method).
+    ///
+    /// Used by stage-4 resolution to determine whether a call site is a
+    /// free function call or a method/attribute call for scoring purposes.
+    pub(super) fn call_mode_map(self) -> &'static [super::CallMode] {
+        match self {
+            Language::Rust => RUST_CALL_MODE_MAP,
+            Language::Python => PYTHON_CALL_MODE_MAP,
+            Language::TypeScript | Language::Tsx => TS_CALL_MODE_MAP,
+            Language::Go => GO_CALL_MODE_MAP,
+        }
+    }
 }
 
 // Pattern index → kind (see RUST_KIND_MAP):
@@ -201,21 +214,51 @@ const TS_KIND_MAP: &[SymbolKind] = &[
 
 // --- Call-site queries (stage 4: cross-file edge resolution) ---
 
+// Rust call patterns:
+//   0: (call_expression function: (identifier) @callee) → Free function call
+//   1: (call_expression function: (field_expression value: (_) @callee_prefix field: (field_identifier) @callee)) → Method call
+//   2: (call_expression function: (scoped_identifier path: (_) @callee_prefix name: (identifier) @callee)) → Qualified call
 const RUST_CALL_QUERY: &str = r#"
 (call_expression function: (identifier) @callee)
-(call_expression function: (field_expression field: (field_identifier) @callee))
-(call_expression function: (scoped_identifier name: (identifier) @callee))
+(call_expression function: (field_expression value: (_) @callee_prefix field: (field_identifier) @callee))
+(call_expression function: (scoped_identifier path: (_) @callee_prefix name: (identifier) @callee))
 "#;
 
+// Pattern index → CallMode (see RUST_CALL_QUERY patterns above):
+//   0: Free function call
+//   1: Method call (has prefix)
+//   2: Qualified call (has prefix)
+const RUST_CALL_MODE_MAP: &[super::CallMode] = &[
+    super::CallMode::Free,
+    super::CallMode::Method,
+    super::CallMode::Method,
+];
+
+// Python call patterns:
+//   0: (call function: (identifier) @callee) → Free function call
+//   1: (call function: (attribute object: (_) @callee_prefix attribute: (identifier) @callee)) → Method call
 const PYTHON_CALL_QUERY: &str = r#"
 (call function: (identifier) @callee)
-(call function: (attribute attribute: (identifier) @callee))
+(call function: (attribute object: (_) @callee_prefix attribute: (identifier) @callee))
 "#;
 
+// Pattern index → CallMode (see PYTHON_CALL_QUERY patterns above):
+//   0: Free function call
+//   1: Method call (has prefix)
+const PYTHON_CALL_MODE_MAP: &[super::CallMode] = &[super::CallMode::Free, super::CallMode::Method];
+
+// TypeScript call patterns:
+//   0: (call_expression function: (identifier) @callee) → Free function call
+//   1: (call_expression function: (member_expression object: (_) @callee_prefix property: (property_identifier) @callee)) → Method call
 const TS_CALL_QUERY: &str = r#"
 (call_expression function: (identifier) @callee)
-(call_expression function: (member_expression property: (property_identifier) @callee))
+(call_expression function: (member_expression object: (_) @callee_prefix property: (property_identifier) @callee))
 "#;
+
+// Pattern index → CallMode (see TS_CALL_QUERY patterns above):
+//   0: Free function call
+//   1: Method call (has prefix)
+const TS_CALL_MODE_MAP: &[super::CallMode] = &[super::CallMode::Free, super::CallMode::Method];
 
 // --- Import/use queries (stage 4: cross-file edge resolution) ---
 
@@ -265,10 +308,18 @@ const GO_KIND_MAP: &[SymbolKind] = &[
     SymbolKind::Constant,
 ];
 
+// Go call patterns:
+//   0: (call_expression function: (identifier) @callee) → Free function call
+//   1: (call_expression function: (selector_expression operand: (_) @callee_prefix field: (field_identifier) @callee)) → Method call
 const GO_CALL_QUERY: &str = r#"
 (call_expression function: (identifier) @callee)
-(call_expression function: (selector_expression field: (field_identifier) @callee))
+(call_expression function: (selector_expression operand: (_) @callee_prefix field: (field_identifier) @callee))
 "#;
+
+// Pattern index → CallMode (see GO_CALL_QUERY patterns above):
+//   0: Free function call
+//   1: Method call (has prefix)
+const GO_CALL_MODE_MAP: &[super::CallMode] = &[super::CallMode::Free, super::CallMode::Method];
 
 const GO_IMPORT_QUERY: &str = r#"
 (import_spec path: (interpreted_string_literal) @import_ref)

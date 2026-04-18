@@ -52,6 +52,17 @@ mod validation_tests;
 
 use crate::structure::graph::{EdgeKind, SymbolKind, Visibility};
 
+/// Call mode classification for stage-4 scope narrowing.
+///
+/// Determines whether a call site is a free function call or a method/attribute call.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CallMode {
+    /// Free function call: `foo()` without a receiver/qualifier.
+    Free,
+    /// Method or attribute call: `obj.method()` or `Type::method()`.
+    Method,
+}
+
 pub use extract::parse_file;
 pub use language::Language;
 
@@ -92,12 +103,18 @@ pub struct ExtractedEdge {
 /// A call site reference extracted during parse for stage-4 resolution.
 ///
 /// The callee name is the local name as it appears at the call site. Stage 4
-/// resolves it against the global symbol name index; unresolved names are
-/// silently skipped (approximate resolution is acceptable in phase 1).
+/// resolves it against the global symbol name index and uses the optional
+/// `callee_prefix` plus `is_method` flag for scope-narrowing; unresolved names
+/// are silently skipped (approximate resolution is acceptable in phase 1).
 #[derive(Clone, Debug)]
 pub struct ExtractedCallRef {
     /// Name of the called function or method (local, not fully qualified).
     pub callee_name: String,
+    /// Receiver or qualifier text at the call site (`"foo"` for `foo.bar()`,
+    /// `"Type"` for `Type::method()`, `None` for a bare `bar()`).
+    pub callee_prefix: Option<String>,
+    /// True for method/attribute calls (`obj.method()`), false for free calls.
+    pub is_method: bool,
 }
 
 /// An import/use reference extracted during parse for stage-4 resolution.

@@ -1,11 +1,15 @@
 //! List query operations for SqliteGraphStore.
 
 use crate::core::ids::{ConceptNodeId, FileNodeId, SymbolNodeId};
+use crate::structure::graph::{SymbolKind, Visibility};
 
 use super::super::SqliteGraphStore;
 
 /// Return type for all_symbols_summary.
 type SymbolSummary = (SymbolNodeId, FileNodeId, String, String, String);
+
+/// Return type for all_symbols_for_resolution.
+type SymbolForResolution = (SymbolNodeId, FileNodeId, String, SymbolKind, Visibility);
 
 /// Get all file paths and their IDs, ordered by path.
 pub fn all_file_paths(store: &SqliteGraphStore) -> crate::Result<Vec<(String, FileNodeId)>> {
@@ -64,6 +68,56 @@ pub fn all_symbol_names(
             )
         })
         .collect())
+}
+
+/// Get all active symbols with the fields stage-4 resolution needs
+/// (ID, file ID, qualified name, kind, visibility).
+///
+/// `kind` is read from its dedicated column; `visibility` is deserialized
+/// from a thin slice of the `data` JSON blob (one allocation per row,
+/// avoids parsing the full `SymbolNode`).
+pub fn all_symbols_for_resolution(
+    store: &SqliteGraphStore,
+) -> crate::Result<Vec<SymbolForResolution>> {
+    #[derive(serde::Deserialize)]
+    struct VisibilitySlice {
+        #[serde(default)]
+        visibility: Visibility,
+    }
+
+    let conn = store.conn.lock();
+    let mut stmt = conn.prepare_cached(
+        "SELECT id, file_id, qualified_name, kind, data FROM symbols WHERE retired_at_rev IS NULL ORDER BY id",
+    )?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+            ))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut out = Vec::with_capacity(rows.len());
+    for (sym_id, file_id, qname, kind_label, data) in rows {
+        let Some(kind) = SymbolKind::from_label(&kind_label) else {
+            continue;
+        };
+        let visibility = serde_json::from_str::<VisibilitySlice>(&data)
+            .map(|s| s.visibility)
+            .unwrap_or_default();
+        out.push((
+            sym_id.parse::<SymbolNodeId>().unwrap(),
+            file_id.parse::<FileNodeId>().unwrap(),
+            qname,
+            kind,
+            visibility,
+        ));
+    }
+    Ok(out)
 }
 
 /// Get all active symbol summaries (ID, file ID, name, kind, body_hash).

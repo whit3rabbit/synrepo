@@ -7,7 +7,9 @@ use std::sync::OnceLock;
 
 use tree_sitter::StreamingIterator as _;
 
-use super::{ExtractedCallRef, ExtractedImportRef, ExtractedSymbol, Language, ParseOutput};
+use super::{
+    CallMode, ExtractedCallRef, ExtractedImportRef, ExtractedSymbol, Language, ParseOutput,
+};
 
 /// Cached definition query with capture indices for "item" and "name".
 struct DefinitionQuery {
@@ -16,7 +18,15 @@ struct DefinitionQuery {
     name_idx: u32,
 }
 
-/// Cached single-capture query (call or import).
+/// Cached call query with capture indices for @callee and optional @callee_prefix.
+struct CallQuery {
+    query: Box<tree_sitter::Query>,
+    callee_idx: u32,
+    /// Optional capture index for @callee_prefix (method/qualified calls).
+    prefix_idx: Option<u32>,
+}
+
+/// Cached single-capture query (import).
 struct SingleCaptureQuery {
     query: Box<tree_sitter::Query>,
     capture_idx: u32,
@@ -35,7 +45,7 @@ fn supported_languages() -> &'static [Language] {
 /// Global caches for compiled tree-sitter queries.
 /// Each query is compiled once per language and reused across all file parses.
 static DEFINITION_QUERIES: OnceLock<Vec<Option<DefinitionQuery>>> = OnceLock::new();
-static CALL_QUERIES: OnceLock<Vec<Option<SingleCaptureQuery>>> = OnceLock::new();
+static CALL_QUERIES: OnceLock<Vec<Option<CallQuery>>> = OnceLock::new();
 static IMPORT_QUERIES: OnceLock<Vec<Option<SingleCaptureQuery>>> = OnceLock::new();
 
 /// Initialize all definition queries for all languages.
@@ -74,23 +84,28 @@ fn init_definition_queries() -> Vec<Option<DefinitionQuery>> {
 }
 
 /// Initialize all call queries for all languages.
-fn init_call_queries() -> Vec<Option<SingleCaptureQuery>> {
+fn init_call_queries() -> Vec<Option<CallQuery>> {
     let languages = supported_languages();
-    let mut cache: Vec<Option<SingleCaptureQuery>> = (0..languages.len()).map(|_| None).collect();
+    let mut cache: Vec<Option<CallQuery>> = (0..languages.len()).map(|_| None).collect();
     for &lang in languages {
         let ts_lang = lang.tree_sitter_language();
         let query_text = lang.call_query();
         match tree_sitter::Query::new(&ts_lang, query_text) {
             Ok(query) => {
                 let capture_names = query.capture_names();
-                let capture_idx = capture_names
+                let callee_idx = capture_names
                     .iter()
                     .position(|n| *n == "callee")
                     .map(|i| i as u32);
-                if let Some(capture_idx) = capture_idx {
-                    cache[lang as usize] = Some(SingleCaptureQuery {
+                let prefix_idx = capture_names
+                    .iter()
+                    .position(|n| *n == "callee_prefix")
+                    .map(|i| i as u32);
+                if let Some(callee_idx) = callee_idx {
+                    cache[lang as usize] = Some(CallQuery {
                         query: Box::new(query),
-                        capture_idx,
+                        callee_idx,
+                        prefix_idx,
                     });
                 }
             }
@@ -140,7 +155,7 @@ fn get_definition_query(language: Language) -> Option<&'static DefinitionQuery> 
 }
 
 /// Get the cached call query for a language.
-fn get_call_query(language: Language) -> Option<&'static SingleCaptureQuery> {
+fn get_call_query(language: Language) -> Option<&'static CallQuery> {
     CALL_QUERIES
         .get_or_init(init_call_queries)
         .get(language as usize)?
@@ -272,17 +287,40 @@ fn extract_call_refs(
         return Ok(vec![]);
     };
 
-    let callee_idx = call_query.capture_idx;
+    let callee_idx = call_query.callee_idx;
+    let prefix_idx = call_query.prefix_idx;
+    let call_mode_map = language.call_mode_map();
     let mut cursor = tree_sitter::QueryCursor::new();
     let mut matches = cursor.matches(&call_query.query, tree.root_node(), content);
     let mut refs = Vec::new();
 
     while let Some(m) = matches.next() {
+        let pattern_index = m.pattern_index;
+        let is_method = call_mode_map
+            .get(pattern_index)
+            .map(|&mode| mode == CallMode::Method)
+            .unwrap_or(false);
+
+        // Find the @callee capture
         for capture in m.captures.iter().filter(|c| c.index == callee_idx) {
             let name = node_text(capture.node, content);
-            if !name.is_empty() {
-                refs.push(ExtractedCallRef { callee_name: name });
+            if name.is_empty() {
+                continue;
             }
+
+            // Find the @callee_prefix capture if present
+            let callee_prefix = prefix_idx.and_then(|idx| {
+                m.captures
+                    .iter()
+                    .find(|c| c.index == idx)
+                    .map(|c| node_text(c.node, content))
+            });
+
+            refs.push(ExtractedCallRef {
+                callee_name: name,
+                callee_prefix: callee_prefix.filter(|s| !s.is_empty()),
+                is_method,
+            });
         }
     }
 

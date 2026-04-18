@@ -60,6 +60,8 @@ alwaysApply: false
 
 # synrepo
 
+synrepo is preconfigured with an MCP server registered in `.cursor/mcp.json`.
+
 ",
     doctrine_block!(),
     "
@@ -221,7 +223,7 @@ pub(crate) const WINDSURF_SHIM: &str = concat!(
     "\
 # synrepo
 
-synrepo precomputes a structural graph of this codebase.
+synrepo is preconfigured with an MCP server registered in `.windsurf/mcp.json`.
 
 ",
     doctrine_block!(),
@@ -358,9 +360,43 @@ define_basic_shim!(
 "
 );
 
-define_basic_shim!(
-    ROO_SHIM,
-    "# synrepo context (Roo Code)
+pub(crate) const ROO_SHIM: &str = concat!(
+    "\
+# synrepo
+
+synrepo is preconfigured with an MCP server registered in `.roo/mcp.json`.
+
+",
+    doctrine_block!(),
+    "
+## MCP tools (primary interface)
+
+- `synrepo_card target=<id> budget=<tiny|normal|deep>` — structured card for a file or symbol
+- `synrepo_search query=<text>` — lexical search
+- `synrepo_overview` — graph counts and mode
+- `synrepo_where_to_edit task=<description>` — file suggestions for a task
+- `synrepo_change_impact target=<id>` — first-pass reverse-dependency impact
+- `synrepo_minimum_context target=<id> budget=<...>` — budget-bounded 1-hop neighborhood
+- `synrepo_entrypoints` — entry-point discovery
+- `synrepo_findings [node_id=<id>]` — cross-link findings
+- `synrepo_recent_activity` — bounded synrepo operational events
+
+Node IDs: `file_0000000000000042`, `symbol_0000000000000024`. Use `synrepo_search` first.
+
+## CLI fallback
+
+```bash
+synrepo status                         # health check
+synrepo status --recent                # bounded operational history
+synrepo search <query>                 # lexical search
+synrepo node <id>                      # node metadata as JSON
+synrepo graph query \"inbound <id>\"    # reverse dependencies
+synrepo graph query \"outbound <id>\"   # forward dependencies
+synrepo graph stats                    # node and edge counts
+synrepo reconcile                      # refresh graph
+synrepo links list                     # cross-link candidates
+synrepo findings                       # findings report
+```
 "
 );
 

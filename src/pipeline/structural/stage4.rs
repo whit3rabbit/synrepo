@@ -6,17 +6,22 @@
 //! edges for newly parsed files. The caller owns the transaction; this module
 //! never calls begin or commit.
 //!
-//! ## Approximate resolution contract (phase 1)
+//! ## Approximate resolution contract (scoped, v2)
 //!
-//! - Call-site names are matched by the final component of the symbol's
-//!   qualified name. Ambiguous matches emit edges to all candidates.
-//! - Import paths are resolved for TypeScript (relative `./` and `../` paths),
-//!   Python (dotted-name to slash-path), Rust (`crate::` / `self::` / `super::`
-//!   plus crate-relative first segments → `.rs` / `mod.rs` candidates), and Go
-//!   (`go.mod` prefix stripping with per-directory `.go` fan-out).
-//! - Unresolved names are silently skipped — no error, no placeholder edge.
-//! - Cross-file edges from unchanged files are preserved from the previous cycle
-//!   because the delete cascade on changed file nodes cleans up stale edges.
+//! Call sites are resolved using a scoring rubric that considers:
+//! - Same file (+100): always callable.
+//! - Imported file (+50): strong positive signal.
+//! - Visibility (+20 Public, +10 Crate, -100 Private cross-file).
+//! - Kind match (+30): method call ↔ Method, free call ↔ Function/Constant.
+//! - Prefix match (+40): callee_prefix matches a component of candidate's qname.
+//!
+//! Cutoff rules:
+//! - Top score ≤ 0: drop (no candidate scores positive).
+//! - Unique top score: emit edge to that candidate.
+//! - Multiple tied at top score ≥ 50: emit edges to all (scoped ambiguity).
+//! - Multiple tied at top score < 50: drop (weak ambiguity).
+//!
+//! Import paths resolved as before.
 //!
 //! ## Resolver lookups use the graph's `file_index`, not the filesystem
 //!
@@ -26,7 +31,7 @@
 //! `.gitignore` and redactions) and avoids one syscall per import.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fs,
     path::{Component, Path, PathBuf},
 };
@@ -36,10 +41,36 @@ use crate::{
     pipeline::structural::ids::derive_edge_id,
     pipeline::structural::provenance::make_provenance,
     structure::{
-        graph::{Edge, EdgeKind, Epistemic, GraphStore},
+        graph::{Edge, EdgeKind, Epistemic, GraphStore, SymbolKind, Visibility},
         parse::{ExtractedCallRef, ExtractedImportRef, Language},
     },
 };
+
+/// Metadata for a symbol used in call-resolution scoring.
+#[derive(Clone, Debug)]
+pub struct SymbolMeta {
+    pub file_id: FileNodeId,
+    pub visibility: Visibility,
+    pub kind: SymbolKind,
+    pub qualified_name: String,
+}
+
+/// Scope map: for each file, the set of files it imports (direct imports only).
+/// Built as Imports edges are emitted, before the Calls resolution loop.
+type ImportsMap = HashMap<FileNodeId, HashSet<FileNodeId>>;
+
+// Scoring weights and cutoffs (see design.md D2). Keep in one place so the
+// tests (and the `top_score >= TIE_EMIT_CUTOFF` branch) can reference them.
+const SAME_FILE_BONUS: i32 = 100;
+const IMPORTED_FILE_BONUS: i32 = 50;
+const PUBLIC_BONUS: i32 = 20;
+const CRATE_BONUS: i32 = 10;
+const PRIVATE_CROSS_FILE_PENALTY: i32 = -100;
+const KIND_MATCH_BONUS: i32 = 30;
+const PREFIX_MATCH_BONUS: i32 = 40;
+/// Minimum score a tied top-candidate group needs before we emit an edge to
+/// every member of the tie. Lone winners bypass this and only need score > 0.
+const TIE_EMIT_CUTOFF: i32 = IMPORTED_FILE_BONUS;
 
 /// Per-compile resolver state threaded into every import reference.
 ///
@@ -88,6 +119,52 @@ pub(super) fn load_go_module_prefix(repo_root: &Path) -> Option<String> {
     None
 }
 
+/// Score a candidate symbol for call resolution per design.md D2 (scoring rubric
+/// documented next to the constants).
+fn score_candidate(
+    call_ref: &ExtractedCallRef,
+    candidate: &SymbolMeta,
+    importing_file_id: FileNodeId,
+    imports: &HashSet<FileNodeId>,
+) -> i32 {
+    let mut score = 0;
+    let same_file = candidate.file_id == importing_file_id;
+
+    if same_file {
+        score += SAME_FILE_BONUS;
+    } else if imports.contains(&candidate.file_id) {
+        score += IMPORTED_FILE_BONUS;
+    }
+
+    match candidate.visibility {
+        Visibility::Public => score += PUBLIC_BONUS,
+        Visibility::Crate => score += CRATE_BONUS,
+        Visibility::Private if !same_file => score += PRIVATE_CROSS_FILE_PENALTY,
+        Visibility::Private | Visibility::Unknown => {}
+    }
+
+    let kind_matches = if call_ref.is_method {
+        candidate.kind == SymbolKind::Method
+    } else {
+        matches!(candidate.kind, SymbolKind::Function | SymbolKind::Constant)
+    };
+    if kind_matches {
+        score += KIND_MATCH_BONUS;
+    }
+
+    if let Some(prefix) = &call_ref.callee_prefix {
+        if candidate
+            .qualified_name
+            .split("::")
+            .any(|component| component == prefix)
+        {
+            score += PREFIX_MATCH_BONUS;
+        }
+    }
+
+    score
+}
+
 /// Pending cross-file resolution work for one file parsed this cycle.
 pub struct CrossFilePending {
     pub file_id: FileNodeId,
@@ -109,24 +186,30 @@ pub fn run_cross_file_resolution(
         return Ok(0);
     }
 
-    // Build name index from all symbols currently in the graph.
-    // Key: short name (last '::' component of qualified_name).
-    // Value: all symbol IDs with that short name.
-    //
-    // These reads run inside the caller's open transaction. SQLite guarantees
-    // that a connection sees its own uncommitted writes, so this sees nodes
-    // inserted by stages 1–3 even though they haven't been committed yet.
-    let all_symbols = graph.all_symbol_names()?;
-    let mut name_index: HashMap<String, Vec<SymbolNodeId>> = HashMap::new();
-    for (sym_id, _file_id, qname) in &all_symbols {
+    // Build short-name index and per-symbol metadata in a single pass using
+    // the bulk resolver query (one SELECT, visibility parsed from the blob).
+    // SQLite read-your-own-writes lets us see stages 1–3's inserts inside the
+    // caller's open transaction.
+    let all_symbols = graph.all_symbols_for_resolution()?;
+    let mut name_index: HashMap<String, Vec<SymbolNodeId>> =
+        HashMap::with_capacity(all_symbols.len());
+    let mut symbol_meta: HashMap<SymbolNodeId, SymbolMeta> =
+        HashMap::with_capacity(all_symbols.len());
+    for (sym_id, file_id, qname, kind, visibility) in all_symbols {
         let short = qname.rsplit("::").next().unwrap_or(qname.as_str());
-        // Avoid allocating a fresh key on every hit (~1 String per symbol,
-        // across 100k-symbol graphs this is measurable).
-        if let Some(v) = name_index.get_mut(short) {
-            v.push(*sym_id);
-        } else {
-            name_index.insert(short.to_string(), vec![*sym_id]);
-        }
+        name_index
+            .entry(short.to_string())
+            .or_default()
+            .push(sym_id);
+        symbol_meta.insert(
+            sym_id,
+            SymbolMeta {
+                file_id,
+                visibility,
+                kind,
+                qualified_name: qname,
+            },
+        );
     }
 
     // Build file_index and files_by_dir in a single pass so both share the
@@ -182,55 +265,23 @@ pub fn run_cross_file_resolution(
         rust_crate_src_by_dir,
     };
 
+    // Imports map: populated as Imports edges are emitted, before Calls resolution.
+    // Maps importing_file -> set of imported file IDs.
+    let mut imports_map: ImportsMap = HashMap::new();
+
     // Edge insertions run inside the caller's open transaction; no begin/commit here.
     let mut emitted = 0usize;
 
+    let empty_imports: HashSet<FileNodeId> = HashSet::new();
+    let mut scored: Vec<(SymbolNodeId, i32)> = Vec::new();
+
+    // Global call-resolution counters (accumulated per-file).
+    let mut total_calls_resolved_uniquely = 0usize;
+    let mut total_calls_resolved_ambiguously = 0usize;
+    let mut total_calls_dropped_weak = 0usize;
+    let mut total_calls_dropped_no_candidates = 0usize;
+
     for item in pending {
-        // Calls edges: file → callee symbol
-        for call_ref in &item.call_refs {
-            let candidates = name_index
-                .get(&call_ref.callee_name)
-                .map(Vec::as_slice)
-                .unwrap_or(&[]);
-
-            for &callee_id in candidates {
-                let edge = Edge {
-                    id: derive_edge_id(
-                        NodeId::File(item.file_id),
-                        NodeId::Symbol(callee_id),
-                        EdgeKind::Calls,
-                    ),
-                    from: NodeId::File(item.file_id),
-                    to: NodeId::Symbol(callee_id),
-                    kind: EdgeKind::Calls,
-                    owner_file_id: None,
-                    last_observed_rev: None,
-                    retired_at_rev: None,
-                    epistemic: Epistemic::ParserObserved,
-                    drift_score: 0.0,
-                    provenance: make_provenance("stage4_calls", revision, &item.file_path, ""),
-                };
-                graph.insert_edge(edge)?;
-                emitted += 1;
-            }
-        }
-
-        // Imports edges: file → imported file.
-        //
-        // Dispatch per importing-file language:
-        // - Go imports legitimately fan out across every `.go` file in the
-        //   target package directory; the resolver returns all of them and
-        //   the caller emits an edge for each one that exists.
-        // - For every other language, the resolver returns candidates in
-        //   preference order (e.g., Rust puts `<base>.rs` before the sub-item
-        //   `<base_without_last>.rs` fallback), and the caller emits an edge
-        //   only for the first candidate that exists in `file_index`.
-        //
-        // Duplicate `(from, to, kind)` inserts collapse via `derive_edge_id`
-        // + `ON CONFLICT(id) DO UPDATE` in the sqlite store, so this is
-        // idempotent regardless of dispatch — the per-language split here
-        // preserves TS/Python's "first match wins" and Rust's "longest-match"
-        // semantics without relying on that.
         let importing_lang = Path::new(&item.file_path)
             .extension()
             .and_then(|e| e.to_str())
@@ -251,7 +302,7 @@ pub fn run_cross_file_resolution(
             };
             for target_id in targets {
                 if target_id == item.file_id {
-                    continue; // skip self-import
+                    continue;
                 }
                 let edge = Edge {
                     id: derive_edge_id(
@@ -271,11 +322,149 @@ pub fn run_cross_file_resolution(
                 };
                 graph.insert_edge(edge)?;
                 emitted += 1;
+
+                imports_map
+                    .entry(item.file_id)
+                    .or_default()
+                    .insert(target_id);
             }
         }
+
+        let imports = imports_map.get(&item.file_id).unwrap_or(&empty_imports);
+
+        // Per-file call-resolution counters.
+        let mut calls_resolved_uniquely = 0usize;
+        let mut calls_resolved_ambiguously = 0usize;
+        let mut calls_dropped_weak = 0usize;
+        let mut calls_dropped_no_candidates = 0usize;
+
+        for call_ref in &item.call_refs {
+            let candidates = name_index
+                .get(&call_ref.callee_name)
+                .map(Vec::as_slice)
+                .unwrap_or(&[]);
+
+            // Track calls with no name-index matches.
+            if candidates.is_empty() {
+                calls_dropped_no_candidates += 1;
+                continue;
+            }
+
+            scored.clear();
+            scored.extend(candidates.iter().filter_map(|callee_id| {
+                symbol_meta.get(callee_id).map(|meta| {
+                    (
+                        *callee_id,
+                        score_candidate(call_ref, meta, item.file_id, imports),
+                    )
+                })
+            }));
+
+            let Some(&(_, top_score)) = scored.iter().max_by_key(|(_, s)| *s) else {
+                calls_dropped_no_candidates += 1;
+                continue;
+            };
+            if top_score <= 0 {
+                tracing::debug!(
+                    call_site = %call_ref.callee_name,
+                    file = %item.file_path,
+                    "call dropped: all candidates scored <= 0"
+                );
+                calls_dropped_weak += 1;
+                continue;
+            }
+            let tie_count = scored.iter().filter(|(_, s)| *s == top_score).count();
+            if tie_count > 1 && top_score < TIE_EMIT_CUTOFF {
+                tracing::debug!(
+                    call_site = %call_ref.callee_name,
+                    file = %item.file_path,
+                    top_score,
+                    tie_count,
+                    "call dropped: ambiguous at low score"
+                );
+                calls_dropped_weak += 1;
+                continue;
+            }
+
+            // We have a winner (unique or tied at high score).
+            if tie_count > 1 {
+                tracing::debug!(
+                    call_site = %call_ref.callee_name,
+                    file = %item.file_path,
+                    top_score,
+                    tie_count,
+                    "call resolved: tie-emit at high score"
+                );
+                calls_resolved_ambiguously += tie_count;
+            } else {
+                calls_resolved_uniquely += 1;
+            }
+
+            for (callee_id, s) in &scored {
+                if *s != top_score {
+                    continue;
+                }
+                graph.insert_edge(build_calls_edge(
+                    item.file_id,
+                    *callee_id,
+                    revision,
+                    &item.file_path,
+                ))?;
+                emitted += 1;
+            }
+        }
+
+        // Per-file telemetry rollup.
+        tracing::trace!(
+            file = %item.file_path,
+            calls_resolved_uniquely,
+            calls_resolved_ambiguously,
+            calls_dropped_weak,
+            calls_dropped_no_candidates,
+            "stage4 call-resolution summary"
+        );
+
+        // Accumulate into global counters.
+        total_calls_resolved_uniquely += calls_resolved_uniquely;
+        total_calls_resolved_ambiguously += calls_resolved_ambiguously;
+        total_calls_dropped_weak += calls_dropped_weak;
+        total_calls_dropped_no_candidates += calls_dropped_no_candidates;
     }
 
+    // Global telemetry rollup.
+    tracing::trace!(
+        total_calls_resolved_uniquely,
+        total_calls_resolved_ambiguously,
+        total_calls_dropped_weak,
+        total_calls_dropped_no_candidates,
+        "stage4 call-resolution global summary"
+    );
+
     Ok(emitted)
+}
+
+fn build_calls_edge(
+    from_file: FileNodeId,
+    callee: SymbolNodeId,
+    revision: &str,
+    file_path: &str,
+) -> Edge {
+    Edge {
+        id: derive_edge_id(
+            NodeId::File(from_file),
+            NodeId::Symbol(callee),
+            EdgeKind::Calls,
+        ),
+        from: NodeId::File(from_file),
+        to: NodeId::Symbol(callee),
+        kind: EdgeKind::Calls,
+        owner_file_id: None,
+        last_observed_rev: None,
+        retired_at_rev: None,
+        epistemic: Epistemic::ParserObserved,
+        drift_score: 0.0,
+        provenance: make_provenance("stage4_calls", revision, file_path, ""),
+    }
 }
 
 /// Attempt to resolve a module reference to one or more repo-relative file paths.

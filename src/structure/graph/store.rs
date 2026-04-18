@@ -6,7 +6,7 @@ use crate::core::ids::{ConceptNodeId, EdgeId, FileNodeId, NodeId, SymbolNodeId};
 use crate::structure::drift::StructuralFingerprint;
 
 use super::edge::{Edge, EdgeKind};
-use super::node::{ConceptNode, FileNode, SymbolNode};
+use super::node::{ConceptNode, FileNode, SymbolKind, SymbolNode, Visibility};
 
 /// Trait for the canonical graph store.
 ///
@@ -162,6 +162,29 @@ pub trait GraphStore: Send + Sync {
                     sym.kind.as_str().to_string(),
                     sym.body_hash,
                 ));
+            }
+        }
+        Ok(out)
+    }
+
+    /// Return `(id, file_id, qualified_name, kind, visibility)` tuples for all
+    /// active symbol nodes, used by stage-4 call-scope narrowing.
+    ///
+    /// Supersedes `all_symbol_names()` + per-row `get_symbol()` for stage 4
+    /// (N+1 anti-pattern). `kind` and `visibility` both live in the `data`
+    /// blob today; the SQLite backend parses them from a single SELECT.
+    ///
+    /// The default implementation falls back to `all_symbol_names` +
+    /// `get_symbol` so in-memory test stores compile without change.
+    #[allow(clippy::type_complexity)]
+    fn all_symbols_for_resolution(
+        &self,
+    ) -> crate::Result<Vec<(SymbolNodeId, FileNodeId, String, SymbolKind, Visibility)>> {
+        let names = self.all_symbol_names()?;
+        let mut out = Vec::with_capacity(names.len());
+        for (sym_id, file_id, qname) in names {
+            if let Ok(Some(sym)) = self.get_symbol(sym_id) {
+                out.push((sym_id, file_id, qname, sym.kind, sym.visibility));
             }
         }
         Ok(out)

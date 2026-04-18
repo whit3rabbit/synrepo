@@ -42,6 +42,21 @@ pub(crate) fn setup(repo_root: &Path, tool: AgentTool, force: bool) -> anyhow::R
         AgentTool::OpenCode => {
             println!("  OpenCode will automatically load the synrepo MCP server and AGENTS.md.")
         }
+        AgentTool::Cursor => {
+            println!(
+                "  Cursor will automatically load the synrepo MCP server from .cursor/mcp.json."
+            )
+        }
+        AgentTool::Windsurf => {
+            println!(
+                "  Windsurf will automatically load the synrepo MCP server from .windsurf/mcp.json."
+            )
+        }
+        AgentTool::Roo => {
+            println!(
+                "  Roo Code will automatically load the synrepo MCP server from .roo/mcp.json."
+            )
+        }
         other => {
             // Shim-only tier: the shim is written, but MCP registration is
             // manual. Give the operator the concrete follow-ups they need.
@@ -95,6 +110,9 @@ pub(crate) fn step_register_mcp(
         AgentTool::Claude => setup_claude_mcp(repo_root),
         AgentTool::Codex => setup_codex_mcp(repo_root),
         AgentTool::OpenCode => setup_opencode_mcp(repo_root),
+        AgentTool::Cursor => setup_cursor_mcp(repo_root),
+        AgentTool::Windsurf => setup_windsurf_mcp(repo_root),
+        AgentTool::Roo => setup_roo_mcp(repo_root),
         other => {
             debug_assert_eq!(other.automation_tier(), AutomationTier::ShimOnly);
             println!(
@@ -345,4 +363,86 @@ pub(crate) fn setup_opencode_mcp(repo_root: &Path) -> anyhow::Result<StepOutcome
     write_json_config(&opencode_json_path, &config)?;
     println!("  Registered MCP server in opencode.json");
     Ok(prior)
+}
+
+/// Standard `mcpServers.synrepo` entry shared by the Cursor/Windsurf/Roo
+/// `.<tool>/mcp.json` editors. Claude Code's `.mcp.json` entry adds a `scope`
+/// field, so it doesn't share this factory.
+fn shim_tool_synrepo_entry() -> Value {
+    json!({
+        "command": "synrepo",
+        "args": ["mcp", "--repo", "."],
+    })
+}
+
+/// Edit `<config_dir_name>/mcp.json` to register synrepo under
+/// `mcpServers.synrepo`. Shared by Cursor, Windsurf, and Roo; each uses the
+/// same schema (a top-level `mcpServers` map keyed by server name).
+fn register_mcp_servers_json(
+    repo_root: &Path,
+    config_dir_name: &str,
+) -> anyhow::Result<StepOutcome> {
+    let config_dir = repo_root.join(config_dir_name);
+    fs::create_dir_all(&config_dir)
+        .with_context(|| format!("failed to create config directory {}", config_dir.display()))?;
+    let mcp_json_path = config_dir.join("mcp.json");
+    let mut config = load_json_config(&mcp_json_path)?;
+
+    if !config.is_object() {
+        return Err(anyhow!(
+            "refusing to overwrite {}: root is not a JSON object",
+            mcp_json_path.display()
+        ));
+    }
+
+    let target = shim_tool_synrepo_entry();
+
+    let root = config.as_object_mut().expect("object checked above");
+    let servers_entry = root
+        .entry("mcpServers".to_string())
+        .or_insert_with(|| json!({}));
+    let servers = servers_entry.as_object_mut().ok_or_else(|| {
+        anyhow!(
+            "refusing to overwrite {}: `mcpServers` exists but is not an object",
+            mcp_json_path.display()
+        )
+    })?;
+
+    let prior = match servers.get("synrepo") {
+        Some(existing) if existing == &target => {
+            println!(
+                "  synrepo already registered in {} (no changes)",
+                mcp_json_path.display()
+            );
+            return Ok(StepOutcome::AlreadyCurrent);
+        }
+        Some(_) => {
+            println!(
+                "  Updating existing synrepo entry in {}",
+                mcp_json_path.display()
+            );
+            StepOutcome::Updated
+        }
+        None => StepOutcome::Applied,
+    };
+
+    servers.insert("synrepo".to_string(), target);
+    write_json_config(&mcp_json_path, &config)?;
+    println!(
+        "  Registered project-scoped MCP server in {}/mcp.json",
+        config_dir_name
+    );
+    Ok(prior)
+}
+
+pub(crate) fn setup_cursor_mcp(repo_root: &Path) -> anyhow::Result<StepOutcome> {
+    register_mcp_servers_json(repo_root, ".cursor")
+}
+
+pub(crate) fn setup_windsurf_mcp(repo_root: &Path) -> anyhow::Result<StepOutcome> {
+    register_mcp_servers_json(repo_root, ".windsurf")
+}
+
+pub(crate) fn setup_roo_mcp(repo_root: &Path) -> anyhow::Result<StepOutcome> {
+    register_mcp_servers_json(repo_root, ".roo")
 }

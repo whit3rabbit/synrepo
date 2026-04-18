@@ -34,7 +34,10 @@ pub(crate) use mcp::run_mcp_server;
 pub(crate) use repair::{check, reconcile, sync};
 pub(crate) use setup::setup;
 #[cfg(test)]
-pub(crate) use setup::{setup_claude_mcp, setup_codex_mcp, setup_opencode_mcp, StepOutcome};
+pub(crate) use setup::{
+    setup_claude_mcp, setup_codex_mcp, setup_cursor_mcp, setup_opencode_mcp, setup_roo_mcp,
+    setup_windsurf_mcp, StepOutcome,
+};
 pub(crate) use setup::{
     step_apply_integration, step_ensure_ready, step_init, step_register_mcp, step_write_shim,
 };
