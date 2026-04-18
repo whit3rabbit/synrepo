@@ -10,6 +10,10 @@ pub mod semantic;
 
 // Re-exports
 pub use deterministic::{candidate_pairs, DEFAULT_DISTANCE_CUTOFF, MIN_IDENT_LEN};
+// `semantic_candidates` is gated because `semantic.rs` is `#![cfg(feature = "semantic-triage")]`
+// at the file level; the symbol does not exist when the feature is off.
+#[cfg(feature = "semantic-triage")]
+pub use semantic::semantic_candidates;
 
 /// Triage scope driving `candidate_pairs`. The caller supplies the concept
 /// nodes it wants to consider; a production call runs against all concepts.

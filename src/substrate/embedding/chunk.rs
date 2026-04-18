@@ -36,12 +36,18 @@ pub enum EmbeddingChunkSource {
 }
 
 /// Unique identifier for an embedding chunk.
+///
+/// Width matches the graph node ID types (`SymbolNodeId` / `ConceptNodeId`,
+/// both `u128`) so a chunk id round-trips back to its source node ID without
+/// loss. Bumping this width requires bumping `INDEX_FORMAT_VERSION` in
+/// `index.rs`; on-disk records hold the chunk id as a fixed-width little-endian
+/// integer.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
-pub struct ChunkId(pub u64);
+pub struct ChunkId(pub u128);
 
 impl std::fmt::Display for ChunkId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "chunk_{:016x}", self.0)
+        write!(f, "chunk_{:032x}", self.0)
     }
 }
 
@@ -191,9 +197,9 @@ mod tests {
     #[test]
     fn chunk_id_display_format() {
         let id = ChunkId(42);
-        assert_eq!(id.to_string(), "chunk_000000000000002a");
+        assert_eq!(id.to_string(), "chunk_0000000000000000000000000000002a");
         let id_big = ChunkId(0xDEADBEEF);
-        assert_eq!(id_big.to_string(), "chunk_00000000deadbeef");
+        assert_eq!(id_big.to_string(), "chunk_000000000000000000000000deadbeef");
     }
 
     #[test]

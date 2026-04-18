@@ -115,3 +115,6 @@ pub fn is_available() -> bool {
 pub fn vectors_gitignore_content() -> &'static str {
     "index/vectors/"
 }
+
+#[cfg(all(test, feature = "semantic-triage"))]
+mod tests;
