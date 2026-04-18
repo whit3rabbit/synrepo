@@ -27,12 +27,12 @@ pub mod repair;
 pub mod setup;
 
 pub use integration::{
-    run_integration_wizard_loop, IntegrationPlan, IntegrationWizardOutcome,
-    IntegrationWizardState, ActionRow as IntegrationActionRow,
+    run_integration_wizard_loop, ActionRow as IntegrationActionRow, IntegrationPlan,
+    IntegrationWizardOutcome, IntegrationWizardState,
 };
 pub use repair::{
-    run_repair_wizard_loop, RepairPlan, RepairWizardOutcome, RepairWizardState,
-    ActionRow as RepairActionRow, RepairActionKind, RepairStep,
+    run_repair_wizard_loop, ActionRow as RepairActionRow, RepairActionKind, RepairPlan, RepairStep,
+    RepairWizardOutcome, RepairWizardState,
 };
 pub use setup::{
     run_setup_wizard_loop, SetupPlan, SetupWizardOutcome, SetupWizardState, WIZARD_TARGETS,
@@ -71,5 +71,31 @@ pub(crate) fn target_label(t: AgentTargetKind) -> &'static str {
         AgentTargetKind::Codex => "Codex CLI",
         AgentTargetKind::Copilot => "GitHub Copilot",
         AgentTargetKind::Windsurf => "Windsurf",
+    }
+}
+
+/// Two-tier support matrix mirrored on the library side so the TUI can render
+/// honest labels without a dependency on the binary crate's `AgentTool` enum.
+/// Must stay in sync with `AgentTool::automation_tier()` in the binary; the
+/// `automation_tier_matches_step_register_mcp_dispatch` test enforces that
+/// agreement for every wizard target.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AgentTargetTier {
+    /// `synrepo setup` writes the agent's MCP config entry automatically.
+    Automated,
+    /// `synrepo setup` writes the shim only; MCP wiring is manual.
+    ShimOnly,
+}
+
+/// Tier for a wizard-visible agent target. Of the five observationally-
+/// detectable targets, only Claude and Codex ship automated MCP registration
+/// today. OpenCode is also Automated on the CLI, but is not part of the
+/// wizard probe set, so it does not appear here.
+pub fn target_tier(t: AgentTargetKind) -> AgentTargetTier {
+    match t {
+        AgentTargetKind::Claude | AgentTargetKind::Codex => AgentTargetTier::Automated,
+        AgentTargetKind::Cursor | AgentTargetKind::Copilot | AgentTargetKind::Windsurf => {
+            AgentTargetTier::ShimOnly
+        }
     }
 }

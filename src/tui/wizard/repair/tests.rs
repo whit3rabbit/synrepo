@@ -2,8 +2,10 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::tui::wizard::repair::state::{RepairWizardState, RepairPlan, RepairActionKind, RepairStep, ActionRow};
     use crate::bootstrap::runtime_probe::{AgentIntegration, AgentTargetKind, Missing};
+    use crate::tui::wizard::repair::state::{
+        RepairActionKind, RepairPlan, RepairStep, RepairWizardState,
+    };
     use crossterm::event::{KeyCode, KeyModifiers};
 
     fn press(state: &mut RepairWizardState, code: KeyCode) {

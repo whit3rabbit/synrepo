@@ -7,7 +7,7 @@ use synrepo::config::Mode;
 use toml_edit::{DocumentMut, Item, Table, Value as TomlValue};
 
 use super::basic::{agent_setup, init};
-use crate::cli_support::agent_shims::AgentTool;
+use crate::cli_support::agent_shims::{AgentTool, AutomationTier};
 
 /// Outcome of a single setup step. Tests assert on this rather than captured
 /// stdout; the CLI still prints progress lines for user-visible output.
@@ -30,8 +30,9 @@ pub(crate) fn setup(repo_root: &Path, tool: AgentTool, force: bool) -> anyhow::R
 
     step_init(repo_root, None, force)?;
     step_apply_integration(repo_root, tool, force)?;
+    step_ensure_ready(repo_root)?;
 
-    println!("\nSetup complete! One Next Step:");
+    println!("\nSetup complete. Repo is ready. One Next Step:");
     match tool {
         AgentTool::Claude => {
             println!("  Run `claude` and it will automatically load the synrepo MCP server.")
@@ -42,13 +43,14 @@ pub(crate) fn setup(repo_root: &Path, tool: AgentTool, force: bool) -> anyhow::R
         AgentTool::OpenCode => {
             println!("  OpenCode will automatically load the synrepo MCP server and AGENTS.md.")
         }
-        _ => {
-            println!("  Configure your agent to use `synrepo mcp --repo .` as a stdio MCP server.")
+        other => {
+            // Shim-only tier: the shim is written, but MCP registration is
+            // manual. Give the operator the concrete follow-ups they need.
+            debug_assert_eq!(other.automation_tier(), AutomationTier::ShimOnly);
+            println!("  Shim written: {}", other.output_path(repo_root).display());
+            println!("  Next: {}", other.include_instruction());
+            println!("  MCP server: point your agent at `synrepo mcp --repo .` (stdio transport).");
         }
-    }
-
-    if fs::metadata(repo_root.join(".synrepo/state/reconcile-state.json")).is_err() {
-        println!("\nTip: Run `synrepo reconcile` to build your first graph if `init` was empty.");
     }
 
     Ok(())
@@ -94,10 +96,12 @@ pub(crate) fn step_register_mcp(
         AgentTool::Claude => setup_claude_mcp(repo_root),
         AgentTool::Codex => setup_codex_mcp(repo_root),
         AgentTool::OpenCode => setup_opencode_mcp(repo_root),
-        _ => {
+        other => {
+            debug_assert_eq!(other.automation_tier(), AutomationTier::ShimOnly);
             println!(
-                "  Note: Project-scoped MCP registration is not yet automated for {}.",
-                target.display_name()
+                "  {} uses shim-only integration; register `synrepo mcp --repo .` \
+                 as a stdio MCP server in the agent's own config.",
+                other.display_name()
             );
             Ok(StepOutcome::NotAutomated)
         }
@@ -118,6 +122,23 @@ pub(crate) fn step_apply_integration(
         (_, StepOutcome::NotAutomated) => StepOutcome::NotAutomated,
         _ => StepOutcome::AlreadyCurrent,
     })
+}
+
+/// Ensure setup leaves an operationally ready runtime by creating the first
+/// reconcile state when it is still missing after init.
+pub(crate) fn step_ensure_ready(repo_root: &Path) -> anyhow::Result<StepOutcome> {
+    let state_path = repo_root
+        .join(".synrepo")
+        .join("state")
+        .join("reconcile-state.json");
+    if state_path.exists() {
+        println!("  Reconcile state already present.");
+        return Ok(StepOutcome::AlreadyCurrent);
+    }
+
+    println!("  Running first reconcile pass...");
+    super::repair::reconcile(repo_root)?;
+    Ok(StepOutcome::Applied)
 }
 
 /// Target entry inserted under `mcpServers.synrepo` in `.mcp.json`.

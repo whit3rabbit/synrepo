@@ -28,8 +28,9 @@ use cli_support::commands::report_reconcile_outcome;
 use cli_support::commands::{
     agent_setup, change_risk, check, compact, export, findings, graph_query, graph_stats, handoffs,
     init, links_accept, links_list, links_reject, links_review, node, reconcile, run_mcp_server,
-    search, setup, status, status_output, step_apply_integration, step_init, step_register_mcp,
-    step_write_shim, sync, upgrade, watch, watch_internal, watch_status, watch_stop,
+    search, setup, status, status_output, step_apply_integration, step_ensure_ready, step_init,
+    step_register_mcp, step_write_shim, sync, upgrade, watch, watch_internal, watch_status,
+    watch_stop,
 };
 
 fn main() -> anyhow::Result<()> {
@@ -190,19 +191,12 @@ fn execute_setup_plan(repo_root: &Path, plan: SetupPlan) -> anyhow::Result<()> {
         step_apply_integration(repo_root, tool, false)?;
     }
     if plan.reconcile_after {
-        // Only run a reconcile pass if init didn't already build the graph.
-        // `step_init` is idempotent so this avoids wasted work; when init is
-        // fresh it already emits the first pass internally.
-        let state_path = repo_root
-            .join(".synrepo")
-            .join("state")
-            .join("reconcile-state.json");
-        if !state_path.exists() {
-            println!("  Running first reconcile pass...");
-            reconcile(repo_root)?;
-        }
+        // Setup promises an operationally ready repo, not just a populated
+        // graph. The shared helper runs the first reconcile only when the
+        // reconcile-state file is still missing.
+        step_ensure_ready(repo_root)?;
     }
-    println!("Setup complete.");
+    println!("Setup complete. Repo is ready.");
     Ok(())
 }
 
@@ -421,10 +415,13 @@ fn dispatch(command: Command, repo_root: &Path, tui_opts: TuiOptions) -> anyhow:
                 // Foreground + TTY + no opt-out = dashboard live mode.
                 match run_live_watch_dashboard(repo_root, tui_opts) {
                     Ok(_) => Ok(()),
-                    // The dashboard live mode entry point bails until Phase
-                    // 8/5.5 wires it; fall back to prior foreground behavior
-                    // so the command stays functional during rollout.
-                    Err(_) => watch(repo_root, false),
+                    Err(err) => {
+                        eprintln!(
+                            "live dashboard unavailable: {err}; falling back to plain foreground watch \
+                             (use `--no-ui` to suppress this notice)"
+                        );
+                        watch(repo_root, false)
+                    }
                 }
             }
         }

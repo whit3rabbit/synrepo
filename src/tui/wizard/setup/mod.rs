@@ -7,9 +7,9 @@
 //! tests can exercise it by driving `handle_key` with crafted key events and
 //! asserting on the resulting plan.
 
-pub mod state;
 pub mod render;
+pub mod state;
 mod tests;
 
-pub use state::{SetupPlan, SetupWizardOutcome, SetupWizardState, WIZARD_TARGETS};
 pub use render::run_setup_wizard_loop;
+pub use state::{SetupPlan, SetupWizardOutcome, SetupWizardState, WIZARD_TARGETS};

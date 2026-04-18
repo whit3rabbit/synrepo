@@ -2,12 +2,18 @@
 //! between dashboard (poll / live) mode and the various wizards. Wizard
 //! rendering still lives in `wizard.rs`; this module only owns the loop.
 
+mod watch_events;
+
+pub use watch_events::watch_event_to_log_entry;
+
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+use crossbeam_channel::{Receiver, TryRecvError};
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 
 use crate::bootstrap::runtime_probe::AgentIntegration;
+use crate::pipeline::watch::WatchEvent;
 use crate::surface::status_snapshot::{build_status_snapshot, StatusOptions, StatusSnapshot};
 use crate::tui::probe::Severity;
 use crate::tui::theme::Theme;
@@ -91,6 +97,10 @@ pub struct AppState {
     pub poll_interval: Duration,
     /// Last time we rebuilt the snapshot.
     last_refresh: Instant,
+    /// Live-mode only: receiver streaming `WatchEvent`s from the hosted watch
+    /// service. `None` in poll mode so the dashboard falls back to file-based
+    /// snapshot refresh.
+    events_rx: Option<Receiver<WatchEvent>>,
 }
 
 /// Post-loop intent expressed by the dashboard when it exits. The caller maps
@@ -108,6 +118,34 @@ pub enum DashboardExit {
 impl AppState {
     /// Build a new poll-mode app state for `repo_root`.
     pub fn new_poll(repo_root: &Path, theme: Theme, integration: AgentIntegration) -> Self {
+        Self::new(repo_root, theme, integration, AppMode::DashboardPoll, None)
+    }
+
+    /// Build a new live-mode app state bound to a `WatchEvent` receiver. Live
+    /// mode still polls status files for the header stats, but the log pane is
+    /// driven by the event bus instead of being inferred from state-file diffs.
+    pub fn new_live(
+        repo_root: &Path,
+        theme: Theme,
+        integration: AgentIntegration,
+        events_rx: Receiver<WatchEvent>,
+    ) -> Self {
+        Self::new(
+            repo_root,
+            theme,
+            integration,
+            AppMode::DashboardLive,
+            Some(events_rx),
+        )
+    }
+
+    fn new(
+        repo_root: &Path,
+        theme: Theme,
+        integration: AgentIntegration,
+        mode: AppMode,
+        events_rx: Option<Receiver<WatchEvent>>,
+    ) -> Self {
         let snapshot = build_status_snapshot(
             repo_root,
             StatusOptions {
@@ -118,7 +156,7 @@ impl AppState {
         Self {
             repo_root: repo_root.to_path_buf(),
             theme,
-            mode: AppMode::DashboardPoll,
+            mode,
             integration,
             snapshot,
             log: EventLog::default(),
@@ -127,6 +165,7 @@ impl AppState {
             launch_integration: false,
             poll_interval: Duration::from_secs(2),
             last_refresh: Instant::now(),
+            events_rx,
         }
     }
 
@@ -139,10 +178,34 @@ impl AppState {
         }
     }
 
-    /// Refresh the snapshot if the poll interval has elapsed.
+    /// Refresh the snapshot if the poll interval has elapsed. In live mode,
+    /// this also drains any pending `WatchEvent`s from the bus into the log
+    /// pane before the file-based snapshot refresh runs.
     pub fn tick(&mut self) {
+        self.drain_events();
         if self.last_refresh.elapsed() >= self.poll_interval {
             self.refresh_now();
+        }
+    }
+
+    /// Drain all pending events from the watch bus into the log pane. Called
+    /// from `tick()`. A disconnected sender clears the receiver so subsequent
+    /// calls are no-ops. Best-effort: a full log just drops oldest entries.
+    pub fn drain_events(&mut self) {
+        let Some(rx) = self.events_rx.as_ref() else {
+            return;
+        };
+        loop {
+            match rx.try_recv() {
+                Ok(event) => {
+                    self.log.push(watch_event_to_log_entry(event));
+                }
+                Err(TryRecvError::Empty) => return,
+                Err(TryRecvError::Disconnected) => {
+                    self.events_rx = None;
+                    return;
+                }
+            }
         }
     }
 
@@ -275,5 +338,36 @@ mod tests {
         state.push_welcome_banner();
         state.push_welcome_banner();
         assert_eq!(state.log.as_slice().len(), 2);
+    }
+
+    #[test]
+    fn drain_events_pulls_all_pending_into_log() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let (tx, rx) = crossbeam_channel::bounded::<WatchEvent>(8);
+        let mut state =
+            AppState::new_live(tempdir.path(), Theme::plain(), AgentIntegration::Absent, rx);
+        tx.send(WatchEvent::ReconcileStarted {
+            at: "t0".to_string(),
+            triggering_events: 0,
+        })
+        .unwrap();
+        tx.send(WatchEvent::Error {
+            at: "t1".to_string(),
+            message: "x".to_string(),
+        })
+        .unwrap();
+        state.drain_events();
+        let log = state.log.as_slice();
+        assert_eq!(log.len(), 2);
+        assert!(log.iter().all(|e| e.tag == "watch"));
+    }
+
+    #[test]
+    fn drain_events_is_noop_in_poll_mode() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let mut state =
+            AppState::new_poll(tempdir.path(), Theme::plain(), AgentIntegration::Absent);
+        state.drain_events();
+        assert!(state.log.as_slice().is_empty());
     }
 }

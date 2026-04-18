@@ -4,10 +4,12 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
 
-use super::state::{IntegrationWizardState, IntegrationStep, ACTION_ROWS, ActionRow};
+use super::state::{ActionRow, IntegrationStep, IntegrationWizardState, ACTION_ROWS};
 use crate::tui::app::poll_key;
 use crate::tui::theme::Theme;
-use crate::tui::wizard::{enter_tui, leave_tui, target_label, WizardTerminal};
+use crate::tui::wizard::{
+    enter_tui, leave_tui, target_label, target_tier, AgentTargetTier, WizardTerminal,
+};
 
 /// Run the integration sub-wizard until Complete or cancellation.
 pub fn run_integration_wizard_loop(
@@ -106,13 +108,18 @@ fn draw_target_step(
         .map(|(i, t)| {
             let selected = i == state.target_cursor;
             let marker = if selected { "▶ " } else { "  " };
-            let label = if Some(*t) == configured {
-                format!("{} (configured)", target_label(*t))
-            } else if state.detected_targets.contains(t) {
-                format!("{} (detected)", target_label(*t))
-            } else {
-                target_label(*t).to_string()
+            let tier = match target_tier(*t) {
+                AgentTargetTier::Automated => "automated",
+                AgentTargetTier::ShimOnly => "shim-only",
             };
+            let status_suffix = if Some(*t) == configured {
+                " (configured)"
+            } else if state.detected_targets.contains(t) {
+                " (detected)"
+            } else {
+                ""
+            };
+            let label = format!("{} [{tier}]{status_suffix}", target_label(*t));
             let style = if selected {
                 theme.agent_style()
             } else if Some(*t) == configured {
@@ -207,6 +214,16 @@ fn draw_confirm_step(
             format!("  {step}. Register the synrepo MCP server"),
             theme.base_style(),
         )));
+        if target_tier(state.target) == AgentTargetTier::ShimOnly {
+            lines.push(Line::from(Span::styled(
+                format!(
+                    "     Note: {} uses shim-only integration; \
+                     MCP registration will print a manual setup hint instead.",
+                    target_label(state.target)
+                ),
+                theme.muted_style(),
+            )));
+        }
     }
     lines.push(Line::from(Span::raw("")));
     lines.push(Line::from(Span::styled(

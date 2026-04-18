@@ -13,10 +13,10 @@
 use std::fs;
 use tempfile::tempdir;
 
-use crate::cli_support::agent_shims::AgentTool;
+use crate::cli_support::agent_shims::{AgentTool, AutomationTier};
 use crate::cli_support::commands::{
-    setup_claude_mcp, setup_codex_mcp, setup_opencode_mcp, step_apply_integration, step_init,
-    step_register_mcp, step_write_shim, StepOutcome,
+    setup_claude_mcp, setup_codex_mcp, setup_opencode_mcp, step_apply_integration,
+    step_ensure_ready, step_init, step_register_mcp, step_write_shim, StepOutcome,
 };
 
 // ---------- Claude: .mcp.json ----------
@@ -361,6 +361,33 @@ fn step_init_skips_when_already_initialized() {
 }
 
 #[test]
+fn step_ensure_ready_runs_first_reconcile_when_state_is_missing() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("README.md"), "ready token\n").unwrap();
+    step_init(dir.path(), None, false).unwrap();
+
+    let outcome = step_ensure_ready(dir.path()).unwrap();
+
+    assert_eq!(outcome, StepOutcome::Applied);
+    assert!(dir
+        .path()
+        .join(".synrepo/state/reconcile-state.json")
+        .exists());
+}
+
+#[test]
+fn step_ensure_ready_skips_when_reconcile_state_exists() {
+    let dir = tempdir().unwrap();
+    fs::write(dir.path().join("README.md"), "ready token\n").unwrap();
+    step_init(dir.path(), None, false).unwrap();
+    step_ensure_ready(dir.path()).unwrap();
+
+    let outcome = step_ensure_ready(dir.path()).unwrap();
+
+    assert_eq!(outcome, StepOutcome::AlreadyCurrent);
+}
+
+#[test]
 fn step_register_mcp_claude_registers_then_idempotent() {
     let dir = tempdir().unwrap();
     let first = step_register_mcp(dir.path(), AgentTool::Claude).unwrap();
@@ -372,11 +399,30 @@ fn step_register_mcp_claude_registers_then_idempotent() {
 }
 
 #[test]
-fn step_register_mcp_not_automated_for_cursor() {
-    let dir = tempdir().unwrap();
-    let outcome = step_register_mcp(dir.path(), AgentTool::Cursor).unwrap();
-    assert_eq!(outcome, StepOutcome::NotAutomated);
-    assert!(!dir.path().join(".mcp.json").exists());
+fn step_register_mcp_returns_not_automated_for_shim_only_targets() {
+    // Shim-only targets must return NotAutomated and must not write any
+    // project-scoped MCP config files. Parameterized over a representative
+    // sample of the shim-only roster (first-wave + one second-wave target).
+    let targets = [
+        AgentTool::Cursor,
+        AgentTool::Copilot,
+        AgentTool::Windsurf,
+        AgentTool::Generic,
+        AgentTool::Gemini,
+    ];
+    for target in targets {
+        let dir = tempdir().unwrap();
+        let outcome = step_register_mcp(dir.path(), target).unwrap();
+        assert_eq!(
+            outcome,
+            StepOutcome::NotAutomated,
+            "{target:?} must return NotAutomated"
+        );
+        assert!(
+            !dir.path().join(".mcp.json").exists(),
+            "{target:?} must not create .mcp.json"
+        );
+    }
 }
 
 #[test]
@@ -412,14 +458,63 @@ fn step_apply_integration_rerun_is_idempotent() {
 }
 
 #[test]
-fn step_apply_integration_not_automated_for_cursor_still_writes_shim() {
-    let dir = tempdir().unwrap();
-    let outcome = step_apply_integration(dir.path(), AgentTool::Cursor, false).unwrap();
+fn step_apply_integration_for_shim_only_targets_still_writes_shim() {
     // Shim write is Applied; MCP registration is NotAutomated. Composite
-    // precedence prefers shim Applied outcome.
-    assert_eq!(outcome, StepOutcome::Applied);
-    assert!(AgentTool::Cursor.output_path(dir.path()).exists());
-    assert!(!dir.path().join(".mcp.json").exists());
+    // precedence prefers shim Applied outcome across every shim-only target.
+    let targets = [
+        AgentTool::Cursor,
+        AgentTool::Copilot,
+        AgentTool::Windsurf,
+        AgentTool::Generic,
+        AgentTool::Gemini,
+    ];
+    for target in targets {
+        let dir = tempdir().unwrap();
+        let outcome = step_apply_integration(dir.path(), target, false).unwrap();
+        assert_eq!(
+            outcome,
+            StepOutcome::Applied,
+            "{target:?} apply must surface shim Applied outcome"
+        );
+        assert!(
+            target.output_path(dir.path()).exists(),
+            "{target:?} shim file must be written"
+        );
+        assert!(
+            !dir.path().join(".mcp.json").exists(),
+            "{target:?} must not register MCP entry"
+        );
+    }
+}
+
+#[test]
+fn automation_tier_matches_step_register_mcp_dispatch() {
+    // Anti-drift guard: `AgentTool::automation_tier()` is the declared source
+    // of truth for which agents get automated MCP registration. Every variant
+    // must dispatch through `step_register_mcp` consistently with its tier —
+    // if someone adds a new variant or moves one between tiers without
+    // updating the corresponding dispatch arm (or vice versa), this test
+    // fails loud.
+    use clap::ValueEnum;
+
+    for target in <AgentTool as ValueEnum>::value_variants() {
+        let dir = tempdir().unwrap();
+        let outcome = step_register_mcp(dir.path(), *target).unwrap();
+        match target.automation_tier() {
+            AutomationTier::Automated => assert!(
+                matches!(
+                    outcome,
+                    StepOutcome::Applied | StepOutcome::AlreadyCurrent | StepOutcome::Updated
+                ),
+                "{target:?} is Automated but dispatch returned {outcome:?}"
+            ),
+            AutomationTier::ShimOnly => assert_eq!(
+                outcome,
+                StepOutcome::NotAutomated,
+                "{target:?} is ShimOnly but dispatch returned {outcome:?}"
+            ),
+        }
+    }
 }
 
 // Phase 10.3: init failure must surface as Err so the wizard's plan executor

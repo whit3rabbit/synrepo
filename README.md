@@ -62,9 +62,13 @@ The cleanest workflow to get `synrepo` running is:
 1.  **Install synrepo**: See [Installation](#installation) above.
 2.  **Run setup**: In your repository root, run:
     ```bash
-    synrepo setup <agent>  # claude, cursor, codex, copilot, generic, windsurf, open-code, gemini, goose, kiro, qwen, junie, roo, tabnine, trae
+    synrepo setup <agent>
     ```
-    This runs `init`, writes client-specific instructions, and registers the project-scoped MCP server where possible.
+    Two support tiers:
+    - **Automated** (writes the shim *and* registers the project-scoped MCP server): `claude`, `codex`, `open-code`.
+    - **Shim-only** (writes the instruction file; wire `synrepo mcp --repo .` into the agent's own config by hand): `cursor`, `copilot`, `windsurf`, `generic`, `gemini`, `goose`, `kiro`, `qwen`, `junie`, `roo`, `tabnine`, `trae`.
+
+    `setup` always runs `init` and writes the client-specific instructions; it only registers the project-scoped MCP server for automated-tier agents.
 3.  **Use the agent**: Your agent (e.g., Claude Code, Cursor) will now load synrepo context via MCP.
 4.  **Watch (Optional)**: If you want background refresh as you edit:
     ```bash

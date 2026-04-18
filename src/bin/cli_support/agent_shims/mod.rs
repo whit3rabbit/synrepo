@@ -20,6 +20,25 @@ use shims::{
     WINDSURF_SHIM,
 };
 
+/// Two-tier support matrix. `Automated` agents get the project-scoped MCP
+/// server entry written into their config (`.mcp.json`, `.codex/config.toml`,
+/// or `opencode.json`) by `synrepo setup`. `ShimOnly` agents get their
+/// instruction file written; MCP registration is documented but left to the
+/// operator, either because the agent has no documented project-scoped MCP
+/// config path or because the agent is a second-wave target not worth
+/// automating yet.
+///
+/// The dispatch in `step_register_mcp` must agree with this tier assignment;
+/// the `automation_tier_matches_step_register_mcp_dispatch` test is the
+/// anti-drift guard.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum AutomationTier {
+    /// `synrepo setup` writes the MCP-server entry into the agent's config.
+    Automated,
+    /// `synrepo setup` writes the shim only; the operator wires MCP by hand.
+    ShimOnly,
+}
+
 /// Agent CLI target for shim generation.
 #[derive(Clone, Copy, Debug, clap::ValueEnum)]
 pub(crate) enum AgentTool {
@@ -70,6 +89,27 @@ impl AgentTool {
             AgentTargetKind::Codex => AgentTool::Codex,
             AgentTargetKind::Copilot => AgentTool::Copilot,
             AgentTargetKind::Windsurf => AgentTool::Windsurf,
+        }
+    }
+
+    /// Which support tier this agent falls into. See [`AutomationTier`].
+    /// The exhaustive match is load-bearing: any new `AgentTool` variant
+    /// fails the build until it is explicitly placed in a tier.
+    pub(crate) fn automation_tier(self) -> AutomationTier {
+        match self {
+            AgentTool::Claude | AgentTool::Codex | AgentTool::OpenCode => AutomationTier::Automated,
+            AgentTool::Cursor
+            | AgentTool::Copilot
+            | AgentTool::Generic
+            | AgentTool::Windsurf
+            | AgentTool::Gemini
+            | AgentTool::Goose
+            | AgentTool::Kiro
+            | AgentTool::Qwen
+            | AgentTool::Junie
+            | AgentTool::Roo
+            | AgentTool::Tabnine
+            | AgentTool::Trae => AutomationTier::ShimOnly,
         }
     }
 

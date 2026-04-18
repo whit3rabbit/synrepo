@@ -1,15 +1,17 @@
-use std::path::Path;
-#[cfg(unix)]
-use std::path::PathBuf;
+use std::{
+    io::{BufRead, BufReader, Write},
+    path::{Path, PathBuf},
+};
 
+use interprocess::local_socket::{traits::Stream as _, Stream};
 use serde::{Deserialize, Serialize};
 
-#[cfg(unix)]
-use super::lease::watch_socket_path;
-use super::lease::{WatchDaemonError, WatchDaemonState};
+use super::lease::{
+    watch_control_endpoint, watch_control_socket_name, WatchDaemonError, WatchDaemonState,
+};
 use super::reconcile::ReconcileOutcome;
 
-/// Control message sent over the per-repo watch socket.
+/// Control message sent over the per-repo watch control endpoint.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "command", rename_all = "snake_case")]
 pub enum WatchControlRequest {
@@ -50,96 +52,78 @@ pub enum WatchControlResponse {
 }
 
 /// Send one control request to the live watch service for this repo.
+///
+/// The wire format is newline-delimited JSON in both directions: the client
+/// writes a request object followed by `\n`, the server responds in kind.
+/// This works portably across `interprocess::local_socket`'s backends (Unix
+/// sockets and Windows named pipes) because local sockets do not expose a
+/// portable half-close, so a length delimiter is required to frame messages.
 pub fn request_watch_control(
     synrepo_dir: &Path,
     request: WatchControlRequest,
 ) -> Result<WatchControlResponse, WatchDaemonError> {
-    #[cfg(unix)]
-    {
-        use std::io::Read as _;
-        use std::os::unix::net::UnixStream;
+    let endpoint = watch_control_endpoint(synrepo_dir);
+    let io_err = |source| WatchDaemonError::Io {
+        path: PathBuf::from(&endpoint),
+        source,
+    };
 
-        let socket_path = watch_socket_path(synrepo_dir);
-        let mut stream =
-            UnixStream::connect(&socket_path).map_err(|source| WatchDaemonError::Io {
-                path: socket_path.clone(),
-                source,
-            })?;
-        write_control_request(&mut stream, &request)?;
-        stream
-            .shutdown(std::net::Shutdown::Write)
-            .map_err(|source| WatchDaemonError::Io {
-                path: socket_path.clone(),
-                source,
-            })?;
+    let name = watch_control_socket_name(&endpoint).map_err(io_err)?;
+    let stream = Stream::connect(name).map_err(io_err)?;
+    write_control_request(&stream, &endpoint, &request)?;
 
-        let mut response_json = String::new();
-        stream
-            .read_to_string(&mut response_json)
-            .map_err(|source| WatchDaemonError::Io {
-                path: socket_path.clone(),
-                source,
-            })?;
+    let mut reader = BufReader::new(&stream);
+    let mut response_line = String::new();
+    reader.read_line(&mut response_line).map_err(io_err)?;
 
-        serde_json::from_str(&response_json).map_err(|error| {
-            WatchDaemonError::Control(format!("invalid watch control response: {error}"))
-        })
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = (synrepo_dir, request);
-        Err(WatchDaemonError::Control(
-            "watch daemon control is only supported on unix-like platforms".to_string(),
-        ))
-    }
+    serde_json::from_str(response_line.trim_end_matches('\n')).map_err(|error| {
+        WatchDaemonError::Control(format!("invalid watch control response: {error}"))
+    })
 }
 
-#[cfg(unix)]
+/// Framing shared by the client and the in-process listener thread. The
+/// server reads one line, parses it as JSON, and writes a newline-terminated
+/// response.
 pub(super) fn read_control_request(
-    stream: &mut std::os::unix::net::UnixStream,
+    reader: &mut BufReader<&Stream>,
+    endpoint: &str,
 ) -> Result<WatchControlRequest, WatchDaemonError> {
-    use std::io::Read as _;
-
-    let mut json = String::new();
-    stream
-        .read_to_string(&mut json)
-        .map_err(|source| WatchDaemonError::Io {
-            path: PathBuf::from("<watch-control-stream>"),
-            source,
-        })?;
-    serde_json::from_str(&json).map_err(|error| {
+    let mut line = String::new();
+    reader
+        .read_line(&mut line)
+        .map_err(|source| io_err(endpoint, source))?;
+    serde_json::from_str(line.trim_end_matches('\n')).map_err(|error| {
         WatchDaemonError::Control(format!("invalid watch control request: {error}"))
     })
 }
 
-#[cfg(unix)]
-pub(super) fn write_control_request(
-    stream: &mut std::os::unix::net::UnixStream,
+fn write_control_request(
+    mut stream: &Stream,
+    endpoint: &str,
     request: &WatchControlRequest,
 ) -> Result<(), WatchDaemonError> {
-    use std::io::Write as _;
-
-    let json = serde_json::to_vec(request).expect("WatchControlRequest serializes");
+    let mut json = serde_json::to_vec(request).expect("WatchControlRequest serializes");
+    json.push(b'\n');
     stream
         .write_all(&json)
-        .map_err(|source| WatchDaemonError::Io {
-            path: PathBuf::from("<watch-control-stream>"),
-            source,
-        })
+        .map_err(|source| io_err(endpoint, source))
 }
 
-#[cfg(unix)]
 pub(super) fn write_control_response(
-    stream: &mut std::os::unix::net::UnixStream,
+    mut stream: &Stream,
+    endpoint: &str,
     response: &WatchControlResponse,
 ) -> Result<(), WatchDaemonError> {
-    use std::io::Write as _;
-
-    let json = serde_json::to_vec(response).expect("WatchControlResponse serializes");
+    let mut json = serde_json::to_vec(response).expect("WatchControlResponse serializes");
+    json.push(b'\n');
     stream
         .write_all(&json)
-        .map_err(|source| WatchDaemonError::Io {
-            path: PathBuf::from("<watch-control-stream>"),
-            source,
-        })
+        .map_err(|source| io_err(endpoint, source))
+}
+
+fn io_err(endpoint: &str, source: std::io::Error) -> WatchDaemonError {
+    WatchDaemonError::Io {
+        path: PathBuf::from(endpoint),
+        source,
+    }
 }

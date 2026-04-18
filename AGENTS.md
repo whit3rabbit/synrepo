@@ -44,7 +44,7 @@ cargo run -- watch                 # foreground watch for the current repo
 cargo run -- watch --daemon        # detached per-repo watch service
 cargo run -- watch status          # watch ownership and reconcile telemetry
 cargo run -- watch stop            # stop active watch service or clean stale watch artifacts
-cargo run -- agent-setup <tool>    # write integration shim; tools: claude/cursor/copilot/generic/codex/windsurf; --regen to update if stale
+cargo run -- agent-setup <tool>    # write integration shim; automated tier (writes shim + MCP config): claude, codex, open-code; shim-only tier (writes shim only): cursor, copilot, windsurf, generic, gemini, goose, kiro, qwen, junie, roo, tabnine, trae; --regen to update if stale
 cargo run -- search <query>        # lexical search
 cargo run -- graph query "outbound <node_id> [edge_kind]"  # graph traversal
 cargo run -- graph stats           # node/edge counts
@@ -125,7 +125,7 @@ Node types: `FileNode` (content-hash identity), `SymbolNode` (tree-sitter extrac
 - `.synrepo/state/writer.lock` — process-level write lock (PID + timestamp); held during each actual runtime mutation, including watch-triggered reconcile passes
 - `.synrepo/state/watch-daemon.json` — per-repo watch lease plus owner/telemetry snapshot for `synrepo watch`
 - `.synrepo/state/watch-daemon.log` — stderr of the detached watch daemon; truncated on each spawn, useful for post-mortem on startup crashes
-- `.synrepo/state/watch.sock` — local control socket for active daemon watch mode
+- `.synrepo/state/watch.sock` — Unix-only control socket for active daemon watch mode (on Windows the control plane is a named pipe `synrepo-watch-<hash>` with no on-disk artifact)
 - `.synrepo/state/reconcile-state.json` — last reconcile outcome, timestamp, and discovered/symbol counts
 - `.synrepo/state/repair-log.jsonl` — append-only resolution log written by `synrepo sync`; one JSON object per line
 - `openspec/` — planning artifacts only, not runtime
@@ -180,7 +180,7 @@ Stages 4–8:
 - `synrepo export [--format markdown|json] [--deep] [--commit] [--out <dir>]` — generates `synrepo-context/` with rendered card output; added to `.gitignore` unless `--commit`.
 - `synrepo upgrade [--apply]` — dry-run or apply storage compatibility actions; replaces the old "run `synrepo init`" recovery instruction for version-skew scenarios.
 - `synrepo status [--json]` — enriched with export freshness and overlay cost summary.
-- `synrepo agent-setup` — now accepts `codex` and `windsurf` targets, plus `--regen` flag for idempotent updates.
+- `synrepo agent-setup` — now accepts `codex` and `windsurf` targets, plus `--regen` flag for idempotent updates. Two support tiers: automated (Claude, Codex, OpenCode — writes shim and MCP config) vs. shim-only (everything else — writes the shim; operator wires `synrepo mcp --repo .` into the agent's own config). Tier is the source of truth on `AgentTool::automation_tier()`; the `automation_tier_matches_step_register_mcp_dispatch` test enforces agreement with `step_register_mcp`.
 
 ### Shipped risk assessment surface (change-risk-card-v1)
 
@@ -219,6 +219,7 @@ Stages 4–8:
 - **Compatibility blocks on version mismatch**: if `.synrepo/` contains a graph store whose recorded format version is newer than the current binary understands, `synrepo init` and all graph commands will error. Run `synrepo upgrade` to see recovery steps; for a full reset, remove `.synrepo/` and run `synrepo init`.
 - **Git history mining uses `gix`** (not `git2`). The history collector in `pipeline/git/mod.rs` disables rewrite tracking for performance. The rename fallback in `pipeline/git/renames.rs` enables it separately for the identity cascade step 4. Both use the `gix` crate; all gix usage is centralized under `src/pipeline/git/`.
 - **`notify` and `notify-debouncer-full` are in `Cargo.toml`** and are used by the shipped watch runtime in `src/pipeline/watch/service.rs`. The service runs both `synrepo watch` foreground mode and `synrepo watch --daemon`, with `.synrepo/` self-event suppression and startup reconcile before steady-state watching.
+- **Watch control plane is `interprocess::local_socket`** (Unix domain socket on Unix, named pipe on Windows). Use `watch_control_endpoint(synrepo_dir)` to get the platform-appropriate endpoint string and `watch_control_socket_name(endpoint)` to build the `interprocess::local_socket::Name` — do not concatenate `.sock` paths by hand. The Windows endpoint is `synrepo-watch-<blake3-hash-prefix>` and has no on-disk artifact; `watch_socket_path` remains Unix-only for cleanup of the stale socket file. Live dashboard mode streams `WatchEvent`s from the service to the TUI via a `crossbeam_channel` bounded to 256 — sends are best-effort (`let _ = tx.send(...)`), a dropped receiver must not kill the reconcile loop.
 - **`concept_directories` config defaults**: `docs/concepts`, `docs/adr`, `docs/decisions`. Adding a fourth directory (e.g. `architecture/decisions`) requires a config-sensitive compatibility check — changing this field triggers a graph advisory in the compat report.
 - **File rename detection is implemented (full identity cascade).** Content-hash rename, symbol-set split/merge detection, and git rename fallback are all wired. When a file is moved, the cascade preserves the `FileNodeId` and records old paths in `path_history`. `SplitFrom` and `MergedFrom` edges are emitted for split/merge cases.
 - **FileNodeId is stable across content edits.** Content-hash changes no longer delete and re-insert file nodes. Instead, `content_hash` is a version field updated in place, and `last_observed_rev` advances. Symbols and edges owned by the file are retired (marked `retired_at_rev`) if not re-emitted in the new compile, or re-activated if they re-appear. This enables drift scoring across observation windows.
@@ -231,6 +232,7 @@ Stages 4–8:
 - **Binary crate test visibility**: In `src/bin/cli_support/tests/`, functions are accessible as `crate::<name>` only if imported at the binary root (`cli.rs`) via `use`. Modules declared `mod <name>` inside `commands/` are private — tests cannot reference them by full path; use the re-exported name instead.
 - **Lib-internal test helpers needed by *both* lib tests and bin-crate tests must be `pub #[doc(hidden)]`, not `pub(crate)` or `#[cfg(test)]`.** Bin-crate tests compile the library *without* `cfg(test)`, so `#[cfg(test)]` items and `pub(crate)` are invisible to them. The writer module's `hold_writer_flock_with_ownership` / `spawn_and_reap_pid` / `live_foreign_pid` / `TestFlockHolder` are the canonical example (defined in `src/pipeline/writer/helpers.rs`, re-exported from `src/pipeline/writer/mod.rs`).
 - **Commentary freshness is computed in two places**: `src/bin/cli_support/commands/status.rs::commentary_coverage_full` (status `--full`) and `src/pipeline/repair/report/surfaces/commentary.rs::scan_commentary_staleness` (repair surface). Both walk `commentary_hashes()` against `resolve_commentary_node`. The repair version is `pub(super) struct CommentaryScan { total, stale }`; unifying requires promoting it to `pub` in the repair module.
+- **Persisted state-struct fields need `#[serde(alias = "old_name")]` on rename.** `WatchDaemonState`, `WriterOwnership`, and reconcile-state structs are serialized to `.synrepo/state/*.json` by live daemons — renaming a `pub` field without the alias leaves existing JSON files unparseable after an upgrade.
 - **Writer lock is a kernel advisory lock (`flock`/`LockFileEx` via `fs2`), not file existence.** Tests that only stamp JSON into `.synrepo/state/writer.lock` do NOT exercise contention. To simulate a foreign holder, call `synrepo::pipeline::writer::hold_writer_flock_with_ownership(lock_path, &WriterOwnership { pid, acquired_at })` which takes the flock on a separate fd. Dead-PID / live-foreign-PID helpers: `writer::spawn_and_reap_pid()` and `writer::live_foreign_pid() -> (Child, u32)`. Do not re-implement these.
 - **`fs2` is a direct dep** providing cross-platform advisory locking (`FileExt::try_lock_exclusive` → `flock` on Unix, `LockFileEx` on Windows). `libc` is a `[target.'cfg(unix)'.dependencies]` dep used only for `O_CLOEXEC` on the writer lock fd.
 - **`bootstrap()` signature**: `synrepo::bootstrap::bootstrap(repo_root: &Path, mode: Option<Mode>)` — two args only. Does not accept a pre-built `Config` or `synrepo_dir`; it derives both internally.

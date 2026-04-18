@@ -10,9 +10,11 @@
 //! The wizard only returns a [`RepairPlan`]; the bin-side dispatcher executes
 //! the plan after the TUI alt-screen has been torn down.
 
-pub mod state;
 pub mod render;
+pub mod state;
 mod tests;
 
-pub use state::{RepairPlan, RepairWizardOutcome, RepairWizardState, ActionRow, RepairActionKind, RepairStep};
 pub use render::run_repair_wizard_loop;
+pub use state::{
+    ActionRow, RepairActionKind, RepairPlan, RepairStep, RepairWizardOutcome, RepairWizardState,
+};

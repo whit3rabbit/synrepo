@@ -2,9 +2,9 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::tui::wizard::setup::state::{SetupWizardState, SetupStep, WIZARD_TARGETS};
     use crate::bootstrap::runtime_probe::AgentTargetKind;
     use crate::config::Mode;
+    use crate::tui::wizard::setup::state::{SetupStep, SetupWizardState, WIZARD_TARGETS};
     use crossterm::event::{KeyCode, KeyModifiers};
 
     fn press(state: &mut SetupWizardState, code: KeyCode) {

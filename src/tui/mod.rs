@@ -100,7 +100,8 @@ pub fn run_dashboard(
     }
     let opts = opts.into();
     let theme = theme::Theme::from_no_color(opts.no_color);
-    let intent = dashboard::run_poll_dashboard(repo_root, integration, theme, opts.welcome_banner)?;
+    let intent =
+        dashboard::run_poll_dashboard(repo_root, integration, theme, opts.welcome_banner, None)?;
     match intent {
         app::DashboardExit::Quit => Ok(TuiOutcome::Exited),
         app::DashboardExit::LaunchIntegration => Ok(TuiOutcome::LaunchIntegrationRequested),
@@ -193,24 +194,15 @@ pub fn run_integration_wizard(
 /// Spawns the watch service on a background thread, opens the poll-mode
 /// dashboard in the foreground, then (when the operator quits) sends a
 /// `Stop` control request so the service releases its lease before we
-/// return. Unix-only — the control socket is a `UnixListener` and the watch
-/// service already rejects non-unix platforms.
+/// return. The control plane is `interprocess::local_socket` (Unix socket on
+/// Unix, named pipe on Windows) so this entry point is cross-platform.
 pub fn run_live_watch_dashboard(repo_root: &Path, opts: TuiOptions) -> anyhow::Result<TuiOutcome> {
-    #[cfg(not(unix))]
-    {
-        let _ = (repo_root, opts);
-        anyhow::bail!("live watch dashboard is unix-only");
+    if !stdout_is_tty() {
+        return Ok(TuiOutcome::NonTtyFallback);
     }
-    #[cfg(unix)]
-    {
-        if !stdout_is_tty() {
-            return Ok(TuiOutcome::NonTtyFallback);
-        }
-        live::run(repo_root, opts)
-    }
+    live::run(repo_root, opts)
 }
 
-#[cfg(unix)]
 mod live {
     //! Live-mode shim: host the watch service on a background thread and
     //! drive the poll-mode dashboard in the foreground. Kept isolated so
@@ -222,29 +214,33 @@ mod live {
 
     use crate::config::Config;
     use crate::pipeline::watch::{
-        request_watch_control, run_watch_service, watch_socket_path, WatchConfig,
-        WatchControlRequest, WatchServiceMode,
+        request_watch_control, run_watch_service, WatchConfig, WatchControlRequest,
+        WatchControlResponse, WatchEvent, WatchServiceMode,
     };
 
     use super::{dashboard::run_poll_dashboard, theme::Theme, TuiOptions, TuiOutcome};
     use crate::bootstrap::runtime_probe::probe as bootstrap_probe;
     use crate::tui::app::DashboardExit;
 
-    /// Wait up to 2 s for the watch service to bind its control socket. The
-    /// service always lays the socket down before entering its main loop, so
-    /// this is a quick readiness check, not a long poll.
-    fn wait_for_socket(path: &Path) -> anyhow::Result<()> {
+    /// Wait up to 2 s for the watch service to start answering control
+    /// requests. Works on both backends (Unix socket and Windows named pipe)
+    /// because it probes through the portable `interprocess` client rather
+    /// than polling a filesystem path.
+    fn wait_for_service_ready(synrepo_dir: &Path) -> anyhow::Result<()> {
+        // Sleep-then-probe: the service thread was just spawned and has not
+        // bound the control endpoint yet, so probing first burns one
+        // guaranteed-failed connect per startup.
         let deadline = Instant::now() + Duration::from_secs(2);
         while Instant::now() < deadline {
-            if path.exists() {
+            thread::sleep(Duration::from_millis(50));
+            if matches!(
+                request_watch_control(synrepo_dir, WatchControlRequest::Status),
+                Ok(WatchControlResponse::Status { .. })
+            ) {
                 return Ok(());
             }
-            thread::sleep(Duration::from_millis(50));
         }
-        anyhow::bail!(
-            "live-mode watch service failed to bind {} within 2 s",
-            path.display()
-        )
+        anyhow::bail!("live-mode watch service failed to come up within 2 s")
     }
 
     pub(super) fn run(repo_root: &Path, opts: TuiOptions) -> anyhow::Result<TuiOutcome> {
@@ -252,7 +248,11 @@ mod live {
         let config = Config::load(repo_root)?;
         let theme = Theme::from_no_color(opts.no_color);
 
-        let socket_path = watch_socket_path(&synrepo_dir);
+        // Watch service → dashboard event bus. Bounded so a stuck dashboard
+        // can't make the service's emit path grow unbounded; the sender side
+        // uses best-effort `try_send`, so a full buffer drops events rather
+        // than blocking reconcile.
+        let (event_tx, event_rx) = crossbeam_channel::bounded::<WatchEvent>(256);
 
         // Spawn the watch service. It owns its own lease + reconcile loop.
         let (done_tx, done_rx) = mpsc::channel::<anyhow::Result<()>>();
@@ -260,25 +260,23 @@ mod live {
         let service_config = config.clone();
         let service_synrepo_dir: PathBuf = synrepo_dir.clone();
         let service_thread = thread::spawn(move || {
-            // TODO(phase-B): wire a real event sender here so the dashboard
-            // log pane streams reconcile events instead of polling state files.
             let result = run_watch_service(
                 &service_repo,
                 &service_config,
                 &WatchConfig::default(),
                 &service_synrepo_dir,
                 WatchServiceMode::Foreground,
-                None,
+                Some(event_tx),
             )
             .map_err(|e| anyhow::anyhow!(e.to_string()));
             let _ = done_tx.send(result);
         });
 
-        // Wait for the service to bind its socket before opening the TUI.
-        // If it fails to come up we must not proceed (the stop-watch action
-        // relies on the socket being available).
+        // Wait for the control plane to answer before opening the TUI: if
+        // the service fails to come up we must not proceed (the stop-watch
+        // action relies on it).
         let mut service_thread = Some(service_thread);
-        if let Err(err) = wait_for_socket(&socket_path) {
+        if let Err(err) = wait_for_service_ready(&synrepo_dir) {
             if let Some(t) = service_thread.take() {
                 let _ = t.join();
             }
@@ -287,10 +285,15 @@ mod live {
 
         // Re-probe so the dashboard header reflects agent integration state.
         let report = bootstrap_probe(repo_root);
-        // The poll dashboard polls status files; the service reconciles
-        // through those same files, so the dashboard naturally observes
-        // live updates without cross-thread event wiring.
-        let intent = run_poll_dashboard(repo_root, report.agent_integration, theme, false)?;
+        // Live mode: the log pane drains `WatchEvent`s from `event_rx`;
+        // header stats still come from the status-snapshot file refresh.
+        let intent = run_poll_dashboard(
+            repo_root,
+            report.agent_integration,
+            theme,
+            false,
+            Some(event_rx),
+        )?;
 
         // Dashboard has exited. Stop the service.
         let stop = request_watch_control(&synrepo_dir, WatchControlRequest::Stop);

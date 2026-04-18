@@ -3,6 +3,7 @@
 use crossterm::event::{KeyCode, KeyModifiers};
 
 use crate::bootstrap::runtime_probe::{AgentIntegration, AgentTargetKind};
+use crate::tui::wizard::{target_tier, AgentTargetTier};
 
 /// Plan produced by a completed integration sub-wizard.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -269,10 +270,17 @@ impl IntegrationWizardState {
 /// defaults to "finish MCP registration"; Complete state defaults to nothing
 /// selected (user must explicitly opt in to regen). Absent or a different
 /// target defaults to "write shim and register mcp".
+///
+/// Shim-only targets (Cursor, Copilot, Windsurf) force `register_mcp=false`
+/// by default because `step_register_mcp` will only print a manual-setup hint
+/// for them. Defaulting the checkbox off avoids misleading the operator; the
+/// confirm step warns anyone who explicitly opts in.
 fn default_actions_for(current: &AgentIntegration, target: AgentTargetKind) -> (bool, bool) {
-    match current {
+    let (write_shim, register_mcp) = match current {
         AgentIntegration::Complete { target: t } if *t == target => (false, false),
         AgentIntegration::Partial { target: t } if *t == target => (false, true),
         _ => (true, true),
-    }
+    };
+    let register_mcp = register_mcp && target_tier(target) == AgentTargetTier::Automated;
+    (write_shim, register_mcp)
 }

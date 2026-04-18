@@ -9,7 +9,7 @@ use notify_debouncer_full::{
 
 use crate::pipeline::watch::{
     load_reconcile_state, request_watch_control, run_watch_service, ReconcileOutcome, WatchConfig,
-    WatchControlRequest, WatchControlResponse, WatchServiceMode, WatchServiceStatus,
+    WatchControlRequest, WatchControlResponse, WatchEvent, WatchServiceMode, WatchServiceStatus,
 };
 
 use super::{setup_test_repo, wait_for};
@@ -178,6 +178,60 @@ fn watch_service_ignores_runtime_only_writes() {
 
     assert_eq!(after.last_event_at, baseline.last_event_at);
     assert_eq!(after.last_reconcile_at, baseline.last_reconcile_at);
+
+    let _ = request_watch_control(&synrepo_dir, WatchControlRequest::Stop);
+    handle.join().unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn watch_service_emits_started_then_finished_events_for_startup_reconcile() {
+    let (_dir, repo, config, synrepo_dir) = setup_test_repo();
+    let service_repo = repo.clone();
+    let service_config = config.clone();
+    let service_synrepo = synrepo_dir.clone();
+    let (event_tx, event_rx) = crossbeam_channel::bounded::<WatchEvent>(16);
+
+    let handle = thread::spawn(move || {
+        run_watch_service(
+            &service_repo,
+            &service_config,
+            &WatchConfig::default(),
+            &service_synrepo,
+            WatchServiceMode::Foreground,
+            Some(event_tx),
+        )
+        .unwrap();
+    });
+
+    // Startup pass emits Started+Finished before any filesystem events land.
+    let first = event_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("startup ReconcileStarted must arrive");
+    let second = event_rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("startup ReconcileFinished must arrive");
+
+    match (&first, &second) {
+        (
+            WatchEvent::ReconcileStarted {
+                triggering_events: 0,
+                ..
+            },
+            WatchEvent::ReconcileFinished {
+                outcome,
+                triggering_events: 0,
+                ..
+            },
+        ) => {
+            assert!(
+                matches!(outcome, ReconcileOutcome::Completed(_)),
+                "startup reconcile should complete in a fresh repo; got {:?}",
+                outcome
+            );
+        }
+        other => panic!("unexpected startup event pair: {:?}", other),
+    }
 
     let _ = request_watch_control(&synrepo_dir, WatchControlRequest::Stop);
     handle.join().unwrap();

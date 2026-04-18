@@ -47,6 +47,7 @@ ignore = "0.4"              # respects .gitignore / .git/info/exclude
 notify = "6"                # cross-platform file watcher for phase 2+
 notify-debouncer-full = "0.3"
 fs2 = "0.4"                 # cross-platform advisory file locking (flock / LockFileEx) for the writer lock
+interprocess = "2"          # local_socket: Unix socket on Unix, named pipe on Windows. Blocking API only.
 
 # --- Git integration ---
 gix = { version = "0.81", default-features = false, features = ["sha1", "max-performance-safe", "revision", "blob-diff"] }

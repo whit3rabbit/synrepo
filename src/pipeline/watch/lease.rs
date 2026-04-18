@@ -1,5 +1,6 @@
-// Lease management is only active on unix (watch daemon requires Unix sockets).
-#![cfg_attr(not(unix), allow(dead_code, unused_imports))]
+// Lease management is cross-platform: the control plane lives on top of
+// `interprocess::local_socket`, which maps to Unix domain sockets on Unix and
+// to named pipes on Windows. Unix-only helpers remain gated individually.
 
 use std::{
     fs,
@@ -8,6 +9,12 @@ use std::{
     sync::atomic::{AtomicU64, Ordering},
     time::Duration,
 };
+
+use interprocess::local_socket::Name;
+#[cfg(unix)]
+use interprocess::local_socket::{GenericFilePath, ToFsName};
+#[cfg(windows)]
+use interprocess::local_socket::{GenericNamespaced, ToNsName};
 
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
@@ -45,8 +52,11 @@ pub struct WatchDaemonState {
     pub started_at: String,
     /// Whether the service is foreground or detached.
     pub mode: WatchServiceMode,
-    /// Canonical path of the control socket for this repo.
-    pub socket_path: String,
+    /// Platform-specific control endpoint identifier (socket filesystem path
+    /// on Unix, named-pipe name on Windows). The serde alias accepts the
+    /// legacy `socket_path` field name written by older daemons.
+    #[serde(alias = "socket_path")]
+    pub control_endpoint: String,
     /// Most recent filesystem event burst seen outside `.synrepo/`.
     pub last_event_at: Option<String>,
     /// RFC 3339 UTC timestamp of the last completed reconcile attempt.
@@ -65,7 +75,7 @@ impl WatchDaemonState {
             pid: std::process::id(),
             started_at: now_rfc3339(),
             mode,
-            socket_path: watch_socket_path(synrepo_dir).display().to_string(),
+            control_endpoint: watch_control_endpoint(synrepo_dir),
             last_event_at: None,
             last_reconcile_at: None,
             last_reconcile_outcome: None,
@@ -353,16 +363,57 @@ pub fn watch_daemon_state_path(synrepo_dir: &Path) -> PathBuf {
 /// back to the literal input, which is still consistent for the lifetime
 /// of one synrepo install.
 pub fn watch_socket_path(synrepo_dir: &Path) -> PathBuf {
-    let canonical = fs::canonicalize(synrepo_dir).unwrap_or_else(|_| synrepo_dir.to_path_buf());
-    let digest = blake3::hash(canonical.to_string_lossy().as_bytes());
-    let hex = hex::encode(digest.as_bytes());
-
     // Use a user-owned directory to prevent /tmp-based pre-creation or
     // permission-denial attacks. Prefers $HOME/.cache/synrepo-run/ or
     // $XDG_RUNTIME_DIR/synrepo/, falling back to a per-user/per-process
     // subdirectory in temp_dir() with 0700 permissions.
     let socket_dir = user_socket_dir();
-    socket_dir.join(format!("{}.sock", &hex[..16]))
+    socket_dir.join(format!("{}.sock", stable_repo_hash_16(synrepo_dir)))
+}
+
+/// 16-hex-char prefix of a blake3 hash over the canonicalised synrepo
+/// directory. Both the Unix socket filename and the Windows named-pipe name
+/// key off the same digest so the endpoint is deterministic per repo.
+fn stable_repo_hash_16(synrepo_dir: &Path) -> String {
+    let canonical = fs::canonicalize(synrepo_dir).unwrap_or_else(|_| synrepo_dir.to_path_buf());
+    let digest = blake3::hash(canonical.to_string_lossy().as_bytes());
+    hex::encode(digest.as_bytes())[..16].to_string()
+}
+
+/// Platform-appropriate backing identifier for the watch control endpoint.
+///
+/// On Unix this is the socket filesystem path as a string (same backing store
+/// as [`watch_socket_path`]). On Windows this is a namespaced pipe name
+/// derived from a stable hash of the repo's synrepo directory, so the same
+/// repo always resolves to the same pipe.
+///
+/// Kept as a `String` so the interprocess `Name<'_>` can be constructed at
+/// use time without needing an owned-name facility on the crate side.
+pub fn watch_control_endpoint(synrepo_dir: &Path) -> String {
+    #[cfg(unix)]
+    {
+        watch_socket_path(synrepo_dir)
+            .to_string_lossy()
+            .into_owned()
+    }
+    #[cfg(windows)]
+    {
+        format!("synrepo-watch-{}", stable_repo_hash_16(synrepo_dir))
+    }
+}
+
+/// Build an interprocess `Name<'_>` from the endpoint string produced by
+/// [`watch_control_endpoint`]. Uses `GenericFilePath` on Unix and
+/// `GenericNamespaced` on Windows.
+pub(crate) fn watch_control_socket_name(endpoint: &str) -> std::io::Result<Name<'_>> {
+    #[cfg(unix)]
+    {
+        endpoint.to_fs_name::<GenericFilePath>()
+    }
+    #[cfg(windows)]
+    {
+        endpoint.to_ns_name::<GenericNamespaced>()
+    }
 }
 
 fn user_socket_dir() -> PathBuf {

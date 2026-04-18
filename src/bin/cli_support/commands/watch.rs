@@ -193,7 +193,7 @@ fn render_watch_status_snapshot(snapshot: &WatchDaemonState) {
     );
     println!("  pid:          {}", snapshot.pid);
     println!("  started:      {}", snapshot.started_at);
-    println!("  socket:       {}", snapshot.socket_path);
+    println!("  endpoint:     {}", snapshot.control_endpoint);
     println!(
         "  last event:   {}",
         snapshot

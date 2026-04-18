@@ -4,7 +4,7 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
 
-use super::state::{SetupWizardState, SetupStep, WIZARD_TARGETS};
+use super::state::{SetupStep, SetupWizardState, WIZARD_TARGETS};
 use crate::tui::app::poll_key;
 use crate::tui::theme::Theme;
 use crate::tui::wizard::{enter_tui, leave_tui, target_label, WizardTerminal};
@@ -82,9 +82,7 @@ fn draw(frame: &mut ratatui::Frame, state: &SetupWizardState, theme: &Theme) {
 
     let hint = match state.step {
         SetupStep::Splash => " Enter continue  Esc exit ",
-        SetupStep::SelectMode | SetupStep::SelectTarget => {
-            " ↑/↓ move  Enter select  Esc cancel "
-        }
+        SetupStep::SelectMode | SetupStep::SelectTarget => " ↑/↓ move  Enter select  Esc cancel ",
         SetupStep::Confirm => " Enter apply  b back  Ctrl-C abort ",
         SetupStep::Complete => "",
     };

@@ -8,9 +8,11 @@
 //! alt-screen tears down. The library never calls the bin-side `step_*`
 //! helpers directly.
 
-pub mod state;
 pub mod render;
+pub mod state;
 mod tests;
 
-pub use state::{IntegrationPlan, IntegrationWizardOutcome, IntegrationWizardState, ActionRow, IntegrationStep};
 pub use render::run_integration_wizard_loop;
+pub use state::{
+    ActionRow, IntegrationPlan, IntegrationStep, IntegrationWizardOutcome, IntegrationWizardState,
+};

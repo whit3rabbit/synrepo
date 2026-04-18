@@ -32,7 +32,7 @@ fn links_accept_blocked_when_watch_running() {
         pid: child.id(),
         started_at: "2026-04-15T00:00:00Z".to_string(),
         mode: WatchServiceMode::Foreground,
-        socket_path: synrepo_dir.join("state/watch.sock").display().to_string(),
+        control_endpoint: synrepo_dir.join("state/watch.sock").display().to_string(),
         last_event_at: None,
         last_reconcile_at: None,
         last_reconcile_outcome: None,

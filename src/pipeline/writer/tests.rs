@@ -217,7 +217,7 @@ fn write_admission_blocked_when_watch_running() {
         pid: std::process::id(),
         started_at: "2026-01-01T00:00:00Z".to_string(),
         mode: WatchServiceMode::Daemon,
-        socket_path: synrepo_dir
+        control_endpoint: synrepo_dir
             .join("state")
             .join("watch.sock")
             .display()

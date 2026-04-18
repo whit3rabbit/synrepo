@@ -4,6 +4,7 @@
 use std::io::{self, Stdout};
 use std::path::Path;
 
+use crossbeam_channel::Receiver;
 use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
@@ -13,7 +14,8 @@ use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::Terminal;
 
 use crate::bootstrap::runtime_probe::AgentIntegration;
-use crate::tui::app::{poll_key, AppMode, AppState, DashboardExit};
+use crate::pipeline::watch::WatchEvent;
+use crate::tui::app::{poll_key, AppState, DashboardExit};
 use crate::tui::probe::{
     build_activity_vm, build_header_vm, build_health_vm, build_next_actions, display_repo_path,
 };
@@ -25,17 +27,25 @@ use crate::tui::widgets::{
 /// Terminal alias used by the render loop.
 pub type DashboardTerminal = Terminal<CrosstermBackend<Stdout>>;
 
-/// Enter the alternate screen + raw mode and run the poll-mode dashboard
-/// until the user quits. Always restores the terminal on the way out, even
-/// when rendering errors bubble up.
+/// Enter the alternate screen + raw mode and run the dashboard until the user
+/// quits. Always restores the terminal on the way out, even when rendering
+/// errors bubble up.
+///
+/// When `events_rx` is `Some`, the dashboard runs in live mode: the log pane
+/// drains `WatchEvent`s from the receiver each tick instead of relying on
+/// state-file polling. When `None`, poll mode is used.
 pub fn run_poll_dashboard(
     repo_root: &Path,
     integration: AgentIntegration,
     theme: Theme,
     welcome_banner: bool,
+    events_rx: Option<Receiver<WatchEvent>>,
 ) -> anyhow::Result<DashboardExit> {
     let mut terminal = enter_tui()?;
-    let mut state = AppState::new_poll(repo_root, theme, integration);
+    let mut state = match events_rx {
+        Some(rx) => AppState::new_live(repo_root, theme, integration, rx),
+        None => AppState::new_poll(repo_root, theme, integration),
+    };
     if welcome_banner {
         state.push_welcome_banner();
     }
@@ -145,8 +155,4 @@ fn draw_dashboard(frame: &mut ratatui::Frame, state: &AppState) {
         theme: &state.theme,
     };
     frame.render_widget(log, outer[2]);
-
-    // Mode is implicit today; AppMode exists to carry state through live-mode
-    // wiring in Phase 8.10 without restructuring the render loop.
-    let _ = AppMode::DashboardPoll;
 }

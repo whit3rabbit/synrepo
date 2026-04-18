@@ -1,11 +1,10 @@
-// The watch service uses Unix sockets and is only active on unix platforms.
-// On Windows the top-level function returns an unsupported error immediately,
-// leaving all service/lease helpers as dead code.  Suppress the lint rather
-// than gating every item individually.
-#![cfg_attr(not(unix), allow(dead_code, unused_imports))]
+// The watch service uses `interprocess::local_socket` for its control plane:
+// Unix domain sockets on Unix, Windows named pipes on Windows. One blocking
+// protocol implementation backs both.
 
 use std::{
     fs,
+    io::BufReader,
     path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
@@ -15,6 +14,7 @@ use std::{
     time::Duration,
 };
 
+use interprocess::local_socket::{traits::Listener as _, ListenerNonblockingMode, ListenerOptions};
 use notify_debouncer_full::{
     new_debouncer,
     notify::{RecursiveMode, Watcher},
@@ -23,11 +23,14 @@ use notify_debouncer_full::{
 
 use crate::config::Config;
 
-#[cfg(unix)]
-use super::control::{read_control_request, write_control_response};
 use super::{
-    control::{WatchControlRequest, WatchControlResponse},
-    lease::{acquire_watch_daemon_lease, watch_socket_path, WatchServiceMode, WatchStateHandle},
+    control::{
+        read_control_request, write_control_response, WatchControlRequest, WatchControlResponse,
+    },
+    lease::{
+        acquire_watch_daemon_lease, watch_control_endpoint, watch_control_socket_name,
+        WatchServiceMode, WatchStateHandle,
+    },
     reconcile::{persist_reconcile_state, run_reconcile_pass, ReconcileOutcome},
 };
 
@@ -108,130 +111,119 @@ pub fn run_watch_service(
     mode: WatchServiceMode,
     events: Option<crossbeam_channel::Sender<WatchEvent>>,
 ) -> crate::Result<()> {
-    #[cfg(not(unix))]
-    {
-        let _ = (repo_root, config, watch_config, synrepo_dir, mode, events);
-        Err(crate::Error::Other(anyhow::anyhow!(
-            "watch daemon service is only supported on unix-like platforms"
-        )))
-    }
+    let (_lease, state_handle) = acquire_watch_daemon_lease(synrepo_dir, mode)
+        .map_err(|error| crate::Error::Other(anyhow::anyhow!(error.to_string())))?;
 
-    #[cfg(unix)]
-    {
-        let (_lease, state_handle) = acquire_watch_daemon_lease(synrepo_dir, mode)
-            .map_err(|error| crate::Error::Other(anyhow::anyhow!(error.to_string())))?;
+    let stop_flag = Arc::new(AtomicBool::new(false));
+    let (tx, rx) = mpsc::channel::<LoopMessage>();
+    let socket_thread = spawn_control_listener(
+        synrepo_dir,
+        state_handle.clone(),
+        tx.clone(),
+        stop_flag.clone(),
+    )?;
 
-        let stop_flag = Arc::new(AtomicBool::new(false));
-        let (tx, rx) = mpsc::channel::<LoopMessage>();
-        let socket_thread = spawn_control_listener(
-            synrepo_dir,
-            state_handle.clone(),
-            tx.clone(),
-            stop_flag.clone(),
-        )?;
+    emit_event(&events, |now| WatchEvent::ReconcileStarted {
+        at: now,
+        triggering_events: 0,
+    });
+    let startup = run_reconcile_pass(repo_root, config, synrepo_dir);
+    persist_reconcile_state(synrepo_dir, &startup, 0);
+    state_handle.note_reconcile(&startup, 0);
+    tracing::info!(outcome = %startup.as_str(), "startup reconcile complete");
+    emit_event(&events, |now| WatchEvent::ReconcileFinished {
+        at: now,
+        outcome: startup.clone(),
+        triggering_events: 0,
+    });
 
-        emit_event(&events, |now| WatchEvent::ReconcileStarted {
-            at: now,
-            triggering_events: 0,
-        });
-        let startup = run_reconcile_pass(repo_root, config, synrepo_dir);
-        persist_reconcile_state(synrepo_dir, &startup, 0);
-        state_handle.note_reconcile(&startup, 0);
-        tracing::info!(outcome = %startup.as_str(), "startup reconcile complete");
-        emit_event(&events, |now| WatchEvent::ReconcileFinished {
-            at: now,
-            outcome: startup.clone(),
-            triggering_events: 0,
-        });
+    let mut debouncer = new_debouncer(watch_config.debounce_timeout, None, move |result| {
+        let _ = tx.send(LoopMessage::WatchResult(result));
+    })
+    .map_err(|error| {
+        crate::Error::Other(anyhow::anyhow!("failed to create file watcher: {error}"))
+    })?;
 
-        let mut debouncer = new_debouncer(watch_config.debounce_timeout, None, move |result| {
-            let _ = tx.send(LoopMessage::WatchResult(result));
-        })
+    debouncer
+        .watcher()
+        .watch(repo_root, RecursiveMode::Recursive)
         .map_err(|error| {
-            crate::Error::Other(anyhow::anyhow!("failed to create file watcher: {error}"))
+            crate::Error::Other(anyhow::anyhow!(
+                "failed to watch {}: {error}",
+                repo_root.display()
+            ))
         })?;
 
-        debouncer
-            .watcher()
-            .watch(repo_root, RecursiveMode::Recursive)
-            .map_err(|error| {
-                crate::Error::Other(anyhow::anyhow!(
-                    "failed to watch {}: {error}",
-                    repo_root.display()
-                ))
-            })?;
-
-        loop {
-            match rx.recv() {
-                Ok(LoopMessage::WatchResult(Ok(watcher_events))) => {
-                    let filtered = filter_repo_events(watcher_events, synrepo_dir);
-                    if filtered.is_empty() {
-                        continue;
-                    }
-                    let event_count = filtered.len().min(watch_config.max_events_per_cycle);
-                    state_handle.note_event();
-                    tracing::debug!(events = event_count, "coalesced events; running reconcile");
-                    emit_event(&events, |now| WatchEvent::ReconcileStarted {
-                        at: now,
-                        triggering_events: event_count,
-                    });
-                    let outcome = run_reconcile_pass(repo_root, config, synrepo_dir);
-                    persist_reconcile_state(synrepo_dir, &outcome, event_count);
-                    state_handle.note_reconcile(&outcome, event_count);
-                    tracing::info!(
-                        outcome = %outcome.as_str(),
-                        events = event_count,
-                        "reconcile pass complete"
-                    );
-                    emit_event(&events, |now| WatchEvent::ReconcileFinished {
-                        at: now,
-                        outcome: outcome.clone(),
-                        triggering_events: event_count,
-                    });
+    loop {
+        match rx.recv() {
+            Ok(LoopMessage::WatchResult(Ok(watcher_events))) => {
+                let filtered = filter_repo_events(watcher_events, synrepo_dir);
+                if filtered.is_empty() {
+                    continue;
                 }
-                Ok(LoopMessage::WatchResult(Err(errors))) => {
-                    for error in &errors {
-                        tracing::warn!("watcher error: {error}");
-                        emit_event(&events, |now| WatchEvent::Error {
-                            at: now,
-                            message: format!("watcher error: {error}"),
-                        });
-                    }
-                }
-                Ok(LoopMessage::Stop { respond_to }) => {
-                    stop_flag.store(true, Ordering::Relaxed);
-                    let _ = respond_to.send(WatchControlResponse::Ack {
-                        message: "watch service stopping".to_string(),
-                    });
-                    break;
-                }
-                Ok(LoopMessage::ReconcileNow { respond_to }) => {
-                    emit_event(&events, |now| WatchEvent::ReconcileStarted {
-                        at: now,
-                        triggering_events: 0,
-                    });
-                    let outcome = run_reconcile_pass(repo_root, config, synrepo_dir);
-                    persist_reconcile_state(synrepo_dir, &outcome, 0);
-                    state_handle.note_reconcile(&outcome, 0);
-                    emit_event(&events, |now| WatchEvent::ReconcileFinished {
-                        at: now,
-                        outcome: outcome.clone(),
-                        triggering_events: 0,
-                    });
-                    let _ = respond_to.send(WatchControlResponse::Reconcile {
-                        outcome,
-                        triggering_events: 0,
-                    });
-                }
-                Err(_) => break,
+                let event_count = filtered.len().min(watch_config.max_events_per_cycle);
+                state_handle.note_event();
+                tracing::debug!(events = event_count, "coalesced events; running reconcile");
+                emit_event(&events, |now| WatchEvent::ReconcileStarted {
+                    at: now,
+                    triggering_events: event_count,
+                });
+                let outcome = run_reconcile_pass(repo_root, config, synrepo_dir);
+                persist_reconcile_state(synrepo_dir, &outcome, event_count);
+                state_handle.note_reconcile(&outcome, event_count);
+                tracing::info!(
+                    outcome = %outcome.as_str(),
+                    events = event_count,
+                    "reconcile pass complete"
+                );
+                emit_event(&events, |now| WatchEvent::ReconcileFinished {
+                    at: now,
+                    outcome: outcome.clone(),
+                    triggering_events: event_count,
+                });
             }
+            Ok(LoopMessage::WatchResult(Err(errors))) => {
+                for error in &errors {
+                    tracing::warn!("watcher error: {error}");
+                    emit_event(&events, |now| WatchEvent::Error {
+                        at: now,
+                        message: format!("watcher error: {error}"),
+                    });
+                }
+            }
+            Ok(LoopMessage::Stop { respond_to }) => {
+                stop_flag.store(true, Ordering::Relaxed);
+                let _ = respond_to.send(WatchControlResponse::Ack {
+                    message: "watch service stopping".to_string(),
+                });
+                break;
+            }
+            Ok(LoopMessage::ReconcileNow { respond_to }) => {
+                emit_event(&events, |now| WatchEvent::ReconcileStarted {
+                    at: now,
+                    triggering_events: 0,
+                });
+                let outcome = run_reconcile_pass(repo_root, config, synrepo_dir);
+                persist_reconcile_state(synrepo_dir, &outcome, 0);
+                state_handle.note_reconcile(&outcome, 0);
+                emit_event(&events, |now| WatchEvent::ReconcileFinished {
+                    at: now,
+                    outcome: outcome.clone(),
+                    triggering_events: 0,
+                });
+                let _ = respond_to.send(WatchControlResponse::Reconcile {
+                    outcome,
+                    triggering_events: 0,
+                });
+            }
+            Err(_) => break,
         }
-
-        stop_flag.store(true, Ordering::Relaxed);
-        drop(debouncer);
-        let _ = socket_thread.join();
-        Ok(())
     }
+
+    stop_flag.store(true, Ordering::Relaxed);
+    drop(debouncer);
+    let _ = socket_thread.join();
+    Ok(())
 }
 
 /// Run the watch loop in the foreground.
@@ -305,38 +297,45 @@ fn canonicalize_lossy(path: &Path) -> Option<PathBuf> {
     })
 }
 
-#[cfg(unix)]
 fn spawn_control_listener(
     synrepo_dir: &Path,
     state_handle: WatchStateHandle,
     tx: mpsc::Sender<LoopMessage>,
     stop_flag: Arc<AtomicBool>,
 ) -> crate::Result<thread::JoinHandle<()>> {
-    use std::os::unix::net::UnixListener;
+    let endpoint = watch_control_endpoint(synrepo_dir);
 
-    let socket_path = watch_socket_path(synrepo_dir);
-    if socket_path.exists() {
-        let _ = std::fs::remove_file(&socket_path);
+    // On Unix the backing store is a filesystem path. A prior dead daemon
+    // may have left a stale socket file behind, which makes `bind()` fail
+    // with EADDRINUSE. Remove it proactively. Windows named pipes are
+    // ephemeral and need no pre-cleanup.
+    #[cfg(unix)]
+    {
+        let _ = fs::remove_file(&endpoint);
     }
 
-    let listener = UnixListener::bind(&socket_path).map_err(|error| {
+    let name = watch_control_socket_name(&endpoint).map_err(|error| {
         crate::Error::Other(anyhow::anyhow!(
-            "failed to bind watch control socket {}: {error}",
-            socket_path.display()
+            "failed to build watch control socket name {endpoint}: {error}"
         ))
     })?;
-    listener.set_nonblocking(true).map_err(|error| {
-        crate::Error::Other(anyhow::anyhow!(
-            "failed to configure watch control socket {}: {error}",
-            socket_path.display()
-        ))
-    })?;
+    let listener = ListenerOptions::new()
+        .name(name)
+        .nonblocking(ListenerNonblockingMode::Accept)
+        .create_sync()
+        .map_err(|error| {
+            crate::Error::Other(anyhow::anyhow!(
+                "failed to bind watch control socket {endpoint}: {error}"
+            ))
+        })?;
 
     Ok(thread::spawn(move || {
         while !stop_flag.load(Ordering::Relaxed) {
             match listener.accept() {
-                Ok((mut stream, _addr)) => {
-                    let response = match read_control_request(&mut stream) {
+                Ok(stream) => {
+                    let mut reader = BufReader::new(&stream);
+                    let request_result = read_control_request(&mut reader, &endpoint);
+                    let response = match request_result {
                         Ok(WatchControlRequest::Status) => WatchControlResponse::Status {
                             snapshot: state_handle.snapshot(),
                         },
@@ -346,13 +345,12 @@ fn spawn_control_listener(
                             message: error.to_string(),
                         },
                     };
-                    if let Err(error) = write_control_response(&mut stream, &response) {
+                    if let Err(error) = write_control_response(&stream, &endpoint, &response) {
                         tracing::warn!(error = %error, "failed to write watch control response");
                     }
                 }
-                // REVIEW NOTE: the 50ms sleep is the backoff for the
-                // non-blocking accept loop. Removing it pegs a CPU core at
-                // 100% while the daemon idles. Keep this arm.
+                // Backoff for the non-blocking accept loop: without this the
+                // idle daemon pegs a CPU core at 100%.
                 Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                     thread::sleep(Duration::from_millis(50));
                 }
@@ -365,7 +363,6 @@ fn spawn_control_listener(
     }))
 }
 
-#[cfg(unix)]
 fn bridge_stop_request(tx: &mpsc::Sender<LoopMessage>) -> WatchControlResponse {
     let (respond_to, recv_from_loop) = mpsc::channel();
     if tx.send(LoopMessage::Stop { respond_to }).is_err() {
@@ -381,7 +378,6 @@ fn bridge_stop_request(tx: &mpsc::Sender<LoopMessage>) -> WatchControlResponse {
         })
 }
 
-#[cfg(unix)]
 fn bridge_reconcile_request(tx: &mpsc::Sender<LoopMessage>) -> WatchControlResponse {
     let (respond_to, recv_from_loop) = mpsc::channel();
     if tx.send(LoopMessage::ReconcileNow { respond_to }).is_err() {
