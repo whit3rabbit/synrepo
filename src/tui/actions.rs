@@ -385,6 +385,7 @@ mod tests {
 
     #[test]
     fn reconcile_now_on_ready_repo_completes() {
+        let _guard = crate::test_support::global_test_lock("tui-reconcile-now");
         let dir = tempdir().unwrap();
         init_repo(dir.path());
         let ctx = ActionContext::new(dir.path());
@@ -432,6 +433,7 @@ mod tests {
         };
         use std::fs;
 
+        let _guard = crate::test_support::global_test_lock("tui-reconcile-now");
         let dir = tempdir().unwrap();
         init_repo(dir.path());
         let ctx = ActionContext::new(dir.path());

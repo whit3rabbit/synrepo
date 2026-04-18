@@ -210,6 +210,7 @@ fn bootstrap_fresh_init_materializes_graph_with_code_symbols() {
 
 #[test]
 fn bootstrap_rerun_refreshes_graph_on_content_change() {
+    let _guard = crate::test_support::global_test_lock("bootstrap-runtime-refresh");
     let repo = tempdir().unwrap();
     std::fs::create_dir_all(repo.path().join("src")).unwrap();
     std::fs::write(repo.path().join("src/lib.rs"), "pub fn before() {}\n").unwrap();

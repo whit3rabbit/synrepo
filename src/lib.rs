@@ -45,6 +45,8 @@ pub mod store;
 pub mod structure;
 pub mod substrate;
 pub mod surface;
+#[doc(hidden)]
+pub mod test_support;
 pub mod tui;
 
 pub use crate::core::ids::{ConceptNodeId, EdgeId, FileNodeId, NodeId, SymbolNodeId};

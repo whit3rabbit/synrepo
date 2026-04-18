@@ -9,8 +9,13 @@ use tempfile::tempdir;
 
 use super::{commands, sample_link, setup_curated_link_env};
 
+fn serial_accept_guard() -> synrepo::test_support::GlobalTestLock {
+    synrepo::test_support::global_test_lock("links-accept")
+}
+
 #[test]
 fn links_accept_blocked_in_auto_mode() {
+    let _guard = serial_accept_guard();
     let repo = tempdir().unwrap();
     bootstrap(repo.path(), Some(Mode::Auto)).unwrap();
 
@@ -25,6 +30,7 @@ fn links_accept_blocked_in_auto_mode() {
 
 #[test]
 fn links_accept_writes_human_declared_edge() {
+    let _guard = serial_accept_guard();
     let (repo, mut overlay, from, to) = setup_curated_link_env();
     overlay.insert_link(sample_link(from, to)).unwrap();
 
@@ -54,6 +60,7 @@ fn links_accept_writes_human_declared_edge() {
 
 #[test]
 fn links_accept_is_idempotent_on_replay() {
+    let _guard = serial_accept_guard();
     // Two accepts must produce exactly one graph edge: the compensation path
     // depends on `insert_edge` being idempotent for crash-recovery reruns.
     let (repo, mut overlay, from, to) = setup_curated_link_env();
@@ -79,6 +86,7 @@ fn links_accept_is_idempotent_on_replay() {
 /// see no graph edge, and proceed with the normal accept flow.
 #[test]
 fn links_accept_recovers_pending_promotion_without_edge() {
+    let _guard = serial_accept_guard();
     let (repo, mut overlay, from, to) = setup_curated_link_env();
     overlay.insert_link(sample_link(from, to)).unwrap();
 
@@ -130,6 +138,7 @@ fn links_accept_recovers_pending_promotion_without_edge() {
 /// pending_promotion, find the graph edge, and complete Phase 3.
 #[test]
 fn links_accept_completes_pending_promotion_with_edge() {
+    let _guard = serial_accept_guard();
     let (repo, mut overlay, from, to) = setup_curated_link_env();
     overlay.insert_link(sample_link(from, to)).unwrap();
 
@@ -179,6 +188,7 @@ fn links_accept_completes_pending_promotion_with_edge() {
 
 #[test]
 fn links_accept_stale_revision_fails() {
+    let _guard = serial_accept_guard();
     let (repo, mut overlay, from, to) = setup_curated_link_env();
 
     let mut link_v1 = sample_link(from, to);
@@ -201,6 +211,7 @@ fn links_accept_stale_revision_fails() {
 
 #[test]
 fn links_accept_current_revision_succeeds() {
+    let _guard = serial_accept_guard();
     let (repo, mut overlay, from, to) = setup_curated_link_env();
 
     let mut link = sample_link(from, to);

@@ -23,8 +23,8 @@ jobs:
         with:
           key: ${{ matrix.os }}
 
-      - name: cargo test
-        run: cargo test --workspace
+      - name: make ci-test
+        run: make ci-test
 
-      - name: cargo clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: make ci-lint
+        run: make ci-lint

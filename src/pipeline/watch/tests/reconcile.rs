@@ -57,6 +57,7 @@ fn reconcile_pass_returns_lock_conflict_when_lock_is_held() {
 
 #[test]
 fn reconcile_pass_corrects_stale_graph_state() {
+    let _guard = crate::test_support::global_test_lock("watch-reconcile-refresh");
     let (_dir, repo, config, synrepo_dir) = setup_test_repo();
     let first = run_reconcile_pass(&repo, &config, &synrepo_dir);
     assert!(matches!(first, ReconcileOutcome::Completed(_)));
