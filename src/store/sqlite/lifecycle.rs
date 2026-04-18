@@ -31,11 +31,11 @@ impl SqliteGraphStore {
         let rev = revision as i64;
         conn.execute(
             "UPDATE symbols SET retired_at_rev = ?2 WHERE id = ?1",
-            params![id.0 as i64, rev],
+            params![id.to_string(), rev],
         )?;
         conn.execute(
             "UPDATE symbols SET data = json_set(data, '$.retired_at_rev', ?2) WHERE id = ?1",
-            params![id.0 as i64, rev],
+            params![id.to_string(), rev],
         )?;
         Ok(())
     }
@@ -46,11 +46,11 @@ impl SqliteGraphStore {
         let rev = revision as i64;
         conn.execute(
             "UPDATE edges SET retired_at_rev = ?2 WHERE id = ?1",
-            params![id.0 as i64, rev],
+            params![id.to_string(), rev],
         )?;
         conn.execute(
             "UPDATE edges SET data = json_set(data, '$.retired_at_rev', ?2) WHERE id = ?1",
-            params![id.0 as i64, rev],
+            params![id.to_string(), rev],
         )?;
         Ok(())
     }
@@ -61,13 +61,13 @@ impl SqliteGraphStore {
         let rev = revision as i64;
         conn.execute(
             "UPDATE symbols SET retired_at_rev = NULL, last_observed_rev = ?2 WHERE id = ?1",
-            params![id.0 as i64, rev],
+            params![id.to_string(), rev],
         )?;
         // In the JSON blob, remove retired_at_rev and set last_observed_rev.
         // json_set on a null key just sets it; json_remove on a missing key is a no-op.
         conn.execute(
             "UPDATE symbols SET data = json_set(json_remove(data, '$.retired_at_rev'), '$.last_observed_rev', ?2) WHERE id = ?1",
-            params![id.0 as i64, rev],
+            params![id.to_string(), rev],
         )?;
         Ok(())
     }
@@ -78,11 +78,11 @@ impl SqliteGraphStore {
         let rev = revision as i64;
         conn.execute(
             "UPDATE edges SET retired_at_rev = NULL, last_observed_rev = ?2 WHERE id = ?1",
-            params![id.0 as i64, rev],
+            params![id.to_string(), rev],
         )?;
         conn.execute(
             "UPDATE edges SET data = json_set(json_remove(data, '$.retired_at_rev'), '$.last_observed_rev', ?2) WHERE id = ?1",
-            params![id.0 as i64, rev],
+            params![id.to_string(), rev],
         )?;
         Ok(())
     }
@@ -93,7 +93,7 @@ impl SqliteGraphStore {
         load_rows(
             &conn,
             "SELECT data FROM symbols WHERE file_id = ?1 AND retired_at_rev IS NULL ORDER BY id",
-            params![file_id.0 as i64],
+            params![file_id.to_string()],
         )
     }
 
@@ -103,7 +103,7 @@ impl SqliteGraphStore {
         load_rows(
             &conn,
             "SELECT data FROM edges WHERE owner_file_id = ?1 AND retired_at_rev IS NULL ORDER BY id",
-            params![file_id.0 as i64],
+            params![file_id.to_string()],
         )
     }
 
@@ -128,8 +128,8 @@ impl SqliteGraphStore {
         // Cascade delete edges that point to/from symbols we are about to delete
         let cascading_edges_removed = conn.execute(
             "DELETE FROM edges WHERE 
-             from_node_id IN (SELECT printf('sym_%016x', id) FROM symbols WHERE retired_at_rev IS NOT NULL AND retired_at_rev < ?1)
-             OR to_node_id IN (SELECT printf('sym_%016x', id) FROM symbols WHERE retired_at_rev IS NOT NULL AND retired_at_rev < ?1)",
+             from_node_id IN (SELECT id FROM symbols WHERE retired_at_rev IS NOT NULL AND retired_at_rev < ?1)
+             OR to_node_id IN (SELECT id FROM symbols WHERE retired_at_rev IS NOT NULL AND retired_at_rev < ?1)",
             params![rev],
         )?;
 

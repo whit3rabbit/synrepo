@@ -15,7 +15,7 @@ use rusqlite::params;
 /// Upsert a file node.
 pub fn upsert_file(store: &mut SqliteGraphStore, node: FileNode) -> crate::Result<()> {
     let data = encode_json(&node)?;
-    let id = node.id.0 as i64;
+    let id = node.id.to_string();
     let path = node.path;
     let last_obs = node.last_observed_rev.map(|r| r as i64);
 
@@ -35,8 +35,8 @@ pub fn upsert_file(store: &mut SqliteGraphStore, node: FileNode) -> crate::Resul
 pub fn upsert_symbol(store: &mut SqliteGraphStore, node: SymbolNode) -> crate::Result<()> {
     let data = encode_json(&node)?;
     let kind = encode_label(&node.kind)?;
-    let id = node.id.0 as i64;
-    let file_id = node.file_id.0 as i64;
+    let id = node.id.to_string();
+    let file_id = node.file_id.to_string();
     let qualified_name = node.qualified_name;
     let first_seen_rev = &node.first_seen_rev;
     let last_modified_rev = &node.last_modified_rev;
@@ -63,7 +63,7 @@ pub fn upsert_symbol(store: &mut SqliteGraphStore, node: SymbolNode) -> crate::R
 /// Upsert a concept node.
 pub fn upsert_concept(store: &mut SqliteGraphStore, node: ConceptNode) -> crate::Result<()> {
     let data = encode_json(&node)?;
-    let id = node.id.0 as i64;
+    let id = node.id.to_string();
     let path = node.path;
     let last_obs = node.last_observed_rev.map(|r| r as i64);
 
@@ -94,7 +94,7 @@ pub fn get_file(store: &SqliteGraphStore, id: FileNodeId) -> crate::Result<Optio
     load_row(
         &conn,
         "SELECT data FROM files WHERE id = ?1",
-        params![id.0 as i64],
+        params![id.to_string()],
     )
 }
 
@@ -104,7 +104,7 @@ pub fn get_symbol(store: &SqliteGraphStore, id: SymbolNodeId) -> crate::Result<O
     load_row(
         &conn,
         "SELECT data FROM symbols WHERE id = ?1",
-        params![id.0 as i64],
+        params![id.to_string()],
     )
 }
 
@@ -117,7 +117,7 @@ pub fn get_concept(
     load_row(
         &conn,
         "SELECT data FROM concepts WHERE id = ?1",
-        params![id.0 as i64],
+        params![id.to_string()],
     )
 }
 

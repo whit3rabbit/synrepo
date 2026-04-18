@@ -32,7 +32,7 @@ pub fn write_drift_scores(
             "INSERT INTO edge_drift (edge_id, revision, drift_score)
              VALUES (?1, ?2, ?3)
              ON CONFLICT(edge_id, revision) DO UPDATE SET drift_score = excluded.drift_score",
-            params![edge_id.0 as i64, revision, score],
+            params![edge_id.to_string(), revision, score],
         )?;
     }
     conn.execute_batch("COMMIT")?;
@@ -50,12 +50,12 @@ pub fn read_drift_scores(
     )?;
     let rows = stmt
         .query_map(params![revision], |row| {
-            Ok((row.get::<_, i64>(0)? as u64, row.get::<_, f32>(1)?))
+            Ok((row.get::<_, String>(0)?, row.get::<_, f32>(1)?))
         })?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(rows
         .into_iter()
-        .map(|(id, score)| (EdgeId(id), score))
+        .map(|(id, score)| (id.parse::<EdgeId>().unwrap(), score))
         .collect())
 }
 
@@ -104,7 +104,7 @@ pub fn write_fingerprints(
             "INSERT INTO file_fingerprints (file_node_id, revision, fingerprint)
              VALUES (?1, ?2, ?3)
              ON CONFLICT(file_node_id, revision) DO UPDATE SET fingerprint = excluded.fingerprint",
-            params![file_id.0 as i64, revision, data],
+            params![file_id.to_string(), revision, data],
         )?;
     }
     conn.execute_batch("COMMIT")?;
@@ -122,14 +122,14 @@ pub fn read_fingerprints(
     )?;
     let rows = stmt
         .query_map(params![revision], |row| {
-            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?
         .collect::<Result<Vec<_>, _>>()?;
     let mut map = HashMap::new();
     for (id, data) in rows {
         let fp: StructuralFingerprint =
             serde_json::from_str(&data).map_err(|e| anyhow::anyhow!(e))?;
-        map.insert(FileNodeId(id as u64), fp);
+        map.insert(id.parse::<FileNodeId>().unwrap(), fp);
     }
     Ok(map)
 }

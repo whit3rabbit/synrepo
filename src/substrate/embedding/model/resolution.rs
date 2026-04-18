@@ -75,57 +75,14 @@ impl ModelResolver {
             }
         }
 
-        // Check if it's an absolute path to a .onnx file (check before HF,
-        // since absolute paths contain `/` which would match the HF heuristic).
-        let onnx_path = PathBuf::from(model_id);
-        if onnx_path.is_absolute() && model_id.ends_with(".onnx") {
-            // Refuse UNC / verbatim / device prefixes before touching the
-            // filesystem. On Windows these trigger remote SMB auth (leaking
-            // NTLM hashes) and would otherwise hand an attacker-chosen ORT
-            // graph to the embedding runtime. The string-level `looks_like_unc`
-            // check belt-and-braces the same rejection on every platform —
-            // on Unix `Path::is_absolute` returns false for `\\host\share`,
-            // but we still want to refuse it consistently.
-            if has_windows_prefix_component(&onnx_path) || looks_like_unc(model_id) {
-                return Err(crate::Error::Config(format!(
-                    "semantic_model '{}' uses a UNC or device path; refusing to load",
-                    model_id
-                )));
-            }
-            let tokenizer_path = onnx_path.with_file_name("tokenizer.json");
-            if !tokenizer_path.exists() {
-                return Err(crate::Error::Config(format!(
-                    "Local model '{}' found but accompanying 'tokenizer.json' is missing in the same directory",
-                    model_id
-                )));
-            }
-            tracing::warn!(
-                model = model_id,
-                pooling = "mean",
-                normalize = true,
-                "Using default pooling=mean and normalize=true for custom local model. \
-                 If this model expects CLS pooling, set semantic_pooling in config."
-            );
-            return Ok(ModelResolution {
-                model_path: onnx_path,
-                tokenizer_path,
-                model_name: model_id.to_string(),
-                embedding_dim: declared_dim,
-                pooling: PoolingStrategy::Mean, // Default for custom models
-                normalize: true,                // Default for custom models
-                downloaded: false,
-            });
-        }
-
-        // Check if it's a Hugging Face model ID (contains `/` but not an absolute path).
-        if model_id.contains('/') {
-            return self.resolve_huggingface(model_id, &model_cache_dir, declared_dim);
-        }
-
         Err(crate::Error::Config(format!(
-            "Invalid model identifier '{}'. Expected a built-in name ({}), a Hugging Face model ID (e.g. 'intfloat/e5-base-v2'), or an absolute path to a .onnx file",
+            "Invalid model identifier '{}'. Expected a built-in name ({})",
             model_id,
-            BUILTIN_MODELS.iter().map(|s| s.model_id).collect::<Vec<_>>().join(", ")
+            BUILTIN_MODELS
+                .iter()
+                .map(|s| s.model_id)
+                .collect::<Vec<_>>()
+                .join(", ")
         )))
     }
 
@@ -162,53 +119,6 @@ impl ModelResolver {
             embedding_dim: spec.expected_dim,
             pooling: spec.pooling,
             normalize: spec.normalize,
-            downloaded,
-        })
-    }
-
-    fn resolve_huggingface(
-        &self,
-        model_id: &str,
-        cache_dir: &Path,
-        declared_dim: u16,
-    ) -> Result<ModelResolution> {
-        let onnx_url = format!(
-            "https://huggingface.co/{}/resolve/main/model.onnx",
-            model_id
-        );
-        let tokenizer_url = format!(
-            "https://huggingface.co/{}/resolve/main/tokenizer.json",
-            model_id
-        );
-
-        let model_path = cache_dir.join("model.onnx");
-        let tokenizer_path = cache_dir.join("tokenizer.json");
-
-        let mut downloaded = false;
-        if !model_path.exists() {
-            self.download_file(&onnx_url, &model_path)?;
-            downloaded = true;
-        }
-        if !tokenizer_path.exists() {
-            self.download_file(&tokenizer_url, &tokenizer_path)?;
-            downloaded = true;
-        }
-
-        tracing::warn!(
-            model = model_id,
-            pooling = "mean",
-            normalize = true,
-            "Assuming mean pooling and L2 normalization for Hugging Face model. \
-             sentence-transformers models typically use mean pooling, but verify for non-st models."
-        );
-
-        Ok(ModelResolution {
-            model_path,
-            tokenizer_path,
-            model_name: model_id.to_string(),
-            embedding_dim: declared_dim,
-            pooling: PoolingStrategy::Mean, // Default guess for HF models
-            normalize: true,
             downloaded,
         })
     }
@@ -291,75 +201,5 @@ mod tests {
             Err(e) if e.to_string().contains("download lock") => {}
             Err(e) => panic!("Unexpected error: {}", e),
         }
-    }
-
-    #[test]
-    fn resolve_bad_onnx_path_returns_error() {
-        let resolver = ModelResolver::new();
-        let result = resolver.resolve("/nonexistent/path/model.onnx", Path::new("."), 384);
-        let err = result.unwrap_err();
-        assert!(
-            err.to_string().contains("tokenizer") || err.to_string().contains("missing"),
-            "Expected clear error about missing tokenizer, got: {err}"
-        );
-    }
-
-    #[test]
-    fn resolve_onnx_without_tokenizer_returns_config_error() {
-        let dir = tempfile::tempdir().unwrap();
-        let onnx_path = dir.path().join("model.onnx");
-        std::fs::write(&onnx_path, b"fake onnx").unwrap();
-        // tokenizer.json deliberately not created
-        let resolver = ModelResolver::new();
-        let result = resolver.resolve(onnx_path.to_str().unwrap(), Path::new("."), 384);
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(
-            err.to_string().contains("tokenizer"),
-            "Expected tokenizer mention in error, got: {err}"
-        );
-    }
-
-    #[test]
-    fn resolve_builtin_wrong_dim_returns_config_error() {
-        let resolver = ModelResolver::new();
-        let result = resolver.resolve("all-MiniLM-L6-v2", Path::new("."), 999);
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(
-            err.to_string().contains("384") || err.to_string().contains("embedding_dim"),
-            "Expected dimension mismatch error, got: {err}"
-        );
-    }
-
-    #[test]
-    fn resolve_rejects_unc_style_slash_path() {
-        // `//attacker/share/m.onnx` is absolute on Unix and on Windows, so
-        // it hits the local-ONNX branch; the UNC check must reject it before
-        // any filesystem probe that could leak NTLM or load a foreign ORT
-        // graph.
-        let resolver = ModelResolver::new();
-        let err = resolver
-            .resolve("//attacker/share/m.onnx", Path::new("."), 384)
-            .unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains("UNC") || msg.contains("device"),
-            "Expected UNC/device rejection, got: {msg}"
-        );
-    }
-
-    #[cfg(windows)]
-    #[test]
-    fn resolve_rejects_backslash_unc_path() {
-        let resolver = ModelResolver::new();
-        let err = resolver
-            .resolve(r"\\attacker\share\m.onnx", Path::new("."), 384)
-            .unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains("UNC") || msg.contains("device"),
-            "Expected UNC/device rejection, got: {msg}"
-        );
     }
 }

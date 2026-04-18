@@ -9,7 +9,7 @@ use super::{commands, sample_link};
 
 fn insert_n_candidates(overlay: &mut SqliteOverlayStore, from: NodeId, n: u64) {
     for i in 0..n {
-        let to = NodeId::Symbol(SymbolNodeId(1000 + i));
+        let to = NodeId::Symbol(SymbolNodeId((1000 + i) as u128));
         overlay.insert_link(sample_link(from, to)).unwrap();
     }
 }

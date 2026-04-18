@@ -1,9 +1,9 @@
 ---
-source: src/surface/card/compiler/tests.rs
+source: src/surface/card/compiler/tests/links.rs
 expression: json
 ---
 {
-  "symbol": 1646091276222327452,
+  "symbol": "sym_6aeed050165175727f73e633a1a15fd8",
   "name": "annotated",
   "qualified_name": "annotated",
   "defined_at": "src/lib.rs:10",
@@ -22,10 +22,10 @@ expression: json
   "proposed_links": [
     {
       "source": {
-        "Symbol": 1646091276222327452
+        "Symbol": "sym_6aeed050165175727f73e633a1a15fd8"
       },
       "target": {
-        "File": 18328221221486569595
+        "File": "file_a244943efc82b187fe5aec18077ba87b"
       },
       "kind": "references",
       "tier": "high",

@@ -176,8 +176,8 @@ pub(super) fn seed_overlay_candidates(repo_root: &std::path::Path, n: u64) {
     let mut overlay = SqliteOverlayStore::open(&overlay_dir).unwrap();
 
     for i in 0..n {
-        let from = NodeId::Concept(ConceptNodeId(i + 1));
-        let to = NodeId::File(FileNodeId(i + 1 + 10_000));
+        let from = NodeId::Concept(ConceptNodeId((i + 1) as u128));
+        let to = NodeId::File(FileNodeId((i + 1 + 10_000) as u128));
         let link = OverlayLink {
             from,
             to,

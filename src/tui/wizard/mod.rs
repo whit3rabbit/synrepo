@@ -5,10 +5,11 @@
 //!
 //! This module owns the shared crossterm alt-screen lifecycle and common
 //! helpers. The setup wizard lives in [`setup`]; the repair wizard in
-//! [`repair`]. Each sub-module exports its own state machine, plan struct,
-//! and `run_*_wizard_loop` entry point. The library never calls bin-side
-//! step_* helpers directly — each wizard returns a plan that the bin-side
-//! dispatcher executes after the TUI alternate-screen has been torn down.
+//! [`repair`]; the integration wizard in [`integration`]. Each sub-directory
+//! exports its own state machine, plan struct, and `run_*_wizard_loop` entry
+//! point. The library never calls bin-side step_* helpers directly — each
+//! wizard returns a plan that the bin-side dispatcher executes after the TUI
+//! alternate-screen has been torn down.
 
 use std::io::{self, Stdout};
 
@@ -26,10 +27,16 @@ pub mod repair;
 pub mod setup;
 
 pub use integration::{
-    run_integration_wizard_loop, IntegrationPlan, IntegrationWizardOutcome, IntegrationWizardState,
+    run_integration_wizard_loop, IntegrationPlan, IntegrationWizardOutcome,
+    IntegrationWizardState, ActionRow as IntegrationActionRow,
 };
-pub use repair::{run_repair_wizard_loop, RepairPlan, RepairWizardOutcome, RepairWizardState};
-pub use setup::{run_setup_wizard_loop, SetupPlan, SetupWizardOutcome, SetupWizardState};
+pub use repair::{
+    run_repair_wizard_loop, RepairPlan, RepairWizardOutcome, RepairWizardState,
+    ActionRow as RepairActionRow, RepairActionKind, RepairStep,
+};
+pub use setup::{
+    run_setup_wizard_loop, SetupPlan, SetupWizardOutcome, SetupWizardState, WIZARD_TARGETS,
+};
 
 /// Type alias for the crossterm-backed terminal each wizard drives.
 pub(crate) type WizardTerminal = Terminal<CrosstermBackend<Stdout>>;

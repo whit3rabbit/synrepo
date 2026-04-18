@@ -501,7 +501,7 @@ fn status_default_with_1000_commentary_rows_completes_quickly() {
     for i in 0..1000_u64 {
         insert_commentary_row(
             &mut overlay,
-            NodeId::Symbol(SymbolNodeId(0x10_0000 + i)),
+            NodeId::Symbol(SymbolNodeId((0x10_0000 + i) as u128)),
             "stale",
         );
     }

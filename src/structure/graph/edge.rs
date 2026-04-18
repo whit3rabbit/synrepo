@@ -99,8 +99,8 @@ pub fn derive_edge_id(from: NodeId, to: NodeId, kind: EdgeKind) -> EdgeId {
     hasher.update(from.to_string().as_bytes());
     hasher.update(to.to_string().as_bytes());
     hasher.update(kind.as_str().as_bytes());
-    EdgeId(u64::from_le_bytes(
-        hasher.finalize().as_bytes()[..8]
+    EdgeId(u128::from_le_bytes(
+        hasher.finalize().as_bytes()[..16]
             .try_into()
             .expect("blake3 output is 32 bytes"),
     ))

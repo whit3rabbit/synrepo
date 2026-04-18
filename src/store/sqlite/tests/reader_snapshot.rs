@@ -14,7 +14,7 @@ use tempfile::tempdir;
 
 fn make_file(id: u64, path: &str) -> FileNode {
     FileNode {
-        id: FileNodeId(id),
+        id: FileNodeId(id as u128),
         path: path.to_string(),
         path_history: Vec::new(),
         content_hash: format!("hash-{id:x}"),
@@ -29,7 +29,7 @@ fn make_file(id: u64, path: &str) -> FileNode {
 
 fn make_symbol(id: u64, file_id: FileNodeId, qname: &str) -> SymbolNode {
     SymbolNode {
-        id: SymbolNodeId(id),
+        id: SymbolNodeId(id as u128),
         file_id,
         qualified_name: qname.to_string(),
         display_name: qname.to_string(),

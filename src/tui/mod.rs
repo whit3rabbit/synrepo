@@ -260,12 +260,15 @@ mod live {
         let service_config = config.clone();
         let service_synrepo_dir: PathBuf = synrepo_dir.clone();
         let service_thread = thread::spawn(move || {
+            // TODO(phase-B): wire a real event sender here so the dashboard
+            // log pane streams reconcile events instead of polling state files.
             let result = run_watch_service(
                 &service_repo,
                 &service_config,
                 &WatchConfig::default(),
                 &service_synrepo_dir,
                 WatchServiceMode::Foreground,
+                None,
             )
             .map_err(|e| anyhow::anyhow!(e.to_string()));
             let _ = done_tx.send(result);

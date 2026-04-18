@@ -131,8 +131,8 @@ fn candidates_limited_applies_sql_side_limit() {
 
     // Insert 10 cross-link candidates with varying scores.
     for i in 0..10u64 {
-        let from = NodeId::Concept(ConceptNodeId(i));
-        let to = NodeId::Symbol(SymbolNodeId(100 + i));
+        let from = NodeId::Concept(ConceptNodeId(i as u128));
+        let to = NodeId::Symbol(SymbolNodeId((100 + i) as u128));
         let mut link = sample_link(from, to, "h-from", "h-to");
         link.confidence_score = 0.5 + (i as f32 * 0.04); // 0.50 .. 0.86
         link.confidence_tier = if i < 5 {

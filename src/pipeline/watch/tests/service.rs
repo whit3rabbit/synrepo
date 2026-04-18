@@ -47,6 +47,7 @@ fn watch_service_handles_status_reconcile_and_stop() {
             &WatchConfig::default(),
             &service_synrepo,
             WatchServiceMode::Foreground,
+            None,
         )
         .unwrap();
     });
@@ -87,6 +88,7 @@ fn watch_service_records_lock_conflict_when_writer_lock_is_held() {
             &WatchConfig::default(),
             &service_synrepo,
             WatchServiceMode::Foreground,
+            None,
         )
         .unwrap();
     });
@@ -139,6 +141,7 @@ fn watch_service_ignores_runtime_only_writes() {
             &WatchConfig::default(),
             &service_synrepo,
             WatchServiceMode::Foreground,
+            None,
         )
         .unwrap();
     });

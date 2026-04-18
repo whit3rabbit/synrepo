@@ -1,9 +1,9 @@
 ---
-source: src/surface/card/compiler/tests.rs
+source: src/surface/card/compiler/tests/basic.rs
 expression: normal
 ---
 {
-  "symbol": 5559367378525914440,
+  "symbol": "sym_d4df48aace678ef3b1378965e1d10cc0",
   "name": "add",
   "qualified_name": "add",
   "defined_at": "src/lib.rs:31",

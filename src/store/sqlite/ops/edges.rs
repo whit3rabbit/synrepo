@@ -16,10 +16,10 @@ use rusqlite::params;
 pub fn insert_edge(store: &mut SqliteGraphStore, edge: Edge) -> crate::Result<()> {
     let data = encode_json(&edge)?;
     let kind = encode_label(&edge.kind)?;
-    let id = edge.id.0 as i64;
+    let id = edge.id.to_string();
     let from_node_id = edge.from.to_string();
     let to_node_id = edge.to.to_string();
-    let owner_fid = edge.owner_file_id.map(|fid| fid.0 as i64);
+    let owner_fid = edge.owner_file_id.map(|fid| fid.to_string());
     let last_obs = edge.last_observed_rev.map(|r| r as i64);
     let retired = edge.retired_at_rev.map(|r| r as i64);
 
@@ -41,7 +41,7 @@ pub fn insert_edge(store: &mut SqliteGraphStore, edge: Edge) -> crate::Result<()
 
 /// Delete an edge by ID.
 pub fn delete_edge(store: &mut SqliteGraphStore, edge_id: EdgeId) -> crate::Result<()> {
-    let id = edge_id.0 as i64;
+    let id = edge_id.to_string();
     store
         .conn
         .lock()

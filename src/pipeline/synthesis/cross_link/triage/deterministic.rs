@@ -311,7 +311,7 @@ mod tests {
 
     fn file_node(id: u64, path: &str) -> FileNode {
         FileNode {
-            id: FileNodeId(id),
+            id: FileNodeId(id as u128),
             path: path.into(),
             path_history: Vec::new(),
             content_hash: format!("hash-{id}"),
@@ -326,7 +326,7 @@ mod tests {
 
     fn sym_node(id: u64, file_id: FileNodeId, qname: &str) -> SymbolNode {
         SymbolNode {
-            id: SymbolNodeId(id),
+            id: SymbolNodeId(id as u128),
             file_id,
             qualified_name: qname.into(),
             display_name: qname.rsplit("::").next().unwrap_or(qname).into(),
@@ -346,7 +346,7 @@ mod tests {
 
     fn concept(id: u64, path: &str, title: &str, body: Option<&str>) -> ConceptNode {
         ConceptNode {
-            id: ConceptNodeId(id),
+            id: ConceptNodeId(id as u128),
             path: path.into(),
             title: title.into(),
             aliases: Vec::new(),
@@ -361,7 +361,7 @@ mod tests {
 
     fn edge_between(id: u64, from: NodeId, to: NodeId, kind: EdgeKind) -> Edge {
         Edge {
-            id: crate::core::ids::EdgeId(id),
+            id: crate::core::ids::EdgeId(id as u128),
             from,
             to,
             kind,

@@ -20,7 +20,7 @@ pub use reconcile::{
     persist_reconcile_state, reconcile_state_path, run_reconcile_pass, ReconcileOutcome,
     ReconcileState, ReconcileStateError,
 };
-pub use service::{run_watch_loop, run_watch_service, WatchConfig};
+pub use service::{run_watch_loop, run_watch_service, WatchConfig, WatchEvent};
 
 #[cfg(test)]
 mod tests;

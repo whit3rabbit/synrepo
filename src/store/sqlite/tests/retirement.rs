@@ -16,7 +16,7 @@ fn open_memory_store() -> SqliteGraphStore {
 
 fn make_file(id: u64, path: &str) -> FileNode {
     FileNode {
-        id: FileNodeId(id),
+        id: FileNodeId(id as u128),
         path: path.to_string(),
         path_history: vec![],
         content_hash: format!("hash_{id}"),
@@ -31,8 +31,8 @@ fn make_file(id: u64, path: &str) -> FileNode {
 
 fn make_symbol(id: u64, file_id: u64, name: &str) -> SymbolNode {
     SymbolNode {
-        id: SymbolNodeId(id),
-        file_id: FileNodeId(file_id),
+        id: SymbolNodeId(id as u128),
+        file_id: FileNodeId(file_id as u128),
         qualified_name: name.to_string(),
         display_name: name.to_string(),
         kind: crate::structure::graph::SymbolKind::Function,
@@ -50,14 +50,14 @@ fn make_symbol(id: u64, file_id: u64, name: &str) -> SymbolNode {
 }
 
 fn make_defines_edge(file_id: u64, sym_id: u64) -> Edge {
-    let from = NodeId::File(FileNodeId(file_id));
-    let to = NodeId::Symbol(SymbolNodeId(sym_id));
+    let from = NodeId::File(FileNodeId(file_id as u128));
+    let to = NodeId::Symbol(SymbolNodeId(sym_id as u128));
     Edge {
         id: derive_edge_id(from, to, EdgeKind::Defines),
         from,
         to,
         kind: EdgeKind::Defines,
-        owner_file_id: Some(FileNodeId(file_id)),
+        owner_file_id: Some(FileNodeId(file_id as u128)),
         last_observed_rev: Some(1),
         retired_at_rev: None,
         epistemic: Epistemic::ParserObserved,
@@ -82,18 +82,18 @@ fn retire_symbol_hides_from_symbols_for_file() {
     store.upsert_symbol(make_symbol(11, 1, "bar")).unwrap();
 
     // Both visible before retirement.
-    assert_eq!(store.symbols_for_file(FileNodeId(1)).unwrap().len(), 2);
+    assert_eq!(store.symbols_for_file(FileNodeId(1_u128)).unwrap().len(), 2);
 
     // Retire one.
-    store.retire_symbol(SymbolNodeId(10), 2).unwrap();
+    store.retire_symbol(SymbolNodeId(10_u128), 2).unwrap();
 
     // Only one visible.
-    let active = store.symbols_for_file(FileNodeId(1)).unwrap();
+    let active = store.symbols_for_file(FileNodeId(1_u128)).unwrap();
     assert_eq!(active.len(), 1);
     assert_eq!(active[0].qualified_name, "bar");
 
     // But get_symbol still finds the retired one (for drift, provenance).
-    let retired = store.get_symbol(SymbolNodeId(10)).unwrap().unwrap();
+    let retired = store.get_symbol(SymbolNodeId(10_u128)).unwrap().unwrap();
     assert_eq!(retired.retired_at_rev, Some(2));
 }
 
@@ -109,7 +109,7 @@ fn retire_edge_hides_from_outbound_and_active_edges() {
     // Visible before retirement.
     assert_eq!(
         store
-            .outbound(NodeId::File(FileNodeId(1)), None)
+            .outbound(NodeId::File(FileNodeId(1_u128)), None)
             .unwrap()
             .len(),
         1
@@ -122,7 +122,7 @@ fn retire_edge_hides_from_outbound_and_active_edges() {
     // Hidden from outbound and active_edges.
     assert_eq!(
         store
-            .outbound(NodeId::File(FileNodeId(1)), None)
+            .outbound(NodeId::File(FileNodeId(1_u128)), None)
             .unwrap()
             .len(),
         0
@@ -145,15 +145,15 @@ fn edges_owned_by_returns_only_active_edges_for_owner() {
     store.insert_edge(make_defines_edge(1, 10)).unwrap();
     store.insert_edge(make_defines_edge(2, 20)).unwrap();
 
-    assert_eq!(store.edges_owned_by(FileNodeId(1)).unwrap().len(), 1);
-    assert_eq!(store.edges_owned_by(FileNodeId(2)).unwrap().len(), 1);
+    assert_eq!(store.edges_owned_by(FileNodeId(1_u128)).unwrap().len(), 1);
+    assert_eq!(store.edges_owned_by(FileNodeId(2_u128)).unwrap().len(), 1);
 
     // Retire edge owned by file 1.
     let e1 = make_defines_edge(1, 10);
     store.retire_edge(e1.id, 2).unwrap();
 
-    assert_eq!(store.edges_owned_by(FileNodeId(1)).unwrap().len(), 0);
-    assert_eq!(store.edges_owned_by(FileNodeId(2)).unwrap().len(), 1);
+    assert_eq!(store.edges_owned_by(FileNodeId(1_u128)).unwrap().len(), 0);
+    assert_eq!(store.edges_owned_by(FileNodeId(2_u128)).unwrap().len(), 1);
 }
 
 #[test]
@@ -162,11 +162,11 @@ fn unretire_symbol_restores_visibility() {
     store.upsert_file(make_file(1, "a.rs")).unwrap();
     store.upsert_symbol(make_symbol(10, 1, "foo")).unwrap();
 
-    store.retire_symbol(SymbolNodeId(10), 2).unwrap();
-    assert_eq!(store.symbols_for_file(FileNodeId(1)).unwrap().len(), 0);
+    store.retire_symbol(SymbolNodeId(10_u128), 2).unwrap();
+    assert_eq!(store.symbols_for_file(FileNodeId(1_u128)).unwrap().len(), 0);
 
-    store.unretire_symbol(SymbolNodeId(10), 3).unwrap();
-    let active = store.symbols_for_file(FileNodeId(1)).unwrap();
+    store.unretire_symbol(SymbolNodeId(10_u128), 3).unwrap();
+    let active = store.symbols_for_file(FileNodeId(1_u128)).unwrap();
     assert_eq!(active.len(), 1);
     assert_eq!(active[0].last_observed_rev, Some(3));
     assert_eq!(active[0].retired_at_rev, None);
@@ -202,7 +202,7 @@ fn compact_retired_removes_old_observations() {
     store.insert_edge(edge.clone()).unwrap();
 
     // Retire at rev 2.
-    store.retire_symbol(SymbolNodeId(10), 2).unwrap();
+    store.retire_symbol(SymbolNodeId(10_u128), 2).unwrap();
     store.retire_edge(edge.id, 2).unwrap();
 
     // Compact with threshold 3 (removes retired_at < 3).
@@ -211,10 +211,10 @@ fn compact_retired_removes_old_observations() {
     assert_eq!(summary.edges_removed, 1);
 
     // Retired symbol is gone.
-    assert!(store.get_symbol(SymbolNodeId(10)).unwrap().is_none());
+    assert!(store.get_symbol(SymbolNodeId(10_u128)).unwrap().is_none());
 
     // Active symbol survives.
-    assert!(store.get_symbol(SymbolNodeId(11)).unwrap().is_some());
+    assert!(store.get_symbol(SymbolNodeId(11_u128)).unwrap().is_some());
 }
 
 #[test]
@@ -231,7 +231,7 @@ fn compact_retired_preserves_active_observations() {
     assert_eq!(summary.symbols_removed, 0);
     assert_eq!(summary.edges_removed, 0);
 
-    assert!(store.get_symbol(SymbolNodeId(10)).unwrap().is_some());
+    assert!(store.get_symbol(SymbolNodeId(10_u128)).unwrap().is_some());
     assert_eq!(store.all_edges().unwrap().len(), 1);
 }
 
@@ -242,7 +242,7 @@ fn compact_retired_within_retention_window_survives() {
     store.upsert_symbol(make_symbol(10, 1, "foo")).unwrap();
 
     // Retire at rev 5.
-    store.retire_symbol(SymbolNodeId(10), 5).unwrap();
+    store.retire_symbol(SymbolNodeId(10_u128), 5).unwrap();
 
     // Compact with threshold 4: retired_at_rev (5) >= threshold (4), so survives.
     let summary = store.compact_retired(4).unwrap();

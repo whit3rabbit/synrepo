@@ -388,8 +388,22 @@ fn user_socket_dir() -> PathBuf {
         .unwrap_or_else(|_| "unknown".to_string());
     let dir = std::env::temp_dir().join(format!("synrepo-run-{}", username));
 
-    if let Err(e) = fs::create_dir_all(&dir) {
-        tracing::debug!("Failed to create fallback socket dir: {}", e);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        let mut builder = fs::DirBuilder::new();
+        builder.mode(0o700);
+        if let Err(e) = builder.create(&dir) {
+            if e.kind() != std::io::ErrorKind::AlreadyExists {
+                tracing::debug!("Failed to create fallback socket dir: {}", e);
+            }
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        if let Err(e) = fs::create_dir_all(&dir) {
+            tracing::debug!("Failed to create fallback socket dir: {}", e);
+        }
     }
 
     #[cfg(unix)]
@@ -409,7 +423,6 @@ fn user_socket_dir() -> PathBuf {
 #[cfg(unix)]
 fn harden_fallback_socket_dir(dir: &Path) {
     use std::os::unix::fs::MetadataExt;
-    use std::os::unix::fs::PermissionsExt;
 
     // `fs::metadata` and `fs::set_permissions` both follow symlinks, so
     // without this check an attacker on a shared host could pre-create
@@ -446,10 +459,6 @@ fn harden_fallback_socket_dir(dir: &Path) {
                 meta.uid()
             );
         }
-    }
-
-    if let Err(e) = fs::set_permissions(dir, fs::Permissions::from_mode(0o700)) {
-        tracing::debug!("Failed to set permissions on fallback socket dir: {}", e);
     }
 }
 

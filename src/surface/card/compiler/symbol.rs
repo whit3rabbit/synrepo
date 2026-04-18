@@ -159,10 +159,10 @@ pub(crate) fn build_generation_context(card: &SymbolCard) -> String {
         s.push_str(&format!("Signature: {sig}\n"));
     }
     if let Some(doc) = &card.doc_comment {
-        s.push_str(&format!("Doc comment: {doc}\n"));
+        s.push_str(&format!("<doc_comment>\n{doc}\n</doc_comment>\n"));
     }
     if let Some(body) = &card.source_body {
-        s.push_str(&format!("Body:\n{body}\n"));
+        s.push_str(&format!("<source_code>\n{body}\n</source_code>\n"));
     }
     s
 }

@@ -85,8 +85,8 @@ pub fn extract_concept(
 pub fn derive_concept_id(path: &str) -> ConceptNodeId {
     let hash = blake3::hash(path.as_bytes());
     let bytes = hash.as_bytes();
-    let id = u64::from_le_bytes(bytes[0..8].try_into().expect("blake3 output >= 8 bytes"));
-    ConceptNodeId(id)
+    let id = u128::from_le_bytes(bytes[0..16].try_into().expect("blake3 output >= 16 bytes"));
+    ConceptNodeId(id as u128)
 }
 
 /// Extract the relative file paths declared in the `governs:` frontmatter key.

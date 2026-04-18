@@ -29,10 +29,10 @@ fn test_provenance() -> Provenance {
     }
 }
 
-fn make_symbol(id: u64, file_id: u64, qname: &str, body_hash: &str) -> SymbolNode {
+fn make_symbol(id: u64, file_id: u128, qname: &str, body_hash: &str) -> SymbolNode {
     SymbolNode {
-        id: SymbolNodeId(id),
-        file_id: crate::core::ids::FileNodeId(file_id),
+        id: SymbolNodeId(id as u128),
+        file_id: crate::core::ids::FileNodeId(file_id as u128),
         qualified_name: qname.to_string(),
         display_name: qname.split("::").last().unwrap_or(qname).to_string(),
         kind: SymbolKind::Function,

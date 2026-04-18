@@ -55,7 +55,8 @@ RUST_LOG=debug cargo run -- <cmd>  # enable tracing output
 openspec status --change <name> --json  # artifact/task completion check; isComplete=true when archivable
 ```
 
-Node IDs in display format: `file_0000000000000042`, `symbol_0000000000000024`, `concept_0000000000000099`.
+Node IDs in display format: `file_00000000000000000000000000000042`, `sym_00000000000000000000000000000024`, `concept_00000000000000000000000000000099`.
+These are 128-bit (16-byte) blake3 hashes serialized as 32-character hexadecimal strings to prevent JSON numerical parser limitations. Do not cast them as raw integers via serde.
 
 Dev dependencies: `proptest` (property tests for token budget invariants), `insta` (snapshot tests for card output), `tempfile` (test fixtures). `criterion` is available for explicit benchmark work.
 
@@ -69,7 +70,7 @@ Four layers, bottom to top. No layer may import from a layer above it.
 Files must stay under 400 lines; split into sub-modules before they grow past that.
 
 **0. Core** (`src/core/`) — Shared types with no heavy deps.
-- `ids.rs` — stable identifier types: `FileNodeId`, `SymbolNodeId`, `ConceptNodeId`, `EdgeId`, `NodeId` (unified enum). These are the types named in the hard invariants below.
+- `ids.rs` — stable identifier types: `FileNodeId`, `SymbolNodeId`, `ConceptNodeId`, `EdgeId`, `NodeId` (unified enum). Backed by `u128` blake3 hashes. They implement `Serialize / Deserialize` to 32-char snake-case hexadecimal strings (e.g., `"file_..."`) to bypass serde_json maximum number limits (`u64::MAX`). SQLite columns for IDs are type `TEXT PRIMARY KEY`.
 - `provenance.rs` — `Provenance`, `CreatedBy`, `SourceRef`: every graph row and overlay entry carries one.
 - Spec: `openspec/specs/foundation/spec.md`
 

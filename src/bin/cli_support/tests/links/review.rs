@@ -19,7 +19,7 @@ fn links_review_sorts_descending_and_applies_limit() {
     let from = NodeId::Concept(ids.concept_id);
     // Three different `to` symbols so each candidate is a distinct overlay row.
     for (idx, score) in [(2u64, 0.3f32), (3, 0.9), (4, 0.6)] {
-        let mut link = sample_link(from, NodeId::Symbol(SymbolNodeId(idx)));
+        let mut link = sample_link(from, NodeId::Symbol(SymbolNodeId(idx as u128)));
         link.confidence_score = score;
         link.confidence_tier = ConfidenceTier::ReviewQueue;
         overlay.insert_link(link).unwrap();

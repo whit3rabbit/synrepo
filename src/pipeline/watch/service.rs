@@ -28,8 +28,43 @@ use super::control::{read_control_request, write_control_response};
 use super::{
     control::{WatchControlRequest, WatchControlResponse},
     lease::{acquire_watch_daemon_lease, watch_socket_path, WatchServiceMode, WatchStateHandle},
-    reconcile::{persist_reconcile_state, run_reconcile_pass},
+    reconcile::{persist_reconcile_state, run_reconcile_pass, ReconcileOutcome},
 };
+
+/// Event emitted by the watch service for each reconcile attempt and error.
+///
+/// Used by the live-mode dashboard to stream activity into the log pane.
+/// The wire format is intentionally minimal: keep this structure close to the
+/// poll dashboard's `LogEntry` shape so mapping stays trivial.
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(tag = "event", rename_all = "snake_case")]
+pub enum WatchEvent {
+    /// Emitted immediately before `run_reconcile_pass` runs. `triggering_events`
+    /// is 0 for the startup pass and for operator-requested passes.
+    ReconcileStarted {
+        /// RFC 3339 UTC timestamp when the pass started.
+        at: String,
+        /// Number of debounced filesystem events that triggered this pass.
+        triggering_events: usize,
+    },
+    /// Emitted after a reconcile pass completes with its outcome.
+    ReconcileFinished {
+        /// RFC 3339 UTC timestamp when the pass finished.
+        at: String,
+        /// Final outcome from `run_reconcile_pass`.
+        outcome: ReconcileOutcome,
+        /// Number of debounced filesystem events that triggered this pass.
+        triggering_events: usize,
+    },
+    /// Emitted for watcher-level errors (debouncer failures). Reconcile
+    /// failures surface as `ReconcileFinished { outcome: Failed(_) }`.
+    Error {
+        /// RFC 3339 UTC timestamp when the error was observed.
+        at: String,
+        /// Human-readable error description.
+        message: String,
+    },
+}
 
 /// Configuration for the watch and reconcile loop.
 #[derive(Clone, Debug)]
@@ -61,16 +96,21 @@ enum LoopMessage {
 }
 
 /// Run the watch service in the current process.
+///
+/// `events` is an optional best-effort event stream. The live-mode dashboard
+/// subscribes here; foreground and daemon callers pass `None`. A dropped
+/// receiver does not stop the loop — sends are best-effort.
 pub fn run_watch_service(
     repo_root: &Path,
     config: &Config,
     watch_config: &WatchConfig,
     synrepo_dir: &Path,
     mode: WatchServiceMode,
+    events: Option<crossbeam_channel::Sender<WatchEvent>>,
 ) -> crate::Result<()> {
     #[cfg(not(unix))]
     {
-        let _ = (repo_root, config, watch_config, synrepo_dir, mode);
+        let _ = (repo_root, config, watch_config, synrepo_dir, mode, events);
         Err(crate::Error::Other(anyhow::anyhow!(
             "watch daemon service is only supported on unix-like platforms"
         )))
@@ -90,10 +130,19 @@ pub fn run_watch_service(
             stop_flag.clone(),
         )?;
 
+        emit_event(&events, |now| WatchEvent::ReconcileStarted {
+            at: now,
+            triggering_events: 0,
+        });
         let startup = run_reconcile_pass(repo_root, config, synrepo_dir);
         persist_reconcile_state(synrepo_dir, &startup, 0);
         state_handle.note_reconcile(&startup, 0);
         tracing::info!(outcome = %startup.as_str(), "startup reconcile complete");
+        emit_event(&events, |now| WatchEvent::ReconcileFinished {
+            at: now,
+            outcome: startup.clone(),
+            triggering_events: 0,
+        });
 
         let mut debouncer = new_debouncer(watch_config.debounce_timeout, None, move |result| {
             let _ = tx.send(LoopMessage::WatchResult(result));
@@ -114,14 +163,18 @@ pub fn run_watch_service(
 
         loop {
             match rx.recv() {
-                Ok(LoopMessage::WatchResult(Ok(events))) => {
-                    let filtered = filter_repo_events(events, synrepo_dir);
+                Ok(LoopMessage::WatchResult(Ok(watcher_events))) => {
+                    let filtered = filter_repo_events(watcher_events, synrepo_dir);
                     if filtered.is_empty() {
                         continue;
                     }
                     let event_count = filtered.len().min(watch_config.max_events_per_cycle);
                     state_handle.note_event();
                     tracing::debug!(events = event_count, "coalesced events; running reconcile");
+                    emit_event(&events, |now| WatchEvent::ReconcileStarted {
+                        at: now,
+                        triggering_events: event_count,
+                    });
                     let outcome = run_reconcile_pass(repo_root, config, synrepo_dir);
                     persist_reconcile_state(synrepo_dir, &outcome, event_count);
                     state_handle.note_reconcile(&outcome, event_count);
@@ -130,10 +183,19 @@ pub fn run_watch_service(
                         events = event_count,
                         "reconcile pass complete"
                     );
+                    emit_event(&events, |now| WatchEvent::ReconcileFinished {
+                        at: now,
+                        outcome: outcome.clone(),
+                        triggering_events: event_count,
+                    });
                 }
                 Ok(LoopMessage::WatchResult(Err(errors))) => {
                     for error in &errors {
                         tracing::warn!("watcher error: {error}");
+                        emit_event(&events, |now| WatchEvent::Error {
+                            at: now,
+                            message: format!("watcher error: {error}"),
+                        });
                     }
                 }
                 Ok(LoopMessage::Stop { respond_to }) => {
@@ -144,9 +206,18 @@ pub fn run_watch_service(
                     break;
                 }
                 Ok(LoopMessage::ReconcileNow { respond_to }) => {
+                    emit_event(&events, |now| WatchEvent::ReconcileStarted {
+                        at: now,
+                        triggering_events: 0,
+                    });
                     let outcome = run_reconcile_pass(repo_root, config, synrepo_dir);
                     persist_reconcile_state(synrepo_dir, &outcome, 0);
                     state_handle.note_reconcile(&outcome, 0);
+                    emit_event(&events, |now| WatchEvent::ReconcileFinished {
+                        at: now,
+                        outcome: outcome.clone(),
+                        triggering_events: 0,
+                    });
                     let _ = respond_to.send(WatchControlResponse::Reconcile {
                         outcome,
                         triggering_events: 0,
@@ -176,7 +247,20 @@ pub fn run_watch_loop(
         watch_config,
         synrepo_dir,
         WatchServiceMode::Foreground,
+        None,
     )
+}
+
+/// Best-effort send on the optional event channel. A dropped receiver must
+/// not kill the watch loop, so failures are swallowed.
+fn emit_event<F>(sender: &Option<crossbeam_channel::Sender<WatchEvent>>, build: F)
+where
+    F: FnOnce(String) -> WatchEvent,
+{
+    if let Some(tx) = sender {
+        let event = build(crate::pipeline::writer::now_rfc3339());
+        let _ = tx.try_send(event);
+    }
 }
 
 pub(crate) fn filter_repo_events(

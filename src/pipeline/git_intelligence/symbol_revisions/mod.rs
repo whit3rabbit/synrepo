@@ -40,7 +40,7 @@ pub fn derive_symbol_revisions(
     // all_symbols_summary returns (id, file_id, qname, kind_label, body_hash) in a
     // single batch query, avoiding the previous N+1 pattern of calling get_symbol per row.
     let symbol_summary = graph.all_symbols_summary()?;
-    let mut current_by_file: HashMap<String, HashMap<SymbolKey, (u64, String)>> = HashMap::new();
+    let mut current_by_file: HashMap<String, HashMap<SymbolKey, (u128, String)>> = HashMap::new();
     for (sym_id, file_id, qname, kind_label, body_hash) in &symbol_summary {
         let Some(path) = id_to_path.get(&file_id) else {
             continue;
@@ -93,12 +93,12 @@ pub fn derive_symbol_revisions(
         }
 
         // Write derived revisions back to graph store.
-        for (key, (sym_id_u64, _)) in current_hashes {
+        for (key, (sym_id_int, _)) in current_hashes {
             let first = first_seen.get(key).cloned();
             let last_mod = last_modified.get(key).cloned();
 
             if first.is_some() || last_mod.is_some() {
-                let sym_id = crate::core::ids::SymbolNodeId(*sym_id_u64);
+                let sym_id = crate::core::ids::SymbolNodeId(*sym_id_int);
                 if let Some(mut sym) = graph.get_symbol(sym_id)? {
                     sym.first_seen_rev = first;
                     sym.last_modified_rev = last_mod;

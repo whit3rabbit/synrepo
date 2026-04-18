@@ -28,7 +28,7 @@ fn seed_files(synrepo_dir: &std::path::Path, count: usize) {
         let hash = format!("hash-{i}");
         graph
             .upsert_file(FileNode {
-                id: FileNodeId((i as u64) + 1),
+                id: FileNodeId((i as u128) + 1),
                 path: path.clone(),
                 path_history: Vec::new(),
                 content_hash: hash.clone(),

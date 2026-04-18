@@ -57,6 +57,7 @@ pub(crate) fn watch(repo_root: &Path, daemon: bool) -> anyhow::Result<()> {
             &WatchConfig::default(),
             &synrepo_dir,
             WatchServiceMode::Foreground,
+            None,
         )
         .map_err(|error| anyhow::anyhow!(error.to_string()))
     }
@@ -72,6 +73,7 @@ pub(crate) fn watch_internal(repo_root: &Path) -> anyhow::Result<()> {
         &WatchConfig::default(),
         &synrepo_dir,
         WatchServiceMode::Daemon,
+        None,
     )
     .map_err(|error| anyhow::anyhow!(error.to_string()))
 }

@@ -9,47 +9,47 @@ pub(super) fn init_schema(conn: &Connection) -> crate::Result<()> {
         PRAGMA busy_timeout = 5000;
 
         CREATE TABLE IF NOT EXISTS files (
-            id INTEGER PRIMARY KEY,
+            id TEXT PRIMARY KEY,
             path TEXT NOT NULL UNIQUE,
             data TEXT NOT NULL
-        );
+        ) WITHOUT ROWID;
 
         CREATE TABLE IF NOT EXISTS symbols (
-            id INTEGER PRIMARY KEY,
-            file_id INTEGER NOT NULL,
+            id TEXT PRIMARY KEY,
+            file_id TEXT NOT NULL,
             qualified_name TEXT NOT NULL,
             kind TEXT NOT NULL,
             data TEXT NOT NULL
-        );
+        ) WITHOUT ROWID;
 
         CREATE INDEX IF NOT EXISTS idx_symbols_file_id ON symbols(file_id);
 
         CREATE TABLE IF NOT EXISTS concepts (
-            id INTEGER PRIMARY KEY,
+            id TEXT PRIMARY KEY,
             path TEXT NOT NULL UNIQUE,
             data TEXT NOT NULL
-        );
+        ) WITHOUT ROWID;
 
         CREATE TABLE IF NOT EXISTS edges (
-            id INTEGER PRIMARY KEY,
+            id TEXT PRIMARY KEY,
             from_node_id TEXT NOT NULL,
             to_node_id TEXT NOT NULL,
             kind TEXT NOT NULL,
             data TEXT NOT NULL
-        );
+        ) WITHOUT ROWID;
 
         CREATE INDEX IF NOT EXISTS idx_edges_from_kind ON edges(from_node_id, kind);
         CREATE INDEX IF NOT EXISTS idx_edges_to_kind ON edges(to_node_id, kind);
 
         CREATE TABLE IF NOT EXISTS edge_drift (
-            edge_id INTEGER NOT NULL,
+            edge_id TEXT NOT NULL,
             revision TEXT NOT NULL,
             drift_score REAL NOT NULL,
             PRIMARY KEY (edge_id, revision)
         ) WITHOUT ROWID;
 
         CREATE TABLE IF NOT EXISTS file_fingerprints (
-            file_node_id INTEGER NOT NULL,
+            file_node_id TEXT NOT NULL,
             revision TEXT NOT NULL,
             fingerprint TEXT NOT NULL,
             PRIMARY KEY (file_node_id, revision)

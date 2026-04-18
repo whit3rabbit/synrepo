@@ -7,7 +7,7 @@ expression: deep
     "approx_tokens": 10,
     "co_changes": [],
     "drift_flag": null,
-    "file": 4849841517771044389,
+    "file": "file_9af6693ae5dcd892434e192a33af3625",
     "git_intelligence": null,
     "imported_by": [],
     "imports": [],
@@ -15,7 +15,7 @@ expression: deep
     "source_store": "graph",
     "symbols": [
       {
-        "id": 8599377644913348356,
+        "id": "sym_c91e9e253fe55f8802f3bf861682fb4b",
         "location": "src/lib.rs:22",
         "qualified_name": "add"
       }
