@@ -60,7 +60,10 @@ fn graph_query_output_traverses_edges_with_optional_kind_filter() {
     assert_eq!(outbound_json["edge_kind"], "defines");
     assert_eq!(outbound_json["edges"].as_array().unwrap().len(), 1);
     assert_eq!(outbound_json["edges"][0]["kind"], "defines");
-    assert_eq!(outbound_json["edges"][0]["id"], "edge_0000000000000077");
+    assert_eq!(
+        outbound_json["edges"][0]["id"],
+        "edge_00000000000000000000000000000077"
+    );
     assert_eq!(outbound_json["edges"][0]["from"], ids.file_id.to_string());
     assert_eq!(outbound_json["edges"][0]["to"], ids.symbol_id.to_string());
 
