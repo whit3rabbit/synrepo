@@ -9,6 +9,7 @@ use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 
 use crate::bootstrap::runtime_probe::AgentIntegration;
 use crate::surface::status_snapshot::{build_status_snapshot, StatusOptions, StatusSnapshot};
+use crate::tui::probe::Severity;
 use crate::tui::theme::Theme;
 use crate::tui::widgets::{LogEntry, QuickAction};
 
@@ -83,10 +84,25 @@ pub struct AppState {
     pub quick_actions: Vec<QuickAction>,
     /// When set, render loop should exit after the current draw.
     pub should_exit: bool,
+    /// When set, the caller should launch the integration sub-wizard after the
+    /// render loop unwinds. See [`DashboardExit`].
+    pub launch_integration: bool,
     /// Refresh interval for poll mode.
     pub poll_interval: Duration,
     /// Last time we rebuilt the snapshot.
     last_refresh: Instant,
+}
+
+/// Post-loop intent expressed by the dashboard when it exits. The caller maps
+/// this to either "fully done" or "re-enter the dashboard after running a
+/// sub-wizard".
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DashboardExit {
+    /// Operator quit; caller should tear down and return.
+    Quit,
+    /// Operator asked for the integration sub-wizard; caller should launch it
+    /// and then re-open the dashboard.
+    LaunchIntegration,
 }
 
 impl AppState {
@@ -108,8 +124,18 @@ impl AppState {
             log: EventLog::default(),
             quick_actions: default_poll_actions(),
             should_exit: false,
+            launch_integration: false,
             poll_interval: Duration::from_secs(2),
             last_refresh: Instant::now(),
+        }
+    }
+
+    /// Compute the post-loop exit intent. Called after the render loop unwinds.
+    pub fn exit_intent(&self) -> DashboardExit {
+        if self.launch_integration {
+            DashboardExit::LaunchIntegration
+        } else {
+            DashboardExit::Quit
         }
     }
 
@@ -132,6 +158,22 @@ impl AppState {
         self.last_refresh = Instant::now();
     }
 
+    /// Push the one-shot welcome banner entry that appears on first transition
+    /// from the setup wizard. The caller is responsible for only invoking this
+    /// when the dashboard is being opened for the first time after a
+    /// successful wizard run; the dashboard itself has no persistent state to
+    /// enforce the "one-shot" property.
+    pub fn push_welcome_banner(&mut self) {
+        self.log.push(LogEntry {
+            timestamp: crate::tui::actions::now_rfc3339(),
+            tag: "synrepo".to_string(),
+            message:
+                "Welcome to synrepo. Press q to quit, r to refresh. Run `synrepo --help` for more."
+                    .to_string(),
+            severity: Severity::Healthy,
+        });
+    }
+
     /// Handle a key event. Returns true when the event was consumed.
     pub fn handle_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> bool {
         // Global quit bindings.
@@ -148,6 +190,11 @@ impl AppState {
                 self.refresh_now();
                 true
             }
+            KeyCode::Char('i') => {
+                self.launch_integration = true;
+                self.should_exit = true;
+                true
+            }
             _ => false,
         }
     }
@@ -158,6 +205,11 @@ fn default_poll_actions() -> Vec<QuickAction> {
         QuickAction {
             key: "r".to_string(),
             label: "refresh snapshot".to_string(),
+            disabled: false,
+        },
+        QuickAction {
+            key: "i".to_string(),
+            label: "agent integration".to_string(),
             disabled: false,
         },
         QuickAction {
@@ -177,5 +229,51 @@ pub fn poll_key(timeout: Duration) -> anyhow::Result<Option<(KeyCode, KeyModifie
     match crossterm::event::read()? {
         Event::Key(k) if k.kind == KeyEventKind::Press => Ok(Some((k.code, k.modifiers))),
         _ => Ok(None),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::bootstrap::runtime_probe::AgentIntegration;
+    use crate::tui::theme::Theme;
+
+    #[test]
+    fn new_poll_starts_with_empty_log() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let state = AppState::new_poll(tempdir.path(), Theme::plain(), AgentIntegration::Absent);
+        assert!(state.log.as_slice().is_empty());
+    }
+
+    #[test]
+    fn push_welcome_banner_seeds_exactly_one_entry() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let mut state =
+            AppState::new_poll(tempdir.path(), Theme::plain(), AgentIntegration::Absent);
+        state.push_welcome_banner();
+        let entries = state.log.as_slice();
+        assert_eq!(entries.len(), 1);
+        let banner = &entries[0];
+        assert_eq!(banner.tag, "synrepo");
+        assert!(
+            banner.message.to_ascii_lowercase().contains("welcome"),
+            "banner message should greet the user: {:?}",
+            banner.message
+        );
+        assert!(matches!(banner.severity, Severity::Healthy));
+    }
+
+    #[test]
+    fn push_welcome_banner_is_idempotent_per_call_but_caller_must_only_invoke_once() {
+        // The state machine itself does not dedupe — the caller is responsible
+        // for the one-shot property. This test pins that contract so a future
+        // refactor that *does* dedupe internally does not silently drop the
+        // banner when the caller relies on exactly-one-push semantics.
+        let tempdir = tempfile::tempdir().unwrap();
+        let mut state =
+            AppState::new_poll(tempdir.path(), Theme::plain(), AgentIntegration::Absent);
+        state.push_welcome_banner();
+        state.push_welcome_banner();
+        assert_eq!(state.log.as_slice().len(), 2);
     }
 }

@@ -558,6 +558,21 @@ Delivered:
   bounded surface over `.synrepo/state/reconcile-state.json`,
   `.synrepo/state/repair-log.jsonl`, and overlay events already persisted
 
+### Phase 7 — runtime UX and operator surface *(partially shipped)*
+
+Tracked in `openspec/changes/runtime-dashboard-v1/`. Promotes bare `synrepo`
+from a no-op into a first-run router that probes the repo and either opens
+the dashboard, runs a guided setup/repair wizard, or prints a non-TTY
+fallback summary. See §22 for the interactive-surface contract.
+
+* runtime probe + routing decision (shipped)
+* guided setup / repair / agent-integration wizards with no-writes-before-confirm
+  semantics (shipped)
+* poll-mode dashboard with health, activity, next-actions, quick-actions, and
+  log panes (shipped)
+* live-mode dashboard hosted by foreground `synrepo watch` (TODO — stubbed
+  entrypoint today; falls back to plain log lines)
+
 ## 18. Unresolved risks
 
 * wrong-but-cited inferred links
@@ -576,3 +591,38 @@ The overlay stores machine-authored suggestions.
 Cards are the product.
 Phase 2 is the real ship target.
 Everything else is optional leverage on top.
+
+## 22. Interactive surface
+
+The MCP server is the primary surface for agents; the interactive TUI is for
+human operators. Both consume the same `StatusSnapshot` model, so a dashboard
+row and the equivalent `synrepo status` line always agree.
+
+Entrypoints:
+
+* Bare `synrepo` (no subcommand) runs a read-only `runtime_probe` and routes
+  to one of: dashboard (ready repo), setup wizard (uninitialized), repair
+  wizard (partial). On non-TTY stdout every entrypoint short-circuits to a
+  plain-text summary and exits non-zero on non-ready classifications so
+  scripts stay deterministic.
+* `synrepo dashboard` opens the poll-mode dashboard explicitly and exits
+  non-zero if the probe does not classify the repo as ready.
+* The dashboard's `i` quick-action launches the agent-integration sub-wizard
+  without leaving the dashboard process.
+
+Authoritative specs:
+
+* `openspec/specs/bootstrap/spec.md` — runtime-probe and routing contract
+* `openspec/changes/runtime-dashboard-v1/` — dashboard, wizards, and
+  non-TTY fallback contract
+
+Design invariants that apply across all three wizards:
+
+* no filesystem writes before the explicit confirm step — cancellation at
+  splash, mode, or agent-target leaves the working directory byte-identical
+* the library-side wizard loops return a `*Plan` value; the bin-side
+  dispatcher executes the plan after the TUI alternate-screen has been torn
+  down (no library→bin step calls)
+* the runtime probe is read-only by contract — asserted by a bit-identical
+  pre/post filesystem test so the probe can never acquire the writer lock or
+  mutate any store

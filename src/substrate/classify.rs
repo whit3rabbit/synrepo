@@ -74,6 +74,7 @@ pub fn classify(path: &Path, size_bytes: u64, first_bytes: &[u8]) -> FileClass {
             language: "typescript",
         },
         Some("tsx") => FileClass::SupportedCode { language: "tsx" },
+        Some("go") => FileClass::SupportedCode { language: "go" },
         Some("md" | "mdx" | "markdown") => FileClass::Markdown,
         Some("ipynb") => FileClass::Jupyter,
         _ => FileClass::TextCode,

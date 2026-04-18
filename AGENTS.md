@@ -27,6 +27,9 @@ cargo test --bin synrepo <test_name>  # run binary-crate tests (cli_support::tes
 cargo clippy --all-targets -- -D warnings  # lint (CI-equivalent)
 cargo fmt                          # format
 make check                         # fmt-check + lint + test (CI equivalent)
+cargo run --                       # bare entrypoint: probe + route to dashboard/setup/repair wizard (TTY) or plain-text summary (pipe)
+cargo run -- dashboard             # explicit poll-mode dashboard; non-zero exit on uninitialized/partial repos
+cargo run -- dashboard --no-color  # dashboard without ANSI styling (still TTY; honored by every TUI entrypoint)
 cargo run -- init                  # initialize .synrepo/ in cwd
 cargo run -- [--repo <path>] init  # override repo root
 cargo run -- reconcile             # refresh graph store without full re-bootstrap
@@ -160,7 +163,7 @@ Stages 1–3 run on every `synrepo init`:
 3. **Parse prose** — concept node extraction from configured markdown directories
 
 Stages 4–8:
-4. Cross-file edge resolution (`calls`, `imports`, `inherits`, `references`) — **implemented** in `cards-and-mcp-v1`: name-based approximate resolution via tree-sitter call/import queries + post-parse name lookup pass in `src/pipeline/structural/stage4.rs`
+4. Cross-file edge resolution (`calls`, `imports`, `inherits`, `references`) — **implemented** in `cards-and-mcp-v1`; Rust and Go `Imports` resolvers shipped in `stage4-rust-go-resolvers-v1` (Rust handles `crate::`/`self::`/`super::` and bare top-level crate paths with longest-match selection; Go strips `go.mod` module prefix and fans out to every `.go` file in the target package). Name-based approximate resolution via tree-sitter call/import queries + post-parse name lookup pass in `src/pipeline/structural/stage4.rs`.
 5. Git mining (co-change, ownership, hotspots, recent file history) — **implemented** in `git-intelligence-v1`: deterministic first-parent history sampling via `src/pipeline/git/` and `src/pipeline/git_intelligence/`, surfaced today through file-facing outputs and node inspection
 6. Identity cascade (rename detection) — **implemented**: content-hash rename, split/merge detection, git rename fallback all wired
 7. Drift scoring — **implemented**: Jaccard distance on persisted structural fingerprints, sidecar `edge_drift` and `file_fingerprints` tables, all-edge enumeration
@@ -208,7 +211,7 @@ Stages 4–8:
   - `src/pipeline/watch/lease.rs` (460)
   **Watchlist (approaching limit):** `src/surface/card/git.rs` (446), `src/pipeline/recent_activity/mod.rs` (364), `src/bin/cli_support/cli_args.rs` (369), `src/surface/card/compiler/call_path.rs` (358), `src/structure/graph/store.rs` (349), `src/config.rs` (345)
 - **`signature` and `doc_comment` are populated** by `src/structure/parse/extract/mod.rs` for Rust (`///` line comments, declaration up to `{`/`;`), Python (docstring, `def` line up to `:`), and TypeScript/TSX (JSDoc `/** */`, declaration up to `{`). These fields are safe to use in all three languages.
-- **Stage 4 cross-file edges are now emitted**: `Calls` (file→symbol, approximate name resolution) and `Imports` (file→file, relative path resolution) edges are produced by `run_structural_compile`. `Inherits`, `References`, `Mentions` are not yet emitted. `CoChangesWith` is emitted by stage 5 via `git_intelligence/emit.rs`, not stage 4. `SplitFrom` and `MergedFrom` are emitted by stage 6 (identity cascade) for split/merge cases.
+- **Stage 4 cross-file edges are now emitted**: `Calls` (file→symbol, approximate name resolution) and `Imports` (file→file) edges are produced by `run_structural_compile`. Import resolution covers TypeScript/TSX (relative path), Python (dotted module), Rust (`crate::`/`self::`/`super::` plus bare top-level crate paths, with longest-match selection per `stage4-rust-go-resolvers-v1`), and Go (module-prefix stripping via `go.mod`, fanning out to every `.go` file in the target package). `Inherits`, `References`, `Mentions` are not yet emitted. `CoChangesWith` is emitted by stage 5 via `git_intelligence/emit.rs`, not stage 4. `SplitFrom` and `MergedFrom` are emitted by stage 6 (identity cascade) for split/merge cases.
 - **`all_edges()` excludes retired edges.** Use `all_edges()` for drift scoring and card compilation (both only care about active edges). If you need to include retired edges (e.g. for compaction enumeration), query the `edges` table directly without the `retired_at_rev IS NULL` filter.
 - **`criterion` is present in `Cargo.toml`**, but the documented test workflow still centers on `proptest` and `insta`. Use `criterion` only for explicit benchmark work.
 - **`.synrepo/graph/nodes.db`** is the actual SQLite file. Code that opens the graph store uses `SqliteGraphStore::open(&graph_dir)` where `graph_dir` is `.synrepo/graph/`; the `nodes.db` name is internal to `src/store/sqlite/mod.rs`.

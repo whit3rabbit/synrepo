@@ -332,7 +332,7 @@ pub fn outcome_to_log(tag: &str, outcome: &ActionOutcome) -> LogEntry {
 /// Minimal RFC 3339 stamp without pulling a format dep. Uses `OffsetDateTime`
 /// if `time` is already in scope via `surface::status_snapshot`; fallback is
 /// epoch seconds so the log pane never loses a timestamp.
-fn now_rfc3339() -> String {
+pub(crate) fn now_rfc3339() -> String {
     match time::OffsetDateTime::now_utc().format(&time::format_description::well_known::Rfc3339) {
         Ok(s) => s,
         Err(_) => {

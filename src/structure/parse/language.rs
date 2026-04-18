@@ -216,9 +216,14 @@ const TS_CALL_QUERY: &str = r#"
 
 // --- Import/use queries (stage 4: cross-file edge resolution) ---
 
+// Captures the full argument text of a `use_declaration`. The
+// `scoped_identifier` node's text is the whole `::`-separated path
+// (e.g., `std::collections::HashMap`, `crate::util::helper`), which
+// stage 4's Rust resolver needs to map onto candidate module files.
+// The bare-identifier arm still covers single-segment `use foo;`.
 const RUST_IMPORT_QUERY: &str = r#"
 (use_declaration argument: (identifier) @import_ref)
-(use_declaration argument: (scoped_identifier name: (identifier) @import_ref))
+(use_declaration argument: (scoped_identifier) @import_ref)
 "#;
 
 const PYTHON_IMPORT_QUERY: &str = r#"

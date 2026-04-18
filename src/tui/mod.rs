@@ -24,7 +24,10 @@ use std::path::Path;
 use crate::bootstrap::runtime_probe::{probe, AgentIntegration, Missing};
 use crate::config::Mode;
 
-pub use self::wizard::{RepairPlan, RepairWizardOutcome, SetupPlan, SetupWizardOutcome};
+pub use self::wizard::{
+    IntegrationPlan, IntegrationWizardOutcome, RepairPlan, RepairWizardOutcome, SetupPlan,
+    SetupWizardOutcome,
+};
 
 pub mod actions;
 pub mod app;
@@ -41,6 +44,26 @@ pub struct TuiOptions {
     pub no_color: bool,
 }
 
+/// Dashboard-specific options. Extends [`TuiOptions`] with a one-shot welcome
+/// banner flag that the setup-wizard dispatcher sets on the first successful
+/// wizard → dashboard transition.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct DashboardOptions {
+    /// Drop all styling even if the terminal supports color.
+    pub no_color: bool,
+    /// Seed the log pane with a single one-shot welcome entry on startup.
+    pub welcome_banner: bool,
+}
+
+impl From<TuiOptions> for DashboardOptions {
+    fn from(opts: TuiOptions) -> Self {
+        Self {
+            no_color: opts.no_color,
+            welcome_banner: false,
+        }
+    }
+}
+
 /// Human-readable outcome of a TUI entry point. The bare-`synrepo` router
 /// uses this to pick an exit code and avoid re-entering the TUI on shutdown.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -55,21 +78,33 @@ pub enum TuiOutcome {
     WizardCompleted,
     /// Wizard was cancelled before any writes; caller should exit zero.
     WizardCancelled,
+    /// Dashboard exited with a request to launch the integration sub-wizard.
+    /// The caller should run `run_integration_wizard` and — on successful
+    /// completion — re-open the dashboard.
+    LaunchIntegrationRequested,
 }
 
 /// Open the poll-mode dashboard on a ready repo. See `run_live_watch_dashboard`
 /// for the live-mode counterpart.
+///
+/// `opts` accepts either a [`TuiOptions`] (via `.into()`) or a
+/// [`DashboardOptions`] directly; the latter carries the one-shot welcome
+/// banner flag that the wizard dispatcher sets after a successful setup.
 pub fn run_dashboard(
     repo_root: &Path,
     integration: AgentIntegration,
-    opts: TuiOptions,
+    opts: impl Into<DashboardOptions>,
 ) -> anyhow::Result<TuiOutcome> {
     if !stdout_is_tty() {
         return Ok(TuiOutcome::NonTtyFallback);
     }
+    let opts = opts.into();
     let theme = theme::Theme::from_no_color(opts.no_color);
-    dashboard::run_poll_dashboard(repo_root, integration, theme)?;
-    Ok(TuiOutcome::Exited)
+    let intent = dashboard::run_poll_dashboard(repo_root, integration, theme, opts.welcome_banner)?;
+    match intent {
+        app::DashboardExit::Quit => Ok(TuiOutcome::Exited),
+        app::DashboardExit::LaunchIntegration => Ok(TuiOutcome::LaunchIntegrationRequested),
+    }
 }
 
 /// Open the guided setup wizard on an uninitialized repo.
@@ -78,10 +113,7 @@ pub fn run_dashboard(
 /// [`SetupPlan`] after the TUI alternate-screen has been torn down. The
 /// library never calls the bin-side `step_*` helpers directly; the bin-side
 /// dispatcher consumes the plan and runs the real I/O.
-pub fn run_setup_wizard(
-    repo_root: &Path,
-    opts: TuiOptions,
-) -> anyhow::Result<SetupWizardOutcome> {
+pub fn run_setup_wizard(repo_root: &Path, opts: TuiOptions) -> anyhow::Result<SetupWizardOutcome> {
     if !stdout_is_tty() {
         return Ok(SetupWizardOutcome::NonTty);
     }
@@ -111,7 +143,7 @@ fn has_concept_directory(repo_root: &Path) -> bool {
 /// [`RepairPlan`] after the TUI alternate-screen has been torn down. The
 /// library never calls the bin-side step helpers directly; the bin-side
 /// dispatcher consumes the plan, runs the selected actions in order, and
-/// re-runs the probe between steps per Task 11.4.
+/// re-runs the probe between steps.
 pub fn run_repair_wizard(
     repo_root: &Path,
     _missing_override: Vec<Missing>,
@@ -137,23 +169,143 @@ pub fn run_repair_wizard(
 }
 
 /// Open the agent-integration sub-wizard. Launchable from the dashboard quick
-/// action or directly from `synrepo dashboard --integrate` in future phases.
+/// action or directly via a dedicated CLI surface.
+///
+/// Returns an [`IntegrationWizardOutcome`] so the caller can execute the
+/// resulting [`IntegrationPlan`] after the TUI alternate-screen has been torn
+/// down. Like the other wizards, this library-side entry point never calls
+/// bin-side step helpers directly; the caller runs the real I/O.
 pub fn run_integration_wizard(
-    _repo_root: &Path,
-    _integration: AgentIntegration,
-    _opts: TuiOptions,
-) -> anyhow::Result<TuiOutcome> {
-    // Scaffolded; implementation lands in Phase 12.
-    anyhow::bail!("integration wizard is not yet implemented")
+    repo_root: &Path,
+    integration: AgentIntegration,
+    opts: TuiOptions,
+) -> anyhow::Result<IntegrationWizardOutcome> {
+    if !stdout_is_tty() {
+        return Ok(IntegrationWizardOutcome::NonTty);
+    }
+    let theme = theme::Theme::from_no_color(opts.no_color);
+    let probe_report = probe(repo_root);
+    wizard::run_integration_wizard_loop(theme, integration, probe_report.detected_agent_targets)
 }
 
 /// Open the dashboard in live mode hosted by foreground `synrepo watch`.
-pub fn run_live_watch_dashboard(
-    _repo_root: &Path,
-    _opts: TuiOptions,
-) -> anyhow::Result<TuiOutcome> {
-    // Scaffolded; implementation lands in Phase 8.10 / 5.5.
-    anyhow::bail!("live watch dashboard is not yet implemented")
+///
+/// Spawns the watch service on a background thread, opens the poll-mode
+/// dashboard in the foreground, then (when the operator quits) sends a
+/// `Stop` control request so the service releases its lease before we
+/// return. Unix-only — the control socket is a `UnixListener` and the watch
+/// service already rejects non-unix platforms.
+pub fn run_live_watch_dashboard(repo_root: &Path, opts: TuiOptions) -> anyhow::Result<TuiOutcome> {
+    #[cfg(not(unix))]
+    {
+        let _ = (repo_root, opts);
+        anyhow::bail!("live watch dashboard is unix-only");
+    }
+    #[cfg(unix)]
+    {
+        if !stdout_is_tty() {
+            return Ok(TuiOutcome::NonTtyFallback);
+        }
+        live::run(repo_root, opts)
+    }
+}
+
+#[cfg(unix)]
+mod live {
+    //! Live-mode shim: host the watch service on a background thread and
+    //! drive the poll-mode dashboard in the foreground. Kept isolated so
+    //! the unix-only plumbing does not pollute the rest of `tui::mod`.
+    use std::path::{Path, PathBuf};
+    use std::sync::mpsc;
+    use std::thread;
+    use std::time::{Duration, Instant};
+
+    use crate::config::Config;
+    use crate::pipeline::watch::{
+        request_watch_control, run_watch_service, watch_socket_path, WatchConfig,
+        WatchControlRequest, WatchServiceMode,
+    };
+
+    use super::{dashboard::run_poll_dashboard, theme::Theme, TuiOptions, TuiOutcome};
+    use crate::bootstrap::runtime_probe::probe as bootstrap_probe;
+    use crate::tui::app::DashboardExit;
+
+    /// Wait up to 2 s for the watch service to bind its control socket. The
+    /// service always lays the socket down before entering its main loop, so
+    /// this is a quick readiness check, not a long poll.
+    fn wait_for_socket(path: &Path) -> anyhow::Result<()> {
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while Instant::now() < deadline {
+            if path.exists() {
+                return Ok(());
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+        anyhow::bail!(
+            "live-mode watch service failed to bind {} within 2 s",
+            path.display()
+        )
+    }
+
+    pub(super) fn run(repo_root: &Path, opts: TuiOptions) -> anyhow::Result<TuiOutcome> {
+        let synrepo_dir = Config::synrepo_dir(repo_root);
+        let config = Config::load(repo_root)?;
+        let theme = Theme::from_no_color(opts.no_color);
+
+        let socket_path = watch_socket_path(&synrepo_dir);
+
+        // Spawn the watch service. It owns its own lease + reconcile loop.
+        let (done_tx, done_rx) = mpsc::channel::<anyhow::Result<()>>();
+        let service_repo = repo_root.to_path_buf();
+        let service_config = config.clone();
+        let service_synrepo_dir: PathBuf = synrepo_dir.clone();
+        let service_thread = thread::spawn(move || {
+            let result = run_watch_service(
+                &service_repo,
+                &service_config,
+                &WatchConfig::default(),
+                &service_synrepo_dir,
+                WatchServiceMode::Foreground,
+            )
+            .map_err(|e| anyhow::anyhow!(e.to_string()));
+            let _ = done_tx.send(result);
+        });
+
+        // Wait for the service to bind its socket before opening the TUI.
+        // If it fails to come up we must not proceed (the stop-watch action
+        // relies on the socket being available).
+        let mut service_thread = Some(service_thread);
+        if let Err(err) = wait_for_socket(&socket_path) {
+            if let Some(t) = service_thread.take() {
+                let _ = t.join();
+            }
+            return Err(err);
+        }
+
+        // Re-probe so the dashboard header reflects agent integration state.
+        let report = bootstrap_probe(repo_root);
+        // The poll dashboard polls status files; the service reconciles
+        // through those same files, so the dashboard naturally observes
+        // live updates without cross-thread event wiring.
+        let intent = run_poll_dashboard(repo_root, report.agent_integration, theme, false)?;
+
+        // Dashboard has exited. Stop the service.
+        let stop = request_watch_control(&synrepo_dir, WatchControlRequest::Stop);
+        if let Err(err) = stop {
+            tracing::warn!(error = %err, "failed to send stop to live-mode watch service");
+        }
+        // Drain the service thread regardless of how it exited.
+        if let Some(t) = service_thread.take() {
+            let _ = t.join();
+        }
+        // Drain any final status the thread posted.
+        while done_rx.try_recv().is_ok() {}
+
+        match intent {
+            DashboardExit::Quit => Ok(TuiOutcome::Exited),
+            DashboardExit::LaunchIntegration => Ok(TuiOutcome::LaunchIntegrationRequested),
+        }
+    }
 }
 
 /// Detect whether stdout is attached to a TTY. Used by every entry point to
@@ -163,4 +315,99 @@ pub fn stdout_is_tty() -> bool {
     // recent Rust and does not pull a transitive dependency.
     use std::io::IsTerminal;
     std::io::stdout().is_terminal()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tui::theme::{Theme, ThemeVariant};
+
+    #[test]
+    fn tui_options_default_has_color_on() {
+        let opts = TuiOptions::default();
+        assert!(!opts.no_color);
+    }
+
+    #[test]
+    fn no_color_flag_maps_to_plain_theme() {
+        // --no-color still enters the TUI but uses Theme::plain() so no ANSI
+        // codes are emitted. The theme construction is pure, so we pin the
+        // mapping here without needing to actually drive a PTY.
+        let theme = Theme::from_no_color(true);
+        assert_eq!(theme.variant, ThemeVariant::Plain);
+    }
+
+    #[test]
+    fn color_on_maps_to_dark_theme() {
+        let theme = Theme::from_no_color(false);
+        assert_eq!(theme.variant, ThemeVariant::Dark);
+    }
+
+    #[test]
+    fn dashboard_options_from_tui_options_propagates_no_color() {
+        let tui = TuiOptions { no_color: true };
+        let dash: DashboardOptions = tui.into();
+        assert!(dash.no_color);
+        assert!(
+            !dash.welcome_banner,
+            "welcome_banner defaults to false when converting from TuiOptions",
+        );
+    }
+
+    #[test]
+    fn dashboard_options_default_has_color_on_and_no_banner() {
+        let opts = DashboardOptions::default();
+        assert!(!opts.no_color);
+        assert!(!opts.welcome_banner);
+    }
+
+    /// In a `cargo test` harness stdout is captured, so `stdout_is_tty()`
+    /// always returns `false`. That is the pipe-out path the spec refers to.
+    /// The assertion here pins the short-circuit contract so a future refactor
+    /// that changes the fallback signal is noticed.
+    #[test]
+    fn pipe_out_run_dashboard_returns_non_tty_fallback() {
+        use crate::bootstrap::runtime_probe::AgentIntegration;
+        let tempdir = tempfile::tempdir().unwrap();
+        assert!(!stdout_is_tty(), "cargo test harness must capture stdout");
+        let outcome = run_dashboard(
+            tempdir.path(),
+            AgentIntegration::Absent,
+            TuiOptions::default(),
+        )
+        .expect("short-circuit is infallible");
+        assert_eq!(outcome, TuiOutcome::NonTtyFallback);
+    }
+
+    #[test]
+    fn pipe_out_run_setup_wizard_returns_non_tty() {
+        let tempdir = tempfile::tempdir().unwrap();
+        assert!(!stdout_is_tty());
+        let outcome = run_setup_wizard(tempdir.path(), TuiOptions::default())
+            .expect("short-circuit is infallible");
+        assert_eq!(outcome, SetupWizardOutcome::NonTty);
+    }
+
+    #[test]
+    fn pipe_out_run_repair_wizard_returns_non_tty() {
+        let tempdir = tempfile::tempdir().unwrap();
+        assert!(!stdout_is_tty());
+        let outcome = run_repair_wizard(tempdir.path(), Vec::new(), TuiOptions::default())
+            .expect("short-circuit is infallible");
+        assert_eq!(outcome, RepairWizardOutcome::NonTty);
+    }
+
+    #[test]
+    fn pipe_out_run_integration_wizard_returns_non_tty() {
+        use crate::bootstrap::runtime_probe::AgentIntegration;
+        let tempdir = tempfile::tempdir().unwrap();
+        assert!(!stdout_is_tty());
+        let outcome = run_integration_wizard(
+            tempdir.path(),
+            AgentIntegration::Absent,
+            TuiOptions::default(),
+        )
+        .expect("short-circuit is infallible");
+        assert_eq!(outcome, IntegrationWizardOutcome::NonTty);
+    }
 }

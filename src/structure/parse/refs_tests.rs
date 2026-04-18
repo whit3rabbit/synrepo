@@ -116,7 +116,7 @@ func Greet(name string) string { return name }
 // ── Task 5.2: import_refs per language ───────────────────────────────────────
 
 #[test]
-fn rust_import_refs_capture_last_name_of_use_paths() {
+fn rust_import_refs_capture_full_use_paths() {
     let source = b"
 use std::collections::HashMap;
 use serde::Serialize;
@@ -124,7 +124,34 @@ use crate::util::helper;
 ";
     let output = parse(&"src/rust_imports.rs", source);
     let refs = import_paths(&output);
-    for wanted in ["HashMap", "Serialize", "helper"] {
+    for wanted in [
+        "std::collections::HashMap",
+        "serde::Serialize",
+        "crate::util::helper",
+    ] {
+        assert!(
+            refs.contains(&wanted),
+            "Rust import_refs missing `{wanted}`; got: {refs:?}"
+        );
+    }
+}
+
+#[test]
+fn rust_import_refs_capture_super_and_crate_prefixes() {
+    let source = b"
+use super::sibling::Thing;
+use self::nested::Other;
+use crate::root::Root;
+use single_segment;
+";
+    let output = parse(&"src/foo/bar.rs", source);
+    let refs = import_paths(&output);
+    for wanted in [
+        "super::sibling::Thing",
+        "self::nested::Other",
+        "crate::root::Root",
+        "single_segment",
+    ] {
         assert!(
             refs.contains(&wanted),
             "Rust import_refs missing `{wanted}`; got: {refs:?}"

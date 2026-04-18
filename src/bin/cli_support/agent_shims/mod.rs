@@ -60,7 +60,9 @@ impl AgentTool {
     /// binary's wider [`AgentTool`] enum. Used by the setup wizard when
     /// executing its plan — the library offers the observationally-detectable
     /// subset, and the binary owns the full shim roster.
-    pub(crate) fn from_target_kind(kind: synrepo::bootstrap::runtime_probe::AgentTargetKind) -> Self {
+    pub(crate) fn from_target_kind(
+        kind: synrepo::bootstrap::runtime_probe::AgentTargetKind,
+    ) -> Self {
         use synrepo::bootstrap::runtime_probe::AgentTargetKind;
         match kind {
             AgentTargetKind::Claude => AgentTool::Claude,

@@ -21,9 +21,13 @@ use ratatui::Terminal;
 
 use crate::bootstrap::runtime_probe::AgentTargetKind;
 
+pub mod integration;
 pub mod repair;
 pub mod setup;
 
+pub use integration::{
+    run_integration_wizard_loop, IntegrationPlan, IntegrationWizardOutcome, IntegrationWizardState,
+};
 pub use repair::{run_repair_wizard_loop, RepairPlan, RepairWizardOutcome, RepairWizardState};
 pub use setup::{run_setup_wizard_loop, SetupPlan, SetupWizardOutcome, SetupWizardState};
 

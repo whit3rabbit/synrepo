@@ -94,8 +94,12 @@ pub fn run_structural_compile(
             &discovered_paths,
             compile_rev,
         )?;
-        let edges =
-            stage4::run_cross_file_resolution(graph, &txn.cross_file_pending, &txn.revision)?;
+        let edges = stage4::run_cross_file_resolution(
+            graph,
+            &txn.cross_file_pending,
+            &txn.revision,
+            repo_root,
+        )?;
         Ok((txn, edges))
     })() {
         Ok(v) => v,

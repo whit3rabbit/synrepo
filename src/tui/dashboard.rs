@@ -13,7 +13,7 @@ use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::Terminal;
 
 use crate::bootstrap::runtime_probe::AgentIntegration;
-use crate::tui::app::{poll_key, AppMode, AppState};
+use crate::tui::app::{poll_key, AppMode, AppState, DashboardExit};
 use crate::tui::probe::{
     build_activity_vm, build_header_vm, build_health_vm, build_next_actions, display_repo_path,
 };
@@ -32,12 +32,17 @@ pub fn run_poll_dashboard(
     repo_root: &Path,
     integration: AgentIntegration,
     theme: Theme,
-) -> anyhow::Result<()> {
+    welcome_banner: bool,
+) -> anyhow::Result<DashboardExit> {
     let mut terminal = enter_tui()?;
     let mut state = AppState::new_poll(repo_root, theme, integration);
+    if welcome_banner {
+        state.push_welcome_banner();
+    }
     let result = render_loop(&mut terminal, &mut state);
     leave_tui(&mut terminal)?;
-    result
+    result?;
+    Ok(state.exit_intent())
 }
 
 /// Set up crossterm: raw mode, alt screen, hide cursor.

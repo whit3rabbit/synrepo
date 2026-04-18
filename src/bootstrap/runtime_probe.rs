@@ -109,6 +109,18 @@ pub enum AgentIntegration {
     },
 }
 
+impl AgentIntegration {
+    /// Configured target, if any. Returns `None` for `Absent`.
+    pub fn target(&self) -> Option<AgentTargetKind> {
+        match self {
+            AgentIntegration::Absent => None,
+            AgentIntegration::Partial { target } | AgentIntegration::Complete { target } => {
+                Some(*target)
+            }
+        }
+    }
+}
+
 /// Structured output of [`probe`].
 #[derive(Clone, Debug)]
 pub struct ProbeReport {

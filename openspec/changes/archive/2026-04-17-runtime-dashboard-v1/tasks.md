@@ -28,8 +28,8 @@
 - [x] 5.2 Allow bare `synrepo` with no subcommand in clap config; route via `bootstrap::runtime_probe::probe` + `RoutingDecision` in `src/bin/cli.rs`
 - [x] 5.3 Add a non-TTY fallback in the bare-entry path: on `ready` print a concise text summary and exit zero; on `uninitialized` or `partial` print an instructional message and exit non-zero
 - [x] 5.4 Add a `--no-ui` (or `--log`) flag to `synrepo watch` for explicit plain-log foreground operation; wire auto-detection so non-TTY foreground `synrepo watch` also falls back to plain logs
-- [ ] 5.5 Wire `synrepo watch` in a TTY (no `--daemon`, no `--no-ui`) to open the dashboard in live mode hosting the watch service in-process
-- [ ] 5.6 Preserve every existing subcommand's exact behavior; add a CLI smoke test asserting `synrepo status`, `synrepo init`, `synrepo watch --daemon`, `synrepo watch --no-ui`, `synrepo sync`, `synrepo check`, `synrepo export`, `synrepo upgrade`, `synrepo agent-setup`, `synrepo mcp` are all still dispatched unchanged
+- [x] 5.5 Wire `synrepo watch` in a TTY (no `--daemon`, no `--no-ui`) to open the dashboard in live mode hosting the watch service in-process
+- [x] 5.6 Preserve every existing subcommand's exact behavior; add a CLI smoke test asserting `synrepo status`, `synrepo init`, `synrepo watch --daemon`, `synrepo watch --no-ui`, `synrepo sync`, `synrepo check`, `synrepo export`, `synrepo upgrade`, `synrepo agent-setup`, `synrepo mcp` are all still dispatched unchanged
 
 ## 6. Shared status snapshot model
 
@@ -54,7 +54,7 @@
 - [x] 8.7 Implement the quick-actions pane with key bindings for start/stop watch, reconcile now, refresh, open setup/repair, open integration; diverge per dashboard mode (poll vs live)
 - [x] 8.8 Implement the event/notification log pane backed by a bounded in-memory ring buffer; in live mode pipe watch-service events into the same buffer
 - [x] 8.9 Implement the poll-mode refresh loop (periodic `StatusSnapshot` recomputation, ~2s cadence) and the live-mode event-stream subscription to the in-process watch service
-- [ ] 8.10 Implement the stop-watch-in-live-mode behavior: action stops the watch service and exits the dashboard process
+- [x] 8.10 Implement the stop-watch-in-live-mode behavior: action stops the watch service and exits the dashboard process
 
 ## 9. Operational actions
 
@@ -70,15 +70,15 @@
 
 ## 10a. First-run UX polish
 
-- [ ] 10a.1 Implement the splash step in `src/tui/wizard.rs` — one screen with a one-sentence description, estimated runtime, privacy reassurance, Enter-to-continue, Esc-to-exit
-- [ ] 10a.2 Add observational agent-target detection helpers in `src/bootstrap/runtime_probe.rs` (repo and `$HOME` hints for claude, cursor, codex, copilot, windsurf); return a deterministic ordered list
-- [ ] 10a.3 Wire the wizard agent-target step to pre-highlight the first detected target; always include "Skip" as a first-class choice
-- [ ] 10a.4 Wire mode-selection default based on observational signals (concept directories present → suggest curated; otherwise auto)
-- [ ] 10a.5 Implement the plan-confirmation step that renders the exact planned actions (init → parse → reconcile → optional shim path → optional MCP target) before any writes
-- [ ] 10a.6 Guarantee no file-system writes before the "Confirm + run" step; add a test asserting that wizard cancellation at the splash, mode, and agent-target steps leaves the working directory byte-identical
-- [ ] 10a.7 Implement the one-shot welcome banner in the dashboard log pane on first successful transition from the wizard
-- [ ] 10a.8 Implement the non-TTY first-run fallback: on `uninitialized` or `partial` state with non-TTY stdout, print a short instructional message and exit non-zero without entering the TUI
-- [ ] 10a.9 Make the repair wizard skip splash and mode re-prompt; open directly at the missing-components list
+- [x] 10a.1 Implement the splash step in `src/tui/wizard.rs` — one screen with a one-sentence description, estimated runtime, privacy reassurance, Enter-to-continue, Esc-to-exit
+- [x] 10a.2 Add observational agent-target detection helpers in `src/bootstrap/runtime_probe.rs` (repo and `$HOME` hints for claude, cursor, codex, copilot, windsurf); return a deterministic ordered list
+- [x] 10a.3 Wire the wizard agent-target step to pre-highlight the first detected target; always include "Skip" as a first-class choice
+- [x] 10a.4 Wire mode-selection default based on observational signals (concept directories present → suggest curated; otherwise auto)
+- [x] 10a.5 Implement the plan-confirmation step that renders the exact planned actions (init → parse → reconcile → optional shim path → optional MCP target) before any writes
+- [x] 10a.6 Guarantee no file-system writes before the "Confirm + run" step; add a test asserting that wizard cancellation at the splash, mode, and agent-target steps leaves the working directory byte-identical
+- [x] 10a.7 Implement the one-shot welcome banner in the dashboard log pane on first successful transition from the wizard
+- [x] 10a.8 Implement the non-TTY first-run fallback: on `uninitialized` or `partial` state with non-TTY stdout, print a short instructional message and exit non-zero without entering the TUI
+- [x] 10a.9 Make the repair wizard skip splash and mode re-prompt; open directly at the missing-components list
 
 ## 11. Repair wizard
 
@@ -89,25 +89,25 @@
 
 ## 12. Agent-integration completion flow
 
-- [ ] 12.1 Add an integration sub-wizard launched from the dashboard quick action
-- [ ] 12.2 Detect the configured target (or prompt to choose one) and offer to write the shim, register MCP, or both based on the current integration state
-- [ ] 12.3 Never overwrite an existing shim unless the user passes a `--regen` equivalent confirmation within the wizard
+- [x] 12.1 Add an integration sub-wizard launched from the dashboard quick action
+- [x] 12.2 Detect the configured target (or prompt to choose one) and offer to write the shim, register MCP, or both based on the current integration state
+- [x] 12.3 Never overwrite an existing shim unless the user passes a `--regen` equivalent confirmation within the wizard
 
 ## 13. Non-TTY / no-color fallback
 
-- [ ] 13.1 Detect non-TTY stdout in `src/tui/mod.rs` before entering the alternate screen
-- [ ] 13.2 Print a concise text summary (probe classification, key health signals, recommended next subcommand) and exit zero
-- [ ] 13.3 Honor `--no-color` as a plain-rendering mode that still enters the TUI but disables styling; add tests for both pipe-out and `--no-color` paths
+- [x] 13.1 Detect non-TTY stdout in `src/tui/mod.rs` before entering the alternate screen
+- [x] 13.2 Print a concise text summary (probe classification, key health signals, recommended next subcommand) and exit zero
+- [x] 13.3 Honor `--no-color` as a plain-rendering mode that still enters the TUI but disables styling; add tests for both pipe-out and `--no-color` paths
 
 ## 14. Documentation and roadmap
 
-- [ ] 14.1 Update `AGENTS.md` / `CLAUDE.md` Commands section to document bare `synrepo` and `synrepo dashboard`
-- [ ] 14.2 Add a "Phase N — Runtime UX and Operator Surface" entry to `ROADMAP.md` pointing at this change
-- [ ] 14.3 Add a short "Interactive surface" section to `docs/FOUNDATION-SPEC.md` linking to the runtime-probe and dashboard specs
+- [x] 14.1 Update `AGENTS.md` / `CLAUDE.md` Commands section to document bare `synrepo` and `synrepo dashboard`
+- [x] 14.2 Add a "Phase N — Runtime UX and Operator Surface" entry to `ROADMAP.md` pointing at this change *(ROADMAP.md was removed in commit 26960e7; Phase 7 entry added to `docs/FOUNDATION-SPEC.md` §17 instead — this is the current phased-plan home)*
+- [x] 14.3 Add a short "Interactive surface" section to `docs/FOUNDATION-SPEC.md` linking to the runtime-probe and dashboard specs
 
 ## 15. Validation and archive readiness
 
-- [ ] 15.1 Run `openspec validate runtime-dashboard-v1 --strict` and address any reported issues
-- [ ] 15.2 Run `make check` (fmt-check + clippy + tests) and confirm green on the CI matrix
-- [ ] 15.3 Manual smoke test on each supported platform: bare `synrepo` on uninitialized, partial, and ready repos; verify non-TTY fallback via `synrepo | cat`
-- [ ] 15.4 Prepare the archive checklist per `opsx:archive` conventions
+- [x] 15.1 Run `openspec validate runtime-dashboard-v1 --strict` and address any reported issues
+- [x] 15.2 Run `make check` (fmt-check + clippy + tests) and confirm green on the CI matrix
+- [ ] 15.3 Manual smoke test on each supported platform: bare `synrepo` on uninitialized, partial, and ready repos; verify non-TTY fallback via `synrepo | cat` *(left to the operator preparing the release; the non-TTY path is covered by `tui::pipe_out_*` unit tests but cross-platform smoke is manual by definition)*
+- [ ] 15.4 Prepare the archive checklist per `opsx:archive` conventions *(run `/opsx:archive runtime-dashboard-v1` when ready to move the change under `openspec/changes/archive/`)*

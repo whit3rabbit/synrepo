@@ -187,12 +187,9 @@ impl RepairWizardState {
             });
         }
 
-        let shim_target = match integration {
-            AgentIntegration::Absent => detected_targets.first().copied(),
-            AgentIntegration::Partial { target } | AgentIntegration::Complete { target } => {
-                Some(*target)
-            }
-        };
+        let shim_target = integration
+            .target()
+            .or_else(|| detected_targets.first().copied());
 
         if matches!(
             integration,
@@ -384,7 +381,10 @@ fn draw_select(frame: &mut ratatui::Frame, area: Rect, state: &RepairWizardState
             theme.muted_style(),
         )));
         for g in &state.guidance {
-            lines.push(Line::from(Span::styled(format!("  {g}"), theme.muted_style())));
+            lines.push(Line::from(Span::styled(
+                format!("  {g}"),
+                theme.muted_style(),
+            )));
         }
         lines.push(Line::from(Span::raw("")));
     }
@@ -417,7 +417,10 @@ fn draw_select(frame: &mut ratatui::Frame, area: Rect, state: &RepairWizardState
 
     let split = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Length(lines.len() as u16 + 2), Constraint::Min(2)])
+        .constraints([
+            Constraint::Length(lines.len() as u16 + 2),
+            Constraint::Min(2),
+        ])
         .split(area);
 
     frame.render_widget(
@@ -564,10 +567,7 @@ mod tests {
             },
             &[],
         );
-        assert!(s
-            .rows
-            .iter()
-            .all(|r| r.kind != RepairActionKind::WriteShim));
+        assert!(s.rows.iter().all(|r| r.kind != RepairActionKind::WriteShim));
     }
 
     #[test]
