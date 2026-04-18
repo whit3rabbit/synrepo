@@ -164,6 +164,7 @@ fn typescript_kind_map_is_pinned() {
         Type,     // type_alias_declaration
         Method,   // method_definition
         Method,   // abstract_method_signature
+        Class,    // variable_declarator → (class)
     ];
     assert_eq!(Language::TypeScript.kind_map(), expected);
     // TSX shares the same query body + kind map by design.

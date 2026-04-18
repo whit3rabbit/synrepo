@@ -6,7 +6,6 @@ use std::{
     fs,
     io::Write as _,
     path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
     time::Duration,
 };
 
@@ -22,7 +21,6 @@ use serde::{Deserialize, Serialize};
 use crate::pipeline::writer::{is_process_alive, now_rfc3339};
 
 const WATCH_DAEMON_FILENAME: &str = "watch-daemon.json";
-static NEXT_WATCH_STATE_TMP_ID: AtomicU64 = AtomicU64::new(0);
 
 /// Foreground or daemon execution mode for the watch service.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -558,17 +556,12 @@ pub(super) fn persist_watch_state_at(
     state: &WatchDaemonState,
 ) -> Result<(), WatchDaemonError> {
     let json = serde_json::to_string(state).expect("WatchDaemonState serializes");
-    let state_dir = state_path
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from("."));
-    let tmp_path = watch_state_tmp_path(&state_dir);
-    fs::write(&tmp_path, json.as_bytes())
-        .and_then(|_| fs::rename(&tmp_path, state_path))
-        .map_err(|source| WatchDaemonError::Io {
+    crate::util::atomic_write(state_path, json.as_bytes()).map_err(|source| {
+        WatchDaemonError::Io {
             path: state_path.to_path_buf(),
             source,
-        })?;
+        }
+    })?;
     Ok(())
 }
 
@@ -593,15 +586,6 @@ fn load_watch_state_with_retry(state_path: &Path) -> Result<WatchDaemonState, St
         std::thread::sleep(Duration::from_millis(BACKOFF_MS));
     }
     load_watch_state_from_path(state_path)
-}
-
-fn watch_state_tmp_path(state_dir: &Path) -> PathBuf {
-    let id = NEXT_WATCH_STATE_TMP_ID.fetch_add(1, Ordering::Relaxed);
-    state_dir.join(format!(
-        "{WATCH_DAEMON_FILENAME}.tmp.{}.{}",
-        std::process::id(),
-        id
-    ))
 }
 
 fn cleanup_file(path: &Path) {

@@ -153,27 +153,21 @@ class Outer:
     assert_eq!(outer_method.kind, SymbolKind::Method);
     assert_eq!(outer_method.qualified_name, "Outer::outer_method");
 
-    // Phase-1 qualname walks to the nearest enclosing class. Inner's
-    // method is qualified with `Inner`, not `Outer::Inner`. Pin that
-    // so a future refinement is an intentional, tested change.
+    // Nested-class qualname walks every enclosing class outer-first, so
+    // inner_method is `Outer::Inner::inner_method`, not just `Inner::...`.
     assert_eq!(inner_method.kind, SymbolKind::Method);
-    assert_eq!(inner_method.qualified_name, "Inner::inner_method");
+    assert_eq!(inner_method.qualified_name, "Outer::Inner::inner_method");
 
-    // Phase-1 quirk: the nested `class Inner:` statement is itself a symbol
-    // whose immediate ancestor is Outer's class body. qualname.rs hits the
-    // `block → class_definition` arm first and returns `SymbolKind::Method`
-    // for it, not `Class`. This is documented here to fail loudly if a
-    // future change alters the behavior. Nested-class kinding is a known
-    // rough edge tracked outside parse-hardening-tree-sitter.
+    // The nested `class Inner:` statement itself is a Class, not a Method.
+    // Its qualname reflects the enclosing class scope.
     assert_eq!(
         inner_class.qualified_name, "Outer::Inner",
         "nested-class qualname must reflect enclosing class scope"
     );
     assert_eq!(
         inner_class.kind,
-        SymbolKind::Method,
-        "phase-1: nested class inside class body is currently kinded as Method \
-         (block→class_definition ancestor walk). Update deliberately when fixed."
+        SymbolKind::Class,
+        "nested class inside a class body is still a Class, not a Method"
     );
 }
 
@@ -209,15 +203,13 @@ export class Shape {
 }
 
 #[test]
-fn typescript_class_expression_assigned_to_const_is_recognized_where_possible() {
-    // Class expressions (e.g. `const Shape = class { ... }`) are an
-    // alternate syntactic shape. The current definition query keys on
-    // `class_declaration`, not `class_expression`, so the class itself
-    // will not be extracted — but a method definition inside the class
-    // body should still be picked up by the `method_definition` pattern
-    // because tree-sitter-typescript exposes the inner method node.
-    // Pin that behavior so a future change does not silently lose
-    // these methods.
+fn typescript_class_expression_assigned_to_const_is_extracted_with_variable_name() {
+    // Class expressions (e.g. `const Shape = class { ... }`) bind the
+    // class to a `variable_declarator` name. The definition query has a
+    // pattern that anchors on `variable_declarator name: (identifier)
+    // value: (class)`, so the class itself IS extracted with the
+    // variable identifier as its name. Methods inside the class body
+    // are still picked up by the `method_definition` pattern.
     let source = b"
 export const Shape = class {
     area(): number { return 1; }
@@ -227,20 +219,35 @@ export const Shape = class {
         .unwrap()
         .unwrap();
 
-    let area = output.symbols.iter().find(|s| s.display_name == "area");
-    assert!(
-        area.is_some(),
-        "expected `area` method from class expression to appear; got: {:?}",
-        output
-            .symbols
-            .iter()
-            .map(|s| (s.display_name.as_str(), s.kind))
-            .collect::<Vec<_>>(),
-    );
+    let shape = output
+        .symbols
+        .iter()
+        .find(|s| s.display_name == "Shape")
+        .unwrap_or_else(|| {
+            panic!(
+                "expected `Shape` class from class expression to appear; got: {:?}",
+                output
+                    .symbols
+                    .iter()
+                    .map(|s| (s.display_name.as_str(), s.kind))
+                    .collect::<Vec<_>>(),
+            )
+        });
     assert_eq!(
-        area.unwrap().kind,
+        shape.kind,
+        SymbolKind::Class,
+        "class-expression bound to a const must be kinded as Class"
+    );
+
+    let area = output
+        .symbols
+        .iter()
+        .find(|s| s.display_name == "area")
+        .expect("expected `area` method from class expression to appear");
+    assert_eq!(
+        area.kind,
         SymbolKind::Method,
-        "class-expression methods must be kinded as Method even when the class name is not captured"
+        "class-expression methods must be kinded as Method"
     );
 }
 

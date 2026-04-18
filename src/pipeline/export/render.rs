@@ -140,6 +140,24 @@ where
     D: IntoIterator<Item = ExportDecision>,
 {
     let mut w = buf_writer(&export_dir.join("index.json"))?;
+    write_json_to_writer(&mut w, files, symbols, decisions)
+}
+
+/// Stream the JSON export to an arbitrary writer. Exposed for tests that
+/// wrap the writer to verify the streaming contract (no batch-materialized
+/// Vec<Card> regression).
+pub(crate) fn write_json_to_writer<W, F, S, D>(
+    w: &mut W,
+    files: F,
+    symbols: S,
+    decisions: D,
+) -> crate::Result<(usize, usize, usize)>
+where
+    W: Write,
+    F: IntoIterator<Item = FileCard>,
+    S: IntoIterator<Item = SymbolCard>,
+    D: IntoIterator<Item = ExportDecision>,
+{
     // Top-level object and scalar/object members written directly. The change_risk
     // sub-object is fixed text; keeping it inline avoids another serializer call.
     w.write_all(b"{\n")?;
@@ -154,11 +172,11 @@ where
     )?;
     w.write_all(b"  },\n")?;
 
-    let file_count = write_json_array(&mut w, "files", files)?;
+    let file_count = write_json_array(w, "files", files)?;
     w.write_all(b",\n")?;
-    let symbol_count = write_json_array(&mut w, "symbols", symbols)?;
+    let symbol_count = write_json_array(w, "symbols", symbols)?;
     w.write_all(b",\n")?;
-    let decision_count = write_json_array(&mut w, "decisions", decisions)?;
+    let decision_count = write_json_array(w, "decisions", decisions)?;
     w.write_all(b"\n}\n")?;
     w.flush()?;
     Ok((file_count, symbol_count, decision_count))

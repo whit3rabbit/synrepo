@@ -12,9 +12,12 @@ use rmcp::{
     ServerHandler, ServiceExt as _,
 };
 use synrepo::config::Config;
+use synrepo::store::compatibility::StoreId;
 use synrepo::surface::handoffs::HandoffsRequest;
 use synrepo::surface::handoffs::{collect_handoffs, to_json as handoffs_to_json};
 use synrepo::surface::mcp::{audit, cards, primitives, search, SynrepoState};
+
+use super::super::graph::check_store_ready;
 
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -314,7 +317,9 @@ pub fn run_mcp_server(repo_root: &Path) -> anyhow::Result<()> {
     rt.block_on(async { serve(repo_root).await })
 }
 
-async fn serve(repo_root: &Path) -> anyhow::Result<()> {
+/// Load config and gate on storage compatibility. Factored out of `serve` so
+/// unit tests can exercise the fail-fast path without spinning up stdio.
+pub(crate) fn prepare_state(repo_root: &Path) -> anyhow::Result<SynrepoState> {
     let config = Config::load(repo_root).with_context(|| {
         format!(
             "Could not load config from {}/.synrepo/config.toml — run `synrepo init` first",
@@ -322,11 +327,22 @@ async fn serve(repo_root: &Path) -> anyhow::Result<()> {
         )
     })?;
 
-    let state = SynrepoState {
+    // Fail fast if the on-disk stores are not ready to serve. Without this
+    // check the MCP server accepts clients and only surfaces compatibility
+    // failures per tool call, which confuses the agent and hides the
+    // canonical `synrepo upgrade` remediation path.
+    let synrepo_dir = Config::synrepo_dir(repo_root);
+    check_store_ready(&synrepo_dir, &config, StoreId::Graph)?;
+    check_store_ready(&synrepo_dir, &config, StoreId::Overlay)?;
+
+    Ok(SynrepoState {
         config,
         repo_root: repo_root.to_path_buf(),
-    };
+    })
+}
 
+async fn serve(repo_root: &Path) -> anyhow::Result<()> {
+    let state = prepare_state(repo_root)?;
     let server = SynrepoServer::new(state);
     let transport = stdio();
     server.serve(transport).await?;

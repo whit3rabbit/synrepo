@@ -128,6 +128,10 @@ export class Greeter implements Named {
     constructor(name: string) { this.name = name; }
     greet(): Greeting { return `Hi, ${this.name}`; }
 }
+
+export const Shape = class {
+    area(): number { return 0; }
+};
 "#;
 
 // ── TSX fixture (task 3.4) ───────────────────────────────────────────────────
@@ -231,6 +235,8 @@ const FIXTURES: &[Fixture] = &[
             ("Greeting", SymbolKind::Type),
             ("Greeter", SymbolKind::Class),
             ("greet", SymbolKind::Method),
+            ("Shape", SymbolKind::Class),
+            ("area", SymbolKind::Method),
         ],
         expected_imports: &["path", "fs"],
     },

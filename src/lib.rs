@@ -48,6 +48,7 @@ pub mod surface;
 #[doc(hidden)]
 pub mod test_support;
 pub mod tui;
+pub mod util;
 
 pub use crate::core::ids::{ConceptNodeId, EdgeId, FileNodeId, NodeId, SymbolNodeId};
 pub use error::{Error, Result};

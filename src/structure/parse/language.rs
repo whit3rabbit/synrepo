@@ -172,12 +172,13 @@ const PYTHON_DEFINITION_QUERY: &str = r#"
 const PYTHON_KIND_MAP: &[SymbolKind] = &[SymbolKind::Function, SymbolKind::Class];
 
 // Pattern index → kind (see TS_KIND_MAP):
-//   0: function_declaration       → Function
-//   1: class_declaration          → Class
-//   2: interface_declaration      → Trait
-//   3: type_alias_declaration     → Type
-//   4: method_definition          → Method
-//   5: abstract_method_signature  → Method
+//   0: function_declaration              → Function
+//   1: class_declaration                 → Class
+//   2: interface_declaration             → Trait
+//   3: type_alias_declaration            → Type
+//   4: method_definition                 → Method
+//   5: abstract_method_signature         → Method
+//   6: variable_declarator → (class)     → Class   (class-expression bound to a name)
 const TS_DEFINITION_QUERY: &str = r#"
 (function_declaration name: (identifier) @name) @item
 (class_declaration name: (type_identifier) @name) @item
@@ -185,6 +186,7 @@ const TS_DEFINITION_QUERY: &str = r#"
 (type_alias_declaration name: (type_identifier) @name) @item
 (method_definition name: (property_identifier) @name) @item
 (abstract_method_signature name: (property_identifier) @name) @item
+(variable_declarator name: (identifier) @name value: (class) @item)
 "#;
 
 const TS_KIND_MAP: &[SymbolKind] = &[
@@ -194,6 +196,7 @@ const TS_KIND_MAP: &[SymbolKind] = &[
     SymbolKind::Type,
     SymbolKind::Method,
     SymbolKind::Method,
+    SymbolKind::Class,
 ];
 
 // --- Call-site queries (stage 4: cross-file edge resolution) ---

@@ -28,6 +28,8 @@ pub(crate) use links::{
     findings_output, links_accept_commit, links_list_output, links_review_output, CommitArgs,
     LinksCommitStore, RealLinksStore,
 };
+#[cfg(test)]
+pub(crate) use mcp::prepare_state as prepare_mcp_state;
 pub(crate) use mcp::run_mcp_server;
 pub(crate) use repair::{check, reconcile, sync};
 pub(crate) use setup::setup;

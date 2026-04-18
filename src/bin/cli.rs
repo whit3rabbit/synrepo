@@ -24,6 +24,8 @@ use tracing_subscriber::EnvFilter;
 use cli_support::agent_shims::AgentTool;
 use cli_support::cli_args::{Cli, Command, GraphCommand, LinksCommand, WatchCommand};
 #[cfg(test)]
+use cli_support::commands::prepare_mcp_state;
+#[cfg(test)]
 use cli_support::commands::report_reconcile_outcome;
 use cli_support::commands::{
     agent_setup, change_risk, check, compact, export, findings, graph_query, graph_stats, handoffs,

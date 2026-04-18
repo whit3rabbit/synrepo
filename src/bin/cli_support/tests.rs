@@ -6,6 +6,7 @@ mod dashboard_parity;
 mod export;
 mod graph;
 mod links;
+mod mcp;
 mod overlay_scale;
 mod reconcile;
 mod search;
