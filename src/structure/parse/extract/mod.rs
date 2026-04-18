@@ -1,5 +1,6 @@
 mod docs;
 mod qualname;
+mod visibility;
 
 use std::path::Path;
 use std::sync::OnceLock;
@@ -233,10 +234,14 @@ pub fn parse_file(path: &Path, content: &[u8]) -> crate::Result<Option<ParseOutp
         let body_range = (item_node.start_byte() as u32, item_node.end_byte() as u32);
         let body_bytes = &content[item_node.start_byte()..item_node.end_byte()];
 
+        // Extract visibility using name reference before moving name.
+        let symbol_visibility = visibility::extract_visibility(item_node, content, language, &name);
+
         symbols.push(ExtractedSymbol {
             qualified_name,
             display_name: name,
             kind,
+            visibility: symbol_visibility,
             body_byte_range: body_range,
             body_hash: hex::encode(blake3::hash(body_bytes).as_bytes()),
             signature: docs::extract_signature(item_node, content, language),

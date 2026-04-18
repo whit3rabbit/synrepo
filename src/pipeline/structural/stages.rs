@@ -247,6 +247,7 @@ fn process_supported_code_files(
                         qualified_name: symbol.qualified_name.clone(),
                         display_name: symbol.display_name.clone(),
                         kind: symbol.kind,
+                        visibility: symbol.visibility,
                         body_byte_range: symbol.body_byte_range,
                         body_hash: symbol.body_hash.clone(),
                         signature: symbol.signature.clone(),

@@ -9,7 +9,7 @@ use crate::{
         GitIntelligenceContext,
     },
     pipeline::git_intelligence::derive_symbol_revisions,
-    structure::graph::{Epistemic, FileNode, GraphStore, SymbolKind, SymbolNode},
+    structure::graph::{Epistemic, FileNode, GraphStore, SymbolKind, SymbolNode, Visibility},
 };
 use std::path::Path;
 use tempfile::tempdir;
@@ -36,6 +36,7 @@ fn make_symbol(id: u64, file_id: u128, qname: &str, body_hash: &str) -> SymbolNo
         qualified_name: qname.to_string(),
         display_name: qname.split("::").last().unwrap_or(qname).to_string(),
         kind: SymbolKind::Function,
+        visibility: Visibility::Public,
         body_byte_range: (0, 10),
         body_hash: body_hash.to_string(),
         signature: None,

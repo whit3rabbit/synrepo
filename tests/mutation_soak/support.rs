@@ -20,7 +20,7 @@ use synrepo::pipeline::writer::{
 use synrepo::store::overlay::{format_candidate_id, SqliteOverlayStore};
 use synrepo::store::sqlite::SqliteGraphStore;
 use synrepo::structure::graph::{
-    ConceptNode, EdgeKind, Epistemic, FileNode, GraphStore, SymbolKind, SymbolNode,
+    ConceptNode, EdgeKind, Epistemic, FileNode, GraphStore, SymbolKind, SymbolNode, Visibility,
 };
 use synrepo::NodeId;
 use tempfile::{tempdir, TempDir};
@@ -83,6 +83,7 @@ pub(crate) fn setup_curated_link_repo(pass_id: &str) -> SeededLinkRepo {
             qualified_name: "synrepo::hello".to_string(),
             display_name: "hello".to_string(),
             kind: SymbolKind::Function,
+            visibility: Visibility::Public,
             body_byte_range: (0, 16),
             body_hash: "bodyhash".to_string(),
             signature: Some("pub fn hello()".to_string()),

@@ -15,6 +15,7 @@ use crate::{
     store::{overlay::SqliteOverlayStore, sqlite::SqliteGraphStore},
     structure::graph::{
         ConceptNode, Edge, EdgeKind, Epistemic, FileNode, GraphStore, SymbolKind, SymbolNode,
+        Visibility,
     },
 };
 
@@ -188,6 +189,7 @@ fn seed_fixture_graph(graph: &mut SqliteGraphStore, with_second_pair: bool, code
             qualified_name: "crate::authenticate".to_string(),
             display_name: "authenticate".to_string(),
             kind: SymbolKind::Function,
+            visibility: Visibility::Public,
             body_byte_range: body_range(code, "pub fn authenticate() {}"),
             body_hash: "body-auth".to_string(),
             signature: Some("pub fn authenticate()".to_string()),
@@ -265,6 +267,7 @@ fn seed_fixture_graph(graph: &mut SqliteGraphStore, with_second_pair: bool, code
                 qualified_name: "crate::authorize".to_string(),
                 display_name: "authorize".to_string(),
                 kind: SymbolKind::Function,
+                visibility: Visibility::Public,
                 body_byte_range: body_range(code, "pub fn authorize() {}"),
                 body_hash: "body-authorize".to_string(),
                 signature: Some("pub fn authorize()".to_string()),

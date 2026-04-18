@@ -4,6 +4,7 @@ use crate::{
     core::ids::{ConceptNodeId, EdgeId, FileNodeId, NodeId, SymbolNodeId},
     structure::graph::{
         ConceptNode, Edge, EdgeKind, Epistemic, FileNode, GraphStore, SymbolKind, SymbolNode,
+        Visibility,
     },
 };
 use std::collections::BTreeMap;
@@ -33,6 +34,7 @@ fn graph_store_round_trips_nodes_edges_and_provenance() {
         qualified_name: "synrepo::lib".to_string(),
         display_name: "lib".to_string(),
         kind: SymbolKind::Module,
+        visibility: Visibility::Public,
         body_byte_range: (0, 64),
         body_hash: "def456".to_string(),
         signature: Some("pub mod lib".to_string()),
@@ -133,6 +135,7 @@ fn persisted_stats_count_nodes_and_edges_by_kind() {
         qualified_name: "crate::lib".to_string(),
         display_name: "lib".to_string(),
         kind: SymbolKind::Module,
+        visibility: Visibility::Public,
         body_byte_range: (0, 1),
         body_hash: "b".to_string(),
         signature: None,

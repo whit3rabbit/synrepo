@@ -9,7 +9,9 @@ use crate::{
         OverlayEpistemic, OverlayLink, OverlayStore,
     },
     store::{overlay::SqliteOverlayStore, sqlite::SqliteGraphStore},
-    structure::graph::{ConceptNode, Epistemic, FileNode, GraphStore, SymbolKind, SymbolNode},
+    structure::graph::{
+        ConceptNode, Epistemic, FileNode, GraphStore, SymbolKind, SymbolNode, Visibility,
+    },
 };
 
 use super::findings::{CrossLinkFinding, FindingsFilter};
@@ -102,6 +104,7 @@ fn seed_graph(graph: &mut SqliteGraphStore) {
             qualified_name: "crate::authenticate".to_string(),
             display_name: "authenticate".to_string(),
             kind: SymbolKind::Function,
+            visibility: Visibility::Public,
             body_byte_range: (0, 16),
             body_hash: "body-hash".to_string(),
             signature: Some("fn authenticate()".to_string()),

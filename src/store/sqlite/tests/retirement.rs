@@ -6,7 +6,7 @@ use crate::{
     core::ids::{FileNodeId, NodeId, SymbolNodeId},
     store::sqlite::SqliteGraphStore,
     structure::graph::{
-        derive_edge_id, Edge, EdgeKind, Epistemic, FileNode, GraphStore, SymbolNode,
+        derive_edge_id, Edge, EdgeKind, Epistemic, FileNode, GraphStore, SymbolNode, Visibility,
     },
 };
 
@@ -36,6 +36,7 @@ fn make_symbol(id: u64, file_id: u64, name: &str) -> SymbolNode {
         qualified_name: name.to_string(),
         display_name: name.to_string(),
         kind: crate::structure::graph::SymbolKind::Function,
+        visibility: Visibility::Public,
         body_byte_range: (0, 10),
         body_hash: format!("body_{id}"),
         signature: None,

@@ -8,7 +8,7 @@ use super::super::SqliteGraphStore;
 use super::support::sample_provenance;
 use crate::{
     core::ids::{FileNodeId, NodeId, SymbolNodeId},
-    structure::graph::{Epistemic, FileNode, GraphStore, SymbolKind, SymbolNode},
+    structure::graph::{Epistemic, FileNode, GraphStore, SymbolKind, SymbolNode, Visibility},
 };
 use tempfile::tempdir;
 
@@ -34,6 +34,7 @@ fn make_symbol(id: u64, file_id: FileNodeId, qname: &str) -> SymbolNode {
         qualified_name: qname.to_string(),
         display_name: qname.to_string(),
         kind: SymbolKind::Module,
+        visibility: Visibility::Public,
         body_byte_range: (0, 1),
         body_hash: format!("body-{id:x}"),
         signature: None,

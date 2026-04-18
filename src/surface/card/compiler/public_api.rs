@@ -1,24 +1,23 @@
 //! `PublicAPICard` compilation from graph-derived directory facts.
 //!
-//! Collects exported symbols from direct-child files by inspecting
-//! `SymbolNode.signature` for a `pub` prefix. Entry points are detected
-//! using the same four-rule taxonomy as `EntryPointCard`. Recent API changes
-//! are symbols whose containing file was last touched within 30 days
-//! (`Deep` budget only).
+//! Collects exported symbols from direct-child files by reading the
+//! `SymbolNode.visibility` field. Entry points are detected using the same
+//! four-rule taxonomy as `EntryPointCard`. Recent API changes are symbols
+//! whose containing file was last touched within 30 days (`Deep` budget only).
 //!
-//! # Visibility heuristic
+//! # Cross-language visibility
 //!
-//! `signature.starts_with("pub")` matches Rust's `pub`, `pub(crate)`,
-//! `pub(super)`, and `pub(in path)`. For Python, TypeScript, and Go — where
-//! visibility is not expressed as a `pub` keyword — `public_symbols` will be
-//! empty in v1. A dedicated `visibility` field on `SymbolNode` is the right
-//! long-term fix; deferred.
+//! `PublicAPICard` now emits symbols for Rust, Python, TypeScript, and Go.
+//! - Rust: `pub` -> Public, `pub(crate)` -> Crate, no prefix -> Private.
+//! - Python: dunders and non-underscore names -> Public, `_name` -> Private.
+//! - TypeScript: wrapped in `export` -> Public, otherwise -> Public (v1).
+//! - Go: uppercase first char -> Public, lowercase -> Private.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::{
     core::ids::FileNodeId,
-    structure::graph::GraphStore,
+    structure::graph::{GraphStore, Visibility},
     surface::card::{
         git::symbol_last_change_from_insights,
         types::{PublicAPICard, PublicAPIEntry},
@@ -76,11 +75,14 @@ pub(super) fn public_api_card_impl(
 
         let symbols = graph.symbols_for_file(*file_id)?;
         for sym in &symbols {
-            // Visibility filter: Rust `pub` prefix only.
-            let sig = match &sym.signature {
-                Some(s) if s.starts_with("pub") => s.clone(),
-                _ => continue,
-            };
+            // Visibility filter: include Public and Crate, exclude Private and Unknown.
+            let is_visible = matches!(sym.visibility, Visibility::Public | Visibility::Crate);
+            if !is_visible {
+                continue;
+            }
+
+            // Signature is optional but we use it if present for the entry.
+            let sig = sym.signature.clone().unwrap_or_default();
 
             public_symbol_count += 1;
 
@@ -228,14 +230,8 @@ mod tests {
             "private_helper must be excluded; got: {names:?}"
         );
 
-        // All materialised entries must have a pub signature.
-        for entry in &card.public_symbols {
-            assert!(
-                entry.signature.starts_with("pub"),
-                "non-pub signature slipped through: {}",
-                entry.signature
-            );
-        }
+        // All materialised entries have visibility Public or Crate (filtered in compiler).
+        // The test above verifies private_helper is excluded.
 
         // recent_api_changes empty at Normal.
         assert!(card.recent_api_changes.is_empty());
@@ -298,5 +294,124 @@ mod tests {
         );
         // Symbols are still materialised at Deep.
         assert!(!card.public_symbols.is_empty());
+    }
+
+    // Fixture: Python file with public, private, and dunder names.
+    fn write_python_fixture(root: &std::path::Path) {
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::write(
+            root.join("src/__init__.py"),
+            "class Public:\n\
+             pass\n\n\
+             class _Private:\n\
+             pass\n\n\
+             def __init__(self):\n\
+             pass\n",
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn public_api_card_emits_for_python_non_dunder_names() {
+        let repo = tempdir().unwrap();
+        write_python_fixture(repo.path());
+        let graph = bootstrap(&repo);
+        let compiler = GraphCardCompiler::new(Box::new(graph), None::<&std::path::Path>);
+
+        let card = compiler.public_api_card("src", Budget::Deep).unwrap();
+
+        let names: Vec<_> = card
+            .public_symbols
+            .iter()
+            .map(|e| e.name.as_str())
+            .collect();
+        // Public and __init__ should be included, _Private excluded.
+        assert!(
+            names.contains(&"Public"),
+            "Public class must be included; got: {names:?}"
+        );
+        assert!(
+            names.contains(&"__init__"),
+            "__init__ must be included; got: {names:?}"
+        );
+        assert!(
+            !names.contains(&"_Private"),
+            "_Private must be excluded; got: {names:?}"
+        );
+    }
+
+    // Fixture: TypeScript file with export statement and non-exported class.
+    fn write_typescript_fixture(root: &std::path::Path) {
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::write(
+            root.join("src/main.ts"),
+            "export class Foo {}\n\
+             class Bar {}\n",
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn public_api_card_emits_for_typescript_export_decl() {
+        let repo = tempdir().unwrap();
+        write_typescript_fixture(repo.path());
+        let graph = bootstrap(&repo);
+        let compiler = GraphCardCompiler::new(Box::new(graph), None::<&std::path::Path>);
+
+        let card = compiler.public_api_card("src", Budget::Deep).unwrap();
+
+        let names: Vec<_> = card
+            .public_symbols
+            .iter()
+            .map(|e| e.name.as_str())
+            .collect();
+        // Foo (exported) must be included.
+        assert!(
+            names.contains(&"Foo"),
+            "Foo must be included; got: {names:?}"
+        );
+        // Bar: per the design, class-member accessibility_modifier is out of scope
+        // for v1, so it defaults to Public. Both are included.
+        assert!(
+            names.contains(&"Bar"),
+            "Bar defaults to Public in v1; got: {names:?}"
+        );
+    }
+
+    // Fixture: Go file with capitalized and lowercase functions.
+    fn write_go_fixture(root: &std::path::Path) {
+        fs::create_dir_all(root.join("src")).unwrap();
+        fs::write(
+            root.join("src/main.go"),
+            "package main\n\n\
+             func Handle() {}\n\
+             func helper() {}\n",
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn public_api_card_emits_for_go_capitalized_ident() {
+        let repo = tempdir().unwrap();
+        write_go_fixture(repo.path());
+        let graph = bootstrap(&repo);
+        let compiler = GraphCardCompiler::new(Box::new(graph), None::<&std::path::Path>);
+
+        let card = compiler.public_api_card("src", Budget::Deep).unwrap();
+
+        let names: Vec<_> = card
+            .public_symbols
+            .iter()
+            .map(|e| e.name.as_str())
+            .collect();
+        // Handle (capitalized) should be included, helper (lowercase) excluded.
+        assert!(
+            names.contains(&"Handle"),
+            "Handle must be included; got: {names:?}"
+        );
+        assert!(
+            !names.contains(&"helper"),
+            "helper must be excluded; got: {names:?}"
+        );
     }
 }

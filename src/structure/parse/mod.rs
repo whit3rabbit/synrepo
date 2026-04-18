@@ -50,7 +50,7 @@ mod tests;
 #[cfg(test)]
 mod validation_tests;
 
-use crate::structure::graph::{EdgeKind, SymbolKind};
+use crate::structure::graph::{EdgeKind, SymbolKind, Visibility};
 
 pub use extract::parse_file;
 pub use language::Language;
@@ -64,6 +64,8 @@ pub struct ExtractedSymbol {
     pub display_name: String,
     /// Kind.
     pub kind: SymbolKind,
+    /// Visibility scope.
+    pub visibility: Visibility,
     /// Byte offsets of the symbol body in the file.
     pub body_byte_range: (u32, u32),
     /// blake3 hash of the body bytes.

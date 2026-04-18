@@ -8,6 +8,44 @@ use crate::core::provenance::Provenance;
 
 use super::epistemic::Epistemic;
 
+/// Visibility of a symbol node.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum Visibility {
+    /// Exported / externally callable.
+    Public,
+    /// Visible to the same compilation unit (e.g. `pub(crate)` in Rust).
+    Crate,
+    /// File or module-scoped.
+    Private,
+    /// Extraction could not determine.
+    #[default]
+    Unknown,
+}
+
+impl Visibility {
+    /// Stable snake_case label used for ID derivation and persistence.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Visibility::Public => "public",
+            Visibility::Crate => "crate",
+            Visibility::Private => "private",
+            Visibility::Unknown => "unknown",
+        }
+    }
+
+    /// Reverse of `as_str`: parse a stable snake_case label back to a `Visibility`.
+    pub fn from_label(label: &str) -> Option<Self> {
+        match label {
+            "public" => Some(Visibility::Public),
+            "crate" => Some(Visibility::Crate),
+            "private" => Some(Visibility::Private),
+            "unknown" => Some(Visibility::Unknown),
+            _ => None,
+        }
+    }
+}
+
 /// Kind of a symbol node.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -111,6 +149,9 @@ pub struct SymbolNode {
     pub display_name: String,
     /// Symbol kind.
     pub kind: SymbolKind,
+    /// Visibility scope (e.g. Public, Crate, Private).
+    #[serde(default)]
+    pub visibility: Visibility,
     /// Byte offsets into the file where the symbol body begins and ends.
     pub body_byte_range: (u32, u32),
     /// blake3 hash of the symbol's body bytes.
@@ -195,6 +236,38 @@ pub fn concept_source_path_allowed(path: &str, concept_directories: &[String]) -
 #[cfg(test)]
 mod tests {
     use super::concept_source_path_allowed;
+    use super::{SymbolNode, Visibility};
+
+    #[test]
+    fn symbol_node_visibility_defaults_to_unknown_on_missing_field() {
+        // Simulate JSON without the visibility field (pre-migration data).
+        let json = r#"{
+            "id": "sym_00000000000000000000000000000001",
+            "file_id": "file_00000000000000000000000000000001",
+            "qualified_name": "crate::foo",
+            "display_name": "foo",
+            "kind": "function",
+            "body_byte_range": [0, 10],
+            "body_hash": "abc123",
+            "signature": null,
+            "doc_comment": null,
+            "first_seen_rev": null,
+            "last_modified_rev": null,
+            "last_observed_rev": null,
+            "retired_at_rev": null,
+            "epistemic": "parser_observed",
+            "provenance": {
+                "created_at": "1970-01-01T00:00:00+00:00",
+                "source_revision": "rev",
+                "created_by": "structural_pipeline",
+                "pass": "parse",
+                "source_artifacts": []
+            }
+        }"#;
+
+        let node: SymbolNode = serde_json::from_str(json).unwrap();
+        assert_eq!(node.visibility, Visibility::Unknown);
+    }
 
     #[test]
     fn concept_source_paths_must_live_in_configured_markdown_dirs() {

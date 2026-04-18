@@ -6,7 +6,8 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::core::ids::{FileNodeId, NodeId, SymbolNodeId};
 use crate::overlay::OverlayEdgeKind;
-use crate::structure::graph::GraphStore;
+#[allow(unused_imports)]
+use crate::structure::graph::{Epistemic, GraphStore, SymbolKind, SymbolNode, Visibility};
 
 use super::super::{CandidatePair, TriageSource};
 use super::TriageScope;
@@ -331,6 +332,7 @@ mod tests {
             qualified_name: qname.into(),
             display_name: qname.rsplit("::").next().unwrap_or(qname).into(),
             kind: SymbolKind::Function,
+            visibility: Visibility::Public,
             body_byte_range: (0, 1),
             body_hash: "b".into(),
             signature: None,

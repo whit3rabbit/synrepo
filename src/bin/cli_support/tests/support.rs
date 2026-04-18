@@ -11,7 +11,7 @@ use synrepo::overlay::{
 use synrepo::store::overlay::SqliteOverlayStore;
 use synrepo::store::sqlite::SqliteGraphStore;
 use synrepo::structure::graph::{
-    ConceptNode, EdgeKind, Epistemic, FileNode, GraphStore, SymbolKind, SymbolNode,
+    ConceptNode, EdgeKind, Epistemic, FileNode, GraphStore, SymbolKind, SymbolNode, Visibility,
 };
 use synrepo::NodeId;
 use time::OffsetDateTime;
@@ -103,6 +103,7 @@ pub(super) fn seed_graph(repo_root: &std::path::Path) -> SeededGraphIds {
             qualified_name: "synrepo::lib".to_string(),
             display_name: "lib".to_string(),
             kind: SymbolKind::Module,
+            visibility: Visibility::Public,
             body_byte_range: (0, 64),
             body_hash: "def456".to_string(),
             signature: Some("pub mod lib".to_string()),

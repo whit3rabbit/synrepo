@@ -2,7 +2,9 @@ use super::super::SqliteGraphStore;
 use super::support::sample_provenance;
 use crate::{
     core::ids::{EdgeId, FileNodeId, NodeId, SymbolNodeId},
-    structure::graph::{Edge, EdgeKind, Epistemic, FileNode, GraphStore, SymbolKind, SymbolNode},
+    structure::graph::{
+        Edge, EdgeKind, Epistemic, FileNode, GraphStore, SymbolKind, SymbolNode, Visibility,
+    },
 };
 use tempfile::tempdir;
 
@@ -30,6 +32,7 @@ fn deleting_a_file_removes_child_symbols_and_incident_edges() {
         qualified_name: "main".to_string(),
         display_name: "main".to_string(),
         kind: SymbolKind::Function,
+        visibility: Visibility::Public,
         body_byte_range: (0, 10),
         body_hash: "body".to_string(),
         signature: Some("fn main()".to_string()),
@@ -93,6 +96,7 @@ fn deleting_a_file_removes_edges_for_all_symbols_in_one_pass() {
             qualified_name: "main::one".to_string(),
             display_name: "one".to_string(),
             kind: SymbolKind::Function,
+            visibility: Visibility::Public,
             body_byte_range: (0, 10),
             body_hash: "body-1".to_string(),
             signature: Some("fn one()".to_string()),
@@ -110,6 +114,7 @@ fn deleting_a_file_removes_edges_for_all_symbols_in_one_pass() {
             qualified_name: "main::two".to_string(),
             display_name: "two".to_string(),
             kind: SymbolKind::Function,
+            visibility: Visibility::Public,
             body_byte_range: (11, 20),
             body_hash: "body-2".to_string(),
             signature: Some("fn two()".to_string()),
