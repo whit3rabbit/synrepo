@@ -11,10 +11,19 @@
 //! 3. **Parse prose** — markdown link parser for files in configured concept
 //!    directories, extract concept nodes.
 //!
-//! Stage 4 (cross-file edge resolution) is now wired: after stages 1–3
-//! commit, a name-resolution pass emits `Calls` and `Imports` edges.
-//! Stages 5–8 (git mining, identity cascade, drift scoring, ArcSwap commit)
-//! remain TODO stubs.
+//! Stage 4 (cross-file edge resolution) is wired: after stages 1–3 commit,
+//! a name-resolution pass emits `Calls` and `Imports` edges (TS/TSX, Python,
+//! Rust, Go).
+//! Stage 5 (git mining) is wired via `pipeline::git` and
+//! `pipeline::git_intelligence`, emitting `CoChangesWith` edges and
+//! per-file history/hotspot/ownership insights.
+//! Stage 6 (identity cascade — content-hash rename, split/merge, git
+//! rename fallback) is wired in `structure::identity`.
+//! Stage 7 (drift scoring via Jaccard distance on persisted structural
+//! fingerprints) is wired; sidecar `edge_drift` and `file_fingerprints`
+//! tables hold the output.
+//! Stage 8 (ArcSwap commit) remains TODO — see
+//! `pipeline-stage8-arcswap-v1`.
 //!
 //! ## Relationship to watch and reconcile
 //!
