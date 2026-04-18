@@ -1,4 +1,4 @@
-.PHONY: build release test lint fmt fmt-check clean install check
+.PHONY: build release test soak-test lint fmt fmt-check clean install check
 
 build:
 	cargo build
@@ -8,6 +8,9 @@ release:
 
 test:
 	cargo test
+
+soak-test:
+	cargo test --test mutation_soak -- --ignored --test-threads=1
 
 lint:
 	cargo clippy -- -D warnings

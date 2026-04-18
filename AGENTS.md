@@ -24,9 +24,11 @@ cargo test                         # run all tests
 cargo test <test_name>             # run a single test (substring match)
 cargo test -p synrepo <test_name>  # run a single test by exact path
 cargo test --bin synrepo <test_name>  # run binary-crate tests (cli_support::tests::*)
+cargo test --test mutation_soak -- --ignored --test-threads=1  # release-gate crash/contention soak suite (Unix only, serial)
 cargo clippy --all-targets -- -D warnings  # lint (CI-equivalent)
 cargo fmt                          # format
 make check                         # fmt-check + lint + test (CI equivalent)
+make soak-test                     # run the ignored mutation-surface soak suite serially
 cargo run --                       # bare entrypoint: probe + route to dashboard/setup/repair wizard (TTY) or plain-text summary (pipe)
 cargo run -- dashboard             # explicit poll-mode dashboard; non-zero exit on uninitialized/partial repos
 cargo run -- dashboard --no-color  # dashboard without ANSI styling (still TTY; honored by every TUI entrypoint)
@@ -205,12 +207,12 @@ Stages 4–8:
   - `src/store/sqlite/ops/` (refactored from 590-line single file)
   - `src/substrate/embedding/index.rs` (571)
   - `src/pipeline/compact.rs` (563)
-  - `src/bin/cli_support/commands/links.rs` (542)
   - `src/pipeline/diagnostics.rs` (534)
   - `src/structure/identity.rs` (517)
   - `src/pipeline/structural/stages.rs` (500)
   - `src/pipeline/watch/lease.rs` (460)
   **Watchlist (approaching limit):** `src/surface/card/git.rs` (446), `src/pipeline/recent_activity/mod.rs` (364), `src/bin/cli_support/cli_args.rs` (369), `src/surface/card/compiler/call_path.rs` (358), `src/structure/graph/store.rs` (349), `src/config.rs` (345)
+- **`src/bin/cli_support/commands/links/accept.rs` owns the curated `links accept` 3-phase commit path** and the debug-only crash failpoints used by the soak suite. Keep `SYNREPO_TEST_CRASH_AT=links_accept:after_pending` and `links_accept:after_graph_insert` test-only, and prefer extending the submodule instead of growing `commands/links.rs` again.
 - **`signature` and `doc_comment` are populated** by `src/structure/parse/extract/mod.rs` for Rust (`///` line comments, declaration up to `{`/`;`), Python (docstring, `def` line up to `:`), and TypeScript/TSX (JSDoc `/** */`, declaration up to `{`). These fields are safe to use in all three languages.
 - **Stage 4 cross-file edges are now emitted**: `Calls` (file→symbol, approximate name resolution) and `Imports` (file→file) edges are produced by `run_structural_compile`. Import resolution covers TypeScript/TSX (relative path), Python (dotted module), Rust (`crate::`/`self::`/`super::` plus bare top-level crate paths, with longest-match selection per `stage4-rust-go-resolvers-v1`), and Go (module-prefix stripping via `go.mod`, fanning out to every `.go` file in the target package). `Inherits`, `References`, `Mentions` are not yet emitted. `CoChangesWith` is emitted by stage 5 via `git_intelligence/emit.rs`, not stage 4. `SplitFrom` and `MergedFrom` are emitted by stage 6 (identity cascade) for split/merge cases.
 - **`all_edges()` excludes retired edges.** Use `all_edges()` for drift scoring and card compilation (both only care about active edges). If you need to include retired edges (e.g. for compaction enumeration), query the `edges` table directly without the `retired_at_rev IS NULL` filter.
@@ -238,6 +240,7 @@ Stages 4–8:
 - **`bootstrap()` signature**: `synrepo::bootstrap::bootstrap(repo_root: &Path, mode: Option<Mode>)` — two args only. Does not accept a pre-built `Config` or `synrepo_dir`; it derives both internally.
 - **`cargo build --workspace` does not imply `cargo test` will compile**: test-scoped code (`#[cfg(test)]` and `mod tests`) only compiles under `cargo test` / `cargo check --tests` / `cargo clippy --all-targets`. A pre-existing test-only compile error in an unrelated module will surface there, not in `cargo build`. When verifying focused work against in-tree WIP, isolate the WIP (temporary rename or stash) before running tests to confirm your own work.
 - **`make check` has known parallel-run flakes**: `tui::actions::tests::reconcile_now_*`, `cli_support::tests::links::accept::*`, and `bootstrap::init::tests::bootstrap_rerun_refreshes_graph_on_content_change` intermittently fail when the full suite runs in parallel (writer-lock contention). All pass in isolation — re-run the failing test by name before treating it as a real regression.
+- **`tests/mutation_soak.rs` is an ignored Unix-only release-gate suite** covering `links accept` crash recovery, watch-active mutation blocking (`export`, `compact --apply`, `upgrade --apply`), abrupt watch-daemon death cleanup, and repeated writer-lock contention under real subprocess load. Run it serially with `cargo test --test mutation_soak -- --ignored --test-threads=1` or `make soak-test`; keep it out of default CI unless the workflow is intentionally being expanded.
 - **Test fixtures that create multiple files must not share byte-identical content.** `FileNodeId` is content-hashed for new files (see invariant 3), so two files with the same bytes collapse to the same node and one overwrites the other. Differentiate with a leading comment or distinct body when a test needs multiple files (canonical example: `src/a.rs` and `src/b.rs` in `pipeline::structural::tests::edges`).
 - **Adding a new `Language` variant is surface-enforced.** See the "Adding a new language" section below. Tests fail loud if any required surface is missed.
 
