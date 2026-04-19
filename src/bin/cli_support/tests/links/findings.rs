@@ -12,7 +12,7 @@ use super::{commands, sample_link};
 #[test]
 fn findings_obays_limit() {
     let repo = tempdir().unwrap();
-    bootstrap(repo.path(), Some(Mode::Auto)).unwrap();
+    bootstrap(repo.path(), Some(Mode::Auto), false).unwrap();
     let synrepo_dir = Config::synrepo_dir(repo.path());
     let mut overlay = SqliteOverlayStore::open(&synrepo_dir.join("overlay")).unwrap();
 

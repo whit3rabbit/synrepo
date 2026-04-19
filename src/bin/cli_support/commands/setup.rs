@@ -24,10 +24,15 @@ pub(crate) enum StepOutcome {
 
 /// Full onboarding flow for a specific agent client. Thin composer over the
 /// decomposed `step_*` helpers so TUI wizards can reuse the same steps.
-pub(crate) fn setup(repo_root: &Path, tool: AgentTool, force: bool) -> anyhow::Result<()> {
+pub(crate) fn setup(
+    repo_root: &Path,
+    tool: AgentTool,
+    force: bool,
+    gitignore: bool,
+) -> anyhow::Result<()> {
     println!("Setting up synrepo for {}...", tool.display_name());
 
-    step_init(repo_root, None, force)?;
+    step_init(repo_root, None, force, gitignore)?;
     step_apply_integration(repo_root, tool, force)?;
     step_ensure_ready(repo_root)?;
 
@@ -76,11 +81,12 @@ pub(crate) fn step_init(
     repo_root: &Path,
     mode: Option<Mode>,
     force: bool,
+    gitignore: bool,
 ) -> anyhow::Result<StepOutcome> {
     let synrepo_dir = repo_root.join(".synrepo");
     if !synrepo_dir.exists() || force {
         println!("  Initializing .synrepo/...");
-        init(repo_root, mode)?;
+        init(repo_root, mode, gitignore)?;
         Ok(StepOutcome::Applied)
     } else {
         println!("  .synrepo/ already initialized.");
@@ -139,6 +145,85 @@ pub(crate) fn step_apply_integration(
         (_, StepOutcome::NotAutomated) => StepOutcome::NotAutomated,
         _ => StepOutcome::AlreadyCurrent,
     })
+}
+
+/// Patch `.synrepo/config.toml` with a `[synthesis]` block derived from
+/// `choice`. `None` (user chose "Skip") is a no-op so re-running
+/// `synrepo setup --synthesis` and cancelling does not clobber prior config.
+///
+/// The write is atomic and preserves unrelated keys/comments via `toml_edit`.
+/// `local_endpoint` is written authoritatively; `local_preset` is informational.
+pub(crate) fn step_apply_synthesis(
+    repo_root: &Path,
+    choice: Option<&synrepo::tui::SynthesisChoice>,
+) -> anyhow::Result<StepOutcome> {
+    use synrepo::tui::wizard::setup::synthesis::{CloudProvider, SynthesisChoice};
+
+    let Some(choice) = choice else {
+        println!("  Synthesis sub-wizard cancelled; config.toml untouched.");
+        return Ok(StepOutcome::AlreadyCurrent);
+    };
+
+    let config_path = repo_root.join(".synrepo").join("config.toml");
+    let raw = if config_path.exists() {
+        fs::read_to_string(&config_path)
+            .with_context(|| format!("failed to read {}", config_path.display()))?
+    } else {
+        String::new()
+    };
+    let mut doc: DocumentMut = raw.parse().map_err(|err| {
+        anyhow!(
+            "refusing to overwrite {}: file exists but is not valid TOML ({err})",
+            config_path.display()
+        )
+    })?;
+
+    let synthesis_item = doc
+        .entry("synthesis")
+        .or_insert_with(|| Item::Table(Table::new()));
+    let synthesis = synthesis_item.as_table_mut().ok_or_else(|| {
+        anyhow!(
+            "refusing to overwrite {}: `synthesis` exists but is not a table",
+            config_path.display()
+        )
+    })?;
+    synthesis.set_implicit(false);
+
+    synthesis.insert("enabled", Item::Value(TomlValue::from(true)));
+    match choice {
+        SynthesisChoice::Cloud(provider) => {
+            let name = match provider {
+                CloudProvider::Anthropic => "anthropic",
+                CloudProvider::OpenAi => "openai",
+                CloudProvider::Gemini => "gemini",
+            };
+            synthesis.insert("provider", Item::Value(TomlValue::from(name)));
+            synthesis.remove("local_endpoint");
+            synthesis.remove("local_preset");
+        }
+        SynthesisChoice::Local { preset, endpoint } => {
+            synthesis.insert("provider", Item::Value(TomlValue::from("local")));
+            synthesis.insert(
+                "local_endpoint",
+                Item::Value(TomlValue::from(endpoint.as_str())),
+            );
+            synthesis.insert(
+                "local_preset",
+                Item::Value(TomlValue::from(preset.config_value())),
+            );
+        }
+    }
+
+    write_atomic(&config_path, doc.to_string().as_bytes())?;
+    println!(
+        "  Wrote [synthesis] block to {} (provider: {})",
+        config_path.display(),
+        match choice {
+            SynthesisChoice::Cloud(p) => p.config_value(),
+            SynthesisChoice::Local { .. } => "local",
+        }
+    );
+    Ok(StepOutcome::Applied)
 }
 
 /// Ensure setup leaves an operationally ready runtime by creating the first

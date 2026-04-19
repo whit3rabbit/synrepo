@@ -5,6 +5,9 @@ mod tests {
     use crate::bootstrap::runtime_probe::AgentTargetKind;
     use crate::config::Mode;
     use crate::tui::wizard::setup::state::{SetupStep, SetupWizardState, WIZARD_TARGETS};
+    use crate::tui::wizard::setup::synthesis::{
+        CloudProvider, LocalPreset, SynthesisChoice, SynthesisRow, SYNTHESIS_ROWS,
+    };
     use crossterm::event::{KeyCode, KeyModifiers};
 
     fn press(state: &mut SetupWizardState, code: KeyCode) {
@@ -229,6 +232,197 @@ mod tests {
             assert_eq!(s.step, SetupStep::SelectMode);
             s.handle_key(KeyCode::Esc, KeyModifiers::empty());
         });
+    }
+
+    // ---- Synthesis step coverage ----
+    //
+    // These exercise the 4-to-7-step synthesis sub-flow introduced in the
+    // opt-in safeguard change. `SYNTHESIS_ROWS` is `[Skip, Anthropic, OpenAI,
+    // Gemini, Local]` at index time — the tests pin positions explicitly so a
+    // future reorder of the row list fails loud rather than silently shifting.
+
+    /// Drive the wizard from Splash to SelectSynthesis using the defaults
+    /// (auto mode, skip target). Returns the state ready for synthesis input.
+    fn drive_to_synthesis(s: &mut SetupWizardState) {
+        press(s, KeyCode::Enter); // splash → mode
+        press(s, KeyCode::Enter); // mode → target
+        for _ in 0..WIZARD_TARGETS.len() {
+            press(s, KeyCode::Down); // land on "Skip"
+        }
+        press(s, KeyCode::Enter); // target → synthesis
+        assert_eq!(s.step, SetupStep::SelectSynthesis);
+    }
+
+    #[test]
+    fn synthesis_skip_confirms_with_no_choice() {
+        let mut s = SetupWizardState::new(Mode::Auto, vec![]);
+        drive_to_synthesis(&mut s);
+        // First row is Skip; Enter commits.
+        assert_eq!(SYNTHESIS_ROWS[0], SynthesisRow::Skip);
+        press(&mut s, KeyCode::Enter);
+        assert_eq!(s.step, SetupStep::Confirm);
+        press(&mut s, KeyCode::Enter);
+        let plan = s.finalize().expect("plan");
+        assert!(plan.synthesis.is_none());
+    }
+
+    #[test]
+    fn synthesis_cloud_anthropic_confirms_with_choice() {
+        let mut s = SetupWizardState::new(Mode::Auto, vec![]);
+        drive_to_synthesis(&mut s);
+        press(&mut s, KeyCode::Down); // Skip → Anthropic (index 1)
+        assert_eq!(
+            SYNTHESIS_ROWS[1],
+            SynthesisRow::Cloud(CloudProvider::Anthropic)
+        );
+        press(&mut s, KeyCode::Enter);
+        assert_eq!(s.step, SetupStep::Confirm);
+        press(&mut s, KeyCode::Enter);
+        let plan = s.finalize().expect("plan");
+        assert_eq!(
+            plan.synthesis,
+            Some(SynthesisChoice::Cloud(CloudProvider::Anthropic))
+        );
+    }
+
+    #[test]
+    fn synthesis_local_preset_ollama_default_endpoint() {
+        let mut s = SetupWizardState::new(Mode::Auto, vec![]);
+        drive_to_synthesis(&mut s);
+        // Walk to the Local row (last in SYNTHESIS_ROWS).
+        let local_index = SYNTHESIS_ROWS
+            .iter()
+            .position(|r| matches!(r, SynthesisRow::Local))
+            .expect("Local row present");
+        for _ in 0..local_index {
+            press(&mut s, KeyCode::Down);
+        }
+        press(&mut s, KeyCode::Enter);
+        assert_eq!(s.step, SetupStep::SelectLocalPreset);
+        // Ollama is at index 0 in LOCAL_PRESETS; Enter accepts with its default endpoint.
+        press(&mut s, KeyCode::Enter);
+        assert_eq!(s.step, SetupStep::EditLocalEndpoint);
+        assert_eq!(
+            s.endpoint_input.value(),
+            LocalPreset::Ollama.default_endpoint()
+        );
+        press(&mut s, KeyCode::Enter); // accept endpoint unchanged
+        assert_eq!(s.step, SetupStep::Confirm);
+        press(&mut s, KeyCode::Enter);
+        let plan = s.finalize().expect("plan");
+        assert_eq!(
+            plan.synthesis,
+            Some(SynthesisChoice::Local {
+                preset: LocalPreset::Ollama,
+                endpoint: LocalPreset::Ollama.default_endpoint().to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn synthesis_local_custom_endpoint_is_editable() {
+        let mut s = SetupWizardState::new(Mode::Auto, vec![]);
+        drive_to_synthesis(&mut s);
+        let local_index = SYNTHESIS_ROWS
+            .iter()
+            .position(|r| matches!(r, SynthesisRow::Local))
+            .expect("Local row present");
+        for _ in 0..local_index {
+            press(&mut s, KeyCode::Down);
+        }
+        press(&mut s, KeyCode::Enter); // into preset list
+                                       // Move to Custom (last preset).
+        for _ in 0..4 {
+            press(&mut s, KeyCode::Down);
+        }
+        press(&mut s, KeyCode::Enter); // into endpoint editor
+        assert_eq!(s.step, SetupStep::EditLocalEndpoint);
+        // Clear the pre-filled default and type a fresh URL.
+        s.handle_key(KeyCode::Char('u'), KeyModifiers::CONTROL);
+        for ch in "http://gpu-box:9000/v1/chat/completions".chars() {
+            press(&mut s, KeyCode::Char(ch));
+        }
+        press(&mut s, KeyCode::Enter); // endpoint → confirm
+        assert_eq!(s.step, SetupStep::Confirm);
+        press(&mut s, KeyCode::Enter); // confirm → complete
+        let plan = s.finalize().expect("plan");
+        assert_eq!(
+            plan.synthesis,
+            Some(SynthesisChoice::Local {
+                preset: LocalPreset::Custom,
+                endpoint: "http://gpu-box:9000/v1/chat/completions".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn synthesis_endpoint_esc_returns_to_preset_without_cancel() {
+        let mut s = SetupWizardState::new(Mode::Auto, vec![]);
+        drive_to_synthesis(&mut s);
+        let local_index = SYNTHESIS_ROWS
+            .iter()
+            .position(|r| matches!(r, SynthesisRow::Local))
+            .expect("Local row present");
+        for _ in 0..local_index {
+            press(&mut s, KeyCode::Down);
+        }
+        press(&mut s, KeyCode::Enter); // into preset list
+        press(&mut s, KeyCode::Enter); // into endpoint editor
+        assert_eq!(s.step, SetupStep::EditLocalEndpoint);
+        press(&mut s, KeyCode::Esc);
+        assert_eq!(s.step, SetupStep::SelectLocalPreset);
+        assert!(!s.cancelled, "Esc from endpoint editor must not cancel");
+        assert!(s.synthesis.is_none(), "no choice committed yet");
+    }
+
+    #[test]
+    fn synthesis_endpoint_empty_input_refuses_enter() {
+        let mut s = SetupWizardState::new(Mode::Auto, vec![]);
+        drive_to_synthesis(&mut s);
+        let local_index = SYNTHESIS_ROWS
+            .iter()
+            .position(|r| matches!(r, SynthesisRow::Local))
+            .expect("Local row present");
+        for _ in 0..local_index {
+            press(&mut s, KeyCode::Down);
+        }
+        press(&mut s, KeyCode::Enter); // into preset list
+        press(&mut s, KeyCode::Enter); // into endpoint editor
+        s.handle_key(KeyCode::Char('u'), KeyModifiers::CONTROL); // clear
+        press(&mut s, KeyCode::Enter);
+        // Still on editor — empty endpoint is a silent no-op, not a transition.
+        assert_eq!(s.step, SetupStep::EditLocalEndpoint);
+        assert!(s.synthesis.is_none());
+    }
+
+    #[test]
+    fn synthesis_preset_switch_reseeds_endpoint_default() {
+        let mut s = SetupWizardState::new(Mode::Auto, vec![]);
+        drive_to_synthesis(&mut s);
+        let local_index = SYNTHESIS_ROWS
+            .iter()
+            .position(|r| matches!(r, SynthesisRow::Local))
+            .expect("Local row present");
+        for _ in 0..local_index {
+            press(&mut s, KeyCode::Down);
+        }
+        press(&mut s, KeyCode::Enter); // into preset list
+                                       // Accept Ollama first.
+        press(&mut s, KeyCode::Enter);
+        assert_eq!(
+            s.endpoint_input.value(),
+            LocalPreset::Ollama.default_endpoint()
+        );
+        press(&mut s, KeyCode::Esc); // back to preset list
+        assert_eq!(s.step, SetupStep::SelectLocalPreset);
+        // Select llama.cpp (index 1).
+        press(&mut s, KeyCode::Down);
+        press(&mut s, KeyCode::Enter);
+        assert_eq!(
+            s.endpoint_input.value(),
+            LocalPreset::LlamaCpp.default_endpoint(),
+            "switching preset must reseed the text buffer with the new default",
+        );
     }
 
     #[test]

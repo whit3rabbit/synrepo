@@ -39,7 +39,8 @@ pub(crate) use setup::{
     setup_windsurf_mcp, StepOutcome,
 };
 pub(crate) use setup::{
-    step_apply_integration, step_ensure_ready, step_init, step_register_mcp, step_write_shim,
+    step_apply_integration, step_apply_synthesis, step_ensure_ready, step_init, step_register_mcp,
+    step_write_shim,
 };
 pub(crate) use status::{status, status_output};
 #[cfg(test)]

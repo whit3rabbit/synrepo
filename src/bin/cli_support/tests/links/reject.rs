@@ -11,7 +11,7 @@ use super::{commands, sample_link, write_curated_mode};
 #[test]
 fn links_reject_blocked_in_auto_mode() {
     let repo = tempdir().unwrap();
-    bootstrap(repo.path(), Some(Mode::Auto)).unwrap();
+    bootstrap(repo.path(), Some(Mode::Auto), false).unwrap();
 
     let err = commands::links_reject(
         repo.path(),

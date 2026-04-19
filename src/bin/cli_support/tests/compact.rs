@@ -12,7 +12,7 @@ fn compact_dry_run_library() {
     let repo = dir.path();
 
     // Initialize a repo.
-    bootstrap(repo, None).unwrap();
+    bootstrap(repo, None, false).unwrap();
     let synrepo_dir = Config::synrepo_dir(repo);
     let config = Config::load(repo).unwrap();
 
@@ -34,7 +34,7 @@ fn compact_apply_library() {
     let repo = dir.path();
 
     // Initialize a repo.
-    bootstrap(repo, None).unwrap();
+    bootstrap(repo, None, false).unwrap();
     let synrepo_dir = Config::synrepo_dir(repo);
     let config = Config::load(repo).unwrap();
 

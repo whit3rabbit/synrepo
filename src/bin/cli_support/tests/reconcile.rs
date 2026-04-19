@@ -29,7 +29,7 @@ fn init_with_semantic_triage_produces_vectors_index() {
     )
     .unwrap();
 
-    bootstrap(repo.path(), None).unwrap();
+    bootstrap(repo.path(), None, false).unwrap();
 
     // Verify vectors directory exists with valid index
     let vectors_dir = synrepo_dir.join("index").join("vectors");
@@ -68,7 +68,7 @@ fn reconcile_rebuilds_vectors_index_after_deletion() {
     )
     .unwrap();
 
-    bootstrap(repo.path(), None).unwrap();
+    bootstrap(repo.path(), None, false).unwrap();
 
     let vectors_dir = synrepo_dir.join("index").join("vectors");
     let index_path = vectors_dir.join("index.bin");
@@ -99,7 +99,7 @@ fn reconcile_completes_on_initialized_repo() {
     let repo = tempdir().unwrap();
     std::fs::create_dir_all(repo.path().join("src")).unwrap();
     std::fs::write(repo.path().join("src/lib.rs"), "pub fn greet() {}\n").unwrap();
-    bootstrap(repo.path(), None).unwrap();
+    bootstrap(repo.path(), None, false).unwrap();
 
     super::super::commands::reconcile(repo.path()).unwrap();
 
@@ -122,7 +122,7 @@ fn reconcile_refreshes_the_search_index() {
         "pub fn greet() { println!(\"old token\"); }\n",
     )
     .unwrap();
-    bootstrap(repo.path(), None).unwrap();
+    bootstrap(repo.path(), None, false).unwrap();
 
     std::fs::write(
         repo.path().join("src/lib.rs"),
@@ -148,7 +148,7 @@ fn reconcile_returns_lock_conflict_error_when_writer_busy() {
     let repo = tempdir().unwrap();
     std::fs::create_dir_all(repo.path().join("src")).unwrap();
     std::fs::write(repo.path().join("src/lib.rs"), "pub fn x() {}\n").unwrap();
-    bootstrap(repo.path(), None).unwrap();
+    bootstrap(repo.path(), None, false).unwrap();
 
     let synrepo_dir = Config::synrepo_dir(repo.path());
     std::fs::create_dir_all(synrepo_dir.join("state")).unwrap();

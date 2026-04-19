@@ -26,7 +26,7 @@ use crate::config::Mode;
 
 pub use self::wizard::{
     IntegrationPlan, IntegrationWizardOutcome, RepairPlan, RepairWizardOutcome, SetupPlan,
-    SetupWizardOutcome,
+    SetupWizardOutcome, SynthesisChoice,
 };
 
 pub mod actions;
@@ -128,6 +128,19 @@ pub fn run_setup_wizard(repo_root: &Path, opts: TuiOptions) -> anyhow::Result<Se
         Mode::Auto
     };
     wizard::run_setup_wizard_loop(theme, default_mode, probe_report.detected_agent_targets)
+}
+
+/// Open the synthesis-only sub-wizard. Used by `synrepo setup --synthesis`
+/// after the non-interactive setup flow has initialized the repo. Walks the
+/// operator through SelectSynthesis → (SelectLocalPreset → EditLocalEndpoint)
+/// → Confirm and returns a [`SetupWizardOutcome`]; only the plan's
+/// `synthesis` field is meaningful.
+pub fn run_synthesis_only_wizard(opts: TuiOptions) -> anyhow::Result<SetupWizardOutcome> {
+    if !stdout_is_tty() {
+        return Ok(SetupWizardOutcome::NonTty);
+    }
+    let theme = theme::Theme::from_no_color(opts.no_color);
+    wizard::run_synthesis_only_wizard_loop(theme)
 }
 
 /// Detect whether the repo contains any of the canonical concept / ADR

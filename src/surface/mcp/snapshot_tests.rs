@@ -60,7 +60,7 @@ Use the add helper.
     )
     .unwrap();
 
-    bootstrap::bootstrap(repo.path(), None).unwrap();
+    bootstrap::bootstrap(repo.path(), None, false).unwrap();
     assert!(snapshot::current().snapshot_epoch > 0);
 
     let state = SynrepoState {

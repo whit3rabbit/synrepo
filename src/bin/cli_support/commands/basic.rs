@@ -8,11 +8,15 @@ use crate::cli_support::agent_shims::AgentTool;
 use super::watch::ensure_watch_not_running;
 
 /// Initialize the repository with the specified mode.
-pub(crate) fn init(repo_root: &Path, requested_mode: Option<Mode>) -> anyhow::Result<()> {
+pub(crate) fn init(
+    repo_root: &Path,
+    requested_mode: Option<Mode>,
+    gitignore: bool,
+) -> anyhow::Result<()> {
     let synrepo_dir = Config::synrepo_dir(repo_root);
     ensure_watch_not_running(&synrepo_dir, "init")?;
 
-    let report = synrepo::bootstrap::bootstrap(repo_root, requested_mode)?;
+    let report = synrepo::bootstrap::bootstrap(repo_root, requested_mode, gitignore)?;
     print!("{}", report.render());
     Ok(())
 }

@@ -10,7 +10,7 @@ fn bootstrap_fresh_repo_reports_healthy_summary() {
     let repo = tempdir().unwrap();
     std::fs::write(repo.path().join("README.md"), "fresh token\n").unwrap();
 
-    let report = bootstrap(repo.path(), None).unwrap();
+    let report = bootstrap(repo.path(), None, false).unwrap();
     let rendered = report.render();
 
     assert_eq!(report.health, BootstrapHealth::Healthy);
@@ -32,7 +32,7 @@ fn bootstrap_selects_curated_when_rationale_markdown_exists() {
     std::fs::write(adr_dir.join("0001-record.md"), "# Decision\n").unwrap();
     std::fs::write(repo.path().join("README.md"), "curated token\n").unwrap();
 
-    let report = bootstrap(repo.path(), None).unwrap();
+    let report = bootstrap(repo.path(), None, false).unwrap();
     let rendered = report.render();
     let config = Config::load(repo.path()).unwrap();
 
@@ -46,11 +46,11 @@ fn bootstrap_selects_curated_when_rationale_markdown_exists() {
 fn bootstrap_rerun_refreshes_existing_runtime() {
     let repo = tempdir().unwrap();
     std::fs::write(repo.path().join("README.md"), "before refresh\n").unwrap();
-    bootstrap(repo.path(), None).unwrap();
+    bootstrap(repo.path(), None, false).unwrap();
 
     std::fs::write(repo.path().join("README.md"), "after refresh token\n").unwrap();
 
-    let report = bootstrap(repo.path(), None).unwrap();
+    let report = bootstrap(repo.path(), None, false).unwrap();
     let matches = crate::substrate::search(
         &Config::load(repo.path()).unwrap(),
         repo.path(),
@@ -70,7 +70,7 @@ fn bootstrap_repairs_partial_runtime_and_reports_degraded() {
     std::fs::create_dir_all(&synrepo_dir).unwrap();
     std::fs::write(repo.path().join("README.md"), "repair token\n").unwrap();
 
-    let report = bootstrap(repo.path(), None).unwrap();
+    let report = bootstrap(repo.path(), None, false).unwrap();
     let rendered = report.render();
 
     assert_eq!(report.health, BootstrapHealth::Degraded);
@@ -83,7 +83,7 @@ fn bootstrap_repairs_partial_runtime_and_reports_degraded() {
 fn bootstrap_reports_graph_sensitive_config_drift_without_blocking() {
     let repo = tempdir().unwrap();
     std::fs::write(repo.path().join("README.md"), "compat token\n").unwrap();
-    bootstrap(repo.path(), None).unwrap();
+    bootstrap(repo.path(), None, false).unwrap();
 
     let updated = Config {
         concept_directories: vec![
@@ -100,7 +100,7 @@ fn bootstrap_reports_graph_sensitive_config_drift_without_blocking() {
     )
     .unwrap();
 
-    let report = bootstrap(repo.path(), None).unwrap();
+    let report = bootstrap(repo.path(), None, false).unwrap();
     let rendered = report.render();
 
     assert!(rendered.contains("Compatibility:"));
@@ -114,7 +114,7 @@ fn bootstrap_blocks_on_invalid_existing_config() {
     std::fs::create_dir_all(&synrepo_dir).unwrap();
     std::fs::write(synrepo_dir.join("config.toml"), "mode = [not valid").unwrap();
 
-    let error = bootstrap(repo.path(), None).unwrap_err().to_string();
+    let error = bootstrap(repo.path(), None, false).unwrap_err().to_string();
 
     assert!(error.contains("Bootstrap health: blocked"));
     assert!(error.contains("invalid existing config"));
@@ -124,9 +124,9 @@ fn bootstrap_blocks_on_invalid_existing_config() {
 fn bootstrap_explicit_mode_overrides_existing_config_on_refresh() {
     let repo = tempdir().unwrap();
     std::fs::write(repo.path().join("README.md"), "mode token\n").unwrap();
-    bootstrap(repo.path(), Some(Mode::Curated)).unwrap();
+    bootstrap(repo.path(), Some(Mode::Curated), false).unwrap();
 
-    let report = bootstrap(repo.path(), Some(Mode::Auto)).unwrap();
+    let report = bootstrap(repo.path(), Some(Mode::Auto), false).unwrap();
     let config = Config::load(repo.path()).unwrap();
 
     assert_eq!(report.mode, Mode::Auto);
@@ -141,7 +141,7 @@ fn bootstrap_honors_explicit_auto_with_curated_recommendation() {
     std::fs::write(adr_dir.join("0002-architecture.md"), "# Architecture\n").unwrap();
     std::fs::write(repo.path().join("README.md"), "explicit token\n").unwrap();
 
-    let report = bootstrap(repo.path(), Some(Mode::Auto)).unwrap();
+    let report = bootstrap(repo.path(), Some(Mode::Auto), false).unwrap();
     let rendered = report.render();
     let config = Config::load(repo.path()).unwrap();
 
@@ -155,7 +155,7 @@ fn bootstrap_honors_explicit_auto_with_curated_recommendation() {
 fn bootstrap_blocks_on_newer_graph_store_version() {
     let repo = tempdir().unwrap();
     std::fs::write(repo.path().join("README.md"), "graph token\n").unwrap();
-    bootstrap(repo.path(), None).unwrap();
+    bootstrap(repo.path(), None, false).unwrap();
 
     let synrepo_dir = Config::synrepo_dir(repo.path());
     std::fs::write(synrepo_dir.join("graph/nodes.db"), "db").unwrap();
@@ -171,7 +171,7 @@ fn bootstrap_blocks_on_newer_graph_store_version() {
     )
     .unwrap();
 
-    let error = bootstrap(repo.path(), None).unwrap_err().to_string();
+    let error = bootstrap(repo.path(), None, false).unwrap_err().to_string();
 
     assert!(error.contains("Bootstrap health: blocked"));
     assert!(error.contains("graph"));
@@ -188,7 +188,7 @@ fn bootstrap_fresh_init_materializes_graph_with_code_symbols() {
     )
     .unwrap();
 
-    let report = bootstrap(repo.path(), None).unwrap();
+    let report = bootstrap(repo.path(), None, false).unwrap();
 
     let graph_dir = Config::synrepo_dir(repo.path()).join("graph");
     let store = SqliteGraphStore::open_existing(&graph_dir).unwrap();
@@ -213,10 +213,10 @@ fn bootstrap_rerun_refreshes_graph_on_content_change() {
     let repo = tempdir().unwrap();
     std::fs::create_dir_all(repo.path().join("src")).unwrap();
     std::fs::write(repo.path().join("src/lib.rs"), "pub fn before() {}\n").unwrap();
-    bootstrap(repo.path(), None).unwrap();
+    bootstrap(repo.path(), None, false).unwrap();
 
     std::fs::write(repo.path().join("src/lib.rs"), "pub fn after() {}\n").unwrap();
-    bootstrap(repo.path(), None).unwrap();
+    bootstrap(repo.path(), None, false).unwrap();
 
     let graph_dir = Config::synrepo_dir(repo.path()).join("graph");
     let store = SqliteGraphStore::open_existing(&graph_dir).unwrap();
@@ -253,7 +253,7 @@ fn bootstrap_blocked_when_writer_lock_held() {
     };
     let _flock = hold_writer_flock_with_ownership(&writer_lock_path(&synrepo_dir), &ownership);
 
-    let err = bootstrap(repo.path(), None).unwrap_err().to_string();
+    let err = bootstrap(repo.path(), None, false).unwrap_err().to_string();
     let _ = sleep_child.kill();
     let _ = sleep_child.wait();
     assert!(
@@ -268,7 +268,7 @@ fn bootstrap_writes_config_and_gitignore_without_leaving_temp_files() {
     let repo = tempdir().unwrap();
     std::fs::write(repo.path().join("README.md"), "temp token\n").unwrap();
 
-    bootstrap(repo.path(), None).unwrap();
+    bootstrap(repo.path(), None, false).unwrap();
 
     let synrepo_dir = Config::synrepo_dir(repo.path());
     assert!(synrepo_dir.join("config.toml").exists());
@@ -299,4 +299,21 @@ fn atomic_write_file_replaces_existing_contents() {
         std::fs::read_to_string(&target).unwrap(),
         "mode = \"curated\"\n"
     );
+}
+
+#[test]
+fn bootstrap_gitignore_ignores_config_toml() {
+    let repo = tempdir().unwrap();
+    std::fs::write(repo.path().join("README.md"), "gitignore token\n").unwrap();
+
+    bootstrap(repo.path(), None, false).unwrap();
+
+    let gitignore_path = Config::synrepo_dir(repo.path()).join(".gitignore");
+    let content = std::fs::read_to_string(gitignore_path).unwrap();
+
+    // Verification: config.toml should NOT be prefixed with ! in the gitignore.
+    // The policy is to ignore everything except .gitignore itself.
+    assert!(content.contains("*"));
+    assert!(content.contains("!.gitignore"));
+    assert!(!content.contains("!config.toml"));
 }

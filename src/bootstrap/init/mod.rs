@@ -24,6 +24,7 @@ static NEXT_BOOTSTRAP_TMP_ID: AtomicU64 = AtomicU64::new(0);
 pub fn bootstrap(
     repo_root: &Path,
     requested_mode: Option<Mode>,
+    update_gitignore: bool,
 ) -> anyhow::Result<BootstrapReport> {
     let synrepo_dir = Config::synrepo_dir(repo_root);
     let runtime_already_existed = synrepo_dir.exists();
@@ -82,6 +83,9 @@ pub fn bootstrap(
 
     atomic_write_file(&config_path, toml::to_string_pretty(&config)?.as_bytes())?;
     write_synrepo_gitignore(&synrepo_dir)?;
+    if update_gitignore {
+        append_to_root_gitignore(repo_root)?;
+    }
     let repaired = runtime_already_existed
         && (layout_changed || remediated || !had_existing_config || !had_gitignore);
     let action = if !runtime_already_existed {
@@ -204,13 +208,34 @@ fn write_synrepo_gitignore(synrepo_dir: &Path) -> anyhow::Result<()> {
     let gitignore_path = synrepo_dir.join(".gitignore");
     atomic_write_file(
         &gitignore_path,
-        b"# Gitignore everything in .synrepo/ except config.toml\n\
+        b"# Gitignore everything in .synrepo/\n\
          *\n\
          !.gitignore\n\
-         !config.toml\n\
          # Generated vectors directory (semantic-triage)\n\
          index/vectors/\n",
     )?;
+    Ok(())
+}
+
+fn append_to_root_gitignore(repo_root: &Path) -> anyhow::Result<()> {
+    let gitignore_path = repo_root.join(".gitignore");
+    let entry = ".synrepo/";
+
+    if gitignore_path.exists() {
+        let content = std::fs::read_to_string(&gitignore_path)?;
+        if content.lines().any(|l| l.trim() == entry) {
+            return Ok(());
+        }
+        let mut new_content = content;
+        if !new_content.ends_with('\n') {
+            new_content.push('\n');
+        }
+        new_content.push_str(entry);
+        new_content.push('\n');
+        std::fs::write(&gitignore_path, new_content)?;
+    } else {
+        std::fs::write(&gitignore_path, format!("{entry}\n"))?;
+    }
     Ok(())
 }
 

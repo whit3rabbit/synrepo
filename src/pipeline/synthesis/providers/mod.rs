@@ -80,6 +80,28 @@ impl ProviderKind {
     }
 }
 
+/// Source of an endpoint or model configuration.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EndpointSource {
+    /// Resolved from an environment variable (e.g. `SYNREPO_LLM_LOCAL_ENDPOINT`).
+    Environment,
+    /// Resolved from a configuration file (e.g. `.synrepo/config.toml`).
+    Config,
+    /// Using the compiled default value.
+    Default,
+}
+
+impl EndpointSource {
+    /// Returns a display label for the source.
+    pub fn display_label(&self) -> &'static str {
+        match self {
+            Self::Environment => "environment",
+            Self::Config => "config",
+            Self::Default => "default",
+        }
+    }
+}
+
 /// Resolved provider wiring: API key, model name, and (for Local) endpoint.
 pub struct ProviderConfig {
     /// Provider-specific API key (unset for Local / None).
@@ -88,6 +110,8 @@ pub struct ProviderConfig {
     pub model: Option<String>,
     /// Local-provider endpoint (only meaningful when kind == Local).
     pub local_endpoint: Option<String>,
+    /// Source of the resolved endpoint.
+    pub endpoint_source: EndpointSource,
     /// Maximum tokens per API call (chars-based budget).
     pub max_tokens_per_call: u32,
 }
@@ -105,46 +129,51 @@ impl ProviderConfig {
             .filter(|s| !s.is_empty())
             .or_else(|| config.synthesis.model.clone().filter(|s| !s.is_empty()));
 
-        let (api_key, local_endpoint) = match provider {
+        let (api_key, local_endpoint, endpoint_source) = match provider {
             ProviderKind::Anthropic => {
                 let key = std::env::var("ANTHROPIC_API_KEY")
                     .or_else(|_| std::env::var("SYNREPO_ANTHROPIC_API_KEY"))
                     .ok()
                     .filter(|k| !k.is_empty());
-                (key, None)
+                (key, None, EndpointSource::Default)
             }
             ProviderKind::OpenAi => {
                 let key = std::env::var("OPENAI_API_KEY")
                     .ok()
                     .filter(|k| !k.is_empty());
-                (key, None)
+                (key, None, EndpointSource::Default)
             }
             ProviderKind::Gemini => {
                 let key = std::env::var("GEMINI_API_KEY")
                     .ok()
                     .filter(|k| !k.is_empty());
-                (key, None)
+                (key, None, EndpointSource::Default)
             }
             ProviderKind::Local => {
-                let endpoint = std::env::var("SYNREPO_LLM_LOCAL_ENDPOINT")
+                if let Some(endpoint) = std::env::var("SYNREPO_LLM_LOCAL_ENDPOINT")
                     .ok()
                     .filter(|s| !s.is_empty())
-                    .or_else(|| {
-                        config
-                            .synthesis
-                            .local_endpoint
-                            .clone()
-                            .filter(|s| !s.is_empty())
-                    });
-                (None, endpoint)
+                {
+                    (None, Some(endpoint), EndpointSource::Environment)
+                } else if let Some(endpoint) = config
+                    .synthesis
+                    .local_endpoint
+                    .clone()
+                    .filter(|s| !s.is_empty())
+                {
+                    (None, Some(endpoint), EndpointSource::Config)
+                } else {
+                    (None, None, EndpointSource::Default)
+                }
             }
-            ProviderKind::None => (None, None),
+            ProviderKind::None => (None, None, EndpointSource::Default),
         };
 
         Self {
             api_key,
             model: model_override,
             local_endpoint,
+            endpoint_source,
             max_tokens_per_call,
         }
     }
@@ -357,7 +386,11 @@ pub struct ActiveProvider {
     /// Provider name (lowercase, stable).
     pub provider: &'static str,
     /// Default model for the provider (None for `ProviderKind::None`).
-    pub model: Option<&'static str>,
+    pub model: Option<String>,
+    /// Active local endpoint, if using ProviderKind::Local.
+    pub local_endpoint: Option<String>,
+    /// Source of the local endpoint.
+    pub endpoint_source: EndpointSource,
     /// Whether synthesis will actually run with the current config+env.
     pub status: SynthesisStatus,
 }
@@ -374,6 +407,12 @@ pub fn describe_active_provider(config: &SynrepoConfig) -> ActiveProvider {
         ProviderKind::None => ("none", None),
     };
 
+    let resolved = ProviderConfig::resolve(provider, config, 1024);
+
+    let model = resolved
+        .model
+        .or_else(|| default_model.map(|m| m.to_string()));
+
     let status = if synthesis_opted_in(config) {
         SynthesisStatus::Enabled
     } else if let Some(env_var) = detect_provider_key_env() {
@@ -384,7 +423,9 @@ pub fn describe_active_provider(config: &SynrepoConfig) -> ActiveProvider {
 
     ActiveProvider {
         provider: name,
-        model: default_model,
+        model,
+        local_endpoint: resolved.local_endpoint,
+        endpoint_source: resolved.endpoint_source,
         status,
     }
 }

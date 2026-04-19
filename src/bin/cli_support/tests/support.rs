@@ -73,7 +73,7 @@ pub(super) struct SeededGraphIds {
 }
 
 pub(super) fn seed_graph(repo_root: &std::path::Path) -> SeededGraphIds {
-    bootstrap(repo_root, None).unwrap();
+    bootstrap(repo_root, None, false).unwrap();
 
     let graph_dir = Config::synrepo_dir(repo_root).join("graph");
     let mut store = SqliteGraphStore::open(&graph_dir).unwrap();

@@ -39,7 +39,7 @@ fn write_watch_state(state_dir: &std::path::Path, pid: u32) {
 fn export_blocked_when_watch_running() {
     let dir = tempdir().unwrap();
     let repo = dir.path();
-    bootstrap(repo, None).unwrap();
+    bootstrap(repo, None, false).unwrap();
 
     let synrepo_dir = Config::synrepo_dir(repo);
     let state_dir = synrepo_dir.join("state");
@@ -65,7 +65,7 @@ fn export_blocked_when_watch_running() {
 fn export_succeeds_after_stale_watch_cleanup() {
     let dir = tempdir().unwrap();
     let repo = dir.path();
-    bootstrap(repo, None).unwrap();
+    bootstrap(repo, None, false).unwrap();
 
     let synrepo_dir = Config::synrepo_dir(repo);
     let state_dir = synrepo_dir.join("state");
@@ -93,7 +93,7 @@ fn export_succeeds_after_stale_watch_cleanup() {
 fn export_blocked_when_writer_flock_held_by_foreign_process() {
     let dir = tempdir().unwrap();
     let repo = dir.path();
-    bootstrap(repo, None).unwrap();
+    bootstrap(repo, None, false).unwrap();
 
     let synrepo_dir = Config::synrepo_dir(repo);
     let lock_path = writer_lock_path(&synrepo_dir);
@@ -147,7 +147,7 @@ fn export_blocked_when_writer_flock_held_by_foreign_process() {
 fn sync_blocked_when_writer_flock_held_by_foreign_process() {
     let dir = tempdir().unwrap();
     let repo = dir.path();
-    bootstrap(repo, None).unwrap();
+    bootstrap(repo, None, false).unwrap();
 
     let synrepo_dir = Config::synrepo_dir(repo);
     let lock_path = writer_lock_path(&synrepo_dir);
@@ -177,7 +177,7 @@ fn sync_blocked_when_writer_flock_held_by_foreign_process() {
 fn export_does_not_leave_partial_output_when_admission_fails() {
     let dir = tempdir().unwrap();
     let repo = dir.path();
-    bootstrap(repo, None).unwrap();
+    bootstrap(repo, None, false).unwrap();
 
     // Pre-create the export directory to verify the admission failure
     // short-circuits BEFORE any write touches it.

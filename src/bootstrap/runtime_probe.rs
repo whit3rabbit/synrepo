@@ -524,7 +524,7 @@ mod tests {
         // real bootstrap() helper so the runtime is exactly what `synrepo init`
         // would produce.
         let dir = tempdir().unwrap();
-        let _report = crate::bootstrap::bootstrap(dir.path(), None).unwrap();
+        let _report = crate::bootstrap::bootstrap(dir.path(), None, false).unwrap();
 
         let report = probe_with_home(dir.path(), None);
         assert_eq!(

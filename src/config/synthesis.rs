@@ -43,8 +43,30 @@ pub struct SynthesisConfig {
     pub local_preset: Option<String>,
 }
 
+impl SynthesisConfig {
+    /// Merge another synthesis config into this one. `other` wins on all fields.
+    pub fn merge(&mut self, other: Self) {
+        if other.enabled {
+            self.enabled = true;
+        }
+        if other.provider.is_some() {
+            self.provider = other.provider;
+        }
+        if other.model.is_some() {
+            self.model = other.model;
+        }
+        if other.local_endpoint.is_some() {
+            self.local_endpoint = other.local_endpoint;
+        }
+        if other.local_preset.is_some() {
+            self.local_preset = other.local_preset;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::config::Config;
     use std::fs;
     use tempfile::tempdir;
@@ -105,5 +127,25 @@ mod tests {
         let config = Config::load(dir.path()).unwrap();
         assert!(config.synthesis.enabled);
         assert!(config.synthesis.provider.is_none());
+    }
+
+    #[test]
+    fn merge_synthesis_configs() {
+        let mut base = SynthesisConfig {
+            enabled: false,
+            provider: Some("anthropic".to_string()),
+            ..Default::default()
+        };
+        let other = SynthesisConfig {
+            enabled: true,
+            model: Some("gpt-4".to_string()),
+            ..Default::default()
+        };
+
+        base.merge(other);
+
+        assert!(base.enabled);
+        assert_eq!(base.provider.as_deref(), Some("anthropic"));
+        assert_eq!(base.model.as_deref(), Some("gpt-4"));
     }
 }

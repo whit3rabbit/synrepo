@@ -15,8 +15,9 @@ use clap::Parser;
 use synrepo::bootstrap::runtime_probe::{probe, Missing, RoutingDecision};
 use synrepo::tui::{
     run_dashboard, run_integration_wizard, run_live_watch_dashboard, run_repair_wizard,
-    run_setup_wizard, stdout_is_tty, DashboardOptions, IntegrationPlan, IntegrationWizardOutcome,
-    RepairPlan, RepairWizardOutcome, SetupPlan, SetupWizardOutcome, TuiOptions, TuiOutcome,
+    run_setup_wizard, run_synthesis_only_wizard, stdout_is_tty, DashboardOptions, IntegrationPlan,
+    IntegrationWizardOutcome, RepairPlan, RepairWizardOutcome, SetupPlan, SetupWizardOutcome,
+    TuiOptions, TuiOutcome,
 };
 use syntext::SearchOptions;
 use tracing_subscriber::EnvFilter;
@@ -30,9 +31,9 @@ use cli_support::commands::report_reconcile_outcome;
 use cli_support::commands::{
     agent_setup, change_risk, check, compact, export, findings, graph_query, graph_stats, handoffs,
     init, links_accept, links_list, links_reject, links_review, node, reconcile, run_mcp_server,
-    search, setup, status, status_output, step_apply_integration, step_ensure_ready, step_init,
-    step_register_mcp, step_write_shim, sync, upgrade, watch, watch_internal, watch_status,
-    watch_stop,
+    search, setup, status, status_output, step_apply_integration, step_apply_synthesis,
+    step_ensure_ready, step_init, step_register_mcp, step_write_shim, sync, upgrade, watch,
+    watch_internal, watch_status, watch_stop,
 };
 
 fn main() -> anyhow::Result<()> {
@@ -187,10 +188,13 @@ fn execute_integration_plan(repo_root: &Path, plan: IntegrationPlan) -> anyhow::
 /// down. All file-system writes happen here, not inside the library.
 fn execute_setup_plan(repo_root: &Path, plan: SetupPlan) -> anyhow::Result<()> {
     println!("synrepo setup: applying plan.");
-    step_init(repo_root, Some(plan.mode), false)?;
+    step_init(repo_root, Some(plan.mode), false, false)?;
     if let Some(target) = plan.target {
         let tool = AgentTool::from_target_kind(target);
         step_apply_integration(repo_root, tool, false)?;
+    }
+    if plan.synthesis.is_some() {
+        step_apply_synthesis(repo_root, plan.synthesis.as_ref())?;
     }
     if plan.reconcile_after {
         // Setup promises an operationally ready repo, not just a populated
@@ -200,6 +204,29 @@ fn execute_setup_plan(repo_root: &Path, plan: SetupPlan) -> anyhow::Result<()> {
     }
     println!("Setup complete. Repo is ready.");
     Ok(())
+}
+
+/// Launch the synthesis-only sub-wizard after `synrepo setup <tool> --synthesis`,
+/// patching `.synrepo/config.toml` with the chosen `[synthesis]` block. Non-TTY
+/// callers get a pointer to the config file instead of crashing.
+fn run_synthesis_step(repo_root: &Path, opts: TuiOptions) -> anyhow::Result<()> {
+    match run_synthesis_only_wizard(opts)? {
+        SetupWizardOutcome::Completed { plan } => {
+            step_apply_synthesis(repo_root, plan.synthesis.as_ref())?;
+            Ok(())
+        }
+        SetupWizardOutcome::Cancelled => {
+            println!("synthesis sub-wizard cancelled; config.toml untouched.");
+            Ok(())
+        }
+        SetupWizardOutcome::NonTty => {
+            println!(
+                "--synthesis requires a TTY. Edit .synrepo/config.toml manually; see \
+                 AGENTS.md for the `[synthesis]` block schema."
+            );
+            Ok(())
+        }
+    }
 }
 
 /// After a successful setup wizard, re-probe and open the dashboard with the
@@ -247,7 +274,7 @@ fn execute_repair_plan(repo_root: &Path, plan: RepairPlan) -> anyhow::Result<()>
         // `step_init` with force=false is idempotent on an existing repo and
         // creates `.synrepo/config.toml` if missing. It is the canonical path
         // for config bootstrap.
-        step_init(repo_root, None, false)?;
+        step_init(repo_root, None, false, false)?;
         let _ = probe(repo_root);
     }
     if plan.run_upgrade_apply {
@@ -350,10 +377,21 @@ fn run_dashboard_command(repo_root: &Path, opts: TuiOptions) -> anyhow::Result<(
 /// from prior releases.
 fn dispatch(command: Command, repo_root: &Path, tui_opts: TuiOptions) -> anyhow::Result<()> {
     match command {
-        Command::Init { mode } => init(repo_root, mode.map(Into::into)),
+        Command::Init { mode, gitignore } => init(repo_root, mode.map(Into::into), gitignore),
         Command::Status { json, recent, full } => status(repo_root, json, recent, full),
         Command::AgentSetup { tool, force, regen } => agent_setup(repo_root, tool, force, regen),
-        Command::Setup { tool, force } => setup(repo_root, tool, force),
+        Command::Setup {
+            tool,
+            force,
+            synthesis,
+            gitignore,
+        } => {
+            setup(repo_root, tool, force, gitignore)?;
+            if synthesis {
+                run_synthesis_step(repo_root, tui_opts)?;
+            }
+            Ok(())
+        }
         Command::Reconcile => reconcile(repo_root),
         Command::Check { json } => check(repo_root, json),
         Command::Sync {

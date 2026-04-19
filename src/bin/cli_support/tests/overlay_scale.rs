@@ -55,7 +55,7 @@ fn read_pending_candidates_scales_to_5000_rows() {
 fn status_default_with_5000_candidates_completes_quickly() {
     let dir = tempdir().unwrap();
     let repo = dir.path();
-    bootstrap(repo, None).unwrap();
+    bootstrap(repo, None, false).unwrap();
     seed_overlay_candidates(repo, SCALE_N);
 
     // Default path (no --full, no --recent): must stay cheap even when

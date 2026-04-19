@@ -51,7 +51,7 @@ fn bootstrap_extract_chunks_load_v3_index_and_query() {
     )
     .unwrap();
 
-    bootstrap(repo_path, None).expect("bootstrap");
+    bootstrap(repo_path, None, false).expect("bootstrap");
 
     // Open the populated graph and pull chunks via the public extractor.
     let graph_dir = synrepo_dir.join("graph");

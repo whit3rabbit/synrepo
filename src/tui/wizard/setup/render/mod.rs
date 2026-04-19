@@ -23,6 +23,24 @@ pub fn run_setup_wizard_loop(
     let result = render_loop(&mut terminal, &mut state, &theme);
     leave_tui(&mut terminal)?;
     result?;
+    finalize_outcome(state)
+}
+
+/// Run only the synthesis sub-flow of the setup wizard. Used by `synrepo
+/// setup <tool> --synthesis`, where the normal init + integration work has
+/// already run non-interactively and only the `[synthesis]` block remains.
+/// Callers should read `plan.synthesis` and ignore the plan's mode/target
+/// fields (which are placeholder defaults set by `synthesis_only()`).
+pub fn run_synthesis_only_wizard_loop(theme: Theme) -> anyhow::Result<super::SetupWizardOutcome> {
+    let mut terminal = enter_tui()?;
+    let mut state = SetupWizardState::synthesis_only();
+    let result = render_loop(&mut terminal, &mut state, &theme);
+    leave_tui(&mut terminal)?;
+    result?;
+    finalize_outcome(state)
+}
+
+fn finalize_outcome(state: SetupWizardState) -> anyhow::Result<super::SetupWizardOutcome> {
     if state.cancelled {
         Ok(super::SetupWizardOutcome::Cancelled)
     } else if let Some(plan) = state.finalize() {

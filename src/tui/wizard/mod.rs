@@ -35,7 +35,8 @@ pub use repair::{
     RepairWizardOutcome, RepairWizardState,
 };
 pub use setup::{
-    run_setup_wizard_loop, SetupPlan, SetupWizardOutcome, SetupWizardState, WIZARD_TARGETS,
+    run_setup_wizard_loop, run_synthesis_only_wizard_loop, SetupPlan, SetupWizardOutcome,
+    SetupWizardState, SynthesisChoice, WIZARD_TARGETS,
 };
 
 /// Type alias for the crossterm-backed terminal each wizard drives.

@@ -142,6 +142,16 @@ impl SetupWizardState {
         }
     }
 
+    /// Build a state positioned directly at `SelectSynthesis`, used by
+    /// `synrepo setup --synthesis` to run only the synthesis sub-flow. The
+    /// plan's `mode`/`target` fields are placeholders — the caller must only
+    /// consume `plan.synthesis`.
+    pub fn synthesis_only() -> Self {
+        let mut s = Self::new(Mode::Auto, vec![]);
+        s.step = SetupStep::SelectSynthesis;
+        s
+    }
+
     /// Handle a key event; returns `true` if the loop should redraw. Pressing
     /// Esc / Ctrl-C / q at any step before `Confirm` cancels the wizard. At
     /// `Confirm`, Esc / b steps back rather than cancelling; Ctrl-C still

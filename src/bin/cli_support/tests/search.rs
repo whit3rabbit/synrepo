@@ -19,7 +19,7 @@ fn three_file_repo() -> (tempfile::TempDir, std::path::PathBuf) {
     )
     .unwrap();
     std::fs::write(repo.join("src/c.py"), "x = 'TokenAlpha'\n").unwrap();
-    bootstrap(&repo, None).unwrap();
+    bootstrap(&repo, None, false).unwrap();
     (dir, repo)
 }
 
@@ -27,7 +27,7 @@ fn three_file_repo() -> (tempfile::TempDir, std::path::PathBuf) {
 fn search_requires_rebuild_when_index_sensitive_config_changes() {
     let repo = tempdir().unwrap();
     std::fs::write(repo.path().join("README.md"), "search token\n").unwrap();
-    bootstrap(repo.path(), None).unwrap();
+    bootstrap(repo.path(), None, false).unwrap();
 
     let updated = Config {
         roots: vec!["src".to_string()],
@@ -51,7 +51,7 @@ fn search_requires_rebuild_when_index_sensitive_config_changes() {
 fn search_refuses_to_race_the_writer_lock() {
     let repo = tempdir().unwrap();
     std::fs::write(repo.path().join("README.md"), "search token\n").unwrap();
-    bootstrap(repo.path(), None).unwrap();
+    bootstrap(repo.path(), None, false).unwrap();
 
     let synrepo_dir = Config::synrepo_dir(repo.path());
     std::fs::create_dir_all(synrepo_dir.join("state")).unwrap();

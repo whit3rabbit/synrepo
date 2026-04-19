@@ -305,7 +305,7 @@ fn status_next_step_routes_to_current_when_reconcile_completed() {
     use synrepo::pipeline::watch::{persist_reconcile_state, ReconcileOutcome};
 
     let repo = tempdir().unwrap();
-    bootstrap(repo.path(), None).unwrap();
+    bootstrap(repo.path(), None, false).unwrap();
     let synrepo_dir = Config::synrepo_dir(repo.path());
 
     persist_reconcile_state(

@@ -17,7 +17,7 @@ fn insert_n_candidates(overlay: &mut SqliteOverlayStore, from: NodeId, n: u64) {
 #[test]
 fn links_list_outputs_candidates() {
     let repo = tempdir().unwrap();
-    bootstrap(repo.path(), Some(Mode::Auto)).unwrap();
+    bootstrap(repo.path(), Some(Mode::Auto), false).unwrap();
     let synrepo_dir = Config::synrepo_dir(repo.path());
     let mut overlay = SqliteOverlayStore::open(&synrepo_dir.join("overlay")).unwrap();
 
@@ -52,7 +52,7 @@ fn links_list_outputs_candidates() {
 #[test]
 fn links_list_default_limit_caps_at_50() {
     let repo = tempdir().unwrap();
-    bootstrap(repo.path(), Some(Mode::Auto)).unwrap();
+    bootstrap(repo.path(), Some(Mode::Auto), false).unwrap();
     let synrepo_dir = Config::synrepo_dir(repo.path());
     let mut overlay = SqliteOverlayStore::open(&synrepo_dir.join("overlay")).unwrap();
 
@@ -75,7 +75,7 @@ fn links_list_default_limit_caps_at_50() {
 #[test]
 fn links_list_explicit_zero_returns_all() {
     let repo = tempdir().unwrap();
-    bootstrap(repo.path(), Some(Mode::Auto)).unwrap();
+    bootstrap(repo.path(), Some(Mode::Auto), false).unwrap();
     let synrepo_dir = Config::synrepo_dir(repo.path());
     let mut overlay = SqliteOverlayStore::open(&synrepo_dir.join("overlay")).unwrap();
 
@@ -103,7 +103,7 @@ fn links_list_explicit_zero_returns_all() {
 #[test]
 fn links_list_explicit_limit_honored() {
     let repo = tempdir().unwrap();
-    bootstrap(repo.path(), Some(Mode::Auto)).unwrap();
+    bootstrap(repo.path(), Some(Mode::Auto), false).unwrap();
     let synrepo_dir = Config::synrepo_dir(repo.path());
     let mut overlay = SqliteOverlayStore::open(&synrepo_dir.join("overlay")).unwrap();
 

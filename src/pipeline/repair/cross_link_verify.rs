@@ -7,6 +7,10 @@ use crate::{
     store::sqlite::SqliteGraphStore,
 };
 
+/// Maximum length (in bytes) of a normalized span allowed for LCS verification.
+/// Prevents O(N*M) CPU exhaustion on poisoned or oversized inputs.
+const MAX_LCS_INPUT_LEN: usize = 4096;
+
 pub(super) struct VerifiedCandidate {
     pub source_spans: Vec<CitedSpan>,
     pub target_spans: Vec<CitedSpan>,
@@ -140,7 +144,14 @@ fn verify_spans(source_text: &str, spans: &[CitedSpan]) -> Option<Vec<CitedSpan>
 
 fn verify_span(source_text: &str, normalized_source: &str, span: &CitedSpan) -> Option<CitedSpan> {
     let normalized_span = normalize_text(&span.normalized_text);
-    if normalized_span.is_empty() {
+    if normalized_span.is_empty() || normalized_span.len() > MAX_LCS_INPUT_LEN {
+        if normalized_span.len() > MAX_LCS_INPUT_LEN {
+            tracing::warn!(
+                len = normalized_span.len(),
+                limit = MAX_LCS_INPUT_LEN,
+                "skipping LCS verification for oversized span"
+            );
+        }
         return None;
     }
 
@@ -500,5 +511,22 @@ mod tests {
 
         // The function should either find a match or return None without hanging.
         let _ = super::windowed_lcs_match(&source, needle);
+    }
+
+    #[test]
+    fn verify_span_rejects_oversized_inputs() {
+        use crate::overlay::CitedSpan;
+        let source = "short source";
+        let norm_source = super::normalize_text(source);
+        let oversized_needle = "a".repeat(super::MAX_LCS_INPUT_LEN + 1);
+        let span = CitedSpan {
+            artifact: crate::core::ids::NodeId::File(crate::core::ids::FileNodeId(0)),
+            normalized_text: oversized_needle,
+            verified_at_offset: 0,
+            lcs_ratio: 0.0,
+        };
+
+        // Should return None due to length cap
+        assert!(super::verify_span(source, &norm_source, &span).is_none());
     }
 }

@@ -107,7 +107,7 @@ fn node_output_includes_file_git_intelligence_for_sampled_history() {
         "bob@example.com",
     );
 
-    bootstrap(repo.path(), None).unwrap();
+    bootstrap(repo.path(), None, false).unwrap();
 
     let graph_dir = Config::synrepo_dir(repo.path()).join("graph");
     let store = SqliteGraphStore::open_existing(&graph_dir).unwrap();

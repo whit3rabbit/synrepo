@@ -274,20 +274,111 @@ impl Default for Config {
 }
 
 impl Config {
-    /// Load config from `repo_root/.synrepo/config.toml`. If the file
-    /// doesn't exist, return defaults.
+    /// Load config from `repo_root/.synrepo/config.toml`, merging with the
+    /// global config at `~/.synrepo/config.toml` if it exists. Project
+    /// settings override global settings. If neither exists, returns
+    /// `Error::NotInitialized`.
     pub fn load(repo_root: &Path) -> crate::Result<Self> {
-        let path = repo_root.join(".synrepo/config.toml");
-        if !path.exists() {
+        let global_path = Self::global_config_path();
+        let local_path = repo_root.join(".synrepo/config.toml");
+
+        if !global_path.exists() && !local_path.exists() {
             return Err(crate::Error::NotInitialized(repo_root.to_path_buf()));
         }
-        let text = std::fs::read_to_string(&path)?;
-        toml::from_str(&text).map_err(|e| crate::Error::Config(e.to_string()))
+
+        let mut config = if global_path.exists() {
+            let text = std::fs::read_to_string(&global_path)?;
+            toml::from_str(&text).map_err(|e| crate::Error::Config(e.to_string()))?
+        } else {
+            Self::default()
+        };
+
+        if local_path.exists() {
+            let text = std::fs::read_to_string(&local_path)?;
+            let local_config: Config =
+                toml::from_str(&text).map_err(|e| crate::Error::Config(e.to_string()))?;
+            config.merge(local_config);
+        }
+
+        Ok(config)
+    }
+
+    /// Path to the global config at `~/.synrepo/config.toml`.
+    pub fn global_config_path() -> PathBuf {
+        home_dir()
+            .unwrap_or_else(|| PathBuf::from("/"))
+            .join(".synrepo/config.toml")
     }
 
     /// Path to the `.synrepo/` directory for a given repo root.
     pub fn synrepo_dir(repo_root: &Path) -> PathBuf {
         repo_root.join(".synrepo")
+    }
+
+    /// Merge another config into this one. `other` wins on all fields.
+    pub fn merge(&mut self, other: Self) {
+        // This is a manual merge for now since we want explicit control over
+        // which fields are project-scoped.
+        self.mode = other.mode;
+        // Only override roots if it's not the default ["."]
+        if other.roots != default_roots() {
+            self.roots = other.roots;
+        }
+        if other.concept_directories != default_concept_dirs() {
+            self.concept_directories = other.concept_directories;
+        }
+        if other.git_commit_depth != default_git_commit_depth() {
+            self.git_commit_depth = other.git_commit_depth;
+        }
+        if other.max_file_size_bytes != default_max_file_size() {
+            self.max_file_size_bytes = other.max_file_size_bytes;
+        }
+        if other.max_graph_snapshot_bytes != default_max_graph_snapshot_bytes() {
+            self.max_graph_snapshot_bytes = other.max_graph_snapshot_bytes;
+        }
+        if !other.redact_globs.is_empty() && other.redact_globs != default_redact_globs() {
+            self.redact_globs = other.redact_globs;
+        }
+        if other.commentary_cost_limit != default_commentary_cost_limit() {
+            self.commentary_cost_limit = other.commentary_cost_limit;
+        }
+        if other.cross_link_cost_limit != default_cross_link_cost_limit() {
+            self.cross_link_cost_limit = other.cross_link_cost_limit;
+        }
+        if other.export_dir != default_export_dir() {
+            self.export_dir = other.export_dir;
+        }
+        if other.retain_retired_revisions != default_retain_retired_revisions() {
+            self.retain_retired_revisions = other.retain_retired_revisions;
+        }
+        if other.enable_semantic_triage {
+            self.enable_semantic_triage = true;
+        }
+        if other.semantic_model != default_semantic_model() {
+            self.semantic_model = other.semantic_model;
+        }
+        if other.embedding_dim != default_embedding_dim() {
+            self.embedding_dim = other.embedding_dim;
+        }
+        self.cross_link_confidence_thresholds = other.cross_link_confidence_thresholds;
+
+        // Synthesis merge is more complex (nested)
+        self.synthesis.merge(other.synthesis);
+    }
+}
+
+fn home_dir() -> Option<PathBuf> {
+    #[cfg(unix)]
+    {
+        std::env::var_os("HOME").map(PathBuf::from)
+    }
+    #[cfg(windows)]
+    {
+        std::env::var_os("USERPROFILE").map(PathBuf::from)
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        None
     }
 }
 
@@ -362,5 +453,66 @@ mod tests {
 
         let err = Config::load(dir.path()).unwrap_err();
         assert!(err.to_string().starts_with("config error:"));
+    }
+
+    #[test]
+    fn merge_overrides_fields() {
+        let mut base = Config::default();
+        base.git_commit_depth = 100;
+        base.mode = Mode::Auto;
+
+        let mut other = Config::default();
+        other.git_commit_depth = 200;
+        other.mode = Mode::Curated;
+
+        base.merge(other);
+
+        assert_eq!(base.git_commit_depth, 200);
+        assert_eq!(base.mode, Mode::Curated);
+    }
+
+    #[test]
+    fn merge_preserves_unmodified_fields() {
+        let mut base = Config::default();
+        base.commentary_cost_limit = 1000;
+
+        let other = Config::default(); // default commentary_cost_limit is 5000
+        base.merge(other);
+
+        assert_eq!(base.commentary_cost_limit, 1000);
+    }
+    #[test]
+    fn load_merges_global_and_local() {
+        let home = tempdir().unwrap();
+        let repo = tempdir().unwrap();
+        std::fs::create_dir_all(home.path().join(".synrepo")).unwrap();
+        std::fs::create_dir_all(repo.path().join(".synrepo")).unwrap();
+
+        let global_toml = r#"
+            mode = "curated"
+            [synthesis]
+            enabled = true
+            provider = "anthropic"
+        "#;
+        std::fs::write(home.path().join(".synrepo/config.toml"), global_toml).unwrap();
+
+        let local_toml = r#"
+            mode = "auto"
+            [synthesis]
+            provider = "openai"
+        "#;
+        std::fs::write(repo.path().join(".synrepo/config.toml"), local_toml).unwrap();
+
+        // Simulate global config path by setting HOME
+        std::env::set_var("HOME", home.path());
+
+        // Config::load should merge: mode is auto (local wins), synthesis enabled is true (global preserved), synthesis provider is openai (local wins)
+        let config = Config::load(repo.path()).expect("load must succeed");
+
+        assert_eq!(config.mode, Mode::Auto);
+        assert!(config.synthesis.enabled);
+        assert_eq!(config.synthesis.provider.as_deref(), Some("openai"));
+
+        std::env::remove_var("HOME");
     }
 }

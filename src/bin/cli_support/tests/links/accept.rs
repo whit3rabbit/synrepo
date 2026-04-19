@@ -15,9 +15,8 @@ fn serial_accept_guard() -> synrepo::test_support::GlobalTestLock {
 
 #[test]
 fn links_accept_blocked_in_auto_mode() {
-    let _guard = serial_accept_guard();
     let repo = tempdir().unwrap();
-    bootstrap(repo.path(), Some(Mode::Auto)).unwrap();
+    bootstrap(repo.path(), Some(Mode::Auto), false).unwrap();
 
     let err = commands::links_accept(
         repo.path(),

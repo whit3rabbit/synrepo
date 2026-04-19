@@ -352,11 +352,24 @@ fn render_synthesis_line(display: &SynthesisDisplay) -> String {
         None => display.provider.clone(),
     };
     match &display.status {
-        SynthesisStatus::Enabled => provider_and_model,
+        SynthesisStatus::Enabled => {
+            let mut line = provider_and_model;
+            if let Some(endpoint) = &display.local_endpoint {
+                let source = display.endpoint_source.display_label();
+                write!(line, " @ {endpoint} [source: {source}]").unwrap();
+                if matches!(
+                    display.endpoint_source,
+                    synrepo::pipeline::synthesis::providers::EndpointSource::Config
+                ) {
+                    write!(line, " (CAUTION: shared repo config)").unwrap();
+                }
+            }
+            line
+        }
         SynthesisStatus::DisabledKeyDetected { env_var } => {
             format!(
-                "disabled ({env_var} detected; set [synthesis] enabled = true in \
-                 .synrepo/config.toml to use it)"
+                "disabled ({env_var} detected; run 'synrepo setup <tool> --synthesis' \
+                 to enable, or set [synthesis] enabled = true in .synrepo/config.toml)"
             )
         }
         SynthesisStatus::Disabled => "disabled".to_string(),
@@ -374,6 +387,8 @@ fn synthesis_json(display: &SynthesisDisplay) -> serde_json::Value {
     serde_json::json!({
         "provider": display.provider,
         "model": display.model,
+        "local_endpoint": display.local_endpoint,
+        "endpoint_source": display.endpoint_source.display_label(),
         "status": status_str,
         "detected_env_var": detected_env_var,
     })

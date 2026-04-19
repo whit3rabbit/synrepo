@@ -368,7 +368,7 @@ mod tests {
     use tempfile::tempdir;
 
     fn init_repo(path: &Path) {
-        crate::bootstrap::bootstrap(path, None).expect("bootstrap");
+        crate::bootstrap::bootstrap(path, None, false).expect("bootstrap");
     }
 
     #[test]

@@ -58,6 +58,10 @@ pub struct SynthesisDisplay {
     pub provider: String,
     /// Default model for the provider, if one exists.
     pub model: Option<String>,
+    /// Active local endpoint, if using ProviderKind::Local.
+    pub local_endpoint: Option<String>,
+    /// Source of the local endpoint.
+    pub endpoint_source: crate::pipeline::synthesis::providers::EndpointSource,
     /// Resolved enablement status.
     pub status: SynthesisStatus,
 }
@@ -183,7 +187,9 @@ pub fn build_status_snapshot(repo_root: &Path, opts: StatusOptions) -> StatusSna
     let active = describe_active_provider(config_ref);
     let synthesis_provider = Some(SynthesisDisplay {
         provider: active.provider.to_string(),
-        model: active.model.map(|m| m.to_string()),
+        model: active.model,
+        local_endpoint: active.local_endpoint,
+        endpoint_source: active.endpoint_source,
         status: active.status,
     });
 

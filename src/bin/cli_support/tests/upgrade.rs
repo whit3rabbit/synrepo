@@ -22,7 +22,7 @@ fn setup_bootstrapped_repo() -> (tempfile::TempDir, std::path::PathBuf) {
     git(&dir, &["add", "."]);
     git(&dir, &["commit", "-m", "init"]);
 
-    bootstrap(repo, None).unwrap();
+    bootstrap(repo, None, false).unwrap();
 
     let repo_path = repo.to_path_buf();
     (dir, repo_path)

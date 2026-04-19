@@ -134,7 +134,7 @@ mod tests {
             "pub fn first() {}\npub fn second() {}\n",
         )
         .unwrap();
-        crate::bootstrap::bootstrap(repo, None).unwrap();
+        crate::bootstrap::bootstrap(repo, None, false).unwrap();
 
         let state = Arc::new(SynrepoState {
             config: Config::load(repo).unwrap(),

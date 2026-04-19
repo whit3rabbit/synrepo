@@ -616,7 +616,7 @@ fn codex_setup_leaves_no_leftover_temp_files() {
 #[test]
 fn step_init_runs_init_on_empty_repo() {
     let dir = tempdir().unwrap();
-    let outcome = step_init(dir.path(), None, false).unwrap();
+    let outcome = step_init(dir.path(), None, false, false).unwrap();
     assert_eq!(outcome, StepOutcome::Applied);
     assert!(dir.path().join(".synrepo/config.toml").exists());
 }
@@ -624,10 +624,10 @@ fn step_init_runs_init_on_empty_repo() {
 #[test]
 fn step_init_skips_when_already_initialized() {
     let dir = tempdir().unwrap();
-    step_init(dir.path(), None, false).unwrap();
+    step_init(dir.path(), None, false, false).unwrap();
 
     // Re-running without force must be an AlreadyCurrent no-op.
-    let again = step_init(dir.path(), None, false).unwrap();
+    let again = step_init(dir.path(), None, false, false).unwrap();
     assert_eq!(again, StepOutcome::AlreadyCurrent);
 }
 
@@ -635,7 +635,7 @@ fn step_init_skips_when_already_initialized() {
 fn step_ensure_ready_runs_first_reconcile_when_state_is_missing() {
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("README.md"), "ready token\n").unwrap();
-    step_init(dir.path(), None, false).unwrap();
+    step_init(dir.path(), None, false, false).unwrap();
 
     let outcome = step_ensure_ready(dir.path()).unwrap();
 
@@ -650,7 +650,7 @@ fn step_ensure_ready_runs_first_reconcile_when_state_is_missing() {
 fn step_ensure_ready_skips_when_reconcile_state_exists() {
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("README.md"), "ready token\n").unwrap();
-    step_init(dir.path(), None, false).unwrap();
+    step_init(dir.path(), None, false, false).unwrap();
     step_ensure_ready(dir.path()).unwrap();
 
     let outcome = step_ensure_ready(dir.path()).unwrap();
@@ -790,6 +790,6 @@ fn automation_tier_matches_step_register_mcp_dispatch() {
 fn step_init_surfaces_error_when_synrepo_path_is_blocked() {
     let dir = tempdir().unwrap();
     fs::write(dir.path().join(".synrepo"), "blocker").unwrap();
-    let err = step_init(dir.path(), None, true);
+    let err = step_init(dir.path(), None, true, false);
     assert!(err.is_err(), "expected Err from blocked init, got {err:?}");
 }

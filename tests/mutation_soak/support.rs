@@ -38,7 +38,7 @@ pub(crate) fn init_repo() -> TempDir {
     let repo = tempdir().expect("tempdir");
     fs::create_dir_all(repo.path().join("src")).expect("create src");
     fs::write(repo.path().join("src/lib.rs"), "pub fn hello() {}\n").expect("write src/lib.rs");
-    bootstrap(repo.path(), None).expect("bootstrap repo");
+    bootstrap(repo.path(), None, false).expect("bootstrap repo");
     repo
 }
 
@@ -47,7 +47,7 @@ pub(crate) fn setup_curated_link_repo(pass_id: &str) -> SeededLinkRepo {
     let repo = dir.path().to_path_buf();
     fs::create_dir_all(repo.join("src")).expect("create src");
     fs::write(repo.join("src/lib.rs"), "pub fn hello() {}\n").expect("write src/lib.rs");
-    bootstrap(&repo, Some(Mode::Curated)).expect("bootstrap curated repo");
+    bootstrap(&repo, Some(Mode::Curated), false).expect("bootstrap curated repo");
 
     let synrepo_dir = synrepo_dir(&repo);
     let graph_dir = synrepo_dir.join("graph");
