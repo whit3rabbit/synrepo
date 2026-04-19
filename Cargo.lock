@@ -4043,6 +4043,7 @@ dependencies = [
  "tree-sitter-rust",
  "tree-sitter-typescript",
  "walkdir",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

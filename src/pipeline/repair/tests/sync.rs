@@ -51,10 +51,14 @@ fn sync_repairs_stale_reconcile_and_writes_resolution_log() {
     )
     .unwrap();
     let repaired_surfaces: Vec<_> = summary.repaired.iter().map(|f| f.surface).collect();
+    let blocked_surfaces: Vec<_> = summary.blocked.iter().map(|f| f.surface).collect();
+    let report_only_surfaces: Vec<_> = summary.report_only.iter().map(|f| f.surface).collect();
     assert!(
         repaired_surfaces.contains(&RepairSurface::StructuralRefresh),
-        "StructuralRefresh must be repaired, got: {:?}",
-        repaired_surfaces
+        "StructuralRefresh must be repaired. repaired={:?} blocked={:?} report_only={:?}",
+        repaired_surfaces,
+        blocked_surfaces,
+        report_only_surfaces
     );
     assert!(
         repair_log_path(&synrepo_dir).exists(),
@@ -155,22 +159,28 @@ fn sync_renders_report_only_and_repaired_distinctly() {
     )
     .unwrap();
     let rendered = summary.render();
+    let repaired_surfaces: Vec<_> = summary.repaired.iter().map(|f| f.surface).collect();
+    let blocked_surfaces: Vec<_> = summary.blocked.iter().map(|f| f.surface).collect();
+    let report_only_surfaces: Vec<_> = summary.report_only.iter().map(|f| f.surface).collect();
+    let ctx = format!(
+        "repaired={repaired_surfaces:?} blocked={blocked_surfaces:?} report_only={report_only_surfaces:?}\nrendered=\n{rendered}"
+    );
 
     assert!(
         rendered.contains("repaired:"),
-        "render must include repaired section"
+        "render must include repaired section; {ctx}"
     );
     assert!(
         rendered.contains("report-only:"),
-        "render must include report-only section"
+        "render must include report-only section; {ctx}"
     );
     assert!(
         rendered.contains("[ok]"),
-        "repaired surfaces must be marked [ok]"
+        "repaired surfaces must be marked [ok]; {ctx}"
     );
     assert!(
         rendered.contains("[skip]"),
-        "report-only surfaces must be marked [skip]"
+        "report-only surfaces must be marked [skip]; {ctx}"
     );
 }
 

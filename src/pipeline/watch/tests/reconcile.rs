@@ -22,10 +22,12 @@ fn reconcile_pass_completes_on_valid_repo() {
     let (_dir, repo, config, synrepo_dir) = setup_test_repo();
 
     let outcome = run_reconcile_pass(&repo, &config, &synrepo_dir);
-    assert!(matches!(outcome, ReconcileOutcome::Completed(_)));
-    if let ReconcileOutcome::Completed(summary) = outcome {
-        assert!(summary.files_discovered >= 1);
-        assert!(summary.symbols_extracted >= 1);
+    match outcome {
+        ReconcileOutcome::Completed(summary) => {
+            assert!(summary.files_discovered >= 1);
+            assert!(summary.symbols_extracted >= 1);
+        }
+        other => panic!("expected Completed, got {other:?}"),
     }
 }
 
@@ -60,14 +62,16 @@ fn reconcile_pass_corrects_stale_graph_state() {
     let _guard = crate::test_support::global_test_lock("watch-reconcile-refresh");
     let (_dir, repo, config, synrepo_dir) = setup_test_repo();
     let first = run_reconcile_pass(&repo, &config, &synrepo_dir);
-    assert!(matches!(first, ReconcileOutcome::Completed(_)));
+    if !matches!(first, ReconcileOutcome::Completed(_)) {
+        panic!("expected first pass Completed, got {first:?}");
+    }
 
     fs::write(repo.join("src/new.rs"), "pub fn new_fn() {}\n").unwrap();
     let second = run_reconcile_pass(&repo, &config, &synrepo_dir);
     if let ReconcileOutcome::Completed(summary) = second {
         assert!(summary.files_discovered >= 2);
     } else {
-        panic!("expected Completed after adding new file");
+        panic!("expected Completed after adding new file, got {second:?}");
     }
 }
 
@@ -108,7 +112,9 @@ fn reconcile_prunes_cross_link_orphans() {
 
     let (_dir, repo, config, synrepo_dir) = setup_test_repo();
     let first = run_reconcile_pass(&repo, &config, &synrepo_dir);
-    assert!(matches!(first, ReconcileOutcome::Completed(_)));
+    if !matches!(first, ReconcileOutcome::Completed(_)) {
+        panic!("expected first pass Completed, got {first:?}");
+    }
 
     let mut overlay = SqliteOverlayStore::open(&synrepo_dir.join("overlay")).unwrap();
     let from = NodeId::Concept(ConceptNodeId(9_999));
@@ -146,7 +152,9 @@ fn reconcile_prunes_cross_link_orphans() {
     drop(overlay);
 
     let second = run_reconcile_pass(&repo, &config, &synrepo_dir);
-    assert!(matches!(second, ReconcileOutcome::Completed(_)));
+    if !matches!(second, ReconcileOutcome::Completed(_)) {
+        panic!("expected second pass Completed after cross-link insert, got {second:?}");
+    }
 
     let overlay = SqliteOverlayStore::open_existing(&synrepo_dir.join("overlay")).unwrap();
     assert_eq!(overlay.cross_link_count().unwrap(), 0);
@@ -218,7 +226,9 @@ fn reconcile_emits_cochange_edges_on_repo_with_multi_file_commits() {
 
     let config = crate::config::Config::default();
     let outcome = run_reconcile_pass(&repo, &config, &synrepo_dir);
-    assert!(matches!(outcome, ReconcileOutcome::Completed(_)));
+    if !matches!(outcome, ReconcileOutcome::Completed(_)) {
+        panic!("expected Completed on multi-file-commit repo, got {outcome:?}");
+    }
 
     // Verify CoChangesWith edges exist in the graph.
     let graph = SqliteGraphStore::open(&synrepo_dir.join("graph")).unwrap();

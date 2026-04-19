@@ -110,6 +110,11 @@ ndarray = { version = "0.17.2", optional = true }
 # inherit the advisory lock. Already a transitive dep.
 libc = "0.2"
 
+[target.'cfg(windows)'.dependencies]
+# Minimal Win32 surface for `is_process_alive` on Windows. Version matches the
+# already-transitive 0.61.x pulled in by fs2, interprocess, and gix.
+windows-sys = { version = "0.61", features = ["Win32_System_Threading", "Win32_Foundation"] }
+
 [features]
 default = []
 semantic-triage = ["dep:ort", "dep:tokenizers", "dep:ndarray"]

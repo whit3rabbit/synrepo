@@ -28,7 +28,12 @@
 //!
 //! See `docs/FOUNDATION.md` and `docs/FOUNDATION-SPEC.md` for design documentation.
 
-#![forbid(unsafe_code)]
+// Crate-wide ban on unsafe code. `deny` (not `forbid`) so we can scope
+// narrow, audited exceptions — currently only the Windows `is_process_alive`
+// path in `pipeline::writer::helpers`, which calls `OpenProcess` /
+// `GetExitCodeProcess` / `CloseHandle`. Every other module stays
+// unsafe-free; `deny` fails the build on any accidental reintroduction.
+#![deny(unsafe_code)]
 #![warn(missing_docs)]
 #![warn(clippy::all)]
 

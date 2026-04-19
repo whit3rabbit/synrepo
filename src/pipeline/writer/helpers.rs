@@ -234,10 +234,17 @@ fn cleanup_partial_lock_file(lock_path: &Path) {
 
 // ---- Process liveness ----
 
-/// Check whether a process is alive using `kill -0 <pid>` on Unix.
+/// Check whether a process is alive.
 ///
-/// On non-Unix platforms, conservatively returns `true` (assumes alive) to
-/// prevent spurious stale-lock takeover on untested operating systems.
+/// Unix uses `kill -0 <pid>`: signal 0 asks the kernel to validate that
+/// the target exists and is signalable, without actually delivering a signal.
+///
+/// Windows uses `OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION)` +
+/// `GetExitCodeProcess`. A process is alive iff its exit code is
+/// `STILL_ACTIVE` (259). The known ambiguity: a real process that genuinely
+/// exited with code 259 will be reported as alive, mirroring the analogous
+/// PID-reuse ambiguity in the Unix check. Accept it — the alternative
+/// (`WaitForSingleObject(h, 0) == WAIT_TIMEOUT`) isn't justified here.
 pub(crate) fn is_process_alive(pid: u32) -> bool {
     #[cfg(unix)]
     {
@@ -249,8 +256,39 @@ pub(crate) fn is_process_alive(pid: u32) -> bool {
             .map(|s| s.success())
             .unwrap_or(false)
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
     {
+        use windows_sys::Win32::Foundation::{CloseHandle, FALSE, STILL_ACTIVE};
+        use windows_sys::Win32::System::Threading::{
+            GetExitCodeProcess, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
+        };
+
+        // HANDLE is `*mut core::ffi::c_void`; OpenProcess returns null on
+        // failure (target gone, access denied). Check `.is_null()` before any
+        // subsequent call, and always CloseHandle a real handle.
+        //
+        // SAFETY: the Win32 calls below are the minimum surface needed to
+        // answer "is this pid still running". We never dereference the
+        // returned HANDLE ourselves; we pass it by value to the two functions
+        // the OS expects, and only when non-null. This is the single unsafe
+        // block in the library crate — see the note at `src/lib.rs` atop the
+        // `#![deny(unsafe_code)]` attribute.
+        #[allow(unsafe_code)]
+        unsafe {
+            let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+            if handle.is_null() {
+                return false;
+            }
+            let mut code: u32 = 0;
+            let got = GetExitCodeProcess(handle, &mut code as *mut u32);
+            CloseHandle(handle);
+            got != 0 && code == STILL_ACTIVE as u32
+        }
+    }
+    #[cfg(not(any(unix, windows)))]
+    {
+        // Other targets (e.g. wasm) have no process model; treat every pid
+        // as live to preserve the conservative stale-lock takeover behavior.
         let _ = pid;
         true
     }
