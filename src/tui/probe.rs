@@ -2,9 +2,8 @@
 //! `crate::surface::status_snapshot` for widget consumption. Kept narrow so
 //! widgets don't import ratatui types into the probe modules.
 
-use std::path::PathBuf;
-
 use crate::bootstrap::runtime_probe::{AgentIntegration, AgentTargetKind};
+use crate::config::home_dir;
 use crate::pipeline::diagnostics::{ReconcileHealth, WriterStatus};
 use crate::pipeline::synthesis::SynthesisStatus;
 use crate::pipeline::watch::WatchServiceStatus;
@@ -375,17 +374,3 @@ fn shorten_home(p: &std::path::Path) -> String {
     full
 }
 
-fn home_dir() -> Option<PathBuf> {
-    #[cfg(unix)]
-    {
-        std::env::var_os("HOME").map(PathBuf::from)
-    }
-    #[cfg(windows)]
-    {
-        std::env::var_os("USERPROFILE").map(PathBuf::from)
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        None
-    }
-}

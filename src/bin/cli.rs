@@ -22,7 +22,7 @@ use synrepo::tui::{
 use syntext::SearchOptions;
 use tracing_subscriber::EnvFilter;
 
-use cli_support::agent_shims::AgentTool;
+use cli_support::agent_shims::{registry as shim_registry, AgentTool, AutomationTier};
 use cli_support::cli_args::{Cli, Command, GraphCommand, LinksCommand, WatchCommand};
 #[cfg(test)]
 use cli_support::commands::prepare_mcp_state;
@@ -30,10 +30,10 @@ use cli_support::commands::prepare_mcp_state;
 use cli_support::commands::report_reconcile_outcome;
 use cli_support::commands::{
     agent_setup, change_risk, check, compact, export, findings, graph_query, graph_stats, handoffs,
-    init, links_accept, links_list, links_reject, links_review, node, reconcile, run_mcp_server,
-    search, setup, status, status_output, step_apply_integration, step_apply_synthesis,
-    step_ensure_ready, step_init, step_register_mcp, step_write_shim, sync, upgrade, watch,
-    watch_internal, watch_status, watch_stop,
+    init, links_accept, links_list, links_reject, links_review, node, reconcile, remove,
+    run_mcp_server, search, setup, status, status_output, step_apply_integration,
+    step_apply_synthesis, step_backup_mcp_config, step_ensure_ready, step_init, step_register_mcp,
+    step_write_shim, sync, upgrade, watch, watch_internal, watch_status, watch_stop,
 };
 
 fn main() -> anyhow::Result<()> {
@@ -177,9 +177,14 @@ fn execute_integration_plan(repo_root: &Path, plan: IntegrationPlan) -> anyhow::
     if plan.write_shim {
         step_write_shim(repo_root, tool, plan.overwrite_shim)?;
     }
+    let mut backup: Option<String> = None;
     if plan.register_mcp {
+        backup = step_backup_mcp_config(repo_root, tool)?;
         step_register_mcp(repo_root, tool)?;
     }
+    let wrote_mcp =
+        plan.register_mcp && matches!(tool.automation_tier(), AutomationTier::Automated);
+    shim_registry::record_install_best_effort(repo_root, tool, wrote_mcp, backup);
     println!("Integration complete.");
     Ok(())
 }
@@ -191,7 +196,10 @@ fn execute_setup_plan(repo_root: &Path, plan: SetupPlan) -> anyhow::Result<()> {
     step_init(repo_root, Some(plan.mode), false, false)?;
     if let Some(target) = plan.target {
         let tool = AgentTool::from_target_kind(target);
+        let backup = step_backup_mcp_config(repo_root, tool)?;
         step_apply_integration(repo_root, tool, false)?;
+        let wrote_mcp = matches!(tool.automation_tier(), AutomationTier::Automated);
+        shim_registry::record_install_best_effort(repo_root, tool, wrote_mcp, backup);
     }
     if plan.synthesis.is_some() {
         step_apply_synthesis(repo_root, plan.synthesis.as_ref())?;
@@ -290,7 +298,10 @@ fn execute_repair_plan(repo_root: &Path, plan: RepairPlan) -> anyhow::Result<()>
     if let Some(target) = plan.write_shim_for {
         let tool = AgentTool::from_target_kind(target);
         println!("  Writing shim for {tool:?}...");
+        let backup = step_backup_mcp_config(repo_root, tool)?;
         step_apply_integration(repo_root, tool, false)?;
+        let wrote_mcp = matches!(tool.automation_tier(), AutomationTier::Automated);
+        shim_registry::record_install_best_effort(repo_root, tool, wrote_mcp, backup);
     }
     println!("Repair complete.");
     Ok(())
@@ -510,5 +521,12 @@ fn dispatch(command: Command, repo_root: &Path, tui_opts: TuiOptions) -> anyhow:
         Command::WatchInternal => watch_internal(repo_root),
         Command::Dashboard => run_dashboard_command(repo_root, tui_opts),
         Command::Mcp => run_mcp_server(repo_root),
+        Command::Remove {
+            tool,
+            apply,
+            json,
+            keep_synrepo_dir,
+            force,
+        } => remove(repo_root, tool, apply, json, keep_synrepo_dir, force),
     }
 }

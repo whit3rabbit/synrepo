@@ -2,8 +2,10 @@
 //! between dashboard (poll / live) mode and the various wizards. Wizard
 //! rendering still lives in `wizard.rs`; this module only owns the loop.
 
+mod view_state;
 mod watch_events;
 
+pub use view_state::ActiveTab;
 pub use watch_events::watch_event_to_log_entry;
 
 use std::path::{Path, PathBuf};
@@ -38,7 +40,7 @@ pub enum AppMode {
 /// 128 entries so a long-running dashboard doesn't leak memory.
 #[derive(Clone, Debug)]
 pub struct EventLog {
-    entries: std::collections::VecDeque<LogEntry>,
+    entries: Vec<LogEntry>,
     cap: usize,
 }
 
@@ -46,7 +48,7 @@ impl EventLog {
     /// New empty log with the given capacity (minimum 16).
     pub fn new(cap: usize) -> Self {
         Self {
-            entries: std::collections::VecDeque::with_capacity(cap.max(16)),
+            entries: Vec::with_capacity(cap.max(16)),
             cap: cap.max(16),
         }
     }
@@ -54,14 +56,14 @@ impl EventLog {
     /// Push a new entry, dropping the oldest if the log is full.
     pub fn push(&mut self, entry: LogEntry) {
         if self.entries.len() >= self.cap {
-            self.entries.pop_front();
+            self.entries.remove(0);
         }
-        self.entries.push_back(entry);
+        self.entries.push(entry);
     }
 
-    /// Iterate over entries oldest-to-newest.
-    pub fn as_slice(&self) -> Vec<LogEntry> {
-        self.entries.iter().cloned().collect()
+    /// Entries oldest-to-newest, borrowed. Cheap to call every render tick.
+    pub fn as_slice(&self) -> &[LogEntry] {
+        &self.entries
     }
 }
 
@@ -93,8 +95,25 @@ pub struct AppState {
     /// When set, the caller should launch the integration sub-wizard after the
     /// render loop unwinds. See [`DashboardExit`].
     pub launch_integration: bool,
-    /// Refresh interval for poll mode.
-    pub poll_interval: Duration,
+    /// Currently selected dashboard tab.
+    pub active_tab: ActiveTab,
+    /// Rows-up-from-bottom for the Live tab. `0` pins the view to the newest
+    /// entry; higher values scroll the frame up.
+    pub scroll_offset: usize,
+    /// When true, new Live-feed entries snap the view back to the bottom.
+    pub follow_mode: bool,
+    /// Monotonic tick counter for the header spinner animation.
+    pub frame: u32,
+    /// True between a `ReconcileStarted` and its matching
+    /// `ReconcileFinished`/`Error`. Drives whether the header spinner renders.
+    pub reconcile_active: bool,
+    /// How long `poll_key` waits for a key event before returning. Set short
+    /// so the spinner and snapshot refresh feel live.
+    pub poll_timeout: Duration,
+    /// Cadence at which file-based status snapshots are rebuilt. Independent
+    /// of `poll_timeout` so the spinner can redraw at 10 Hz while the
+    /// expensive snapshot refresh stays at 2 s.
+    pub snapshot_refresh_interval: Duration,
     /// Last time we rebuilt the snapshot.
     last_refresh: Instant,
     /// Live-mode only: receiver streaming `WatchEvent`s from the hosted watch
@@ -163,7 +182,13 @@ impl AppState {
             quick_actions: default_poll_actions(),
             should_exit: false,
             launch_integration: false,
-            poll_interval: Duration::from_secs(2),
+            active_tab: ActiveTab::Live,
+            scroll_offset: 0,
+            follow_mode: true,
+            frame: 0,
+            reconcile_active: false,
+            poll_timeout: Duration::from_millis(125),
+            snapshot_refresh_interval: Duration::from_secs(2),
             last_refresh: Instant::now(),
             events_rx,
         }
@@ -178,12 +203,15 @@ impl AppState {
         }
     }
 
-    /// Refresh the snapshot if the poll interval has elapsed. In live mode,
-    /// this also drains any pending `WatchEvent`s from the bus into the log
-    /// pane before the file-based snapshot refresh runs.
+    /// Refresh the snapshot if the snapshot-refresh interval has elapsed. In
+    /// live mode, this also drains any pending `WatchEvent`s from the bus into
+    /// the log pane before the file-based snapshot refresh runs. Advances the
+    /// spinner frame counter every tick so the animation runs independently of
+    /// the snapshot cadence.
     pub fn tick(&mut self) {
         self.drain_events();
-        if self.last_refresh.elapsed() >= self.poll_interval {
+        self.frame = self.frame.wrapping_add(1);
+        if self.last_refresh.elapsed() >= self.snapshot_refresh_interval {
             self.refresh_now();
         }
     }
@@ -191,6 +219,8 @@ impl AppState {
     /// Drain all pending events from the watch bus into the log pane. Called
     /// from `tick()`. A disconnected sender clears the receiver so subsequent
     /// calls are no-ops. Best-effort: a full log just drops oldest entries.
+    /// Also flips `reconcile_active` so the header spinner tracks in-flight
+    /// reconcile passes without requiring a separate event channel.
     pub fn drain_events(&mut self) {
         let Some(rx) = self.events_rx.as_ref() else {
             return;
@@ -198,11 +228,18 @@ impl AppState {
         loop {
             match rx.try_recv() {
                 Ok(event) => {
+                    match &event {
+                        WatchEvent::ReconcileStarted { .. } => self.reconcile_active = true,
+                        WatchEvent::ReconcileFinished { .. } | WatchEvent::Error { .. } => {
+                            self.reconcile_active = false
+                        }
+                    }
                     self.log.push(watch_event_to_log_entry(event));
                 }
                 Err(TryRecvError::Empty) => return,
                 Err(TryRecvError::Disconnected) => {
                     self.events_rx = None;
+                    self.reconcile_active = false;
                     return;
                 }
             }
@@ -247,6 +284,61 @@ impl AppState {
         if code == KeyCode::Char('c') && modifiers.contains(KeyModifiers::CONTROL) {
             self.should_exit = true;
             return true;
+        }
+        // Tab switching.
+        match code {
+            KeyCode::Tab => {
+                self.cycle_tab();
+                return true;
+            }
+            KeyCode::Char('1') => {
+                self.set_tab(ActiveTab::Live);
+                return true;
+            }
+            KeyCode::Char('2') => {
+                self.set_tab(ActiveTab::Health);
+                return true;
+            }
+            KeyCode::Char('3') => {
+                self.set_tab(ActiveTab::Actions);
+                return true;
+            }
+            _ => {}
+        }
+        // Live-tab scroll bindings. Disabled on the other tabs so `j`/`k`
+        // remain free for future per-tab navigation.
+        if matches!(self.active_tab, ActiveTab::Live) {
+            match code {
+                KeyCode::Up | KeyCode::Char('k') => {
+                    self.scroll_up(1);
+                    return true;
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    self.scroll_down(1);
+                    return true;
+                }
+                KeyCode::PageUp => {
+                    self.page_up();
+                    return true;
+                }
+                KeyCode::PageDown => {
+                    self.page_down();
+                    return true;
+                }
+                KeyCode::Home | KeyCode::Char('g') => {
+                    self.scroll_home();
+                    return true;
+                }
+                KeyCode::End | KeyCode::Char('G') => {
+                    self.scroll_end();
+                    return true;
+                }
+                KeyCode::Char('f') => {
+                    self.toggle_follow();
+                    return true;
+                }
+                _ => {}
+            }
         }
         match code {
             KeyCode::Char('r') => {
@@ -296,78 +388,4 @@ pub fn poll_key(timeout: Duration) -> anyhow::Result<Option<(KeyCode, KeyModifie
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::bootstrap::runtime_probe::AgentIntegration;
-    use crate::tui::theme::Theme;
-
-    #[test]
-    fn new_poll_starts_with_empty_log() {
-        let tempdir = tempfile::tempdir().unwrap();
-        let state = AppState::new_poll(tempdir.path(), Theme::plain(), AgentIntegration::Absent);
-        assert!(state.log.as_slice().is_empty());
-    }
-
-    #[test]
-    fn push_welcome_banner_seeds_exactly_one_entry() {
-        let tempdir = tempfile::tempdir().unwrap();
-        let mut state =
-            AppState::new_poll(tempdir.path(), Theme::plain(), AgentIntegration::Absent);
-        state.push_welcome_banner();
-        let entries = state.log.as_slice();
-        assert_eq!(entries.len(), 1);
-        let banner = &entries[0];
-        assert_eq!(banner.tag, "synrepo");
-        assert!(
-            banner.message.to_ascii_lowercase().contains("welcome"),
-            "banner message should greet the user: {:?}",
-            banner.message
-        );
-        assert!(matches!(banner.severity, Severity::Healthy));
-    }
-
-    #[test]
-    fn push_welcome_banner_is_idempotent_per_call_but_caller_must_only_invoke_once() {
-        // The state machine itself does not dedupe — the caller is responsible
-        // for the one-shot property. This test pins that contract so a future
-        // refactor that *does* dedupe internally does not silently drop the
-        // banner when the caller relies on exactly-one-push semantics.
-        let tempdir = tempfile::tempdir().unwrap();
-        let mut state =
-            AppState::new_poll(tempdir.path(), Theme::plain(), AgentIntegration::Absent);
-        state.push_welcome_banner();
-        state.push_welcome_banner();
-        assert_eq!(state.log.as_slice().len(), 2);
-    }
-
-    #[test]
-    fn drain_events_pulls_all_pending_into_log() {
-        let tempdir = tempfile::tempdir().unwrap();
-        let (tx, rx) = crossbeam_channel::bounded::<WatchEvent>(8);
-        let mut state =
-            AppState::new_live(tempdir.path(), Theme::plain(), AgentIntegration::Absent, rx);
-        tx.send(WatchEvent::ReconcileStarted {
-            at: "t0".to_string(),
-            triggering_events: 0,
-        })
-        .unwrap();
-        tx.send(WatchEvent::Error {
-            at: "t1".to_string(),
-            message: "x".to_string(),
-        })
-        .unwrap();
-        state.drain_events();
-        let log = state.log.as_slice();
-        assert_eq!(log.len(), 2);
-        assert!(log.iter().all(|e| e.tag == "watch"));
-    }
-
-    #[test]
-    fn drain_events_is_noop_in_poll_mode() {
-        let tempdir = tempfile::tempdir().unwrap();
-        let mut state =
-            AppState::new_poll(tempdir.path(), Theme::plain(), AgentIntegration::Absent);
-        state.drain_events();
-        assert!(state.log.as_slice().is_empty());
-    }
-}
+mod tests;

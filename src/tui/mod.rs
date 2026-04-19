@@ -26,7 +26,8 @@ use crate::config::Mode;
 
 pub use self::wizard::{
     IntegrationPlan, IntegrationWizardOutcome, RepairPlan, RepairWizardOutcome, SetupPlan,
-    SetupWizardOutcome, SynthesisChoice,
+    SetupWizardOutcome, SynthesisChoice, UninstallActionKind, UninstallPlan,
+    UninstallWizardOutcome,
 };
 
 pub mod actions;
@@ -200,6 +201,28 @@ pub fn run_integration_wizard(
     let theme = theme::Theme::from_no_color(opts.no_color);
     let probe_report = probe(repo_root);
     wizard::run_integration_wizard_loop(theme, integration, probe_report.detected_agent_targets)
+}
+
+/// Open the uninstall wizard for the current repo.
+///
+/// `installed` is the full set of detected artifacts the caller would apply
+/// on a bulk `synrepo remove --apply`; `preserved` is the set of `.bak`
+/// sidecars that are surfaced as guidance but are never removed.
+///
+/// Returns [`UninstallWizardOutcome::NonTty`] when stdout is not a terminal.
+/// The bin-side dispatcher translates the resulting plan back into its own
+/// `RemoveAction` list and executes it after the alt-screen has been torn
+/// down, matching the pattern used by the repair and integration wizards.
+pub fn run_uninstall_wizard(
+    installed: Vec<UninstallActionKind>,
+    preserved: Vec<std::path::PathBuf>,
+    opts: TuiOptions,
+) -> anyhow::Result<UninstallWizardOutcome> {
+    if !stdout_is_tty() {
+        return Ok(UninstallWizardOutcome::NonTty);
+    }
+    let theme = theme::Theme::from_no_color(opts.no_color);
+    wizard::run_uninstall_wizard_loop(theme, &installed, &preserved)
 }
 
 /// Open the dashboard in live mode hosted by foreground `synrepo watch`.

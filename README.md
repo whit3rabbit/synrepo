@@ -22,6 +22,20 @@ Install a specific version:
 
     curl -fsSL https://raw.githubusercontent.com/whit3rabbit/synrepo/main/scripts/install.sh | INSTALL_VERSION=0.0.1 sh
 
+**Windows (PowerShell)**
+
+    irm https://raw.githubusercontent.com/whit3rabbit/synrepo/main/scripts/install.ps1 | iex
+
+Install a specific version:
+
+    & ([scriptblock]::Create((irm https://raw.githubusercontent.com/whit3rabbit/synrepo/main/scripts/install.ps1))) -Version 0.0.1
+
+The scripts verify each download against the release `SHA256SUMS` before installing.
+On macOS they use Homebrew when `brew` is on `PATH` (set `SYNREPO_SKIP_BREW=1` to skip).
+Otherwise the Linux/macOS script installs to `~/.local/bin` and, if needed, adds that
+directory to your shell rc (`~/.zshrc`, `~/.bashrc`, or `~/.profile`). The PowerShell
+script installs to `%LOCALAPPDATA%\synrepo\` and updates your user `PATH`.
+
 **Any platform with Cargo**
 
     cargo install synrepo

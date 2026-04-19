@@ -37,7 +37,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub(super) use helpers::now_rfc3339;
+pub use helpers::now_rfc3339;
 use helpers::{
     decrement_depth, insert_initial_lock, open_and_try_lock_with_retry, read_ownership,
     read_ownership_with_retry, try_reenter, write_lock_metadata,

@@ -10,8 +10,10 @@ mod export;
 mod handoffs;
 mod links;
 pub(crate) mod mcp;
+mod remove;
 mod repair;
 mod setup;
+mod setup_backup;
 mod status;
 mod upgrade;
 mod watch;
@@ -31,6 +33,7 @@ pub(crate) use links::{
 #[cfg(test)]
 pub(crate) use mcp::prepare_state as prepare_mcp_state;
 pub(crate) use mcp::run_mcp_server;
+pub(crate) use remove::remove;
 pub(crate) use repair::{check, reconcile, sync};
 pub(crate) use setup::setup;
 #[cfg(test)]
@@ -42,6 +45,7 @@ pub(crate) use setup::{
     step_apply_integration, step_apply_synthesis, step_ensure_ready, step_init, step_register_mcp,
     step_write_shim,
 };
+pub(crate) use setup_backup::{mcp_config_has_synrepo, step_backup_mcp_config};
 pub(crate) use status::{status, status_output};
 #[cfg(test)]
 pub(crate) use upgrade::report_reconcile_outcome;

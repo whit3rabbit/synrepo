@@ -288,6 +288,31 @@ pub(crate) enum Command {
     /// structural graph, cards, search index, overlay data, and provenance.
     /// Communicates over stdio using the MCP protocol.
     Mcp,
+
+    /// Uninstall synrepo artifacts from the current repo.
+    ///
+    /// Bulk `synrepo remove` targets every tracked/detected agent shim, the
+    /// project's MCP entries, any root `.gitignore` line synrepo added, and
+    /// prompts before deleting `.synrepo/` itself. `synrepo remove <tool>`
+    /// narrows the plan to a single agent. `.mcp.json.bak` sidecars are never
+    /// removed.
+    Remove {
+        /// Limit removal to a single agent's shim + MCP entry.
+        tool: Option<AgentTool>,
+        /// Execute the plan. Without this flag, only a dry-run table is printed.
+        #[arg(long)]
+        apply: bool,
+        /// Emit JSON instead of the human-readable plan / summary.
+        #[arg(long)]
+        json: bool,
+        /// Skip the `.synrepo/` prompt and leave the directory in place.
+        #[arg(long)]
+        keep_synrepo_dir: bool,
+        /// Non-interactive: answer "yes" to the `.synrepo/` prompt and
+        /// proceed even when a watch daemon is still running.
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 #[derive(Subcommand)]

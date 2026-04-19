@@ -25,6 +25,7 @@ use crate::bootstrap::runtime_probe::AgentTargetKind;
 pub mod integration;
 pub mod repair;
 pub mod setup;
+pub mod uninstall;
 
 pub use integration::{
     run_integration_wizard_loop, ActionRow as IntegrationActionRow, IntegrationPlan,
@@ -37,6 +38,10 @@ pub use repair::{
 pub use setup::{
     run_setup_wizard_loop, run_synthesis_only_wizard_loop, SetupPlan, SetupWizardOutcome,
     SetupWizardState, SynthesisChoice, WIZARD_TARGETS,
+};
+pub use uninstall::{
+    run_uninstall_wizard_loop, UninstallActionKind, UninstallActionRow, UninstallPlan,
+    UninstallStep, UninstallWizardOutcome, UninstallWizardState,
 };
 
 /// Type alias for the crossterm-backed terminal each wizard drives.

@@ -1,5 +1,7 @@
 //! Dashboard layout and render loop. Owns the two-mode (poll vs. live) entry
-//! points and composes widgets into a single ratatui frame.
+//! points and composes widgets into a single ratatui frame. The content area
+//! is tab-switched between Live, Health, and Actions; the header carries a
+//! reconcile spinner so the operator sees liveness feedback on every tab.
 
 use std::io::{self, Stdout};
 use std::path::Path;
@@ -15,13 +17,13 @@ use ratatui::Terminal;
 
 use crate::bootstrap::runtime_probe::AgentIntegration;
 use crate::pipeline::watch::WatchEvent;
-use crate::tui::app::{poll_key, AppState, DashboardExit};
+use crate::tui::app::{poll_key, ActiveTab, AppState, DashboardExit};
 use crate::tui::probe::{
     build_activity_vm, build_header_vm, build_health_vm, build_next_actions, display_repo_path,
 };
 use crate::tui::theme::Theme;
 use crate::tui::widgets::{
-    ActivityWidget, HeaderWidget, HealthWidget, LogWidget, NextActionsWidget, QuickActionsWidget,
+    ActionsTabWidget, DashboardTabsWidget, FooterWidget, HeaderWidget, HealthWidget, LiveFeedWidget,
 };
 
 /// Terminal alias used by the render loop.
@@ -78,9 +80,10 @@ fn render_loop(terminal: &mut DashboardTerminal, state: &mut AppState) -> anyhow
     while !state.should_exit {
         state.tick();
         terminal.draw(|frame| draw_dashboard(frame, state))?;
-        // Budget at most poll_interval between redraws so the snapshot gets a
-        // chance to refresh even when the user isn't pressing keys.
-        if let Some((code, mods)) = poll_key(state.poll_interval)? {
+        // Short key-poll budget so the spinner and follow-mode snapping feel
+        // responsive. Snapshot refresh is gated separately on
+        // `snapshot_refresh_interval` inside `tick()`.
+        if let Some((code, mods)) = poll_key(state.poll_timeout)? {
             state.handle_key(code, mods);
         }
     }
@@ -93,66 +96,68 @@ fn draw_dashboard(frame: &mut ratatui::Frame, state: &AppState) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(5), // header
-            Constraint::Min(8),    // middle rows
-            Constraint::Length(8), // log
+            Constraint::Length(3), // tab bar
+            Constraint::Min(0),    // active tab content
+            Constraint::Length(1), // footer key hints
         ])
         .split(size);
 
-    // Header.
+    // Header with spinner.
     let repo_display = display_repo_path(&state.repo_root);
     let header_vm = build_header_vm(repo_display, &state.snapshot, &state.integration);
     let header = HeaderWidget {
         vm: &header_vm,
         theme: &state.theme,
+        frame: state.frame,
+        reconcile_active: state.reconcile_active,
     };
     frame.render_widget(header, outer[0]);
 
-    // Middle: health + activity on the left, next-actions + quick-actions on the right.
-    let middle = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
-        .split(outer[1]);
-    let left = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
-        .split(middle[0]);
-    let right = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
-        .split(middle[1]);
-
-    let health_vm = build_health_vm(&state.snapshot);
-    let health = HealthWidget {
-        vm: &health_vm,
+    // Tab bar.
+    let tabs = DashboardTabsWidget {
+        active: state.active_tab,
         theme: &state.theme,
     };
-    frame.render_widget(health, left[0]);
+    frame.render_widget(tabs, outer[1]);
 
-    let activity_vm = build_activity_vm(&state.snapshot);
-    let activity = ActivityWidget {
-        vm: &activity_vm,
+    // Active tab content.
+    let content_area = outer[2];
+    match state.active_tab {
+        ActiveTab::Live => {
+            let activity_vm = build_activity_vm(&state.snapshot);
+            let live = LiveFeedWidget {
+                log: state.log.as_slice(),
+                activity: &activity_vm,
+                scroll_offset: state.scroll_offset,
+                follow_mode: state.follow_mode,
+                theme: &state.theme,
+            };
+            frame.render_widget(live, content_area);
+        }
+        ActiveTab::Health => {
+            let health_vm = build_health_vm(&state.snapshot);
+            let health = HealthWidget {
+                vm: &health_vm,
+                theme: &state.theme,
+            };
+            frame.render_widget(health, content_area);
+        }
+        ActiveTab::Actions => {
+            let next_actions = build_next_actions(&state.snapshot, &state.integration);
+            let actions = ActionsTabWidget {
+                next_actions: &next_actions,
+                quick_actions: &state.quick_actions,
+                theme: &state.theme,
+            };
+            frame.render_widget(actions, content_area);
+        }
+    }
+
+    // Footer with key hints.
+    let footer = FooterWidget {
+        active: state.active_tab,
+        follow_mode: state.follow_mode,
         theme: &state.theme,
     };
-    frame.render_widget(activity, left[1]);
-
-    let actions = build_next_actions(&state.snapshot, &state.integration);
-    let next_actions = NextActionsWidget {
-        actions: &actions,
-        theme: &state.theme,
-    };
-    frame.render_widget(next_actions, right[0]);
-
-    let quick = QuickActionsWidget {
-        actions: &state.quick_actions,
-        theme: &state.theme,
-    };
-    frame.render_widget(quick, right[1]);
-
-    // Footer log pane.
-    let entries = state.log.as_slice();
-    let log = LogWidget {
-        entries: &entries,
-        theme: &state.theme,
-    };
-    frame.render_widget(log, outer[2]);
+    frame.render_widget(footer, outer[3]);
 }

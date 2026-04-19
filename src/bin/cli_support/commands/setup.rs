@@ -6,7 +6,8 @@ use synrepo::config::Mode;
 use toml_edit::{DocumentMut, Item, Table, Value as TomlValue};
 
 use super::basic::{agent_setup, init};
-use crate::cli_support::agent_shims::{AgentTool, AutomationTier};
+use super::setup_backup::step_backup_mcp_config;
+use crate::cli_support::agent_shims::{registry as shim_registry, AgentTool, AutomationTier};
 
 /// Outcome of a single setup step. Tests assert on this rather than captured
 /// stdout; the CLI still prints progress lines for user-visible output.
@@ -33,8 +34,14 @@ pub(crate) fn setup(
     println!("Setting up synrepo for {}...", tool.display_name());
 
     step_init(repo_root, None, force, gitignore)?;
+    // Back up the tool's MCP config before any mutation so `synrepo remove`
+    // can preserve the stored path as a `.bak` sidecar.
+    let backup = step_backup_mcp_config(repo_root, tool)?;
     step_apply_integration(repo_root, tool, force)?;
     step_ensure_ready(repo_root)?;
+
+    let wrote_mcp = matches!(tool.automation_tier(), AutomationTier::Automated);
+    shim_registry::record_install_best_effort(repo_root, tool, wrote_mcp, backup);
 
     println!("\nSetup complete. Repo is ready. One Next Step:");
     match tool {
@@ -263,7 +270,7 @@ fn opencode_synrepo_entry() -> Value {
 
 /// Parse a JSON file if it exists; fail loud with the file path if the content
 /// is present but malformed, rather than silently discarding user config.
-fn load_json_config(path: &Path) -> anyhow::Result<Value> {
+pub(crate) fn load_json_config(path: &Path) -> anyhow::Result<Value> {
     if !path.exists() {
         return Ok(json!({}));
     }
@@ -282,7 +289,7 @@ fn load_json_config(path: &Path) -> anyhow::Result<Value> {
 }
 
 /// Write JSON back to disk with pretty-printing and a trailing newline.
-fn write_json_config(path: &Path, value: &Value) -> anyhow::Result<()> {
+pub(crate) fn write_json_config(path: &Path, value: &Value) -> anyhow::Result<()> {
     let mut out = serde_json::to_string_pretty(value)
         .with_context(|| format!("failed to serialize {}", path.display()))?;
     out.push('\n');

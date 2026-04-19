@@ -2,6 +2,73 @@ use super::doctrine::{DOCTRINE_BLOCK, TOOL_DESC_ESCALATION_LINE};
 use super::*;
 
 #[test]
+fn canonical_name_matches_clap_value_enum_form() {
+    // Every variant's `canonical_name` must match the kebab-case string clap
+    // derives for its `value_enum`, so `synrepo remove <tool>` and
+    // registry-stored `tool` keys stay in lockstep.
+    use clap::ValueEnum;
+    for variant in AgentTool::value_variants() {
+        let clap_name = variant
+            .to_possible_value()
+            .expect("AgentTool variants are not skipped")
+            .get_name()
+            .to_string();
+        assert_eq!(
+            variant.canonical_name(),
+            clap_name.as_str(),
+            "canonical_name drift for {variant:?}"
+        );
+    }
+}
+
+#[test]
+fn mcp_config_relative_path_is_set_iff_automation_tier_is_automated() {
+    use clap::ValueEnum;
+    for variant in AgentTool::value_variants() {
+        match variant.automation_tier() {
+            AutomationTier::Automated => assert!(
+                variant.mcp_config_relative_path().is_some(),
+                "automated tool {variant:?} has no mcp_config_relative_path"
+            ),
+            AutomationTier::ShimOnly => assert!(
+                variant.mcp_config_relative_path().is_none(),
+                "shim-only tool {variant:?} reports an mcp_config_relative_path"
+            ),
+        }
+    }
+}
+
+#[test]
+fn mcp_config_relative_path_pin() {
+    // Pins the known paths so any silent rename in one site vs. the matching
+    // `setup_*_mcp` function in commands/setup.rs is caught.
+    assert_eq!(
+        AgentTool::Claude.mcp_config_relative_path(),
+        Some(".mcp.json")
+    );
+    assert_eq!(
+        AgentTool::Codex.mcp_config_relative_path(),
+        Some(".codex/config.toml")
+    );
+    assert_eq!(
+        AgentTool::OpenCode.mcp_config_relative_path(),
+        Some("opencode.json")
+    );
+    assert_eq!(
+        AgentTool::Cursor.mcp_config_relative_path(),
+        Some(".cursor/mcp.json")
+    );
+    assert_eq!(
+        AgentTool::Windsurf.mcp_config_relative_path(),
+        Some(".windsurf/mcp.json")
+    );
+    assert_eq!(
+        AgentTool::Roo.mcp_config_relative_path(),
+        Some(".roo/mcp.json")
+    );
+}
+
+#[test]
 fn test_display_name() {
     assert_eq!(AgentTool::Claude.display_name(), "Claude Code");
     assert_eq!(AgentTool::Cursor.display_name(), "Cursor");

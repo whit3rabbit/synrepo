@@ -9,6 +9,7 @@
 use std::path::{Path, PathBuf};
 
 pub(crate) mod doctrine;
+pub(crate) mod registry;
 mod shims;
 
 #[cfg(test)]
@@ -236,6 +237,56 @@ impl AgentTool {
             AgentTool::Trae => {
                 "Trae loads `.trae/skills/synrepo/SKILL.md` as a skill automatically."
             }
+        }
+    }
+
+    /// Stable, machine-readable name matching the CLI kebab-case form
+    /// (e.g. `OpenCode` → `"open-code"`). Used as the `tool` key in the install
+    /// registry at `~/.synrepo/projects.toml` so remove can map tool strings
+    /// back to `AgentTool` variants deterministically.
+    pub(crate) fn canonical_name(self) -> &'static str {
+        match self {
+            AgentTool::Claude => "claude",
+            AgentTool::Cursor => "cursor",
+            AgentTool::Copilot => "copilot",
+            AgentTool::Generic => "generic",
+            AgentTool::Codex => "codex",
+            AgentTool::Windsurf => "windsurf",
+            AgentTool::OpenCode => "open-code",
+            AgentTool::Gemini => "gemini",
+            AgentTool::Goose => "goose",
+            AgentTool::Kiro => "kiro",
+            AgentTool::Qwen => "qwen",
+            AgentTool::Junie => "junie",
+            AgentTool::Roo => "roo",
+            AgentTool::Tabnine => "tabnine",
+            AgentTool::Trae => "trae",
+        }
+    }
+
+    /// Project-root-relative path of the MCP config file this tool edits
+    /// during `synrepo setup`. Returns `None` for shim-only-tier tools.
+    ///
+    /// Mirrors the paths hard-coded in the matching `setup_*_mcp` functions
+    /// in `commands/setup.rs`; the `mcp_config_relative_path_matches_setup`
+    /// test in `agent_shims/tests.rs` pins the two sites together.
+    pub(crate) fn mcp_config_relative_path(self) -> Option<&'static str> {
+        match self {
+            AgentTool::Claude => Some(".mcp.json"),
+            AgentTool::Codex => Some(".codex/config.toml"),
+            AgentTool::OpenCode => Some("opencode.json"),
+            AgentTool::Cursor => Some(".cursor/mcp.json"),
+            AgentTool::Windsurf => Some(".windsurf/mcp.json"),
+            AgentTool::Roo => Some(".roo/mcp.json"),
+            AgentTool::Copilot
+            | AgentTool::Generic
+            | AgentTool::Gemini
+            | AgentTool::Goose
+            | AgentTool::Kiro
+            | AgentTool::Qwen
+            | AgentTool::Junie
+            | AgentTool::Tabnine
+            | AgentTool::Trae => None,
         }
     }
 

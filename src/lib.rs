@@ -41,6 +41,7 @@ pub mod core;
 pub mod error;
 pub mod overlay;
 pub mod pipeline;
+pub mod registry;
 pub mod store;
 pub mod structure;
 pub mod substrate;

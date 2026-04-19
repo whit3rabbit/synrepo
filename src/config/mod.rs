@@ -367,7 +367,10 @@ impl Config {
     }
 }
 
-fn home_dir() -> Option<PathBuf> {
+/// Best-effort home-directory resolver: `$HOME` on Unix, `%USERPROFILE%` on
+/// Windows, `None` on bare/unsupported targets. Callers should treat `None` as
+/// "no per-user state available" and degrade gracefully.
+pub fn home_dir() -> Option<PathBuf> {
     #[cfg(unix)]
     {
         std::env::var_os("HOME").map(PathBuf::from)

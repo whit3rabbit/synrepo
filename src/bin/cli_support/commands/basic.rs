@@ -3,7 +3,7 @@ use std::path::Path;
 use synrepo::config::{Config, Mode};
 use synrepo::surface::card::{Budget, CardCompiler};
 
-use crate::cli_support::agent_shims::AgentTool;
+use crate::cli_support::agent_shims::{registry as shim_registry, AgentTool};
 
 use super::watch::ensure_watch_not_running;
 
@@ -139,5 +139,10 @@ pub(crate) fn agent_setup(
         println!("Wrote {} shim: {}", tool.display_name(), out_path.display());
     }
     println!("  {}", tool.include_instruction());
+
+    // Shim-only: no MCP config written, so removal should not expect an
+    // MCP entry for this agent in the project registry.
+    shim_registry::record_install_best_effort(repo_root, tool, false, None);
+
     Ok(())
 }
