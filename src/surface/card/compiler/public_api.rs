@@ -17,7 +17,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::{
     core::ids::FileNodeId,
-    structure::graph::{GraphStore, Visibility},
+    structure::graph::{GraphReader, Visibility},
     surface::card::{
         git::symbol_last_change_from_insights,
         types::{PublicAPICard, PublicAPIEntry},
@@ -33,7 +33,7 @@ const RECENT_API_DAYS: i64 = 30;
 /// Compile a `PublicAPICard` for the given directory path.
 pub(super) fn public_api_card_impl(
     compiler: &GraphCardCompiler,
-    graph: &dyn GraphStore,
+    graph: &dyn GraphReader,
     path: &str,
     budget: Budget,
 ) -> crate::Result<PublicAPICard> {

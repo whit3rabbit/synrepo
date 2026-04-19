@@ -1,6 +1,6 @@
 use crate::{
     core::ids::NodeId,
-    structure::graph::{EdgeKind, GraphStore},
+    structure::graph::{EdgeKind, GraphReader, GraphStore},
     surface::card::{Budget, DecisionCard, Freshness},
 };
 
@@ -34,8 +34,10 @@ where
     R: serde::Serialize,
 {
     let result = (|| {
-        let compiler = state.create_compiler().map_err(|e| anyhow::anyhow!(e))?;
-        let val = with_graph_snapshot(compiler.graph(), || f(&compiler))?;
+        let compiler = state
+            .create_read_compiler()
+            .map_err(|e| anyhow::anyhow!(e))?;
+        let val = f(&compiler)?;
         Ok(serde_json::to_value(val)?)
     })();
     render_result(result)
@@ -81,7 +83,7 @@ pub fn lift_commentary_text(json: &mut serde_json::Value) {
 pub fn attach_decision_cards(
     json: &mut serde_json::Value,
     node_id: NodeId,
-    graph: &dyn crate::structure::graph::GraphStore,
+    graph: &dyn GraphReader,
     budget: Budget,
 ) -> anyhow::Result<()> {
     let concepts = graph.find_governing_concepts(node_id)?;

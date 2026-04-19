@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use crate::{
     core::ids::{FileNodeId, NodeId},
-    structure::graph::{EdgeKind, GraphStore, SymbolKind, SymbolNode},
+    structure::graph::{EdgeKind, GraphReader, SymbolKind, SymbolNode},
     surface::card::{
         types::{TestAssociation, TestEntry, TestSurfaceCard},
         Budget, SourceStore,
@@ -13,7 +13,7 @@ use crate::{
 
 /// Compile a TestSurfaceCard by discovering test files related to a scope.
 pub(super) fn test_surface_card_impl(
-    graph: &dyn GraphStore,
+    graph: &dyn GraphReader,
     scope: &str,
     budget: Budget,
 ) -> crate::Result<TestSurfaceCard> {
@@ -196,7 +196,7 @@ fn find_associated_test_files(
 
 /// Find test symbols from a test file by name convention.
 fn find_test_symbols(
-    graph: &dyn GraphStore,
+    graph: &dyn GraphReader,
     file_id: FileNodeId,
 ) -> crate::Result<Vec<SymbolNode>> {
     let all_symbols = graph.symbols_for_file(file_id)?;

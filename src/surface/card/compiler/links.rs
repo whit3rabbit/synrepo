@@ -1,7 +1,7 @@
 use crate::{
     core::ids::NodeId,
     overlay::{derive_link_freshness, ConfidenceTier, OverlayStore},
-    structure::graph::GraphStore,
+    structure::graph::GraphReader,
     surface::card::types::ProposedLink,
 };
 
@@ -11,7 +11,7 @@ use crate::{
 /// freshness of each link against the canonical graph's content hashes.
 pub(super) fn resolve_proposed_links(
     overlay: Option<&parking_lot::Mutex<dyn OverlayStore>>,
-    graph: &dyn GraphStore,
+    graph: &dyn GraphReader,
     node: NodeId,
 ) -> crate::Result<(Option<Vec<ProposedLink>>, &'static str)> {
     let overlay = match overlay {
@@ -62,7 +62,7 @@ pub(super) fn resolve_proposed_links(
     Ok((Some(proposed), state))
 }
 
-fn get_node_content_hash(graph: &dyn GraphStore, node: NodeId) -> crate::Result<Option<String>> {
+fn get_node_content_hash(graph: &dyn GraphReader, node: NodeId) -> crate::Result<Option<String>> {
     match node {
         NodeId::File(id) => Ok(graph.get_file(id)?.map(|f| f.content_hash)),
         NodeId::Symbol(id) => {

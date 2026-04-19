@@ -3,6 +3,10 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+mod synthesis;
+
+pub use synthesis::SynthesisConfig;
+
 /// Which operational mode synrepo runs in.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -54,6 +58,11 @@ pub struct Config {
     /// Maximum file size in bytes for indexing. Files above this are skipped.
     #[serde(default = "default_max_file_size")]
     pub max_file_size_bytes: u64,
+
+    /// Advisory ceiling for the in-memory graph snapshot. `0` disables
+    /// snapshot publication entirely.
+    #[serde(default = "default_max_graph_snapshot_bytes")]
+    pub max_graph_snapshot_bytes: usize,
 
     /// Paths matching these globs are skipped entirely (e.g. secrets).
     #[serde(default = "default_redact_globs")]
@@ -114,6 +123,12 @@ pub struct Config {
     /// this threshold are forwarded to LLM evidence extraction.
     #[serde(default = "default_semantic_similarity_threshold")]
     pub semantic_similarity_threshold: f64,
+
+    /// LLM synthesis configuration. Off by default; opting in is required
+    /// even when provider API keys are present in the env. See
+    /// [`SynthesisConfig`].
+    #[serde(default)]
+    pub synthesis: SynthesisConfig,
 }
 
 /// TOML-friendly mirror of `overlay::ConfidenceThresholds`. Lives in this
@@ -185,6 +200,10 @@ fn default_max_file_size() -> u64 {
     1024 * 1024 // 1 MB
 }
 
+fn default_max_graph_snapshot_bytes() -> usize {
+    128 * 1024 * 1024
+}
+
 fn default_redact_globs() -> Vec<String> {
     vec![
         "**/secrets/**".to_string(),
@@ -238,6 +257,7 @@ impl Default for Config {
             concept_directories: default_concept_dirs(),
             git_commit_depth: default_git_commit_depth(),
             max_file_size_bytes: default_max_file_size(),
+            max_graph_snapshot_bytes: default_max_graph_snapshot_bytes(),
             redact_globs: default_redact_globs(),
             commentary_cost_limit: default_commentary_cost_limit(),
             cross_link_cost_limit: default_cross_link_cost_limit(),
@@ -248,6 +268,7 @@ impl Default for Config {
             semantic_model: default_semantic_model(),
             embedding_dim: default_embedding_dim(),
             semantic_similarity_threshold: default_semantic_similarity_threshold(),
+            synthesis: SynthesisConfig::default(),
         }
     }
 }

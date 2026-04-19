@@ -8,13 +8,13 @@
 use std::collections::HashSet;
 
 use crate::{
-    structure::graph::GraphStore,
+    structure::graph::GraphReader,
     surface::card::{types::ModuleCard, Budget, FileRef, SourceStore, SymbolRef},
 };
 
 /// Compile a `ModuleCard` for the given directory path.
 pub(super) fn module_card_impl(
-    graph: &dyn GraphStore,
+    graph: &dyn GraphReader,
     path: &str,
     budget: Budget,
 ) -> crate::Result<ModuleCard> {
@@ -83,7 +83,7 @@ pub(super) fn module_card_impl(
 /// Collect symbols from the given direct-child files.
 /// At `Tiny` budget, returns an empty list but still counts symbols.
 fn collect_symbols(
-    graph: &dyn GraphStore,
+    graph: &dyn GraphReader,
     files: &[FileRef],
     budget: Budget,
 ) -> crate::Result<(Vec<SymbolRef>, usize)> {

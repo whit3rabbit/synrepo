@@ -16,6 +16,7 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 
 use crate::config::Config;
+use crate::structure::graph::snapshot;
 use crate::surface::card::compiler::GraphCardCompiler;
 
 pub mod audit;
@@ -25,6 +26,9 @@ pub mod primitives;
 pub mod search;
 
 mod findings;
+
+#[cfg(test)]
+mod snapshot_tests;
 
 /// Shared read-only state held across all MCP tool invocations.
 ///
@@ -44,14 +48,12 @@ pub struct SynrepoState {
 }
 
 impl SynrepoState {
-    /// Create a fresh, request-local compiler.
+    /// Create a fresh, request-local compiler backed by SQLite.
     ///
     /// The caller is responsible for holding the handle for the duration of
     /// a single tool request and then dropping it to release the SQLite
     /// connections and their associated snapshots.
-    pub fn create_compiler(
-        &self,
-    ) -> crate::Result<crate::surface::card::compiler::GraphCardCompiler> {
+    pub fn create_sqlite_compiler(&self) -> crate::Result<GraphCardCompiler> {
         use crate::store::overlay::SqliteOverlayStore;
         use crate::store::sqlite::SqliteGraphStore;
 
@@ -71,6 +73,40 @@ impl SynrepoState {
 
         Ok(compiler)
     }
+
+    /// Create a fresh, request-local compiler for read-only MCP tools.
+    pub fn create_read_compiler(&self) -> crate::Result<GraphCardCompiler> {
+        use crate::store::overlay::SqliteOverlayStore;
+
+        if graph_snapshot_disabled() {
+            return self.create_sqlite_compiler();
+        }
+
+        let graph = snapshot::current();
+        if graph.snapshot_epoch == 0 {
+            return self.create_sqlite_compiler();
+        }
+
+        let synrepo_dir = Config::synrepo_dir(&self.repo_root);
+        let overlay_dir = synrepo_dir.join("overlay");
+        let overlay = SqliteOverlayStore::open_existing(&overlay_dir).ok();
+
+        let mut compiler =
+            GraphCardCompiler::new_with_snapshot(graph, Some(self.repo_root.clone()))
+                .with_config(self.config.clone());
+
+        if let Some(overlay) = overlay {
+            compiler = compiler.with_overlay(Some(Arc::new(Mutex::new(overlay))));
+        }
+
+        Ok(compiler)
+    }
+}
+
+pub(crate) fn graph_snapshot_disabled() -> bool {
+    std::env::var("SYNREPO_DISABLE_GRAPH_SNAPSHOT")
+        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false)
 }
 
 const _: () = {

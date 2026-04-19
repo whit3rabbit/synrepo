@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use crate::{
     core::ids::{FileNodeId, NodeId},
-    structure::graph::{Edge, EdgeKind, GraphStore},
+    structure::graph::{Edge, EdgeKind, GraphReader},
     surface::card::git::FileGitIntelligence,
 };
 
@@ -10,7 +10,7 @@ use super::{Budget, FileCard, FileRef, GraphCardCompiler, SourceStore, SymbolRef
 
 pub(super) fn file_card(
     compiler: &GraphCardCompiler,
-    graph: &dyn GraphStore,
+    graph: &dyn GraphReader,
     id: FileNodeId,
     budget: Budget,
 ) -> crate::Result<FileCard> {

@@ -3,7 +3,6 @@ use crate::bootstrap::BootstrapHealth;
 use crate::config::{Config, Mode};
 use crate::store::compatibility::{self, StoreId};
 use crate::store::sqlite::SqliteGraphStore;
-use crate::structure::graph::GraphStore;
 use tempfile::tempdir;
 
 #[test]

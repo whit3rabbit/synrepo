@@ -8,6 +8,7 @@ use crate::{
         },
         sqlite::SqliteGraphStore,
     },
+    structure::graph::{snapshot, with_graph_read_snapshot},
 };
 use anyhow::Context as _;
 use serde_json::json;
@@ -23,12 +24,6 @@ pub(crate) fn render_findings(
     let graph_dir = synrepo_dir.join("graph");
     let overlay_dir = synrepo_dir.join("overlay");
 
-    let graph = SqliteGraphStore::open_existing(&graph_dir).with_context(|| {
-        format!(
-            "Graph store not found at {} — run `synrepo init` first",
-            graph_dir.display()
-        )
-    })?;
     let overlay = SqliteOverlayStore::open_existing(&overlay_dir).with_context(|| {
         format!(
             "Overlay store not found at {} — generate cross-links first",
@@ -51,15 +46,35 @@ pub(crate) fn render_findings(
         .transpose()
         .map_err(|error| anyhow::anyhow!("invalid freshness: {error}"))?;
 
-    let findings = overlay.findings(
-        &graph,
-        &FindingsFilter {
-            node_id,
-            kind,
-            freshness,
-            limit: Some(limit as usize),
-        },
-    )?;
+    let filter = FindingsFilter {
+        node_id,
+        kind,
+        freshness,
+        limit: Some(limit as usize),
+    };
+
+    let findings = if super::graph_snapshot_disabled() {
+        let graph = SqliteGraphStore::open_existing(&graph_dir).with_context(|| {
+            format!(
+                "Graph store not found at {} — run `synrepo init` first",
+                graph_dir.display()
+            )
+        })?;
+        with_graph_read_snapshot(&graph, |reader| overlay.findings(reader, &filter))?
+    } else {
+        let graph = snapshot::current();
+        if graph.snapshot_epoch == 0 {
+            let sqlite = SqliteGraphStore::open_existing(&graph_dir).with_context(|| {
+                format!(
+                    "Graph store not found at {} — run `synrepo init` first",
+                    graph_dir.display()
+                )
+            })?;
+            with_graph_read_snapshot(&sqlite, |reader| overlay.findings(reader, &filter))?
+        } else {
+            overlay.findings(graph.as_ref(), &filter)?
+        }
+    };
 
     Ok(json!({ "findings": findings }))
 }

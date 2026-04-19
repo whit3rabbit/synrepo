@@ -190,7 +190,6 @@ fn prune_overlay_orphans(synrepo_dir: &Path, graph: &SqliteGraphStore) {
     use crate::core::ids::NodeId;
     use crate::overlay::OverlayStore;
     use crate::store::overlay::SqliteOverlayStore;
-    use crate::structure::graph::GraphStore;
 
     let overlay_dir = synrepo_dir.join("overlay");
     let overlay_db = SqliteOverlayStore::db_path(&overlay_dir);

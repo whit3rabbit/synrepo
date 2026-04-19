@@ -122,9 +122,9 @@ SymbolCard for `parse_query` (function)
     precision is still approximate name resolution, not full type-aware
     binding)
   tests touching this symbol: pending dedicated TestSurfaceCard wiring
-  last meaningful change: pending; design resolved as file-level proxy
-    with an explicit `granularity` label (`File` today, `Symbol` once
-    body-hash-keyed history lands). Tracked by git-data-surfacing-v1.
+  last meaningful change: shipped; uses symbol-level granularity by diffing
+    `body_hash` transitions across the sampled git history. Tracked by
+    `symbol-last-change-v1`.
   approx tokens: 120
 ```
 
@@ -140,15 +140,15 @@ synrepo compiles several card types. The full family below describes the product
 | **EntryPointCard** | shipped | Where does execution start in this subsystem? | binary, cli_command, http_handler, and lib_root classification rules over the symbol graph |
 | **CallPathCard** | shipped | How does control flow get from A to B? | shortest path in the call graph (limited to file scope in v1) |
 | **ChangeRiskCard** | shipped | What breaks if I modify this? | dependents + co-change + drift + hotspot signals (beta fidelity) |
-| **PublicAPICard** | planned | What does this crate/module expose? | export list + visibility analysis + recent API changes |
-| **TestSurfaceCard** | partially shipped | What tests constrain this symbol? | test files discovered via path-convention heuristics |
+| **PublicAPICard** | shipped | What does this crate/module expose? | export list + visibility analysis + recent API changes |
+| **TestSurfaceCard** | shipped | What tests constrain this symbol? | test files discovered via path-convention heuristics |
 | **DecisionCard** *(optional)* | shipped | Why was this built this way? | linked human-authored ADRs and inline `# DECISION:` markers |
 
 The first eight card types require zero LLM involvement and zero prose ingestion beyond docstrings and inline comments. They work on a brand-new repo with no documentation. They are the wedge.
 
 ### The context budget protocol
 
-The three tiers are not just truncation knobs. They are a deliberate three-surface progressive-disclosure protocol: `tiny` is the *index surface* for orientation and routing, `normal` is the *neighborhood surface* for local understanding, and `deep` is the *fetch-on-demand surface* that includes source bodies and optional commentary. Agents are expected to escalate intentionally (index, then neighborhood, then deep fetch), the same shape that good library search APIs take (search → context → fetch). This inverts the RAG default of "return everything similar and hope the right thing is in there."
+The three tiers are not just truncation knobs. They are a deliberate three-surface progressive-disclosure protocol (`progressive-disclosure-v1`): `tiny` is the *index surface* for orientation and routing, `normal` is the *neighborhood surface* for local understanding, and `deep` is the *fetch-on-demand surface* that includes source bodies and optional commentary. Agents are expected to escalate intentionally (index, then neighborhood, then deep fetch), the same shape that good library search APIs take (search → context → fetch). This inverts the RAG default of "return everything similar and hope the right thing is in there."
 
 Every MCP tool that returns cards declares a token budget, and the agent picks the tier:
 
@@ -234,7 +234,7 @@ The data already exists: `.synrepo/state/reconcile-state.json`, `.synrepo/state/
 
 ## The two pipelines
 
-**Structural pipeline (hot path, no LLM).** Runs on every change, synchronously, seconds even on thousand-file refactors. Walks the configured roots, parses code via tree-sitter, parses prose via the Markdown parser, mines git history, computes derived structural facts (reachability, dead code, hidden coupling, drift scores), commits to sqlite and syntext. Changed files are upserted in place (preserving stable node identity), and stale observations are soft-retired rather than cascade-deleted, so drift scoring and provenance remain coherent across revisions. That's the whole critical path — no cascade budget, no deferral, no nightly queue. A 1,000-file refactor gets its graph updated in a few seconds of tree-sitter plus the graph write. Agents never read stale structural state.
+**Structural pipeline (hot path, no LLM).** Runs on every change, synchronously, seconds even on thousand-file refactors. Walks the configured roots, parses code via tree-sitter (supporting Rust, Python, TypeScript/TSX, and Go), parses prose via the Markdown parser, mines git history, computes derived structural facts (reachability, dead code, hidden coupling, drift scores), commits to sqlite and syntext. Stage 4 resolution is **scoped and scored (`stage4-call-scope-narrowing-v1`)**, using a rubric (same file, imports, visibility, kind, prefix) to drastically narrow `Calls` edges. Visibility (`Public`, `Crate`, `Private`) is a first-class, cross-language field (`cross-language-symbol-visibility-v1`). Changed files are upserted in place (preserving stable node identity), and stale observations are soft-retired rather than cascade-deleted, so drift scoring and provenance remain coherent across revisions. That's the whole critical path — no cascade budget, no deferral, no nightly queue. A 1,000-file refactor gets its graph updated in a few seconds of tree-sitter plus the graph write. Agents never read stale structural state.
 
 **Synthesis pipeline (cold path, LLM-driven, lazy).** Never blocks the structural pipeline. Never blocks MCP queries. Runs in three triggering modes: on-demand (an MCP tool asked for commentary or a card at `deep` tier), background (low-priority worker regenerating overlay during idle time), or explicit (the user ran `synrepo sync --generate-cross-links`). Produces card commentary, proposes cross-links, runs lint. Everything it produces goes into the overlay. Input never includes other overlay content, enforced at the retrieval layer.
 
@@ -248,7 +248,7 @@ Staleness is explicit. Every overlay entry carries the content hash of the sourc
 
 How LLM-proposed cross-links get from "a candidate pair looks promising" to "an overlay entry with verified citations." Four stages.
 
-*v1 implementation.* Stages 2, 3, and 4 below ship today. Stage 1 ships the graph-distance plus prose-identifier variant of candidate generation (`src/pipeline/synthesis/cross_link/triage.rs`); the embedding layer is deferred (see §Reuse strategy and Phase 5). An operator opting in with `synrepo sync --generate-cross-links` gets verified, cited overlay links today without any local embedding model.
+*v1 implementation.* Stages 1 through 4 below are fully shipped. Stage 1 utilizes a deterministic name-match prefilter by default, with an opt-in **semantic triage (`semantic-triage-v1`)** feature backed by local ONNX models to catch relationship candidates that lack lexical overlap.
 
 ### Stage 1 — Hybrid candidate generation
 
@@ -260,7 +260,7 @@ score = 0.5 * embedding_cosine
       + 0.2 * 1/(1 + directory_distance)
 ```
 
-The default embedding model is `all-MiniLM-L6-v2` via the `ort` ONNX runtime crate — ~90 MB on disk, CPU-fast, 384-dimensional, fully local. Vectors are keyed by `(content_hash, model_id)` and cached in `.synrepo/embeddings/`. BYO API embedding is supported via the same trait.
+The default embedding model is `all-MiniLM-L6-v2` via the `ort` ONNX runtime crate — ~90 MB on disk, CPU-fast, 384-dimensional, fully local. Vectors are keyed by `(content_hash, model_id)` and cached in `.synrepo/embeddings/`. This semantic prefilter acts as a safety net for candidate pairs that fail the deterministic prefilter.
 
 For each source artifact, retrieve top 50 by raw embedding similarity, re-rank by the hybrid score, take top K (default 20). None of these land in the graph; they are candidates for the LLM to consider.
 
@@ -291,7 +291,12 @@ Verification is lexical, deterministic, but **normalized and fuzzy-matched**, no
 
 **Normalization layer.** Both the LLM's cited span and the candidate window from the source artifact are passed through the same normalizer: collapse whitespace runs, normalize line endings, normalize Unicode quote variants to ASCII, normalize Unicode dashes, lowercase the first character of the span.
 
-**Fuzzy token match.** After normalization, compare via token-level longest common subsequence at a configurable threshold (default 90%). If the best window in the source artifact has LCS ratio ≥ threshold, the citation is accepted and the edge is **snapped to the actual byte range of that window**, not the LLM's claimed offset. The threshold is provider-tunable — frontier models (Claude, GPT-4 class) use 95%, local models (Llama-3, Phi) use 90% or lower.
+**Fuzzy token match.** After normalization, compare via a highly efficient **3-stage cascade (`repair-fuzzy-match-algorithm-v1`)** bounded by a soft time budget:
+1. **Exact substring match** — for high-fidelity frontier model output.
+2. **Anchored partial match** — for cases where the LLM truncated or slightly altered the start/end.
+3. **Windowed LCS** — a sliding-window longest common subsequence at a configurable threshold (default 90%). 
+
+If any stage succeeds, the citation is accepted and the edge is **snapped to the actual byte range of that window**, not the LLM's claimed offset. The threshold is provider-tunable — frontier models (Claude, GPT-4 class) use 95%, local models (Llama-3, Phi) use 90% or lower.
 
 Why fuzzy is OK: the point isn't to prove the LLM produced a perfect transcription, it's to prove the substantive content the LLM claims exists in the source actually exists. A 90% token match means the LLM correctly identified a real passage and slightly mangled the surface form. Snapping to the actual span means the overlay records the truth, not the approximation.
 
@@ -311,21 +316,21 @@ Cited-evidence verification is a strong improvement over "the target node exists
 
 AST-based rename detection as the primary mechanism, with content hash and `git log --follow` as fallbacks. This is the single most important correctness problem: if file node identity breaks, every inbound edge breaks and the graph rots.
 
-**File identity.** `FileNodeId` is stable across both renames and in-place content edits. A content-hash change advances the `content_hash` version field on the file node without triggering node deletion. Symbols and edges that are no longer emitted after a content change are soft-retired (marked with `retired_at_rev`) rather than cascade-deleted, preserving cross-revision continuity for drift scoring and provenance.
+**File identity.** `FileNodeId` is stable across renames, splits, merges, and in-place content edits (`structural-resilience-v1` & `v2`). For new files, it is derived from the content hash of the first-seen version; for existing files, the stored ID is always reused. A content-hash change advances the `content_hash` version field on the file node without triggering node deletion or invalidating inbound edges. This prevents the graph from rotting during rapid local saves.
 
-When the structural pipeline detects a file disappearance and one or more new files in the same compile cycle, it runs the rename-detection cascade:
+When the structural pipeline detects a file disappearance and one or more new files in the same compile cycle, it runs the **Identity Cascade (shipped in Stage 6)**:
 
 1. **AST symbol-set match.** For each new file, compute the set of `(qualified_name, body_hash)` tuples for its top-level symbols. If a disappeared file's symbol set overlaps substantially (threshold configurable), treat it as a rename: preserve the file node ID, append the new path to path history, log the rename. Catches simple renames cleanly.
 2. **Symbol-set split.** If a disappeared file's symbols are split across multiple new files (e.g. `auth.rs` -> `jwt.rs` + `session.rs`), split the file node. The original retains its ID and points to the largest-overlap new file; a new node is created for the other with `split_from` provenance edges. Refactors heal automatically when there's structural evidence.
 3. **Symbol-set merge.** Symmetric: multiple disappeared files' symbols all in one new file -> new node with `merged_from` edges.
-4. **Git rename fallback.** When symbol evidence is inconclusive (config files, heavily refactored files), fall back to `git log --follow`.
+4. **Git rename fallback.** When symbol evidence is inconclusive, fall back to a deterministic `gix` rename detection pass.
 5. **Accept breakage as last resort.** When neither symbol nor git evidence connects an old file to a new one, treat it as delete + add. Log a finding. The system is designed to tolerate this gracefully: broken edges become candidates for the next synthesis pass.
 
 Physical deletion is reserved for files genuinely absent from the repository after the identity cascade, and for the compaction maintenance pass that removes retired observations older than the configured retention window (`retain_retired_revisions`, default 10 compile revisions).
 
 **Symbol identity.** `(file_node_id, qualified_name, kind, body_hash)`. A body rewrite updates the hash but keeps the node ID. A name change is detected via AST-match within-file.
 
-**Observation lifecycle.** Every parser-emitted symbol and edge carries an `owner_file_id` (the file whose parse pass produced it) and observation-window fields (`last_observed_rev`, `retired_at_rev`). Recompiling a file retires only observations owned by that file that were not re-emitted, leaving observations owned by other files untouched. Human-declared facts (`Epistemic::HumanDeclared`) are never retired by a parser pass. Retired observations remain physically present and visible to drift scoring until compacted.
+**Observation lifecycle.** Every parser-emitted symbol and edge carries an `owner_file_id` (the file whose parse pass produced it) and observation-window fields (`last_observed_rev`, `retired_at_rev`). This **soft-retirement lifecycle (`graph-lifecycle-v1`)** ensures that stale observations are marked retired rather than cascade-deleted, preserving the audit trail. Recompiling a file retires only observations owned by that file that were not re-emitted, leaving observations owned by other files untouched. Human-declared facts (`Epistemic::HumanDeclared`) are never retired by a parser pass. Retired observations remain physically present and visible to drift scoring (shipped in Stage 7) until compacted. Drift scoring uses Jaccard distance on persisted structural fingerprints in the sidecar `edge_drift` table.
 
 This is much stronger than a git-only approach but it is not bedrock. Pathological refactors (path moves + symbol renames + body rewrites in one commit) will still defeat it. The system degrades gracefully: broken edges become findings, the synthesis pipeline can re-propose them lazily.
 
@@ -335,7 +340,7 @@ This is much stronger than a git-only approach but it is not bedrock. Pathologic
 
 | Class | Handling |
 | --- | --- |
-| Code in a supported language (Rust, Python, TypeScript, etc.) | Full pipeline: index + tree-sitter parse + symbol extraction |
+| Code in a supported language (Rust, Python, TypeScript/TSX, Go) | Full pipeline: index + tree-sitter parse + symbol extraction |
 | Other text code (toml, yaml, sql, shell) | Index only, no symbol extraction |
 | Markdown / mdx | Index + link parse + frontmatter parse |
 | Jupyter notebooks | Extract source cells, ignore output cells |
@@ -381,10 +386,11 @@ Task-first and card-centric. The default response unit is a card (or set of card
 | `synrepo_where_to_edit(task_description, budget?)` | shipped | "I want to do X, which files matter?" | Ranked FileCards from lexical matches plus lightweight structural signals |
 | `synrepo_change_impact(target, budget?)` | shipped | "If I modify this, what could break?" | Approximate impacted files today; fuller ChangeRiskCard shape later |
 | `synrepo_entrypoints(scope?, budget?)` | shipped | "Where does execution start?" | EntryPointCards for the scope |
-| `synrepo_call_path(from, to, budget?)` | planned | "How does control flow get from A to B?" | CallPathCard with shortest path |
-| `synrepo_test_surface(target, budget?)` | planned | "What tests constrain this behavior?" | TestSurfaceCard |
-| `synrepo_minimum_context(task_description, budget?)` | planned | "Smallest file set for this task?" | Budget-capped ranked FileCards |
-| `synrepo_explain(target, require_freshness?)` | planned | "Why does this exist?" | DecisionCards if human-authored rationale exists |
+| `synrepo_call_path(from, to, budget?)` | shipped | "How does control flow get from A to B?" | CallPathCard with shortest path |
+| `synrepo_test_surface(target, budget?)` | shipped | "What tests constrain this behavior?" | TestSurfaceCard |
+| `synrepo_minimum_context(task_description, budget?)` | shipped | "Smallest file set for this task?" | Budget-capped ranked FileCards |
+| `synrepo_next_actions(limit?, since_days?)` | shipped | prioritized, derived handoffs from repair log, overlay, and git hotspots | prioritized task list |
+| `synrepo_public_api(path, budget?)` | shipped | "What is the public surface of this module?" | PublicAPICard |
 | `synrepo_search(query)` | shipped | Exact n-gram search via syntext | Lexical fallback when name-based lookup fails |
 | `synrepo_findings(scope?)` | shipped | Overlay findings and inconsistencies | Findings with provenance |
 
@@ -667,17 +673,25 @@ The key principle: agent usefulness arrives at phase 2 with zero LLM involvement
 
 **Phase 0 — substrate (shipped).** syntext as library dependency. Discover-and-index pipeline with file type handling and encoding robustness. CLI: `synrepo init`, `synrepo search`. No graph, no LLM.
 
-**Phase 1 — structural graph (shipped except drift scoring).** tree-sitter parsing via crate-bundled queries plus per-language `extra.scm`. sqlite graph store with observed-only epistemic labels and provenance. Stage 6 content-hash rename detection shipped; split / merge detection is still TODO. Markdown link parser shipped. Drift scoring on edges is a TODO stub (Stage 7). Structural compile pipeline is LLM-free and synchronous. CLI: `synrepo init [--mode auto|curated]`, `synrepo graph query`, `synrepo node <id>`.
+**Phase 1 — structural graph (fully shipped).** tree-sitter parsing via crate-bundled queries plus per-language `extra.scm`. sqlite graph store with observed-only epistemic labels and provenance. Stage 6 split/merge/rename detection, Stage 7 drift scoring, and Stage 8 `ArcSwap<Graph>` snapshot publication are shipped. Structural compile pipeline is LLM-free and synchronous.
 
-**Phase 2 — cards and the MCP server, no LLM (partially shipped; product milestone reached).** Shipped card compiler: SymbolCard, FileCard, ModuleCard, EntryPointCard, DecisionCard. Context budget protocol with `tiny` / `normal` / `deep` tiers and server-side enforcement shipped. Shipped MCP tools: `synrepo_overview`, `synrepo_card`, `synrepo_module_card`, `synrepo_search`, `synrepo_where_to_edit`, `synrepo_change_impact`, `synrepo_entrypoints`, `synrepo_findings`. Planned: `synrepo_call_path`, `synrepo_test_surface`, `synrepo_minimum_context`, `synrepo_explain` alongside the four planned card types. Known laziness drift: `FileCard.git_intelligence` wiring and `SymbolCard.last_change`. **This is the first phase where synrepo delivers real value, with zero LLM cost and zero staleness risk.** The product goal of sub-60-second orientation on a fresh 10k-file clone is reachable today for symbol- and file-level questions; it still falls short for change-impact and test-surface questions.
+**Phase 2 — cards and the MCP server (shipped).** Shipped card compiler: SymbolCard, FileCard, ModuleCard, EntryPointCard, DecisionCard, PublicAPICard, CallPathCard, TestSurfaceCard, ChangeRiskCard. Context budget protocol with `tiny` / `normal` / `deep` tiers and server-side enforcement shipped. Shipped MCP tools cover orientation, routing, impact, and search. `FileCard.git_intelligence` and `SymbolCard.last_change` (symbol-level granularity) are fully functional.
 
-**Phase 3 — git intelligence and DecisionCards (partially shipped).** Shipped: file-scoped history, hotspots, ownership, co-change via `gix`; inline `# DECISION:` marker parsing; DecisionCard. Not yet shipped: graph-level `CoChangesWith` edges; `SymbolCard.last_change`; bus factor; surfacing Git intelligence on `FileCard` (wiring gap, see Phase 2).
+**Phase 3 — git intelligence and co-change (shipped).** Shipped: file-scoped history, hotspots, ownership, co-change via `gix`; inline `# DECISION:` marker parsing; DecisionCard; graph-level `CoChangesWith` edges.
 
 **Phase 4 — card commentary tier (shipped).** LLM synthesis is trait-shaped (`CommentaryGenerator`), defaults to `NoOpGenerator`, opts into `ClaudeCommentaryGenerator` when `SYNREPO_ANTHROPIC_API_KEY` is set. Commentary lands in overlay, never in graph. Freshness labels (fresh / stale / missing / unsupported / invalid / budget_withheld) are enforced at the card surface.
 
-**Phase 5 — overlay cross-linking (partially shipped).** Shipped: graph-distance plus prose-identifier candidate triage (`src/pipeline/synthesis/cross_link/triage.rs`), two-stage Claude-backed LLM proposal, normalized fuzzy verification, confidence tiers, review queue, card surfacing at Deep tier, curated-mode promotion that creates `Governs` edges with `Epistemic::HumanDeclared`. Deferred: the embedding model (`all-MiniLM-L6-v2` via `ort`) is deliberately not shipped yet; the commented-out dependencies in `Cargo.toml` are a marker, not a gap. Embedding-based candidate generation becomes worth adding once the triage pass misses too many true candidates on larger repos.
+**Phase 5 — overlay cross-linking (shipped).** Shipped: graph-distance plus prose-identifier candidate triage, two-stage Claude-backed LLM proposal, normalized fuzzy verification (3-stage cascade), confidence tiers, review queue, card surfacing at Deep tier, curated-mode promotion that creates `Governs` edges with `Epistemic::HumanDeclared`. The embedding model (`all-MiniLM-L6-v2` via `ort`) is fully integrated for semantic triage.
 
-**Phase 6 — polish (shipped).** Shipped: `synrepo export`, `synrepo upgrade`, `synrepo status`, `synrepo agent-setup` across six agent targets, and dedicated `synrepo compact`. In progress: long-tail language support beyond Go, PDF extraction, decision relevance decay signals.
+**Phase 6 — polish (shipped).** Shipped: `synrepo export`, `synrepo upgrade`, `synrepo status`, `synrepo agent-setup` across agent targets, and dedicated `synrepo compact` (with retention policies and repair-log rotation).
+
+**Phase 7 — runtime UX (shipped).** The live-mode TUI dashboard hosted by foreground `synrepo watch` is shipped. The repair wizard UI (with `ratatui` + `crossterm`) is fully complete.
+
+### Hidden Triumphs (Architectural Hard-Wins)
+
+1. **The Write Admission Gate (`runtime-safety-hardening-v1`)**: A unified, thread-scoped write admission path that cleanly delegates to the watch daemon when active, making CLI/Daemon contention bulletproof.
+2. **Parser CI Strictness (`parse-hardening-tree-sitter`)**: Tree-sitter degradation is locked down via CI. If a query misses a capture or pattern indexes drift, CI fails immediately.
+3. **Agent Doctrine Consistency (`agent-doctrine-v1`)**: The agent doctrine is centralized into a single macro (`doctrine_block!()`). Every shim and MCP tool description is byte-identical at compile time, guaranteeing consistent escalation rules.
 
 Each phase produces something shippable. Phase 0 is a faster grep. Phase 1 is a static graph. **Phase 2 is the product.** Phase 4 adds prose. Phase 5 adds cross-linking. A reader who loses faith in the LLM parts after phase 2 still has a useful tool.
 

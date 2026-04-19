@@ -14,7 +14,7 @@ use crate::{
     pipeline::{
         maintenance::execute_maintenance,
         structural::run_structural_compile,
-        synthesis::{ClaudeCommentaryGenerator, CommentaryGenerator},
+        synthesis::{build_commentary_generator, CommentaryGenerator},
         watch::{
             emit_cochange_edges_pass, emit_symbol_revisions_pass, persist_reconcile_state,
             ReconcileOutcome,
@@ -201,7 +201,7 @@ pub fn refresh_commentary(
     let mut overlay = SqliteOverlayStore::open_existing(&overlay_dir)?;
     let graph = SqliteGraphStore::open_existing(&context.synrepo_dir.join("graph"))?;
     let generator: Box<dyn CommentaryGenerator> =
-        ClaudeCommentaryGenerator::new_or_noop(context.config.commentary_cost_limit);
+        build_commentary_generator(context.config, context.config.commentary_cost_limit);
 
     let rows = overlay.commentary_hashes()?;
     let mut refreshed = 0usize;

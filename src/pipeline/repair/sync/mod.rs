@@ -148,7 +148,7 @@ pub fn resolve_pending_promotions(synrepo_dir: &Path) -> crate::Result<usize> {
         pipeline::structural::derive_edge_id,
         store::overlay::{parse_overlay_edge_kind, SqliteOverlayStore},
         store::sqlite::SqliteGraphStore,
-        structure::graph::{EdgeKind, GraphStore},
+        structure::graph::EdgeKind,
     };
 
     let overlay_dir = synrepo_dir.join("overlay");

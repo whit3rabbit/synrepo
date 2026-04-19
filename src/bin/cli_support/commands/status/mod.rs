@@ -10,9 +10,13 @@ use std::fmt::Write;
 use std::path::Path;
 
 use synrepo::{
-    pipeline::diagnostics::{EmbeddingHealth, ReconcileHealth, WriterStatus},
+    pipeline::{
+        diagnostics::{EmbeddingHealth, ReconcileHealth, WriterStatus},
+        synthesis::SynthesisStatus,
+    },
     surface::status_snapshot::{
-        build_status_snapshot, CommentaryCoverage, RepairAuditState, StatusOptions, StatusSnapshot,
+        build_status_snapshot, CommentaryCoverage, GraphSnapshotStatus, RepairAuditState,
+        StatusOptions, StatusSnapshot, SynthesisDisplay,
     },
 };
 
@@ -36,12 +40,12 @@ pub(crate) fn status_output(
     if json {
         write_status_json(&mut out, &snapshot)?;
     } else {
-        write_status_text(&mut out, &snapshot);
+        write_status_text(&mut out, &snapshot, full);
     }
     Ok(out)
 }
 
-fn write_status_text(out: &mut String, snapshot: &StatusSnapshot) {
+fn write_status_text(out: &mut String, snapshot: &StatusSnapshot, full: bool) {
     if !snapshot.initialized {
         writeln!(out, "synrepo status: not initialized").unwrap();
         writeln!(
@@ -137,6 +141,19 @@ fn write_status_text(out: &mut String, snapshot: &StatusSnapshot) {
     .unwrap();
     writeln!(out, "  export:       {}", snapshot.export_freshness).unwrap();
     writeln!(out, "  overlay cost: {}", snapshot.overlay_cost_summary).unwrap();
+    if full {
+        writeln!(
+            out,
+            "  snapshot:     epoch {}  age {}  size {} ({} files / {} symbols / {} edges)",
+            snapshot.graph_snapshot.epoch,
+            render_snapshot_age(snapshot.graph_snapshot.age_ms),
+            render_snapshot_size(snapshot.graph_snapshot.size_bytes),
+            snapshot.graph_snapshot.file_count,
+            snapshot.graph_snapshot.symbol_count,
+            snapshot.graph_snapshot.edge_count,
+        )
+        .unwrap();
+    }
     match &diag.embedding_health {
         EmbeddingHealth::Disabled => {}
         EmbeddingHealth::Available { model, dim, chunks } => {
@@ -161,6 +178,14 @@ fn write_status_text(out: &mut String, snapshot: &StatusSnapshot) {
         helpers::render_repair_audit(&snapshot.repair_audit)
     )
     .unwrap();
+
+    // Synthesis provider status
+    if let Some(synthesis) = &snapshot.synthesis_provider {
+        writeln!(out, "  synthesis:    {}", render_synthesis_line(synthesis)).unwrap();
+    } else {
+        writeln!(out, "  synthesis:    not initialized").unwrap();
+    }
+
     writeln!(
         out,
         "  next step:    {}",
@@ -272,6 +297,8 @@ fn write_status_json(out: &mut String, snapshot: &StatusSnapshot) -> anyhow::Res
             }),
         },
         "commentary_coverage": commentary_json,
+        "graph_snapshot": graph_snapshot_json(&snapshot.graph_snapshot),
+        "synthesis_provider": snapshot.synthesis_provider.as_ref().map(synthesis_json),
         "recent_activity": activity_json,
         "last_compaction_timestamp": snapshot.last_compaction.map(|ts| ts.to_string()),
         "repair_audit": repair_audit_json,
@@ -285,6 +312,70 @@ fn commentary_json(coverage: &CommentaryCoverage) -> serde_json::Value {
     serde_json::json!({
         "total": coverage.total,
         "fresh": coverage.fresh,
+    })
+}
+
+fn graph_snapshot_json(snapshot: &GraphSnapshotStatus) -> serde_json::Value {
+    serde_json::json!({
+        "snapshot_epoch": snapshot.epoch,
+        "snapshot_age_ms": snapshot.age_ms,
+        "snapshot_size_bytes": snapshot.size_bytes,
+        "files": snapshot.file_count,
+        "symbols": snapshot.symbol_count,
+        "edges": snapshot.edge_count,
+    })
+}
+
+fn render_snapshot_age(age_ms: u64) -> String {
+    if age_ms < 1_000 {
+        format!("{age_ms}ms")
+    } else {
+        format!("{:.1}s", age_ms as f64 / 1_000.0)
+    }
+}
+
+fn render_snapshot_size(size_bytes: usize) -> String {
+    const KIB: f64 = 1024.0;
+    const MIB: f64 = 1024.0 * 1024.0;
+    if size_bytes >= 1024 * 1024 {
+        format!("{:.1} MiB", size_bytes as f64 / MIB)
+    } else if size_bytes >= 1024 {
+        format!("{:.1} KiB", size_bytes as f64 / KIB)
+    } else {
+        format!("{size_bytes} B")
+    }
+}
+
+fn render_synthesis_line(display: &SynthesisDisplay) -> String {
+    let provider_and_model = match &display.model {
+        Some(m) => format!("{} ({})", display.provider, m),
+        None => display.provider.clone(),
+    };
+    match &display.status {
+        SynthesisStatus::Enabled => provider_and_model,
+        SynthesisStatus::DisabledKeyDetected { env_var } => {
+            format!(
+                "disabled ({env_var} detected; set [synthesis] enabled = true in \
+                 .synrepo/config.toml to use it)"
+            )
+        }
+        SynthesisStatus::Disabled => "disabled".to_string(),
+    }
+}
+
+fn synthesis_json(display: &SynthesisDisplay) -> serde_json::Value {
+    let (status_str, detected_env_var) = match &display.status {
+        SynthesisStatus::Enabled => ("enabled", None),
+        SynthesisStatus::DisabledKeyDetected { env_var } => {
+            ("disabled_key_detected", Some(*env_var))
+        }
+        SynthesisStatus::Disabled => ("disabled", None),
+    };
+    serde_json::json!({
+        "provider": display.provider,
+        "model": display.model,
+        "status": status_str,
+        "detected_env_var": detected_env_var,
     })
 }
 

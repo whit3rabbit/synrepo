@@ -95,10 +95,6 @@ pub fn resolve_neighborhood(
     target: &str,
     budget: Budget,
 ) -> crate::Result<MinimumContextResponse> {
-    let graph = compiler.graph();
-
-    graph.begin_read_snapshot()?;
-    let result = resolve::resolve_neighborhood_inner(compiler, graph, target, budget);
-    let _ = graph.end_read_snapshot();
-    result
+    compiler
+        .with_reader(|graph| resolve::resolve_neighborhood_inner(compiler, graph, target, budget))
 }

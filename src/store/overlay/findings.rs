@@ -8,8 +8,7 @@ use crate::{
         with_overlay_read_snapshot, ConfidenceTier, CrossLinkFreshness, CrossLinkProvenance,
         OverlayEdgeKind,
     },
-    store::sqlite::SqliteGraphStore,
-    structure::graph::{with_graph_read_snapshot, GraphStore},
+    structure::graph::GraphReader,
 };
 
 use super::SqliteOverlayStore;
@@ -58,66 +57,64 @@ impl SqliteOverlayStore {
     /// Query operator-facing findings over the active cross-link overlay.
     pub fn findings(
         &self,
-        graph: &SqliteGraphStore,
+        graph: &dyn GraphReader,
         filter: &FindingsFilter,
     ) -> crate::Result<Vec<CrossLinkFinding>> {
-        with_graph_read_snapshot(graph, |_| {
-            with_overlay_read_snapshot(self, |overlay| {
-                let candidates = match filter.node_id {
-                    Some(node_id) => overlay.links_for(node_id)?,
-                    None => overlay.all_candidates(None)?,
-                };
+        with_overlay_read_snapshot(self, |overlay| {
+            let candidates = match filter.node_id {
+                Some(node_id) => overlay.links_for(node_id)?,
+                None => overlay.all_candidates(None)?,
+            };
 
-                let mut findings = Vec::new();
-                for candidate in candidates {
-                    if filter.kind.is_some_and(|kind| candidate.kind != kind) {
-                        continue;
-                    }
-
-                    let freshness = crate::overlay::derive_link_freshness(
-                        &candidate,
-                        current_endpoint_hash(graph, candidate.from)?.as_deref(),
-                        current_endpoint_hash(graph, candidate.to)?.as_deref(),
-                    );
-
-                    if filter
-                        .freshness
-                        .is_some_and(|expected| freshness != expected)
-                    {
-                        continue;
-                    }
-
-                    if !matches_default_audit_surface(candidate.confidence_tier, freshness) {
-                        continue;
-                    }
-
-                    findings.push(CrossLinkFinding {
-                        candidate_id: format_candidate_id(
-                            candidate.from,
-                            candidate.to,
-                            candidate.kind,
-                            &candidate.provenance.pass_id,
-                        ),
-                        from_node_id: candidate.from.to_string(),
-                        to_node_id: candidate.to.to_string(),
-                        kind: candidate.kind,
-                        tier: candidate.confidence_tier,
-                        score: candidate.confidence_score,
-                        freshness,
-                        source_span_count: candidate.source_spans.len(),
-                        target_span_count: candidate.target_spans.len(),
-                        rationale: candidate.rationale,
-                        provenance: candidate.provenance,
-                    });
+            let mut findings = Vec::new();
+            for candidate in candidates {
+                if filter.kind.is_some_and(|kind| candidate.kind != kind) {
+                    continue;
                 }
 
-                findings.sort_by(compare_findings);
-                if let Some(limit) = filter.limit {
-                    findings.truncate(limit);
+                let freshness = crate::overlay::derive_link_freshness(
+                    &candidate,
+                    current_endpoint_hash(graph, candidate.from)?.as_deref(),
+                    current_endpoint_hash(graph, candidate.to)?.as_deref(),
+                );
+
+                if filter
+                    .freshness
+                    .is_some_and(|expected| freshness != expected)
+                {
+                    continue;
                 }
 
-                Ok(findings)
-            })
+                if !matches_default_audit_surface(candidate.confidence_tier, freshness) {
+                    continue;
+                }
+
+                findings.push(CrossLinkFinding {
+                    candidate_id: format_candidate_id(
+                        candidate.from,
+                        candidate.to,
+                        candidate.kind,
+                        &candidate.provenance.pass_id,
+                    ),
+                    from_node_id: candidate.from.to_string(),
+                    to_node_id: candidate.to.to_string(),
+                    kind: candidate.kind,
+                    tier: candidate.confidence_tier,
+                    score: candidate.confidence_score,
+                    freshness,
+                    source_span_count: candidate.source_spans.len(),
+                    target_span_count: candidate.target_spans.len(),
+                    rationale: candidate.rationale,
+                    provenance: candidate.provenance,
+                });
+            }
+
+            findings.sort_by(compare_findings);
+            if let Some(limit) = filter.limit {
+                findings.truncate(limit);
+            }
+
+            Ok(findings)
         })
     }
 }
@@ -211,7 +208,7 @@ fn matches_default_audit_surface(tier: ConfidenceTier, freshness: CrossLinkFresh
     ) || freshness == CrossLinkFreshness::SourceDeleted
 }
 
-fn current_endpoint_hash(graph: &dyn GraphStore, node: NodeId) -> crate::Result<Option<String>> {
+fn current_endpoint_hash(graph: &dyn GraphReader, node: NodeId) -> crate::Result<Option<String>> {
     match node {
         NodeId::File(file_id) => Ok(graph.get_file(file_id)?.map(|file| file.content_hash)),
         NodeId::Symbol(symbol_id) => {

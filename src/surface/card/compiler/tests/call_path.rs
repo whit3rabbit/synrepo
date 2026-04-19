@@ -3,7 +3,7 @@
 use super::super::test_support::bootstrap;
 use super::super::{Budget, SourceStore};
 use super::fixtures::make_compiler;
-use crate::{core::ids::SymbolNodeId, structure::graph::GraphStore, surface::card::CardCompiler};
+use crate::{core::ids::SymbolNodeId, surface::card::CardCompiler};
 use std::fs;
 use tempfile::tempdir;
 

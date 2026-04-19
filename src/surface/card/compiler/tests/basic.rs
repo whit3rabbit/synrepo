@@ -5,9 +5,7 @@ use super::super::test_support::bootstrap;
 use super::super::{Budget, GraphCardCompiler, SourceStore};
 use super::fixtures::make_compiler;
 use crate::{
-    core::ids::NodeId,
-    store::sqlite::SqliteGraphStore,
-    structure::graph::{EdgeKind, GraphStore},
+    core::ids::NodeId, store::sqlite::SqliteGraphStore, structure::graph::EdgeKind,
     surface::card::CardCompiler,
 };
 use insta::assert_snapshot;

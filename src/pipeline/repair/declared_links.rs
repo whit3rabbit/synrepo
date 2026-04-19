@@ -1,10 +1,6 @@
 use std::path::Path;
 
-use crate::{
-    core::ids::NodeId,
-    store::sqlite::SqliteGraphStore,
-    structure::graph::{EdgeKind, GraphStore},
-};
+use crate::{core::ids::NodeId, store::sqlite::SqliteGraphStore, structure::graph::EdgeKind};
 
 use super::{DriftClass, RepairAction, RepairFinding, RepairSurface, Severity};
 

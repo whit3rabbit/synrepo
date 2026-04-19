@@ -1,8 +1,8 @@
 ## 0. User approval gate
 
-- [ ] 0.1 Confirm with operator: scope is full graph in memory, not file+symbol index only. Record the answer in `notes.md`.
-- [ ] 0.2 Confirm with operator: 500 MB default memory ceiling. Adjust if the operator has tighter / looser constraints.
-- [ ] 0.3 Confirm with operator: this change lands after `symbol-body-hash-column-v1`. If that change is not merged, halt here.
+- [x] 0.1 Confirm with operator: scope is full graph in memory, not file+symbol index only. Record the answer in `notes.md`.
+- [x] 0.2 Confirm with operator: 500 MB default memory ceiling. Adjust if the operator has tighter / looser constraints.
+- [x] 0.3 Confirm with operator: this change lands after `symbol-body-hash-column-v1`. If that change is not merged, halt here.
 
 ## 1. Extract `GraphReader` trait
 

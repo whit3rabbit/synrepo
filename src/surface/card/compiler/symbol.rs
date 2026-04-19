@@ -4,7 +4,7 @@ use std::sync::Arc;
 use crate::{
     core::ids::{NodeId, SymbolNodeId},
     overlay::{FreshnessState, OverlayStore},
-    structure::graph::GraphStore,
+    structure::graph::GraphReader,
     surface::card::git::symbol_last_change_from_insights,
     surface::card::types::{Freshness, OverlayCommentary},
 };
@@ -16,7 +16,7 @@ use super::{Budget, GraphCardCompiler, SourceStore, SymbolCard, SymbolRef};
 /// optional overlay/generator pair.
 pub(super) struct SymbolCardContext<'a> {
     pub compiler: &'a GraphCardCompiler,
-    pub graph: &'a dyn GraphStore,
+    pub graph: &'a dyn GraphReader,
     pub repo_root: &'a Option<PathBuf>,
     pub overlay: Option<&'a Arc<parking_lot::Mutex<dyn OverlayStore>>>,
 }

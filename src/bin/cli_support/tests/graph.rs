@@ -3,7 +3,6 @@ use super::support::{git, git_stdout, git_with_author, seed_graph};
 use synrepo::bootstrap::bootstrap;
 use synrepo::config::Config;
 use synrepo::store::sqlite::SqliteGraphStore;
-use synrepo::structure::graph::GraphStore;
 use tempfile::tempdir;
 
 #[test]

@@ -1,5 +1,5 @@
 use super::support::open_graph;
-use crate::{config::Config, structure::graph::GraphStore};
+use crate::config::Config;
 use std::fs;
 use tempfile::tempdir;
 

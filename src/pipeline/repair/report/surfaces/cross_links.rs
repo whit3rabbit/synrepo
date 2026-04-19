@@ -227,7 +227,6 @@ fn current_endpoint_hash(
     node: crate::core::ids::NodeId,
 ) -> crate::Result<Option<String>> {
     use crate::core::ids::NodeId;
-    use crate::structure::graph::GraphStore;
 
     match node {
         NodeId::File(file_id) => Ok(graph.get_file(file_id)?.map(|f| f.content_hash)),

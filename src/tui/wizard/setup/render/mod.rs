@@ -4,7 +4,10 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
 
+mod synthesis;
+
 use super::state::{SetupStep, SetupWizardState, WIZARD_TARGETS};
+use super::synthesis::SynthesisChoice;
 use crate::tui::app::poll_key;
 use crate::tui::theme::Theme;
 use crate::tui::wizard::{enter_tui, leave_tui, target_label, WizardTerminal};
@@ -57,10 +60,13 @@ fn draw(frame: &mut ratatui::Frame, state: &SetupWizardState, theme: &Theme) {
 
     let title = Paragraph::new(Line::from(Span::styled(
         match state.step {
-            SetupStep::Splash => " synrepo setup — step 1/4: welcome ",
-            SetupStep::SelectMode => " synrepo setup — step 2/4: graph mode ",
-            SetupStep::SelectTarget => " synrepo setup — step 3/4: agent integration ",
-            SetupStep::Confirm => " synrepo setup — step 4/4: confirm ",
+            SetupStep::Splash => " synrepo setup — step 1/5: welcome ",
+            SetupStep::SelectMode => " synrepo setup — step 2/5: graph mode ",
+            SetupStep::SelectTarget => " synrepo setup — step 3/5: agent integration ",
+            SetupStep::SelectSynthesis => " synrepo setup — step 4/5: LLM synthesis ",
+            SetupStep::SelectLocalPreset => " synrepo setup — step 4a: local LLM preset ",
+            SetupStep::EditLocalEndpoint => " synrepo setup — step 4b: local endpoint ",
+            SetupStep::Confirm => " synrepo setup — step 5/5: confirm ",
             SetupStep::Complete => " synrepo setup — done ",
         },
         theme.agent_style(),
@@ -76,13 +82,26 @@ fn draw(frame: &mut ratatui::Frame, state: &SetupWizardState, theme: &Theme) {
         SetupStep::Splash => draw_splash_step(frame, outer[1], theme),
         SetupStep::SelectMode => draw_mode_step(frame, outer[1], state, theme),
         SetupStep::SelectTarget => draw_target_step(frame, outer[1], state, theme),
+        SetupStep::SelectSynthesis => synthesis::draw_synthesis_step(frame, outer[1], state, theme),
+        SetupStep::SelectLocalPreset => {
+            synthesis::draw_local_preset_step(frame, outer[1], state, theme)
+        }
+        SetupStep::EditLocalEndpoint => {
+            synthesis::draw_local_endpoint_step(frame, outer[1], state, theme)
+        }
         SetupStep::Confirm => draw_confirm_step(frame, outer[1], state, theme),
         SetupStep::Complete => {}
     }
 
     let hint = match state.step {
         SetupStep::Splash => " Enter continue  Esc exit ",
-        SetupStep::SelectMode | SetupStep::SelectTarget => " ↑/↓ move  Enter select  Esc cancel ",
+        SetupStep::SelectMode
+        | SetupStep::SelectTarget
+        | SetupStep::SelectSynthesis
+        | SetupStep::SelectLocalPreset => " ↑/↓ move  Enter select  Esc cancel ",
+        SetupStep::EditLocalEndpoint => {
+            " type URL  Enter accept  Esc back  Ctrl-U clear  Ctrl-C abort "
+        }
         SetupStep::Confirm => " Enter apply  b back  Ctrl-C abort ",
         SetupStep::Complete => "",
     };
@@ -209,33 +228,69 @@ fn draw_confirm_step(
         theme.base_style(),
     )));
     lines.push(Line::from(Span::raw("")));
+    let mut step_no: usize = 1;
     lines.push(Line::from(Span::styled(
-        format!("  1. init .synrepo/ in {} mode", state.mode),
+        format!("  {step_no}. init .synrepo/ in {} mode", state.mode),
         theme.base_style(),
     )));
-    match state.target {
-        Some(target) => {
+    step_no += 1;
+    if let Some(target) = state.target {
+        lines.push(Line::from(Span::styled(
+            format!("  {step_no}. write agent shim for {}", target_label(target)),
+            theme.base_style(),
+        )));
+        step_no += 1;
+        lines.push(Line::from(Span::styled(
+            format!(
+                "  {step_no}. register MCP server for {}",
+                target_label(target)
+            ),
+            theme.base_style(),
+        )));
+        step_no += 1;
+    }
+    match &state.synthesis {
+        Some(SynthesisChoice::Cloud(provider)) => {
             lines.push(Line::from(Span::styled(
-                format!("  2. write agent shim for {}", target_label(target)),
+                format!(
+                    "  {step_no}. enable synthesis via {} (set {} in your shell)",
+                    provider.config_value(),
+                    synthesis::provider_env_var(*provider),
+                ),
                 theme.base_style(),
             )));
+            step_no += 1;
+        }
+        Some(SynthesisChoice::Local { preset, endpoint }) => {
             lines.push(Line::from(Span::styled(
-                format!("  3. register MCP server for {}", target_label(target)),
+                format!(
+                    "  {step_no}. enable local synthesis ({} at {endpoint})",
+                    preset.config_value()
+                ),
                 theme.base_style(),
             )));
-            lines.push(Line::from(Span::styled(
-                "  4. run first reconcile pass",
-                theme.base_style(),
-            )));
+            step_no += 1;
         }
         None => {
             lines.push(Line::from(Span::styled(
-                "  2. run first reconcile pass (agent integration skipped)",
-                theme.base_style(),
+                format!("  {step_no}. leave synthesis disabled (no [synthesis] block)"),
+                theme.muted_style(),
             )));
+            step_no += 1;
         }
     }
+    lines.push(Line::from(Span::styled(
+        format!("  {step_no}. run first reconcile pass"),
+        theme.base_style(),
+    )));
     lines.push(Line::from(Span::raw("")));
+    if matches!(state.synthesis, Some(SynthesisChoice::Cloud(_))) {
+        lines.push(Line::from(Span::styled(
+            "Reminder: API keys stay in your shell only. synrepo never writes them to disk.",
+            theme.muted_style(),
+        )));
+        lines.push(Line::from(Span::raw("")));
+    }
     lines.push(Line::from(Span::styled(
         "No files have been written yet. Press Enter to apply or b to go back.",
         theme.muted_style(),

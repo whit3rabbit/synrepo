@@ -8,12 +8,127 @@ use crate::structure::drift::StructuralFingerprint;
 use super::edge::{Edge, EdgeKind};
 use super::node::{ConceptNode, FileNode, SymbolKind, SymbolNode, Visibility};
 
+/// Read-only access to the canonical graph.
+pub trait GraphReader: Send + Sync {
+    /// Look up a file node by its stable ID.
+    fn get_file(&self, id: FileNodeId) -> crate::Result<Option<FileNode>>;
+
+    /// Look up a symbol node by its stable ID.
+    fn get_symbol(&self, id: SymbolNodeId) -> crate::Result<Option<SymbolNode>>;
+
+    /// Look up a concept node by its stable ID.
+    fn get_concept(&self, id: ConceptNodeId) -> crate::Result<Option<ConceptNode>>;
+
+    /// Find the file node currently associated with a given path.
+    fn file_by_path(&self, path: &str) -> crate::Result<Option<FileNode>>;
+
+    /// All outbound edges from a node, optionally filtered by kind.
+    fn outbound(&self, from: NodeId, kind: Option<EdgeKind>) -> crate::Result<Vec<Edge>>;
+
+    /// All inbound edges to a node, optionally filtered by kind.
+    fn inbound(&self, to: NodeId, kind: Option<EdgeKind>) -> crate::Result<Vec<Edge>>;
+
+    /// Return all file paths currently in the graph with their stable node IDs.
+    fn all_file_paths(&self) -> crate::Result<Vec<(String, FileNodeId)>>;
+
+    /// Return all concept paths currently in the graph with their stable node IDs.
+    fn all_concept_paths(&self) -> crate::Result<Vec<(String, ConceptNodeId)>>;
+
+    /// Return `(id, file_id, qualified_name)` tuples for all symbol nodes.
+    fn all_symbol_names(&self) -> crate::Result<Vec<(SymbolNodeId, FileNodeId, String)>>;
+
+    /// Return `(id, file_id, qualified_name, kind_label, body_hash)` tuples for
+    /// all symbol nodes in a single batch query.
+    #[allow(clippy::type_complexity)]
+    fn all_symbols_summary(
+        &self,
+    ) -> crate::Result<Vec<(SymbolNodeId, FileNodeId, String, String, String)>> {
+        let names = self.all_symbol_names()?;
+        let mut out = Vec::with_capacity(names.len());
+        for (sym_id, file_id, qname) in names {
+            if let Ok(Some(sym)) = self.get_symbol(sym_id) {
+                out.push((
+                    sym_id,
+                    file_id,
+                    qname,
+                    sym.kind.as_str().to_string(),
+                    sym.body_hash,
+                ));
+            }
+        }
+        Ok(out)
+    }
+
+    /// Return `(id, file_id, qualified_name, kind, visibility)` tuples for all
+    /// active symbol nodes, used by stage-4 call-scope narrowing.
+    #[allow(clippy::type_complexity)]
+    fn all_symbols_for_resolution(
+        &self,
+    ) -> crate::Result<Vec<(SymbolNodeId, FileNodeId, String, SymbolKind, Visibility)>> {
+        let names = self.all_symbol_names()?;
+        let mut out = Vec::with_capacity(names.len());
+        for (sym_id, file_id, qname) in names {
+            if let Ok(Some(sym)) = self.get_symbol(sym_id) {
+                out.push((sym_id, file_id, qname, sym.kind, sym.visibility));
+            }
+        }
+        Ok(out)
+    }
+
+    /// Return all edges in the graph regardless of source node type.
+    fn all_edges(&self) -> crate::Result<Vec<Edge>> {
+        let mut edges = Vec::new();
+        for (_, file_id) in self.all_file_paths()? {
+            edges.extend(self.outbound(NodeId::File(file_id), None)?);
+        }
+        Ok(edges)
+    }
+
+    /// Return all active (non-retired) symbols owned by a file.
+    fn symbols_for_file(&self, _file_id: FileNodeId) -> crate::Result<Vec<SymbolNode>> {
+        Ok(Vec::new())
+    }
+
+    /// Return all active (non-retired) edges owned by a file.
+    fn edges_owned_by(&self, _file_id: FileNodeId) -> crate::Result<Vec<Edge>> {
+        Ok(Vec::new())
+    }
+
+    /// Return all active (non-retired) edges in the graph.
+    fn active_edges(&self) -> crate::Result<Vec<Edge>> {
+        self.all_edges()
+    }
+
+    /// Return the count of edges matching `kind`.
+    fn count_edges_by_kind(&self, kind: EdgeKind) -> crate::Result<usize> {
+        Ok(self
+            .all_edges()?
+            .into_iter()
+            .filter(|edge| edge.kind == kind)
+            .count())
+    }
+
+    /// Return all `ConceptNode`s that have an outgoing `Governs` edge to `node_id`.
+    fn find_governing_concepts(&self, node_id: NodeId) -> crate::Result<Vec<ConceptNode>> {
+        let edges = self.inbound(node_id, Some(EdgeKind::Governs))?;
+        let mut concepts = Vec::new();
+        for edge in edges {
+            if let NodeId::Concept(concept_id) = edge.from {
+                if let Some(concept) = self.get_concept(concept_id)? {
+                    concepts.push(concept);
+                }
+            }
+        }
+        Ok(concepts)
+    }
+}
+
 /// Trait for the canonical graph store.
 ///
 /// Phase 1 implementation is sqlite-backed; see [`crate::store`].
 /// Other backends (in-memory for tests, petgraph for hot queries) can
 /// implement this trait without changes to callers.
-pub trait GraphStore: Send + Sync {
+pub trait GraphStore: GraphReader {
     /// Insert or update a file node.
     fn upsert_file(&mut self, node: FileNode) -> crate::Result<()>;
 
@@ -49,24 +164,6 @@ pub trait GraphStore: Send + Sync {
     /// Delete a node and all incident edges. Used when a file disappears
     /// and the identity cascade cannot find a new home for it.
     fn delete_node(&mut self, id: NodeId) -> crate::Result<()>;
-
-    /// Look up a file node by its stable ID.
-    fn get_file(&self, id: FileNodeId) -> crate::Result<Option<FileNode>>;
-
-    /// Look up a symbol node by its stable ID.
-    fn get_symbol(&self, id: SymbolNodeId) -> crate::Result<Option<SymbolNode>>;
-
-    /// Look up a concept node by its stable ID.
-    fn get_concept(&self, id: ConceptNodeId) -> crate::Result<Option<ConceptNode>>;
-
-    /// Find the file node currently associated with a given path.
-    fn file_by_path(&self, path: &str) -> crate::Result<Option<FileNode>>;
-
-    /// All outbound edges from a node, optionally filtered by kind.
-    fn outbound(&self, from: NodeId, kind: Option<EdgeKind>) -> crate::Result<Vec<Edge>>;
-
-    /// All inbound edges to a node, optionally filtered by kind.
-    fn inbound(&self, to: NodeId, kind: Option<EdgeKind>) -> crate::Result<Vec<Edge>>;
 
     /// Begin a write batch. Called before the first graph interaction in each
     /// structural compile cycle. No-op for in-memory or test stores.
@@ -123,73 +220,6 @@ pub trait GraphStore: Send + Sync {
         Ok(())
     }
 
-    /// Return all file paths currently in the graph with their stable node IDs.
-    /// Used by the structural compile to detect stale file facts.
-    fn all_file_paths(&self) -> crate::Result<Vec<(String, FileNodeId)>>;
-
-    /// Return all concept paths currently in the graph with their stable node IDs.
-    /// Used by the structural compile to detect stale concept facts.
-    fn all_concept_paths(&self) -> crate::Result<Vec<(String, ConceptNodeId)>>;
-
-    /// Return `(id, file_id, qualified_name)` tuples for all symbol nodes.
-    ///
-    /// Used by the stage-4 name-resolution pass to build the global symbol
-    /// index without loading full JSON blobs.
-    fn all_symbol_names(&self) -> crate::Result<Vec<(SymbolNodeId, FileNodeId, String)>>;
-
-    /// Return `(id, file_id, qualified_name, kind_label, body_hash)` tuples for
-    /// all symbol nodes in a single batch query.
-    ///
-    /// Supersedes calling `all_symbol_names` + individual `get_symbol` per row
-    /// (N+1 anti-pattern). The `kind_label` field is the stable snake_case
-    /// string returned by `SymbolKind::as_str`.
-    ///
-    /// The default implementation falls back to `all_symbol_names` + `get_symbol`
-    /// so existing test stores compile without change; the SQLite backend
-    /// overrides this with a single `SELECT`.
-    #[allow(clippy::type_complexity)]
-    fn all_symbols_summary(
-        &self,
-    ) -> crate::Result<Vec<(SymbolNodeId, FileNodeId, String, String, String)>> {
-        let names = self.all_symbol_names()?;
-        let mut out = Vec::with_capacity(names.len());
-        for (sym_id, file_id, qname) in names {
-            if let Ok(Some(sym)) = self.get_symbol(sym_id) {
-                out.push((
-                    sym_id,
-                    file_id,
-                    qname,
-                    sym.kind.as_str().to_string(),
-                    sym.body_hash,
-                ));
-            }
-        }
-        Ok(out)
-    }
-
-    /// Return `(id, file_id, qualified_name, kind, visibility)` tuples for all
-    /// active symbol nodes, used by stage-4 call-scope narrowing.
-    ///
-    /// Supersedes `all_symbol_names()` + per-row `get_symbol()` for stage 4
-    /// (N+1 anti-pattern). `kind` and `visibility` both live in the `data`
-    /// blob today; the SQLite backend parses them from a single SELECT.
-    ///
-    /// The default implementation falls back to `all_symbol_names` +
-    /// `get_symbol` so in-memory test stores compile without change.
-    #[allow(clippy::type_complexity)]
-    fn all_symbols_for_resolution(
-        &self,
-    ) -> crate::Result<Vec<(SymbolNodeId, FileNodeId, String, SymbolKind, Visibility)>> {
-        let names = self.all_symbol_names()?;
-        let mut out = Vec::with_capacity(names.len());
-        for (sym_id, file_id, qname) in names {
-            if let Ok(Some(sym)) = self.get_symbol(sym_id) {
-                out.push((sym_id, file_id, qname, sym.kind, sym.visibility));
-            }
-        }
-        Ok(out)
-    }
-
     /// Return the latest revision string stored in the `edge_drift` table, or
     /// `None` when the table is empty or the store does not support drift.
     ///
@@ -232,19 +262,6 @@ pub trait GraphStore: Send + Sync {
     /// revision's fingerprints for comparison.
     fn latest_fingerprint_revision(&self) -> crate::Result<Option<String>> {
         Ok(None)
-    }
-
-    /// Return all edges in the graph regardless of source node type.
-    /// Used by drift scoring to iterate over every edge, including those
-    /// whose source is a symbol or concept node.
-    fn all_edges(&self) -> crate::Result<Vec<Edge>> {
-        // Default: fall back to collecting file-outbound edges. The SQLite
-        // backend overrides this with a single SELECT.
-        let mut edges = Vec::new();
-        for (_, file_id) in self.all_file_paths()? {
-            edges.extend(self.outbound(NodeId::File(file_id), None)?);
-        }
-        Ok(edges)
     }
 
     /// Batch-write structural fingerprints for files at a given revision.
@@ -300,44 +317,10 @@ pub trait GraphStore: Send + Sync {
         Ok(())
     }
 
-    /// Return all active (non-retired) symbols owned by a file.
-    fn symbols_for_file(&self, _file_id: FileNodeId) -> crate::Result<Vec<SymbolNode>> {
-        Ok(Vec::new())
-    }
-
-    /// Return all active (non-retired) edges owned by a file.
-    fn edges_owned_by(&self, _file_id: FileNodeId) -> crate::Result<Vec<Edge>> {
-        Ok(Vec::new())
-    }
-
-    /// Return all active (non-retired) edges in the graph.
-    /// Card compilation and MCP queries use this instead of `all_edges()`
-    /// to avoid surfacing retired observations.
-    fn active_edges(&self) -> crate::Result<Vec<Edge>> {
-        self.all_edges()
-    }
-
     /// Physically delete retired nodes/edges older than `older_than_rev`.
     /// Returns counts of removed rows. Default no-op.
     fn compact_retired(&mut self, _older_than_rev: u64) -> crate::Result<CompactionSummary> {
         Ok(CompactionSummary::default())
-    }
-
-    /// Return all `ConceptNode`s that have an outgoing `Governs` edge to `node_id`.
-    ///
-    /// This is a default method backed by `inbound` + `get_concept` so all
-    /// `GraphStore` implementations inherit it automatically.
-    fn find_governing_concepts(&self, node_id: NodeId) -> crate::Result<Vec<ConceptNode>> {
-        let edges = self.inbound(node_id, Some(EdgeKind::Governs))?;
-        let mut concepts = Vec::new();
-        for edge in edges {
-            if let NodeId::Concept(concept_id) = edge.from {
-                if let Some(concept) = self.get_concept(concept_id)? {
-                    concepts.push(concept);
-                }
-            }
-        }
-        Ok(concepts)
     }
 }
 
@@ -378,7 +361,7 @@ impl<'a> Drop for SnapshotGuard<'a> {
 /// and surfacing an end-failure would mask the caller's original error.
 pub fn with_graph_read_snapshot<F, R>(graph: &dyn GraphStore, f: F) -> crate::Result<R>
 where
-    F: FnOnce(&dyn GraphStore) -> crate::Result<R>,
+    F: FnOnce(&dyn GraphReader) -> crate::Result<R>,
 {
     graph.begin_read_snapshot()?;
     let _guard = SnapshotGuard(graph);

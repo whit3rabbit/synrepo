@@ -4,7 +4,7 @@ use synrepo::core::provenance::CreatedBy;
 use synrepo::overlay::{OverlayEdgeKind, OverlayStore};
 use synrepo::store::overlay::{format_candidate_id, SqliteOverlayStore};
 use synrepo::store::sqlite::SqliteGraphStore;
-use synrepo::structure::graph::{EdgeKind, Epistemic, GraphStore};
+use synrepo::structure::graph::{EdgeKind, Epistemic};
 use tempfile::tempdir;
 
 use super::{commands, sample_link, setup_curated_link_env};

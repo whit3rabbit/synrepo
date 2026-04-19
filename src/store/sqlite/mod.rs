@@ -19,6 +19,9 @@ use std::{
 
 use schema::{count_rows, init_schema};
 
+use crate::core::ids::{ConceptNodeId, FileNodeId, NodeId, SymbolNodeId};
+use crate::structure::graph::{ConceptNode, Edge, EdgeKind, FileNode, GraphReader, SymbolNode};
+
 const GRAPH_DB_FILENAME: &str = "nodes.db";
 
 /// Deterministic persisted graph statistics for the CLI surface.
@@ -92,6 +95,79 @@ impl SqliteGraphStore {
     /// Absolute path of the sqlite file used by the canonical graph store.
     pub fn db_path(graph_dir: &Path) -> PathBuf {
         graph_dir.join(GRAPH_DB_FILENAME)
+    }
+
+    /// Inherent shim for the read-only graph surface.
+    pub fn get_file(&self, id: FileNodeId) -> crate::Result<Option<FileNode>> {
+        GraphReader::get_file(self, id)
+    }
+
+    /// Inherent shim for the read-only graph surface.
+    pub fn get_symbol(&self, id: SymbolNodeId) -> crate::Result<Option<SymbolNode>> {
+        GraphReader::get_symbol(self, id)
+    }
+
+    /// Inherent shim for the read-only graph surface.
+    pub fn get_concept(&self, id: ConceptNodeId) -> crate::Result<Option<ConceptNode>> {
+        GraphReader::get_concept(self, id)
+    }
+
+    /// Inherent shim for the read-only graph surface.
+    pub fn file_by_path(&self, path: &str) -> crate::Result<Option<FileNode>> {
+        GraphReader::file_by_path(self, path)
+    }
+
+    /// Inherent shim for the read-only graph surface.
+    pub fn outbound(&self, from: NodeId, kind: Option<EdgeKind>) -> crate::Result<Vec<Edge>> {
+        GraphReader::outbound(self, from, kind)
+    }
+
+    /// Inherent shim for the read-only graph surface.
+    pub fn inbound(&self, to: NodeId, kind: Option<EdgeKind>) -> crate::Result<Vec<Edge>> {
+        GraphReader::inbound(self, to, kind)
+    }
+
+    /// Inherent shim for the read-only graph surface.
+    pub fn all_file_paths(&self) -> crate::Result<Vec<(String, FileNodeId)>> {
+        GraphReader::all_file_paths(self)
+    }
+
+    /// Inherent shim for the read-only graph surface.
+    pub fn all_concept_paths(&self) -> crate::Result<Vec<(String, ConceptNodeId)>> {
+        GraphReader::all_concept_paths(self)
+    }
+
+    /// Inherent shim for the read-only graph surface.
+    pub fn all_symbol_names(&self) -> crate::Result<Vec<(SymbolNodeId, FileNodeId, String)>> {
+        GraphReader::all_symbol_names(self)
+    }
+
+    /// Inherent shim for the read-only graph surface.
+    #[allow(clippy::type_complexity)]
+    pub fn all_symbols_summary(
+        &self,
+    ) -> crate::Result<Vec<(SymbolNodeId, FileNodeId, String, String, String)>> {
+        GraphReader::all_symbols_summary(self)
+    }
+
+    /// Inherent shim for the read-only graph surface.
+    pub fn symbols_for_file(&self, file_id: FileNodeId) -> crate::Result<Vec<SymbolNode>> {
+        GraphReader::symbols_for_file(self, file_id)
+    }
+
+    /// Inherent shim for the read-only graph surface.
+    pub fn edges_owned_by(&self, file_id: FileNodeId) -> crate::Result<Vec<Edge>> {
+        GraphReader::edges_owned_by(self, file_id)
+    }
+
+    /// Inherent shim for the read-only graph surface.
+    pub fn all_edges(&self) -> crate::Result<Vec<Edge>> {
+        GraphReader::all_edges(self)
+    }
+
+    /// Inherent shim for the read-only graph surface.
+    pub fn active_edges(&self) -> crate::Result<Vec<Edge>> {
+        GraphReader::active_edges(self)
     }
 
     /// Return deterministic persisted counts for the Phase 1 graph CLI.

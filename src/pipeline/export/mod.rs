@@ -116,7 +116,7 @@ pub fn write_exports(
         GraphCardCompiler::new(Box::new(graph), Some(repo_root)).with_config(config.clone());
 
     // Collect all node IDs under a single snapshot epoch.
-    let (file_ids, symbol_ids, concept_ids) = with_graph_read_snapshot(compiler.graph(), |g| {
+    let (file_ids, symbol_ids, concept_ids) = compiler.with_reader(|g| {
         let file_ids: Vec<_> = g.all_file_paths()?.into_iter().map(|(_, id)| id).collect();
         let symbol_ids: Vec<_> = g
             .all_symbol_names()?

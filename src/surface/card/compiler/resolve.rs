@@ -1,9 +1,9 @@
 use std::str::FromStr;
 
-use crate::{core::ids::NodeId, structure::graph::GraphStore};
+use crate::{core::ids::NodeId, structure::graph::GraphReader};
 
 pub(super) fn resolve_target(
-    graph: &dyn GraphStore,
+    graph: &dyn GraphReader,
     target: &str,
 ) -> crate::Result<Option<NodeId>> {
     // 0. Try node ID parse (e.g. "symbol_0000000000000024", "file_0000000000000042").

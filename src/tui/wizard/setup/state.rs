@@ -2,6 +2,9 @@
 
 use crossterm::event::{KeyCode, KeyModifiers};
 
+use super::synthesis::{
+    LocalPreset, SynthesisChoice, SynthesisRow, TextInputField, LOCAL_PRESETS, SYNTHESIS_ROWS,
+};
 use crate::bootstrap::runtime_probe::AgentTargetKind;
 use crate::config::Mode;
 
@@ -13,6 +16,9 @@ pub struct SetupPlan {
     pub mode: Mode,
     /// Optional agent-integration target. `None` means the user chose "skip".
     pub target: Option<AgentTargetKind>,
+    /// Synthesis decision. `None` means the user picked "Skip" (no
+    /// `[synthesis]` block is written; keys in env stay untouched).
+    pub synthesis: Option<SynthesisChoice>,
     /// Whether to run a reconcile pass after init finishes. Always `true` for
     /// v1 so the first-run experience is complete; kept as a field so future
     /// "fast-path" flows can opt out without widening the plan shape.
@@ -46,6 +52,12 @@ pub enum SetupStep {
     SelectMode,
     /// Pick agent-integration target or "skip".
     SelectTarget,
+    /// Pick synthesis provider (cloud, local, or skip).
+    SelectSynthesis,
+    /// Pick a local-LLM preset (Ollama, llama.cpp, LM Studio, vLLM, Custom).
+    SelectLocalPreset,
+    /// Edit the local-LLM endpoint URL. Pre-filled from the preset default.
+    EditLocalEndpoint,
     /// Review the plan and press Enter to apply.
     Confirm,
     /// Render loop should exit; outcome is already captured.
@@ -74,10 +86,24 @@ pub struct SetupWizardState {
     pub mode_cursor: usize,
     /// Cursor index in the target list: 0..N for targets, N for "Skip".
     pub target_cursor: usize,
+    /// Cursor index into [`SYNTHESIS_ROWS`].
+    pub synthesis_cursor: usize,
+    /// Cursor index into [`LOCAL_PRESETS`].
+    pub local_preset_cursor: usize,
     /// Committed mode (set on Enter at `SelectMode`).
     pub mode: Mode,
     /// Committed target (set on Enter at `SelectTarget`). `None` means skip.
     pub target: Option<AgentTargetKind>,
+    /// Committed synthesis choice. `None` means the user picked "Skip" on
+    /// `SelectSynthesis`. Set on Enter at `SelectSynthesis` for cloud/skip or
+    /// at `EditLocalEndpoint` for local.
+    pub synthesis: Option<SynthesisChoice>,
+    /// Text input buffer used by `EditLocalEndpoint`. Seeded with the preset
+    /// default; mutable while the user edits.
+    pub endpoint_input: TextInputField,
+    /// Preset selected on `SelectLocalPreset`. Used by `EditLocalEndpoint` to
+    /// build the final [`SynthesisChoice::Local`] on Enter.
+    pub local_preset: LocalPreset,
     /// Deterministic ordered list of agent targets detected from repo /
     /// `$HOME` hints. Used to pre-select the target cursor.
     pub detected_targets: Vec<AgentTargetKind>,
@@ -104,8 +130,13 @@ impl SetupWizardState {
             step: SetupStep::Splash,
             mode_cursor,
             target_cursor,
+            synthesis_cursor: 0,
+            local_preset_cursor: 0,
             mode: default_mode,
             target: None,
+            synthesis: None,
+            endpoint_input: TextInputField::with_value(LocalPreset::Ollama.default_endpoint()),
+            local_preset: LocalPreset::Ollama,
             detected_targets,
             cancelled: false,
         }
@@ -183,10 +214,113 @@ impl SetupWizardState {
                     }
                     KeyCode::Enter => {
                         self.target = WIZARD_TARGETS.get(self.target_cursor).copied();
-                        self.step = SetupStep::Confirm;
+                        self.step = SetupStep::SelectSynthesis;
                         true
                     }
                     _ => false,
+                }
+            }
+            SetupStep::SelectSynthesis => {
+                if is_quit {
+                    self.cancelled = true;
+                    self.step = SetupStep::Complete;
+                    return true;
+                }
+                let max = SYNTHESIS_ROWS.len().saturating_sub(1);
+                match code {
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        self.synthesis_cursor = self.synthesis_cursor.saturating_sub(1);
+                        true
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        if self.synthesis_cursor < max {
+                            self.synthesis_cursor += 1;
+                        }
+                        true
+                    }
+                    KeyCode::Enter => {
+                        match SYNTHESIS_ROWS.get(self.synthesis_cursor).copied() {
+                            Some(SynthesisRow::Skip) => {
+                                self.synthesis = None;
+                                self.step = SetupStep::Confirm;
+                            }
+                            Some(SynthesisRow::Cloud(provider)) => {
+                                self.synthesis = Some(SynthesisChoice::Cloud(provider));
+                                self.step = SetupStep::Confirm;
+                            }
+                            Some(SynthesisRow::Local) => {
+                                self.step = SetupStep::SelectLocalPreset;
+                            }
+                            None => {}
+                        }
+                        true
+                    }
+                    _ => false,
+                }
+            }
+            SetupStep::SelectLocalPreset => {
+                if is_quit {
+                    self.cancelled = true;
+                    self.step = SetupStep::Complete;
+                    return true;
+                }
+                let max = LOCAL_PRESETS.len().saturating_sub(1);
+                match code {
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        self.local_preset_cursor = self.local_preset_cursor.saturating_sub(1);
+                        true
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        if self.local_preset_cursor < max {
+                            self.local_preset_cursor += 1;
+                        }
+                        true
+                    }
+                    KeyCode::Enter => {
+                        let preset = LOCAL_PRESETS
+                            .get(self.local_preset_cursor)
+                            .copied()
+                            .unwrap_or(LocalPreset::Ollama);
+                        self.local_preset = preset;
+                        // Re-seed the text field with the freshly chosen
+                        // preset default so switching presets mid-flow is
+                        // observable.
+                        self.endpoint_input.reset(preset.default_endpoint());
+                        self.step = SetupStep::EditLocalEndpoint;
+                        true
+                    }
+                    _ => false,
+                }
+            }
+            SetupStep::EditLocalEndpoint => {
+                let is_abort =
+                    code == KeyCode::Char('c') && modifiers.contains(KeyModifiers::CONTROL);
+                if is_abort {
+                    self.cancelled = true;
+                    self.step = SetupStep::Complete;
+                    return true;
+                }
+                match code {
+                    KeyCode::Esc => {
+                        // Back to preset selection; do not cancel.
+                        self.step = SetupStep::SelectLocalPreset;
+                        true
+                    }
+                    KeyCode::Enter => {
+                        let endpoint = self.endpoint_input.value().trim().to_string();
+                        if endpoint.is_empty() {
+                            // Silently refuse empty input; render layer will
+                            // hint at this. Keep the step unchanged.
+                            return false;
+                        }
+                        self.synthesis = Some(SynthesisChoice::Local {
+                            preset: self.local_preset,
+                            endpoint,
+                        });
+                        self.step = SetupStep::Confirm;
+                        true
+                    }
+                    _ => self.endpoint_input.handle_key(code, modifiers),
                 }
             }
             SetupStep::Confirm => match code {
@@ -195,8 +329,8 @@ impl SetupWizardState {
                     true
                 }
                 KeyCode::Esc | KeyCode::Char('b') => {
-                    // Back to target selection; do not cancel.
-                    self.step = SetupStep::SelectTarget;
+                    // Back to synthesis selection; do not cancel.
+                    self.step = SetupStep::SelectSynthesis;
                     true
                 }
                 KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
@@ -219,6 +353,7 @@ impl SetupWizardState {
         Some(SetupPlan {
             mode: self.mode,
             target: self.target,
+            synthesis: self.synthesis.clone(),
             reconcile_after: true,
         })
     }

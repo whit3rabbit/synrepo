@@ -5,7 +5,6 @@ use crate::{
     core::path_safety::safe_join_in_repo,
     overlay::{CitedSpan, OverlayLink},
     store::sqlite::SqliteGraphStore,
-    structure::graph::GraphStore,
 };
 
 pub(super) struct VerifiedCandidate {

@@ -125,7 +125,7 @@ pub fn handle_node(state: &SynrepoState, id: String) -> String {
     with_mcp_compiler(state, |compiler| match node_id {
         NodeId::File(file_id) => {
             let node = compiler
-                .graph()
+                .reader()
                 .get_file(file_id)?
                 .ok_or_else(|| anyhow::anyhow!("node not found: {id}"))?;
             Ok(json!({
@@ -136,7 +136,7 @@ pub fn handle_node(state: &SynrepoState, id: String) -> String {
         }
         NodeId::Symbol(symbol_id) => {
             let node = compiler
-                .graph()
+                .reader()
                 .get_symbol(symbol_id)?
                 .ok_or_else(|| anyhow::anyhow!("node not found: {id}"))?;
             Ok(json!({
@@ -147,7 +147,7 @@ pub fn handle_node(state: &SynrepoState, id: String) -> String {
         }
         NodeId::Concept(concept_id) => {
             let node = compiler
-                .graph()
+                .reader()
                 .get_concept(concept_id)?
                 .ok_or_else(|| anyhow::anyhow!("node not found: {id}"))?;
             Ok(json!({
@@ -184,8 +184,8 @@ pub fn handle_edges(
         });
 
         let edges = match direction.as_str() {
-            "inbound" => compiler.graph().inbound(node_id, store_filter)?,
-            _ => compiler.graph().outbound(node_id, store_filter)?,
+            "inbound" => compiler.reader().inbound(node_id, store_filter)?,
+            _ => compiler.reader().outbound(node_id, store_filter)?,
         };
 
         let filtered: Vec<serde_json::Value> = match parsed_kinds.as_deref() {
@@ -213,8 +213,8 @@ pub fn handle_query(state: &SynrepoState, query: String) -> String {
 
     with_mcp_compiler(state, |compiler| {
         let edges = match direction {
-            QueryDirection::Outbound => compiler.graph().outbound(node_id, edge_kind)?,
-            QueryDirection::Inbound => compiler.graph().inbound(node_id, edge_kind)?,
+            QueryDirection::Outbound => compiler.reader().outbound(node_id, edge_kind)?,
+            QueryDirection::Inbound => compiler.reader().inbound(node_id, edge_kind)?,
         };
 
         let rendered: Vec<serde_json::Value> =
@@ -272,24 +272,24 @@ pub fn handle_provenance(state: &SynrepoState, id: String) -> String {
     with_mcp_compiler(state, |compiler| {
         let provenance = match node_id {
             NodeId::File(file_id) => compiler
-                .graph()
+                .reader()
                 .get_file(file_id)?
                 .ok_or_else(|| anyhow::anyhow!("node not found: {id}"))
                 .map(|n| n.provenance),
             NodeId::Symbol(symbol_id) => compiler
-                .graph()
+                .reader()
                 .get_symbol(symbol_id)?
                 .ok_or_else(|| anyhow::anyhow!("node not found: {id}"))
                 .map(|n| n.provenance),
             NodeId::Concept(concept_id) => compiler
-                .graph()
+                .reader()
                 .get_concept(concept_id)?
                 .ok_or_else(|| anyhow::anyhow!("node not found: {id}"))
                 .map(|n| n.provenance),
         }?;
 
-        let outbound = compiler.graph().outbound(node_id, None)?;
-        let inbound = compiler.graph().inbound(node_id, None)?;
+        let outbound = compiler.reader().outbound(node_id, None)?;
+        let inbound = compiler.reader().inbound(node_id, None)?;
 
         let mut all_edges: Vec<serde_json::Value> = Vec::new();
         for e in outbound {
@@ -322,9 +322,9 @@ fn node_exists(
     node_id: NodeId,
 ) -> anyhow::Result<()> {
     let exists = match node_id {
-        NodeId::File(id) => compiler.graph().get_file(id)?.is_some(),
-        NodeId::Symbol(id) => compiler.graph().get_symbol(id)?.is_some(),
-        NodeId::Concept(id) => compiler.graph().get_concept(id)?.is_some(),
+        NodeId::File(id) => compiler.reader().get_file(id)?.is_some(),
+        NodeId::Symbol(id) => compiler.reader().get_symbol(id)?.is_some(),
+        NodeId::Concept(id) => compiler.reader().get_concept(id)?.is_some(),
     };
     if !exists {
         anyhow::bail!("node not found: {node_id}");

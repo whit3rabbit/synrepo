@@ -6,7 +6,6 @@ use super::fixtures::git_backed_fixture;
 use crate::{
     config::Config,
     pipeline::git::test_support::{git, init_commit},
-    structure::graph::GraphStore,
     surface::card::{CardCompiler, LastChangeGranularity},
 };
 use std::fs;

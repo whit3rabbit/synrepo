@@ -387,7 +387,6 @@ impl std::io::Write for CountingWriter {
 #[test]
 fn export_json_peak_in_flight_bytes_stays_under_budget() {
     use crate::pipeline::export::render;
-    use crate::structure::graph::with_graph_read_snapshot;
     use crate::surface::card::{compiler::GraphCardCompiler, CardCompiler};
 
     // 500 seeded files is well past the point where Vec<Card> materialization
@@ -410,22 +409,23 @@ fn export_json_peak_in_flight_bytes_stays_under_budget() {
     let config = Config::default();
     let compiler = GraphCardCompiler::new(Box::new(graph), Some(repo.path())).with_config(config);
 
-    let (file_ids, symbol_ids) = with_graph_read_snapshot(compiler.graph(), |g| {
-        let fids: Vec<_> = g
-            .all_file_paths()
-            .unwrap()
-            .into_iter()
-            .map(|(_, id)| id)
-            .collect();
-        let sids: Vec<_> = g
-            .all_symbol_names()
-            .unwrap()
-            .into_iter()
-            .map(|(id, _, _)| id)
-            .collect();
-        Ok((fids, sids))
-    })
-    .unwrap();
+    let (file_ids, symbol_ids) = compiler
+        .with_reader(|g| {
+            let fids: Vec<_> = g
+                .all_file_paths()
+                .unwrap()
+                .into_iter()
+                .map(|(_, id)| id)
+                .collect();
+            let sids: Vec<_> = g
+                .all_symbol_names()
+                .unwrap()
+                .into_iter()
+                .map(|(id, _, _)| id)
+                .collect();
+            Ok((fids, sids))
+        })
+        .unwrap();
 
     assert_eq!(file_ids.len(), N, "seeded files must appear in graph");
 

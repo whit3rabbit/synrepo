@@ -6,6 +6,7 @@ use std::path::PathBuf;
 
 use crate::bootstrap::runtime_probe::{AgentIntegration, AgentTargetKind};
 use crate::pipeline::diagnostics::{ReconcileHealth, WriterStatus};
+use crate::pipeline::synthesis::SynthesisStatus;
 use crate::pipeline::watch::WatchServiceStatus;
 use crate::surface::status_snapshot::StatusSnapshot;
 
@@ -196,6 +197,33 @@ pub fn build_health_vm(snapshot: &StatusSnapshot) -> HealthVm {
         value: snapshot.overlay_cost_summary.clone(),
         severity: Severity::Healthy,
     });
+
+    // Synthesis row: expected-off is Healthy; a detected but unused key
+    // escalates to Stale so the dashboard nudges the user toward opt-in.
+    if let Some(synthesis) = &snapshot.synthesis_provider {
+        let (value, severity) = match &synthesis.status {
+            SynthesisStatus::Enabled => {
+                let model = synthesis
+                    .model
+                    .as_deref()
+                    .map(|m| format!(" ({m})"))
+                    .unwrap_or_default();
+                (
+                    format!("{}{}", synthesis.provider, model),
+                    Severity::Healthy,
+                )
+            }
+            SynthesisStatus::DisabledKeyDetected { env_var } => {
+                (format!("disabled ({env_var} detected)"), Severity::Stale)
+            }
+            SynthesisStatus::Disabled => ("disabled".to_string(), Severity::Healthy),
+        };
+        rows.push(HealthRow {
+            label: "synthesis".to_string(),
+            value,
+            severity,
+        });
+    }
 
     HealthVm { rows }
 }

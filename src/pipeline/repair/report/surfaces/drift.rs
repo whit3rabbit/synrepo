@@ -130,7 +130,6 @@ fn retired_observations_findings(
     synrepo_dir: &std::path::Path,
 ) -> crate::Result<Vec<RepairFinding>> {
     use crate::store::sqlite::SqliteGraphStore;
-    use crate::structure::graph::GraphStore;
 
     let graph_dir = synrepo_dir.join("graph");
     let graph_db = graph_dir.join("nodes.db");

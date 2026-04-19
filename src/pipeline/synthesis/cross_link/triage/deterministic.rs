@@ -7,7 +7,9 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use crate::core::ids::{FileNodeId, NodeId, SymbolNodeId};
 use crate::overlay::OverlayEdgeKind;
 #[allow(unused_imports)]
-use crate::structure::graph::{Epistemic, GraphStore, SymbolKind, SymbolNode, Visibility};
+use crate::structure::graph::{
+    Epistemic, GraphReader, GraphStore, SymbolKind, SymbolNode, Visibility,
+};
 
 use super::super::{CandidatePair, TriageSource};
 use super::TriageScope;
@@ -227,6 +229,58 @@ mod tests {
         }
     }
 
+    impl GraphReader for MemGraph {
+        fn get_file(&self, id: FileNodeId) -> crate::Result<Option<FileNode>> {
+            Ok(self.files.get(&id).cloned())
+        }
+        fn get_symbol(&self, id: SymbolNodeId) -> crate::Result<Option<SymbolNode>> {
+            Ok(self.symbols.get(&id).cloned())
+        }
+        fn get_concept(&self, id: ConceptNodeId) -> crate::Result<Option<ConceptNode>> {
+            Ok(self.concepts.get(&id).cloned())
+        }
+        fn file_by_path(&self, path: &str) -> crate::Result<Option<FileNode>> {
+            Ok(self.files.values().find(|f| f.path == path).cloned())
+        }
+        fn outbound(&self, from: NodeId, kind: Option<EdgeKind>) -> crate::Result<Vec<Edge>> {
+            Ok(self
+                .edges
+                .iter()
+                .filter(|e| e.from == from && kind.is_none_or(|k| e.kind == k))
+                .cloned()
+                .collect())
+        }
+        fn inbound(&self, to: NodeId, kind: Option<EdgeKind>) -> crate::Result<Vec<Edge>> {
+            Ok(self
+                .edges
+                .iter()
+                .filter(|e| e.to == to && kind.is_none_or(|k| e.kind == k))
+                .cloned()
+                .collect())
+        }
+        fn all_file_paths(&self) -> crate::Result<Vec<(String, FileNodeId)>> {
+            Ok(self
+                .files
+                .values()
+                .map(|f| (f.path.clone(), f.id))
+                .collect())
+        }
+        fn all_concept_paths(&self) -> crate::Result<Vec<(String, ConceptNodeId)>> {
+            Ok(self
+                .concepts
+                .values()
+                .map(|c| (c.path.clone(), c.id))
+                .collect())
+        }
+        fn all_symbol_names(&self) -> crate::Result<Vec<(SymbolNodeId, FileNodeId, String)>> {
+            Ok(self
+                .symbols
+                .values()
+                .map(|s| (s.id, s.file_id, s.qualified_name.clone()))
+                .collect())
+        }
+    }
+
     impl GraphStore for MemGraph {
         fn upsert_file(&mut self, node: FileNode) -> crate::Result<()> {
             self.files.insert(node.id, node);
@@ -256,57 +310,8 @@ mod tests {
         fn delete_node(&mut self, _id: NodeId) -> crate::Result<()> {
             Ok(())
         }
-        fn get_file(&self, id: FileNodeId) -> crate::Result<Option<FileNode>> {
-            Ok(self.files.get(&id).cloned())
-        }
-        fn get_symbol(&self, id: SymbolNodeId) -> crate::Result<Option<SymbolNode>> {
-            Ok(self.symbols.get(&id).cloned())
-        }
-        fn get_concept(&self, id: ConceptNodeId) -> crate::Result<Option<ConceptNode>> {
-            Ok(self.concepts.get(&id).cloned())
-        }
-        fn file_by_path(&self, path: &str) -> crate::Result<Option<FileNode>> {
-            Ok(self.files.values().find(|f| f.path == path).cloned())
-        }
-        fn outbound(&self, from: NodeId, kind: Option<EdgeKind>) -> crate::Result<Vec<Edge>> {
-            Ok(self
-                .edges
-                .iter()
-                .filter(|e| e.from == from && kind.is_none_or(|k| e.kind == k))
-                .cloned()
-                .collect())
-        }
-        fn inbound(&self, to: NodeId, kind: Option<EdgeKind>) -> crate::Result<Vec<Edge>> {
-            Ok(self
-                .edges
-                .iter()
-                .filter(|e| e.to == to && kind.is_none_or(|k| e.kind == k))
-                .cloned()
-                .collect())
-        }
         fn commit(&mut self) -> crate::Result<()> {
             Ok(())
-        }
-        fn all_file_paths(&self) -> crate::Result<Vec<(String, FileNodeId)>> {
-            Ok(self
-                .files
-                .values()
-                .map(|f| (f.path.clone(), f.id))
-                .collect())
-        }
-        fn all_concept_paths(&self) -> crate::Result<Vec<(String, ConceptNodeId)>> {
-            Ok(self
-                .concepts
-                .values()
-                .map(|c| (c.path.clone(), c.id))
-                .collect())
-        }
-        fn all_symbol_names(&self) -> crate::Result<Vec<(SymbolNodeId, FileNodeId, String)>> {
-            Ok(self
-                .symbols
-                .values()
-                .map(|s| (s.id, s.file_id, s.qualified_name.clone()))
-                .collect())
         }
     }
 

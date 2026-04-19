@@ -6,7 +6,7 @@
 //! step so the three call sites stay in sync.
 
 use crate::core::ids::NodeId;
-use crate::structure::graph::{FileNode, GraphStore, SymbolNode};
+use crate::structure::graph::{FileNode, GraphReader, SymbolNode};
 
 /// Snapshot of the graph-side node a commentary entry points at.
 ///
@@ -30,7 +30,7 @@ pub struct CommentaryNodeSnapshot {
 /// no content hash to compare against (concepts). Propagates graph-store
 /// errors.
 pub fn resolve_commentary_node(
-    graph: &dyn GraphStore,
+    graph: &dyn GraphReader,
     node: NodeId,
 ) -> crate::Result<Option<CommentaryNodeSnapshot>> {
     match node {

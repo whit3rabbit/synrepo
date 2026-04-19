@@ -39,6 +39,47 @@ Binaries for Linux (amd64, arm64), macOS (arm64, x86_64), and Windows (amd64) ar
 - A watch service (`synrepo watch [--daemon]`) that keeps `.synrepo/` fresh as files change
 - An MCP server (`synrepo mcp`) exposing 16 read-only tools for agent-facing repository context
 
+## Optional LLM synthesis
+
+Everything above runs locally without any LLM. Synthesis (commentary generation and cross-link candidate proposal) is a separate, opt-in path. It is **off by default**, even when provider API keys are present in your shell environment, so `synrepo` never silently consumes keys you set for other tools.
+
+Supported providers:
+
+| Provider | Env var for key | Default model |
+|---|---|---|
+| Anthropic | `ANTHROPIC_API_KEY` | `claude-sonnet-4-6` |
+| OpenAI | `OPENAI_API_KEY` | `gpt-4o-mini` |
+| Gemini | `GEMINI_API_KEY` | `gemini-1.5-flash` |
+| Local (Ollama, llama.cpp, LM Studio, vLLM) | none | `llama3` |
+
+API keys live in the shell environment only. `synrepo` never writes keys to `.synrepo/config.toml` or any on-disk cache.
+
+**Enable synthesis** by adding a block to `.synrepo/config.toml` (or run `synrepo setup --synthesis` to use the wizard):
+
+```toml
+[synthesis]
+enabled = true
+provider = "anthropic"   # or "openai" | "gemini" | "local"
+# model = "claude-sonnet-4-6"
+# local_endpoint = "http://localhost:11434/api/chat"
+```
+
+**Local quick-starts**:
+
+- Ollama: `ollama serve && ollama pull llama3`, then `local_endpoint = "http://localhost:11434/api/chat"`
+- llama.cpp / LM Studio / vLLM (OpenAI-compatible): `local_endpoint = "http://localhost:8080/v1/chat/completions"`
+
+The suffix `/v1/chat/completions` selects the OpenAI-compatible request shape; any other path uses Ollama's native `/api/chat` format.
+
+**One-shot env overrides** (precedence: env > config > default):
+
+- `SYNREPO_LLM_ENABLED=1` — enable without editing config
+- `SYNREPO_LLM_PROVIDER=anthropic|openai|gemini|local|none`
+- `SYNREPO_LLM_MODEL=<model>`
+- `SYNREPO_LLM_LOCAL_ENDPOINT=<url>`
+
+When synthesis is disabled but `synrepo` detects a provider key in your environment, `synrepo status` surfaces a one-line hint so you know the feature exists without guessing.
+
 ## Supported Languages
 
 Structural extraction is wired for five languages. Parser output (symbols, call sites, imports) lands in the graph; stage-4 resolution promotes call and import references into cross-file edges where the language's contract allows.

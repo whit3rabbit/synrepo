@@ -9,7 +9,12 @@
 
 pub mod render;
 pub mod state;
+pub mod synthesis;
 mod tests;
 
 pub use render::run_setup_wizard_loop;
 pub use state::{SetupPlan, SetupWizardOutcome, SetupWizardState, WIZARD_TARGETS};
+pub use synthesis::{
+    CloudProvider, LocalPreset, SynthesisChoice, SynthesisRow, TextInputField, LOCAL_PRESETS,
+    SYNTHESIS_ROWS,
+};

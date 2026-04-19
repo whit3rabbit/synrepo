@@ -1,7 +1,7 @@
 //! ChangeRiskCard compilation.
 
 use crate::core::ids::NodeId;
-use crate::structure::graph::{EdgeKind, GraphStore};
+use crate::structure::graph::{Edge, EdgeKind, GraphReader};
 
 use super::{
     super::Budget, super::ChangeRiskCard, super::RiskFactor, super::RiskLevel, GraphCardCompiler,
@@ -10,11 +10,10 @@ use super::{
 /// Compile a ChangeRiskCard for a symbol or file target.
 pub fn change_risk_card(
     compiler: &GraphCardCompiler,
+    graph: &dyn GraphReader,
     target: NodeId,
     budget: Budget,
 ) -> crate::Result<ChangeRiskCard> {
-    let graph = compiler.graph();
-
     let (target_name, target_kind) = match &target {
         NodeId::File(fid) => {
             let node = graph
@@ -40,7 +39,8 @@ pub fn change_risk_card(
     let outgoing_edges = graph.outbound(target, None)?;
     let incoming_edges = graph.inbound(target, None)?;
 
-    let (drift_score, affected_edge_count) = compute_drift_info(graph, &outgoing_edges, revision);
+    let (drift_score, affected_edge_count) =
+        compute_drift_info(compiler, &outgoing_edges, revision);
     let co_change_partners = compute_co_change_partners(&incoming_edges);
     let hotspot_score = compute_hotspot_score(compiler, &target).unwrap_or(0.0);
 
@@ -118,15 +118,15 @@ pub fn change_risk_card(
 /// Compute average drift score and count of edges with drift scores.
 /// Single read of the drift score table; returns (average, matched_count).
 fn compute_drift_info(
-    graph: &dyn GraphStore,
-    edges: &[crate::structure::graph::Edge],
+    compiler: &GraphCardCompiler,
+    edges: &[Edge],
     revision: &str,
 ) -> (f64, usize) {
     if edges.is_empty() {
         return (0.0, 0);
     }
 
-    let all_scores = match graph.read_drift_scores(revision) {
+    let all_scores = match compiler.read_drift_scores(revision) {
         Ok(scores) => scores,
         Err(_) => return (0.0, 0),
     };
@@ -181,11 +181,11 @@ fn compute_co_change_partners(incoming: &[crate::structure::graph::Edge]) -> CoC
 fn compute_hotspot_score(compiler: &GraphCardCompiler, target: &NodeId) -> crate::Result<f64> {
     let path = match target {
         NodeId::File(fid) => {
-            let node = compiler
-                .graph()
+            compiler
+                .reader()
                 .get_file(*fid)?
-                .ok_or_else(|| anyhow::anyhow!("file node not found"))?;
-            node.path.clone()
+                .ok_or_else(|| anyhow::anyhow!("file node not found"))?
+                .path
         }
         _ => return Ok(0.0),
     };

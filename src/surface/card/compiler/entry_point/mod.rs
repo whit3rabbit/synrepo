@@ -2,7 +2,7 @@
 //!
 //! Detection runs at card-compile time against already-persisted graph rows.
 //! No pipeline stage is added; all signals come from `SymbolNode.qualified_name`,
-//! `SymbolNode.kind`, and the file path from `GraphStore::all_file_paths`.
+//! `SymbolNode.kind`, and the file path from `GraphReader::all_file_paths`.
 //!
 //! Rules (applied in order; first match wins):
 //!
@@ -15,7 +15,7 @@ use std::collections::HashMap;
 
 use crate::{
     core::ids::{FileNodeId, NodeId},
-    structure::graph::{EdgeKind, GraphStore, SymbolKind},
+    structure::graph::{EdgeKind, GraphReader, SymbolKind},
     surface::card::{
         truncate_chars,
         types::{EntryPoint, EntryPointCard, EntryPointKind},
@@ -25,7 +25,7 @@ use crate::{
 
 /// Detect and compile an `EntryPointCard` from graph facts.
 pub(super) fn entry_point_card_impl(
-    graph: &dyn GraphStore,
+    graph: &dyn GraphReader,
     scope: Option<&str>,
     budget: Budget,
 ) -> crate::Result<EntryPointCard> {

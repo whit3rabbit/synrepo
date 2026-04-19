@@ -174,7 +174,7 @@ fn persist_reconcile_state_records_lock_conflict() {
 fn reconcile_emits_cochange_edges_on_repo_with_multi_file_commits() {
     use crate::core::ids::NodeId;
     use crate::store::sqlite::SqliteGraphStore;
-    use crate::structure::graph::{EdgeKind, GraphStore};
+    use crate::structure::graph::EdgeKind;
 
     let dir = tempfile::tempdir().unwrap();
     let repo = dir.path().to_path_buf();

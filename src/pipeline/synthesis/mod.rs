@@ -1,6 +1,6 @@
 //! The synthesis pipeline.
 //!
-//! Cold path. LLM-driven. Optional.
+//! Cold path. LLM-driven. Optional!
 //! Produces commentary, proposed cross-links, and findings.
 //!
 //! This module defines the [`CommentaryGenerator`] trait: the narrow,
@@ -11,19 +11,29 @@
 //! - [`stub::NoOpGenerator`]: always returns `Ok(None)`. Used when no API
 //!   key is configured, inside tests, and as a fallback when the live
 //!   generator is disabled.
-//! - [`claude::ClaudeCommentaryGenerator`]: calls the Claude Messages API
-//!   when `SYNREPO_ANTHROPIC_API_KEY` is set.
+//! - Provider implementations in [`providers`]: call various LLM APIs when
+//!   the appropriate API key is set via environment variables.
 
-pub mod claude;
 pub mod cross_link;
-pub mod cross_link_claude;
+pub mod providers;
 pub mod stub;
 
-pub use claude::ClaudeCommentaryGenerator;
 pub use cross_link::{
     score, CandidatePair, CandidateScope, CrossLinkGenerator, NoOpCrossLinkGenerator,
 };
-pub use cross_link_claude::ClaudeCrossLinkGenerator;
+pub use providers::{
+    build_commentary_generator, build_cross_link_generator, describe_active_provider,
+    ActiveProvider, ProviderConfig, ProviderKind, SynthesisStatus,
+};
+// Re-export provider implementations for compatibility
+pub use providers::{
+    AnthropicCommentaryGenerator, AnthropicCrossLinkGenerator, GeminiCommentaryGenerator,
+    GeminiCrossLinkGenerator, LocalCommentaryGenerator, LocalCrossLinkGenerator,
+    OpenAiCommentaryGenerator, OpenAiCrossLinkGenerator,
+};
+// Legacy re-exports
+pub use providers::ClaudeCommentaryGenerator;
+pub use providers::ClaudeCrossLinkGenerator;
 pub use stub::NoOpGenerator;
 
 use crate::core::ids::NodeId;

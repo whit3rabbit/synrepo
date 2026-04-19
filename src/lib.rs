@@ -12,7 +12,7 @@
 //!    - [`identity`] handles AST-based rename detection
 //!    - [`drift`] scores per-edge Jaccard distance over persisted structural
 //!      fingerprints (stage 7 — implemented, sidecar `edge_drift` / `file_fingerprints` tables).
-//!      Stage 8 (ArcSwap commit) is still a TODO.
+//!    - [`graph::snapshot`] publishes the immutable in-memory `Graph` after each successful compile.
 //! 3. **Overlay layer** — LLM-authored content, physically separate from the graph.
 //!    Phase 4+ only; module exists to enforce the architectural boundary. See [`overlay`].
 //! 4. **Surface layer** — CLI (`src/bin/cli.rs`), MCP server (`synrepo mcp` subcommand),

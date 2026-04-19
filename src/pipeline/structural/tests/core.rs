@@ -1,10 +1,6 @@
 use super::super::{ids, run_structural_compile};
 use super::support::open_graph;
-use crate::{
-    config::Config,
-    core::ids::NodeId,
-    structure::graph::{EdgeKind, GraphStore},
-};
+use crate::{config::Config, core::ids::NodeId, structure::graph::EdgeKind};
 use std::fs;
 use tempfile::tempdir;
 

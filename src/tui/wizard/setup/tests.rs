@@ -21,6 +21,8 @@ mod tests {
         assert_eq!(s.step, SetupStep::SelectTarget);
         assert_eq!(s.mode, Mode::Auto);
         press(&mut s, KeyCode::Enter);
+        assert_eq!(s.step, SetupStep::SelectSynthesis);
+        press(&mut s, KeyCode::Enter);
         assert_eq!(s.step, SetupStep::Confirm);
         assert_eq!(s.target, Some(AgentTargetKind::Claude));
         press(&mut s, KeyCode::Enter);
@@ -43,6 +45,9 @@ mod tests {
         }
         press(&mut s, KeyCode::Enter);
         assert_eq!(s.target, None);
+        assert_eq!(s.step, SetupStep::SelectSynthesis);
+        press(&mut s, KeyCode::Enter);
+        assert_eq!(s.step, SetupStep::Confirm);
         press(&mut s, KeyCode::Enter);
         let plan = s.finalize().expect("plan");
         assert_eq!(plan.mode, Mode::Curated);
@@ -109,9 +114,11 @@ mod tests {
         press(&mut s, KeyCode::Enter); // leave splash
         press(&mut s, KeyCode::Enter);
         press(&mut s, KeyCode::Enter);
+        assert_eq!(s.step, SetupStep::SelectSynthesis);
+        press(&mut s, KeyCode::Enter);
         assert_eq!(s.step, SetupStep::Confirm);
         press(&mut s, KeyCode::Char('b'));
-        assert_eq!(s.step, SetupStep::SelectTarget);
+        assert_eq!(s.step, SetupStep::SelectSynthesis);
         assert!(!s.cancelled);
     }
 
@@ -119,6 +126,7 @@ mod tests {
     fn ctrl_c_at_confirm_cancels() {
         let mut s = SetupWizardState::new(Mode::Auto, vec![]);
         press(&mut s, KeyCode::Enter); // leave splash
+        press(&mut s, KeyCode::Enter);
         press(&mut s, KeyCode::Enter);
         press(&mut s, KeyCode::Enter);
         s.handle_key(KeyCode::Char('c'), KeyModifiers::CONTROL);

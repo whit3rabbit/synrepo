@@ -1,5 +1,5 @@
 use crate::core::ids::NodeId;
-use crate::structure::graph::{EdgeKind, GraphStore};
+use crate::structure::graph::{EdgeKind, GraphReader};
 use crate::surface::card::compiler::GraphCardCompiler;
 use crate::surface::card::git::FileGitIntelligence;
 use crate::surface::card::types::Freshness;
@@ -16,7 +16,7 @@ use anyhow::anyhow;
 /// All functions are pub(super) since they are only called from mod.rs.
 pub(super) fn resolve_neighborhood_inner(
     compiler: &GraphCardCompiler,
-    graph: &dyn GraphStore,
+    graph: &dyn GraphReader,
     target: &str,
     budget: Budget,
 ) -> crate::Result<MinimumContextResponse> {
@@ -99,7 +99,7 @@ fn node_card_json(
         }
         NodeId::Concept(concept_id) => {
             let concept = compiler
-                .graph()
+                .reader()
                 .get_concept(concept_id)?
                 .ok_or_else(|| anyhow!("concept not found"))?;
             serde_json::to_value(&concept).map_err(|e| anyhow!(e))?
@@ -123,7 +123,7 @@ pub(super) fn strip_overlay_fields(json: &mut serde_json::Value) {
 /// Get the file path for a node (needed for git-intelligence lookup).
 /// For symbols, resolves through the containing file. For files, returns
 /// the path directly. For concepts, returns empty (no git intelligence).
-fn file_path_for_node(graph: &dyn GraphStore, node_id: NodeId) -> crate::Result<String> {
+fn file_path_for_node(graph: &dyn GraphReader, node_id: NodeId) -> crate::Result<String> {
     match node_id {
         NodeId::File(file_id) => {
             let file = graph
@@ -146,7 +146,7 @@ fn file_path_for_node(graph: &dyn GraphStore, node_id: NodeId) -> crate::Result<
 
 /// Count edges for the `edge_counts` payload.
 fn compute_edge_counts(
-    graph: &dyn GraphStore,
+    graph: &dyn GraphReader,
     node_id: NodeId,
     file_path: &str,
     compiler: &GraphCardCompiler,
@@ -174,7 +174,7 @@ fn compute_edge_counts(
 #[allow(clippy::type_complexity)]
 fn resolve_structural_neighbors(
     compiler: &GraphCardCompiler,
-    graph: &dyn GraphStore,
+    graph: &dyn GraphReader,
     node_id: NodeId,
     budget: Budget,
 ) -> crate::Result<(Option<Vec<NeighborSummary>>, Option<Vec<serde_json::Value>>)> {
@@ -217,7 +217,7 @@ fn resolve_structural_neighbors(
 
 /// Build a lightweight summary for a neighbor node.
 fn neighbor_summary_for_node(
-    graph: &dyn GraphStore,
+    graph: &dyn GraphReader,
     node_id: &NodeId,
     edge_kind: &EdgeKind,
 ) -> crate::Result<Option<NeighborSummary>> {
@@ -252,7 +252,7 @@ fn neighbor_summary_for_node(
 
 /// Resolve governing decisions as DecisionCards (summary at normal, full at deep).
 fn resolve_governing_decisions(
-    graph: &dyn GraphStore,
+    graph: &dyn GraphReader,
     node_id: NodeId,
     budget: Budget,
 ) -> crate::Result<Option<Vec<serde_json::Value>>> {

@@ -5,7 +5,7 @@ use super::super::{Budget, GraphCardCompiler};
 use super::fixtures::{
     current_content_hash, fresh_symbol_fixture, make_overlay_store, sample_proposed_link,
 };
-use crate::{core::ids::NodeId, structure::graph::GraphStore, surface::card::CardCompiler};
+use crate::{core::ids::NodeId, surface::card::CardCompiler};
 use insta::assert_snapshot;
 
 #[test]

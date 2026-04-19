@@ -200,15 +200,14 @@ impl IntegrationWizardState {
                 self.toggle_action_at_cursor();
                 true
             }
+            KeyCode::Enter if self.any_action_selected() => {
+                self.step = IntegrationStep::Confirm;
+                true
+            }
             KeyCode::Enter => {
-                if self.any_action_selected() {
-                    self.step = IntegrationStep::Confirm;
-                    true
-                } else {
-                    // Nothing selected; refuse to advance so the confirm page
-                    // never shows an empty plan. Keeps the UX honest.
-                    false
-                }
+                // Nothing selected; refuse to advance so the confirm page
+                // never shows an empty plan. Keeps the UX honest.
+                false
             }
             KeyCode::Esc => {
                 self.step = IntegrationStep::SelectTarget;

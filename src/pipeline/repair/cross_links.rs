@@ -8,7 +8,7 @@ use crate::{
         OverlayStore,
     },
     pipeline::synthesis::{
-        score, CandidatePair, CandidateScope, ClaudeCrossLinkGenerator, CrossLinkGenerator,
+        build_cross_link_generator, score, CandidatePair, CandidateScope, CrossLinkGenerator,
     },
     store::{overlay::SqliteOverlayStore, sqlite::SqliteGraphStore},
 };
@@ -32,7 +32,8 @@ pub(super) fn run_cross_link_generation(
     generate_new: bool,
     regenerate_stale: bool,
 ) -> crate::Result<GenerationOutcome> {
-    let generator = ClaudeCrossLinkGenerator::new_or_noop(
+    let generator = build_cross_link_generator(
+        config,
         config.commentary_cost_limit,
         config.cross_link_confidence_thresholds.into(),
     );
@@ -133,10 +134,7 @@ fn select_generation_pairs(
     generate_new: bool,
     regenerate_stale: bool,
 ) -> crate::Result<Vec<CandidatePair>> {
-    use crate::{
-        pipeline::synthesis::cross_link::triage::{candidate_pairs, TriageScope},
-        structure::graph::GraphStore,
-    };
+    use crate::pipeline::synthesis::cross_link::triage::{candidate_pairs, TriageScope};
 
     let concepts = graph
         .all_concept_paths()?

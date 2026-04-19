@@ -1,5 +1,5 @@
 //! `GraphCardCompiler`: the primary implementation of `CardCompiler` backed
-//! by the `SqliteGraphStore`-compatible `GraphStore` trait.
+//! by the `SqliteGraphStore`-compatible `GraphStore` / `GraphReader` traits.
 //!
 //! ## Phase-1 limitations
 //!
@@ -36,7 +36,8 @@ use crate::{
     core::ids::{FileNodeId, NodeId, SymbolNodeId},
     overlay::OverlayStore,
     pipeline::{git_intelligence::GitPathHistoryInsights, synthesis::CommentaryGenerator},
-    structure::graph::{with_graph_read_snapshot, GraphStore},
+    store::sqlite::SqliteGraphStore,
+    structure::graph::{with_graph_read_snapshot, Graph, GraphReader, GraphStore},
 };
 
 use self::git_cache::GitCache;
@@ -65,7 +66,7 @@ mod tests;
 /// Holds an optional overlay store + commentary generator pair; when both
 /// are absent, commentary resolution is a no-op.
 pub struct GraphCardCompiler {
-    graph: Box<dyn GraphStore>,
+    backend: GraphBackend,
     /// Repository root, used to read source bodies at `Deep` budget and to
     /// scope git-intelligence lookups.
     repo_root: Option<PathBuf>,
@@ -82,13 +83,29 @@ pub struct GraphCardCompiler {
     overlay: Option<Arc<Mutex<dyn OverlayStore>>>,
 }
 
+enum GraphBackend {
+    Sqlite(Box<dyn GraphStore>),
+    Snapshot(Arc<Graph>),
+}
+
 impl GraphCardCompiler {
     /// Create a compiler from a boxed graph store.
     ///
     /// Pass `repo_root` to enable source-body inclusion at `Deep` budget.
     pub fn new(graph: Box<dyn GraphStore>, repo_root: Option<impl Into<PathBuf>>) -> Self {
         Self {
-            graph,
+            backend: GraphBackend::Sqlite(graph),
+            repo_root: repo_root.map(Into::into),
+            config: None,
+            git_cache: GitCache::new(),
+            overlay: None,
+        }
+    }
+
+    /// Create a compiler backed by the published in-memory graph snapshot.
+    pub fn new_with_snapshot(graph: Arc<Graph>, repo_root: Option<impl Into<PathBuf>>) -> Self {
+        Self {
+            backend: GraphBackend::Snapshot(graph),
             repo_root: repo_root.map(Into::into),
             config: None,
             git_cache: GitCache::new(),
@@ -110,9 +127,49 @@ impl GraphCardCompiler {
         self
     }
 
-    /// Access the underlying graph store for direct queries.
-    pub fn graph(&self) -> &dyn GraphStore {
-        self.graph.as_ref()
+    /// Access the underlying SQLite graph store when this compiler is using it.
+    pub fn graph(&self) -> Option<&dyn GraphStore> {
+        match &self.backend {
+            GraphBackend::Sqlite(graph) => Some(graph.as_ref()),
+            GraphBackend::Snapshot(_) => None,
+        }
+    }
+
+    /// Access the current compiler backend as a read-only graph reader.
+    pub fn reader(&self) -> &dyn GraphReader {
+        match &self.backend {
+            GraphBackend::Sqlite(graph) => graph.as_ref(),
+            GraphBackend::Snapshot(graph) => graph.as_ref(),
+        }
+    }
+
+    pub(crate) fn with_reader<R>(
+        &self,
+        f: impl FnOnce(&dyn GraphReader) -> crate::Result<R>,
+    ) -> crate::Result<R> {
+        match &self.backend {
+            GraphBackend::Sqlite(graph) => with_graph_read_snapshot(graph.as_ref(), f),
+            GraphBackend::Snapshot(graph) => f(graph.as_ref()),
+        }
+    }
+
+    pub(crate) fn read_drift_scores(
+        &self,
+        revision: &str,
+    ) -> crate::Result<Vec<(crate::EdgeId, f32)>> {
+        match &self.backend {
+            GraphBackend::Sqlite(graph) => graph.read_drift_scores(revision),
+            GraphBackend::Snapshot(_) => {
+                let repo_root = self.repo_root.as_ref().ok_or_else(|| {
+                    crate::Error::Other(anyhow::anyhow!(
+                        "snapshot-backed compiler requires repo_root for drift-score reads"
+                    ))
+                })?;
+                let graph_dir = Config::synrepo_dir(repo_root).join("graph");
+                let graph = SqliteGraphStore::open_existing(&graph_dir)?;
+                with_graph_read_snapshot(&graph, |_| graph.read_drift_scores(revision))
+            }
+        }
     }
 
     /// Resolve (and cache) git-intelligence for a repo-relative path.
@@ -149,33 +206,30 @@ impl GraphCardCompiler {
         match id {
             NodeId::Symbol(sym_id) => {
                 // Pin a graph snapshot to read the card context safely.
-                let (prompt, content_hash) =
-                    with_graph_read_snapshot(self.graph.as_ref(), |graph| {
-                        let card = symbol::symbol_card(
-                            symbol::SymbolCardContext {
-                                compiler: self,
-                                graph,
-                                repo_root: &self.repo_root,
-                                overlay: self.overlay.as_ref(),
-                            },
-                            sym_id,
-                            Budget::Deep,
-                        )?;
+                let (prompt, content_hash) = self.with_reader(|graph| {
+                    let card = symbol::symbol_card(
+                        symbol::SymbolCardContext {
+                            compiler: self,
+                            graph,
+                            repo_root: &self.repo_root,
+                            overlay: self.overlay.as_ref(),
+                        },
+                        sym_id,
+                        Budget::Deep,
+                    )?;
 
-                        let symbol = graph.get_symbol(sym_id)?.ok_or_else(|| {
-                            crate::Error::Other(anyhow::anyhow!("symbol {sym_id} not found"))
-                        })?;
-                        let file = graph.get_file(symbol.file_id)?.ok_or_else(|| {
-                            crate::Error::Other(anyhow::anyhow!(
-                                "file for symbol {sym_id} not found"
-                            ))
-                        })?;
-
-                        Ok((
-                            symbol::build_generation_context(&card),
-                            file.content_hash.clone(),
-                        ))
+                    let symbol = graph.get_symbol(sym_id)?.ok_or_else(|| {
+                        crate::Error::Other(anyhow::anyhow!("symbol {sym_id} not found"))
                     })?;
+                    let file = graph.get_file(symbol.file_id)?.ok_or_else(|| {
+                        crate::Error::Other(anyhow::anyhow!("file for symbol {sym_id} not found"))
+                    })?;
+
+                    Ok((
+                        symbol::build_generation_context(&card),
+                        file.content_hash.clone(),
+                    ))
+                })?;
 
                 match generator.generate(id, &prompt)? {
                     Some(mut entry) => {
@@ -198,8 +252,7 @@ impl GraphCardCompiler {
 
 impl CardCompiler for GraphCardCompiler {
     fn symbol_card(&self, id: SymbolNodeId, budget: Budget) -> crate::Result<SymbolCard> {
-        // Pin a single committed epoch on the graph for the whole compile.
-        let result = with_graph_read_snapshot(self.graph.as_ref(), |graph| {
+        let result = self.with_reader(|graph| {
             symbol::symbol_card(
                 symbol::SymbolCardContext {
                     compiler: self,
@@ -217,9 +270,7 @@ impl CardCompiler for GraphCardCompiler {
     }
 
     fn file_card(&self, id: FileNodeId, budget: Budget) -> crate::Result<FileCard> {
-        let result = with_graph_read_snapshot(self.graph.as_ref(), |graph| {
-            file::file_card(self, graph, id, budget)
-        });
+        let result = self.with_reader(|graph| file::file_card(self, graph, id, budget));
         self.git_cache.on_compile_cycle_end();
         result
     }
@@ -229,25 +280,21 @@ impl CardCompiler for GraphCardCompiler {
         scope: Option<&str>,
         budget: Budget,
     ) -> crate::Result<EntryPointCard> {
-        let result = with_graph_read_snapshot(self.graph.as_ref(), |graph| {
-            entry_point::entry_point_card_impl(graph, scope, budget)
-        });
+        let result =
+            self.with_reader(|graph| entry_point::entry_point_card_impl(graph, scope, budget));
         self.git_cache.on_compile_cycle_end();
         result
     }
 
     fn module_card(&self, path: &str, budget: Budget) -> crate::Result<ModuleCard> {
-        let result = with_graph_read_snapshot(self.graph.as_ref(), |graph| {
-            module::module_card_impl(graph, path, budget)
-        });
+        let result = self.with_reader(|graph| module::module_card_impl(graph, path, budget));
         self.git_cache.on_compile_cycle_end();
         result
     }
 
     fn public_api_card(&self, path: &str, budget: Budget) -> crate::Result<PublicAPICard> {
-        let result = with_graph_read_snapshot(self.graph.as_ref(), |graph| {
-            public_api::public_api_card_impl(self, graph, path, budget)
-        });
+        let result =
+            self.with_reader(|graph| public_api::public_api_card_impl(self, graph, path, budget));
         self.git_cache.on_compile_cycle_end();
         result
     }
@@ -257,9 +304,8 @@ impl CardCompiler for GraphCardCompiler {
         target: SymbolNodeId,
         budget: Budget,
     ) -> crate::Result<super::CallPathCard> {
-        let result = with_graph_read_snapshot(self.graph.as_ref(), |graph| {
-            call_path::call_path_card_impl(graph, target, budget)
-        });
+        let result =
+            self.with_reader(|graph| call_path::call_path_card_impl(graph, target, budget));
         self.git_cache.on_compile_cycle_end();
         result
     }
@@ -269,25 +315,21 @@ impl CardCompiler for GraphCardCompiler {
         scope: &str,
         budget: Budget,
     ) -> crate::Result<super::TestSurfaceCard> {
-        let result = with_graph_read_snapshot(self.graph.as_ref(), |graph| {
-            test_surface::test_surface_card_impl(graph, scope, budget)
-        });
+        let result =
+            self.with_reader(|graph| test_surface::test_surface_card_impl(graph, scope, budget));
         self.git_cache.on_compile_cycle_end();
         result
     }
 
     fn resolve_target(&self, target: &str) -> crate::Result<Option<NodeId>> {
-        let result = with_graph_read_snapshot(self.graph.as_ref(), |graph| {
-            resolve::resolve_target(graph, target)
-        });
+        let result = self.with_reader(|graph| resolve::resolve_target(graph, target));
         self.git_cache.on_compile_cycle_end();
         result
     }
 
     fn change_risk_card(&self, target: NodeId, budget: Budget) -> crate::Result<ChangeRiskCard> {
-        let result = with_graph_read_snapshot(self.graph.as_ref(), |_graph| {
-            change_risk::change_risk_card(self, target, budget)
-        });
+        let result =
+            self.with_reader(|graph| change_risk::change_risk_card(self, graph, target, budget));
         self.git_cache.on_compile_cycle_end();
         result
     }

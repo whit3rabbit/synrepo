@@ -4,7 +4,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::{
     core::ids::{NodeId, SymbolNodeId},
-    structure::graph::{Edge, EdgeKind, GraphStore, SymbolKind, SymbolNode},
+    structure::graph::{Edge, EdgeKind, GraphReader, SymbolKind, SymbolNode},
     surface::card::{
         types::{CallPath, CallPathCard, SymbolRef},
         Budget, SourceStore,
@@ -13,7 +13,7 @@ use crate::{
 
 /// Compile a CallPathCard by tracing backward from the target symbol to entry points.
 pub(super) fn call_path_card_impl(
-    graph: &dyn GraphStore,
+    graph: &dyn GraphReader,
     target: SymbolNodeId,
     budget: Budget,
 ) -> crate::Result<CallPathCard> {
@@ -70,7 +70,7 @@ pub(super) fn call_path_card_impl(
 }
 
 /// Find all entry point symbols in the graph.
-fn find_entry_points(graph: &dyn GraphStore) -> crate::Result<HashSet<SymbolNodeId>> {
+fn find_entry_points(graph: &dyn GraphReader) -> crate::Result<HashSet<SymbolNodeId>> {
     let symbols_summary = graph.all_symbols_summary()?;
     let file_paths = graph.all_file_paths()?;
 
@@ -132,7 +132,7 @@ fn is_entry_point(qname: &str, path: &str, kind: SymbolKind) -> bool {
 }
 
 /// Build a map from target symbol to incoming Calls edges.
-fn build_call_graph(graph: &dyn GraphStore) -> crate::Result<HashMap<SymbolNodeId, Vec<Edge>>> {
+fn build_call_graph(graph: &dyn GraphReader) -> crate::Result<HashMap<SymbolNodeId, Vec<Edge>>> {
     let edges = graph.active_edges()?;
     let mut calls_into: HashMap<SymbolNodeId, Vec<Edge>> = HashMap::new();
 
@@ -149,7 +149,7 @@ fn build_call_graph(graph: &dyn GraphStore) -> crate::Result<HashMap<SymbolNodeI
 
 /// Backward BFS from target to entry points.
 fn backward_bfs(
-    _graph: &dyn GraphStore,
+    _graph: &dyn GraphReader,
     target: SymbolNodeId,
     calls_into: &HashMap<SymbolNodeId, Vec<Edge>>,
     entry_points: &HashSet<SymbolNodeId>,
@@ -236,7 +236,7 @@ fn deduplicate_paths(paths: Vec<Vec<SymbolNodeId>>) -> (Vec<Vec<SymbolNodeId>>, 
 
 /// Convert raw paths to CallPath objects with budget-tier truncation.
 fn convert_to_call_paths(
-    graph: &dyn GraphStore,
+    graph: &dyn GraphReader,
     paths: Vec<Vec<SymbolNodeId>>,
     budget: Budget,
 ) -> crate::Result<Vec<CallPath>> {
@@ -332,7 +332,7 @@ fn convert_to_call_paths(
 }
 
 /// Convert a SymbolNode to a SymbolRef.
-fn make_symbol_ref(symbol: &SymbolNode, graph: &dyn GraphStore) -> crate::Result<SymbolRef> {
+fn make_symbol_ref(symbol: &SymbolNode, graph: &dyn GraphReader) -> crate::Result<SymbolRef> {
     let file_path = graph
         .get_file(symbol.file_id)?
         .map(|f| f.path.clone())

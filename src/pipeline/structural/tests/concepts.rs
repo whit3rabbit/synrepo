@@ -3,7 +3,7 @@ use super::support::open_graph;
 use crate::{
     config::Config,
     core::ids::NodeId,
-    structure::graph::{EdgeKind, Epistemic, GraphStore},
+    structure::graph::{EdgeKind, Epistemic},
 };
 use std::fs;
 use tempfile::tempdir;

@@ -22,8 +22,8 @@
 //! Stage 7 (drift scoring via Jaccard distance on persisted structural
 //! fingerprints) is wired; sidecar `edge_drift` and `file_fingerprints`
 //! tables hold the output.
-//! Stage 8 (ArcSwap commit) remains TODO — see
-//! `pipeline-stage8-arcswap-v1`.
+//! Stage 8 (ArcSwap publish of the in-memory graph snapshot) is wired after
+//! the SQLite commit and drift scoring complete.
 //!
 //! ## Relationship to watch and reconcile
 //!
@@ -48,6 +48,7 @@ pub use crate::structure::graph::derive_edge_id;
 
 mod provenance;
 mod stage4;
+mod stage8;
 mod stages;
 
 #[cfg(test)]
@@ -128,6 +129,12 @@ pub fn run_structural_compile(
             0
         }
     };
+
+    if let Some(snapshot_epoch) = compile_rev {
+        if let Err(e) = stage8::run_graph_snapshot_commit(config, graph, snapshot_epoch) {
+            tracing::warn!(error = %e, "stage 8 graph snapshot publish failed; continuing");
+        }
+    }
 
     Ok(CompileSummary {
         files_discovered,

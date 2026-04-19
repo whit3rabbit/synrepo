@@ -93,77 +93,79 @@ pub fn handle_where_to_edit(state: &SynrepoState, task: String, limit: u32) -> S
     let result: anyhow::Result<serde_json::Value> = (|| {
         let matches = crate::substrate::search(&state.config, &state.repo_root, &task)?;
 
-        let compiler = state.create_compiler().map_err(|e| anyhow::anyhow!(e))?;
-        with_graph_snapshot(compiler.graph(), || {
-            let mut seen = HashSet::new();
-            let mut cards = Vec::new();
+        let compiler = state
+            .create_read_compiler()
+            .map_err(|e| anyhow::anyhow!(e))?;
+        let mut seen = HashSet::new();
+        let mut cards = Vec::new();
 
-            for m in &matches {
-                let path = m.path.to_string_lossy().to_string();
-                if seen.contains(&path) {
-                    continue;
-                }
-                seen.insert(path.clone());
+        for m in &matches {
+            let path = m.path.to_string_lossy().to_string();
+            if seen.contains(&path) {
+                continue;
+            }
+            seen.insert(path.clone());
 
-                if let Some(file) = compiler.graph().file_by_path(&path)? {
-                    let card = compiler.file_card(file.id, Budget::Tiny)?;
-                    cards.push(serde_json::to_value(&card)?);
-                }
-
-                if cards.len() >= limit as usize {
-                    break;
-                }
+            if let Some(file) = compiler.reader().file_by_path(&path)? {
+                let card = compiler.file_card(file.id, Budget::Tiny)?;
+                cards.push(serde_json::to_value(&card)?);
             }
 
-            Ok(json!({ "task": task, "suggestions": cards }))
-        })
+            if cards.len() >= limit as usize {
+                break;
+            }
+        }
+
+        Ok(json!({ "task": task, "suggestions": cards }))
     })();
     render_result(result)
 }
 
 pub fn handle_change_impact(state: &SynrepoState, target: String) -> String {
     let result = (|| {
-        let compiler = state.create_compiler().map_err(|e| anyhow::anyhow!(e))?;
-        with_graph_snapshot(compiler.graph(), || {
-            let node_id = compiler
-                .resolve_target(&target)?
-                .ok_or_else(|| anyhow::anyhow!("target not found: {target}"))?;
+        let compiler = state
+            .create_read_compiler()
+            .map_err(|e| anyhow::anyhow!(e))?;
+        let node_id = compiler
+            .resolve_target(&target)?
+            .ok_or_else(|| anyhow::anyhow!("target not found: {target}"))?;
 
-            let imports_in = compiler.graph().inbound(node_id, Some(EdgeKind::Imports))?;
-            let calls_in = compiler.graph().inbound(node_id, Some(EdgeKind::Calls))?;
+        let imports_in = compiler
+            .reader()
+            .inbound(node_id, Some(EdgeKind::Imports))?;
+        let calls_in = compiler.reader().inbound(node_id, Some(EdgeKind::Calls))?;
 
-            let mut impacted_files: Vec<serde_json::Value> = Vec::new();
-            let mut seen_files = HashSet::new();
+        let mut impacted_files: Vec<serde_json::Value> = Vec::new();
+        let mut seen_files = HashSet::new();
 
-            for edge in imports_in.iter().chain(calls_in.iter()) {
-                let file_id = match edge.from {
-                    NodeId::File(id) => id,
-                    NodeId::Symbol(sym_id) => {
-                        if let Some(sym) = compiler.graph().get_symbol(sym_id)? {
-                            sym.file_id
-                        } else {
-                            continue;
-                        }
-                    }
-                    _ => continue,
-                };
-
-                if seen_files.insert(file_id) {
-                    if let Some(file) = compiler.graph().get_file(file_id)? {
-                        impacted_files.push(json!({
-                            "path": file.path,
-                            "edge_kind": edge.kind.as_str(),
-                        }));
+        for edge in imports_in.iter().chain(calls_in.iter()) {
+            let file_id = match edge.from {
+                NodeId::File(id) => id,
+                NodeId::Symbol(sym_id) => {
+                    if let Some(sym) = compiler.reader().get_symbol(sym_id)? {
+                        sym.file_id
+                    } else {
+                        continue;
                     }
                 }
-            }
+                _ => continue,
+            };
 
-            Ok(json!({
-                "target": target,
-                "impacted_files": impacted_files,
-                "total": impacted_files.len(),
-            }))
-        })
+            if seen_files.insert(file_id) {
+                if let Some(file) = compiler.reader().get_file(file_id)? {
+                    impacted_files.push(json!({
+                        "path": file.path,
+                        "edge_kind": edge.kind.as_str(),
+                    }));
+                }
+            }
+        }
+
+        Ok(json!({
+            "target": target,
+            "impacted_files": impacted_files,
+            "total": impacted_files.len(),
+        }))
     })();
     render_result(result)
 }

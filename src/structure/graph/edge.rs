@@ -12,7 +12,7 @@ use super::epistemic::Epistemic;
 ///
 /// Restricted to observed relationships. Edge types the synthesis layer
 /// proposes live on [`crate::overlay::OverlayEdgeKind`] instead.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EdgeKind {
     /// `from` imports `to` (module-level import statement).

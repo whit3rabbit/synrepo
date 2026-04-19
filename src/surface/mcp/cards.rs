@@ -115,7 +115,7 @@ pub fn handle_card(state: &SynrepoState, target: String, budget: String) -> Stri
                 attach_decision_cards(
                     &mut json_val,
                     NodeId::Symbol(sym_id),
-                    compiler.graph(),
+                    compiler.reader(),
                     budget,
                 )?;
                 Ok(json_val)
@@ -126,14 +126,14 @@ pub fn handle_card(state: &SynrepoState, target: String, budget: String) -> Stri
                 attach_decision_cards(
                     &mut json_val,
                     NodeId::File(file_id),
-                    compiler.graph(),
+                    compiler.reader(),
                     budget,
                 )?;
                 Ok(json_val)
             }
             NodeId::Concept(concept_id) => {
                 let concept = compiler
-                    .graph()
+                    .reader()
                     .get_concept(concept_id)?
                     .ok_or_else(|| anyhow::anyhow!("concept not found"))?;
                 Ok(serde_json::to_value(&concept)?)
@@ -219,17 +219,19 @@ pub fn handle_change_risk(state: &SynrepoState, target: String, budget: String) 
 }
 
 pub fn handle_refresh_commentary(state: &SynrepoState, target: String) -> String {
-    use crate::pipeline::synthesis::claude::ClaudeCommentaryGenerator;
+    use crate::pipeline::synthesis::build_commentary_generator;
     use serde_json::json;
 
     let result = (|| {
-        let compiler = state.create_compiler().map_err(|e| anyhow::anyhow!(e))?;
+        let compiler = state
+            .create_sqlite_compiler()
+            .map_err(|e| anyhow::anyhow!(e))?;
         let node_id = compiler
             .resolve_target(&target)?
             .ok_or_else(|| anyhow::anyhow!("target not found: {target}"))?;
 
         let max_tokens = state.config.commentary_cost_limit;
-        let generator = ClaudeCommentaryGenerator::new_or_noop(max_tokens);
+        let generator = build_commentary_generator(&state.config, max_tokens);
 
         let text = compiler.refresh_commentary(node_id, &*generator)?;
         Ok(json!({

@@ -8,7 +8,7 @@ use crate::{
     overlay::OverlayStore,
     pipeline::git::test_support::{git, init_commit},
     store::{overlay::SqliteOverlayStore, sqlite::SqliteGraphStore},
-    structure::graph::{EdgeKind, GraphStore},
+    structure::graph::EdgeKind,
 };
 use parking_lot::Mutex;
 use std::fs;

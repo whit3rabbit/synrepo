@@ -3,6 +3,7 @@
 
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::time::SystemTime;
 
 use time::OffsetDateTime;
 
@@ -15,13 +16,14 @@ use crate::{
         export::load_manifest,
         recent_activity::{read_recent_activity, ActivityEntry, RecentActivityQuery},
         repair::{read_repair_log_degraded_marker, resolve_commentary_node, RepairLogDegraded},
+        synthesis::{describe_active_provider, SynthesisStatus},
         watch::load_reconcile_state,
     },
     store::{
         overlay::SqliteOverlayStore,
         sqlite::{PersistedGraphStats, SqliteGraphStore},
     },
-    structure::graph::with_graph_read_snapshot,
+    structure::graph::{snapshot, with_graph_read_snapshot, GraphReader},
 };
 
 /// Options controlling how the snapshot is built.
@@ -47,6 +49,19 @@ pub enum RepairAuditState {
     },
 }
 
+/// Display-ready summary of synthesis state. Carries both the resolved
+/// provider identity (what would run if enabled) and the enablement status
+/// (whether it actually will run, and why not when it won't).
+#[derive(Clone, Debug)]
+pub struct SynthesisDisplay {
+    /// Provider name (e.g. `anthropic`, `local`).
+    pub provider: String,
+    /// Default model for the provider, if one exists.
+    pub model: Option<String>,
+    /// Resolved enablement status.
+    pub status: SynthesisStatus,
+}
+
 /// Commentary-coverage summary. `total` is always present when the overlay was
 /// readable; `fresh` is only populated when the full-freshness scan ran.
 #[derive(Clone, Debug)]
@@ -59,6 +74,23 @@ pub struct CommentaryCoverage {
     pub fresh: Option<usize>,
     /// Human-readable one-line summary suitable for status text output.
     pub display: String,
+}
+
+/// Status of the published in-memory graph snapshot.
+#[derive(Clone, Debug)]
+pub struct GraphSnapshotStatus {
+    /// Monotonic epoch of the published snapshot, or `0` when none is live.
+    pub epoch: u64,
+    /// Age in milliseconds since the snapshot was published.
+    pub age_ms: u64,
+    /// Approximate heap footprint of the published snapshot.
+    pub size_bytes: usize,
+    /// Active file count in the snapshot.
+    pub file_count: usize,
+    /// Active symbol count in the snapshot.
+    pub symbol_count: usize,
+    /// Active edge count in the snapshot.
+    pub edge_count: usize,
 }
 
 /// Shared overlay handle opened once per snapshot build.
@@ -83,12 +115,17 @@ pub struct StatusSnapshot {
     pub diagnostics: Option<RuntimeDiagnostics>,
     /// Persisted graph counts; `None` when the graph store is missing.
     pub graph_stats: Option<PersistedGraphStats>,
+    /// Published in-memory graph snapshot status.
+    pub graph_snapshot: GraphSnapshotStatus,
     /// Export freshness summary line.
     pub export_freshness: String,
     /// Overlay LLM-cost summary line.
     pub overlay_cost_summary: String,
     /// Commentary coverage.
     pub commentary_coverage: CommentaryCoverage,
+    /// Synthesis provider information, including enablement status and
+    /// whether a provider API key was detected in the environment.
+    pub synthesis_provider: Option<SynthesisDisplay>,
     /// Last compaction timestamp, if any.
     pub last_compaction: Option<OffsetDateTime>,
     /// Repair audit state.
@@ -112,9 +149,11 @@ pub fn build_status_snapshot(repo_root: &Path, opts: StatusOptions) -> StatusSna
                 config: None,
                 diagnostics: None,
                 graph_stats: None,
+                graph_snapshot: current_graph_snapshot_status(),
                 export_freshness: String::new(),
                 overlay_cost_summary: String::new(),
                 commentary_coverage: CommentaryCoverage::unavailable("not initialized"),
+                synthesis_provider: None,
                 last_compaction: None,
                 repair_audit: RepairAuditState::Ok,
                 recent_activity: None,
@@ -135,11 +174,18 @@ pub fn build_status_snapshot(repo_root: &Path, opts: StatusOptions) -> StatusSna
     };
 
     let export_freshness = export_freshness_summary(repo_root, &synrepo_dir, config_ref);
+    let graph_snapshot = current_graph_snapshot_status();
     let overlay = open_status_overlay(&synrepo_dir);
     let overlay_cost_summary = overlay_cost_summary(&overlay);
     let commentary_coverage = commentary_coverage(&synrepo_dir, opts.full, &overlay);
     let last_compaction = load_last_compaction_timestamp(&synrepo_dir);
     let repair_audit = load_repair_audit_state(&synrepo_dir);
+    let active = describe_active_provider(config_ref);
+    let synthesis_provider = Some(SynthesisDisplay {
+        provider: active.provider.to_string(),
+        model: active.model.map(|m| m.to_string()),
+        status: active.status,
+    });
 
     let recent_activity = if opts.recent {
         let query = RecentActivityQuery {
@@ -157,13 +203,35 @@ pub fn build_status_snapshot(repo_root: &Path, opts: StatusOptions) -> StatusSna
         config,
         diagnostics: Some(diagnostics),
         graph_stats,
+        graph_snapshot,
         export_freshness,
         overlay_cost_summary,
         commentary_coverage,
+        synthesis_provider,
         last_compaction,
         repair_audit,
         recent_activity,
         synrepo_dir,
+    }
+}
+
+fn current_graph_snapshot_status() -> GraphSnapshotStatus {
+    let graph = snapshot::current();
+    let age_ms = graph
+        .published_at
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .ok()
+        .and_then(|_| graph.published_at.elapsed().ok())
+        .map(|elapsed| elapsed.as_millis().min(u128::from(u64::MAX)) as u64)
+        .unwrap_or(0);
+
+    GraphSnapshotStatus {
+        epoch: graph.snapshot_epoch,
+        age_ms,
+        size_bytes: graph.approx_bytes(),
+        file_count: graph.files.len(),
+        symbol_count: graph.symbols.len(),
+        edge_count: graph.all_edges().map(|edges| edges.len()).unwrap_or(0),
     }
 }
 

@@ -108,7 +108,7 @@ Node types: `FileNode` (content-hash identity), `SymbolNode` (tree-sitter extrac
 - `mode_inspect.rs` — auto vs curated mode detection via `inspect_repository_mode()`
 - Spec: `openspec/specs/bootstrap/spec.md`
 
-**Pipeline** (`src/pipeline/`) — `structural/` defines the 8-stage compile cycle. `mod.rs` owns transaction orchestration and `CompileSummary`; `stages.rs` owns stages 1–3 (discover → parse code → parse prose); `stage4.rs` owns cross-file edge resolution. Stage 5 (git mining) runs via `src/pipeline/git/` and `src/pipeline/git_intelligence/`. Stage 6 (identity cascade: content-hash, split, merge, git rename fallback, breakage) is wired. Stage 7 (drift scoring via Jaccard distance on persisted structural fingerprints) is wired and writes to the sidecar `edge_drift` and `file_fingerprints` tables. Stage 8 (ArcSwap commit) is not yet wired. `synthesis/` defines the `CommentaryGenerator` trait boundary with `stub.rs` (`NoOpGenerator`, default) and `claude.rs` (`ClaudeCommentaryGenerator`, reads `SYNREPO_ANTHROPIC_API_KEY`); called explicitly via the the `synrepo_refresh_commentary` tool or sync repair actions.
+**Pipeline** (`src/pipeline/`) — `structural/` defines the 8-stage compile cycle. `mod.rs` owns transaction orchestration and `CompileSummary`; `stages.rs` owns stages 1–3 (discover → parse code → parse prose); `stage4.rs` owns cross-file edge resolution. Stage 5 (git mining) runs via `src/pipeline/git/` and `src/pipeline/git_intelligence/`. Stage 6 (identity cascade: content-hash, split, merge, git rename fallback, breakage) is wired. Stage 7 (drift scoring via Jaccard distance on persisted structural fingerprints) is wired and writes to the sidecar `edge_drift` and `file_fingerprints` tables. Stage 8 publishes the immutable in-memory graph snapshot via `ArcSwap<Graph>` after the SQLite commit succeeds. `synthesis/` defines the `CommentaryGenerator` trait boundary with `stub.rs` (`NoOpGenerator`, default) and `providers/` for the configured synthesis backends; called explicitly via `synrepo_refresh_commentary` or sync repair actions.
 - `maintenance.rs` — storage-compatibility cleanup and compaction hooks; driven by `sync`.
 - `repair/` — `mod.rs` is a thin façade. `report/` holds the drift-report builder with `surfaces/` (10 `SurfaceCheck` implementations split into `mod.rs`, `commentary.rs`, `cross_links.rs`, `drift.rs`, `rationale.rs`). `sync.rs` drives auto-repair, `cross_links.rs` runs the cross-link generation pass, `log.rs` appends JSONL resolution records, `declared_links.rs` verifies `Governs` targets, `commentary.rs` is the commentary-refresh repair action that calls the synthesis generator, and `types/` holds the stable enums plus report/log payload types.
 - `git_intelligence/` — `mod.rs` is a thin façade. `types.rs` defines the public Git-intelligence payloads, `analysis.rs` derives history/hotspot/ownership/co-change summaries, `emit.rs` emits `CoChangesWith` edges into the graph after each git pass, `symbol_revisions/` tracks per-symbol `first_seen_rev`/`last_modified_rev` via body-hash diffing, and `tests/` is split by status, history, path, and shared support helpers.
@@ -135,6 +135,13 @@ Node types: `FileNode` (content-hash identity), `SymbolNode` (tree-sitter extrac
 - `.synrepo/state/reconcile-state.json` — last reconcile outcome, timestamp, and discovered/symbol counts
 - `.synrepo/state/repair-log.jsonl` — append-only resolution log written by `synrepo sync`; one JSON object per line
 - `openspec/` — planning artifacts only, not runtime
+
+### In-memory snapshot
+
+- `GraphReader` is the read-only graph trait implemented by both `SqliteGraphStore` and the immutable in-memory `Graph`.
+- `src/structure/graph/snapshot.rs` holds the process-global `ArcSwap<Graph>` handle. Read-only MCP/card paths prefer this snapshot when available.
+- Stage 8 publishes a fresh snapshot after the structural SQLite transaction commits and drift scoring completes, so readers never observe partial graph state.
+- `Config.max_graph_snapshot_bytes` defaults to `128 MiB`. It is advisory: oversized snapshots still publish with a warning. Setting it to `0` disables publication and leaves readers on the SQLite path.
 
 ### Layer and size rules
 
@@ -174,7 +181,7 @@ Stages 4–8:
 5. Git mining (co-change, ownership, hotspots, recent file history) — **implemented** in `git-intelligence-v1`: deterministic first-parent history sampling via `src/pipeline/git/` and `src/pipeline/git_intelligence/`, surfaced today through file-facing outputs and node inspection
 6. Identity cascade (rename detection) — **implemented**: content-hash rename, split/merge detection, git rename fallback all wired
 7. Drift scoring — **implemented**: Jaccard distance on persisted structural fingerprints, sidecar `edge_drift` and `file_fingerprints` tables, all-edge enumeration
-8. ArcSwap commit — TODO stub
+8. ArcSwap publish — implemented: rebuild immutable `Graph` from SQLite, then atomically publish via `ArcSwap`
 
 ### Overlay and audit surfaces
 
@@ -195,7 +202,7 @@ Stages 4–8:
 
 ### Not yet implemented
 
-- ArcSwap commit (stage 8) remains TODO.
+- No additional structural pipeline stages remain. Follow-on work is about optimization and surface polish, not a missing Stage 8.
 
 ## Gotchas
 
@@ -252,7 +259,7 @@ Stages 4–8:
 - **Test fixtures that create multiple files must not share byte-identical content.** `FileNodeId` is content-hashed for new files (see invariant 3), so two files with the same bytes collapse to the same node and one overwrites the other. Differentiate with a leading comment or distinct body when a test needs multiple files (canonical example: `src/a.rs` and `src/b.rs` in `pipeline::structural::tests::edges`).
 - **Adding a new `Language` variant is surface-enforced.** See the "Adding a new language" section below. Tests fail loud if any required surface is missed.
 
-## Config fields (`src/config.rs`)
+## Config fields (`src/config/mod.rs`)
 
 | Field | Default | Notes |
 |-------|---------|-------|
@@ -261,8 +268,47 @@ Stages 4–8:
 | `concept_directories` | `["docs/concepts", "docs/adr", "docs/decisions"]` | Concept/ADR dirs; changing triggers compat advisory |
 | `git_commit_depth` | `500` | History depth budget for deterministic Git-intelligence sampling and file-scoped summaries |
 | `max_file_size_bytes` | `1048576` (1 MB) | Files larger than this are skipped |
+| `max_graph_snapshot_bytes` | `134217728` (128 MiB) | Advisory ceiling for the published in-memory graph snapshot. `0` disables publication |
 | `redact_globs` | `["**/secrets/**", "**/*.env*", "**/*-private.md"]` | Files matching these are never indexed |
 | `retain_retired_revisions` | `10` | Compile revisions to keep retired observations before compaction deletes them |
+
+## Synthesis providers
+
+The synthesis pipeline supports multiple LLM providers for commentary and cross-link generation.
+
+**Disabled by default.** Synthesis is off even when provider API keys are present in the environment, so `synrepo` never silently consumes keys set for unrelated tools. Enable it via `[synthesis]` in `.synrepo/config.toml` or `synrepo setup --synthesis`.
+
+| Provider | Env var | Default model | API key |
+|----------|---------|---------------|---------|
+| Anthropic (default) | `ANTHROPIC_API_KEY` | `claude-sonnet-4-6` | Required |
+| OpenAI | `OPENAI_API_KEY` | `gpt-4o-mini` | Required |
+| Gemini | `GEMINI_API_KEY` | `gemini-1.5-flash` | Required |
+| Local (Ollama/llama.cpp/LM Studio/vLLM) | `SYNREPO_LLM_LOCAL_ENDPOINT` | `llama3` | None |
+
+Config block (all fields optional, serde-defaulted so older configs load unchanged):
+
+```toml
+[synthesis]
+enabled = true
+provider = "anthropic"    # "anthropic" | "openai" | "gemini" | "local" | "none"
+model = "claude-sonnet-4-6"
+local_endpoint = "http://localhost:11434/api/chat"
+local_preset = "ollama"   # informational only; local_endpoint is authoritative
+```
+
+Precedence (env wins):
+
+- `SYNREPO_LLM_ENABLED=1` overrides `enabled = false`
+- `SYNREPO_LLM_PROVIDER` > `synthesis.provider` > default (`anthropic`)
+- `SYNREPO_LLM_MODEL` > `synthesis.model` > provider default
+- `SYNREPO_LLM_LOCAL_ENDPOINT` > `synthesis.local_endpoint` > `http://localhost:11434/api/chat`
+- Unknown provider strings fall back to `anthropic` with a warning; the same applies to an unknown `synthesis.provider` value in config
+
+For `Local`, the request shape is inferred from the endpoint path: `/v1/chat/completions` → OpenAI-compatible (llama.cpp, LM Studio, vLLM); any other path → Ollama native. No dedicated implementation per server is needed.
+
+API keys live in the shell environment only. `synrepo` does not write keys to `.synrepo/config.toml` or any persisted state; OS-keychain integration is explicitly out of scope today.
+
+The legacy `SYNREPO_ANTHROPIC_API_KEY` is also accepted as a fallback to `ANTHROPIC_API_KEY`.
 
 ## Adding a new language
 
