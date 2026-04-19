@@ -506,8 +506,12 @@ mod tests {
         "#;
         std::fs::write(repo.path().join(".synrepo/config.toml"), local_toml).unwrap();
 
-        // Simulate global config path by setting HOME
+        // Simulate global config path via the same env var `home_dir()` reads:
+        // `$HOME` on Unix, `%USERPROFILE%` on Windows.
+        #[cfg(unix)]
         std::env::set_var("HOME", home.path());
+        #[cfg(windows)]
+        std::env::set_var("USERPROFILE", home.path());
 
         // Config::load should merge: mode is auto (local wins), synthesis enabled is true (global preserved), synthesis provider is openai (local wins)
         let config = Config::load(repo.path()).expect("load must succeed");
@@ -516,6 +520,9 @@ mod tests {
         assert!(config.synthesis.enabled);
         assert_eq!(config.synthesis.provider.as_deref(), Some("openai"));
 
+        #[cfg(unix)]
         std::env::remove_var("HOME");
+        #[cfg(windows)]
+        std::env::remove_var("USERPROFILE");
     }
 }

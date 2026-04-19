@@ -11,6 +11,11 @@ use super::super::{
 use super::dead_pid;
 use super::setup_test_repo;
 
+// Unix-only: two `acquire_watch_daemon_lease` calls in the same process rely
+// on POSIX flock rejecting a second handle. Windows `LockFileEx` is
+// per-handle, so the second acquire succeeds in-process. Cross-process
+// contention is covered by the soak suite at `tests/mutation_soak.rs`.
+#[cfg(unix)]
 #[test]
 fn watch_lease_blocks_a_second_live_owner() {
     let (_dir, _repo, _config, synrepo_dir) = setup_test_repo();

@@ -111,6 +111,11 @@ fn malformed_lock_file_is_replaced() {
     drop(lock);
 }
 
+// Windows `LockFileEx` is per-handle: two handles in the same process can
+// both acquire the lock, which defeats the same-process contention this test
+// simulates. Gate to Unix, matching the precedent set by
+// `second_open_of_same_lock_file_blocks` and `stale_lock_from_dead_pid_is_replaced`.
+#[cfg(unix)]
 #[test]
 fn concurrent_acquire_from_threads_is_rejected() {
     use std::sync::Arc;
@@ -202,6 +207,13 @@ fn drop_does_not_remove_replaced_lock_file() {
 }
 
 /// Write admission is rejected while a live watch owner holds the repo.
+///
+/// Unix-only: `watch_service_status` reopens the flock file on a fresh handle
+/// to check if it is held, which relies on POSIX per-process flock semantics.
+/// Windows `LockFileEx` is per-handle, so the same-process reopen succeeds and
+/// the live-watch check wrongly reports Stale. A true cross-process simulation
+/// would be needed to exercise this path on Windows.
+#[cfg(unix)]
 #[test]
 fn write_admission_blocked_when_watch_running() {
     use crate::pipeline::watch::lease::acquire_watch_daemon_lease;
