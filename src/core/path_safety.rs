@@ -20,6 +20,7 @@
 //!   - any `Component::Prefix` (catches Windows prefixes even if some future
 //!     platform loosens `is_absolute`)
 //!   - embedded NUL bytes (defence against smuggled terminators)
+//!   - newline characters (defence against configuration injection into .gitignore)
 //!
 //! `has_windows_prefix_component` is a cross-platform check that returns
 //! true for UNC / verbatim / device / drive prefixes on Windows. On Unix
@@ -32,7 +33,11 @@ use std::path::{Component, Path, PathBuf};
 /// in-repo relative path. Returns `None` for anything that could escape
 /// `root` or that carries an OS-specific prefix.
 pub(crate) fn safe_join_in_repo(root: &Path, relative: &str) -> Option<PathBuf> {
-    if relative.is_empty() || relative.as_bytes().contains(&0) {
+    if relative.is_empty()
+        || relative.as_bytes().contains(&0)
+        || relative.contains('\n')
+        || relative.contains('\r')
+    {
         return None;
     }
 
@@ -108,10 +113,12 @@ mod tests {
     }
 
     #[test]
-    fn safe_join_rejects_empty_and_nul() {
+    fn safe_join_rejects_empty_nul_and_newlines() {
         let root = Path::new("/tmp/repo");
         assert_eq!(safe_join_in_repo(root, ""), None);
         assert_eq!(safe_join_in_repo(root, "foo\0bar"), None);
+        assert_eq!(safe_join_in_repo(root, "foo\nbar"), None);
+        assert_eq!(safe_join_in_repo(root, "foo\rbar"), None);
     }
 
     #[test]
