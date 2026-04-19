@@ -12,8 +12,9 @@ use super::{commands, sample_link, setup_curated_link_env, write_curated_mode};
 #[cfg(unix)]
 #[test]
 fn links_accept_blocked_when_watch_running() {
-    use std::process::Command;
-    use synrepo::pipeline::watch::{WatchDaemonState, WatchServiceMode};
+    use synrepo::pipeline::watch::{
+        hold_watch_flock_with_state, WatchDaemonState, WatchServiceMode,
+    };
 
     let repo = tempdir().unwrap();
     let ids = seed_graph(repo.path());
@@ -25,11 +26,10 @@ fn links_accept_blocked_when_watch_running() {
     let to = NodeId::Symbol(ids.symbol_id);
     overlay.insert_link(sample_link(from, to)).unwrap();
 
-    // Plant a watch lease pointing at a live process so ensure_watch_not_running
-    // sees Running rather than Stale.
-    let mut child = Command::new("sleep").arg("5").spawn().unwrap();
+    // Hold the kernel flock on the watch sentinel and write a matching state
+    // file so ensure_watch_not_running sees Running rather than Stale.
     let state = WatchDaemonState {
-        pid: child.id(),
+        pid: std::process::id(),
         started_at: "2026-04-15T00:00:00Z".to_string(),
         mode: WatchServiceMode::Foreground,
         control_endpoint: synrepo_dir.join("state/watch.sock").display().to_string(),
@@ -39,13 +39,7 @@ fn links_accept_blocked_when_watch_running() {
         last_error: None,
         last_triggering_events: None,
     };
-    let state_dir = synrepo_dir.join("state");
-    std::fs::create_dir_all(&state_dir).unwrap();
-    std::fs::write(
-        state_dir.join("watch-daemon.json"),
-        serde_json::to_string(&state).unwrap(),
-    )
-    .unwrap();
+    let _watch = hold_watch_flock_with_state(&synrepo_dir, &state);
 
     let candidate_id = format_candidate_id(from, to, OverlayEdgeKind::References, "test-pass");
     let err = commands::links_accept(repo.path(), &candidate_id, None).unwrap_err();
@@ -62,9 +56,6 @@ fn links_accept_blocked_when_watch_running() {
             .contains("links reject: watch service is active"),
         "expected watch-service guard error from reject, got: {reject_err}"
     );
-
-    let _ = child.kill();
-    let _ = child.wait();
 }
 
 #[cfg(unix)]

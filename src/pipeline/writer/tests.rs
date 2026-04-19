@@ -204,32 +204,18 @@ fn drop_does_not_remove_replaced_lock_file() {
 /// Write admission is rejected while a live watch owner holds the repo.
 #[test]
 fn write_admission_blocked_when_watch_running() {
-    use crate::pipeline::watch::WatchDaemonState;
+    use crate::pipeline::watch::lease::acquire_watch_daemon_lease;
     use crate::pipeline::watch::WatchServiceMode;
 
     let dir = tempdir().unwrap();
     let synrepo_dir = dir.path().join(".synrepo");
-    let state_dir = synrepo_dir.join("state");
-    std::fs::create_dir_all(&state_dir).unwrap();
+    std::fs::create_dir_all(synrepo_dir.join("state")).unwrap();
 
-    // Write a valid watch-daemon.json with the current PID (which is alive).
-    let watch_state = WatchDaemonState {
-        pid: std::process::id(),
-        started_at: "2026-01-01T00:00:00Z".to_string(),
-        mode: WatchServiceMode::Daemon,
-        control_endpoint: synrepo_dir
-            .join("state")
-            .join("watch.sock")
-            .display()
-            .to_string(),
-        last_event_at: None,
-        last_reconcile_at: None,
-        last_reconcile_outcome: None,
-        last_error: None,
-        last_triggering_events: None,
-    };
-    let state_path = state_dir.join("watch-daemon.json");
-    std::fs::write(&state_path, serde_json::to_string(&watch_state).unwrap()).unwrap();
+    // Hold a real watch lease (kernel flock + state file) for the duration
+    // of the admission check. Plain state-file seeding no longer signals a
+    // live watch; the flock is the source of truth.
+    let (_lease, _handle) =
+        acquire_watch_daemon_lease(&synrepo_dir, WatchServiceMode::Daemon).unwrap();
 
     let result = acquire_write_admission(&synrepo_dir, "test_op");
     assert!(

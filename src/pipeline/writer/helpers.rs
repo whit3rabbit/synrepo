@@ -126,7 +126,7 @@ pub(super) fn sentinel_path(lock_path: &Path) -> PathBuf {
 ///
 /// On Unix the file is opened with `O_CLOEXEC` so child processes do not
 /// inherit the lock; `LockFileEx` on Windows is per-handle by default.
-pub(super) fn open_and_try_lock(lock_path: &Path) -> Result<Option<fs::File>, LockError> {
+pub(crate) fn open_and_try_lock(lock_path: &Path) -> Result<Option<fs::File>, LockError> {
     let sentinel = sentinel_path(lock_path);
     let mut opts = fs::OpenOptions::new();
     opts.create(true).read(true).write(true);

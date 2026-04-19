@@ -121,22 +121,20 @@ fn upgrade_apply_blocked_when_watch_running() {
     )
     .unwrap();
 
-    // Plant a live watch-daemon lease. The current process PID is guaranteed
-    // to be alive for the duration of the test, so ensure_watch_not_running
-    // sees Running rather than Stale.
-    let state_dir = synrepo_dir.join("state");
-    fs::create_dir_all(&state_dir).unwrap();
-    let state = serde_json::json!({
-        "pid": std::process::id(),
-        "started_at": "2026-01-01T00:00:00Z",
-        "mode": "daemon",
-        "socket_path": state_dir.join("watch.sock").display().to_string(),
-    });
-    fs::write(
-        state_dir.join("watch-daemon.json"),
-        serde_json::to_string(&state).unwrap(),
-    )
-    .unwrap();
+    // Plant a live watch-daemon lease (flock + state) so
+    // ensure_watch_not_running sees Running rather than Stale.
+    let state = synrepo::pipeline::watch::WatchDaemonState {
+        pid: std::process::id(),
+        started_at: "2026-01-01T00:00:00Z".to_string(),
+        mode: synrepo::pipeline::watch::WatchServiceMode::Daemon,
+        control_endpoint: synrepo_dir.join("state/watch.sock").display().to_string(),
+        last_event_at: None,
+        last_reconcile_at: None,
+        last_reconcile_outcome: None,
+        last_error: None,
+        last_triggering_events: None,
+    };
+    let _watch = synrepo::pipeline::watch::hold_watch_flock_with_state(&synrepo_dir, &state);
 
     let err = upgrade(&repo, true).unwrap_err();
     let msg = err.to_string();

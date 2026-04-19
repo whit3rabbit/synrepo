@@ -9,6 +9,9 @@ use std::fs;
 use synrepo::bootstrap::bootstrap;
 use synrepo::config::Config;
 use synrepo::pipeline::export::ExportFormat;
+use synrepo::pipeline::watch::{
+    hold_watch_flock_with_state, TestWatchFlockHolder, WatchDaemonState, WatchServiceMode,
+};
 #[cfg(unix)]
 use synrepo::pipeline::writer::{
     hold_writer_flock_with_ownership, live_foreign_pid, spawn_and_reap_pid, writer_lock_path,
@@ -20,19 +23,19 @@ use crate::export;
 #[cfg(unix)]
 use crate::sync;
 
-fn write_watch_state(state_dir: &std::path::Path, pid: u32) {
-    fs::create_dir_all(state_dir).unwrap();
-    let state = serde_json::json!({
-        "pid": pid,
-        "started_at": "2026-01-01T00:00:00Z",
-        "mode": "daemon",
-        "socket_path": state_dir.join("watch.sock").display().to_string(),
-    });
-    fs::write(
-        state_dir.join("watch-daemon.json"),
-        serde_json::to_string(&state).unwrap(),
-    )
-    .unwrap();
+fn hold_live_watch(synrepo_dir: &std::path::Path, pid: u32) -> TestWatchFlockHolder {
+    let state = WatchDaemonState {
+        pid,
+        started_at: "2026-01-01T00:00:00Z".to_string(),
+        mode: WatchServiceMode::Daemon,
+        control_endpoint: synrepo_dir.join("state/watch.sock").display().to_string(),
+        last_event_at: None,
+        last_reconcile_at: None,
+        last_reconcile_outcome: None,
+        last_error: None,
+        last_triggering_events: None,
+    };
+    hold_watch_flock_with_state(synrepo_dir, &state)
 }
 
 #[test]
@@ -42,8 +45,7 @@ fn export_blocked_when_watch_running() {
     bootstrap(repo, None, false).unwrap();
 
     let synrepo_dir = Config::synrepo_dir(repo);
-    let state_dir = synrepo_dir.join("state");
-    write_watch_state(&state_dir, std::process::id());
+    let _watch = hold_live_watch(&synrepo_dir, std::process::id());
 
     let err = export(repo, ExportFormat::Markdown, false, false, None).unwrap_err();
     let msg = err.to_string();
@@ -69,9 +71,22 @@ fn export_succeeds_after_stale_watch_cleanup() {
 
     let synrepo_dir = Config::synrepo_dir(repo);
     let state_dir = synrepo_dir.join("state");
-    write_watch_state(&state_dir, spawn_and_reap_pid());
+    fs::create_dir_all(&state_dir).unwrap();
+    // Write a state file with a dead PID but no flock — the new semantics
+    // classify this as Stale, which acquire_write_admission cleans up.
+    let dead_state = serde_json::json!({
+        "pid": spawn_and_reap_pid(),
+        "started_at": "2026-01-01T00:00:00Z",
+        "mode": "daemon",
+        "socket_path": state_dir.join("watch.sock").display().to_string(),
+    });
+    fs::write(
+        state_dir.join("watch-daemon.json"),
+        serde_json::to_string(&dead_state).unwrap(),
+    )
+    .unwrap();
 
-    // Stale watch-daemon.json with a dead PID must be cleaned up by
+    // Stale watch-daemon.json must be cleaned up by
     // acquire_write_admission and the export must proceed.
     export(repo, ExportFormat::Markdown, false, false, None).expect("export must succeed");
 
@@ -187,8 +202,7 @@ fn export_does_not_leave_partial_output_when_admission_fails() {
     fs::write(&sentinel, "pre-existing content").unwrap();
 
     let synrepo_dir = Config::synrepo_dir(repo);
-    let state_dir = synrepo_dir.join("state");
-    write_watch_state(&state_dir, std::process::id());
+    let _watch = hold_live_watch(&synrepo_dir, std::process::id());
 
     let err = export(repo, ExportFormat::Markdown, false, false, None).unwrap_err();
     assert!(err.to_string().contains("watch service is active"));

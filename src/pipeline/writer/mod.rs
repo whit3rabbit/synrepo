@@ -37,7 +37,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub(crate) use helpers::is_process_alive;
 pub(super) use helpers::now_rfc3339;
 use helpers::{
     decrement_depth, insert_initial_lock, open_and_try_lock_with_retry, read_ownership,
@@ -47,6 +46,7 @@ use helpers::{
 pub use helpers::{
     hold_writer_flock_with_ownership, live_foreign_pid, spawn_and_reap_pid, TestFlockHolder,
 };
+pub(crate) use helpers::{is_process_alive, open_and_try_lock};
 use serde::{Deserialize, Serialize};
 
 /// Ownership record written to `.synrepo/state/writer.lock`.

@@ -21,6 +21,7 @@ pub mod gemini;
 pub mod http;
 pub mod local;
 pub mod openai;
+pub mod openrouter;
 
 /// Available synthesis providers.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -32,6 +33,8 @@ pub enum ProviderKind {
     OpenAi,
     /// Google Gemini provider
     Gemini,
+    /// OpenRouter provider
+    OpenRouter,
     /// Local provider (Ollama, vLLM, llama.cpp, LM Studio)
     Local,
     /// Explicitly disabled - always returns NoOp generators
@@ -44,6 +47,7 @@ impl ProviderKind {
             "anthropic" => Some(ProviderKind::Anthropic),
             "openai" => Some(ProviderKind::OpenAi),
             "gemini" => Some(ProviderKind::Gemini),
+            "openrouter" => Some(ProviderKind::OpenRouter),
             "local" => Some(ProviderKind::Local),
             "none" => Some(ProviderKind::None),
             _ => None,
@@ -74,6 +78,7 @@ impl ProviderKind {
             ProviderKind::Anthropic => "anthropic",
             ProviderKind::OpenAi => "openai",
             ProviderKind::Gemini => "gemini",
+            ProviderKind::OpenRouter => "openrouter",
             ProviderKind::Local => "local",
             ProviderKind::None => "none",
         }
@@ -145,6 +150,12 @@ impl ProviderConfig {
             }
             ProviderKind::Gemini => {
                 let key = std::env::var("GEMINI_API_KEY")
+                    .ok()
+                    .filter(|k| !k.is_empty());
+                (key, None, EndpointSource::Default)
+            }
+            ProviderKind::OpenRouter => {
+                let key = std::env::var("OPENROUTER_API_KEY")
                     .ok()
                     .filter(|k| !k.is_empty());
                 (key, None, EndpointSource::Default)
@@ -250,6 +261,21 @@ pub fn build_commentary_generator(
                 Box::new(NoOpGenerator)
             }
         }
+        ProviderKind::OpenRouter => {
+            if let Some(key) = resolved.api_key {
+                let model = resolved
+                    .model
+                    .unwrap_or_else(|| openrouter::DEFAULT_MODEL.to_string());
+                tracing::info!("synthesis: openrouter (model: {})", model);
+                Box::new(openrouter::OpenRouterCommentaryGenerator::new(
+                    key,
+                    model,
+                    max_tokens_per_call,
+                ))
+            } else {
+                Box::new(NoOpGenerator)
+            }
+        }
         ProviderKind::Local => {
             let model = resolved
                 .model
@@ -341,6 +367,21 @@ pub fn build_cross_link_generator(
                 Box::new(NoOpCrossLinkGenerator)
             }
         }
+        ProviderKind::OpenRouter => {
+            if let Some(key) = resolved.api_key {
+                let model = resolved
+                    .model
+                    .unwrap_or_else(|| openrouter::DEFAULT_MODEL.to_string());
+                Box::new(openrouter::OpenRouterCrossLinkGenerator::new(
+                    key,
+                    model,
+                    max_tokens_per_call,
+                    thresholds,
+                ))
+            } else {
+                Box::new(NoOpCrossLinkGenerator)
+            }
+        }
         ProviderKind::Local => {
             let model = resolved
                 .model
@@ -403,6 +444,7 @@ pub fn describe_active_provider(config: &SynrepoConfig) -> ActiveProvider {
         ProviderKind::Anthropic => ("anthropic", Some(anthropic::DEFAULT_MODEL)),
         ProviderKind::OpenAi => ("openai", Some(openai::DEFAULT_MODEL)),
         ProviderKind::Gemini => ("gemini", Some(gemini::DEFAULT_MODEL)),
+        ProviderKind::OpenRouter => ("openrouter", Some(openrouter::DEFAULT_MODEL)),
         ProviderKind::Local => ("local", Some(local::DEFAULT_MODEL)),
         ProviderKind::None => ("none", None),
     };
@@ -439,6 +481,7 @@ fn detect_provider_key_env() -> Option<&'static str> {
         "SYNREPO_ANTHROPIC_API_KEY",
         "OPENAI_API_KEY",
         "GEMINI_API_KEY",
+        "OPENROUTER_API_KEY",
     ];
     for name in CANDIDATES {
         if let Ok(value) = std::env::var(name) {
@@ -455,6 +498,7 @@ pub use anthropic::{AnthropicCommentaryGenerator, AnthropicCrossLinkGenerator};
 pub use gemini::{GeminiCommentaryGenerator, GeminiCrossLinkGenerator};
 pub use local::{LocalCommentaryGenerator, LocalCrossLinkGenerator};
 pub use openai::{OpenAiCommentaryGenerator, OpenAiCrossLinkGenerator};
+pub use openrouter::{OpenRouterCommentaryGenerator, OpenRouterCrossLinkGenerator};
 
 // Legacy type aliases for compatibility
 /// Alias for [`anthropic::AnthropicCommentaryGenerator`] - kept for backward compatibility.
@@ -481,6 +525,7 @@ mod tests {
         "SYNREPO_ANTHROPIC_API_KEY",
         "OPENAI_API_KEY",
         "GEMINI_API_KEY",
+        "OPENROUTER_API_KEY",
     ];
 
     // Global lock: env is process-wide shared state. Every test in this
@@ -618,5 +663,23 @@ mod tests {
             resolved.local_endpoint.as_deref(),
             Some("http://config-host:1111/api/chat")
         );
+    }
+
+    #[test]
+    fn local_endpoint_defaults_to_ollama_when_unset() {
+        let _env = EnvGuard::new();
+        let mut config = enabled_config();
+        config.synthesis.provider = Some("local".to_string());
+        // No local_endpoint set in config or env.
+        let resolved = ProviderConfig::resolve(ProviderKind::Local, &config, 1024);
+        // It should be None here, and the builder should use the default.
+        assert!(resolved.local_endpoint.is_none());
+
+        let _gen = build_commentary_generator(&config, 1024);
+        // We can't easily inspect the inner endpoint of the box, but we can verify it doesn't panic
+        // and uses the expected path in describe_active_provider.
+        let active = describe_active_provider(&config);
+        assert_eq!(active.provider, "local");
+        assert!(active.local_endpoint.is_none());
     }
 }

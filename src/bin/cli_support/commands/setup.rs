@@ -196,6 +196,7 @@ pub(crate) fn step_apply_synthesis(
                 CloudProvider::Anthropic => "anthropic",
                 CloudProvider::OpenAi => "openai",
                 CloudProvider::Gemini => "gemini",
+                CloudProvider::OpenRouter => "openrouter",
             };
             synthesis.insert("provider", Item::Value(TomlValue::from(name)));
             synthesis.remove("local_endpoint");

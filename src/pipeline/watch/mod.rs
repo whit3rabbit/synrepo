@@ -5,7 +5,7 @@
 //! on-demand reconciles still flow through `run_reconcile_pass`.
 
 mod control;
-mod lease;
+pub(crate) mod lease;
 pub(crate) mod reconcile;
 mod service;
 
@@ -15,6 +15,8 @@ pub use lease::{
     watch_socket_path, StateLoadError, WatchDaemonError, WatchDaemonState, WatchServiceMode,
     WatchServiceStatus,
 };
+#[doc(hidden)]
+pub use lease::{hold_watch_flock_with_state, TestWatchFlockHolder};
 pub use reconcile::{
     emit_cochange_edges_pass, emit_symbol_revisions_pass, load_reconcile_state,
     persist_reconcile_state, reconcile_state_path, run_reconcile_pass, ReconcileOutcome,

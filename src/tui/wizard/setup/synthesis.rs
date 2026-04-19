@@ -17,6 +17,8 @@ pub enum CloudProvider {
     OpenAi,
     /// Google Gemini.
     Gemini,
+    /// OpenRouter.
+    OpenRouter,
 }
 
 impl CloudProvider {
@@ -26,6 +28,7 @@ impl CloudProvider {
             CloudProvider::Anthropic => "anthropic",
             CloudProvider::OpenAi => "openai",
             CloudProvider::Gemini => "gemini",
+            CloudProvider::OpenRouter => "openrouter",
         }
     }
 
@@ -35,6 +38,7 @@ impl CloudProvider {
             CloudProvider::Anthropic => "Anthropic (Claude) — set ANTHROPIC_API_KEY in your shell",
             CloudProvider::OpenAi => "OpenAI — set OPENAI_API_KEY in your shell",
             CloudProvider::Gemini => "Gemini — set GEMINI_API_KEY in your shell",
+            CloudProvider::OpenRouter => "OpenRouter — set OPENROUTER_API_KEY in your shell",
         }
     }
 }
@@ -135,6 +139,7 @@ pub const SYNTHESIS_ROWS: &[SynthesisRow] = &[
     SynthesisRow::Cloud(CloudProvider::Anthropic),
     SynthesisRow::Cloud(CloudProvider::OpenAi),
     SynthesisRow::Cloud(CloudProvider::Gemini),
+    SynthesisRow::Cloud(CloudProvider::OpenRouter),
     SynthesisRow::Local,
 ];
 

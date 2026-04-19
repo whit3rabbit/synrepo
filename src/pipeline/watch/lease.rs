@@ -4,9 +4,7 @@
 
 use std::{
     fs,
-    io::Write as _,
     path::{Path, PathBuf},
-    time::Duration,
 };
 
 use interprocess::local_socket::Name;
@@ -18,7 +16,8 @@ use interprocess::local_socket::{GenericNamespaced, ToNsName};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
-use crate::pipeline::writer::{is_process_alive, now_rfc3339};
+use crate::pipeline::writer::{now_rfc3339, open_and_try_lock};
+use fs2::FileExt;
 
 const WATCH_DAEMON_FILENAME: &str = "watch-daemon.json";
 
@@ -129,6 +128,9 @@ pub enum WatchDaemonError {
         /// Underlying I/O error.
         source: std::io::Error,
     },
+    /// A security violation was detected (e.g. symlink or foreign-owned socket dir).
+    #[error("Security violation: {0}")]
+    Security(String),
     /// Control request failed.
     #[error("{0}")]
     Control(String),
@@ -189,8 +191,12 @@ impl WatchStateHandle {
 #[derive(Debug)]
 pub struct WatchDaemonLease {
     state_path: PathBuf,
+    flock_path: PathBuf,
     socket_path: PathBuf,
     identity: WatchDaemonState,
+    /// Held for its Drop side-effect (releases the kernel flock).
+    #[allow(dead_code)]
+    flock_file: fs::File,
 }
 
 impl Drop for WatchDaemonLease {
@@ -201,6 +207,7 @@ impl Drop for WatchDaemonLease {
             .is_ok_and(|state| state.same_owner(&self.identity))
         {
             cleanup_file(&self.state_path);
+            cleanup_file(&self.flock_path);
             cleanup_file(&self.socket_path);
         }
     }
@@ -212,6 +219,7 @@ pub(crate) fn acquire_watch_daemon_lease(
     mode: WatchServiceMode,
 ) -> Result<(WatchDaemonLease, WatchStateHandle), WatchDaemonError> {
     let state_path = watch_daemon_state_path(synrepo_dir);
+    let flock_path = watch_flock_path(synrepo_dir);
     let socket_path = watch_socket_path(synrepo_dir);
     let state_dir = synrepo_dir.join("state");
     fs::create_dir_all(&state_dir).map_err(|source| WatchDaemonError::Io {
@@ -219,77 +227,43 @@ pub(crate) fn acquire_watch_daemon_lease(
         source,
     })?;
 
+    // Step 1: Acquire the kernel advisory lock on the sentinel file.
+    // `open_and_try_lock` appends `.flock` to its argument, so pass `state_path`
+    // (`watch-daemon.json`) and it creates `watch-daemon.json.flock` — the same
+    // path `watch_flock_path()` returns and `watch_service_status` reads back.
+    let flock_file = open_and_try_lock(&state_path).map_err(|e| match e {
+        crate::pipeline::writer::LockError::Io { path, source } => {
+            WatchDaemonError::Io { path, source }
+        }
+        _ => WatchDaemonError::Control(format!("Failed to open flock file: {e}")),
+    })?;
+
+    let Some(flock_file) = flock_file else {
+        // If we can't get the flock, someone else is live.
+        let state = load_watch_state_from_path(&state_path).ok();
+        return Err(WatchDaemonError::HeldByOther {
+            pid: state.map(|s| s.pid).unwrap_or(0),
+            state_path,
+        });
+    };
+
+    // Step 2: Now that we own the flock, write the JSON metadata.
     let initial = WatchDaemonState::new(synrepo_dir, mode);
     let json = serde_json::to_string(&initial).expect("WatchDaemonState serializes");
-    let mut cleared_stale = false;
+    std::fs::write(&state_path, json.as_bytes()).map_err(|source| WatchDaemonError::Io {
+        path: state_path.clone(),
+        source,
+    })?;
 
-    loop {
-        match fs::OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .open(&state_path)
-        {
-            Ok(mut file) => {
-                if let Err(source) = file.write_all(json.as_bytes()) {
-                    cleanup_file(&state_path);
-                    return Err(WatchDaemonError::Io {
-                        path: state_path.clone(),
-                        source,
-                    });
-                }
-                if let Err(source) = file.sync_all() {
-                    cleanup_file(&state_path);
-                    return Err(WatchDaemonError::Io {
-                        path: state_path.clone(),
-                        source,
-                    });
-                }
-                let lease = WatchDaemonLease {
-                    state_path: state_path.clone(),
-                    socket_path,
-                    identity: initial.clone(),
-                };
-                let handle = WatchStateHandle::new(state_path, initial);
-                return Ok((lease, handle));
-            }
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-                if cleared_stale {
-                    return Err(
-                        match load_watch_state_from_path(&watch_daemon_state_path(synrepo_dir)) {
-                            Ok(state) => WatchDaemonError::HeldByOther {
-                                pid: state.pid,
-                                state_path: watch_daemon_state_path(synrepo_dir),
-                            },
-                            Err(_) => WatchDaemonError::Io {
-                                path: watch_daemon_state_path(synrepo_dir),
-                                source: error,
-                            },
-                        },
-                    );
-                }
-
-                match load_watch_state_with_retry(&watch_daemon_state_path(synrepo_dir)) {
-                    Ok(state) if is_process_alive(state.pid) => {
-                        return Err(WatchDaemonError::HeldByOther {
-                            pid: state.pid,
-                            state_path: watch_daemon_state_path(synrepo_dir),
-                        });
-                    }
-                    _ => {
-                        cleanup_file(&watch_daemon_state_path(synrepo_dir));
-                        cleanup_file(&watch_socket_path(synrepo_dir));
-                        cleared_stale = true;
-                    }
-                }
-            }
-            Err(source) => {
-                return Err(WatchDaemonError::Io {
-                    path: watch_daemon_state_path(synrepo_dir),
-                    source,
-                });
-            }
-        }
-    }
+    let lease = WatchDaemonLease {
+        state_path: state_path.clone(),
+        flock_path,
+        socket_path,
+        identity: initial.clone(),
+        flock_file,
+    };
+    let handle = WatchStateHandle::new(state_path, initial);
+    Ok((lease, handle))
 }
 
 /// Load the persisted watch-service state, if present and readable.
@@ -299,16 +273,45 @@ pub fn load_watch_state(synrepo_dir: &Path) -> Result<WatchDaemonState, StateLoa
 
 /// Inspect whether the repo currently has a live, stale, or missing watch service.
 pub fn watch_service_status(synrepo_dir: &Path) -> WatchServiceStatus {
+    let flock_path = watch_flock_path(synrepo_dir);
     let state_path = watch_daemon_state_path(synrepo_dir);
-    if !state_path.exists() {
-        return WatchServiceStatus::Inactive;
+    let state_load = load_watch_state_from_path(&state_path);
+
+    if !flock_path.exists() {
+        // No flock file means no live owner. A lingering state file is a
+        // stale/corrupt leftover from a daemon that died uncleanly (or was
+        // manually seeded by a test); cleanup must still sweep it.
+        return match state_load {
+            Ok(state) => WatchServiceStatus::Stale(Some(state)),
+            Err(StateLoadError::NotFound) => WatchServiceStatus::Inactive,
+            Err(StateLoadError::Malformed(e)) => WatchServiceStatus::Corrupt(e),
+        };
     }
 
-    match load_watch_state_from_path(&state_path) {
-        Ok(state) if is_process_alive(state.pid) => WatchServiceStatus::Running(state),
-        Ok(state) => WatchServiceStatus::Stale(Some(state)),
-        Err(StateLoadError::NotFound) => WatchServiceStatus::Inactive,
-        Err(StateLoadError::Malformed(e)) => WatchServiceStatus::Corrupt(e),
+    // Try to take the flock. If we succeed (even non-blockingly), the owner is dead.
+    match fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(&flock_path)
+    {
+        Ok(file) => match file.try_lock_exclusive() {
+            Ok(()) => {
+                // We got the lock, so the previous owner is definitely gone.
+                // The lease is stale.
+                WatchServiceStatus::Stale(state_load.ok())
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                // Someone else holds the lock. Service is live.
+                match state_load {
+                    Ok(state) => WatchServiceStatus::Running(state),
+                    Err(StateLoadError::NotFound) => WatchServiceStatus::Inactive,
+                    Err(StateLoadError::Malformed(e)) => WatchServiceStatus::Corrupt(e),
+                }
+            }
+            Err(e) => WatchServiceStatus::Corrupt(format!("flock error: {e}")),
+        },
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => WatchServiceStatus::Inactive,
+        Err(e) => WatchServiceStatus::Corrupt(format!("flock open error: {e}")),
     }
 }
 
@@ -321,9 +324,13 @@ pub fn watch_service_status(synrepo_dir: &Path) -> WatchServiceStatus {
 pub fn cleanup_stale_watch_artifacts(synrepo_dir: &Path) -> Result<bool, WatchDaemonError> {
     match watch_service_status(synrepo_dir) {
         WatchServiceStatus::Running(_) => Ok(false),
-        WatchServiceStatus::Inactive => remove_ignore_missing(watch_socket_path(synrepo_dir)),
+        WatchServiceStatus::Inactive => {
+            remove_ignore_missing(watch_flock_path(synrepo_dir))?;
+            remove_ignore_missing(watch_socket_path(synrepo_dir))
+        }
         WatchServiceStatus::Stale(_) | WatchServiceStatus::Corrupt(_) => {
             remove_ignore_missing(watch_daemon_state_path(synrepo_dir))?;
+            remove_ignore_missing(watch_flock_path(synrepo_dir))?;
             remove_ignore_missing(watch_socket_path(synrepo_dir))?;
             Ok(true)
         }
@@ -341,6 +348,13 @@ fn remove_ignore_missing(path: PathBuf) -> Result<bool, WatchDaemonError> {
 /// Canonical path of the persisted watch-service state file.
 pub fn watch_daemon_state_path(synrepo_dir: &Path) -> PathBuf {
     synrepo_dir.join("state").join(WATCH_DAEMON_FILENAME)
+}
+
+/// Logical path of the watch-daemon sentinel flock file.
+pub fn watch_flock_path(synrepo_dir: &Path) -> PathBuf {
+    synrepo_dir
+        .join("state")
+        .join(format!("{}.flock", WATCH_DAEMON_FILENAME))
 }
 
 /// Canonical path of the per-repo watch control socket.
@@ -435,42 +449,61 @@ fn user_socket_dir() -> PathBuf {
     let username = std::env::var("USER")
         .or_else(|_| std::env::var("LOGNAME"))
         .unwrap_or_else(|_| "unknown".to_string());
-    let dir = std::env::temp_dir().join(format!("synrepo-run-{}", username));
+
+    let base_dir = std::env::temp_dir().join(format!("synrepo-run-{}", username));
 
     #[cfg(unix)]
     {
-        use std::os::unix::fs::DirBuilderExt;
-        let mut builder = fs::DirBuilder::new();
-        builder.mode(0o700);
-        if let Err(e) = builder.create(&dir) {
-            if e.kind() != std::io::ErrorKind::AlreadyExists {
-                tracing::debug!("Failed to create fallback socket dir: {}", e);
+        // Try the primary name first. If it's foreign-owned or a symlink,
+        // retry with a few random salts to avoid local DoS.
+        if let Ok(dir) = try_create_hardened_socket_dir(&base_dir) {
+            return dir;
+        }
+
+        // Salted retries.
+        for salt in 1..=10 {
+            let salted_dir =
+                std::env::temp_dir().join(format!("synrepo-run-{}-{}", username, salt));
+            if let Ok(dir) = try_create_hardened_socket_dir(&salted_dir) {
+                return dir;
             }
         }
     }
+
     #[cfg(not(unix))]
     {
-        if let Err(e) = fs::create_dir_all(&dir) {
+        if let Err(e) = fs::create_dir_all(&base_dir) {
             tracing::debug!("Failed to create fallback socket dir: {}", e);
         }
     }
 
-    #[cfg(unix)]
-    harden_fallback_socket_dir(&dir);
+    base_dir
+}
 
-    dir
+#[cfg(unix)]
+fn try_create_hardened_socket_dir(dir: &Path) -> Result<PathBuf, WatchDaemonError> {
+    use std::os::unix::fs::DirBuilderExt;
+    let mut builder = fs::DirBuilder::new();
+    builder.mode(0o700);
+
+    if let Err(e) = builder.create(dir) {
+        if e.kind() != std::io::ErrorKind::AlreadyExists {
+            return Err(WatchDaemonError::Io {
+                path: dir.to_path_buf(),
+                source: e,
+            });
+        }
+    }
+
+    harden_fallback_socket_dir(dir).map(|_| dir.to_path_buf())
 }
 
 /// Refuse symlinks, refuse foreign-owned directories, then chmod 0700.
 ///
 /// Split out of `user_socket_dir` so regression tests can exercise it
 /// directly against a crafted path without racing on process env vars.
-///
-/// Panics on symlink or foreign ownership — the `/tmp` fallback is a
-/// security boundary and silently continuing would let an attacker redirect
-/// or chmod victim-owned directories.
 #[cfg(unix)]
-fn harden_fallback_socket_dir(dir: &Path) {
+fn harden_fallback_socket_dir(dir: &Path) -> Result<(), WatchDaemonError> {
     use std::os::unix::fs::MetadataExt;
 
     // `fs::metadata` and `fs::set_permissions` both follow symlinks, so
@@ -480,16 +513,17 @@ fn harden_fallback_socket_dir(dir: &Path) {
     // `symlink_metadata` reports the link itself, not its target.
     match fs::symlink_metadata(dir) {
         Ok(meta) if meta.file_type().is_symlink() => {
-            panic!(
-                "Security violation: watch socket directory {} is a symlink; \
-                 refusing to chmod or bind through it.",
+            return Err(WatchDaemonError::Security(format!(
+                "watch socket directory {} is a symlink; refusing to bind through it",
                 dir.display()
-            );
+            )));
         }
         Ok(_) => {}
         Err(e) => {
-            tracing::debug!("Failed to stat fallback socket dir: {}", e);
-            return;
+            return Err(WatchDaemonError::Io {
+                path: dir.to_path_buf(),
+                source: e,
+            });
         }
     }
 
@@ -501,14 +535,15 @@ fn harden_fallback_socket_dir(dir: &Path) {
         };
 
         if Some(meta.uid()) != get_current_uid() {
-            panic!(
-                "Security violation: watch socket directory {} exists but is owned by UID {}. \
-                 This indicates a potential privilege escalation attempt.",
+            return Err(WatchDaemonError::Security(format!(
+                "watch socket directory {} exists but is owned by UID {}; potential privilege escalation",
                 dir.display(),
                 meta.uid()
-            );
+            )));
         }
     }
+
+    Ok(())
 }
 
 #[cfg(all(test, unix))]
@@ -529,10 +564,10 @@ mod lease_security_tests {
         symlink(&target, &link).unwrap();
 
         let link_path = link.clone();
-        let result = std::panic::catch_unwind(|| harden_fallback_socket_dir(&link_path));
+        let result = harden_fallback_socket_dir(&link_path);
         assert!(
             result.is_err(),
-            "harden_fallback_socket_dir must panic on a symlink"
+            "harden_fallback_socket_dir must fail on a symlink"
         );
 
         // Target's mode must NOT have been changed to 0o700. Since we created
@@ -546,9 +581,40 @@ mod lease_security_tests {
         let outer = tempdir().unwrap();
         let dir = outer.path().join("synrepo-run-self");
         fs::create_dir_all(&dir).unwrap();
-        // Must not panic — real directory, owned by us.
-        harden_fallback_socket_dir(&dir);
+        // Must not fail — real directory, owned by us.
+        harden_fallback_socket_dir(&dir).unwrap();
     }
+}
+
+/// Guard returned by [`hold_watch_flock_with_state`]. Dropping it releases
+/// the kernel advisory lock held on its file descriptor.
+#[doc(hidden)]
+pub struct TestWatchFlockHolder {
+    _file: fs::File,
+}
+
+/// Take the watch-daemon kernel flock on a separate fd and write a matching
+/// state file. Simulates a foreign live watch daemon for tests in other
+/// crates (binary-crate tests in particular) that cannot reach the private
+/// `acquire_watch_daemon_lease` API.
+///
+/// Exposed as `pub` + `#[doc(hidden)]` so the binary-crate tests can use it
+/// without widening the public API; see the `helpers.rs` note on why
+/// `#[cfg(test)]` and `pub(crate)` don't work across the bin/lib boundary.
+#[doc(hidden)]
+pub fn hold_watch_flock_with_state(
+    synrepo_dir: &Path,
+    state: &WatchDaemonState,
+) -> TestWatchFlockHolder {
+    let state_dir = synrepo_dir.join("state");
+    fs::create_dir_all(&state_dir).expect("create state dir");
+    let state_path = watch_daemon_state_path(synrepo_dir);
+    let file = crate::pipeline::writer::open_and_try_lock(&state_path)
+        .expect("open+flock I/O must succeed in test")
+        .expect("watch flock must be free (nothing else holds it)");
+    let json = serde_json::to_string(state).expect("serialize WatchDaemonState");
+    fs::write(&state_path, json.as_bytes()).expect("write watch state");
+    TestWatchFlockHolder { _file: file }
 }
 
 pub(super) fn persist_watch_state_at(
@@ -574,18 +640,6 @@ fn load_watch_state_from_path(state_path: &Path) -> Result<WatchDaemonState, Sta
         }
     })?;
     serde_json::from_str(&text).map_err(|e| StateLoadError::Malformed(e.to_string()))
-}
-
-fn load_watch_state_with_retry(state_path: &Path) -> Result<WatchDaemonState, StateLoadError> {
-    const RETRIES: u32 = 5;
-    const BACKOFF_MS: u64 = 1;
-    for _ in 0..RETRIES {
-        if let Ok(state) = load_watch_state_from_path(state_path) {
-            return Ok(state);
-        }
-        std::thread::sleep(Duration::from_millis(BACKOFF_MS));
-    }
-    load_watch_state_from_path(state_path)
 }
 
 fn cleanup_file(path: &Path) {

@@ -19,7 +19,7 @@ pub struct SynthesisConfig {
     #[serde(default)]
     pub enabled: bool,
 
-    /// Provider selector: `anthropic | openai | gemini | local | none`.
+    /// Provider selector: `anthropic | openai | gemini | openrouter | local | none`.
     /// `SYNREPO_LLM_PROVIDER` env var overrides this when set.
     #[serde(default)]
     pub provider: Option<String>,

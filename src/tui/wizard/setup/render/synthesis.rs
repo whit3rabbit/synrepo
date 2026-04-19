@@ -130,5 +130,6 @@ pub(super) fn provider_env_var(provider: CloudProvider) -> &'static str {
         CloudProvider::Anthropic => "ANTHROPIC_API_KEY",
         CloudProvider::OpenAi => "OPENAI_API_KEY",
         CloudProvider::Gemini => "GEMINI_API_KEY",
+        CloudProvider::OpenRouter => "OPENROUTER_API_KEY",
     }
 }
