@@ -333,11 +333,27 @@ fn shim_output_path(repo_root: &Path, target: AgentTargetKind) -> PathBuf {
     // and change-resistant; the test suite for Phase 3 asserts per-target
     // behavior, which will flag divergence.
     match target {
-        AgentTargetKind::Claude => repo_root.join(".claude").join("synrepo-context.md"),
-        AgentTargetKind::Cursor => repo_root.join(".cursor").join("synrepo.mdc"),
-        AgentTargetKind::Codex => repo_root.join(".codex").join("instructions.md"),
+        AgentTargetKind::Claude => repo_root
+            .join(".claude")
+            .join("skills")
+            .join("synrepo")
+            .join("SKILL.md"),
+        AgentTargetKind::Cursor => repo_root
+            .join(".cursor")
+            .join("skills")
+            .join("synrepo")
+            .join("SKILL.md"),
+        AgentTargetKind::Codex => repo_root
+            .join(".codex")
+            .join("skills")
+            .join("synrepo")
+            .join("SKILL.md"),
         AgentTargetKind::Copilot => repo_root.join("synrepo-copilot-instructions.md"),
-        AgentTargetKind::Windsurf => repo_root.join(".windsurf").join("rules").join("synrepo.md"),
+        AgentTargetKind::Windsurf => repo_root
+            .join(".windsurf")
+            .join("skills")
+            .join("synrepo")
+            .join("SKILL.md"),
     }
 }
 
@@ -619,9 +635,9 @@ mod tests {
     #[test]
     fn agent_integration_partial_when_only_shim_present_for_cursor() {
         let dir = tempdir().unwrap();
-        let cursor = dir.path().join(".cursor");
-        fs::create_dir_all(&cursor).unwrap();
-        fs::write(cursor.join("synrepo.mdc"), b"stub shim").unwrap();
+        let cursor_skill = dir.path().join(".cursor").join("skills").join("synrepo");
+        fs::create_dir_all(&cursor_skill).unwrap();
+        fs::write(cursor_skill.join("SKILL.md"), b"stub shim").unwrap();
 
         let report = probe_with_home(dir.path(), None);
         // Cursor has no separate MCP-registration file, so "shim present" is
@@ -639,9 +655,9 @@ mod tests {
     #[test]
     fn agent_integration_partial_claude_shim_without_mcp_registration() {
         let dir = tempdir().unwrap();
-        let claude = dir.path().join(".claude");
-        fs::create_dir_all(&claude).unwrap();
-        fs::write(claude.join("synrepo-context.md"), b"shim").unwrap();
+        let claude_skill = dir.path().join(".claude").join("skills").join("synrepo");
+        fs::create_dir_all(&claude_skill).unwrap();
+        fs::write(claude_skill.join("SKILL.md"), b"shim").unwrap();
 
         let report = probe_with_home(dir.path(), None);
         assert_eq!(
@@ -655,9 +671,9 @@ mod tests {
     #[test]
     fn agent_integration_complete_claude_with_mcp_registration() {
         let dir = tempdir().unwrap();
-        let claude = dir.path().join(".claude");
-        fs::create_dir_all(&claude).unwrap();
-        fs::write(claude.join("synrepo-context.md"), b"shim").unwrap();
+        let claude_skill = dir.path().join(".claude").join("skills").join("synrepo");
+        fs::create_dir_all(&claude_skill).unwrap();
+        fs::write(claude_skill.join("SKILL.md"), b"shim").unwrap();
         fs::write(
             dir.path().join(".mcp.json"),
             r#"{"mcpServers":{"synrepo":{"command":"synrepo","args":["mcp","--repo","."]}}}"#,
@@ -678,7 +694,9 @@ mod tests {
         let dir = tempdir().unwrap();
         let codex = dir.path().join(".codex");
         fs::create_dir_all(&codex).unwrap();
-        fs::write(codex.join("instructions.md"), b"shim").unwrap();
+        let codex_skill = codex.join("skills").join("synrepo");
+        fs::create_dir_all(&codex_skill).unwrap();
+        fs::write(codex_skill.join("SKILL.md"), b"shim").unwrap();
         fs::write(
             codex.join("config.toml"),
             "[mcp]\nsynrepo = \"synrepo mcp --repo .\"\n",
@@ -697,9 +715,9 @@ mod tests {
     #[test]
     fn agent_integration_codex_shim_only_is_partial() {
         let dir = tempdir().unwrap();
-        let codex = dir.path().join(".codex");
-        fs::create_dir_all(&codex).unwrap();
-        fs::write(codex.join("instructions.md"), b"shim").unwrap();
+        let codex_skill = dir.path().join(".codex").join("skills").join("synrepo");
+        fs::create_dir_all(&codex_skill).unwrap();
+        fs::write(codex_skill.join("SKILL.md"), b"shim").unwrap();
 
         let report = probe_with_home(dir.path(), None);
         assert_eq!(

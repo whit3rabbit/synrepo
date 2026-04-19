@@ -5,11 +5,17 @@ use std::path::{Path, PathBuf};
 
 /// Shim paths (relative to repo root) written by `synrepo agent-setup <tool>`.
 /// Listed in the preference order used when picking a pointer target.
+///
+/// The five skill-bundle targets (Claude/Cursor/Codex/Windsurf/Gemini) write
+/// to the Agent Skills standard path `.<tool>/skills/synrepo/SKILL.md`. The
+/// remaining targets use per-tool config conventions that predate the
+/// standard.
 const KNOWN_SHIM_PATHS: &[&str] = &[
-    ".claude/synrepo-context.md",
-    ".cursor/synrepo.mdc",
-    ".codex/instructions.md",
-    ".windsurf/rules/synrepo.md",
+    ".claude/skills/synrepo/SKILL.md",
+    ".cursor/skills/synrepo/SKILL.md",
+    ".codex/skills/synrepo/SKILL.md",
+    ".windsurf/skills/synrepo/SKILL.md",
+    ".gemini/skills/synrepo/SKILL.md",
     "synrepo-copilot-instructions.md",
     "synrepo-agents.md",
 ];
@@ -152,10 +158,11 @@ mod tests {
     #[test]
     fn healthy_render_with_existing_shim_points_at_shim_path() {
         let repo = tempdir().unwrap();
-        std::fs::create_dir_all(repo.path().join(".claude")).unwrap();
+        let claude_skill_dir = repo.path().join(".claude").join("skills").join("synrepo");
+        std::fs::create_dir_all(&claude_skill_dir).unwrap();
         std::fs::write(
-            repo.path().join(".claude").join("synrepo-context.md"),
-            "# existing shim\n",
+            claude_skill_dir.join("SKILL.md"),
+            "---\nname: synrepo\ndescription: test shim\n---\n\n# existing shim\n",
         )
         .unwrap();
         let synrepo_dir = repo.path().join(".synrepo");
@@ -163,7 +170,7 @@ mod tests {
 
         let rendered = report.render();
         assert!(rendered.contains("Agent doctrine: tiny → normal → deep."));
-        assert!(rendered.contains(".claude/synrepo-context.md"));
+        assert!(rendered.contains(".claude/skills/synrepo/SKILL.md"));
         assert!(!rendered.contains("Run `synrepo agent-setup"));
     }
 

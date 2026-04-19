@@ -23,13 +23,22 @@ fn test_display_name() {
 #[test]
 fn test_output_path() {
     let repo_root = std::path::Path::new("/mock/repo");
+    // Agent Skills standard path: `.<tool>/skills/<name>/SKILL.md`.
     assert_eq!(
         AgentTool::Claude.output_path(repo_root),
-        repo_root.join(".claude").join("synrepo-context.md")
+        repo_root
+            .join(".claude")
+            .join("skills")
+            .join("synrepo")
+            .join("SKILL.md")
     );
     assert_eq!(
         AgentTool::Cursor.output_path(repo_root),
-        repo_root.join(".cursor").join("synrepo.mdc")
+        repo_root
+            .join(".cursor")
+            .join("skills")
+            .join("synrepo")
+            .join("SKILL.md")
     );
     assert_eq!(
         AgentTool::Copilot.output_path(repo_root),
@@ -41,11 +50,19 @@ fn test_output_path() {
     );
     assert_eq!(
         AgentTool::Codex.output_path(repo_root),
-        repo_root.join(".codex").join("instructions.md")
+        repo_root
+            .join(".codex")
+            .join("skills")
+            .join("synrepo")
+            .join("SKILL.md")
     );
     assert_eq!(
         AgentTool::Windsurf.output_path(repo_root),
-        repo_root.join(".windsurf").join("rules").join("synrepo.md")
+        repo_root
+            .join(".windsurf")
+            .join("skills")
+            .join("synrepo")
+            .join("SKILL.md")
     );
     assert_eq!(
         AgentTool::OpenCode.output_path(repo_root),
@@ -55,8 +72,9 @@ fn test_output_path() {
         AgentTool::Gemini.output_path(repo_root),
         repo_root
             .join(".gemini")
-            .join("commands")
-            .join("synrepo.toml")
+            .join("skills")
+            .join("synrepo")
+            .join("SKILL.md")
     );
     assert_eq!(
         AgentTool::Goose.output_path(repo_root),
@@ -101,12 +119,13 @@ fn test_output_path() {
 
 #[test]
 fn test_include_instruction() {
+    // Agent Skills hosts auto-discover their per-tool `skills/synrepo/SKILL.md`.
     assert!(AgentTool::Claude
         .include_instruction()
-        .contains("synrepo-context.md"));
+        .contains(".claude/skills/synrepo/SKILL.md"));
     assert!(AgentTool::Cursor
         .include_instruction()
-        .contains("synrepo.mdc"));
+        .contains(".cursor/skills/synrepo/SKILL.md"));
     assert!(AgentTool::Copilot
         .include_instruction()
         .contains("synrepo-copilot-instructions.md"));
@@ -115,17 +134,16 @@ fn test_include_instruction() {
         .contains("synrepo-agents.md"));
     assert!(AgentTool::Codex
         .include_instruction()
-        .contains(".codex/instructions.md"));
+        .contains(".codex/skills/synrepo/SKILL.md"));
     assert!(AgentTool::Windsurf
         .include_instruction()
-        .contains(".windsurf/rules/synrepo.md"));
+        .contains(".windsurf/skills/synrepo/SKILL.md"));
     assert!(AgentTool::OpenCode
         .include_instruction()
         .contains("AGENTS.md"));
-    // New targets have manual instructions
     assert!(AgentTool::Gemini
         .include_instruction()
-        .contains(".gemini/commands/synrepo.toml"));
+        .contains(".gemini/skills/synrepo/SKILL.md"));
     assert!(AgentTool::Goose
         .include_instruction()
         .contains(".goose/recipes/synrepo.yaml"));
@@ -136,20 +154,35 @@ fn test_include_instruction() {
 
 #[test]
 fn test_shim_content_framing() {
-    assert!(AgentTool::Claude
-        .shim_content()
-        .starts_with("# synrepo context"));
-    assert!(AgentTool::Cursor
-        .shim_content()
-        .starts_with("---\ndescription"));
+    // The five skill-bundle targets (Claude, Cursor, Codex, Windsurf, Gemini)
+    // must be valid SKILL.md: YAML frontmatter with `name` + `description` is
+    // required by every Agent Skills host; hosts silently skip SKILL.md files
+    // missing either field.
+    for tool in [
+        AgentTool::Claude,
+        AgentTool::Cursor,
+        AgentTool::Codex,
+        AgentTool::Windsurf,
+        AgentTool::Gemini,
+    ] {
+        let body = tool.shim_content();
+        assert!(
+            body.starts_with("---\nname: synrepo\n"),
+            "{} shim does not start with Agent Skills YAML frontmatter",
+            tool.display_name()
+        );
+        assert!(
+            body.contains("\ndescription: "),
+            "{} shim missing `description:` field",
+            tool.display_name()
+        );
+    }
+
+    // Non-skill shims keep their legacy framing: they install into agent-
+    // specific config files, not a `skills/` directory, and their hosts do not
+    // parse SKILL.md frontmatter.
     assert!(AgentTool::Copilot.shim_content().starts_with("## synrepo"));
     assert!(AgentTool::Generic.shim_content().starts_with("## synrepo"));
-    assert!(AgentTool::Codex
-        .shim_content()
-        .starts_with("# synrepo context"));
-    assert!(AgentTool::Windsurf
-        .shim_content()
-        .starts_with("# synrepo\n"));
     assert!(AgentTool::OpenCode
         .shim_content()
         .starts_with("# synrepo context (OpenCode)"));

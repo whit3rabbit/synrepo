@@ -42,21 +42,21 @@ pub(crate) enum AutomationTier {
 /// Agent CLI target for shim generation.
 #[derive(Clone, Copy, Debug, clap::ValueEnum)]
 pub(crate) enum AgentTool {
-    /// Claude Code — writes `.claude/synrepo-context.md`
+    /// Claude Code — writes `.claude/skills/synrepo/SKILL.md`
     Claude,
-    /// Cursor — writes `.cursor/synrepo.mdc`
+    /// Cursor — writes `.cursor/skills/synrepo/SKILL.md`
     Cursor,
     /// GitHub Copilot — writes `synrepo-copilot-instructions.md`
     Copilot,
     /// Generic AGENTS.md — writes `synrepo-agents.md`
     Generic,
-    /// OpenAI Codex CLI — writes `.codex/instructions.md`
+    /// OpenAI Codex CLI — writes `.codex/skills/synrepo/SKILL.md`
     Codex,
-    /// Windsurf — writes `.windsurf/rules/synrepo.md`
+    /// Windsurf — writes `.windsurf/skills/synrepo/SKILL.md`
     Windsurf,
     /// OpenCode — writes `AGENTS.md`
     OpenCode,
-    /// Google Gemini CLI — writes `.gemini/commands/synrepo.toml`
+    /// Google Gemini CLI — writes `.gemini/skills/synrepo/SKILL.md`
     Gemini,
     /// Goose — writes `.goose/recipes/synrepo.yaml`
     Goose,
@@ -139,17 +139,37 @@ impl AgentTool {
     /// Path of the file written by `synrepo agent-setup`, relative to the repo root.
     pub(crate) fn output_path(self, repo_root: &Path) -> PathBuf {
         match self {
-            AgentTool::Claude => repo_root.join(".claude").join("synrepo-context.md"),
-            AgentTool::Cursor => repo_root.join(".cursor").join("synrepo.mdc"),
+            // Agent Skills standard: hosts auto-discover `<name>/SKILL.md` under
+            // the per-tool `skills/` directory. See Claude Code, Codex CLI,
+            // Cursor 2.4+, Windsurf (Mar 2026), Gemini CLI docs.
+            AgentTool::Claude => repo_root
+                .join(".claude")
+                .join("skills")
+                .join("synrepo")
+                .join("SKILL.md"),
+            AgentTool::Cursor => repo_root
+                .join(".cursor")
+                .join("skills")
+                .join("synrepo")
+                .join("SKILL.md"),
             AgentTool::Copilot => repo_root.join("synrepo-copilot-instructions.md"),
             AgentTool::Generic => repo_root.join("synrepo-agents.md"),
-            AgentTool::Codex => repo_root.join(".codex").join("instructions.md"),
-            AgentTool::Windsurf => repo_root.join(".windsurf").join("rules").join("synrepo.md"),
+            AgentTool::Codex => repo_root
+                .join(".codex")
+                .join("skills")
+                .join("synrepo")
+                .join("SKILL.md"),
+            AgentTool::Windsurf => repo_root
+                .join(".windsurf")
+                .join("skills")
+                .join("synrepo")
+                .join("SKILL.md"),
             AgentTool::OpenCode => repo_root.join("AGENTS.md"),
             AgentTool::Gemini => repo_root
                 .join(".gemini")
-                .join("commands")
-                .join("synrepo.toml"),
+                .join("skills")
+                .join("synrepo")
+                .join("SKILL.md"),
             AgentTool::Goose => repo_root
                 .join(".goose")
                 .join("recipes")
@@ -175,10 +195,10 @@ impl AgentTool {
     pub(crate) fn include_instruction(self) -> &'static str {
         match self {
             AgentTool::Claude => {
-                "Add `@.claude/synrepo-context.md` to your CLAUDE.md to include this context."
+                "Claude Code auto-discovers `.claude/skills/synrepo/SKILL.md` on startup; no further action required."
             }
             AgentTool::Cursor => {
-                "The MCP server is registered in .cursor/mcp.json. The rule fragment is in .cursor/synrepo.mdc — enable it in your Cursor rules."
+                "Cursor 2.4+ auto-discovers `.cursor/skills/synrepo/SKILL.md`; MCP server is registered in .cursor/mcp.json."
             }
             AgentTool::Copilot => {
                 "Paste the contents of `synrepo-copilot-instructions.md` into \
@@ -188,14 +208,14 @@ impl AgentTool {
                 "Paste the contents of `synrepo-agents.md` into your `AGENTS.md` file."
             }
             AgentTool::Codex => {
-                "Codex CLI loads `.codex/instructions.md` automatically from the project root."
+                "Codex CLI auto-discovers `.codex/skills/synrepo/SKILL.md`; MCP server is registered in .codex/config.toml."
             }
             AgentTool::Windsurf => {
-                "Windsurf loads .windsurf/rules/synrepo.md as a project rule automatically. The MCP server is registered in .windsurf/mcp.json."
+                "Windsurf auto-discovers `.windsurf/skills/synrepo/SKILL.md`; MCP server is registered in .windsurf/mcp.json."
             }
             AgentTool::OpenCode => "OpenCode loads `AGENTS.md` as a project rule automatically.",
             AgentTool::Gemini => {
-                "Write the synrepo config manually: create `.gemini/commands/synrepo.toml`."
+                "Gemini CLI auto-discovers `.gemini/skills/synrepo/SKILL.md`; register `synrepo mcp --repo .` as a stdio MCP server in `.gemini/settings.json` yourself."
             }
             AgentTool::Goose => {
                 "Write the synrepo config manually: create `.goose/recipes/synrepo.yaml`."

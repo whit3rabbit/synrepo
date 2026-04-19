@@ -81,7 +81,11 @@ fn agent_setup_returns_error_when_parent_is_a_file() {
 
     let out_path = AgentTool::Claude.output_path(repo);
     let parent = out_path.parent().unwrap();
-    // Create `.claude` as a regular file, blocking directory creation.
+    // Create intermediate dirs up to the parent, then plant a regular file
+    // at the parent path so `create_dir_all(parent)` fails.
+    if let Some(grandparent) = parent.parent() {
+        fs::create_dir_all(grandparent).unwrap();
+    }
     fs::write(parent, "not a directory").unwrap();
 
     let err = agent_setup(repo, AgentTool::Claude, false, false)

@@ -96,7 +96,8 @@ synrepo SHALL support `cursor`, `codex`, and `windsurf` as named targets for `sy
 
 #### Scenario: Generate a cursor shim
 - **WHEN** a user runs `synrepo agent-setup cursor`
-- **THEN** synrepo writes a shim to `.cursor/rules/synrepo.mdc` describing the available MCP tools and their usage
+- **THEN** synrepo writes a shim to `.cursor/skills/synrepo/SKILL.md` describing the available MCP tools and their usage
+- **AND** the shim begins with YAML frontmatter containing `name: synrepo` and a `description` so Cursor auto-discovers it as a skill
 - **AND** the shim content reflects the current shipped MCP surface
 
 #### Scenario: Regenerate an existing shim
@@ -106,7 +107,8 @@ synrepo SHALL support `cursor`, `codex`, and `windsurf` as named targets for `sy
 
 #### Scenario: Generate a codex shim
 - **WHEN** a user runs `synrepo agent-setup codex`
-- **THEN** synrepo writes a shim to `.codex/instructions.md` describing the MCP server and tool list
+- **THEN** synrepo writes a shim to `.codex/skills/synrepo/SKILL.md` describing the MCP server and tool list
+- **AND** the shim begins with YAML frontmatter containing `name: synrepo` and a `description` so Codex CLI auto-discovers it as a skill
 - **AND** the shim notes how to configure the MCP server for codex usage
 
 ### Requirement: Enrich status output with export and overlay cost summary

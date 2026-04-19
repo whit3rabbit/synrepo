@@ -4,10 +4,32 @@
 //! the shared text is byte-identical at compile time. Target-specific copy is
 //! limited to invocation conventions (how the agent's host calls MCP tools,
 //! where the shim file is written, framing headers).
+//!
+//! The five shims that install into `.<tool>/skills/synrepo/SKILL.md`
+//! (Claude, Cursor, Codex, Windsurf, Gemini) additionally prepend
+//! [`skill_frontmatter!()`] so the file is a valid Agent Skills SKILL.md —
+//! the standard's hosts skip any SKILL.md that lacks `name` + `description`
+//! in YAML frontmatter.
 
 use super::doctrine::doctrine_block;
 
+/// YAML frontmatter block required by the Agent Skills standard. Hosts
+/// (Claude Code, Codex CLI, Cursor 2.4+, Windsurf, Gemini CLI) scan skill
+/// directories at startup and read this block to decide when to lazy-load
+/// the skill body. `name` and `description` are both required.
+macro_rules! skill_frontmatter {
+    () => {
+        "---
+name: synrepo
+description: Use synrepo in repositories with a .synrepo/ directory. Prefer synrepo cards and search before reading source files cold.
+---
+
+"
+    };
+}
+
 pub(crate) const CLAUDE_SHIM: &str = concat!(
+    skill_frontmatter!(),
     "\
 # synrepo context
 
@@ -51,13 +73,8 @@ synrepo findings [--node <id>] [--freshness <state>] # audit findings
 );
 
 pub(crate) const CURSOR_SHIM: &str = concat!(
+    skill_frontmatter!(),
     "\
----
-description: synrepo structural graph — MCP tools and CLI fallback
-globs: [\"**/*\"]
-alwaysApply: false
----
-
 # synrepo
 
 synrepo is preconfigured with an MCP server registered in `.cursor/mcp.json`.
@@ -180,6 +197,7 @@ synrepo findings [--freshness <state>]            # findings summary
 );
 
 pub(crate) const CODEX_SHIM: &str = concat!(
+    skill_frontmatter!(),
     "\
 # synrepo context
 
@@ -220,6 +238,7 @@ synrepo findings [--freshness <state>]           # findings summary
 );
 
 pub(crate) const WINDSURF_SHIM: &str = concat!(
+    skill_frontmatter!(),
     "\
 # synrepo
 
@@ -330,9 +349,26 @@ For full MCP tool support, register the synrepo MCP server in your client config
     };
 }
 
-define_basic_shim!(
-    GEMINI_SHIM,
-    "# synrepo context (Gemini CLI)
+pub(crate) const GEMINI_SHIM: &str = concat!(
+    skill_frontmatter!(),
+    "\
+# synrepo context (Gemini CLI)
+
+synrepo precomputes a structural graph of this codebase from tree-sitter parsing and git history.
+
+",
+    doctrine_block!(),
+    "
+## Using synrepo
+
+- Run `synrepo init` to initialize the graph.
+- Use `synrepo status` to check operational health.
+- Use `synrepo search <query>` to find symbols and files.
+- Use `synrepo node <id>` to inspect node metadata.
+- Use `synrepo graph query \"outbound <node_id>\"` to see dependencies.
+- Use `synrepo graph query \"inbound <node_id>\"` to see dependents.
+
+For full MCP tool support, register the synrepo MCP server in your client configuration.
 "
 );
 
