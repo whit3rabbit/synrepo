@@ -297,7 +297,11 @@ fn execute_repair_plan(repo_root: &Path, plan: RepairPlan) -> anyhow::Result<()>
     }
     if let Some(target) = plan.write_shim_for {
         let tool = AgentTool::from_target_kind(target);
-        println!("  Writing shim for {tool:?}...");
+        println!(
+            "  Writing {} {}...",
+            tool.display_name(),
+            tool.artifact_label()
+        );
         let backup = step_backup_mcp_config(repo_root, tool)?;
         step_apply_integration(repo_root, tool, false)?;
         let wrote_mcp = matches!(tool.automation_tier(), AutomationTier::Automated);

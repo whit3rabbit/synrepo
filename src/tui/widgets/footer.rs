@@ -19,6 +19,9 @@ pub struct FooterWidget<'a> {
     pub follow_mode: bool,
     /// Active theme.
     pub theme: &'a Theme,
+    /// Transient message rendered in place of the hint row (e.g.
+    /// "Refreshed: N files, M symbols").
+    pub toast: Option<&'a str>,
 }
 
 /// A hint group (label + key) with a priority used to drop low-value hints
@@ -37,6 +40,14 @@ impl HintGroup {
 
 impl Widget for FooterWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
+        if let Some(msg) = self.toast {
+            // Healthy style so it reads as confirmation rather than alert.
+            let line = Line::from(Span::styled(format!(" {msg}"), self.theme.healthy_style()));
+            Paragraph::new(line)
+                .style(self.theme.base_style())
+                .render(area, buf);
+            return;
+        }
         let groups = self.build_hints();
         let spans = fit_groups(groups, area.width as usize);
         Paragraph::new(Line::from(spans))
@@ -161,6 +172,7 @@ mod tests {
             active,
             follow_mode: follow,
             theme: &theme,
+            toast: None,
         };
         (widget.build_hints(), theme)
     }
@@ -215,6 +227,29 @@ mod tests {
         assert!(
             text.contains("follow"),
             "follow should survive at 80 cols: {text:?}"
+        );
+    }
+
+    #[test]
+    fn toast_replaces_hint_row_when_set() {
+        let theme = Theme::plain();
+        let widget = FooterWidget {
+            active: ActiveTab::Live,
+            follow_mode: false,
+            theme: &theme,
+            toast: Some("Refreshed: 12 files, 34 symbols"),
+        };
+        let area = Rect::new(0, 0, 80, 1);
+        let mut buf = Buffer::empty(area);
+        widget.render(area, &mut buf);
+        let row: String = (0..area.width).map(|x| buf[(x, 0)].symbol()).collect();
+        assert!(
+            row.contains("Refreshed: 12 files, 34 symbols"),
+            "toast text must appear in footer row: {row:?}"
+        );
+        assert!(
+            !row.contains("tabs"),
+            "toast must suppress the hint row: {row:?}"
         );
     }
 

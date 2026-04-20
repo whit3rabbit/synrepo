@@ -183,8 +183,9 @@ impl RepairWizardState {
                 rows.push(ActionRow {
                     kind: RepairActionKind::WriteShim,
                     label: format!(
-                        "Write agent shim for {}",
-                        crate::tui::wizard::target_label(target)
+                        "Write {} {}",
+                        crate::tui::wizard::target_label(target),
+                        crate::tui::wizard::target_artifact_label(target)
                     ),
                     enabled: false,
                     destructive: false,

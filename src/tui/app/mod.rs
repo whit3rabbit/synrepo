@@ -116,11 +116,16 @@ pub struct AppState {
     pub snapshot_refresh_interval: Duration,
     /// Last time we rebuilt the snapshot.
     last_refresh: Instant,
+    /// Transient footer message. Set by `r` so a refresh gives the operator
+    /// confirmation even when the snapshot was already current.
+    toast: Option<(String, Instant)>,
     /// Live-mode only: receiver streaming `WatchEvent`s from the hosted watch
     /// service. `None` in poll mode so the dashboard falls back to file-based
     /// snapshot refresh.
     events_rx: Option<Receiver<WatchEvent>>,
 }
+
+const TOAST_TTL: Duration = Duration::from_millis(2000);
 
 /// Post-loop intent expressed by the dashboard when it exits. The caller maps
 /// this to either "fully done" or "re-enter the dashboard after running a
@@ -190,8 +195,26 @@ impl AppState {
             poll_timeout: Duration::from_millis(125),
             snapshot_refresh_interval: Duration::from_secs(2),
             last_refresh: Instant::now(),
+            toast: None,
             events_rx,
         }
+    }
+
+    /// Set a transient footer toast. A rapid re-press resets the visible
+    /// window rather than stacking, so the operator always sees the latest.
+    pub fn set_toast(&mut self, msg: impl Into<String>) {
+        self.toast = Some((msg.into(), Instant::now()));
+    }
+
+    /// Currently-visible toast text, or `None` if the TTL has elapsed.
+    pub fn active_toast(&self) -> Option<&str> {
+        self.toast.as_ref().and_then(|(msg, set_at)| {
+            if set_at.elapsed() < TOAST_TTL {
+                Some(msg.as_str())
+            } else {
+                None
+            }
+        })
     }
 
     /// Compute the post-loop exit intent. Called after the render loop unwinds.
@@ -343,6 +366,11 @@ impl AppState {
         match code {
             KeyCode::Char('r') => {
                 self.refresh_now();
+                let counts = match self.snapshot.graph_stats.as_ref() {
+                    Some(g) => format!("{} files, {} symbols", g.file_nodes, g.symbol_nodes),
+                    None => "no graph data".to_string(),
+                };
+                self.set_toast(format!("Refreshed: {counts}"));
                 true
             }
             KeyCode::Char('i') => {

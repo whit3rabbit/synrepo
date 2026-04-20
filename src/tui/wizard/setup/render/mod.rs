@@ -10,7 +10,9 @@ use super::state::{SetupStep, SetupWizardState, WIZARD_TARGETS};
 use super::synthesis::SynthesisChoice;
 use crate::tui::app::poll_key;
 use crate::tui::theme::Theme;
-use crate::tui::wizard::{enter_tui, leave_tui, target_label, WizardTerminal};
+use crate::tui::wizard::{
+    enter_tui, leave_tui, target_artifact_label, target_label, WizardTerminal,
+};
 
 /// Run the setup wizard until Complete or cancellation.
 pub fn run_setup_wizard_loop(
@@ -254,7 +256,11 @@ fn draw_confirm_step(
     step_no += 1;
     if let Some(target) = state.target {
         lines.push(Line::from(Span::styled(
-            format!("  {step_no}. write agent shim for {}", target_label(target)),
+            format!(
+                "  {step_no}. write {} {}",
+                target_label(target),
+                target_artifact_label(target)
+            ),
             theme.base_style(),
         )));
         step_no += 1;

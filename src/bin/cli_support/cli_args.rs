@@ -60,17 +60,18 @@ pub(crate) enum Command {
         full: bool,
     },
 
-    /// Generate a thin integration shim for the specified agent CLI.
+    /// Generate the agent's skill or instructions file for the specified agent CLI.
     ///
     /// Writes a named fragment file and prints the one-line include instruction.
     /// Never modifies existing configuration files. Use `--force` to overwrite,
     /// or `--regen` to compare and overwrite only if the content has changed.
     ///
-    /// For a full onboarding flow (init + shim + MCP registration), use `synrepo setup`.
+    /// For a full onboarding flow (init + skill/instructions + MCP registration),
+    /// use `synrepo setup`.
     AgentSetup {
         /// Target agent CLI.
         tool: AgentTool,
-        /// Overwrite an existing shim file if one already exists.
+        /// Overwrite an existing skill or instructions file if one already exists.
         #[arg(long)]
         force: bool,
         /// Compare existing file against the current template; overwrite if different.
@@ -81,7 +82,7 @@ pub(crate) enum Command {
     /// full onboarding flow for a specific agent client.
     ///
     /// This is the recommended first-run command. It runs `synrepo init`,
-    /// writes the client-specific instructions or shim, and registers the
+    /// writes the client-specific skill or instructions file, and registers the
     /// synrepo MCP server in the project's local configuration (where supported).
     Setup {
         /// Target client to set up.
@@ -291,13 +292,13 @@ pub(crate) enum Command {
 
     /// Uninstall synrepo artifacts from the current repo.
     ///
-    /// Bulk `synrepo remove` targets every tracked/detected agent shim, the
-    /// project's MCP entries, any root `.gitignore` line synrepo added, and
-    /// prompts before deleting `.synrepo/` itself. `synrepo remove <tool>`
-    /// narrows the plan to a single agent. `.mcp.json.bak` sidecars are never
-    /// removed.
+    /// Bulk `synrepo remove` targets every tracked/detected agent skill or
+    /// instructions file, the project's MCP entries, any root `.gitignore` line
+    /// synrepo added, and prompts before deleting `.synrepo/` itself.
+    /// `synrepo remove <tool>` narrows the plan to a single agent.
+    /// `.mcp.json.bak` sidecars are never removed.
     Remove {
-        /// Limit removal to a single agent's shim + MCP entry.
+        /// Limit removal to a single agent's skill/instructions file + MCP entry.
         tool: Option<AgentTool>,
         /// Execute the plan. Without this flag, only a dry-run table is printed.
         #[arg(long)]

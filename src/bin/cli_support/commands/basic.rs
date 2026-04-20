@@ -92,7 +92,7 @@ pub(crate) fn change_risk(
     Ok(())
 }
 
-/// Generate a thin integration shim for the specified agent CLI.
+/// Generate the agent skill or instructions file for the specified agent CLI.
 pub(crate) fn agent_setup(
     repo_root: &Path,
     tool: AgentTool,
@@ -101,12 +101,13 @@ pub(crate) fn agent_setup(
 ) -> anyhow::Result<()> {
     let out_path = tool.output_path(repo_root);
     let content = tool.shim_content();
+    let label = tool.artifact_label();
 
     if regen && out_path.exists() {
         let existing = std::fs::read_to_string(&out_path).unwrap_or_default();
         if existing == content {
             println!(
-                "{} shim is already current: {}",
+                "{} {label} is already current: {}",
                 tool.display_name(),
                 out_path.display()
             );
@@ -114,7 +115,7 @@ pub(crate) fn agent_setup(
         }
         // Different content: fall through to write.
         println!(
-            "Updating {} shim (content changed): {}",
+            "Updating {} {label} (content changed): {}",
             tool.display_name(),
             out_path.display()
         );
@@ -136,7 +137,11 @@ pub(crate) fn agent_setup(
         .map_err(|error| anyhow::anyhow!("could not write {}: {error}", out_path.display()))?;
 
     if !regen {
-        println!("Wrote {} shim: {}", tool.display_name(), out_path.display());
+        println!(
+            "Wrote {} {label}: {}",
+            tool.display_name(),
+            out_path.display()
+        );
     }
     println!("  {}", tool.include_instruction());
 

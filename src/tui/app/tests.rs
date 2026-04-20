@@ -83,6 +83,21 @@ fn drain_events_pulls_all_pending_into_log() {
 }
 
 #[test]
+fn pressing_r_sets_refresh_toast() {
+    // The 'r' refresh used to be a silent no-op when nothing on disk had
+    // changed. Now it always sets a toast so the operator sees confirmation.
+    let mut state = make_poll_state();
+    assert!(state.active_toast().is_none(), "fresh state has no toast");
+    let consumed = state.handle_key(KeyCode::Char('r'), KeyModifiers::NONE);
+    assert!(consumed, "'r' should consume the key event");
+    let toast = state.active_toast().expect("toast must be set after 'r'");
+    assert!(
+        toast.starts_with("Refreshed"),
+        "toast should announce a refresh: {toast:?}"
+    );
+}
+
+#[test]
 fn drain_events_is_noop_in_poll_mode() {
     let mut state = make_poll_state();
     state.drain_events();

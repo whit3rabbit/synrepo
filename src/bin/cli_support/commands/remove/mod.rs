@@ -285,7 +285,18 @@ pub(super) fn render_summary(summary: &ApplySummary) {
     println!();
     for item in &summary.applied {
         let label = match &item.action {
-            RemoveAction::DeleteShim { path, .. } => format!("deleted shim {}", path.display()),
+            RemoveAction::DeleteShim { tool, path } => {
+                // Registry strings are canonical-form (matches clap's
+                // kebab-case value-enum form; pinned by the
+                // `canonical_name_matches_clap_value_enum_form` test). Fall
+                // back to "instructions" for tools a future binary knows
+                // that we do not.
+                let label = <AgentTool as clap::ValueEnum>::from_str(tool, false)
+                    .ok()
+                    .map(AgentTool::artifact_label)
+                    .unwrap_or("instructions");
+                format!("deleted {tool} {label} ({})", path.display())
+            }
             RemoveAction::StripMcpEntry { path, .. } => {
                 format!("stripped synrepo entry from {}", path.display())
             }

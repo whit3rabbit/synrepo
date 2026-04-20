@@ -69,7 +69,7 @@ pub(crate) fn leave_tui(terminal: &mut WizardTerminal) -> anyhow::Result<()> {
 }
 
 /// Human-readable label for an agent-target kind. Shared between the setup
-/// wizard (target selection) and the repair wizard (shim row rendering).
+/// wizard (target selection) and the repair wizard.
 pub(crate) fn target_label(t: AgentTargetKind) -> &'static str {
     match t {
         AgentTargetKind::Claude => "Claude Code",
@@ -77,6 +77,34 @@ pub(crate) fn target_label(t: AgentTargetKind) -> &'static str {
         AgentTargetKind::Codex => "Codex CLI",
         AgentTargetKind::Copilot => "GitHub Copilot",
         AgentTargetKind::Windsurf => "Windsurf",
+    }
+}
+
+/// User-facing noun for the artifact this target writes — "skill" for tools
+/// that follow the Agent Skills standard (`SKILL.md`) and "instructions"
+/// otherwise. Mirrors `AgentTool::artifact_label()` for the wizard-visible
+/// subset so the TUI can render honest copy without depending on the binary
+/// crate's `AgentTool` enum.
+pub(crate) fn target_artifact_label(t: AgentTargetKind) -> &'static str {
+    match t {
+        AgentTargetKind::Claude
+        | AgentTargetKind::Cursor
+        | AgentTargetKind::Codex
+        | AgentTargetKind::Windsurf => "skill",
+        AgentTargetKind::Copilot => "instructions",
+    }
+}
+
+/// Same as [`target_artifact_label`] but keyed on the canonical-name string
+/// the binary persists in the install registry (so removal/uninstall flows
+/// can render honest copy when they only have the string in hand). Falls
+/// back to "instructions" for unrecognized names — a safer default than
+/// "skill" because instructions-style files are the more generic shape.
+/// Keep the SKILL-tier list in sync with `AgentTool::artifact_label()`.
+pub(crate) fn artifact_label_for_canonical(tool: &str) -> &'static str {
+    match tool {
+        "claude" | "cursor" | "codex" | "windsurf" | "gemini" | "trae" => "skill",
+        _ => "instructions",
     }
 }
 

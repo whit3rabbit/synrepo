@@ -221,7 +221,8 @@ impl UninstallWizardState {
 fn render_label(kind: &UninstallActionKind) -> String {
     match kind {
         UninstallActionKind::RemoveShim { tool, path } => {
-            format!("Delete {tool} shim ({})", path.display())
+            let label = crate::tui::wizard::artifact_label_for_canonical(tool);
+            format!("Delete {tool} {label} ({})", path.display())
         }
         UninstallActionKind::RemoveMcpEntry { tool, path } => {
             format!("Strip synrepo from {tool} MCP config ({})", path.display())

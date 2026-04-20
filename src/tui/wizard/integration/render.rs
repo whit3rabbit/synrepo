@@ -8,7 +8,8 @@ use super::state::{ActionRow, IntegrationStep, IntegrationWizardState, ACTION_RO
 use crate::tui::app::poll_key;
 use crate::tui::theme::Theme;
 use crate::tui::wizard::{
-    enter_tui, leave_tui, target_label, target_tier, AgentTargetTier, WizardTerminal,
+    enter_tui, leave_tui, target_artifact_label, target_label, target_tier, AgentTargetTier,
+    WizardTerminal,
 };
 
 /// Run the integration sub-wizard until Complete or cancellation.
@@ -110,7 +111,7 @@ fn draw_target_step(
             let marker = if selected { "▶ " } else { "  " };
             let tier = match target_tier(*t) {
                 AgentTargetTier::Automated => "automated",
-                AgentTargetTier::ShimOnly => "shim-only",
+                AgentTargetTier::ShimOnly => "instructions-only",
             };
             let status_suffix = if Some(*t) == configured {
                 " (configured)"
@@ -143,6 +144,10 @@ fn draw_actions_step(
     state: &IntegrationWizardState,
     theme: &Theme,
 ) {
+    let artifact = target_artifact_label(state.target);
+    let write_label = format!("Write or update the agent {artifact}");
+    let overwrite_label =
+        format!("Overwrite an existing {artifact} file if its content differs (regen)");
     let items: Vec<ListItem> = ACTION_ROWS
         .iter()
         .enumerate()
@@ -153,12 +158,10 @@ fn draw_actions_step(
                 ActionRow::OverwriteShim => state.overwrite_shim,
             };
             let check = if checked { "[x]" } else { "[ ]" };
-            let label = match row {
-                ActionRow::WriteShim => "Write or update the agent shim",
+            let label: &str = match row {
+                ActionRow::WriteShim => write_label.as_str(),
                 ActionRow::RegisterMcp => "Register the synrepo MCP server",
-                ActionRow::OverwriteShim => {
-                    "Overwrite an existing shim if its content differs (regen)"
-                }
+                ActionRow::OverwriteShim => overwrite_label.as_str(),
             };
             let selected = i == state.action_cursor;
             let marker = if selected { "▶ " } else { "  " };
@@ -198,13 +201,14 @@ fn draw_confirm_step(
     )));
     let mut step = 1usize;
     if state.write_shim {
+        let artifact = target_artifact_label(state.target);
         let suffix = if state.overwrite_shim {
-            " (may overwrite existing shim if content differs)"
+            format!(" (may overwrite existing {artifact} if content differs)")
         } else {
-            " (skip if shim already up to date)"
+            format!(" (skip if {artifact} already up to date)")
         };
         lines.push(Line::from(Span::styled(
-            format!("  {step}. Write or update the agent shim{suffix}"),
+            format!("  {step}. Write or update the agent {artifact}{suffix}"),
             theme.base_style(),
         )));
         step += 1;
@@ -217,7 +221,7 @@ fn draw_confirm_step(
         if target_tier(state.target) == AgentTargetTier::ShimOnly {
             lines.push(Line::from(Span::styled(
                 format!(
-                    "     Note: {} uses shim-only integration; \
+                    "     Note: {} uses instructions-only integration; \
                      MCP registration will print a manual setup hint instead.",
                     target_label(state.target)
                 ),

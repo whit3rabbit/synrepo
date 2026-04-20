@@ -108,7 +108,11 @@ pub(crate) fn step_write_shim(
     target: AgentTool,
     force: bool,
 ) -> anyhow::Result<StepOutcome> {
-    println!("  Writing integration shim...");
+    println!(
+        "  Writing {} {}...",
+        target.display_name(),
+        target.artifact_label()
+    );
     agent_setup(repo_root, target, force, true)?;
     Ok(StepOutcome::Applied)
 }
@@ -129,7 +133,7 @@ pub(crate) fn step_register_mcp(
         other => {
             debug_assert_eq!(other.automation_tier(), AutomationTier::ShimOnly);
             println!(
-                "  {} uses shim-only integration; register `synrepo mcp --repo .` \
+                "  {} uses instructions-only integration; register `synrepo mcp --repo .` \
                  as a stdio MCP server in the agent's own config.",
                 other.display_name()
             );

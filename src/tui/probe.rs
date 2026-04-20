@@ -41,7 +41,7 @@ pub struct HeaderVm {
     pub lock_label: String,
     /// Writer-lock severity.
     pub lock_severity: Severity,
-    /// MCP readiness label ("registered", "shim only", "absent", "n/a").
+    /// MCP readiness label ("registered", "instructions only", "absent", "n/a").
     pub mcp_label: String,
     /// MCP severity.
     pub mcp_severity: Severity,
@@ -105,9 +105,10 @@ pub fn build_header_vm(
             format!("registered ({})", target.as_str()),
             Severity::Healthy,
         ),
-        AgentIntegration::Partial { target } => {
-            (format!("shim only ({})", target.as_str()), Severity::Stale)
-        }
+        AgentIntegration::Partial { target } => (
+            format!("instructions only ({})", target.as_str()),
+            Severity::Stale,
+        ),
         AgentIntegration::Absent => ("absent".to_string(), Severity::Stale),
     };
 

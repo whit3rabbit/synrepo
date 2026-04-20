@@ -240,6 +240,21 @@ impl AgentTool {
         }
     }
 
+    /// User-facing noun for the artifact written by `agent-setup`: `"skill"`
+    /// for tools that follow the Agent Skills standard (`SKILL.md` under
+    /// `.<tool>/skills/synrepo/`) and `"instructions"` otherwise. Derived
+    /// from [`output_path`] so the label cannot drift from the filename.
+    pub(crate) fn artifact_label(self) -> &'static str {
+        // `repo_root` is only used to build the prefix; the filename it
+        // contributes is independent of the root, so any path works here.
+        let p = self.output_path(Path::new(""));
+        if p.file_name().and_then(|n| n.to_str()) == Some("SKILL.md") {
+            "skill"
+        } else {
+            "instructions"
+        }
+    }
+
     /// Stable, machine-readable name matching the CLI kebab-case form
     /// (e.g. `OpenCode` → `"open-code"`). Used as the `tool` key in the install
     /// registry at `~/.synrepo/projects.toml` so remove can map tool strings

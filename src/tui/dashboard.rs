@@ -153,11 +153,12 @@ fn draw_dashboard(frame: &mut ratatui::Frame, state: &AppState) {
         }
     }
 
-    // Footer with key hints.
+    // Footer with key hints (or transient toast if one is active).
     let footer = FooterWidget {
         active: state.active_tab,
         follow_mode: state.follow_mode,
         theme: &state.theme,
+        toast: state.active_toast(),
     };
     frame.render_widget(footer, outer[3]);
 }
