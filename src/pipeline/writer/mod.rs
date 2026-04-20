@@ -46,7 +46,7 @@ use helpers::{
 pub use helpers::{
     hold_writer_flock_with_ownership, live_foreign_pid, spawn_and_reap_pid, TestFlockHolder,
 };
-pub(crate) use helpers::{is_process_alive, open_and_try_lock};
+pub(crate) use helpers::{is_lock_contention, is_process_alive, open_and_try_lock};
 use serde::{Deserialize, Serialize};
 
 /// Ownership record written to `.synrepo/state/writer.lock`.

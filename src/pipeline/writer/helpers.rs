@@ -144,11 +144,32 @@ pub(crate) fn open_and_try_lock(lock_path: &Path) -> Result<Option<fs::File>, Lo
 
     match file.try_lock_exclusive() {
         Ok(()) => Ok(Some(file)),
-        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => Ok(None),
+        Err(e) if is_lock_contention(&e) => Ok(None),
         Err(source) => Err(LockError::Io {
             path: sentinel,
             source,
         }),
+    }
+}
+
+/// Classify a `try_lock_exclusive` error as lock contention.
+///
+/// Unix `flock` surfaces `EWOULDBLOCK` which Rust maps to `ErrorKind::WouldBlock`.
+/// Windows `LockFileEx` with `LOCKFILE_FAIL_IMMEDIATELY` surfaces
+/// `ERROR_LOCK_VIOLATION` (33), and Rust std leaves that as raw-os without
+/// mapping it to `WouldBlock`. Match both so contention is recognised cross-platform.
+pub(crate) fn is_lock_contention(err: &std::io::Error) -> bool {
+    if err.kind() == std::io::ErrorKind::WouldBlock {
+        return true;
+    }
+    #[cfg(windows)]
+    {
+        const ERROR_LOCK_VIOLATION: i32 = 33;
+        return err.raw_os_error() == Some(ERROR_LOCK_VIOLATION);
+    }
+    #[cfg(not(windows))]
+    {
+        false
     }
 }
 

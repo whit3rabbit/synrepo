@@ -300,7 +300,7 @@ pub fn watch_service_status(synrepo_dir: &Path) -> WatchServiceStatus {
                 // The lease is stale.
                 WatchServiceStatus::Stale(state_load.ok())
             }
-            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+            Err(e) if crate::pipeline::writer::is_lock_contention(&e) => {
                 // Someone else holds the lock. Service is live.
                 match state_load {
                     Ok(state) => WatchServiceStatus::Running(state),
