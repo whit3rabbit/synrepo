@@ -45,6 +45,12 @@ pub fn discover(repo_root: &Path, config: &Config) -> crate::Result<Vec<Discover
     walker.require_git(false);
     walker.follow_links(false);
     walker.add_custom_ignore_filename(".synignore");
+    // Never descend into synrepo's own runtime state. Always-on, independent of
+    // `.synrepo/.gitignore` being present. Beyond closing the feedback loop
+    // (indexing our own graph output), this also avoids reading SQLite's WAL
+    // sidecar files (nodes.db-shm / -wal) which hold mandatory byte-range
+    // locks on Windows and would trip ERROR_LOCK_VIOLATION during sniffing.
+    walker.filter_entry(|entry| entry.file_name() != ".synrepo");
 
     for result in walker.build() {
         let entry = match result {
@@ -174,6 +180,47 @@ mod tests {
         assert_eq!(
             relative_paths,
             vec!["docs/guide.md".to_string(), "src/lib.rs".to_string()]
+        );
+    }
+
+    #[test]
+    fn discover_never_walks_into_synrepo_runtime_state() {
+        // Regression guard: substrate::discover must never descend into
+        // `.synrepo/`, independent of whether `.synrepo/.gitignore` exists.
+        // On Windows, SQLite's WAL sidecar files (`nodes.db-shm`, `nodes.db-wal`)
+        // hold mandatory byte-range locks; a sniffer read into those bytes
+        // returns ERROR_LOCK_VIOLATION (os error 33), which surfaced as every
+        // Windows-only reconcile test failure before this filter landed.
+        let repo = tempdir().unwrap();
+        fs::create_dir_all(repo.path().join("src")).unwrap();
+        fs::write(repo.path().join("src/lib.rs"), "pub fn real_code() {}\n").unwrap();
+
+        // Simulate an un-bootstrapped `.synrepo/` holding files that would
+        // otherwise look indexable (plain text, below size cap, not redacted).
+        fs::create_dir_all(repo.path().join(".synrepo/graph")).unwrap();
+        fs::write(
+            repo.path().join(".synrepo/graph/nodes.db"),
+            "SQLite format 3\0",
+        )
+        .unwrap();
+        fs::write(
+            repo.path().join(".synrepo/config.toml"),
+            "mode = \"auto\"\n",
+        )
+        .unwrap();
+
+        let discovered = discover(repo.path(), &Config::default()).unwrap();
+        let paths: Vec<_> = discovered
+            .iter()
+            .map(|f| f.relative_path.as_str())
+            .collect();
+        assert!(
+            paths.iter().all(|p| !p.starts_with(".synrepo")),
+            "discover must skip .synrepo/ unconditionally, got: {paths:?}"
+        );
+        assert!(
+            paths.contains(&"src/lib.rs"),
+            "discover must still pick up real repo content, got: {paths:?}"
         );
     }
 
