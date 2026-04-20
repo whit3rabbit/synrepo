@@ -301,6 +301,7 @@ fn ensure_candidate_exists(
     Ok(())
 }
 
+#[cfg_attr(not(debug_assertions), allow(unused_variables))]
 fn maybe_abort_test_crash(point: &str) {
     #[cfg(debug_assertions)]
     {

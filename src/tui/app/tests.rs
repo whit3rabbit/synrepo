@@ -4,6 +4,7 @@
 use super::*;
 use crate::bootstrap::runtime_probe::AgentIntegration;
 use crate::pipeline::watch::{ReconcileOutcome, WatchEvent};
+use crate::tui::actions::{stop_watch, ActionContext, ActionOutcome};
 use crate::tui::theme::Theme;
 
 fn make_poll_state() -> AppState {
@@ -19,6 +20,13 @@ fn make_live_state() -> (AppState, crossbeam_channel::Sender<WatchEvent>) {
     // Safe: these are short-lived unit tests.
     std::mem::forget(tempdir);
     (state, tx)
+}
+
+fn make_ready_poll_state() -> (tempfile::TempDir, AppState) {
+    let tempdir = tempfile::tempdir().unwrap();
+    crate::bootstrap::bootstrap(tempdir.path(), None, false).expect("bootstrap");
+    let state = AppState::new_poll(tempdir.path(), Theme::plain(), AgentIntegration::Absent);
+    (tempdir, state)
 }
 
 #[test]
@@ -98,6 +106,99 @@ fn pressing_r_sets_refresh_toast() {
 }
 
 #[test]
+fn pressing_w_starts_watch_sets_toast_log_and_refreshes_snapshot() {
+    let _guard = crate::test_support::global_test_lock("tui-app-watch-toggle");
+    let (tempdir, mut state) = make_ready_poll_state();
+    assert_eq!(state.watch_toggle_label(), Some("start"));
+
+    let consumed = state.handle_key(KeyCode::Char('w'), KeyModifiers::NONE);
+    assert!(consumed, "'w' should consume the key event in poll mode");
+    assert_eq!(state.watch_toggle_label(), Some("stop"));
+    assert!(
+        matches!(
+            state
+                .snapshot
+                .diagnostics
+                .as_ref()
+                .map(|diag| &diag.watch_status),
+            Some(crate::pipeline::watch::WatchServiceStatus::Running(_))
+        ),
+        "watch should be running after toggle"
+    );
+    let toast = state
+        .active_toast()
+        .expect("watch toggle should set a toast");
+    assert!(
+        toast.contains("watch") || toast.contains("spawned"),
+        "watch-start toast should mention the action: {toast:?}"
+    );
+    let entry = state
+        .log
+        .as_slice()
+        .last()
+        .expect("watch toggle should log");
+    assert_eq!(entry.tag, "watch");
+
+    let outcome = stop_watch(&ActionContext::new(tempdir.path()));
+    assert!(
+        matches!(
+            outcome,
+            ActionOutcome::Ack { .. } | ActionOutcome::Completed { .. }
+        ),
+        "cleanup stop must succeed, got {outcome:?}"
+    );
+}
+
+#[test]
+fn pressing_w_stops_watch_from_actions_tab_and_sets_feedback() {
+    let _guard = crate::test_support::global_test_lock("tui-app-watch-toggle");
+    let tempdir = tempfile::tempdir().unwrap();
+    crate::bootstrap::bootstrap(tempdir.path(), None, false).expect("bootstrap");
+    let ctx = ActionContext::new(tempdir.path());
+    let start = crate::tui::actions::start_watch_daemon(&ctx);
+    assert!(
+        matches!(start, ActionOutcome::Ack { .. }),
+        "setup start must succeed, got {start:?}"
+    );
+
+    let mut state = AppState::new_poll(tempdir.path(), Theme::plain(), AgentIntegration::Absent);
+    state.set_tab(ActiveTab::Actions);
+    let consumed = state.handle_key(KeyCode::Char('w'), KeyModifiers::NONE);
+    assert!(consumed, "'w' should work outside the Live tab");
+    assert_eq!(state.watch_toggle_label(), Some("start"));
+    assert!(
+        matches!(
+            state
+                .snapshot
+                .diagnostics
+                .as_ref()
+                .map(|diag| &diag.watch_status),
+            Some(crate::pipeline::watch::WatchServiceStatus::Inactive)
+        ),
+        "watch should be inactive after stop"
+    );
+    let toast = state.active_toast().expect("watch stop should set a toast");
+    assert!(
+        toast.contains("stop") || toast.contains("Stopped") || toast.contains("stopping"),
+        "watch-stop toast should mention the action: {toast:?}"
+    );
+    let entry = state.log.as_slice().last().expect("watch stop should log");
+    assert_eq!(entry.tag, "watch");
+}
+
+#[test]
+fn pressing_w_is_ignored_in_live_mode() {
+    let (mut state, _tx) = make_live_state();
+    let consumed = state.handle_key(KeyCode::Char('w'), KeyModifiers::NONE);
+    assert!(
+        !consumed,
+        "live dashboard should keep foreground watch behavior unchanged"
+    );
+    assert!(state.active_toast().is_none());
+    assert!(state.log.as_slice().is_empty());
+}
+
+#[test]
 fn drain_events_is_noop_in_poll_mode() {
     let mut state = make_poll_state();
     state.drain_events();
@@ -110,11 +211,17 @@ fn handle_key_switches_tabs() {
     state.handle_key(KeyCode::Char('2'), KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Health);
     state.handle_key(KeyCode::Char('3'), KeyModifiers::NONE);
+    assert_eq!(state.active_tab, ActiveTab::Synthesis);
+    state.handle_key(KeyCode::Char('4'), KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Actions);
     state.handle_key(KeyCode::Char('1'), KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Live);
     state.handle_key(KeyCode::Tab, KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Health);
+    state.handle_key(KeyCode::Tab, KeyModifiers::NONE);
+    assert_eq!(state.active_tab, ActiveTab::Synthesis);
+    state.handle_key(KeyCode::Tab, KeyModifiers::NONE);
+    assert_eq!(state.active_tab, ActiveTab::Actions);
 }
 
 #[test]
@@ -222,4 +329,111 @@ fn page_down_at_bottom_reenables_follow() {
     state.handle_key(KeyCode::PageDown, KeyModifiers::NONE);
     assert_eq!(state.scroll_offset, 0);
     assert!(state.follow_mode);
+}
+
+fn prime_picker(state: &mut AppState) {
+    state.picker = Some(FolderPickerState {
+        folders: vec![
+            FolderEntry {
+                path: "src/".to_string(),
+                indexable_count: 2,
+                supported_count: 2,
+                checked: true,
+            },
+            FolderEntry {
+                path: "docs/".to_string(),
+                indexable_count: 1,
+                supported_count: 0,
+                checked: false,
+            },
+        ],
+        cursor: 0,
+    });
+}
+
+#[test]
+fn picker_esc_clears_without_exit() {
+    let (_repo, mut state) = make_ready_poll_state();
+    state.set_tab(ActiveTab::Synthesis);
+    prime_picker(&mut state);
+    let consumed = state.handle_key(KeyCode::Esc, KeyModifiers::NONE);
+    assert!(consumed);
+    assert!(state.picker.is_none());
+    assert!(!state.should_exit, "Esc in picker must not exit the loop");
+    assert!(state.launch_synthesize.is_none());
+}
+
+#[test]
+fn picker_enter_with_selection_exits_with_paths_mode() {
+    let (_repo, mut state) = make_ready_poll_state();
+    state.set_tab(ActiveTab::Synthesis);
+    prime_picker(&mut state);
+    let consumed = state.handle_key(KeyCode::Enter, KeyModifiers::NONE);
+    assert!(consumed);
+    assert!(state.should_exit);
+    match &state.launch_synthesize {
+        Some(SynthesizeMode::Paths(paths)) => {
+            assert_eq!(paths, &vec!["src/".to_string()]);
+        }
+        other => panic!("expected Paths(..), got {other:?}"),
+    }
+    assert!(
+        state.picker.is_none(),
+        "picker cleared on successful commit"
+    );
+}
+
+#[test]
+fn picker_enter_with_empty_selection_stays_open() {
+    let (_repo, mut state) = make_ready_poll_state();
+    state.set_tab(ActiveTab::Synthesis);
+    prime_picker(&mut state);
+    // Uncheck the only checked entry.
+    state.handle_key(KeyCode::Char(' '), KeyModifiers::NONE);
+    let consumed = state.handle_key(KeyCode::Enter, KeyModifiers::NONE);
+    assert!(consumed);
+    assert!(
+        state.picker.is_some(),
+        "empty-selection Enter must keep picker open"
+    );
+    assert!(!state.should_exit);
+    assert!(state.launch_synthesize.is_none());
+}
+
+#[test]
+fn picker_navigation_and_toggle_move_cursor() {
+    let (_repo, mut state) = make_ready_poll_state();
+    state.set_tab(ActiveTab::Synthesis);
+    prime_picker(&mut state);
+    // Start at row 0. Down should move to row 1.
+    state.handle_key(KeyCode::Down, KeyModifiers::NONE);
+    assert_eq!(state.picker.as_ref().unwrap().cursor, 1);
+    // Space toggles docs/.
+    state.handle_key(KeyCode::Char(' '), KeyModifiers::NONE);
+    let entry = &state.picker.as_ref().unwrap().folders[1];
+    assert_eq!(entry.path, "docs/");
+    assert!(entry.checked);
+    // `k` moves back up.
+    state.handle_key(KeyCode::Char('k'), KeyModifiers::NONE);
+    assert_eq!(state.picker.as_ref().unwrap().cursor, 0);
+}
+
+#[test]
+fn picker_tab_switch_clears_it() {
+    let (_repo, mut state) = make_ready_poll_state();
+    state.set_tab(ActiveTab::Synthesis);
+    prime_picker(&mut state);
+    state.handle_key(KeyCode::Char('1'), KeyModifiers::NONE);
+    assert_eq!(state.active_tab, ActiveTab::Live);
+    assert!(state.picker.is_none());
+}
+
+#[test]
+fn picker_quit_key_falls_through() {
+    let (_repo, mut state) = make_ready_poll_state();
+    state.set_tab(ActiveTab::Synthesis);
+    prime_picker(&mut state);
+    let consumed = state.handle_key(KeyCode::Char('q'), KeyModifiers::NONE);
+    assert!(consumed);
+    assert!(state.should_exit, "q must quit even with picker open");
 }

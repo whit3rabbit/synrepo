@@ -4,7 +4,7 @@
 
 pub mod handlers;
 
-pub use handlers::ActionContext;
+pub use handlers::{refresh_commentary, ActionContext};
 
 use std::path::Path;
 

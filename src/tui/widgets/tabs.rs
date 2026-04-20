@@ -1,6 +1,7 @@
 //! Dashboard tab bar. Wraps `ratatui::widgets::Tabs` to keep styling in one
-//! place and render the three operator tabs (Live / Health / Actions) with
-//! a keyboard-hint prefix so the active tab is visible without color.
+//! place and render the four operator tabs (Live / Health / Synthesis /
+//! Actions) with a keyboard-hint prefix so the active tab is visible without
+//! color.
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -27,7 +28,8 @@ impl Widget for DashboardTabsWidget<'_> {
         let titles: Vec<Line<'static>> = [
             ("1", "Live", ActiveTab::Live),
             ("2", "Health", ActiveTab::Health),
-            ("3", "Actions", ActiveTab::Actions),
+            ("3", "Synthesis", ActiveTab::Synthesis),
+            ("4", "Actions", ActiveTab::Actions),
         ]
         .into_iter()
         .map(|(key, label, _)| {
@@ -42,7 +44,8 @@ impl Widget for DashboardTabsWidget<'_> {
             .select(match self.active {
                 ActiveTab::Live => 0,
                 ActiveTab::Health => 1,
-                ActiveTab::Actions => 2,
+                ActiveTab::Synthesis => 2,
+                ActiveTab::Actions => 3,
             })
             .style(self.theme.base_style())
             .highlight_style(self.theme.selected_style())

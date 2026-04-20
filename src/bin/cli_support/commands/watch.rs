@@ -5,6 +5,9 @@ use std::{
     time::Duration,
 };
 
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
+
 use synrepo::{
     config::Config,
     pipeline::watch::{
@@ -125,22 +128,23 @@ pub(crate) fn watch_stop(repo_root: &Path) -> anyhow::Result<()> {
             Ok(())
         }
         WatchServiceStatus::Running(state) => {
-            match request_watch_control(&synrepo_dir, WatchControlRequest::Stop)? {
-                WatchControlResponse::Ack { message } => {
+            match request_watch_control(&synrepo_dir, WatchControlRequest::Stop) {
+                Ok(WatchControlResponse::Ack { message }) => {
                     wait_for_watch_shutdown(&synrepo_dir)?;
                     println!("{message}");
                     println!("Stopped watch service (pid {}).", state.pid);
                     Ok(())
                 }
-                WatchControlResponse::Status { .. } => Err(anyhow::anyhow!(
+                Ok(WatchControlResponse::Status { .. }) => Err(anyhow::anyhow!(
                     "stop request returned a status snapshot instead of an acknowledgement"
                 )),
-                WatchControlResponse::Error { message } => {
+                Ok(WatchControlResponse::Error { message }) => {
                     Err(anyhow::anyhow!("failed to stop watch service: {message}"))
                 }
-                WatchControlResponse::Reconcile { .. } => Err(anyhow::anyhow!(
+                Ok(WatchControlResponse::Reconcile { .. }) => Err(anyhow::anyhow!(
                     "stop request returned a reconcile response instead of an acknowledgement"
                 )),
+                Err(err) => recover_stop_transport_error(&synrepo_dir, err, state.pid),
             }
         }
         WatchServiceStatus::Corrupt(e) => {
@@ -148,6 +152,28 @@ pub(crate) fn watch_stop(repo_root: &Path) -> anyhow::Result<()> {
             println!("Removed corrupt watch service artifacts: {e}");
             Ok(())
         }
+    }
+}
+
+fn recover_stop_transport_error(
+    synrepo_dir: &Path,
+    err: synrepo::pipeline::watch::WatchDaemonError,
+    pid: u32,
+) -> anyhow::Result<()> {
+    match watch_service_status(synrepo_dir) {
+        WatchServiceStatus::Inactive => {
+            println!("Watch service already stopped (pid {}).", pid);
+            Ok(())
+        }
+        WatchServiceStatus::Stale(_) | WatchServiceStatus::Corrupt(_) => {
+            cleanup_stale_watch_artifacts(synrepo_dir)?;
+            println!(
+                "Removed stale watch service artifacts after daemon exit (pid {}).",
+                pid
+            );
+            Ok(())
+        }
+        WatchServiceStatus::Running(_) => Err(anyhow::anyhow!("stop request failed: {err}")),
     }
 }
 
@@ -243,14 +269,18 @@ fn spawn_watch_daemon(repo_root: &Path) -> anyhow::Result<u32> {
         )
     })?;
 
-    let mut child = Command::new(&exe)
+    let mut command = Command::new(&exe);
+    command
         .arg("--repo")
         .arg(repo_root)
         .arg("watch-internal")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::from(stderr_file))
-        .current_dir(repo_root)
+        .current_dir(repo_root);
+    detach_daemon_process(&mut command);
+
+    let mut child = command
         .spawn()
         .map_err(|error| anyhow::anyhow!("failed to spawn watch daemon: {error}"))?;
 
@@ -277,8 +307,19 @@ fn spawn_watch_daemon(repo_root: &Path) -> anyhow::Result<u32> {
     anyhow::bail!("watch daemon did not become ready in time")
 }
 
+fn detach_daemon_process(command: &mut Command) {
+    #[cfg(unix)]
+    {
+        // Break the daemon out of the launching foreground process group so
+        // it survives after `synrepo watch --daemon` or the dashboard
+        // process exits. Keeping the child in the caller's process group can
+        // leave it vulnerable to terminal hangup and stale leases.
+        command.process_group(0);
+    }
+}
+
 fn wait_for_watch_shutdown(synrepo_dir: &Path) -> anyhow::Result<()> {
-    for _ in 0..100 {
+    for _ in 0..600 {
         match watch_service_status(synrepo_dir) {
             WatchServiceStatus::Inactive => return Ok(()),
             WatchServiceStatus::Stale(_) => {

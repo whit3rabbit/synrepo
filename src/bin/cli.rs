@@ -17,7 +17,7 @@ use synrepo::tui::{
     run_dashboard, run_integration_wizard, run_live_watch_dashboard, run_repair_wizard,
     run_setup_wizard, run_synthesis_only_wizard, stdout_is_tty, DashboardOptions, IntegrationPlan,
     IntegrationWizardOutcome, RepairPlan, RepairWizardOutcome, SetupPlan, SetupWizardOutcome,
-    TuiOptions, TuiOutcome,
+    SynthesizeMode, TuiOptions, TuiOutcome,
 };
 use syntext::SearchOptions;
 use tracing_subscriber::EnvFilter;
@@ -33,7 +33,7 @@ use cli_support::commands::{
     init, links_accept, links_list, links_reject, links_review, node, reconcile, remove,
     run_mcp_server, search, setup, status, status_output, step_apply_integration,
     step_apply_synthesis, step_backup_mcp_config, step_ensure_ready, step_init, step_register_mcp,
-    step_write_shim, sync, upgrade, watch, watch_internal, watch_status, watch_stop,
+    step_write_shim, sync, synthesize, upgrade, watch, watch_internal, watch_status, watch_stop,
 };
 
 fn main() -> anyhow::Result<()> {
@@ -118,9 +118,7 @@ fn run_dashboard_with_sub_wizards(
     mut opts: DashboardOptions,
 ) -> anyhow::Result<()> {
     loop {
-        // `run_dashboard` only returns Exited, NonTtyFallback, or
-        // LaunchIntegrationRequested — never a Wizard* variant. An
-        // exhaustive match flags future TuiOutcome additions at compile time.
+        // Exhaustive match flags future TuiOutcome additions at compile time.
         match run_dashboard(repo_root, integration.clone(), opts)? {
             TuiOutcome::Exited | TuiOutcome::NonTtyFallback => return Ok(()),
             TuiOutcome::LaunchIntegrationRequested => {
@@ -145,6 +143,20 @@ fn run_dashboard_with_sub_wizards(
                 integration = report.agent_integration;
                 opts.welcome_banner = false;
             }
+            TuiOutcome::LaunchSynthesisSetupRequested => {
+                let tui_opts = TuiOptions {
+                    no_color: opts.no_color,
+                };
+                run_synthesis_step(repo_root, tui_opts)?;
+                opts.welcome_banner = false;
+            }
+            TuiOutcome::RunSynthesizeRequested(mode) => {
+                let (paths, changed) = synthesize_mode_to_args(mode);
+                if let Err(err) = synthesize(repo_root, paths, changed, false) {
+                    eprintln!("synthesize failed: {err}");
+                }
+                opts.welcome_banner = false;
+            }
             outcome @ (TuiOutcome::WizardCompleted | TuiOutcome::WizardCancelled) => {
                 debug_assert!(
                     false,
@@ -153,6 +165,18 @@ fn run_dashboard_with_sub_wizards(
                 return Ok(());
             }
         }
+    }
+}
+
+/// Translate a [`SynthesizeMode`] into the positional-arg pair the
+/// `synthesize` subcommand accepts. The dashboard's Synthesize action hands
+/// off to the same command-function call-site the CLI uses, so the dry-run
+/// flag is never set from the dashboard path.
+fn synthesize_mode_to_args(mode: SynthesizeMode) -> (Vec<String>, bool) {
+    match mode {
+        SynthesizeMode::AllStale => (Vec::new(), false),
+        SynthesizeMode::Changed => (Vec::new(), true),
+        SynthesizeMode::Paths(paths) => (paths, false),
     }
 }
 
@@ -465,6 +489,11 @@ fn dispatch(command: Command, repo_root: &Path, tui_opts: TuiOptions) -> anyhow:
             regenerate_cross_links,
             reset_synthesis_totals,
         ),
+        Command::Synthesize {
+            paths,
+            changed,
+            dry_run,
+        } => synthesize(repo_root, paths, changed, dry_run),
         Command::Search {
             query,
             ignore_case,

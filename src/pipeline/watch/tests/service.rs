@@ -1,6 +1,14 @@
 #![cfg_attr(not(unix), allow(unused_imports, dead_code))]
 
-use std::{fs, thread, time::Duration};
+use std::{
+    fs,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        mpsc, Arc,
+    },
+    thread,
+    time::{Duration, Instant},
+};
 
 use notify_debouncer_full::{
     notify::{event::ModifyKind, Event, EventKind},
@@ -71,6 +79,26 @@ fn watch_service_handles_status_reconcile_and_stop() {
     let stop = request_watch_control(&synrepo_dir, WatchControlRequest::Stop).unwrap();
     assert!(matches!(stop, WatchControlResponse::Ack { .. }));
     handle.join().unwrap();
+}
+
+#[test]
+fn stop_bridge_acknowledges_without_waiting_for_loop_reply() {
+    let stop_flag = Arc::new(AtomicBool::new(false));
+    let (tx, rx) = mpsc::channel();
+    let started = Instant::now();
+
+    let response = super::super::service::bridge_stop_request(&tx, &stop_flag);
+
+    assert!(
+        started.elapsed() < Duration::from_secs(1),
+        "stop bridge should ack immediately"
+    );
+    assert!(matches!(response, WatchControlResponse::Ack { .. }));
+    assert!(stop_flag.load(Ordering::Relaxed));
+    assert!(
+        rx.recv_timeout(Duration::from_secs(1)).is_ok(),
+        "stop bridge should still wake the main loop"
+    );
 }
 
 #[cfg(unix)]

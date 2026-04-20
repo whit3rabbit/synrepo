@@ -3,10 +3,12 @@
 //! rendering still lives in `wizard.rs`; this module only owns the loop.
 
 mod synthesis_events;
+mod synthesis_picker;
 mod view_state;
 mod watch_events;
 
 pub use synthesis_events::synthesis_event_to_log_entry;
+pub use synthesis_picker::{FolderEntry, FolderPickerState};
 pub use view_state::ActiveTab;
 pub use watch_events::watch_event_to_log_entry;
 
@@ -18,8 +20,11 @@ use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 
 use crate::bootstrap::runtime_probe::AgentIntegration;
 use crate::pipeline::synthesis::telemetry::{self, SynthesisEvent};
-use crate::pipeline::watch::WatchEvent;
+use crate::pipeline::watch::{WatchEvent, WatchServiceStatus};
 use crate::surface::status_snapshot::{build_status_snapshot, StatusOptions, StatusSnapshot};
+use crate::tui::actions::{
+    outcome_to_log, start_watch_daemon, stop_watch, ActionContext, ActionOutcome,
+};
 use crate::tui::probe::Severity;
 use crate::tui::theme::Theme;
 use crate::tui::widgets::{LogEntry, QuickAction};
@@ -98,6 +103,14 @@ pub struct AppState {
     /// When set, the caller should launch the integration sub-wizard after the
     /// render loop unwinds. See [`DashboardExit`].
     pub launch_integration: bool,
+    /// When set, the caller should launch the synthesis setup sub-wizard.
+    pub launch_synthesis_setup: bool,
+    /// When set, the caller should run `synrepo synthesize` with the given mode.
+    pub launch_synthesize: Option<SynthesizeMode>,
+    /// Folder-picker sub-view state. `Some` while the operator is choosing
+    /// which top-level directories to scope `synrepo synthesize` to; cleared
+    /// on Esc, Enter, or any tab switch.
+    pub picker: Option<FolderPickerState>,
     /// Currently selected dashboard tab.
     pub active_tab: ActiveTab,
     /// Rows-up-from-bottom for the Live tab. `0` pins the view to the newest
@@ -134,22 +147,44 @@ pub struct AppState {
 
 const TOAST_TTL: Duration = Duration::from_millis(2000);
 
+/// Which synthesis refresh mode the operator requested from the Synthesis tab.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SynthesizeMode {
+    /// Refresh every stale commentary entry (no scope filter).
+    AllStale,
+    /// Refresh only files hot in recent commit history.
+    Changed,
+    /// Refresh entries under the given repo-relative path prefixes.
+    Paths(Vec<String>),
+}
+
 /// Post-loop intent expressed by the dashboard when it exits. The caller maps
 /// this to either "fully done" or "re-enter the dashboard after running a
 /// sub-wizard".
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum DashboardExit {
     /// Operator quit; caller should tear down and return.
     Quit,
     /// Operator asked for the integration sub-wizard; caller should launch it
     /// and then re-open the dashboard.
     LaunchIntegration,
+    /// Operator asked for the synthesis setup sub-wizard.
+    LaunchSynthesisSetup,
+    /// Operator asked to run `synrepo synthesize` with the given scope.
+    RunSynthesize(SynthesizeMode),
 }
 
 impl AppState {
     /// Build a new poll-mode app state for `repo_root`.
     pub fn new_poll(repo_root: &Path, theme: Theme, integration: AgentIntegration) -> Self {
-        Self::new(repo_root, theme, integration, AppMode::DashboardPoll, None)
+        Self::new(
+            repo_root,
+            theme,
+            integration,
+            AppMode::DashboardPoll,
+            None,
+            Vec::new(),
+        )
     }
 
     /// Build a new live-mode app state bound to a `WatchEvent` receiver. Live
@@ -167,6 +202,24 @@ impl AppState {
             integration,
             AppMode::DashboardLive,
             Some(events_rx),
+            Vec::new(),
+        )
+    }
+
+    /// Build a new poll-mode app state with pre-seeded log entries.
+    pub fn new_poll_with_logs(
+        repo_root: &Path,
+        theme: Theme,
+        integration: AgentIntegration,
+        startup_logs: Vec<LogEntry>,
+    ) -> Self {
+        Self::new(
+            repo_root,
+            theme,
+            integration,
+            AppMode::DashboardPoll,
+            None,
+            startup_logs,
         )
     }
 
@@ -176,6 +229,7 @@ impl AppState {
         integration: AgentIntegration,
         mode: AppMode,
         events_rx: Option<Receiver<WatchEvent>>,
+        startup_logs: Vec<LogEntry>,
     ) -> Self {
         let snapshot = build_status_snapshot(
             repo_root,
@@ -184,16 +238,24 @@ impl AppState {
                 full: false,
             },
         );
+        let quick_actions = quick_actions_for(&mode, &snapshot);
+        let mut log = EventLog::default();
+        for entry in startup_logs {
+            log.push(entry);
+        }
         Self {
             repo_root: repo_root.to_path_buf(),
             theme,
             mode,
             integration,
             snapshot,
-            log: EventLog::default(),
-            quick_actions: default_poll_actions(),
+            log,
+            quick_actions,
             should_exit: false,
             launch_integration: false,
+            launch_synthesis_setup: false,
+            launch_synthesize: None,
+            picker: None,
             active_tab: ActiveTab::Live,
             scroll_offset: 0,
             follow_mode: true,
@@ -227,11 +289,16 @@ impl AppState {
 
     /// Compute the post-loop exit intent. Called after the render loop unwinds.
     pub fn exit_intent(&self) -> DashboardExit {
-        if self.launch_integration {
-            DashboardExit::LaunchIntegration
-        } else {
-            DashboardExit::Quit
+        if let Some(mode) = &self.launch_synthesize {
+            return DashboardExit::RunSynthesize(mode.clone());
         }
+        if self.launch_synthesis_setup {
+            return DashboardExit::LaunchSynthesisSetup;
+        }
+        if self.launch_integration {
+            return DashboardExit::LaunchIntegration;
+        }
+        DashboardExit::Quit
     }
 
     /// Refresh the snapshot if the snapshot-refresh interval has elapsed. In
@@ -312,6 +379,7 @@ impl AppState {
                 full: false,
             },
         );
+        self.quick_actions = quick_actions_for(&self.mode, &self.snapshot);
         self.last_refresh = Instant::now();
     }
 
@@ -333,6 +401,14 @@ impl AppState {
 
     /// Handle a key event. Returns true when the event was consumed.
     pub fn handle_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> bool {
+        // Folder-picker modal: consumes navigation/toggle/commit/cancel keys
+        // before anything else. Global quit (q/Ctrl-C) and tab switches still
+        // fall through below so the operator is never trapped.
+        if self.picker.is_some() {
+            if let Some(consumed) = self.handle_picker_key(code, modifiers) {
+                return consumed;
+            }
+        }
         // Global quit bindings.
         if matches!(code, KeyCode::Char('q') | KeyCode::Esc) {
             self.should_exit = true;
@@ -357,10 +433,43 @@ impl AppState {
                 return true;
             }
             KeyCode::Char('3') => {
+                self.set_tab(ActiveTab::Synthesis);
+                return true;
+            }
+            KeyCode::Char('4') => {
                 self.set_tab(ActiveTab::Actions);
                 return true;
             }
             _ => {}
+        }
+        // Synthesis-tab key dispatch. Plan-specified bindings:
+        //   s — launch synthesis setup sub-wizard
+        //   r — run `synrepo synthesize` against all stale entries
+        //   c — run with `--changed` (recent hotspots)
+        //   f — open folder picker sub-view (in-tab, no dashboard exit)
+        if matches!(self.active_tab, ActiveTab::Synthesis) {
+            match code {
+                KeyCode::Char('s') => {
+                    self.launch_synthesis_setup = true;
+                    self.should_exit = true;
+                    return true;
+                }
+                KeyCode::Char('r') => {
+                    self.launch_synthesize = Some(SynthesizeMode::AllStale);
+                    self.should_exit = true;
+                    return true;
+                }
+                KeyCode::Char('c') => {
+                    self.launch_synthesize = Some(SynthesizeMode::Changed);
+                    self.should_exit = true;
+                    return true;
+                }
+                KeyCode::Char('f') => {
+                    self.open_folder_picker();
+                    return true;
+                }
+                _ => {}
+            }
         }
         // Live-tab scroll bindings. Disabled on the other tabs so `j`/`k`
         // remain free for future per-tab navigation.
@@ -407,6 +516,7 @@ impl AppState {
                 self.set_toast(format!("Refreshed: {counts}"));
                 true
             }
+            KeyCode::Char('w') => self.handle_watch_toggle(),
             KeyCode::Char('i') => {
                 self.launch_integration = true;
                 self.should_exit = true;
@@ -415,15 +525,55 @@ impl AppState {
             _ => false,
         }
     }
+
+    /// Poll-mode dashboards toggle the detached watch daemon with `w`.
+    fn handle_watch_toggle(&mut self) -> bool {
+        if !matches!(self.mode, AppMode::DashboardPoll) {
+            return false;
+        }
+
+        let ctx = ActionContext::new(&self.repo_root);
+        let outcome = if self.watch_is_running() {
+            stop_watch(&ctx)
+        } else {
+            start_watch_daemon(&ctx)
+        };
+        self.set_toast(watch_toast_message(&outcome));
+        self.log.push(outcome_to_log("watch", &outcome));
+        self.refresh_now();
+        true
+    }
+
+    /// Watch label for the footer hint row, when a toggle is available.
+    pub fn watch_toggle_label(&self) -> Option<&'static str> {
+        watch_toggle_label_for(&self.mode, &self.snapshot)
+    }
+
+    fn watch_is_running(&self) -> bool {
+        matches!(
+            self.snapshot
+                .diagnostics
+                .as_ref()
+                .map(|diag| &diag.watch_status),
+            Some(WatchServiceStatus::Running(_))
+        )
+    }
 }
 
-fn default_poll_actions() -> Vec<QuickAction> {
-    vec![
-        QuickAction {
-            key: "r".to_string(),
-            label: "refresh snapshot".to_string(),
+fn quick_actions_for(mode: &AppMode, snapshot: &StatusSnapshot) -> Vec<QuickAction> {
+    let mut actions = vec![QuickAction {
+        key: "r".to_string(),
+        label: "refresh snapshot".to_string(),
+        disabled: false,
+    }];
+    if let Some(watch_label) = watch_toggle_label_for(mode, snapshot) {
+        actions.push(QuickAction {
+            key: "w".to_string(),
+            label: format!("{watch_label} watch"),
             disabled: false,
-        },
+        });
+    }
+    actions.extend([
         QuickAction {
             key: "i".to_string(),
             label: "agent integration".to_string(),
@@ -434,7 +584,26 @@ fn default_poll_actions() -> Vec<QuickAction> {
             label: "quit".to_string(),
             disabled: false,
         },
-    ]
+    ]);
+    actions
+}
+
+fn watch_toggle_label_for(mode: &AppMode, snapshot: &StatusSnapshot) -> Option<&'static str> {
+    if !matches!(mode, AppMode::DashboardPoll) {
+        return None;
+    }
+    match snapshot.diagnostics.as_ref().map(|diag| &diag.watch_status) {
+        Some(WatchServiceStatus::Running(_)) => Some("stop"),
+        _ => Some("start"),
+    }
+}
+
+fn watch_toast_message(outcome: &ActionOutcome) -> String {
+    match outcome {
+        ActionOutcome::Ack { message } | ActionOutcome::Completed { message } => message.clone(),
+        ActionOutcome::Conflict { guidance, .. } => guidance.clone(),
+        ActionOutcome::Error { message } => message.clone(),
+    }
 }
 
 /// Poll the terminal for a key event, honoring a budget tied to the refresh

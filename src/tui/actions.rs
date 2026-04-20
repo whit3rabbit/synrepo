@@ -10,7 +10,11 @@
 //! [`outcome_to_log`].
 
 use std::path::{Path, PathBuf};
-use std::time::SystemTime;
+use std::thread;
+use std::time::{Duration, Instant, SystemTime};
+
+#[cfg(unix)]
+use std::os::unix::process::CommandExt;
 
 use crate::config::Config;
 use crate::pipeline::watch::{
@@ -22,6 +26,9 @@ use crate::pipeline::writer::{
 };
 use crate::tui::probe::Severity;
 use crate::tui::widgets::LogEntry;
+
+const WATCH_START_TIMEOUT: Duration = Duration::from_secs(2);
+const WATCH_STOP_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Context passed to every action dispatcher. Keeps the callsite in the render
 /// loop narrow; callers build this once per app state transition.
@@ -116,13 +123,9 @@ pub fn reconcile_now(ctx: &ActionContext) -> ActionOutcome {
 }
 
 fn run_local_reconcile(ctx: &ActionContext) -> ActionOutcome {
-    let config = match Config::load(&ctx.repo_root) {
+    let config = match load_repo_config(ctx, "reconcile") {
         Ok(c) => c,
-        Err(err) => {
-            return ActionOutcome::Error {
-                message: format!("reconcile: could not load config: {err}"),
-            }
-        }
+        Err(outcome) => return outcome,
     };
 
     match acquire_write_admission(&ctx.synrepo_dir, "reconcile") {
@@ -157,18 +160,21 @@ pub fn stop_watch(ctx: &ActionContext) -> ActionOutcome {
         }
         WatchServiceStatus::Running(state) => {
             match request_watch_control(&ctx.synrepo_dir, WatchControlRequest::Stop) {
-                Ok(WatchControlResponse::Ack { message }) => ActionOutcome::Ack {
-                    message: format!("{message} (pid {})", state.pid),
-                },
+                Ok(WatchControlResponse::Ack { message }) => {
+                    match wait_for_watch_stopped(&ctx.synrepo_dir) {
+                        Ok(()) => ActionOutcome::Ack {
+                            message: format!("{message} (pid {})", state.pid),
+                        },
+                        Err(err) => ActionOutcome::Error { message: err },
+                    }
+                }
                 Ok(WatchControlResponse::Error { message }) => ActionOutcome::Error {
                     message: format!("watch service refused stop: {message}"),
                 },
                 Ok(_) => ActionOutcome::Error {
                     message: "watch service returned an unexpected response to stop".to_string(),
                 },
-                Err(err) => ActionOutcome::Error {
-                    message: format!("stop request failed: {err}"),
-                },
+                Err(err) => recover_stop_transport_error(ctx, err, state.pid),
             }
         }
     }
@@ -180,6 +186,10 @@ pub fn stop_watch(ctx: &ActionContext) -> ActionOutcome {
 /// the CLI `synrepo watch --daemon` path the dashboard is replacing.
 pub fn start_watch_daemon(ctx: &ActionContext) -> ActionOutcome {
     use std::process::{Command, Stdio};
+
+    if let Err(outcome) = load_repo_config(ctx, "watch") {
+        return outcome;
+    }
 
     match watch_service_status(&ctx.synrepo_dir) {
         WatchServiceStatus::Running(state) => {
@@ -203,12 +213,10 @@ pub fn start_watch_daemon(ctx: &ActionContext) -> ActionOutcome {
         WatchServiceStatus::Inactive => {}
     }
 
-    let exe = match std::env::current_exe() {
-        Ok(p) => p,
-        Err(err) => {
-            return ActionOutcome::Error {
-                message: format!("could not resolve current executable: {err}"),
-            };
+    let exe = match resolve_synrepo_executable() {
+        Ok(path) => path,
+        Err(message) => {
+            return ActionOutcome::Error { message };
         }
     };
 
@@ -221,14 +229,128 @@ pub fn start_watch_daemon(ctx: &ActionContext) -> ActionOutcome {
     cmd.stdout(Stdio::null());
     cmd.stderr(Stdio::null());
     cmd.current_dir(&ctx.repo_root);
+    detach_daemon_process(&mut cmd);
 
     match cmd.spawn() {
-        Ok(child) => ActionOutcome::Ack {
-            message: format!("spawned watch daemon (pid {})", child.id()),
+        Ok(child) => match wait_for_watch_running(&ctx.synrepo_dir) {
+            Ok(()) => ActionOutcome::Ack {
+                message: format!("spawned watch daemon (pid {})", child.id()),
+            },
+            Err(err) => ActionOutcome::Error { message: err },
         },
         Err(err) => ActionOutcome::Error {
             message: format!("failed to spawn watch daemon: {err}"),
         },
+    }
+}
+
+fn wait_for_watch_running(synrepo_dir: &Path) -> Result<(), String> {
+    wait_for_watch_transition(synrepo_dir, WATCH_START_TIMEOUT, |status| match status {
+        WatchServiceStatus::Running(_) => Ok(Some(())),
+        WatchServiceStatus::Corrupt(e) => {
+            Err(format!("watch state became corrupt during startup: {e}"))
+        }
+        WatchServiceStatus::Inactive | WatchServiceStatus::Stale(_) => Ok(None),
+    })
+}
+
+fn wait_for_watch_stopped(synrepo_dir: &Path) -> Result<(), String> {
+    wait_for_watch_transition(synrepo_dir, WATCH_STOP_TIMEOUT, |status| match status {
+        WatchServiceStatus::Running(_) => Ok(None),
+        WatchServiceStatus::Inactive => Ok(Some(())),
+        WatchServiceStatus::Stale(_) | WatchServiceStatus::Corrupt(_) => {
+            cleanup_stale_watch_artifacts(synrepo_dir).map_err(|err| {
+                format!("failed to clean stale watch artifacts after stop: {err}")
+            })?;
+            Ok(Some(()))
+        }
+    })
+}
+
+fn wait_for_watch_transition<T>(
+    synrepo_dir: &Path,
+    timeout: Duration,
+    mut check: impl FnMut(WatchServiceStatus) -> Result<Option<T>, String>,
+) -> Result<T, String> {
+    let deadline = Instant::now() + timeout;
+    let mut backoff = Duration::from_millis(10);
+    loop {
+        match check(watch_service_status(synrepo_dir))? {
+            Some(done) => return Ok(done),
+            None if Instant::now() >= deadline => {
+                return Err(format!(
+                    "watch state did not settle within {} ms",
+                    timeout.as_millis()
+                ));
+            }
+            None => {
+                thread::sleep(backoff);
+                backoff = (backoff * 2).min(Duration::from_millis(50));
+            }
+        }
+    }
+}
+
+fn recover_stop_transport_error(
+    ctx: &ActionContext,
+    err: crate::pipeline::watch::WatchDaemonError,
+    pid: u32,
+) -> ActionOutcome {
+    match watch_service_status(&ctx.synrepo_dir) {
+        WatchServiceStatus::Inactive => ActionOutcome::Completed {
+            message: format!("watch service already stopped (pid {pid})"),
+        },
+        WatchServiceStatus::Stale(_) | WatchServiceStatus::Corrupt(_) => {
+            match cleanup_stale_watch_artifacts(&ctx.synrepo_dir) {
+                Ok(_) => ActionOutcome::Completed {
+                    message: format!("cleaned stale watch artifacts after daemon exit (pid {pid})"),
+                },
+                Err(cleanup_err) => ActionOutcome::Error {
+                    message: format!(
+                        "stop request failed: {err}; cleanup also failed: {cleanup_err}"
+                    ),
+                },
+            }
+        }
+        WatchServiceStatus::Running(_) => ActionOutcome::Error {
+            message: format!("stop request failed: {err}"),
+        },
+    }
+}
+
+fn load_repo_config(ctx: &ActionContext, action: &str) -> Result<Config, ActionOutcome> {
+    let local_config = ctx.synrepo_dir.join("config.toml");
+    if !local_config.exists() {
+        return Err(ActionOutcome::Error {
+            message: format!("{action}: not initialized — run `synrepo init` first"),
+        });
+    }
+    Config::load(&ctx.repo_root).map_err(|err| ActionOutcome::Error {
+        message: format!("{action}: could not load config: {err}"),
+    })
+}
+
+fn resolve_synrepo_executable() -> Result<PathBuf, String> {
+    let current = std::env::current_exe()
+        .map_err(|err| format!("could not resolve current executable: {err}"))?;
+    let Some(parent) = current.parent() else {
+        return Ok(current);
+    };
+    if parent.file_name().and_then(|name| name.to_str()) == Some("deps") {
+        if let Some(target_dir) = parent.parent() {
+            let candidate = target_dir.join(format!("synrepo{}", std::env::consts::EXE_SUFFIX));
+            if candidate.exists() {
+                return Ok(candidate);
+            }
+        }
+    }
+    Ok(current)
+}
+
+fn detach_daemon_process(command: &mut std::process::Command) {
+    #[cfg(unix)]
+    {
+        command.process_group(0);
     }
 }
 
@@ -457,5 +579,75 @@ mod tests {
             }
             other => panic!("expected Conflict, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn start_watch_daemon_on_ready_repo_acknowledges_and_observes_running() {
+        let _guard = crate::test_support::global_test_lock("tui-start-watch-daemon");
+        let dir = tempdir().unwrap();
+        init_repo(dir.path());
+        let ctx = ActionContext::new(dir.path());
+
+        let start = start_watch_daemon(&ctx);
+        assert!(matches!(start, ActionOutcome::Ack { .. }), "got {start:?}");
+        assert!(
+            matches!(
+                watch_service_status(&ctx.synrepo_dir),
+                WatchServiceStatus::Running(_)
+            ),
+            "watch should be running after start"
+        );
+
+        let stop = stop_watch(&ctx);
+        assert!(
+            matches!(
+                stop,
+                ActionOutcome::Ack { .. } | ActionOutcome::Completed { .. }
+            ),
+            "cleanup stop must succeed, got {stop:?}"
+        );
+        assert!(
+            matches!(
+                watch_service_status(&ctx.synrepo_dir),
+                WatchServiceStatus::Inactive
+            ),
+            "watch should be inactive after stop"
+        );
+    }
+
+    #[test]
+    fn start_watch_daemon_reports_conflict_when_already_running() {
+        let _guard = crate::test_support::global_test_lock("tui-start-watch-daemon");
+        let dir = tempdir().unwrap();
+        init_repo(dir.path());
+        let ctx = ActionContext::new(dir.path());
+
+        let first = start_watch_daemon(&ctx);
+        assert!(matches!(first, ActionOutcome::Ack { .. }), "got {first:?}");
+        let second = start_watch_daemon(&ctx);
+        assert!(
+            matches!(second, ActionOutcome::Conflict { .. }),
+            "second start should conflict, got {second:?}"
+        );
+
+        let stop = stop_watch(&ctx);
+        assert!(
+            matches!(
+                stop,
+                ActionOutcome::Ack { .. } | ActionOutcome::Completed { .. }
+            ),
+            "cleanup stop must succeed, got {stop:?}"
+        );
+    }
+
+    #[test]
+    fn start_watch_daemon_on_uninitialized_repo_returns_error() {
+        let dir = tempdir().unwrap();
+        let ctx = ActionContext::new(dir.path());
+        let outcome = start_watch_daemon(&ctx);
+        assert!(
+            matches!(outcome, ActionOutcome::Error { .. }),
+            "expected Error, got {outcome:?}"
+        );
     }
 }

@@ -16,6 +16,7 @@ mod setup;
 mod setup_mcp_backup;
 mod setup_synthesis;
 mod status;
+mod synthesize;
 mod upgrade;
 mod watch;
 
@@ -48,6 +49,7 @@ pub(crate) use setup::{
 pub(crate) use setup_mcp_backup::{mcp_config_has_synrepo, step_backup_mcp_config};
 pub(crate) use setup_synthesis::step_apply_synthesis;
 pub(crate) use status::{status, status_output};
+pub(crate) use synthesize::synthesize;
 #[cfg(test)]
 pub(crate) use upgrade::report_reconcile_outcome;
 pub(crate) use upgrade::upgrade;

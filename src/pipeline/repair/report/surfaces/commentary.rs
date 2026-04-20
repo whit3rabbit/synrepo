@@ -2,12 +2,24 @@ use crate::pipeline::repair::{DriftClass, RepairAction, RepairFinding, RepairSur
 
 use super::{RepairContext, SurfaceCheck};
 
-pub(super) struct CommentaryScan {
-    total: usize,
-    stale: usize,
+/// Result of scanning the commentary overlay against the current graph.
+///
+/// `total` is the number of commentary rows resolved; `stale` is how many of
+/// those rows reference a node whose current `content_hash` no longer matches
+/// the hash recorded at commentary time (or whose node could not be resolved
+/// at all).
+pub struct CommentaryScan {
+    /// Total commentary rows found in the overlay.
+    pub total: usize,
+    /// Subset of `total` whose node hash no longer matches the live graph, or
+    /// whose node could not be resolved at all.
+    pub stale: usize,
 }
 
-fn scan_commentary_staleness(synrepo_dir: &std::path::Path) -> crate::Result<CommentaryScan> {
+/// Compare every commentary row in the overlay against the live graph and
+/// return a fresh-vs-stale count. Used by both the repair surface check and
+/// the TUI Synthesis tab.
+pub fn scan_commentary_staleness(synrepo_dir: &std::path::Path) -> crate::Result<CommentaryScan> {
     use crate::core::ids::NodeId;
     use crate::pipeline::repair::commentary::resolve_commentary_node;
     use crate::store::overlay::SqliteOverlayStore;

@@ -16,6 +16,8 @@ pub enum ActiveTab {
     Live,
     /// System-health pane.
     Health,
+    /// Synthesis status, totals, and refresh actions.
+    Synthesis,
     /// Next-actions + quick-actions.
     Actions,
 }
@@ -25,6 +27,7 @@ impl fmt::Display for ActiveTab {
         match self {
             ActiveTab::Live => write!(f, "Live"),
             ActiveTab::Health => write!(f, "Health"),
+            ActiveTab::Synthesis => write!(f, "Synthesis"),
             ActiveTab::Actions => write!(f, "Actions"),
         }
     }
@@ -37,10 +40,12 @@ const PAGE_ROWS: usize = 18;
 
 impl AppState {
     /// Switch to a specific tab. Resets scroll when leaving Live so a return
-    /// visit starts pinned to the bottom.
+    /// visit starts pinned to the bottom. Also clears the synthesis folder
+    /// picker so it never survives a tab switch.
     pub fn set_tab(&mut self, tab: ActiveTab) {
         if self.active_tab != tab {
             self.active_tab = tab;
+            self.picker = None;
             if matches!(tab, ActiveTab::Live) {
                 // Re-enter Live pinned to the tail so operators always see
                 // the most recent entries on tab switch.
@@ -50,11 +55,12 @@ impl AppState {
         }
     }
 
-    /// Advance to the next tab in Live → Health → Actions → Live order.
+    /// Advance to the next tab in Live → Health → Synthesis → Actions → Live order.
     pub fn cycle_tab(&mut self) {
         let next = match self.active_tab {
             ActiveTab::Live => ActiveTab::Health,
-            ActiveTab::Health => ActiveTab::Actions,
+            ActiveTab::Health => ActiveTab::Synthesis,
+            ActiveTab::Synthesis => ActiveTab::Actions,
             ActiveTab::Actions => ActiveTab::Live,
         };
         self.set_tab(next);

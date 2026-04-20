@@ -88,11 +88,9 @@ impl Default for WatchConfig {
     }
 }
 
-enum LoopMessage {
+pub(super) enum LoopMessage {
     WatchResult(DebounceEventResult),
-    Stop {
-        respond_to: mpsc::Sender<WatchControlResponse>,
-    },
+    Stop,
     ReconcileNow {
         respond_to: mpsc::Sender<WatchControlResponse>,
     },
@@ -156,6 +154,10 @@ pub fn run_watch_service(
 
     loop {
         match rx.recv() {
+            Ok(message) if stop_flag.load(Ordering::Relaxed) => match message {
+                LoopMessage::Stop => break,
+                _ => break,
+            },
             Ok(LoopMessage::WatchResult(Ok(watcher_events))) => {
                 let filtered = filter_repo_events(watcher_events, synrepo_dir);
                 if filtered.is_empty() {
@@ -191,11 +193,7 @@ pub fn run_watch_service(
                     });
                 }
             }
-            Ok(LoopMessage::Stop { respond_to }) => {
-                stop_flag.store(true, Ordering::Relaxed);
-                let _ = respond_to.send(WatchControlResponse::Ack {
-                    message: "watch service stopping".to_string(),
-                });
+            Ok(LoopMessage::Stop) => {
                 break;
             }
             Ok(LoopMessage::ReconcileNow { respond_to }) => {
@@ -339,7 +337,7 @@ fn spawn_control_listener(
                         Ok(WatchControlRequest::Status) => WatchControlResponse::Status {
                             snapshot: state_handle.snapshot(),
                         },
-                        Ok(WatchControlRequest::Stop) => bridge_stop_request(&tx),
+                        Ok(WatchControlRequest::Stop) => bridge_stop_request(&tx, &stop_flag),
                         Ok(WatchControlRequest::ReconcileNow) => bridge_reconcile_request(&tx),
                         Err(error) => WatchControlResponse::Error {
                             message: error.to_string(),
@@ -363,19 +361,19 @@ fn spawn_control_listener(
     }))
 }
 
-fn bridge_stop_request(tx: &mpsc::Sender<LoopMessage>) -> WatchControlResponse {
-    let (respond_to, recv_from_loop) = mpsc::channel();
-    if tx.send(LoopMessage::Stop { respond_to }).is_err() {
+pub(super) fn bridge_stop_request(
+    tx: &mpsc::Sender<LoopMessage>,
+    stop_flag: &AtomicBool,
+) -> WatchControlResponse {
+    stop_flag.store(true, Ordering::Relaxed);
+    if tx.send(LoopMessage::Stop).is_err() {
         return WatchControlResponse::Error {
             message: "watch loop is no longer accepting control messages".to_string(),
         };
     }
-
-    recv_from_loop
-        .recv_timeout(Duration::from_secs(30))
-        .unwrap_or_else(|_| WatchControlResponse::Error {
-            message: "watch loop did not answer the control request in time".to_string(),
-        })
+    WatchControlResponse::Ack {
+        message: "watch service stopping".to_string(),
+    }
 }
 
 fn bridge_reconcile_request(tx: &mpsc::Sender<LoopMessage>) -> WatchControlResponse {

@@ -28,9 +28,13 @@ use crate::pipeline::repair::{DriftClass, RepairAction, RepairFinding, RepairSur
 
 /// Context for action handlers.
 pub struct ActionContext<'a> {
+    /// Repository root (absolute path).
     pub repo_root: &'a Path,
+    /// `.synrepo/` directory for the repo.
     pub synrepo_dir: &'a Path,
+    /// Loaded runtime config.
     pub config: &'a Config,
+    /// Pre-computed maintenance plan shared across repair actions.
     pub maint_plan: &'a crate::Result<crate::pipeline::maintenance::MaintenancePlan>,
 }
 
@@ -131,7 +135,7 @@ pub fn handle_actionable_finding(
                 }
             }
         }
-        RepairAction::RefreshCommentary => match refresh_commentary(context, actions_taken) {
+        RepairAction::RefreshCommentary => match refresh_commentary(context, actions_taken, None) {
             Ok(()) => repaired.push(finding.clone()),
             Err(err) => {
                 actions_taken.push(format!(
@@ -191,9 +195,14 @@ pub fn prune_dead_edges(
 }
 
 /// Refresh stale commentary entries.
+///
+/// When `scope` is `Some(paths)`, only files whose path starts with one of the
+/// prefixes is considered. Prefixes are repo-root-relative; each is normalized
+/// to end in `/` so `src` cannot spuriously match `src-extra/...`.
 pub fn refresh_commentary(
     context: &ActionContext<'_>,
     actions_taken: &mut Vec<String>,
+    scope: Option<&[std::path::PathBuf]>,
 ) -> crate::Result<()> {
     use crate::pipeline::repair::commentary::resolve_commentary_node;
 
@@ -203,9 +212,13 @@ pub fn refresh_commentary(
     let generator: Box<dyn CommentaryGenerator> =
         build_commentary_generator(context.config, context.config.commentary_cost_limit);
 
+    // Pre-normalize scope prefixes once so the hot loop only compares strings.
+    let scope_prefixes: Option<Vec<String>> = scope.map(normalize_scope_prefixes);
+
     let rows = overlay.commentary_hashes()?;
     let mut refreshed = 0usize;
     let mut skipped = 0usize;
+    let mut out_of_scope = 0usize;
 
     for (node_id_str, stored_hash) in rows {
         let Ok(node_id) = NodeId::from_str(&node_id_str) else {
@@ -216,6 +229,12 @@ pub fn refresh_commentary(
             skipped += 1;
             continue;
         };
+        if let Some(prefixes) = &scope_prefixes {
+            if !path_matches_any_prefix(&snap.file.path, prefixes) {
+                out_of_scope += 1;
+                continue;
+            }
+        }
         if snap.content_hash == stored_hash {
             continue; // already fresh
         }
@@ -243,8 +262,13 @@ pub fn refresh_commentary(
         refreshed += 1;
     }
 
+    let scope_note = if scope_prefixes.is_some() {
+        format!(", {out_of_scope} outside scope")
+    } else {
+        String::new()
+    };
     actions_taken.push(format!(
-        "commentary refresh: {refreshed} regenerated, {skipped} skipped (no hash change or no generator output)"
+        "commentary refresh: {refreshed} regenerated, {skipped} skipped (no hash change or no generator output){scope_note}"
     ));
     Ok(())
 }
@@ -401,4 +425,68 @@ fn blocked_reconcile_finding(finding: &RepairFinding, notes: String) -> RepairFi
     blocked.recommended_action = RepairAction::ManualReview;
     blocked.notes = Some(notes);
     blocked
+}
+
+/// Convert scope `PathBuf`s into `/`-normalized, trailing-slash-terminated
+/// string prefixes so a prefix-match cannot spuriously accept sibling
+/// directories (`src` matching `src-extra/...`).
+pub(crate) fn normalize_scope_prefixes(paths: &[std::path::PathBuf]) -> Vec<String> {
+    paths
+        .iter()
+        .map(|p| {
+            let mut s = p.to_string_lossy().replace('\\', "/");
+            if !s.is_empty() && !s.ends_with('/') {
+                s.push('/');
+            }
+            s
+        })
+        .collect()
+}
+
+/// True if `file_path` (stored as recorded in the graph, possibly with
+/// backslashes on Windows) starts with any of the normalized prefixes.
+pub(crate) fn path_matches_any_prefix(file_path: &str, prefixes: &[String]) -> bool {
+    let normalized = file_path.replace('\\', "/");
+    prefixes.iter().any(|p| normalized.starts_with(p.as_str()))
+}
+
+#[cfg(test)]
+mod scope_tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn prefix_is_terminated_with_slash() {
+        let prefixes = normalize_scope_prefixes(&[PathBuf::from("src")]);
+        assert_eq!(prefixes, vec!["src/".to_string()]);
+    }
+
+    #[test]
+    fn prefix_sibling_does_not_match() {
+        let prefixes = normalize_scope_prefixes(&[PathBuf::from("src")]);
+        assert!(path_matches_any_prefix("src/lib.rs", &prefixes));
+        assert!(!path_matches_any_prefix("src-extra/lib.rs", &prefixes));
+    }
+
+    #[test]
+    fn backslash_paths_match_forward_slash_prefix() {
+        let prefixes = normalize_scope_prefixes(&[PathBuf::from("src")]);
+        assert!(path_matches_any_prefix("src\\lib.rs", &prefixes));
+    }
+
+    #[test]
+    fn empty_scope_matches_nothing() {
+        let prefixes = normalize_scope_prefixes(&[]);
+        assert!(!path_matches_any_prefix("src/lib.rs", &prefixes));
+    }
+
+    #[test]
+    fn nested_prefix_match() {
+        let prefixes = normalize_scope_prefixes(&[PathBuf::from("crates/core/src")]);
+        assert!(path_matches_any_prefix("crates/core/src/lib.rs", &prefixes));
+        assert!(!path_matches_any_prefix(
+            "crates/core/tests/a.rs",
+            &prefixes
+        ));
+    }
 }

@@ -22,6 +22,8 @@ pub struct FooterWidget<'a> {
     /// Transient message rendered in place of the hint row (e.g.
     /// "Refreshed: N files, M symbols").
     pub toast: Option<&'a str>,
+    /// Poll-mode watch toggle label, when the dashboard exposes `w`.
+    pub watch_toggle_label: Option<&'a str>,
 }
 
 /// A hint group (label + key) with a priority used to drop low-value hints
@@ -63,7 +65,7 @@ impl FooterWidget<'_> {
             priority: 0,
             spans: vec![
                 Span::styled(" tabs ", self.theme.muted_style()),
-                Span::styled("[Tab/1/2/3]", self.theme.agent_style()),
+                Span::styled("[Tab/1/2/3/4]", self.theme.agent_style()),
             ],
         });
         if matches!(self.active, ActiveTab::Live) {
@@ -103,13 +105,16 @@ impl FooterWidget<'_> {
                 Span::styled("[r]", self.theme.agent_style()),
             ],
         });
-        groups.push(HintGroup {
-            priority: 2,
-            spans: vec![
-                Span::styled("  watch ", self.theme.muted_style()),
-                Span::styled("[w]", self.theme.agent_style()),
-            ],
-        });
+        if let Some(label) = self.watch_toggle_label {
+            groups.push(HintGroup {
+                priority: 2,
+                spans: vec![
+                    Span::styled("  watch ", self.theme.muted_style()),
+                    Span::styled("[w] ", self.theme.agent_style()),
+                    Span::styled(label.to_string(), self.theme.base_style()),
+                ],
+            });
+        }
         groups.push(HintGroup {
             priority: 4,
             spans: vec![
@@ -166,13 +171,18 @@ mod tests {
     use super::*;
     use crate::tui::theme::Theme;
 
-    fn footer(active: ActiveTab, follow: bool) -> (Vec<HintGroup>, Theme) {
+    fn footer(
+        active: ActiveTab,
+        follow: bool,
+        watch_toggle_label: Option<&str>,
+    ) -> (Vec<HintGroup>, Theme) {
         let theme = Theme::plain();
         let widget = FooterWidget {
             active,
             follow_mode: follow,
             theme: &theme,
             toast: None,
+            watch_toggle_label,
         };
         (widget.build_hints(), theme)
     }
@@ -183,13 +193,13 @@ mod tests {
 
     #[test]
     fn wide_terminal_keeps_every_hint() {
-        let (groups, _) = footer(ActiveTab::Live, true);
+        let (groups, _) = footer(ActiveTab::Live, true, Some("stop"));
         let spans = fit_groups(groups, 200);
         let text = rendered_text(&spans);
         assert!(text.contains("scroll"));
         assert!(text.contains("follow"));
         assert!(text.contains("refresh"));
-        assert!(text.contains("watch"));
+        assert!(text.contains("watch") && text.contains("stop"));
         assert!(text.contains("integration"));
         assert!(text.ends_with("[q]"));
     }
@@ -198,7 +208,7 @@ mod tests {
     fn narrow_terminal_preserves_quit_hint() {
         for active in [ActiveTab::Live, ActiveTab::Health, ActiveTab::Actions] {
             for width in [40usize, 50, 60, 70, 80] {
-                let (groups, _) = footer(active, false);
+                let (groups, _) = footer(active, false, Some("start"));
                 let spans = fit_groups(groups, width);
                 let text = rendered_text(&spans);
                 assert!(
@@ -216,7 +226,7 @@ mod tests {
 
     #[test]
     fn narrow_live_drops_scroll_before_follow() {
-        let (groups, _) = footer(ActiveTab::Live, true);
+        let (groups, _) = footer(ActiveTab::Live, true, Some("stop"));
         // 80 cols should not fit scroll+follow+all, but should keep follow.
         let spans = fit_groups(groups, 80);
         let text = rendered_text(&spans);
@@ -238,6 +248,7 @@ mod tests {
             follow_mode: false,
             theme: &theme,
             toast: Some("Refreshed: 12 files, 34 symbols"),
+            watch_toggle_label: Some("stop"),
         };
         let area = Rect::new(0, 0, 80, 1);
         let mut buf = Buffer::empty(area);
@@ -259,7 +270,7 @@ mod tests {
         // width below that, fit_groups still returns them (ratatui clamps the
         // remainder visually); we just verify the non-essential groups are
         // all dropped.
-        let (groups, _) = footer(ActiveTab::Live, false);
+        let (groups, _) = footer(ActiveTab::Live, false, Some("start"));
         let spans = fit_groups(groups, 30);
         let text = rendered_text(&spans);
         assert!(text.contains("tabs"));
@@ -269,5 +280,13 @@ mod tests {
         assert!(!text.contains("integration"));
         let visible: usize = spans.iter().map(|s| s.width()).sum();
         assert!(visible <= 30, "visible={visible} text={text:?}");
+    }
+
+    #[test]
+    fn omits_watch_hint_when_toggle_is_unavailable() {
+        let (groups, _) = footer(ActiveTab::Health, false, None);
+        let spans = fit_groups(groups, 200);
+        let text = rendered_text(&spans);
+        assert!(!text.contains("watch"));
     }
 }

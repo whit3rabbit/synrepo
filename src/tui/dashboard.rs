@@ -23,7 +23,8 @@ use crate::tui::probe::{
 };
 use crate::tui::theme::Theme;
 use crate::tui::widgets::{
-    ActionsTabWidget, DashboardTabsWidget, FooterWidget, HeaderWidget, HealthWidget, LiveFeedWidget,
+    ActionsTabWidget, DashboardTabsWidget, FooterWidget, HeaderWidget, HealthWidget,
+    LiveFeedWidget, LogEntry, SynthesisTabWidget,
 };
 
 /// Terminal alias used by the render loop.
@@ -42,11 +43,12 @@ pub fn run_poll_dashboard(
     theme: Theme,
     welcome_banner: bool,
     events_rx: Option<Receiver<WatchEvent>>,
+    startup_logs: Vec<LogEntry>,
 ) -> anyhow::Result<DashboardExit> {
     let mut terminal = enter_tui()?;
     let mut state = match events_rx {
         Some(rx) => AppState::new_live(repo_root, theme, integration, rx),
-        None => AppState::new_poll(repo_root, theme, integration),
+        None => AppState::new_poll_with_logs(repo_root, theme, integration, startup_logs),
     };
     if welcome_banner {
         state.push_welcome_banner();
@@ -142,6 +144,14 @@ fn draw_dashboard(frame: &mut ratatui::Frame, state: &AppState) {
             };
             frame.render_widget(health, content_area);
         }
+        ActiveTab::Synthesis => {
+            let synthesis = SynthesisTabWidget {
+                snapshot: &state.snapshot,
+                picker: state.picker.as_ref(),
+                theme: &state.theme,
+            };
+            frame.render_widget(synthesis, content_area);
+        }
         ActiveTab::Actions => {
             let next_actions = build_next_actions(&state.snapshot, &state.integration);
             let actions = ActionsTabWidget {
@@ -159,6 +169,7 @@ fn draw_dashboard(frame: &mut ratatui::Frame, state: &AppState) {
         follow_mode: state.follow_mode,
         theme: &state.theme,
         toast: state.active_toast(),
+        watch_toggle_label: state.watch_toggle_label(),
     };
     frame.render_widget(footer, outer[3]);
 }

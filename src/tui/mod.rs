@@ -23,7 +23,11 @@ use std::path::Path;
 
 use crate::bootstrap::runtime_probe::{probe, AgentIntegration, Missing};
 use crate::config::Mode;
+use crate::pipeline::watch::{watch_service_status, WatchServiceStatus};
+use crate::tui::actions::{outcome_to_log, start_watch_daemon, ActionContext, ActionOutcome};
+use crate::tui::widgets::LogEntry;
 
+pub use self::app::SynthesizeMode;
 pub use self::wizard::{
     CloudCredentialSource, IntegrationPlan, IntegrationWizardOutcome, RepairPlan,
     RepairWizardOutcome, SetupPlan, SetupWizardOutcome, SynthesisChoice, SynthesisWizardSupport,
@@ -83,6 +87,14 @@ pub enum TuiOutcome {
     /// The caller should run `run_integration_wizard` and — on successful
     /// completion — re-open the dashboard.
     LaunchIntegrationRequested,
+    /// Dashboard exited with a request to launch the synthesis setup wizard.
+    /// The caller should run `run_synthesis_only_wizard` and then re-open the
+    /// dashboard.
+    LaunchSynthesisSetupRequested,
+    /// Dashboard exited with a request to run `synrepo synthesize` with the
+    /// given scope. The caller should invoke the command function directly and
+    /// then re-open the dashboard so the new snapshot is visible.
+    RunSynthesizeRequested(SynthesizeMode),
 }
 
 /// Open the poll-mode dashboard on a ready repo. See `run_live_watch_dashboard`
@@ -101,11 +113,36 @@ pub fn run_dashboard(
     }
     let opts = opts.into();
     let theme = theme::Theme::from_no_color(opts.no_color);
-    let intent =
-        dashboard::run_poll_dashboard(repo_root, integration, theme, opts.welcome_banner, None)?;
+    let startup_logs = ensure_watch_daemon_for_dashboard(repo_root);
+    let intent = dashboard::run_poll_dashboard(
+        repo_root,
+        integration,
+        theme,
+        opts.welcome_banner,
+        None,
+        startup_logs,
+    )?;
     match intent {
         app::DashboardExit::Quit => Ok(TuiOutcome::Exited),
         app::DashboardExit::LaunchIntegration => Ok(TuiOutcome::LaunchIntegrationRequested),
+        app::DashboardExit::LaunchSynthesisSetup => Ok(TuiOutcome::LaunchSynthesisSetupRequested),
+        app::DashboardExit::RunSynthesize(mode) => Ok(TuiOutcome::RunSynthesizeRequested(mode)),
+    }
+}
+
+fn ensure_watch_daemon_for_dashboard(repo_root: &Path) -> Vec<LogEntry> {
+    let ctx = ActionContext::new(repo_root);
+    match watch_service_status(&ctx.synrepo_dir) {
+        WatchServiceStatus::Running(_) => Vec::new(),
+        WatchServiceStatus::Inactive
+        | WatchServiceStatus::Stale(_)
+        | WatchServiceStatus::Corrupt(_) => {
+            let outcome = start_watch_daemon(&ctx);
+            match outcome {
+                ActionOutcome::Error { .. } => vec![outcome_to_log("watch", &outcome)],
+                _ => Vec::new(),
+            }
+        }
     }
 }
 
@@ -331,6 +368,7 @@ mod live {
             theme,
             false,
             Some(event_rx),
+            Vec::new(),
         )?;
 
         // Dashboard has exited. Stop the service.
@@ -348,6 +386,8 @@ mod live {
         match intent {
             DashboardExit::Quit => Ok(TuiOutcome::Exited),
             DashboardExit::LaunchIntegration => Ok(TuiOutcome::LaunchIntegrationRequested),
+            DashboardExit::LaunchSynthesisSetup => Ok(TuiOutcome::LaunchSynthesisSetupRequested),
+            DashboardExit::RunSynthesize(mode) => Ok(TuiOutcome::RunSynthesizeRequested(mode)),
         }
     }
 }
@@ -453,5 +493,99 @@ mod tests {
         )
         .expect("short-circuit is infallible");
         assert_eq!(outcome, IntegrationWizardOutcome::NonTty);
+    }
+
+    #[test]
+    fn ensure_watch_daemon_starts_watch_for_ready_repo_without_log_noise() {
+        let _guard = crate::test_support::global_test_lock("tui-ensure-watch-daemon");
+        let tempdir = tempfile::tempdir().unwrap();
+        crate::bootstrap::bootstrap(tempdir.path(), None, false).expect("bootstrap");
+
+        let logs = ensure_watch_daemon_for_dashboard(tempdir.path());
+        assert!(
+            logs.is_empty(),
+            "successful auto-start should not seed an error log: {logs:?}"
+        );
+        let ctx = crate::tui::actions::ActionContext::new(tempdir.path());
+        assert!(
+            matches!(
+                watch_service_status(&ctx.synrepo_dir),
+                WatchServiceStatus::Running(_)
+            ),
+            "watch should be running after auto-start"
+        );
+
+        let stop = crate::tui::actions::stop_watch(&ctx);
+        assert!(
+            matches!(
+                stop,
+                crate::tui::actions::ActionOutcome::Ack { .. }
+                    | crate::tui::actions::ActionOutcome::Completed { .. }
+            ),
+            "cleanup stop must succeed, got {stop:?}"
+        );
+    }
+
+    #[test]
+    fn ensure_watch_daemon_preserves_existing_running_service() {
+        let _guard = crate::test_support::global_test_lock("tui-ensure-watch-daemon");
+        let tempdir = tempfile::tempdir().unwrap();
+        crate::bootstrap::bootstrap(tempdir.path(), None, false).expect("bootstrap");
+        let ctx = crate::tui::actions::ActionContext::new(tempdir.path());
+        let start = crate::tui::actions::start_watch_daemon(&ctx);
+        assert!(
+            matches!(start, crate::tui::actions::ActionOutcome::Ack { .. }),
+            "setup start must succeed, got {start:?}"
+        );
+
+        let before_pid = match watch_service_status(&ctx.synrepo_dir) {
+            WatchServiceStatus::Running(state) => state.pid,
+            other => panic!("expected running watch before second ensure, got {other:?}"),
+        };
+        let logs = ensure_watch_daemon_for_dashboard(tempdir.path());
+        assert!(
+            logs.is_empty(),
+            "existing watch should not emit startup logs"
+        );
+        let after_pid = match watch_service_status(&ctx.synrepo_dir) {
+            WatchServiceStatus::Running(state) => state.pid,
+            other => panic!("expected running watch after second ensure, got {other:?}"),
+        };
+        assert_eq!(
+            before_pid, after_pid,
+            "ensure must not replace the running daemon"
+        );
+
+        let stop = crate::tui::actions::stop_watch(&ctx);
+        assert!(
+            matches!(
+                stop,
+                crate::tui::actions::ActionOutcome::Ack { .. }
+                    | crate::tui::actions::ActionOutcome::Completed { .. }
+            ),
+            "cleanup stop must succeed, got {stop:?}"
+        );
+    }
+
+    #[test]
+    fn ensure_watch_daemon_returns_blocked_startup_log_on_failure() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let logs = ensure_watch_daemon_for_dashboard(tempdir.path());
+        assert_eq!(
+            logs.len(),
+            1,
+            "failed auto-start should seed one startup log"
+        );
+        let entry = &logs[0];
+        assert_eq!(entry.tag, "watch");
+        assert!(matches!(
+            entry.severity,
+            crate::tui::probe::Severity::Blocked
+        ));
+        assert!(
+            entry.message.contains("not initialized"),
+            "startup log should explain the failure: {:?}",
+            entry.message
+        );
     }
 }
