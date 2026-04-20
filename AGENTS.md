@@ -50,6 +50,8 @@ cargo run -- watch --daemon        # detached per-repo watch service
 cargo run -- watch status          # watch ownership and reconcile telemetry
 cargo run -- watch stop            # stop active watch service or clean stale watch artifacts
 cargo run -- agent-setup <tool>    # write integration shim; automated tier (writes shim + MCP config): claude, codex, open-code, cursor, windsurf, roo; shim-only tier (writes shim only): copilot, generic, gemini, goose, kiro, qwen, junie, tabnine, trae; --regen to update if stale
+cargo run -- setup                 # full onboarding: interactive TUI wizard (mode + agent target + synthesis)
+cargo run -- setup <tool>          # full onboarding: scripted (init + shim + MCP register + first reconcile); --synthesis appends the synthesis sub-wizard
 cargo run -- search <query>        # lexical search
 cargo run -- graph query "outbound <node_id> [edge_kind]"  # graph traversal
 cargo run -- graph stats           # node/edge counts
@@ -87,7 +89,7 @@ Files must stay under 400 lines; split into sub-modules before they grow past th
 
 **2. Structure** (`src/structure/`) — The canonical graph of directly-observed facts only.
 - `graph/` — node types (`FileNode`, `SymbolNode`, `ConceptNode`), `EdgeKind`, `SymbolKind`, `Epistemic` (invariant comment in `epistemic.rs`), `GraphStore` trait
-- `parse.rs` — tree-sitter parsers for Rust, Python, TypeScript/TSX; extracts `ExtractedSymbol` and `ExtractedEdge` records
+- `parse/` — tree-sitter parsers for Rust, Python, TypeScript/TSX, and Go; extracts `ExtractedSymbol` and `ExtractedEdge` records (see `Adding a new language` below)
 - `prose.rs` — markdown concept extractor; produces `ConceptNode` from human-authored files in concept directories
 - `identity.rs` — rename detection cascade (5 steps: content-hash, split, merge, git rename, breakage)
 - `drift.rs` — per-edge drift scoring via Jaccard distance on persisted structural fingerprints
@@ -126,7 +128,7 @@ Node types: `FileNode` (content-hash identity), `SymbolNode` (tree-sitter extrac
 - `.synrepo/graph/nodes.db` — symbols table includes `body_hash` column (indexed) alongside JSON blob
 - `.synrepo/overlay/` — overlay SQLite store (never mixed with graph)
 - `.synrepo/index/` — syntext lexical index
-- `.synrepo/config.toml` — runtime config (`Config` struct in `src/config.rs`)
+- `.synrepo/config.toml` — runtime config (`Config` struct in `src/config/mod.rs`)
 - `.synrepo/.gitignore` — gitignores everything in `.synrepo/` except `config.toml` and `.gitignore`
 - `.synrepo/state/writer.lock` — process-level write lock (PID + timestamp); held during each actual runtime mutation, including watch-triggered reconcile passes
 - `.synrepo/state/watch-daemon.json` — per-repo watch lease plus owner/telemetry snapshot for `synrepo watch`
@@ -211,22 +213,20 @@ Stages 4–8:
 - **`src/bin/cli_support/agent_shims/` is a sub-module directory** — the canonical agent-doctrine text lives in `doctrine.rs` as a `doctrine_block!()` macro that every shim in `shims.rs` embeds via `concat!`. Edits to shim copy that touch escalation rules, do-not rules, or the product-boundary paragraph MUST go through `doctrine_block!`; the byte-identical test in `tests.rs` (`every_shim_embeds_doctrine_block`) enforces this. The escalation-line source-scan test reads `src/bin/cli_support/commands/mcp.rs` — do not move the MCP tool registration out of that file without updating the test path. Edit target-specific sections (tool list framing, CLI fallback examples, file paths) directly in `shims.rs`.
 - **Shim output paths have three sync sites.** `AgentTool::output_path()` in `src/bin/cli_support/agent_shims/mod.rs` is canonical, but `shim_output_path()` in `src/bootstrap/runtime_probe.rs` duplicates the match (library can't import bin-private modules), and `KNOWN_SHIM_PATHS` in `src/bootstrap/report.rs` drives the doctrine-pointer lookup. Changing a shim path requires all three.
 - **`openspec/changes/archive/` is historical.** Do not edit archived proposals/specs/tasks when updating path references or API shapes — only living specs under `openspec/specs/` and runtime code.
-- **`src/structure/parse/extract/` is a sub-module directory** (`mod.rs` ~318 lines, `qualname.rs` ~59 lines) — do not add more code to `mod.rs` without splitting further. **Over-limit (split before adding):**
-  - `src/store/overlay/cross_links.rs` (972) — split into cross_links/ submodule
-  - `src/surface/card/compiler/neighborhood/` (refactored from 688-line single file)
-  - `src/pipeline/synthesis/cross_link/triage.rs` (651)
-  - `src/pipeline/repair/sync.rs` (650)
+- **`src/structure/parse/extract/` is a sub-module directory** (`mod.rs` ~363 lines, `qualname.rs` ~88 lines) — do not add more code to `mod.rs` without splitting further. **Over-limit (split before adding):**
+  - `src/pipeline/watch/lease.rs` (651)
   - `src/pipeline/maintenance.rs` (622)
-  - `src/bin/cli_support/commands/status.rs` (622)
-  - `src/store/overlay/tests.rs` (614) — test file
-  - `src/store/sqlite/ops/` (refactored from 590-line single file)
-  - `src/substrate/embedding/index.rs` (571)
   - `src/pipeline/compact.rs` (563)
-  - `src/pipeline/diagnostics.rs` (534)
+  - `src/pipeline/diagnostics.rs` (540)
+  - `src/substrate/embedding/index.rs` (535)
+  - `src/config/mod.rs` (528)
   - `src/structure/identity.rs` (517)
-  - `src/pipeline/structural/stages.rs` (500)
-  - `src/pipeline/watch/lease.rs` (460)
-  **Watchlist (approaching limit):** `src/surface/card/git.rs` (446), `src/pipeline/recent_activity/mod.rs` (364), `src/bin/cli_support/cli_args.rs` (369), `src/surface/card/compiler/call_path.rs` (358), `src/structure/graph/store.rs` (349), `src/config.rs` (345)
+  - `src/pipeline/structural/stages.rs` (501)
+  - `src/pipeline/synthesis/cross_link/triage/deterministic.rs` (470)
+  - `src/bin/cli_support/commands/status/mod.rs` (453)
+  - `src/surface/card/git.rs` (446)
+  - `src/bin/cli_support/cli_args.rs` (434)
+  **Watchlist (approaching limit):** `src/structure/graph/store.rs` (369), `src/pipeline/recent_activity/mod.rs` (364), `src/surface/card/compiler/call_path.rs` (358)
 - **`src/bin/cli_support/commands/links/accept.rs` owns the curated `links accept` 3-phase commit path** and the debug-only crash failpoints used by the soak suite. Keep `SYNREPO_TEST_CRASH_AT=links_accept:after_pending` and `links_accept:after_graph_insert` test-only, and prefer extending the submodule instead of growing `commands/links.rs` again.
 - **`src/test_support.rs` holds the hidden cross-process test lock helper** used to serialize a few mutation-heavy tests across both lib and bin test binaries. Keep it test-only and use it sparingly for real contention flakes, not as a substitute for fixing product code.
 - **`signature` and `doc_comment` are populated** by `src/structure/parse/extract/mod.rs` for Rust (`///` line comments, declaration up to `{`/`;`), Python (docstring, `def` line up to `:`), and TypeScript/TSX (JSDoc `/** */`, declaration up to `{`). These fields are safe to use in all three languages.
@@ -284,7 +284,7 @@ Stages 4–8:
 
 The synthesis pipeline supports multiple LLM providers for commentary and cross-link generation.
 
-**Disabled by default.** Synthesis is off even when provider API keys are present in the environment, so `synrepo` never silently consumes keys set for unrelated tools. Enable it via `[synthesis]` in `.synrepo/config.toml` or `synrepo setup --synthesis`.
+**Disabled by default.** Synthesis is off even when provider API keys are present in the environment, so `synrepo` never silently consumes keys set for unrelated tools. Enable it via `[synthesis]` in `.synrepo/config.toml`, by running `synrepo setup` (the interactive wizard configures it), or by passing `synrepo setup <tool> --synthesis` (scripted flow + synthesis sub-wizard).
 
 | Provider | Env var | Default model | API key |
 |----------|---------|---------------|---------|

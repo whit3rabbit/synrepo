@@ -188,6 +188,7 @@ fn write_status_text(out: &mut String, snapshot: &StatusSnapshot, full: bool) {
     if let Some(totals) = &snapshot.synthesis_totals {
         let total_calls = totals.calls + totals.failures + totals.budget_blocked;
         if total_calls > 0 {
+            let openrouter_live = openrouter_live_pricing_used(totals);
             let est = if totals.any_estimated { " (est.)" } else { "" };
             let cost = if totals.any_unpriced {
                 format!("${:.4} + unpriced", totals.usd_cost)
@@ -202,7 +203,7 @@ fn write_status_text(out: &mut String, snapshot: &StatusSnapshot, full: bool) {
                 totals.output_tokens,
                 est,
                 cost,
-                synrepo::pipeline::synthesis::pricing::LAST_UPDATED
+                synrepo::pipeline::synthesis::pricing::pricing_basis_label(openrouter_live)
             )
             .unwrap();
             if totals.failures > 0 || totals.budget_blocked > 0 {
@@ -340,6 +341,10 @@ fn write_status_json(out: &mut String, snapshot: &StatusSnapshot) -> anyhow::Res
             "usd_cost": t.usd_cost,
             "any_estimated": t.any_estimated,
             "any_unpriced": t.any_unpriced,
+            "openrouter_live_pricing_used": openrouter_live_pricing_used(t),
+            "pricing_basis": synrepo::pipeline::synthesis::pricing::pricing_basis_label(
+                openrouter_live_pricing_used(t)
+            ),
             "pricing_last_updated": synrepo::pipeline::synthesis::pricing::LAST_UPDATED,
             "per_provider": t.per_provider,
         })),
@@ -350,6 +355,16 @@ fn write_status_json(out: &mut String, snapshot: &StatusSnapshot) -> anyhow::Res
 
     writeln!(out, "{}", serde_json::to_string_pretty(&output)?).unwrap();
     Ok(())
+}
+
+fn openrouter_live_pricing_used(
+    totals: &synrepo::pipeline::synthesis::accounting::SynthesisTotals,
+) -> bool {
+    totals
+        .per_provider
+        .get("openrouter")
+        .and_then(|provider| provider.usd_cost)
+        .is_some()
 }
 
 fn commentary_json(coverage: &CommentaryCoverage) -> serde_json::Value {

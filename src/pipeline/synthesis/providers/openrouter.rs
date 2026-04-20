@@ -15,7 +15,8 @@ use crate::pipeline::synthesis::telemetry::{publish_budget_blocked, CallCtx, Syn
 use crate::pipeline::synthesis::{CommentaryEntry, CommentaryGenerator, CrossLinkGenerator};
 
 use super::http::{
-    build_client, cap_output_bytes, estimate_tokens, post_json_strict, resolve_usage,
+    build_client, cap_output_bytes, estimate_tokens, get_json_strict, post_json_strict,
+    resolve_usage, UsageResolution,
 };
 
 const PROVIDER: &str = "openrouter";
@@ -24,6 +25,7 @@ const PROVIDER: &str = "openrouter";
 pub const DEFAULT_MODEL: &str = "google/gemma-4-31b-it:free";
 
 const API_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
+const GENERATION_URL: &str = "https://openrouter.ai/api/v1/generation";
 const PASS_ID: &str = "commentary-v1-openrouter";
 const CROSS_LINK_PASS_ID: &str = "cross-link-v1-openrouter";
 
@@ -102,16 +104,6 @@ impl CommentaryGenerator for OpenRouterCommentaryGenerator {
             }
         };
 
-        let usage = resolve_usage(
-            parsed
-                .usage
-                .as_ref()
-                .filter(|u| u.prompt_tokens > 0 || u.completion_tokens > 0)
-                .map(|u| (u.prompt_tokens, u.completion_tokens)),
-            context,
-            estimated_tokens,
-        );
-
         let text = parsed
             .choices
             .into_iter()
@@ -120,7 +112,28 @@ impl CommentaryGenerator for OpenRouterCommentaryGenerator {
             .map(|s| s.trim().to_string())
             .unwrap_or_default();
 
-        ctx.complete(usage, cap_output_bytes(&text));
+        let generation_stats = parsed
+            .id
+            .as_deref()
+            .and_then(|id| fetch_generation_stats(&self.client, &headers, id));
+        let usage = resolve_usage(UsageResolution::from_output_text(
+            parsed
+                .usage
+                .as_ref()
+                .filter(|u| u.prompt_tokens > 0 || u.completion_tokens > 0)
+                .map(|u| (u.prompt_tokens, u.completion_tokens))
+                .or_else(|| {
+                    generation_stats
+                        .as_ref()
+                        .and_then(GenerationStats::usage_pair)
+                }),
+            estimated_tokens,
+            &text,
+        ));
+        let billed_usd_cost = generation_stats
+            .as_ref()
+            .and_then(GenerationStats::billed_cost);
+        ctx.complete_with_cost(usage, billed_usd_cost, cap_output_bytes(&text));
 
         if text.is_empty() {
             return Ok(None);
@@ -236,16 +249,28 @@ impl OpenRouterCrossLinkGenerator {
             .and_then(|c| c.message.content)
             .unwrap_or_default();
 
-        let usage = resolve_usage(
+        let generation_stats = parsed
+            .id
+            .as_deref()
+            .and_then(|id| fetch_generation_stats(&self.client, &headers, id));
+        let usage = resolve_usage(UsageResolution::from_output_text(
             parsed
                 .usage
                 .as_ref()
                 .filter(|u| u.prompt_tokens > 0 || u.completion_tokens > 0)
-                .map(|u| (u.prompt_tokens, u.completion_tokens)),
-            &prompt,
+                .map(|u| (u.prompt_tokens, u.completion_tokens))
+                .or_else(|| {
+                    generation_stats
+                        .as_ref()
+                        .and_then(GenerationStats::usage_pair)
+                }),
             estimated_tokens,
-        );
-        ctx.complete(usage, cap_output_bytes(&text));
+            &text,
+        ));
+        let billed_usd_cost = generation_stats
+            .as_ref()
+            .and_then(GenerationStats::billed_cost);
+        ctx.complete_with_cost(usage, billed_usd_cost, cap_output_bytes(&text));
 
         let spans: SpanPayload = match serde_json::from_str(text.trim()) {
             Ok(s) => s,
@@ -350,6 +375,8 @@ struct ChatMessage<'a> {
 
 #[derive(Deserialize)]
 struct ChatResponse {
+    #[serde(default)]
+    id: Option<String>,
     choices: Vec<Choice>,
     #[serde(default)]
     usage: Option<OpenRouterUsage>,
@@ -361,6 +388,34 @@ struct OpenRouterUsage {
     prompt_tokens: u32,
     #[serde(default)]
     completion_tokens: u32,
+}
+
+#[derive(Deserialize)]
+struct GenerationStats {
+    #[serde(default)]
+    total_cost: Option<f64>,
+    #[serde(default)]
+    cost: Option<f64>,
+    #[serde(default)]
+    native_tokens_prompt: Option<u32>,
+    #[serde(default)]
+    native_tokens_completion: Option<u32>,
+    #[serde(default)]
+    tokens_prompt: Option<u32>,
+    #[serde(default)]
+    tokens_completion: Option<u32>,
+}
+
+impl GenerationStats {
+    fn usage_pair(&self) -> Option<(u32, u32)> {
+        self.native_tokens_prompt
+            .zip(self.native_tokens_completion)
+            .or_else(|| self.tokens_prompt.zip(self.tokens_completion))
+    }
+
+    fn billed_cost(&self) -> Option<f64> {
+        self.total_cost.or(self.cost)
+    }
 }
 
 #[derive(Deserialize)]
@@ -391,6 +446,15 @@ struct RawSpan {
 
 fn default_lcs() -> f32 {
     1.0
+}
+
+fn fetch_generation_stats(
+    client: &reqwest::blocking::Client,
+    headers: &[(&str, &str)],
+    generation_id: &str,
+) -> Option<GenerationStats> {
+    let url = format!("{GENERATION_URL}?id={generation_id}");
+    get_json_strict(client, &url, headers).ok()
 }
 
 #[cfg(test)]

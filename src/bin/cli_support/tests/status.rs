@@ -4,6 +4,7 @@ use synrepo::bootstrap::bootstrap;
 use synrepo::config::Config;
 use synrepo::core::ids::{FileNodeId, NodeId, SymbolNodeId};
 use synrepo::overlay::{CommentaryEntry, CommentaryProvenance, OverlayStore};
+use synrepo::pipeline::synthesis::accounting::{self, ProviderTotals, SynthesisTotals};
 use synrepo::pipeline::writer::{writer_lock_path, WriterOwnership};
 use synrepo::store::overlay::SqliteOverlayStore;
 use tempfile::tempdir;
@@ -37,6 +38,16 @@ fn write_malformed_config(repo: &std::path::Path) {
     let synrepo_dir = Config::synrepo_dir(repo);
     std::fs::create_dir_all(&synrepo_dir).unwrap();
     std::fs::write(synrepo_dir.join("config.toml"), "not = valid = toml").unwrap();
+}
+
+fn write_synthesis_totals(repo: &std::path::Path, totals: &SynthesisTotals) {
+    let synrepo_dir = Config::synrepo_dir(repo);
+    std::fs::create_dir_all(synrepo_dir.join("state")).unwrap();
+    std::fs::write(
+        accounting::totals_path(&synrepo_dir),
+        serde_json::to_vec_pretty(totals).unwrap(),
+    )
+    .unwrap();
 }
 
 #[test]
@@ -111,6 +122,94 @@ fn status_reports_graph_counts_after_bootstrap() {
     assert!(
         text.contains("1 files  1 symbols  1 concepts"),
         "expected graph counts line, got: {text}"
+    );
+}
+
+#[test]
+fn status_json_reports_static_pricing_basis_without_openrouter_live_cost() {
+    let repo = tempdir().unwrap();
+    seed_graph(repo.path());
+
+    write_synthesis_totals(
+        repo.path(),
+        &SynthesisTotals {
+            calls: 1,
+            input_tokens: 120,
+            output_tokens: 30,
+            per_provider: std::iter::once((
+                "openai".to_string(),
+                ProviderTotals {
+                    calls: 1,
+                    input_tokens: 120,
+                    output_tokens: 30,
+                    usd_cost: Some(0.001),
+                },
+            ))
+            .collect(),
+            ..SynthesisTotals::default()
+        },
+    );
+
+    let json: serde_json::Value = serde_json::from_str(
+        status_output(repo.path(), true, false, false)
+            .unwrap()
+            .trim(),
+    )
+    .unwrap();
+    assert_eq!(
+        json["synthesis_totals"]["openrouter_live_pricing_used"],
+        serde_json::json!(false)
+    );
+    assert_eq!(
+        json["synthesis_totals"]["pricing_basis"],
+        serde_json::json!(format!(
+            "static table as of {}",
+            synrepo::pipeline::synthesis::pricing::LAST_UPDATED
+        ))
+    );
+}
+
+#[test]
+fn status_json_reports_live_openrouter_pricing_basis_when_openrouter_cost_present() {
+    let repo = tempdir().unwrap();
+    seed_graph(repo.path());
+
+    write_synthesis_totals(
+        repo.path(),
+        &SynthesisTotals {
+            calls: 2,
+            input_tokens: 300,
+            output_tokens: 90,
+            per_provider: std::iter::once((
+                "openrouter".to_string(),
+                ProviderTotals {
+                    calls: 2,
+                    input_tokens: 300,
+                    output_tokens: 90,
+                    usd_cost: Some(0.0025),
+                },
+            ))
+            .collect(),
+            ..SynthesisTotals::default()
+        },
+    );
+
+    let json: serde_json::Value = serde_json::from_str(
+        status_output(repo.path(), true, false, false)
+            .unwrap()
+            .trim(),
+    )
+    .unwrap();
+    assert_eq!(
+        json["synthesis_totals"]["openrouter_live_pricing_used"],
+        serde_json::json!(true)
+    );
+    assert_eq!(
+        json["synthesis_totals"]["pricing_basis"],
+        serde_json::json!(format!(
+            "static table as of {}; OpenRouter live",
+            synrepo::pipeline::synthesis::pricing::LAST_UPDATED
+        ))
     );
 }
 

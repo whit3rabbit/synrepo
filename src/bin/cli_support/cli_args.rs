@@ -79,14 +79,19 @@ pub(crate) enum Command {
         regen: bool,
     },
 
-    /// full onboarding flow for a specific agent client.
+    /// full onboarding flow.
     ///
-    /// This is the recommended first-run command. It runs `synrepo init`,
-    /// writes the client-specific skill or instructions file, and registers the
-    /// synrepo MCP server in the project's local configuration (where supported).
+    /// This is the recommended first-run command. With a `<tool>` argument it
+    /// runs the scripted flow: `synrepo init`, writes the client-specific skill
+    /// or instructions file, and registers the synrepo MCP server in the
+    /// project's local configuration (where supported). Without a `<tool>`
+    /// argument it launches the interactive TUI wizard, which prompts for the
+    /// graph mode, agent target, and synthesis provider before applying the
+    /// same steps. The `--force`, `--synthesis`, and `--gitignore` flags only
+    /// apply to the scripted flow; passing them without a tool is rejected.
     Setup {
-        /// Target client to set up.
-        tool: AgentTool,
+        /// Target client to set up. Omit to launch the interactive wizard.
+        tool: Option<AgentTool>,
         /// Force re-initialization and overwrite existing configs.
         #[arg(long)]
         force: bool,

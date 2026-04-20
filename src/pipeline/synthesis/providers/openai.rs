@@ -16,6 +16,7 @@ use crate::pipeline::synthesis::{CommentaryEntry, CommentaryGenerator, CrossLink
 
 use super::http::{
     build_client, cap_output_bytes, estimate_tokens, post_json_strict, resolve_usage,
+    UsageResolution,
 };
 
 const PROVIDER: &str = "openai";
@@ -100,15 +101,6 @@ impl CommentaryGenerator for OpenAiCommentaryGenerator {
             }
         };
 
-        let usage = resolve_usage(
-            parsed
-                .usage
-                .as_ref()
-                .map(|u| (u.prompt_tokens, u.completion_tokens)),
-            context,
-            estimated_tokens,
-        );
-
         let text = parsed
             .choices
             .into_iter()
@@ -117,6 +109,14 @@ impl CommentaryGenerator for OpenAiCommentaryGenerator {
             .map(|s| s.trim().to_string())
             .unwrap_or_default();
 
+        let usage = resolve_usage(UsageResolution::from_output_text(
+            parsed
+                .usage
+                .as_ref()
+                .map(|u| (u.prompt_tokens, u.completion_tokens)),
+            estimated_tokens,
+            &text,
+        ));
         ctx.complete(usage, cap_output_bytes(&text));
 
         if text.is_empty() {
@@ -231,14 +231,14 @@ impl OpenAiCrossLinkGenerator {
             .and_then(|c| c.message.content)
             .unwrap_or_default();
 
-        let usage = resolve_usage(
+        let usage = resolve_usage(UsageResolution::from_output_text(
             parsed
                 .usage
                 .as_ref()
                 .map(|u| (u.prompt_tokens, u.completion_tokens)),
-            &prompt,
             estimated_tokens,
-        );
+            &text,
+        ));
         ctx.complete(usage, cap_output_bytes(&text));
 
         let spans: SpanPayload = match serde_json::from_str(text.trim()) {

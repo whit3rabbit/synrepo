@@ -144,6 +144,30 @@ fn agent_setup_dispatches_to_agent_setup_variant() {
 }
 
 #[test]
+fn setup_without_tool_parses_to_wizard_mode() {
+    let cli = parse(&["setup"]);
+    let Some(Command::Setup { tool, .. }) = cli.command else {
+        panic!("`setup` (no tool) should parse to Command::Setup");
+    };
+    assert!(
+        tool.is_none(),
+        "omitting the tool positional must leave tool unset so the dispatcher routes to the wizard"
+    );
+}
+
+#[test]
+fn setup_with_tool_still_parses_with_tool_set() {
+    let cli = parse(&["setup", "claude"]);
+    let Some(Command::Setup { tool, .. }) = cli.command else {
+        panic!("`setup claude` should parse to Command::Setup");
+    };
+    assert!(
+        tool.is_some(),
+        "passing a tool positional must populate Command::Setup.tool so the scripted path runs"
+    );
+}
+
+#[test]
 fn mcp_dispatches_to_mcp_variant() {
     let cli = parse(&["mcp"]);
     assert!(

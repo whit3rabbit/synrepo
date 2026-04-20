@@ -8,7 +8,7 @@ Repair pipeline: drift detection, surfaces, and auto-repair actions.
 
 - `mod.rs` — facade, exports
 - `types.rs` — re-exports stable enums from `types/stable.rs` (`RepairSurface`, `DriftClass`, `Severity`, `RepairAction`) and payloads from `types/models.rs`
-- `sync.rs` — auto-repair orchestration
+- `sync/` — auto-repair orchestration (`mod.rs`, `synthesis.rs`)
 - `report/` — drift report builder; `surfaces/` has 10 `SurfaceCheck` implementations across 5 files: `mod.rs`, `commentary.rs`, `cross_links.rs`, `drift.rs`, `rationale.rs`
 - `log.rs` — JSONL resolution log append
 - `commentary.rs` — commentary refresh repair action

@@ -17,6 +17,7 @@ use crate::pipeline::synthesis::{CommentaryEntry, CommentaryGenerator, CrossLink
 
 use super::http::{
     build_client, cap_output_bytes, estimate_tokens, post_json_strict, resolve_usage,
+    UsageResolution,
 };
 
 const PROVIDER: &str = "local";
@@ -126,14 +127,18 @@ impl CommentaryGenerator for LocalCommentaryGenerator {
                 &body,
             ) {
                 Ok(resp) => {
-                    let usage = resolve_usage(
+                    let usage = resolve_usage(UsageResolution::from_output_text(
                         resp.usage
                             .as_ref()
                             .filter(|u| u.prompt_tokens > 0 || u.completion_tokens > 0)
                             .map(|u| (u.prompt_tokens, u.completion_tokens)),
-                        context,
                         estimated_tokens,
-                    );
+                        &resp
+                            .choices
+                            .first()
+                            .map(|c| c.message.content.as_str())
+                            .unwrap_or_default(),
+                    ));
                     let text = resp
                         .choices
                         .into_iter()
@@ -155,11 +160,11 @@ impl CommentaryGenerator for LocalCommentaryGenerator {
                 &body,
             ) {
                 Ok(resp) => {
-                    let usage = resolve_usage(
+                    let usage = resolve_usage(UsageResolution::from_output_text(
                         resp.prompt_eval_count.zip(resp.eval_count),
-                        context,
                         estimated_tokens,
-                    );
+                        &resp.response,
+                    ));
                     (resp.response, usage)
                 }
                 Err(e) => {
@@ -296,14 +301,18 @@ impl LocalCrossLinkGenerator {
                 &body,
             ) {
                 Ok(resp) => {
-                    let usage = resolve_usage(
+                    let usage = resolve_usage(UsageResolution::from_output_text(
                         resp.usage
                             .as_ref()
                             .filter(|u| u.prompt_tokens > 0 || u.completion_tokens > 0)
                             .map(|u| (u.prompt_tokens, u.completion_tokens)),
-                        &prompt,
                         estimated_tokens,
-                    );
+                        &resp
+                            .choices
+                            .first()
+                            .map(|c| c.message.content.as_str())
+                            .unwrap_or_default(),
+                    ));
                     let text = resp
                         .choices
                         .into_iter()
@@ -325,11 +334,11 @@ impl LocalCrossLinkGenerator {
                 &body,
             ) {
                 Ok(resp) => {
-                    let usage = resolve_usage(
+                    let usage = resolve_usage(UsageResolution::from_output_text(
                         resp.prompt_eval_count.zip(resp.eval_count),
-                        &prompt,
                         estimated_tokens,
-                    );
+                        &resp.response,
+                    ));
                     (resp.response, usage)
                 }
                 Err(e) => {

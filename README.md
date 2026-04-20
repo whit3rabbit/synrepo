@@ -68,7 +68,7 @@ Supported providers:
 
 API keys live in the shell environment only. `synrepo` never writes keys to `.synrepo/config.toml` or any on-disk cache.
 
-**Enable synthesis** by adding a block to `.synrepo/config.toml` (or run `synrepo setup --synthesis` to use the wizard):
+**Enable synthesis** by adding a block to `.synrepo/config.toml` (or run `synrepo setup` and let the interactive wizard configure the `[synthesis]` block for you):
 
 ```toml
 [synthesis]
@@ -151,13 +151,14 @@ The cleanest workflow to get `synrepo` running is:
 1.  **Install synrepo**: See [Installation](#installation) above.
 2.  **Run setup**: In your repository root, run:
     ```bash
-    synrepo setup <agent>
+    synrepo setup            # launches the interactive TUI wizard (mode + agent + synthesis)
+    synrepo setup <agent>    # scripted, non-interactive flow for a known agent
     ```
     Two support tiers:
     - **Automated** (writes the shim *and* registers the project-scoped MCP server): `claude`, `codex`, `open-code`.
     - **Shim-only** (writes the instruction file; wire `synrepo mcp --repo .` into the agent's own config by hand): `cursor`, `copilot`, `windsurf`, `generic`, `gemini`, `goose`, `kiro`, `qwen`, `junie`, `roo`, `tabnine`, `trae`.
 
-    `setup` always runs `init` and writes the client-specific instructions; it only registers the project-scoped MCP server for automated-tier agents.
+    `setup` always runs `init` and writes the client-specific instructions; it only registers the project-scoped MCP server for automated-tier agents. Bare `synrepo` on an uninitialized repo opens the same wizard automatically.
 3.  **Use the agent**: Your agent (e.g., Claude Code, Cursor) will now load synrepo context via MCP.
 4.  **Watch (Optional)**: If you want background refresh as you edit:
     ```bash

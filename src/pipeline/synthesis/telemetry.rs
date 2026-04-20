@@ -176,6 +176,8 @@ pub enum SynthesisEvent {
         duration_ms: u64,
         /// Token counts (reported by provider or explicitly estimated).
         usage: TokenUsage,
+        /// Exact billed USD cost when the provider returned it directly.
+        billed_usd_cost: Option<f64>,
         /// Size of the accepted response text in bytes.
         output_bytes: u32,
     },
@@ -388,7 +390,17 @@ impl CallCtx {
     }
 
     /// Mark this call as successfully completed.
-    pub fn complete(mut self, usage: TokenUsage, output_bytes: u32) {
+    pub fn complete(self, usage: TokenUsage, output_bytes: u32) {
+        self.complete_with_cost(usage, None, output_bytes);
+    }
+
+    /// Mark this call as successfully completed with an explicit billed cost.
+    pub fn complete_with_cost(
+        mut self,
+        usage: TokenUsage,
+        billed_usd_cost: Option<f64>,
+        output_bytes: u32,
+    ) {
         self.finished = true;
         publish(SynthesisEvent::CallCompleted {
             call_id: self.call_id,
@@ -397,6 +409,7 @@ impl CallCtx {
             target: self.target.clone(),
             duration_ms: self.duration_ms(),
             usage,
+            billed_usd_cost,
             output_bytes,
         });
     }

@@ -227,6 +227,11 @@ pub fn build_health_vm(snapshot: &StatusSnapshot) -> HealthVm {
         if let Some(totals) = &snapshot.synthesis_totals {
             let calls = totals.calls + totals.failures + totals.budget_blocked;
             if calls > 0 {
+                let openrouter_live = totals
+                    .per_provider
+                    .get("openrouter")
+                    .and_then(|provider| provider.usd_cost)
+                    .is_some();
                 let cost = if totals.any_unpriced {
                     format!("${:.4} (+ unpriced)", totals.usd_cost)
                 } else {
@@ -243,11 +248,11 @@ pub fn build_health_vm(snapshot: &StatusSnapshot) -> HealthVm {
                 rows.push(HealthRow {
                     label: "synthesis usage".to_string(),
                     value: format!(
-                        "{} calls · {} · {} (pricing as of {})",
+                        "{} calls · {} · {} ({})",
                         calls,
                         tokens,
                         cost,
-                        crate::pipeline::synthesis::pricing::LAST_UPDATED
+                        crate::pipeline::synthesis::pricing::pricing_basis_label(openrouter_live)
                     ),
                     severity: Severity::Healthy,
                 });

@@ -22,6 +22,7 @@ pub fn synthesis_event_to_log_entry(event: SynthesisEvent) -> Option<LogEntry> {
             target,
             duration_ms,
             usage,
+            billed_usd_cost: _,
             output_bytes: _,
         } => {
             let est = match usage.source {
@@ -123,6 +124,7 @@ mod tests {
             },
             duration_ms: 123,
             usage: TokenUsage::reported(100, 200),
+            billed_usd_cost: None,
             output_bytes: 512,
         })
         .expect("CallCompleted must produce an entry");
@@ -144,6 +146,7 @@ mod tests {
             },
             duration_ms: 400,
             usage: TokenUsage::estimated(50, 80),
+            billed_usd_cost: None,
             output_bytes: 256,
         })
         .expect("entry");

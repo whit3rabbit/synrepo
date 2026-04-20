@@ -3,15 +3,60 @@
 //! only surface the failure per tool call.
 
 use std::fs;
+use std::io::{Read, Write};
+use std::net::TcpListener;
+use std::sync::Mutex;
+use std::thread;
+use std::time::Duration;
 
 use tempfile::tempdir;
 
 use synrepo::bootstrap::bootstrap;
 use synrepo::config::Config;
+use synrepo::pipeline::synthesis::{accounting, telemetry};
 use synrepo::store::compatibility::snapshot_path;
+use synrepo::store::overlay::SqliteOverlayStore;
 
 use super::support::git;
 use crate::prepare_mcp_state;
+
+const SYNTHESIS_ENV: &[&str] = &[
+    "SYNREPO_LLM_ENABLED",
+    "SYNREPO_LLM_PROVIDER",
+    "SYNREPO_LLM_MODEL",
+    "SYNREPO_LLM_LOCAL_ENDPOINT",
+    "ANTHROPIC_API_KEY",
+    "SYNREPO_ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+    "GEMINI_API_KEY",
+    "OPENROUTER_API_KEY",
+];
+
+static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+struct EnvGuard {
+    _guard: std::sync::MutexGuard<'static, ()>,
+}
+
+impl EnvGuard {
+    fn new() -> Self {
+        let guard = ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        for key in SYNTHESIS_ENV {
+            std::env::remove_var(key);
+        }
+        Self { _guard: guard }
+    }
+}
+
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        for key in SYNTHESIS_ENV {
+            std::env::remove_var(key);
+        }
+    }
+}
 
 fn setup_bootstrapped_repo() -> (tempfile::TempDir, std::path::PathBuf) {
     let dir = tempdir().unwrap();
@@ -28,6 +73,91 @@ fn setup_bootstrapped_repo() -> (tempfile::TempDir, std::path::PathBuf) {
 
     let repo_path = repo.to_path_buf();
     (dir, repo_path)
+}
+
+fn spawn_openai_compat_server(body: &'static str) -> (String, thread::JoinHandle<()>) {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind test synthesis server");
+    let addr = listener.local_addr().expect("read test server address");
+    let handle = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept synthesis request");
+        stream
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .expect("set read timeout");
+
+        let mut request = Vec::new();
+        let mut buffer = [0u8; 1024];
+        let mut body_len = None;
+        loop {
+            let read = stream.read(&mut buffer).expect("read synthesis request");
+            if read == 0 {
+                break;
+            }
+            request.extend_from_slice(&buffer[..read]);
+            if let Some(header_end) = find_header_end(&request) {
+                let content_length = parse_content_length(&request[..header_end]);
+                body_len = Some(content_length);
+                if request.len() >= header_end + content_length {
+                    break;
+                }
+            }
+        }
+
+        let response = format!(
+            "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        stream
+            .write_all(response.as_bytes())
+            .expect("write synthesis response");
+        if let Some(expected) = body_len {
+            assert!(expected > 0, "expected non-empty JSON request body");
+        }
+    });
+
+    (format!("http://{addr}/v1/chat/completions"), handle)
+}
+
+fn find_header_end(bytes: &[u8]) -> Option<usize> {
+    bytes
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .map(|idx| idx + 4)
+}
+
+fn parse_content_length(headers: &[u8]) -> usize {
+    let headers = String::from_utf8_lossy(headers);
+    headers
+        .lines()
+        .find_map(|line| {
+            let (name, value) = line.split_once(':')?;
+            if name.eq_ignore_ascii_case("content-length") {
+                value.trim().parse::<usize>().ok()
+            } else {
+                None
+            }
+        })
+        .unwrap_or(0)
+}
+
+fn write_local_synthesis_config(repo: &std::path::Path, endpoint: &str) {
+    let mut config = Config::load(repo).expect("load bootstrapped config");
+    config.commentary_cost_limit = 50_000;
+    config.synthesis.enabled = true;
+    config.synthesis.provider = Some("local".to_string());
+    config.synthesis.model = Some("test-local".to_string());
+    config.synthesis.local_endpoint = Some(endpoint.to_string());
+    config.synthesis.local_preset = Some("custom".to_string());
+    fs::write(
+        Config::synrepo_dir(repo).join("config.toml"),
+        toml::to_string_pretty(&config).expect("serialize config"),
+    )
+    .expect("write synthesis config");
+}
+
+fn materialize_overlay(repo: &std::path::Path) {
+    let overlay_dir = Config::synrepo_dir(repo).join("overlay");
+    drop(SqliteOverlayStore::open(&overlay_dir).expect("create overlay store"));
 }
 
 #[test]
@@ -57,6 +187,58 @@ fn prepare_state_fails_when_compatibility_snapshot_is_missing() {
         msg.contains("synrepo upgrade"),
         "fail-fast message must point users at `synrepo upgrade`, got: {msg}"
     );
+    drop(dir);
+}
+
+#[test]
+fn refresh_commentary_via_mcp_records_synthesis_accounting() {
+    let _env = EnvGuard::new();
+    let (dir, repo) = setup_bootstrapped_repo();
+    let (endpoint, server) = spawn_openai_compat_server(
+        r#"{"choices":[{"message":{"content":"Generated commentary."}}],"usage":{"prompt_tokens":11,"completion_tokens":7}}"#,
+    );
+    write_local_synthesis_config(&repo, &endpoint);
+    materialize_overlay(&repo);
+
+    let state = prepare_mcp_state(&repo).expect("MCP state should load with synthesis enabled");
+    let synrepo_dir = Config::synrepo_dir(&repo);
+    assert_eq!(
+        telemetry::synrepo_dir().as_deref(),
+        Some(synrepo_dir.as_path())
+    );
+
+    let output =
+        synrepo::surface::mcp::cards::handle_refresh_commentary(&state, "main".to_string());
+    let json: serde_json::Value =
+        serde_json::from_str(&output).expect("refresh_commentary should return JSON");
+    assert_eq!(
+        json["status"], "refreshed",
+        "unexpected MCP output: {output}"
+    );
+    assert_eq!(json["commentary"], "Generated commentary.");
+
+    server.join().expect("join synthesis stub");
+
+    let log = fs::read_to_string(accounting::log_path(&synrepo_dir))
+        .expect("refresh_commentary should write synthesis log");
+    assert!(
+        log.contains("\"provider\":\"local\"") && log.contains("\"outcome\":\"success\""),
+        "expected successful local synthesis log entry, got: {log}"
+    );
+
+    let totals: accounting::SynthesisTotals = serde_json::from_slice(
+        &fs::read(accounting::totals_path(&synrepo_dir))
+            .expect("refresh_commentary should write synthesis totals"),
+    )
+    .expect("totals file should parse");
+    assert_eq!(totals.calls, 1);
+    assert_eq!(totals.failures, 0);
+    assert_eq!(totals.budget_blocked, 0);
+    assert_eq!(totals.input_tokens, 11);
+    assert_eq!(totals.output_tokens, 7);
+    assert_eq!(totals.usd_cost, 0.0);
+    assert!(!totals.any_unpriced);
+
     drop(dir);
 }
 

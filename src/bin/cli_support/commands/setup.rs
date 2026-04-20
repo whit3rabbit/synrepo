@@ -6,7 +6,7 @@ use synrepo::config::Mode;
 use toml_edit::{DocumentMut, Item, Table, Value as TomlValue};
 
 use super::basic::{agent_setup, init};
-use super::setup_backup::step_backup_mcp_config;
+use super::setup_mcp_backup::step_backup_mcp_config;
 use crate::cli_support::agent_shims::{registry as shim_registry, AgentTool, AutomationTier};
 
 /// Outcome of a single setup step. Tests assert on this rather than captured

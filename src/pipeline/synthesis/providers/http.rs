@@ -30,21 +30,45 @@ pub fn estimate_tokens(context: &str) -> u32 {
     (context.len() as u32) / CHARS_PER_TOKEN
 }
 
-/// Turn optional provider-reported token counts into a [`TokenUsage`]. When
-/// `reported` is `None`, fall back to the chars-per-token heuristic against
-/// `context` and flag the result as [`TokenUsage::estimated`].
-///
-/// Callers that want to treat `(0, 0)` as missing (e.g. OpenRouter and local
-/// OpenAI-compatible servers that sometimes send zeros) should `.filter(...)`
-/// before passing the pair in.
-pub fn resolve_usage(
-    reported: Option<(u32, u32)>,
-    context: &str,
-    estimated_input: u32,
-) -> TokenUsage {
-    match reported {
-        Some((i, o)) => TokenUsage::reported(i, o),
-        None => TokenUsage::estimated(estimated_input, estimate_tokens(context)),
+/// Estimate completion tokens from the generated output text.
+pub fn estimate_output_tokens(output_text: &str) -> u32 {
+    estimate_tokens(output_text)
+}
+
+/// Inputs used to resolve the final token accounting for one provider call.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct UsageResolution {
+    /// Prompt/input tokens estimated before or during the call.
+    pub estimated_input_tokens: u32,
+    /// Completion/output tokens estimated from the accepted output text.
+    pub estimated_output_tokens: u32,
+    /// Provider-reported usage, when available.
+    pub reported_usage: Option<(u32, u32)>,
+}
+
+impl UsageResolution {
+    /// Construct a usage resolution from the accepted output text.
+    pub fn from_output_text(
+        reported_usage: Option<(u32, u32)>,
+        estimated_input_tokens: u32,
+        output_text: &str,
+    ) -> Self {
+        Self {
+            estimated_input_tokens,
+            estimated_output_tokens: estimate_output_tokens(output_text),
+            reported_usage,
+        }
+    }
+}
+
+/// Turn a [`UsageResolution`] into a final [`TokenUsage`].
+pub fn resolve_usage(resolution: UsageResolution) -> TokenUsage {
+    match resolution.reported_usage {
+        Some((input_tokens, output_tokens)) => TokenUsage::reported(input_tokens, output_tokens),
+        None => TokenUsage::estimated(
+            resolution.estimated_input_tokens,
+            resolution.estimated_output_tokens,
+        ),
     }
 }
 
@@ -90,4 +114,59 @@ where
     response
         .json::<Res>()
         .map_err(|e| format!("response parse error: {e}"))
+}
+
+/// JSON GET variant that returns a descriptive failure string rather than
+/// collapsing all failure modes to `Ok(None)`.
+pub fn get_json_strict<Res>(
+    client: &reqwest::blocking::Client,
+    url: &str,
+    headers: &[(&str, &str)],
+) -> Result<Res, String>
+where
+    Res: DeserializeOwned,
+{
+    let mut request = client.get(url);
+    for (key, value) in headers {
+        request = request.header(*key, *value);
+    }
+
+    let response = request
+        .send()
+        .map_err(|e| format!("transport error: {e}"))?;
+
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!("non-success status: {status}"));
+    }
+
+    response
+        .json::<Res>()
+        .map_err(|e| format!("response parse error: {e}"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::pipeline::synthesis::telemetry::UsageSource;
+
+    #[test]
+    fn estimated_completion_tokens_follow_output_text() {
+        let usage = resolve_usage(UsageResolution::from_output_text(None, 400, "tiny"));
+        assert_eq!(usage.input_tokens, 400);
+        assert_eq!(usage.output_tokens, estimate_output_tokens("tiny"));
+        assert_eq!(usage.source, UsageSource::Estimated);
+    }
+
+    #[test]
+    fn reported_usage_wins_over_estimates() {
+        let usage = resolve_usage(UsageResolution::from_output_text(
+            Some((11, 7)),
+            400,
+            "tiny",
+        ));
+        assert_eq!(usage.input_tokens, 11);
+        assert_eq!(usage.output_tokens, 7);
+        assert_eq!(usage.source, UsageSource::Reported);
+    }
 }

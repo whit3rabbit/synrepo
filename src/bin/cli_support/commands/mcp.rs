@@ -12,6 +12,7 @@ use rmcp::{
     ServerHandler, ServiceExt as _,
 };
 use synrepo::config::Config;
+use synrepo::pipeline::synthesis::telemetry;
 use synrepo::store::compatibility::StoreId;
 use synrepo::surface::handoffs::HandoffsRequest;
 use synrepo::surface::handoffs::{collect_handoffs, to_json as handoffs_to_json};
@@ -334,6 +335,7 @@ pub(crate) fn prepare_state(repo_root: &Path) -> anyhow::Result<SynrepoState> {
     let synrepo_dir = Config::synrepo_dir(repo_root);
     check_store_ready(&synrepo_dir, &config, StoreId::Graph)?;
     check_store_ready(&synrepo_dir, &config, StoreId::Overlay)?;
+    telemetry::set_synrepo_dir(&synrepo_dir);
 
     Ok(SynrepoState {
         config,

@@ -80,20 +80,7 @@ fn run_bare_entrypoint(repo_root: &Path, opts: TuiOptions) -> anyhow::Result<()>
                 eprint!("{}", bare_uninitialized_fallback());
                 std::process::exit(2);
             }
-            match run_setup_wizard(repo_root, opts)? {
-                SetupWizardOutcome::Completed { plan } => {
-                    execute_setup_plan(repo_root, plan)?;
-                    open_dashboard_after_wizard(repo_root, opts)
-                }
-                SetupWizardOutcome::Cancelled => {
-                    println!("setup wizard cancelled; no changes applied.");
-                    Ok(())
-                }
-                SetupWizardOutcome::NonTty => {
-                    eprint!("{}", bare_uninitialized_fallback());
-                    std::process::exit(2);
-                }
-            }
+            run_wizard_and_apply(repo_root, opts)
         }
         RoutingDecision::OpenRepair { missing } => {
             if !is_tty {
@@ -187,6 +174,28 @@ fn execute_integration_plan(repo_root: &Path, plan: IntegrationPlan) -> anyhow::
     shim_registry::record_install_best_effort(repo_root, tool, wrote_mcp, backup);
     println!("Integration complete.");
     Ok(())
+}
+
+/// Run the TUI setup wizard and apply its [`SetupPlan`] outcome. Shared by the
+/// bare-entrypoint OpenSetup arm and the explicit `synrepo setup` command when
+/// invoked without a `<tool>` argument. Caller is responsible for the non-TTY
+/// short-circuit before calling — this helper still handles the wizard's own
+/// `NonTty` outcome (printed by the wizard itself) defensively.
+fn run_wizard_and_apply(repo_root: &Path, opts: TuiOptions) -> anyhow::Result<()> {
+    match run_setup_wizard(repo_root, opts)? {
+        SetupWizardOutcome::Completed { plan } => {
+            execute_setup_plan(repo_root, plan)?;
+            open_dashboard_after_wizard(repo_root, opts)
+        }
+        SetupWizardOutcome::Cancelled => {
+            println!("setup wizard cancelled; no changes applied.");
+            Ok(())
+        }
+        SetupWizardOutcome::NonTty => {
+            eprint!("{}", bare_uninitialized_fallback());
+            std::process::exit(2);
+        }
+    }
 }
 
 /// Execute a completed [`SetupPlan`] after the TUI alt-screen has been torn
@@ -400,13 +409,46 @@ fn dispatch(command: Command, repo_root: &Path, tui_opts: TuiOptions) -> anyhow:
             force,
             synthesis,
             gitignore,
-        } => {
-            setup(repo_root, tool, force, gitignore)?;
-            if synthesis {
-                run_synthesis_step(repo_root, tui_opts)?;
+        } => match tool {
+            Some(tool) => {
+                setup(repo_root, tool, force, gitignore)?;
+                if synthesis {
+                    run_synthesis_step(repo_root, tui_opts)?;
+                }
+                Ok(())
             }
-            Ok(())
-        }
+            None => {
+                // Wizard mode owns its own init/synthesis/gitignore handling
+                // via SetupPlan, so the scripted-only flags have no clean
+                // place to land. Fail loud rather than silently dropping.
+                let mut bad_flags = Vec::new();
+                if force {
+                    bad_flags.push("--force");
+                }
+                if synthesis {
+                    bad_flags.push("--synthesis");
+                }
+                if gitignore {
+                    bad_flags.push("--gitignore");
+                }
+                if !bad_flags.is_empty() {
+                    anyhow::bail!(
+                        "`synrepo setup` without a tool launches the interactive wizard; \
+                         {} only applies when a tool is passed (e.g. `synrepo setup claude {}`).",
+                        bad_flags.join(" / "),
+                        bad_flags.join(" "),
+                    );
+                }
+                if !stdout_is_tty() {
+                    eprintln!(
+                        "synrepo setup: interactive wizard requires a TTY. \
+                         Pass a tool for the scripted flow (e.g. `synrepo setup claude`)."
+                    );
+                    std::process::exit(2);
+                }
+                run_wizard_and_apply(repo_root, tui_opts)
+            }
+        },
         Command::Reconcile => reconcile(repo_root),
         Command::Check { json } => check(repo_root, json),
         Command::Sync {

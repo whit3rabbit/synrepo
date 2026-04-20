@@ -9,7 +9,8 @@ Storage layer: SQLite backends for graph and overlay.
 - `mod.rs` — module declarations only; trait definitions live in `src/structure/graph/` (`GraphStore`) and `src/overlay/mod.rs` (`OverlayStore`)
 - `sqlite/mod.rs` — `SqliteGraphStore` implementation
 - `sqlite/schema.rs` — graph schema, `busy_timeout = 5000`
-- `sqlite/ops.rs` — CRUD operations
+- `sqlite/ops/` — CRUD operations split across `drift.rs`, `edges.rs`, `helpers.rs`, `lists.rs`, `mod.rs`, `nodes.rs`, `transactions.rs`
+- `sqlite/codec.rs` — row (de)serialization helpers
 - `sqlite/lifecycle.rs` — retirement, compaction
 - `overlay/mod.rs` — overlay store, cross-link audit
 - `overlay/schema.rs` — overlay schema

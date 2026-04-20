@@ -216,10 +216,12 @@ fn record_for_event(event: &SynthesisEvent) -> Option<SynthesisCallRecord> {
             target,
             duration_ms,
             usage,
+            billed_usd_cost,
             output_bytes: _,
         } => {
-            let cost =
-                pricing::cost_for_call(provider, model, usage.input_tokens, usage.output_tokens);
+            let cost = billed_usd_cost.or_else(|| {
+                pricing::cost_for_call(provider, model, usage.input_tokens, usage.output_tokens)
+            });
             Some(SynthesisCallRecord {
                 timestamp: now,
                 call_id: *call_id,
@@ -379,6 +381,7 @@ mod tests {
             target: file_target(call_id as u128),
             duration_ms: 100,
             usage,
+            billed_usd_cost: None,
             output_bytes: 42,
         }
     }
@@ -428,6 +431,7 @@ mod tests {
             target: file_target(1),
             duration_ms: 10,
             usage: TokenUsage::reported(100, 100),
+            billed_usd_cost: None,
             output_bytes: 5,
         };
         record_event(dir.path(), &event).unwrap();
