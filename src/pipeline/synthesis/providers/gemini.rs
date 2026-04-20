@@ -11,9 +11,14 @@ use crate::overlay::{
     OverlayEpistemic, OverlayLink,
 };
 use crate::pipeline::synthesis::cross_link::{score, CandidatePair, CandidateScope};
+use crate::pipeline::synthesis::telemetry::{publish_budget_blocked, CallCtx, SynthesisTarget};
 use crate::pipeline::synthesis::{CommentaryEntry, CommentaryGenerator, CrossLinkGenerator};
 
-use super::http::{build_client, post_json, CHARS_PER_TOKEN};
+use super::http::{
+    build_client, cap_output_bytes, estimate_tokens, post_json_strict, resolve_usage,
+};
+
+const PROVIDER: &str = "gemini";
 
 /// Default Gemini model for synthesis (gemini-1.5-flash is fast and capable).
 pub const DEFAULT_MODEL: &str = "gemini-1.5-flash";
@@ -50,18 +55,20 @@ impl GeminiCommentaryGenerator {
 
 impl CommentaryGenerator for GeminiCommentaryGenerator {
     fn generate(&self, node: NodeId, context: &str) -> crate::Result<Option<CommentaryEntry>> {
-        // Cost check
-        let estimated_tokens = (context.len() as u32) / CHARS_PER_TOKEN;
+        let target = SynthesisTarget::Commentary { node };
+
+        let estimated_tokens = estimate_tokens(context);
         if estimated_tokens > self.max_tokens_per_call {
-            tracing::warn!(
-                estimated = estimated_tokens,
-                budget = self.max_tokens_per_call,
-                "commentary generation skipped: context exceeds configured cost limit"
+            publish_budget_blocked(
+                PROVIDER,
+                &self.model,
+                target,
+                estimated_tokens,
+                self.max_tokens_per_call,
             );
             return Ok(None);
         }
 
-        // Gemini uses a different request format
         let body = GeminiRequest {
             contents: vec![Content {
                 role: "user",
@@ -87,14 +94,23 @@ impl CommentaryGenerator for GeminiCommentaryGenerator {
         let url = format!("{}?key={}", api_url(&self.model), self.api_key);
         let headers = [("Content-Type", "application/json")];
 
-        let parsed: GeminiResponse = match post_json(&self.client, &url, &headers, &body) {
-            Ok(Some(p)) => p,
-            Ok(None) => return Ok(None),
+        let ctx = CallCtx::start(PROVIDER, &self.model, target);
+        let parsed: GeminiResponse = match post_json_strict(&self.client, &url, &headers, &body) {
+            Ok(p) => p,
             Err(e) => {
-                tracing::warn!(error = %e, "commentary generation request failed");
+                ctx.fail(e);
                 return Ok(None);
             }
         };
+
+        let usage = resolve_usage(
+            parsed
+                .usage_metadata
+                .as_ref()
+                .map(|u| (u.prompt_token_count, u.candidates_token_count)),
+            context,
+            estimated_tokens,
+        );
 
         let text = parsed
             .candidates
@@ -104,6 +120,8 @@ impl CommentaryGenerator for GeminiCommentaryGenerator {
             .and_then(|content| content.parts.into_iter().next().map(|p| p.text))
             .map(|s| s.trim().to_string())
             .unwrap_or_default();
+
+        ctx.complete(usage, cap_output_bytes(&text));
 
         if text.is_empty() {
             return Ok(None);
@@ -161,12 +179,20 @@ impl GeminiCrossLinkGenerator {
             kind = overlay_edge_kind_label(pair.kind),
         );
 
-        let estimated_tokens = (prompt.len() as u32) / CHARS_PER_TOKEN;
+        let target = SynthesisTarget::CrossLink {
+            from: pair.from,
+            to: pair.to,
+            kind: pair.kind,
+        };
+
+        let estimated_tokens = estimate_tokens(&prompt);
         if estimated_tokens > self.max_tokens_per_call {
-            tracing::warn!(
-                estimated = estimated_tokens,
-                budget = self.max_tokens_per_call,
-                "cross-link generation skipped: context exceeds configured cost limit"
+            publish_budget_blocked(
+                PROVIDER,
+                &self.model,
+                target,
+                estimated_tokens,
+                self.max_tokens_per_call,
             );
             return None;
         }
@@ -192,11 +218,11 @@ impl GeminiCrossLinkGenerator {
         let url = format!("{}?key={}", api_url(&self.model), self.api_key);
         let headers = [("Content-Type", "application/json")];
 
-        let parsed: GeminiResponse = match post_json(&self.client, &url, &headers, &body) {
-            Ok(Some(p)) => p,
-            Ok(None) => return None,
+        let ctx = CallCtx::start(PROVIDER, &self.model, target);
+        let parsed: GeminiResponse = match post_json_strict(&self.client, &url, &headers, &body) {
+            Ok(p) => p,
             Err(e) => {
-                tracing::warn!(error = %e, "cross-link generation request failed");
+                ctx.fail(e);
                 return None;
             }
         };
@@ -208,6 +234,16 @@ impl GeminiCrossLinkGenerator {
             .and_then(|c| c.content)
             .and_then(|content| content.parts.into_iter().next().map(|p| p.text))
             .unwrap_or_default();
+
+        let usage = resolve_usage(
+            parsed
+                .usage_metadata
+                .as_ref()
+                .map(|u| (u.prompt_token_count, u.candidates_token_count)),
+            &prompt,
+            estimated_tokens,
+        );
+        ctx.complete(usage, cap_output_bytes(&text));
 
         let spans: SpanPayload = match serde_json::from_str(text.trim()) {
             Ok(s) => s,
@@ -332,6 +368,16 @@ struct GenerationConfig {
 #[derive(Deserialize)]
 struct GeminiResponse {
     candidates: Vec<Candidate>,
+    #[serde(default, rename = "usageMetadata")]
+    usage_metadata: Option<GeminiUsage>,
+}
+
+#[derive(Deserialize)]
+struct GeminiUsage {
+    #[serde(default, rename = "promptTokenCount")]
+    prompt_token_count: u32,
+    #[serde(default, rename = "candidatesTokenCount")]
+    candidates_token_count: u32,
 }
 
 #[derive(Deserialize)]

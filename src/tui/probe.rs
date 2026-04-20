@@ -223,6 +223,50 @@ pub fn build_health_vm(snapshot: &StatusSnapshot) -> HealthVm {
             value,
             severity,
         });
+
+        if let Some(totals) = &snapshot.synthesis_totals {
+            let calls = totals.calls + totals.failures + totals.budget_blocked;
+            if calls > 0 {
+                let cost = if totals.any_unpriced {
+                    format!("${:.4} (+ unpriced)", totals.usd_cost)
+                } else {
+                    format!("${:.4}", totals.usd_cost)
+                };
+                let tokens = if totals.any_estimated {
+                    format!(
+                        "{} in / {} out (est.)",
+                        totals.input_tokens, totals.output_tokens
+                    )
+                } else {
+                    format!("{} in / {} out", totals.input_tokens, totals.output_tokens)
+                };
+                rows.push(HealthRow {
+                    label: "synthesis usage".to_string(),
+                    value: format!(
+                        "{} calls · {} · {} (pricing as of {})",
+                        calls,
+                        tokens,
+                        cost,
+                        crate::pipeline::synthesis::pricing::LAST_UPDATED
+                    ),
+                    severity: Severity::Healthy,
+                });
+                if totals.failures > 0 || totals.budget_blocked > 0 {
+                    rows.push(HealthRow {
+                        label: "synthesis skipped".to_string(),
+                        value: format!(
+                            "{} failed · {} budget-blocked",
+                            totals.failures, totals.budget_blocked
+                        ),
+                        severity: if totals.failures > 0 {
+                            Severity::Stale
+                        } else {
+                            Severity::Healthy
+                        },
+                    });
+                }
+            }
+        }
     }
 
     HealthVm { rows }
@@ -374,4 +418,3 @@ fn shorten_home(p: &std::path::Path) -> String {
     }
     full
 }
-

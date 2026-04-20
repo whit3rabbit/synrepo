@@ -12,9 +12,14 @@ use crate::overlay::{
     OverlayEpistemic, OverlayLink,
 };
 use crate::pipeline::synthesis::cross_link::{score, CandidatePair, CandidateScope};
+use crate::pipeline::synthesis::telemetry::{publish_budget_blocked, CallCtx, SynthesisTarget};
 use crate::pipeline::synthesis::{CommentaryEntry, CommentaryGenerator, CrossLinkGenerator};
 
-use super::http::{build_client, post_json, CHARS_PER_TOKEN};
+use super::http::{
+    build_client, cap_output_bytes, estimate_tokens, post_json_strict, resolve_usage,
+};
+
+const PROVIDER: &str = "local";
 
 /// Default local model for synthesis.
 pub const DEFAULT_MODEL: &str = "llama3";
@@ -57,19 +62,21 @@ impl LocalCommentaryGenerator {
 
 impl CommentaryGenerator for LocalCommentaryGenerator {
     fn generate(&self, node: NodeId, context: &str) -> crate::Result<Option<CommentaryEntry>> {
-        // Cost check
-        let estimated_tokens = (context.len() as u32) / CHARS_PER_TOKEN;
+        let target = SynthesisTarget::Commentary { node };
+
+        let estimated_tokens = estimate_tokens(context);
         if estimated_tokens > self.max_tokens_per_call {
-            tracing::warn!(
-                estimated = estimated_tokens,
-                budget = self.max_tokens_per_call,
-                "commentary generation skipped: context exceeds configured cost limit"
+            publish_budget_blocked(
+                PROVIDER,
+                &self.model,
+                target,
+                estimated_tokens,
+                self.max_tokens_per_call,
             );
             return Ok(None);
         }
 
         let body = if self.is_openai_compatible {
-            // OpenAI-compatible format
             serde_json::json!({
                 "model": self.model,
                 "max_tokens": 512,
@@ -90,7 +97,6 @@ impl CommentaryGenerator for LocalCommentaryGenerator {
                 ]
             })
         } else {
-            // Ollama native format
             serde_json::json!({
                 "model": self.model,
                 "stream": false,
@@ -111,60 +117,61 @@ impl CommentaryGenerator for LocalCommentaryGenerator {
 
         let headers = [("Content-Type", "application/json")];
 
-        let text = if self.is_openai_compatible {
-            #[derive(serde::Deserialize)]
-            struct OpenAiResponse {
-                choices: Vec<OpenAiChoice>,
-            }
-            #[derive(serde::Deserialize)]
-            struct OpenAiChoice {
-                message: OpenAiMessage,
-            }
-            #[derive(serde::Deserialize)]
-            struct OpenAiMessage {
-                content: String,
-            }
-
-            match post_json::<serde_json::Value, OpenAiResponse>(
+        let ctx = CallCtx::start(PROVIDER, &self.model, target);
+        let (text, usage) = if self.is_openai_compatible {
+            match post_json_strict::<serde_json::Value, OpenAiCompatResponse>(
                 &self.client,
                 &self.endpoint,
                 &headers,
                 &body,
             ) {
-                Ok(Some(resp)) => resp
-                    .choices
-                    .into_iter()
-                    .next()
-                    .map(|c| c.message.content)
-                    .unwrap_or_default(),
-                Ok(None) => return Ok(None),
+                Ok(resp) => {
+                    let usage = resolve_usage(
+                        resp.usage
+                            .as_ref()
+                            .filter(|u| u.prompt_tokens > 0 || u.completion_tokens > 0)
+                            .map(|u| (u.prompt_tokens, u.completion_tokens)),
+                        context,
+                        estimated_tokens,
+                    );
+                    let text = resp
+                        .choices
+                        .into_iter()
+                        .next()
+                        .map(|c| c.message.content)
+                        .unwrap_or_default();
+                    (text, usage)
+                }
                 Err(e) => {
-                    tracing::warn!(error = %e, "local commentary generation request failed");
+                    ctx.fail(e);
                     return Ok(None);
                 }
             }
         } else {
-            #[derive(serde::Deserialize)]
-            struct OllamaResponse {
-                response: String,
-            }
-
-            match post_json::<serde_json::Value, OllamaResponse>(
+            match post_json_strict::<serde_json::Value, OllamaResponse>(
                 &self.client,
                 &self.endpoint,
                 &headers,
                 &body,
             ) {
-                Ok(Some(resp)) => resp.response,
-                Ok(None) => return Ok(None),
+                Ok(resp) => {
+                    let usage = resolve_usage(
+                        resp.prompt_eval_count.zip(resp.eval_count),
+                        context,
+                        estimated_tokens,
+                    );
+                    (resp.response, usage)
+                }
                 Err(e) => {
-                    tracing::warn!(error = %e, "local commentary generation request failed");
+                    ctx.fail(e);
                     return Ok(None);
                 }
             }
         };
 
         let text = text.trim().to_string();
+        ctx.complete(usage, cap_output_bytes(&text));
+
         if text.is_empty() {
             return Ok(None);
         }
@@ -229,12 +236,20 @@ impl LocalCrossLinkGenerator {
             kind = overlay_edge_kind_label(pair.kind),
         );
 
-        let estimated_tokens = (prompt.len() as u32) / CHARS_PER_TOKEN;
+        let target = SynthesisTarget::CrossLink {
+            from: pair.from,
+            to: pair.to,
+            kind: pair.kind,
+        };
+
+        let estimated_tokens = estimate_tokens(&prompt);
         if estimated_tokens > self.max_tokens_per_call {
-            tracing::warn!(
-                estimated = estimated_tokens,
-                budget = self.max_tokens_per_call,
-                "cross-link generation skipped: context exceeds configured cost limit"
+            publish_budget_blocked(
+                PROVIDER,
+                &self.model,
+                target,
+                estimated_tokens,
+                self.max_tokens_per_call,
             );
             return None;
         }
@@ -272,58 +287,59 @@ impl LocalCrossLinkGenerator {
 
         let headers = [("Content-Type", "application/json")];
 
-        let text = if self.is_openai_compatible {
-            #[derive(serde::Deserialize)]
-            struct OpenAiResponse {
-                choices: Vec<OpenAiChoice>,
-            }
-            #[derive(serde::Deserialize)]
-            struct OpenAiChoice {
-                message: OpenAiMessage,
-            }
-            #[derive(serde::Deserialize)]
-            struct OpenAiMessage {
-                content: String,
-            }
-
-            match post_json::<serde_json::Value, OpenAiResponse>(
+        let ctx = CallCtx::start(PROVIDER, &self.model, target);
+        let (text, usage) = if self.is_openai_compatible {
+            match post_json_strict::<serde_json::Value, OpenAiCompatResponse>(
                 &self.client,
                 &self.endpoint,
                 &headers,
                 &body,
             ) {
-                Ok(Some(resp)) => resp
-                    .choices
-                    .into_iter()
-                    .next()
-                    .map(|c| c.message.content)
-                    .unwrap_or_default(),
-                Ok(None) => return None,
+                Ok(resp) => {
+                    let usage = resolve_usage(
+                        resp.usage
+                            .as_ref()
+                            .filter(|u| u.prompt_tokens > 0 || u.completion_tokens > 0)
+                            .map(|u| (u.prompt_tokens, u.completion_tokens)),
+                        &prompt,
+                        estimated_tokens,
+                    );
+                    let text = resp
+                        .choices
+                        .into_iter()
+                        .next()
+                        .map(|c| c.message.content)
+                        .unwrap_or_default();
+                    (text, usage)
+                }
                 Err(e) => {
-                    tracing::warn!(error = %e, "local cross-link generation request failed");
+                    ctx.fail(e);
                     return None;
                 }
             }
         } else {
-            #[derive(serde::Deserialize)]
-            struct OllamaResponse {
-                response: String,
-            }
-
-            match post_json::<serde_json::Value, OllamaResponse>(
+            match post_json_strict::<serde_json::Value, OllamaResponse>(
                 &self.client,
                 &self.endpoint,
                 &headers,
                 &body,
             ) {
-                Ok(Some(resp)) => resp.response,
-                Ok(None) => return None,
+                Ok(resp) => {
+                    let usage = resolve_usage(
+                        resp.prompt_eval_count.zip(resp.eval_count),
+                        &prompt,
+                        estimated_tokens,
+                    );
+                    (resp.response, usage)
+                }
                 Err(e) => {
-                    tracing::warn!(error = %e, "local cross-link generation request failed");
+                    ctx.fail(e);
                     return None;
                 }
             }
         };
+
+        ctx.complete(usage, cap_output_bytes(&text));
 
         let spans: SpanPayload = match serde_json::from_str(text.trim()) {
             Ok(s) => s,
@@ -412,6 +428,41 @@ fn span_into_cited(artifact: NodeId, raw: RawSpan) -> CitedSpan {
 // Shared types
 
 use serde::Deserialize;
+
+#[derive(Deserialize)]
+struct OpenAiCompatResponse {
+    choices: Vec<OpenAiCompatChoice>,
+    #[serde(default)]
+    usage: Option<OpenAiCompatUsage>,
+}
+
+#[derive(Deserialize)]
+struct OpenAiCompatChoice {
+    message: OpenAiCompatMessage,
+}
+
+#[derive(Deserialize)]
+struct OpenAiCompatMessage {
+    #[serde(default)]
+    content: String,
+}
+
+#[derive(Deserialize)]
+struct OpenAiCompatUsage {
+    #[serde(default)]
+    prompt_tokens: u32,
+    #[serde(default)]
+    completion_tokens: u32,
+}
+
+#[derive(Deserialize)]
+struct OllamaResponse {
+    response: String,
+    #[serde(default)]
+    prompt_eval_count: Option<u32>,
+    #[serde(default)]
+    eval_count: Option<u32>,
+}
 
 #[derive(Deserialize)]
 struct SpanPayload {

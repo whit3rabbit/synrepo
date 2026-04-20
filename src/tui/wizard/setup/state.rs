@@ -52,12 +52,19 @@ pub enum SetupStep {
     SelectMode,
     /// Pick agent-integration target or "skip".
     SelectTarget,
+    /// Static explainer: what synthesis produces, how it is triggered, what it
+    /// costs, and the privacy posture. Always shown before `SelectSynthesis`.
+    ExplainSynthesis,
     /// Pick synthesis provider (cloud, local, or skip).
     SelectSynthesis,
     /// Pick a local-LLM preset (Ollama, llama.cpp, LM Studio, vLLM, Custom).
     SelectLocalPreset,
     /// Edit the local-LLM endpoint URL. Pre-filled from the preset default.
     EditLocalEndpoint,
+    /// "What you'll get / what you won't" review of the committed synthesis
+    /// choice. Shown between committing a provider and the final `Confirm`
+    /// step; skipped when synthesis is disabled.
+    ReviewSynthesisPlan,
     /// Review the plan and press Enter to apply.
     Confirm,
     /// Render loop should exit; outcome is already captured.
@@ -224,7 +231,25 @@ impl SetupWizardState {
                     }
                     KeyCode::Enter => {
                         self.target = WIZARD_TARGETS.get(self.target_cursor).copied();
+                        self.step = SetupStep::ExplainSynthesis;
+                        true
+                    }
+                    _ => false,
+                }
+            }
+            SetupStep::ExplainSynthesis => {
+                if is_quit {
+                    self.cancelled = true;
+                    self.step = SetupStep::Complete;
+                    return true;
+                }
+                match code {
+                    KeyCode::Enter => {
                         self.step = SetupStep::SelectSynthesis;
+                        true
+                    }
+                    KeyCode::Char('b') => {
+                        self.step = SetupStep::SelectTarget;
                         true
                     }
                     _ => false,
@@ -252,11 +277,12 @@ impl SetupWizardState {
                         match SYNTHESIS_ROWS.get(self.synthesis_cursor).copied() {
                             Some(SynthesisRow::Skip) => {
                                 self.synthesis = None;
+                                // Nothing to review when synthesis is off.
                                 self.step = SetupStep::Confirm;
                             }
                             Some(SynthesisRow::Cloud(provider)) => {
                                 self.synthesis = Some(SynthesisChoice::Cloud(provider));
-                                self.step = SetupStep::Confirm;
+                                self.step = SetupStep::ReviewSynthesisPlan;
                             }
                             Some(SynthesisRow::Local) => {
                                 self.step = SetupStep::SelectLocalPreset;
@@ -327,10 +353,32 @@ impl SetupWizardState {
                             preset: self.local_preset,
                             endpoint,
                         });
-                        self.step = SetupStep::Confirm;
+                        self.step = SetupStep::ReviewSynthesisPlan;
                         true
                     }
                     _ => self.endpoint_input.handle_key(code, modifiers),
+                }
+            }
+            SetupStep::ReviewSynthesisPlan => {
+                if is_quit {
+                    self.cancelled = true;
+                    self.step = SetupStep::Complete;
+                    return true;
+                }
+                match code {
+                    KeyCode::Enter => {
+                        self.step = SetupStep::Confirm;
+                        true
+                    }
+                    KeyCode::Char('b') => {
+                        // Jump back to the provider-selection step. Clear the
+                        // committed choice so a back-forward round trip never
+                        // silently reuses a stale selection.
+                        self.synthesis = None;
+                        self.step = SetupStep::SelectSynthesis;
+                        true
+                    }
+                    _ => false,
                 }
             }
             SetupStep::Confirm => match code {
@@ -339,8 +387,13 @@ impl SetupWizardState {
                     true
                 }
                 KeyCode::Esc | KeyCode::Char('b') => {
-                    // Back to synthesis selection; do not cancel.
-                    self.step = SetupStep::SelectSynthesis;
+                    // Back one step: to the review screen when a provider was
+                    // chosen, otherwise all the way to the synthesis list.
+                    self.step = if self.synthesis.is_some() {
+                        SetupStep::ReviewSynthesisPlan
+                    } else {
+                        SetupStep::SelectSynthesis
+                    };
                     true
                 }
                 KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {

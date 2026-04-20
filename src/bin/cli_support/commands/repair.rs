@@ -4,6 +4,7 @@ use synrepo::{
     config::Config,
     pipeline::{
         repair::{build_repair_report, execute_sync, SyncOptions},
+        synthesis::{accounting, telemetry},
         watch::{request_watch_control, WatchControlRequest, WatchControlResponse},
     },
 };
@@ -41,11 +42,24 @@ pub(crate) fn sync(
     json_output: bool,
     generate_cross_links: bool,
     regenerate_cross_links: bool,
+    reset_synthesis_totals: bool,
 ) -> anyhow::Result<()> {
     let config = Config::load(repo_root).map_err(|error| {
         anyhow::anyhow!("sync: not initialized — run `synrepo init` first ({error})")
     })?;
     let synrepo_dir = Config::synrepo_dir(repo_root);
+    telemetry::set_synrepo_dir(&synrepo_dir);
+
+    if reset_synthesis_totals {
+        accounting::reset(&synrepo_dir)
+            .map_err(|error| anyhow::anyhow!("sync: failed to reset synthesis totals ({error})"))?;
+        if json_output {
+            println!("{}", serde_json::json!({ "reset_synthesis_totals": true }));
+        } else {
+            println!("Synthesis totals reset. Call log rotated to `.bak` with timestamp.");
+        }
+        return Ok(());
+    }
 
     let options = SyncOptions {
         generate_cross_links,

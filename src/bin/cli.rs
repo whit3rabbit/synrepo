@@ -413,11 +413,13 @@ fn dispatch(command: Command, repo_root: &Path, tui_opts: TuiOptions) -> anyhow:
             json,
             generate_cross_links,
             regenerate_cross_links,
+            reset_synthesis_totals,
         } => sync(
             repo_root,
             json,
             generate_cross_links,
             regenerate_cross_links,
+            reset_synthesis_totals,
         ),
         Command::Search {
             query,

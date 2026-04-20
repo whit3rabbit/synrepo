@@ -165,11 +165,7 @@ pub fn record_agent(project: &Path, agent: AgentEntry) -> anyhow::Result<()> {
     let mut registry = io::load_from(&path)?;
     registry.schema_version = SCHEMA_VERSION;
     let canonical = canonicalize(project);
-    let entry = match registry
-        .projects
-        .iter_mut()
-        .find(|p| p.path == canonical)
-    {
+    let entry = match registry.projects.iter_mut().find(|p| p.path == canonical) {
         Some(e) => e,
         None => {
             registry.projects.push(ProjectEntry {
@@ -243,10 +239,7 @@ fn find_project_mut<'a>(
     project: &Path,
 ) -> Option<&'a mut ProjectEntry> {
     let canonical = canonicalize(project);
-    registry
-        .projects
-        .iter_mut()
-        .find(|p| p.path == canonical)
+    registry.projects.iter_mut().find(|p| p.path == canonical)
 }
 
 /// Best-effort canonicalization: uses `fs::canonicalize` when the path exists,
@@ -269,4 +262,3 @@ fn absolute(p: &Path) -> std::io::Result<PathBuf> {
     let cwd = std::env::current_dir()?;
     Ok(cwd.join(p))
 }
-

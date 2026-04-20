@@ -176,7 +176,7 @@ fn sync_blocked_when_writer_flock_held_by_foreign_process() {
         },
     );
 
-    let err = sync(repo, false, false, false).unwrap_err();
+    let err = sync(repo, false, false, false, false).unwrap_err();
     let msg = err.to_string();
     assert!(
         msg.contains("writer lock held by pid"),

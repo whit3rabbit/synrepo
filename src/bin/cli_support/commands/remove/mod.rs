@@ -160,7 +160,12 @@ pub(crate) fn remove(
         .actions
         .iter()
         .any(|a| matches!(a, RemoveAction::DeleteSynrepoDir));
-    guard_watch_daemon(&synrepo_dir, has_synrepo_action, force, /*wizard=*/ false)?;
+    guard_watch_daemon(
+        &synrepo_dir,
+        has_synrepo_action,
+        force,
+        /*wizard=*/ false,
+    )?;
 
     // Bulk removal prompts before deleting `.synrepo/` unless `--force` or
     // `--keep-synrepo-dir` was passed. Per-tool removal never includes the

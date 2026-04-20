@@ -94,6 +94,40 @@ The suffix `/v1/chat/completions` selects the OpenAI-compatible request shape; a
 
 When synthesis is disabled but `synrepo` detects a provider key in your environment, `synrepo status` surfaces a one-line hint so you know the feature exists without guessing.
 
+### What synthesis produces
+
+Two artifacts, both stored in the overlay (never in the canonical graph) and always labeled machine-authored:
+
+1. **Commentary** — a short paragraph describing what a file or symbol does. Real example from a refresh run against this repo's `writer` module:
+
+   > writer.rs acquires a per-repo advisory lock on `.synrepo/state/writer.lock` via fs2 and retries briefly on WouldBlock to mask flock release latency. Holders stamp a JSON sidecar with pid + acquired_at for external diagnostics.
+
+2. **Cross-link candidates** — proposed links between human-authored design docs and the code that implements them, tiered by confidence. You review and accept with `synrepo links accept`; accepted links become graph edges with `Epistemic::HumanDeclared`.
+
+Nothing runs in the background. Trigger synthesis explicitly with `synrepo sync --generate-cross-links`, `synrepo sync --regenerate-cross-links`, or the `synrepo_refresh_commentary` MCP tool.
+
+### When to enable it
+
+- You have human-authored design docs under `docs/adr/`, `docs/concepts/`, or `docs/decisions/` and want agents to see which code implements which decision.
+- You are onboarding a new contributor or agent and want file-level commentary to orient them before they start opening 400-line files.
+- You have budget for a few cents per full refresh on frontier cloud models, or you are already running a local model server (Ollama, llama.cpp, LM Studio, vLLM) and want zero-cost commentary.
+- You are comfortable treating the output as advisory, machine-authored prose. `synrepo` never silently promotes synthesis output into the structural graph.
+
+Leave it off if none of the above apply, or if you want to keep `.synrepo/` fully offline and deterministic.
+
+### Rough cost per full refresh
+
+Ballpark for a 500-symbol repo, a full commentary pass with a frontier model. Your actual spend is always visible in the Health tab and `.synrepo/state/synthesis-totals.json`:
+
+- **Anthropic / OpenAI / Gemini / OpenRouter** — a few cents per pass on frontier models, depending on the model you choose. Rate tables live in `src/pipeline/synthesis/pricing.rs` and are dated (`LAST_UPDATED` constant). Unknown `(provider, model)` pairs record `usd_cost: null` rather than guess.
+- **Local (Ollama, llama.cpp, LM Studio, vLLM)** — no API cost. Quality depends on the model you pulled. Some OpenAI-compatible local servers do not return usage fields in their response; `synrepo` detects this and marks those calls `estimated` end-to-end so the dashboard never implies precision it does not have.
+
+### How we track usage
+
+Every synthesis call writes one JSON record to `.synrepo/state/synthesis-log.jsonl` (append-only) and updates a small aggregates snapshot at `.synrepo/state/synthesis-totals.json`. Both files are per-repo and local-only. Fields captured: call id, timestamp, provider, model, target node, duration, input + output tokens, usage source (`reported` or `estimated`), computed USD cost (nullable), outcome.
+
+To inspect: read the JSONL directly, or open the TUI dashboard — synthesis calls stream into the Live tab and the Health tab surfaces lifetime totals. To reset: `synrepo sync --reset-synthesis-totals` rotates the JSONL with a timestamp suffix and zeros the totals snapshot. Pricing has a `last_updated` date surfaced in the Health block so stale rates do not silently under-report cost.
+
 ## Supported Languages
 
 Structural extraction is wired for five languages. Parser output (symbols, call sites, imports) lands in the graph; stage-4 resolution promotes call and import references into cross-file edges where the language's contract allows.

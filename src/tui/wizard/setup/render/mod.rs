@@ -83,9 +83,11 @@ fn draw(frame: &mut ratatui::Frame, state: &SetupWizardState, theme: &Theme) {
             SetupStep::Splash => " synrepo setup — step 1/5: welcome ",
             SetupStep::SelectMode => " synrepo setup — step 2/5: graph mode ",
             SetupStep::SelectTarget => " synrepo setup — step 3/5: agent integration ",
+            SetupStep::ExplainSynthesis => " synrepo setup — step 4/5: what synthesis does ",
             SetupStep::SelectSynthesis => " synrepo setup — step 4/5: LLM synthesis ",
             SetupStep::SelectLocalPreset => " synrepo setup — step 4a: local LLM preset ",
             SetupStep::EditLocalEndpoint => " synrepo setup — step 4b: local endpoint ",
+            SetupStep::ReviewSynthesisPlan => " synrepo setup — step 4c: review synthesis plan ",
             SetupStep::Confirm => " synrepo setup — step 5/5: confirm ",
             SetupStep::Complete => " synrepo setup — done ",
         },
@@ -102,12 +104,18 @@ fn draw(frame: &mut ratatui::Frame, state: &SetupWizardState, theme: &Theme) {
         SetupStep::Splash => draw_splash_step(frame, outer[1], theme),
         SetupStep::SelectMode => draw_mode_step(frame, outer[1], state, theme),
         SetupStep::SelectTarget => draw_target_step(frame, outer[1], state, theme),
+        SetupStep::ExplainSynthesis => {
+            synthesis::draw_explain_synthesis_step(frame, outer[1], theme)
+        }
         SetupStep::SelectSynthesis => synthesis::draw_synthesis_step(frame, outer[1], state, theme),
         SetupStep::SelectLocalPreset => {
             synthesis::draw_local_preset_step(frame, outer[1], state, theme)
         }
         SetupStep::EditLocalEndpoint => {
             synthesis::draw_local_endpoint_step(frame, outer[1], state, theme)
+        }
+        SetupStep::ReviewSynthesisPlan => {
+            synthesis::draw_review_synthesis_plan_step(frame, outer[1], state, theme)
         }
         SetupStep::Confirm => draw_confirm_step(frame, outer[1], state, theme),
         SetupStep::Complete => {}
@@ -119,9 +127,11 @@ fn draw(frame: &mut ratatui::Frame, state: &SetupWizardState, theme: &Theme) {
         | SetupStep::SelectTarget
         | SetupStep::SelectSynthesis
         | SetupStep::SelectLocalPreset => " ↑/↓ move  Enter select  Esc cancel ",
+        SetupStep::ExplainSynthesis => " Enter continue  b back  Esc cancel ",
         SetupStep::EditLocalEndpoint => {
             " type URL  Enter accept  Esc back  Ctrl-U clear  Ctrl-C abort "
         }
+        SetupStep::ReviewSynthesisPlan => " Enter continue  b back  Esc cancel ",
         SetupStep::Confirm => " Enter apply  b back  Ctrl-C abort ",
         SetupStep::Complete => "",
     };

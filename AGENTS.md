@@ -134,6 +134,8 @@ Node types: `FileNode` (content-hash identity), `SymbolNode` (tree-sitter extrac
 - `.synrepo/state/watch.sock` — Unix-only control socket for active daemon watch mode (on Windows the control plane is a named pipe `synrepo-watch-<hash>` with no on-disk artifact)
 - `.synrepo/state/reconcile-state.json` — last reconcile outcome, timestamp, and discovered/symbol counts
 - `.synrepo/state/repair-log.jsonl` — append-only resolution log written by `synrepo sync`; one JSON object per line
+- `.synrepo/state/synthesis-log.jsonl` — append-only per-call synthesis telemetry (timestamp, provider, model, duration, input/output tokens, usage_source, usd_cost, outcome); rotated on `synrepo sync --reset-synthesis-totals`
+- `.synrepo/state/synthesis-totals.json` — aggregates snapshot consumed by the Health tab; written transactionally (temp + rename) after each call
 - `openspec/` — planning artifacts only, not runtime
 
 ### In-memory snapshot
@@ -254,6 +256,9 @@ Stages 4–8:
 - **Writer lock is a kernel advisory lock (`flock`/`LockFileEx` via `fs2`), not file existence.** Tests that only stamp JSON into `.synrepo/state/writer.lock` do NOT exercise contention. To simulate a foreign holder, call `synrepo::pipeline::writer::hold_writer_flock_with_ownership(lock_path, &WriterOwnership { pid, acquired_at })` which takes the flock on a separate fd. Dead-PID / live-foreign-PID helpers: `writer::spawn_and_reap_pid()` and `writer::live_foreign_pid() -> (Child, u32)`. Do not re-implement these.
 - **Writer-lock acquire retries briefly on `WouldBlock`** via `open_and_try_lock_with_retry` in `src/pipeline/writer/helpers.rs` (20 × 5 ms). Under heavy parallel load macOS can delay flock release propagation across fds, so a plain `try_lock_exclusive` returns `WouldBlock` even when no live holder exists. Do not flatten this back to `open_and_try_lock` at the acquire site — it will reintroduce the mutation-test flake.
 - **`fs2` is a direct dep** providing cross-platform advisory locking (`FileExt::try_lock_exclusive` → `flock` on Unix, `LockFileEx` on Windows). `libc` is a `[target.'cfg(unix)'.dependencies]` dep used only for `O_CLOEXEC` on the writer lock fd.
+- **`fs2::try_lock_exclusive` on Windows surfaces raw `ERROR_LOCK_VIOLATION` (os error 33), which Rust std does NOT map to `ErrorKind::WouldBlock`.** Any `e.kind() == WouldBlock` check silently fails on Windows (a held lock looks like an unrelated Io error). Use `pipeline::writer::is_lock_contention(&err)` for cross-platform contention detection; it accepts both `WouldBlock` and raw os 33.
+- **Host `cargo clippy` does not compile `#[cfg(windows)]` blocks**, so Windows-only lints (e.g. `clippy::needless_return`) only fire on the Windows CI runner. When adding or touching `cfg(windows)` code, run `cargo clippy --target x86_64-pc-windows-gnu --bins --lib -- -D warnings` locally before pushing.
+- **Windows CI runs `make ci-test` before `make ci-lint` and stops on first failure.** A lib-crate test failure masks bin-crate test failures in the same run; when fixing a Windows-only lib test, assume there may be additional bin-crate or lint failures that haven't been surfaced yet.
 - **`bootstrap()` signature**: `synrepo::bootstrap::bootstrap(repo_root: &Path, mode: Option<Mode>)` — two args only. Does not accept a pre-built `Config` or `synrepo_dir`; it derives both internally.
 - **`cargo build --workspace` does not imply `cargo test` will compile**: test-scoped code (`#[cfg(test)]` and `mod tests`) only compiles under `cargo test` / `cargo check --tests` / `cargo clippy --all-targets`. A pre-existing test-only compile error in an unrelated module will surface there, not in `cargo build`. When verifying focused work against in-tree WIP, isolate the WIP (temporary rename or stash) before running tests to confirm your own work.
 - **`cargo test --workspace` is still not trusted in parallel for CI**: some mutation-surface tests can interfere under parallel execution even though they pass in isolation and under `--test-threads=1`. CI now uses `make ci-test` (serial workspace tests) so release/publish gates stay stable; use `make check` locally for the faster parallel pass, but confirm suspicious failures with a focused rerun or `make ci-test`.
@@ -312,6 +317,10 @@ For `Local`, the request shape is inferred from the endpoint path: `/v1/chat/com
 API keys live in the shell environment only. `synrepo` does not write keys to `.synrepo/config.toml` or any persisted state; OS-keychain integration is explicitly out of scope today.
 
 The legacy `SYNREPO_ANTHROPIC_API_KEY` is also accepted as a fallback to `ANTHROPIC_API_KEY`.
+
+User-facing rationale (what synthesis produces, when to enable, rough cost) lives in `README.md` under "Optional LLM synthesis" — keep operator-only details here and narrative there.
+
+Per-call telemetry lands in `.synrepo/state/synthesis-log.jsonl` and aggregates in `.synrepo/state/synthesis-totals.json`. Token counts flagged `est.` came from a local OpenAI-compatible server that did not return a `usage` block; the accounting layer marks those calls `UsageSource::Estimated` end-to-end and the Health tab exposes `any_estimated: true` so estimated and reported numbers never get rolled into a single "accurate" total. Pricing in `src/pipeline/synthesis/pricing.rs` has a `LAST_UPDATED` date; unknown `(provider, model)` pairs record `usd_cost: null` rather than guess.
 
 ## Adding a new language
 

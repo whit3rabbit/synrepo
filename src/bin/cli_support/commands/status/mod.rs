@@ -185,6 +185,36 @@ fn write_status_text(out: &mut String, snapshot: &StatusSnapshot, full: bool) {
     } else {
         writeln!(out, "  synthesis:    not initialized").unwrap();
     }
+    if let Some(totals) = &snapshot.synthesis_totals {
+        let total_calls = totals.calls + totals.failures + totals.budget_blocked;
+        if total_calls > 0 {
+            let est = if totals.any_estimated { " (est.)" } else { "" };
+            let cost = if totals.any_unpriced {
+                format!("${:.4} + unpriced", totals.usd_cost)
+            } else {
+                format!("${:.4}", totals.usd_cost)
+            };
+            writeln!(
+                out,
+                "    usage:      {} call(s), {} in / {} out tokens{}, {} (pricing as of {})",
+                total_calls,
+                totals.input_tokens,
+                totals.output_tokens,
+                est,
+                cost,
+                synrepo::pipeline::synthesis::pricing::LAST_UPDATED
+            )
+            .unwrap();
+            if totals.failures > 0 || totals.budget_blocked > 0 {
+                writeln!(
+                    out,
+                    "    skipped:    {} failed, {} budget-blocked",
+                    totals.failures, totals.budget_blocked
+                )
+                .unwrap();
+            }
+        }
+    }
 
     writeln!(
         out,
@@ -299,6 +329,20 @@ fn write_status_json(out: &mut String, snapshot: &StatusSnapshot) -> anyhow::Res
         "commentary_coverage": commentary_json,
         "graph_snapshot": graph_snapshot_json(&snapshot.graph_snapshot),
         "synthesis_provider": snapshot.synthesis_provider.as_ref().map(synthesis_json),
+        "synthesis_totals": snapshot.synthesis_totals.as_ref().map(|t| serde_json::json!({
+            "since": t.since,
+            "updated_at": t.updated_at,
+            "calls": t.calls,
+            "input_tokens": t.input_tokens,
+            "output_tokens": t.output_tokens,
+            "failures": t.failures,
+            "budget_blocked": t.budget_blocked,
+            "usd_cost": t.usd_cost,
+            "any_estimated": t.any_estimated,
+            "any_unpriced": t.any_unpriced,
+            "pricing_last_updated": synrepo::pipeline::synthesis::pricing::LAST_UPDATED,
+            "per_provider": t.per_provider,
+        })),
         "recent_activity": activity_json,
         "last_compaction_timestamp": snapshot.last_compaction.map(|ts| ts.to_string()),
         "repair_audit": repair_audit_json,

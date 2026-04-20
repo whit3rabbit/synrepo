@@ -8,6 +8,8 @@ use std::time::Duration;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
+use crate::pipeline::synthesis::telemetry::TokenUsage;
+
 /// Default timeout for synthesis API calls (30 seconds).
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -28,15 +30,44 @@ pub fn estimate_tokens(context: &str) -> u32 {
     (context.len() as u32) / CHARS_PER_TOKEN
 }
 
-/// Make a JSON POST request and parse the response.
-/// Returns `Ok(None)` on any failure (network error, non-success status, JSON parse error).
-/// The caller is responsible for adding provider-specific headers.
-pub fn post_json<Req, Res>(
+/// Turn optional provider-reported token counts into a [`TokenUsage`]. When
+/// `reported` is `None`, fall back to the chars-per-token heuristic against
+/// `context` and flag the result as [`TokenUsage::estimated`].
+///
+/// Callers that want to treat `(0, 0)` as missing (e.g. OpenRouter and local
+/// OpenAI-compatible servers that sometimes send zeros) should `.filter(...)`
+/// before passing the pair in.
+pub fn resolve_usage(
+    reported: Option<(u32, u32)>,
+    context: &str,
+    estimated_input: u32,
+) -> TokenUsage {
+    match reported {
+        Some((i, o)) => TokenUsage::reported(i, o),
+        None => TokenUsage::estimated(estimated_input, estimate_tokens(context)),
+    }
+}
+
+/// Clamp a text length to a `u32`, used when publishing `output_bytes` on a
+/// completion event. Avoids five copies of the `text.len().min(u32::MAX as usize) as u32`
+/// pattern across providers.
+pub fn cap_output_bytes(text: &str) -> u32 {
+    text.len().min(u32::MAX as usize) as u32
+}
+
+/// JSON POST variant that returns a descriptive failure string instead of
+/// collapsing all failure modes to `Ok(None)`. Used by telemetry-instrumented
+/// providers so `CallCtx::fail` gets a meaningful error tail.
+///
+/// The returned string is short and safe to log: transport errors include
+/// the reqwest message, non-success status includes the numeric status only
+/// (no response body), and parse errors include the serde message.
+pub fn post_json_strict<Req, Res>(
     client: &reqwest::blocking::Client,
     url: &str,
     headers: &[(&str, &str)],
     body: &Req,
-) -> crate::Result<Option<Res>>
+) -> Result<Res, String>
 where
     Req: Serialize,
     Res: DeserializeOwned,
@@ -46,24 +77,17 @@ where
         request = request.header(*key, *value);
     }
 
-    let response = match request.json(body).send() {
-        Ok(r) => r,
-        Err(e) => {
-            tracing::warn!(error = %e, "synthesis request failed");
-            return Ok(None);
-        }
-    };
+    let response = request
+        .json(body)
+        .send()
+        .map_err(|e| format!("transport error: {e}"))?;
 
-    if !response.status().is_success() {
-        tracing::warn!(status = %response.status(), "synthesis returned non-success");
-        return Ok(None);
+    let status = response.status();
+    if !status.is_success() {
+        return Err(format!("non-success status: {status}"));
     }
 
-    match response.json() {
-        Ok(parsed) => Ok(Some(parsed)),
-        Err(e) => {
-            tracing::warn!(error = %e, "synthesis response parse failed");
-            Ok(None)
-        }
-    }
+    response
+        .json::<Res>()
+        .map_err(|e| format!("response parse error: {e}"))
 }

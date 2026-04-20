@@ -16,7 +16,10 @@ use crate::{
         export::load_manifest,
         recent_activity::{read_recent_activity, ActivityEntry, RecentActivityQuery},
         repair::{read_repair_log_degraded_marker, resolve_commentary_node, RepairLogDegraded},
-        synthesis::{describe_active_provider, SynthesisStatus},
+        synthesis::{
+            accounting::{load_totals, SynthesisTotals},
+            describe_active_provider, SynthesisStatus,
+        },
         watch::load_reconcile_state,
     },
     store::{
@@ -130,6 +133,10 @@ pub struct StatusSnapshot {
     /// Synthesis provider information, including enablement status and
     /// whether a provider API key was detected in the environment.
     pub synthesis_provider: Option<SynthesisDisplay>,
+    /// Per-repo synthesis accounting totals loaded from
+    /// `.synrepo/state/synthesis-totals.json`. `None` when the file is
+    /// missing, unreadable, or the repo is uninitialized.
+    pub synthesis_totals: Option<SynthesisTotals>,
     /// Last compaction timestamp, if any.
     pub last_compaction: Option<OffsetDateTime>,
     /// Repair audit state.
@@ -158,6 +165,7 @@ pub fn build_status_snapshot(repo_root: &Path, opts: StatusOptions) -> StatusSna
                 overlay_cost_summary: String::new(),
                 commentary_coverage: CommentaryCoverage::unavailable("not initialized"),
                 synthesis_provider: None,
+                synthesis_totals: None,
                 last_compaction: None,
                 repair_audit: RepairAuditState::Ok,
                 recent_activity: None,
@@ -192,6 +200,7 @@ pub fn build_status_snapshot(repo_root: &Path, opts: StatusOptions) -> StatusSna
         endpoint_source: active.endpoint_source,
         status: active.status,
     });
+    let synthesis_totals = load_totals(&synrepo_dir).ok().flatten();
 
     let recent_activity = if opts.recent {
         let query = RecentActivityQuery {
@@ -214,6 +223,7 @@ pub fn build_status_snapshot(repo_root: &Path, opts: StatusOptions) -> StatusSna
         overlay_cost_summary,
         commentary_coverage,
         synthesis_provider,
+        synthesis_totals,
         last_compaction,
         repair_audit,
         recent_activity,

@@ -2,9 +2,11 @@
 //! between dashboard (poll / live) mode and the various wizards. Wizard
 //! rendering still lives in `wizard.rs`; this module only owns the loop.
 
+mod synthesis_events;
 mod view_state;
 mod watch_events;
 
+pub use synthesis_events::synthesis_event_to_log_entry;
 pub use view_state::ActiveTab;
 pub use watch_events::watch_event_to_log_entry;
 
@@ -15,6 +17,7 @@ use crossbeam_channel::{Receiver, TryRecvError};
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 
 use crate::bootstrap::runtime_probe::AgentIntegration;
+use crate::pipeline::synthesis::telemetry::{self, SynthesisEvent};
 use crate::pipeline::watch::WatchEvent;
 use crate::surface::status_snapshot::{build_status_snapshot, StatusOptions, StatusSnapshot};
 use crate::tui::probe::Severity;
@@ -123,6 +126,10 @@ pub struct AppState {
     /// service. `None` in poll mode so the dashboard falls back to file-based
     /// snapshot refresh.
     events_rx: Option<Receiver<WatchEvent>>,
+    /// Process-global synthesis event stream. Present in both poll and live
+    /// modes: if the user triggers synthesis from within the TUI host (future)
+    /// or any other in-process call site fires, the events merge into the log.
+    synthesis_rx: Receiver<SynthesisEvent>,
 }
 
 const TOAST_TTL: Duration = Duration::from_millis(2000);
@@ -197,6 +204,7 @@ impl AppState {
             last_refresh: Instant::now(),
             toast: None,
             events_rx,
+            synthesis_rx: telemetry::subscribe(),
         }
     }
 
@@ -245,6 +253,11 @@ impl AppState {
     /// Also flips `reconcile_active` so the header spinner tracks in-flight
     /// reconcile passes without requiring a separate event channel.
     pub fn drain_events(&mut self) {
+        self.drain_watch_events();
+        self.drain_synthesis_events();
+    }
+
+    fn drain_watch_events(&mut self) {
         let Some(rx) = self.events_rx.as_ref() else {
             return;
         };
@@ -263,6 +276,27 @@ impl AppState {
                 Err(TryRecvError::Disconnected) => {
                     self.events_rx = None;
                     self.reconcile_active = false;
+                    return;
+                }
+            }
+        }
+    }
+
+    fn drain_synthesis_events(&mut self) {
+        loop {
+            match self.synthesis_rx.try_recv() {
+                Ok(event) => {
+                    if let Some(entry) = synthesis_event_to_log_entry(event) {
+                        self.log.push(entry);
+                    }
+                }
+                Err(TryRecvError::Empty) => return,
+                Err(TryRecvError::Disconnected) => {
+                    // Re-subscribe so a dropped or reaped sender does not
+                    // silently stop the feed. Telemetry fanout reaps
+                    // disconnected receivers on every publish, so we may land
+                    // here after a long idle period.
+                    self.synthesis_rx = telemetry::subscribe();
                     return;
                 }
             }

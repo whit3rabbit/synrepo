@@ -14,9 +14,12 @@
 //! - Provider implementations in [`providers`]: call various LLM APIs when
 //!   the appropriate API key is set via environment variables.
 
+pub mod accounting;
 pub mod cross_link;
+pub mod pricing;
 pub mod providers;
 pub mod stub;
+pub mod telemetry;
 
 pub use cross_link::{
     score, CandidatePair, CandidateScope, CrossLinkGenerator, NoOpCrossLinkGenerator,

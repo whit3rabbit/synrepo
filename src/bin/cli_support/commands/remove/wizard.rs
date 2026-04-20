@@ -37,7 +37,12 @@ pub(super) fn apply_wizard_plan(
         .actions
         .iter()
         .any(|a| matches!(a, RemoveAction::DeleteSynrepoDir));
-    guard_watch_daemon(&synrepo_dir, has_synrepo_action, force, /*wizard=*/ true)?;
+    guard_watch_daemon(
+        &synrepo_dir,
+        has_synrepo_action,
+        force,
+        /*wizard=*/ true,
+    )?;
 
     finalize_remove(repo_root, tool, &plan, json)
 }

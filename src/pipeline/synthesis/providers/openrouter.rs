@@ -11,9 +11,14 @@ use crate::overlay::{
     OverlayEpistemic, OverlayLink,
 };
 use crate::pipeline::synthesis::cross_link::{score, CandidatePair, CandidateScope};
+use crate::pipeline::synthesis::telemetry::{publish_budget_blocked, CallCtx, SynthesisTarget};
 use crate::pipeline::synthesis::{CommentaryEntry, CommentaryGenerator, CrossLinkGenerator};
 
-use super::http::{build_client, post_json, CHARS_PER_TOKEN};
+use super::http::{
+    build_client, cap_output_bytes, estimate_tokens, post_json_strict, resolve_usage,
+};
+
+const PROVIDER: &str = "openrouter";
 
 /// Default OpenRouter model for synthesis (Gemma is usually free/cheap).
 pub const DEFAULT_MODEL: &str = "google/gemma-4-31b-it:free";
@@ -45,13 +50,16 @@ impl OpenRouterCommentaryGenerator {
 
 impl CommentaryGenerator for OpenRouterCommentaryGenerator {
     fn generate(&self, node: NodeId, context: &str) -> crate::Result<Option<CommentaryEntry>> {
-        // Cost check
-        let estimated_tokens = (context.len() as u32) / CHARS_PER_TOKEN;
+        let target = SynthesisTarget::Commentary { node };
+
+        let estimated_tokens = estimate_tokens(context);
         if estimated_tokens > self.max_tokens_per_call {
-            tracing::warn!(
-                estimated = estimated_tokens,
-                budget = self.max_tokens_per_call,
-                "commentary generation skipped: context exceeds configured cost limit"
+            publish_budget_blocked(
+                PROVIDER,
+                &self.model,
+                target,
+                estimated_tokens,
+                self.max_tokens_per_call,
             );
             return Ok(None);
         }
@@ -85,14 +93,24 @@ impl CommentaryGenerator for OpenRouterCommentaryGenerator {
             ("X-Title", "synrepo"),
         ];
 
-        let parsed: ChatResponse = match post_json(&self.client, API_URL, &headers, &body) {
-            Ok(Some(p)) => p,
-            Ok(None) => return Ok(None),
+        let ctx = CallCtx::start(PROVIDER, &self.model, target);
+        let parsed: ChatResponse = match post_json_strict(&self.client, API_URL, &headers, &body) {
+            Ok(p) => p,
             Err(e) => {
-                tracing::warn!(error = %e, "commentary generation request failed");
+                ctx.fail(e);
                 return Ok(None);
             }
         };
+
+        let usage = resolve_usage(
+            parsed
+                .usage
+                .as_ref()
+                .filter(|u| u.prompt_tokens > 0 || u.completion_tokens > 0)
+                .map(|u| (u.prompt_tokens, u.completion_tokens)),
+            context,
+            estimated_tokens,
+        );
 
         let text = parsed
             .choices
@@ -101,6 +119,8 @@ impl CommentaryGenerator for OpenRouterCommentaryGenerator {
             .and_then(|c| c.message.content)
             .map(|s| s.trim().to_string())
             .unwrap_or_default();
+
+        ctx.complete(usage, cap_output_bytes(&text));
 
         if text.is_empty() {
             return Ok(None);
@@ -158,12 +178,20 @@ impl OpenRouterCrossLinkGenerator {
             kind = overlay_edge_kind_label(pair.kind),
         );
 
-        let estimated_tokens = (prompt.len() as u32) / CHARS_PER_TOKEN;
+        let target = SynthesisTarget::CrossLink {
+            from: pair.from,
+            to: pair.to,
+            kind: pair.kind,
+        };
+
+        let estimated_tokens = estimate_tokens(&prompt);
         if estimated_tokens > self.max_tokens_per_call {
-            tracing::warn!(
-                estimated = estimated_tokens,
-                budget = self.max_tokens_per_call,
-                "cross-link generation skipped: context exceeds configured cost limit"
+            publish_budget_blocked(
+                PROVIDER,
+                &self.model,
+                target,
+                estimated_tokens,
+                self.max_tokens_per_call,
             );
             return None;
         }
@@ -192,11 +220,11 @@ impl OpenRouterCrossLinkGenerator {
             ("X-Title", "synrepo"),
         ];
 
-        let parsed: ChatResponse = match post_json(&self.client, API_URL, &headers, &body) {
-            Ok(Some(p)) => p,
-            Ok(None) => return None,
+        let ctx = CallCtx::start(PROVIDER, &self.model, target);
+        let parsed: ChatResponse = match post_json_strict(&self.client, API_URL, &headers, &body) {
+            Ok(p) => p,
             Err(e) => {
-                tracing::warn!(error = %e, "cross-link generation request failed");
+                ctx.fail(e);
                 return None;
             }
         };
@@ -207,6 +235,17 @@ impl OpenRouterCrossLinkGenerator {
             .next()
             .and_then(|c| c.message.content)
             .unwrap_or_default();
+
+        let usage = resolve_usage(
+            parsed
+                .usage
+                .as_ref()
+                .filter(|u| u.prompt_tokens > 0 || u.completion_tokens > 0)
+                .map(|u| (u.prompt_tokens, u.completion_tokens)),
+            &prompt,
+            estimated_tokens,
+        );
+        ctx.complete(usage, cap_output_bytes(&text));
 
         let spans: SpanPayload = match serde_json::from_str(text.trim()) {
             Ok(s) => s,
@@ -312,6 +351,16 @@ struct ChatMessage<'a> {
 #[derive(Deserialize)]
 struct ChatResponse {
     choices: Vec<Choice>,
+    #[serde(default)]
+    usage: Option<OpenRouterUsage>,
+}
+
+#[derive(Deserialize)]
+struct OpenRouterUsage {
+    #[serde(default)]
+    prompt_tokens: u32,
+    #[serde(default)]
+    completion_tokens: u32,
 }
 
 #[derive(Deserialize)]

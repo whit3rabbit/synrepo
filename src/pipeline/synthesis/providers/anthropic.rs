@@ -12,9 +12,14 @@ use crate::overlay::{
     OverlayEpistemic, OverlayLink,
 };
 use crate::pipeline::synthesis::cross_link::{score, CandidatePair, CandidateScope};
+use crate::pipeline::synthesis::telemetry::{publish_budget_blocked, CallCtx, SynthesisTarget};
 use crate::pipeline::synthesis::{CommentaryEntry, CommentaryGenerator, CrossLinkGenerator};
 
-use super::http::{build_client, post_json, CHARS_PER_TOKEN};
+use super::http::{
+    build_client, cap_output_bytes, estimate_tokens, post_json_strict, resolve_usage,
+};
+
+const PROVIDER: &str = "anthropic";
 
 /// Default Anthropic model for synthesis.
 pub const DEFAULT_MODEL: &str = "claude-sonnet-4-6";
@@ -47,13 +52,16 @@ impl AnthropicCommentaryGenerator {
 
 impl CommentaryGenerator for AnthropicCommentaryGenerator {
     fn generate(&self, node: NodeId, context: &str) -> crate::Result<Option<CommentaryEntry>> {
-        // Cost check: estimated prompt tokens exceed the configured budget.
-        let estimated_tokens = (context.len() as u32) / CHARS_PER_TOKEN;
+        let target = SynthesisTarget::Commentary { node };
+
+        let estimated_tokens = estimate_tokens(context);
         if estimated_tokens > self.max_tokens_per_call {
-            tracing::warn!(
-                estimated = estimated_tokens,
-                budget = self.max_tokens_per_call,
-                "commentary generation skipped: context exceeds configured cost limit"
+            publish_budget_blocked(
+                PROVIDER,
+                &self.model,
+                target,
+                estimated_tokens,
+                self.max_tokens_per_call,
             );
             return Ok(None);
         }
@@ -79,14 +87,24 @@ impl CommentaryGenerator for AnthropicCommentaryGenerator {
             ("content-type", "application/json"),
         ];
 
-        let parsed: MessagesResponse = match post_json(&self.client, API_URL, &headers, &body) {
-            Ok(Some(p)) => p,
-            Ok(None) => return Ok(None),
-            Err(e) => {
-                tracing::warn!(error = %e, "commentary generation request failed");
-                return Ok(None);
-            }
-        };
+        let ctx = CallCtx::start(PROVIDER, &self.model, target);
+        let parsed: MessagesResponse =
+            match post_json_strict(&self.client, API_URL, &headers, &body) {
+                Ok(p) => p,
+                Err(e) => {
+                    ctx.fail(e);
+                    return Ok(None);
+                }
+            };
+
+        let usage = resolve_usage(
+            parsed
+                .usage
+                .as_ref()
+                .map(|u| (u.input_tokens, u.output_tokens)),
+            context,
+            estimated_tokens,
+        );
 
         let text = parsed
             .content
@@ -97,6 +115,8 @@ impl CommentaryGenerator for AnthropicCommentaryGenerator {
             .join("\n")
             .trim()
             .to_string();
+
+        ctx.complete(usage, cap_output_bytes(&text));
 
         if text.is_empty() {
             return Ok(None);
@@ -154,12 +174,20 @@ impl AnthropicCrossLinkGenerator {
             kind = overlay_edge_kind_label(pair.kind),
         );
 
-        let estimated_tokens = (prompt.len() as u32) / CHARS_PER_TOKEN;
+        let target = SynthesisTarget::CrossLink {
+            from: pair.from,
+            to: pair.to,
+            kind: pair.kind,
+        };
+
+        let estimated_tokens = estimate_tokens(&prompt);
         if estimated_tokens > self.max_tokens_per_call {
-            tracing::warn!(
-                estimated = estimated_tokens,
-                budget = self.max_tokens_per_call,
-                "cross-link generation skipped: context exceeds configured cost limit"
+            publish_budget_blocked(
+                PROVIDER,
+                &self.model,
+                target,
+                estimated_tokens,
+                self.max_tokens_per_call,
             );
             return None;
         }
@@ -181,14 +209,15 @@ impl AnthropicCrossLinkGenerator {
             ("content-type", "application/json"),
         ];
 
-        let parsed: MessagesResponse = match post_json(&self.client, API_URL, &headers, &body) {
-            Ok(Some(p)) => p,
-            Ok(None) => return None,
-            Err(e) => {
-                tracing::warn!(error = %e, "cross-link generation request failed");
-                return None;
-            }
-        };
+        let ctx = CallCtx::start(PROVIDER, &self.model, target);
+        let parsed: MessagesResponse =
+            match post_json_strict(&self.client, API_URL, &headers, &body) {
+                Ok(p) => p,
+                Err(e) => {
+                    ctx.fail(e);
+                    return None;
+                }
+            };
 
         let text = parsed
             .content
@@ -197,6 +226,16 @@ impl AnthropicCrossLinkGenerator {
             .map(|b| b.text)
             .collect::<Vec<_>>()
             .join("\n");
+
+        let usage = resolve_usage(
+            parsed
+                .usage
+                .as_ref()
+                .map(|u| (u.input_tokens, u.output_tokens)),
+            &prompt,
+            estimated_tokens,
+        );
+        ctx.complete(usage, cap_output_bytes(&text));
 
         let spans: SpanPayload = match serde_json::from_str(text.trim()) {
             Ok(s) => s,
@@ -303,6 +342,8 @@ struct Message<'a> {
 #[derive(Deserialize)]
 struct MessagesResponse {
     content: Vec<ContentBlock>,
+    #[serde(default)]
+    usage: Option<AnthropicUsage>,
 }
 
 #[derive(Deserialize)]
@@ -311,6 +352,14 @@ struct ContentBlock {
     ty: String,
     #[serde(default)]
     text: String,
+}
+
+#[derive(Deserialize)]
+struct AnthropicUsage {
+    #[serde(default)]
+    input_tokens: u32,
+    #[serde(default)]
+    output_tokens: u32,
 }
 
 #[derive(Deserialize)]

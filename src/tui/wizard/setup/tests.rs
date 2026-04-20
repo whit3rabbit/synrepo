@@ -24,8 +24,11 @@ mod tests {
         assert_eq!(s.step, SetupStep::SelectTarget);
         assert_eq!(s.mode, Mode::Auto);
         press(&mut s, KeyCode::Enter);
+        assert_eq!(s.step, SetupStep::ExplainSynthesis);
+        press(&mut s, KeyCode::Enter);
         assert_eq!(s.step, SetupStep::SelectSynthesis);
         press(&mut s, KeyCode::Enter);
+        // Default synthesis cursor is 0 (Skip) — goes straight to Confirm.
         assert_eq!(s.step, SetupStep::Confirm);
         assert_eq!(s.target, Some(AgentTargetKind::Claude));
         press(&mut s, KeyCode::Enter);
@@ -48,6 +51,8 @@ mod tests {
         }
         press(&mut s, KeyCode::Enter);
         assert_eq!(s.target, None);
+        assert_eq!(s.step, SetupStep::ExplainSynthesis);
+        press(&mut s, KeyCode::Enter);
         assert_eq!(s.step, SetupStep::SelectSynthesis);
         press(&mut s, KeyCode::Enter);
         assert_eq!(s.step, SetupStep::Confirm);
@@ -112,26 +117,47 @@ mod tests {
     }
 
     #[test]
-    fn b_at_confirm_goes_back_to_target_step() {
+    fn b_at_confirm_after_skip_goes_back_to_synthesis_selection() {
         let mut s = SetupWizardState::new(Mode::Auto, vec![]);
-        press(&mut s, KeyCode::Enter); // leave splash
-        press(&mut s, KeyCode::Enter);
-        press(&mut s, KeyCode::Enter);
+        press(&mut s, KeyCode::Enter); // splash → mode
+        press(&mut s, KeyCode::Enter); // mode → target
+        press(&mut s, KeyCode::Enter); // target → explain
+        press(&mut s, KeyCode::Enter); // explain → synthesis
         assert_eq!(s.step, SetupStep::SelectSynthesis);
-        press(&mut s, KeyCode::Enter);
+        press(&mut s, KeyCode::Enter); // Skip committed; jumps to confirm
         assert_eq!(s.step, SetupStep::Confirm);
         press(&mut s, KeyCode::Char('b'));
+        // With synthesis skipped, back jumps over the (unvisited) review step
+        // and lands on the provider selector.
         assert_eq!(s.step, SetupStep::SelectSynthesis);
+        assert!(!s.cancelled);
+    }
+
+    #[test]
+    fn b_at_confirm_after_provider_goes_back_to_review() {
+        let mut s = SetupWizardState::new(Mode::Auto, vec![]);
+        press(&mut s, KeyCode::Enter); // splash → mode
+        press(&mut s, KeyCode::Enter); // mode → target
+        press(&mut s, KeyCode::Enter); // target → explain
+        press(&mut s, KeyCode::Enter); // explain → synthesis
+        press(&mut s, KeyCode::Down); // Skip → Anthropic
+        press(&mut s, KeyCode::Enter); // commit Anthropic → review
+        assert_eq!(s.step, SetupStep::ReviewSynthesisPlan);
+        press(&mut s, KeyCode::Enter); // review → confirm
+        assert_eq!(s.step, SetupStep::Confirm);
+        press(&mut s, KeyCode::Char('b'));
+        assert_eq!(s.step, SetupStep::ReviewSynthesisPlan);
         assert!(!s.cancelled);
     }
 
     #[test]
     fn ctrl_c_at_confirm_cancels() {
         let mut s = SetupWizardState::new(Mode::Auto, vec![]);
-        press(&mut s, KeyCode::Enter); // leave splash
-        press(&mut s, KeyCode::Enter);
-        press(&mut s, KeyCode::Enter);
-        press(&mut s, KeyCode::Enter);
+        press(&mut s, KeyCode::Enter); // splash → mode
+        press(&mut s, KeyCode::Enter); // mode → target
+        press(&mut s, KeyCode::Enter); // target → explain
+        press(&mut s, KeyCode::Enter); // explain → synthesis
+        press(&mut s, KeyCode::Enter); // Skip → confirm
         s.handle_key(KeyCode::Char('c'), KeyModifiers::CONTROL);
         assert!(s.cancelled);
         assert!(s.finalize().is_none());
@@ -242,14 +268,17 @@ mod tests {
     // future reorder of the row list fails loud rather than silently shifting.
 
     /// Drive the wizard from Splash to SelectSynthesis using the defaults
-    /// (auto mode, skip target). Returns the state ready for synthesis input.
+    /// (auto mode, skip target). Passes through the `ExplainSynthesis`
+    /// explainer step automatically.
     fn drive_to_synthesis(s: &mut SetupWizardState) {
         press(s, KeyCode::Enter); // splash → mode
         press(s, KeyCode::Enter); // mode → target
         for _ in 0..WIZARD_TARGETS.len() {
             press(s, KeyCode::Down); // land on "Skip"
         }
-        press(s, KeyCode::Enter); // target → synthesis
+        press(s, KeyCode::Enter); // target → explain
+        assert_eq!(s.step, SetupStep::ExplainSynthesis);
+        press(s, KeyCode::Enter); // explain → synthesis
         assert_eq!(s.step, SetupStep::SelectSynthesis);
     }
 
@@ -276,6 +305,8 @@ mod tests {
             SynthesisRow::Cloud(CloudProvider::Anthropic)
         );
         press(&mut s, KeyCode::Enter);
+        assert_eq!(s.step, SetupStep::ReviewSynthesisPlan);
+        press(&mut s, KeyCode::Enter); // review → confirm
         assert_eq!(s.step, SetupStep::Confirm);
         press(&mut s, KeyCode::Enter);
         let plan = s.finalize().expect("plan");
@@ -306,7 +337,9 @@ mod tests {
             s.endpoint_input.value(),
             LocalPreset::Ollama.default_endpoint()
         );
-        press(&mut s, KeyCode::Enter); // accept endpoint unchanged
+        press(&mut s, KeyCode::Enter); // accept endpoint unchanged → review
+        assert_eq!(s.step, SetupStep::ReviewSynthesisPlan);
+        press(&mut s, KeyCode::Enter); // review → confirm
         assert_eq!(s.step, SetupStep::Confirm);
         press(&mut s, KeyCode::Enter);
         let plan = s.finalize().expect("plan");
@@ -342,7 +375,9 @@ mod tests {
         for ch in "http://gpu-box:9000/v1/chat/completions".chars() {
             press(&mut s, KeyCode::Char(ch));
         }
-        press(&mut s, KeyCode::Enter); // endpoint → confirm
+        press(&mut s, KeyCode::Enter); // endpoint → review
+        assert_eq!(s.step, SetupStep::ReviewSynthesisPlan);
+        press(&mut s, KeyCode::Enter); // review → confirm
         assert_eq!(s.step, SetupStep::Confirm);
         press(&mut s, KeyCode::Enter); // confirm → complete
         let plan = s.finalize().expect("plan");
@@ -422,6 +457,34 @@ mod tests {
             s.endpoint_input.value(),
             LocalPreset::LlamaCpp.default_endpoint(),
             "switching preset must reseed the text buffer with the new default",
+        );
+    }
+
+    #[test]
+    fn explain_synthesis_b_goes_back_to_select_target() {
+        let mut s = SetupWizardState::new(Mode::Auto, vec![]);
+        press(&mut s, KeyCode::Enter); // splash → mode
+        press(&mut s, KeyCode::Enter); // mode → target
+        press(&mut s, KeyCode::Enter); // target → explain
+        assert_eq!(s.step, SetupStep::ExplainSynthesis);
+        press(&mut s, KeyCode::Char('b'));
+        assert_eq!(s.step, SetupStep::SelectTarget);
+        assert!(!s.cancelled);
+    }
+
+    #[test]
+    fn review_synthesis_plan_b_clears_choice_and_returns_to_selector() {
+        let mut s = SetupWizardState::new(Mode::Auto, vec![]);
+        drive_to_synthesis(&mut s);
+        press(&mut s, KeyCode::Down); // Skip → Anthropic
+        press(&mut s, KeyCode::Enter); // commit → review
+        assert_eq!(s.step, SetupStep::ReviewSynthesisPlan);
+        assert!(s.synthesis.is_some());
+        press(&mut s, KeyCode::Char('b'));
+        assert_eq!(s.step, SetupStep::SelectSynthesis);
+        assert!(
+            s.synthesis.is_none(),
+            "backing out of the review screen must clear the pending choice",
         );
     }
 

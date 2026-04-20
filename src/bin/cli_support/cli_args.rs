@@ -134,6 +134,10 @@ pub(crate) enum Command {
         /// Re-run generation for stale candidates.
         #[arg(long)]
         regenerate_cross_links: bool,
+        /// Rotate the synthesis call log and zero the per-repo totals snapshot.
+        /// Does not run repair; returns after the reset.
+        #[arg(long)]
+        reset_synthesis_totals: bool,
     },
 
     /// Lexical search via the syntext index.

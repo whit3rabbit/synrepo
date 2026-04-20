@@ -11,6 +11,7 @@ synrepo SHALL define the purpose, durability class, and compatibility owner of t
 - **THEN** the contract identifies which stores are canonical, supplemental, rebuildable, disposable, or ephemeral
 - **AND** it distinguishes what may be deleted and rebuilt from what must be migrated or preserved
 - **AND** it defines the default compatibility action for each current store, including `graph`, `overlay`, `index`, `embeddings`, `cache/llm-responses`, and `state`
+- **AND** it recognises synthesis telemetry files `state/synthesis-log.jsonl` (append-only per-call records) and `state/synthesis-totals.json` (aggregates snapshot) as operational state that is disposable and rotatable without affecting canonical graph or overlay data
 
 ### Requirement: Define migration and rebuild policy
 synrepo SHALL define when schema or format changes require in-place migration, full rebuild, cache invalidation, clear-and-recreate, safe continue, or explicit user action.

@@ -41,6 +41,46 @@ impl CloudProvider {
             CloudProvider::OpenRouter => "OpenRouter — set OPENROUTER_API_KEY in your shell",
         }
     }
+
+    /// One-sentence description of what the provider is best at.
+    /// Rendered on the `ExplainSynthesis` step and on the review screen.
+    pub fn description(&self) -> &'static str {
+        match self {
+            CloudProvider::Anthropic => {
+                "Frontier-tier Claude models. Strong code explanations, high-quality cross-link candidates."
+            }
+            CloudProvider::OpenAi => {
+                "OpenAI hosted models. Widely available keys; quality varies by the model you select."
+            }
+            CloudProvider::Gemini => {
+                "Google Gemini hosted models. Longer context windows; good fit for large files."
+            }
+            CloudProvider::OpenRouter => {
+                "Unified billing across dozens of frontier and open-source models via one key."
+            }
+        }
+    }
+
+    /// Order-of-magnitude cost expectation per full refresh on a 500-symbol
+    /// repo. Deliberately rough: rates shift and we refuse to quote precise
+    /// numbers without reading the provider's live rate card. Surfaced in the
+    /// wizard's explainer and review steps.
+    pub fn cost_hint(&self) -> &'static str {
+        match self {
+            CloudProvider::Anthropic => {
+                "Typically a few cents per full refresh on a frontier model; your API key is billed directly."
+            }
+            CloudProvider::OpenAi => {
+                "Typically a few cents per full refresh; cheap with `gpt-4o-mini`, higher with larger models."
+            }
+            CloudProvider::Gemini => {
+                "Flash-tier models are cheap; Pro-tier costs more and is billed via Google Cloud."
+            }
+            CloudProvider::OpenRouter => {
+                "Cost depends entirely on which underlying model you pick; OpenRouter's docs list live rates."
+            }
+        }
+    }
 }
 
 /// Local-LLM server presets. Each maps to a default endpoint URL and a
@@ -92,6 +132,32 @@ impl LocalPreset {
             LocalPreset::Vllm => "vLLM (OpenAI-compatible)",
             LocalPreset::Custom => "Custom endpoint",
         }
+    }
+
+    /// One-sentence description of what the preset is for.
+    pub fn description(&self) -> &'static str {
+        match self {
+            LocalPreset::Ollama => {
+                "Easiest setup: `ollama pull llama3` then start `ollama serve`. Reports exact token counts."
+            }
+            LocalPreset::LlamaCpp => {
+                "llama.cpp's OpenAI-compatible server. Fast on consumer GPUs; token counts depend on the build."
+            }
+            LocalPreset::LmStudio => {
+                "Desktop GUI with a local OpenAI-compatible server. Good for experimenting with many models."
+            }
+            LocalPreset::Vllm => {
+                "High-throughput inference server for self-hosted deployments."
+            }
+            LocalPreset::Custom => "Point at any OpenAI-compatible or Ollama-native endpoint you run yourself.",
+        }
+    }
+
+    /// Cost / privacy expectation for this preset. Local servers never bill,
+    /// but output quality depends on the model the user pulled; make that
+    /// explicit in the wizard.
+    pub fn cost_hint(&self) -> &'static str {
+        "No API cost: requests stay on your machine. Output quality depends on the model you pulled."
     }
 }
 
