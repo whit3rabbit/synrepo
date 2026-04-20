@@ -165,7 +165,7 @@ pub(crate) fn is_lock_contention(err: &std::io::Error) -> bool {
     #[cfg(windows)]
     {
         const ERROR_LOCK_VIOLATION: i32 = 33;
-        return err.raw_os_error() == Some(ERROR_LOCK_VIOLATION);
+        err.raw_os_error() == Some(ERROR_LOCK_VIOLATION)
     }
     #[cfg(not(windows))]
     {
