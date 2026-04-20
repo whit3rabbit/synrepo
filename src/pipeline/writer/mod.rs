@@ -91,6 +91,9 @@ pub enum LockError {
         /// PID of the active watch service.
         watch_pid: u32,
     },
+    /// A watch service holds the lease but has not published its PID yet.
+    #[error("watch service is still starting for this repo; wait for it to become ready before running mutating commands")]
+    WatchStarting,
     /// The lock file exists but is unreadable or malformed.
     #[error("writer lock at {lock_path} is malformed: {detail}")]
     Malformed {
@@ -249,6 +252,7 @@ pub fn acquire_write_admission(
 
     match watch_service_status(synrepo_dir) {
         WatchServiceStatus::Inactive => {}
+        WatchServiceStatus::Starting => return Err(LockError::WatchStarting),
         WatchServiceStatus::Stale(_) | WatchServiceStatus::Corrupt(_) => {
             if let Err(e) = cleanup_stale_watch_artifacts(synrepo_dir) {
                 tracing::warn!("failed to clean stale watch artifacts: {e}");
@@ -274,6 +278,9 @@ pub fn map_lock_error(operation: &'static str, err: LockError) -> anyhow::Error 
         ),
         LockError::WatchOwned { watch_pid } => anyhow::anyhow!(
             "{operation}: watch service is active (pid {watch_pid}); run `synrepo watch stop` first"
+        ),
+        LockError::WatchStarting => anyhow::anyhow!(
+            "{operation}: watch service is still starting; wait for it to become ready or stop it first"
         ),
         LockError::Io { path, source } => anyhow::anyhow!(
             "{operation}: could not acquire writer lock at {}: {source}",

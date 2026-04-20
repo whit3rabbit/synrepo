@@ -26,6 +26,7 @@ use crate::pipeline::watch::{
 /// Current supervisor-tracked watcher state. This is a view model over the
 /// underlying lease file: `probe()` refreshes it from disk, `start()` /
 /// `stop()` transition it in-process.
+#[allow(dead_code)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum WatcherMode {
     /// No watcher is running and the supervisor has not started one.
@@ -146,6 +147,7 @@ impl WatcherSupervisor {
     /// service. Calling `start()` / `stop()` on an instance built this way
     /// is undefined; the test surface is label rendering only.
     #[cfg(test)]
+    #[allow(dead_code)]
     pub(crate) fn mock_for_test(mode: WatcherMode) -> Self {
         Self {
             repo_root: PathBuf::new(),
@@ -159,10 +161,12 @@ impl WatcherSupervisor {
 
     /// Refresh `mode` from the on-disk lease. Call on dashboard open and
     /// after manual intervention. Does not mutate the watcher itself.
+    #[allow(dead_code)]
     pub fn probe(&mut self) -> WatcherMode {
         let next = match watch_service_status(&self.synrepo_dir) {
             WatchServiceStatus::Running(state) => WatcherMode::External { pid: state.pid },
-            WatchServiceStatus::Inactive
+            WatchServiceStatus::Starting
+            | WatchServiceStatus::Inactive
             | WatchServiceStatus::Stale(_)
             | WatchServiceStatus::Corrupt(_) => {
                 if self.service_thread.is_some() {
@@ -177,6 +181,7 @@ impl WatcherSupervisor {
     }
 
     /// Current tracked mode without touching disk.
+    #[allow(dead_code)]
     pub fn mode(&self) -> WatcherMode {
         self.mode.clone()
     }
@@ -257,6 +262,7 @@ impl WatcherSupervisor {
     /// `Disconnected`, i.e. the service thread exited on its own. The
     /// dashboard's `drain_events` path wires this up so the quick-actions
     /// label and future `w` toggle reflect reality.
+    #[allow(dead_code)]
     pub fn mark_thread_exited(&mut self) {
         if self.service_thread.is_some() {
             let _ = self.service_thread.take();
@@ -343,5 +349,20 @@ mod tests {
         sup.mode = WatcherMode::External { pid: 42 };
         sup.mark_thread_exited();
         assert_eq!(sup.mode(), WatcherMode::External { pid: 42 });
+    }
+
+    #[test]
+    fn wait_for_service_ready_times_out_without_binding() {
+        let repo = make_repo();
+        let (_done_tx, done_rx) = mpsc::channel::<anyhow::Result<()>>();
+        let started = Instant::now();
+        let err =
+            wait_for_service_ready(&repo.path().join(".synrepo"), Duration::from_millis(100), &done_rx)
+                .unwrap_err();
+        assert!(matches!(err, WatcherError::StartTimeout { .. }));
+        assert!(
+            started.elapsed() < Duration::from_secs(1),
+            "startup timeout path should return promptly"
+        );
     }
 }

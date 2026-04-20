@@ -75,13 +75,14 @@ pub fn build_header_vm(
         Some(d) => {
             let label = match &d.watch_status {
                 WatchServiceStatus::Running(s) => format!("{} (pid {})", s.mode, s.pid),
+                WatchServiceStatus::Starting => "starting".to_string(),
                 WatchServiceStatus::Inactive => "inactive".to_string(),
                 WatchServiceStatus::Stale(Some(s)) => format!("stale (pid {})", s.pid),
                 WatchServiceStatus::Stale(None) => "stale artifacts".to_string(),
                 WatchServiceStatus::Corrupt(e) => format!("corrupt ({e})"),
             };
             let sev = match &d.watch_status {
-                WatchServiceStatus::Running(_) => Severity::Healthy,
+                WatchServiceStatus::Running(_) | WatchServiceStatus::Starting => Severity::Healthy,
                 WatchServiceStatus::Inactive => Severity::Stale,
                 WatchServiceStatus::Stale(_) => Severity::Stale,
                 WatchServiceStatus::Corrupt(_) => Severity::Blocked,

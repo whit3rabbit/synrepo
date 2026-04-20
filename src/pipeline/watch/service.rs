@@ -5,9 +5,9 @@
 use std::{
     fs,
     io::BufReader,
-    path::{Path, PathBuf},
+    path::Path,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         mpsc, Arc,
     },
     thread,
@@ -18,11 +18,11 @@ use interprocess::local_socket::{traits::Listener as _, ListenerNonblockingMode,
 use notify_debouncer_full::{
     new_debouncer,
     notify::{RecursiveMode, Watcher},
-    DebounceEventResult, DebouncedEvent,
 };
 
 use crate::config::Config;
 
+pub(super) use super::filter::filter_repo_events;
 use super::{
     control::{
         read_control_request, write_control_response, WatchControlRequest, WatchControlResponse,
@@ -89,7 +89,6 @@ impl Default for WatchConfig {
 }
 
 pub(super) enum LoopMessage {
-    WatchResult(DebounceEventResult),
     Stop,
     ReconcileNow {
         respond_to: mpsc::Sender<WatchControlResponse>,
@@ -135,8 +134,31 @@ pub fn run_watch_service(
         triggering_events: 0,
     });
 
+    let pending_watch_events = Arc::new(AtomicUsize::new(0));
+    let callback_synrepo_dir = synrepo_dir.to_path_buf();
+    let callback_state_handle = state_handle.clone();
+    let callback_events = events.clone();
+    let pending_watch_events_for_callback = pending_watch_events.clone();
     let mut debouncer = new_debouncer(watch_config.debounce_timeout, None, move |result| {
-        let _ = tx.send(LoopMessage::WatchResult(result));
+        match result {
+            Ok(watcher_events) => {
+                let filtered = filter_repo_events(watcher_events, &callback_synrepo_dir);
+                if filtered.is_empty() {
+                    return;
+                }
+                callback_state_handle.note_event();
+                pending_watch_events_for_callback.fetch_add(filtered.len(), Ordering::Relaxed);
+            }
+            Err(errors) => {
+                for error in &errors {
+                    tracing::warn!("watcher error: {error}");
+                    emit_event(&callback_events, |now| WatchEvent::Error {
+                        at: now,
+                        message: format!("watcher error: {error}"),
+                    });
+                }
+            }
+        }
     })
     .map_err(|error| {
         crate::Error::Other(anyhow::anyhow!("failed to create file watcher: {error}"))
@@ -153,18 +175,17 @@ pub fn run_watch_service(
         })?;
 
     loop {
-        match rx.recv() {
+        match rx.recv_timeout(Duration::from_millis(50)) {
             Ok(message) if stop_flag.load(Ordering::Relaxed) => match message {
                 LoopMessage::Stop => break,
                 _ => break,
             },
-            Ok(LoopMessage::WatchResult(Ok(watcher_events))) => {
-                let filtered = filter_repo_events(watcher_events, synrepo_dir);
-                if filtered.is_empty() {
+            Err(mpsc::RecvTimeoutError::Timeout) => {
+                let event_count =
+                    pending_watch_events.swap(0, Ordering::Relaxed).min(watch_config.max_events_per_cycle);
+                if event_count == 0 {
                     continue;
                 }
-                let event_count = filtered.len().min(watch_config.max_events_per_cycle);
-                state_handle.note_event();
                 tracing::debug!(events = event_count, "coalesced events; running reconcile");
                 emit_event(&events, |now| WatchEvent::ReconcileStarted {
                     at: now,
@@ -183,15 +204,6 @@ pub fn run_watch_service(
                     outcome: outcome.clone(),
                     triggering_events: event_count,
                 });
-            }
-            Ok(LoopMessage::WatchResult(Err(errors))) => {
-                for error in &errors {
-                    tracing::warn!("watcher error: {error}");
-                    emit_event(&events, |now| WatchEvent::Error {
-                        at: now,
-                        message: format!("watcher error: {error}"),
-                    });
-                }
             }
             Ok(LoopMessage::Stop) => {
                 break;
@@ -214,7 +226,7 @@ pub fn run_watch_service(
                     triggering_events: 0,
                 });
             }
-            Err(_) => break,
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
         }
     }
 
@@ -252,49 +264,6 @@ where
         let _ = tx.try_send(event);
     }
 }
-
-pub(crate) fn filter_repo_events(
-    events: Vec<DebouncedEvent>,
-    synrepo_dir: &Path,
-) -> Vec<DebouncedEvent> {
-    let canonical_synrepo_dir = canonicalize_lossy(synrepo_dir);
-    events
-        .into_iter()
-        .filter(|event| {
-            !event.paths.iter().all(|path| {
-                path_matches_runtime(path, synrepo_dir, canonical_synrepo_dir.as_deref())
-            })
-        })
-        .collect()
-}
-
-fn path_matches_runtime(
-    path: &Path,
-    synrepo_dir: &Path,
-    canonical_synrepo_dir: Option<&Path>,
-) -> bool {
-    if path.starts_with(synrepo_dir) || synrepo_dir.starts_with(path) {
-        return true;
-    }
-
-    match (canonicalize_lossy(path), canonical_synrepo_dir) {
-        (Some(canonical_path), Some(canonical_synrepo_dir)) => {
-            canonical_path.starts_with(canonical_synrepo_dir)
-                || canonical_synrepo_dir.starts_with(&canonical_path)
-        }
-        _ => false,
-    }
-}
-
-fn canonicalize_lossy(path: &Path) -> Option<PathBuf> {
-    fs::canonicalize(path).ok().or_else(|| {
-        let name = path.file_name()?;
-        let parent = path.parent()?;
-        let canonical_parent = fs::canonicalize(parent).ok()?;
-        Some(canonical_parent.join(name))
-    })
-}
-
 fn spawn_control_listener(
     synrepo_dir: &Path,
     state_handle: WatchStateHandle,

@@ -38,6 +38,7 @@ pub mod actions;
 pub mod app;
 pub mod dashboard;
 pub mod probe;
+mod watcher;
 pub mod theme;
 pub mod widgets;
 pub mod wizard;
@@ -133,7 +134,7 @@ pub fn run_dashboard(
 fn ensure_watch_daemon_for_dashboard(repo_root: &Path) -> Vec<LogEntry> {
     let ctx = ActionContext::new(repo_root);
     match watch_service_status(&ctx.synrepo_dir) {
-        WatchServiceStatus::Running(_) => Vec::new(),
+        WatchServiceStatus::Running(_) | WatchServiceStatus::Starting => Vec::new(),
         WatchServiceStatus::Inactive
         | WatchServiceStatus::Stale(_)
         | WatchServiceStatus::Corrupt(_) => {
@@ -282,81 +283,18 @@ mod live {
     //! Live-mode shim: host the watch service on a background thread and
     //! drive the poll-mode dashboard in the foreground. Kept isolated so
     //! the unix-only plumbing does not pollute the rest of `tui::mod`.
-    use std::path::{Path, PathBuf};
-    use std::sync::mpsc;
-    use std::thread;
-    use std::time::{Duration, Instant};
+    use std::path::Path;
 
-    use crate::config::Config;
-    use crate::pipeline::watch::{
-        request_watch_control, run_watch_service, WatchConfig, WatchControlRequest,
-        WatchControlResponse, WatchEvent, WatchServiceMode,
-    };
-
-    use super::{dashboard::run_poll_dashboard, theme::Theme, TuiOptions, TuiOutcome};
+    use super::{dashboard::run_poll_dashboard, theme::Theme, watcher::WatcherSupervisor, TuiOptions, TuiOutcome};
     use crate::bootstrap::runtime_probe::probe as bootstrap_probe;
     use crate::tui::app::DashboardExit;
 
-    /// Wait up to 2 s for the watch service to start answering control
-    /// requests. Works on both backends (Unix socket and Windows named pipe)
-    /// because it probes through the portable `interprocess` client rather
-    /// than polling a filesystem path.
-    fn wait_for_service_ready(synrepo_dir: &Path) -> anyhow::Result<()> {
-        // Sleep-then-probe: the service thread was just spawned and has not
-        // bound the control endpoint yet, so probing first burns one
-        // guaranteed-failed connect per startup.
-        let deadline = Instant::now() + Duration::from_secs(2);
-        while Instant::now() < deadline {
-            thread::sleep(Duration::from_millis(50));
-            if matches!(
-                request_watch_control(synrepo_dir, WatchControlRequest::Status),
-                Ok(WatchControlResponse::Status { .. })
-            ) {
-                return Ok(());
-            }
-        }
-        anyhow::bail!("live-mode watch service failed to come up within 2 s")
-    }
-
     pub(super) fn run(repo_root: &Path, opts: TuiOptions) -> anyhow::Result<TuiOutcome> {
-        let synrepo_dir = Config::synrepo_dir(repo_root);
-        let config = Config::load(repo_root)?;
         let theme = Theme::from_no_color(opts.no_color);
-
-        // Watch service → dashboard event bus. Bounded so a stuck dashboard
-        // can't make the service's emit path grow unbounded; the sender side
-        // uses best-effort `try_send`, so a full buffer drops events rather
-        // than blocking reconcile.
-        let (event_tx, event_rx) = crossbeam_channel::bounded::<WatchEvent>(256);
-
-        // Spawn the watch service. It owns its own lease + reconcile loop.
-        let (done_tx, done_rx) = mpsc::channel::<anyhow::Result<()>>();
-        let service_repo = repo_root.to_path_buf();
-        let service_config = config.clone();
-        let service_synrepo_dir: PathBuf = synrepo_dir.clone();
-        let service_thread = thread::spawn(move || {
-            let result = run_watch_service(
-                &service_repo,
-                &service_config,
-                &WatchConfig::default(),
-                &service_synrepo_dir,
-                WatchServiceMode::Foreground,
-                Some(event_tx),
-            )
-            .map_err(|e| anyhow::anyhow!(e.to_string()));
-            let _ = done_tx.send(result);
-        });
-
-        // Wait for the control plane to answer before opening the TUI: if
-        // the service fails to come up we must not proceed (the stop-watch
-        // action relies on it).
-        let mut service_thread = Some(service_thread);
-        if let Err(err) = wait_for_service_ready(&synrepo_dir) {
-            if let Some(t) = service_thread.take() {
-                let _ = t.join();
-            }
-            return Err(err);
-        }
+        let mut supervisor = WatcherSupervisor::new(repo_root)?;
+        let event_rx = supervisor
+            .start()
+            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
 
         // Re-probe so the dashboard header reflects agent integration state.
         let report = bootstrap_probe(repo_root);
@@ -372,16 +310,7 @@ mod live {
         )?;
 
         // Dashboard has exited. Stop the service.
-        let stop = request_watch_control(&synrepo_dir, WatchControlRequest::Stop);
-        if let Err(err) = stop {
-            tracing::warn!(error = %err, "failed to send stop to live-mode watch service");
-        }
-        // Drain the service thread regardless of how it exited.
-        if let Some(t) = service_thread.take() {
-            let _ = t.join();
-        }
-        // Drain any final status the thread posted.
-        while done_rx.try_recv().is_ok() {}
+        supervisor.stop();
 
         match intent {
             DashboardExit::Quit => Ok(TuiOutcome::Exited),

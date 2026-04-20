@@ -228,7 +228,7 @@ pub(super) fn guard_watch_daemon(
     }
     if !matches!(
         watch_service_status(synrepo_dir),
-        WatchServiceStatus::Running(_)
+        WatchServiceStatus::Running(_) | WatchServiceStatus::Starting
     ) {
         return Ok(());
     }

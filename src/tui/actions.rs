@@ -110,6 +110,14 @@ pub fn reconcile_now(ctx: &ActionContext) -> ActionOutcome {
                 },
             }
         }
+        WatchServiceStatus::Starting => ActionOutcome::Conflict {
+            owner_pid: None,
+            acquired_at: None,
+            surface: "watch lease".to_string(),
+            guidance:
+                "watch service is still starting; wait for it to become ready before reconciling"
+                    .to_string(),
+        },
         WatchServiceStatus::Inactive => run_local_reconcile(ctx),
         WatchServiceStatus::Stale(_) | WatchServiceStatus::Corrupt(_) => {
             if let Err(err) = cleanup_stale_watch_artifacts(&ctx.synrepo_dir) {
@@ -144,6 +152,10 @@ pub fn stop_watch(ctx: &ActionContext) -> ActionOutcome {
     match watch_service_status(&ctx.synrepo_dir) {
         WatchServiceStatus::Inactive => ActionOutcome::Completed {
             message: "no active watch service".to_string(),
+        },
+        WatchServiceStatus::Starting => match wait_for_watch_startup_settled(&ctx.synrepo_dir) {
+            Ok(()) => stop_watch(ctx),
+            Err(err) => ActionOutcome::Error { message: err },
         },
         WatchServiceStatus::Stale(_) | WatchServiceStatus::Corrupt(_) => {
             match cleanup_stale_watch_artifacts(&ctx.synrepo_dir) {
@@ -192,6 +204,15 @@ pub fn start_watch_daemon(ctx: &ActionContext) -> ActionOutcome {
     }
 
     match watch_service_status(&ctx.synrepo_dir) {
+        WatchServiceStatus::Starting => {
+            return ActionOutcome::Conflict {
+                owner_pid: None,
+                acquired_at: None,
+                surface: "watch lease".to_string(),
+                guidance:
+                    "watch service is still starting; wait for it to become ready before starting another".to_string(),
+            };
+        }
         WatchServiceStatus::Running(state) => {
             return ActionOutcome::Conflict {
                 owner_pid: Some(state.pid),
@@ -247,6 +268,7 @@ pub fn start_watch_daemon(ctx: &ActionContext) -> ActionOutcome {
 fn wait_for_watch_running(synrepo_dir: &Path) -> Result<(), String> {
     wait_for_watch_transition(synrepo_dir, WATCH_START_TIMEOUT, |status| match status {
         WatchServiceStatus::Running(_) => Ok(Some(())),
+        WatchServiceStatus::Starting => Ok(None),
         WatchServiceStatus::Corrupt(e) => {
             Err(format!("watch state became corrupt during startup: {e}"))
         }
@@ -256,7 +278,7 @@ fn wait_for_watch_running(synrepo_dir: &Path) -> Result<(), String> {
 
 fn wait_for_watch_stopped(synrepo_dir: &Path) -> Result<(), String> {
     wait_for_watch_transition(synrepo_dir, WATCH_STOP_TIMEOUT, |status| match status {
-        WatchServiceStatus::Running(_) => Ok(None),
+        WatchServiceStatus::Running(_) | WatchServiceStatus::Starting => Ok(None),
         WatchServiceStatus::Inactive => Ok(Some(())),
         WatchServiceStatus::Stale(_) | WatchServiceStatus::Corrupt(_) => {
             cleanup_stale_watch_artifacts(synrepo_dir).map_err(|err| {
@@ -264,6 +286,13 @@ fn wait_for_watch_stopped(synrepo_dir: &Path) -> Result<(), String> {
             })?;
             Ok(Some(()))
         }
+    })
+}
+
+fn wait_for_watch_startup_settled(synrepo_dir: &Path) -> Result<(), String> {
+    wait_for_watch_transition(synrepo_dir, WATCH_START_TIMEOUT, |status| match status {
+        WatchServiceStatus::Starting => Ok(None),
+        _ => Ok(Some(())),
     })
 }
 
@@ -299,6 +328,9 @@ fn recover_stop_transport_error(
     match watch_service_status(&ctx.synrepo_dir) {
         WatchServiceStatus::Inactive => ActionOutcome::Completed {
             message: format!("watch service already stopped (pid {pid})"),
+        },
+        WatchServiceStatus::Starting => ActionOutcome::Error {
+            message: format!("stop request failed while watch service is still starting: {err}"),
         },
         WatchServiceStatus::Stale(_) | WatchServiceStatus::Corrupt(_) => {
             match cleanup_stale_watch_artifacts(&ctx.synrepo_dir) {
@@ -400,6 +432,14 @@ fn lock_error_to_action(synrepo_dir: &Path, err: LockError) -> ActionOutcome {
             guidance: format!(
                 "watch service owns this repo (pid {watch_pid}); stop it before mutating"
             ),
+        },
+        LockError::WatchStarting => ActionOutcome::Conflict {
+            owner_pid: None,
+            acquired_at: None,
+            surface: "watch lease".to_string(),
+            guidance:
+                "watch service is still starting; wait for it to become ready before mutating"
+                    .to_string(),
         },
         LockError::WrongThread { .. } => ActionOutcome::Error {
             message: "writer lock already held by another thread in this process".to_string(),

@@ -555,7 +555,7 @@ impl AppState {
                 .diagnostics
                 .as_ref()
                 .map(|diag| &diag.watch_status),
-            Some(WatchServiceStatus::Running(_))
+            Some(WatchServiceStatus::Running(_) | WatchServiceStatus::Starting)
         )
     }
 }
@@ -593,7 +593,7 @@ fn watch_toggle_label_for(mode: &AppMode, snapshot: &StatusSnapshot) -> Option<&
         return None;
     }
     match snapshot.diagnostics.as_ref().map(|diag| &diag.watch_status) {
-        Some(WatchServiceStatus::Running(_)) => Some("stop"),
+        Some(WatchServiceStatus::Running(_) | WatchServiceStatus::Starting) => Some("stop"),
         _ => Some("start"),
     }
 }

@@ -60,6 +60,10 @@ pub fn bootstrap(
             "Bootstrap blocked: watch service is active (pid {watch_pid}); \
              run `synrepo watch stop` before re-running `synrepo init`."
         ),
+        LockError::WatchStarting => anyhow::anyhow!(
+            "Bootstrap blocked: watch service is still starting; wait for it to become ready, \
+             then rerun `synrepo init`."
+        ),
         LockError::WrongThread { .. } => anyhow::anyhow!(
             "Bootstrap blocked: writer lock already held by another thread in this process."
         ),

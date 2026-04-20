@@ -27,6 +27,9 @@ pub(crate) fn watch(repo_root: &Path, daemon: bool) -> anyhow::Result<()> {
     let synrepo_dir = Config::synrepo_dir(repo_root);
 
     match watch_service_status(&synrepo_dir) {
+        WatchServiceStatus::Starting => {
+            anyhow::bail!("watch service is still starting; wait for it to become ready");
+        }
         WatchServiceStatus::Running(state) => {
             anyhow::bail!(
                 "watch service already running in {} mode under pid {}",
@@ -90,6 +93,10 @@ pub(crate) fn watch_status(repo_root: &Path) -> anyhow::Result<()> {
         WatchServiceStatus::Inactive => {
             println!("  state:        inactive");
         }
+        WatchServiceStatus::Starting => {
+            println!("  state:        starting");
+            println!("  next step:    wait for the watch service to become ready");
+        }
         WatchServiceStatus::Stale(snapshot) => {
             println!("  state:        stale");
             if let Some(snapshot) = snapshot {
@@ -121,6 +128,10 @@ pub(crate) fn watch_stop(repo_root: &Path) -> anyhow::Result<()> {
         WatchServiceStatus::Inactive => {
             println!("No active watch service for this repo.");
             Ok(())
+        }
+        WatchServiceStatus::Starting => {
+            wait_for_watch_startup_settle(&synrepo_dir)?;
+            watch_stop(repo_root)
         }
         WatchServiceStatus::Stale(_) => {
             cleanup_stale_watch_artifacts(&synrepo_dir)?;
@@ -165,6 +176,9 @@ fn recover_stop_transport_error(
             println!("Watch service already stopped (pid {}).", pid);
             Ok(())
         }
+        WatchServiceStatus::Starting => {
+            Err(anyhow::anyhow!("stop request failed while watch service is still starting: {err}"))
+        }
         WatchServiceStatus::Stale(_) | WatchServiceStatus::Corrupt(_) => {
             cleanup_stale_watch_artifacts(synrepo_dir)?;
             println!(
@@ -180,6 +194,9 @@ fn recover_stop_transport_error(
 pub(super) fn ensure_watch_not_running(synrepo_dir: &Path, action: &str) -> anyhow::Result<()> {
     match watch_service_status(synrepo_dir) {
         WatchServiceStatus::Inactive => Ok(()),
+        WatchServiceStatus::Starting => Err(anyhow::anyhow!(
+            "{action} is unavailable while watch service is still starting. Wait for it to become ready or stop it first."
+        )),
         WatchServiceStatus::Stale(_) => {
             cleanup_stale_watch_artifacts(synrepo_dir)?;
             Ok(())
@@ -199,6 +216,9 @@ pub(super) fn ensure_watch_not_running(synrepo_dir: &Path, action: &str) -> anyh
 pub(super) fn active_watch_pid(synrepo_dir: &Path) -> anyhow::Result<Option<u32>> {
     match watch_service_status(synrepo_dir) {
         WatchServiceStatus::Inactive => Ok(None),
+        WatchServiceStatus::Starting => Err(anyhow::anyhow!(
+            "watch service is still starting; wait for it to become ready before reconciling"
+        )),
         WatchServiceStatus::Stale(_) => {
             cleanup_stale_watch_artifacts(synrepo_dir)?;
             Ok(None)
@@ -244,6 +264,16 @@ fn render_watch_status_snapshot(snapshot: &WatchDaemonState) {
     if let Some(error) = &snapshot.last_error {
         println!("  error:        {error}");
     }
+}
+
+fn wait_for_watch_startup_settle(synrepo_dir: &Path) -> anyhow::Result<()> {
+    for _ in 0..100 {
+        if !matches!(watch_service_status(synrepo_dir), WatchServiceStatus::Starting) {
+            return Ok(());
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    anyhow::bail!("watch service did not finish starting in time")
 }
 
 fn spawn_watch_daemon(repo_root: &Path) -> anyhow::Result<u32> {
@@ -322,6 +352,7 @@ fn wait_for_watch_shutdown(synrepo_dir: &Path) -> anyhow::Result<()> {
     for _ in 0..600 {
         match watch_service_status(synrepo_dir) {
             WatchServiceStatus::Inactive => return Ok(()),
+            WatchServiceStatus::Starting => thread::sleep(Duration::from_millis(50)),
             WatchServiceStatus::Stale(_) => {
                 cleanup_stale_watch_artifacts(synrepo_dir)?;
                 return Ok(());

@@ -9,6 +9,7 @@ use synrepo::{
 pub fn render_watch_summary(status: &WatchServiceStatus) -> String {
     match status {
         WatchServiceStatus::Inactive => "inactive".to_string(),
+        WatchServiceStatus::Starting => "starting".to_string(),
         WatchServiceStatus::Running(state) => {
             format!("{} mode (pid {})", state.mode, state.pid)
         }
@@ -47,6 +48,9 @@ pub fn next_step(diag: &RuntimeDiagnostics, graph_missing: bool) -> &'static str
         &diag.writer_status,
         &diag.watch_status,
     ) {
+        (_, _, WatchServiceStatus::Starting) => {
+            "watch service is starting — wait for it to become ready or use `synrepo watch status`"
+        }
         (_, _, WatchServiceStatus::Running(_)) => {
             "watch service is active — use `synrepo watch status` for runtime details"
         }

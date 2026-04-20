@@ -17,7 +17,7 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::pipeline::writer::{now_rfc3339, open_and_try_lock};
-use fs2::FileExt;
+use super::status::StateLoadError;
 
 const WATCH_DAEMON_FILENAME: &str = "watch-daemon.json";
 
@@ -86,28 +86,6 @@ impl WatchDaemonState {
     }
 }
 
-/// Current watch-service state for a repo.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum WatchServiceStatus {
-    /// No watch service lease exists.
-    Inactive,
-    /// A live watch service owns the repo.
-    Running(WatchDaemonState),
-    /// A stale lease or socket remains from a dead service.
-    Stale(Option<WatchDaemonState>),
-    /// The lease file exists but is malformed.
-    Corrupt(String),
-}
-
-/// Reason watch or reconcile state could not be loaded.
-#[derive(Debug, Eq, PartialEq)]
-pub enum StateLoadError {
-    /// No state file exists.
-    NotFound,
-    /// The state file exists but is unreadable or malformed.
-    Malformed(String),
-}
-
 /// Errors raised by the watch daemon lease or control plane.
 #[derive(Debug, thiserror::Error)]
 pub enum WatchDaemonError {
@@ -116,6 +94,12 @@ pub enum WatchDaemonError {
     HeldByOther {
         /// PID of the current owner.
         pid: u32,
+        /// Path to the lease file.
+        state_path: PathBuf,
+    },
+    /// Another live watch service holds the lease but has not published state yet.
+    #[error("watch service is starting for this repo; wait for it to become ready or stop it before starting another")]
+    HeldByStarting {
         /// Path to the lease file.
         state_path: PathBuf,
     },
@@ -239,21 +223,21 @@ pub(crate) fn acquire_watch_daemon_lease(
     })?;
 
     let Some(flock_file) = flock_file else {
-        // If we can't get the flock, someone else is live.
-        let state = load_watch_state_from_path(&state_path).ok();
-        return Err(WatchDaemonError::HeldByOther {
-            pid: state.map(|s| s.pid).unwrap_or(0),
-            state_path,
+        return Err(match load_watch_state_from_path(&state_path) {
+            Ok(state) => WatchDaemonError::HeldByOther {
+                pid: state.pid,
+                state_path,
+            },
+            Err(StateLoadError::NotFound) => WatchDaemonError::HeldByStarting { state_path },
+            Err(StateLoadError::Malformed(detail)) => WatchDaemonError::Control(format!(
+                "watch service holds the lease but its state file is malformed: {detail}"
+            )),
         });
     };
 
     // Step 2: Now that we own the flock, write the JSON metadata.
     let initial = WatchDaemonState::new(synrepo_dir, mode);
-    let json = serde_json::to_string(&initial).expect("WatchDaemonState serializes");
-    std::fs::write(&state_path, json.as_bytes()).map_err(|source| WatchDaemonError::Io {
-        path: state_path.clone(),
-        source,
-    })?;
+    persist_watch_state_at(&state_path, &initial)?;
 
     let lease = WatchDaemonLease {
         state_path: state_path.clone(),
@@ -264,85 +248,6 @@ pub(crate) fn acquire_watch_daemon_lease(
     };
     let handle = WatchStateHandle::new(state_path, initial);
     Ok((lease, handle))
-}
-
-/// Load the persisted watch-service state, if present and readable.
-pub fn load_watch_state(synrepo_dir: &Path) -> Result<WatchDaemonState, StateLoadError> {
-    load_watch_state_from_path(&watch_daemon_state_path(synrepo_dir))
-}
-
-/// Inspect whether the repo currently has a live, stale, or missing watch service.
-pub fn watch_service_status(synrepo_dir: &Path) -> WatchServiceStatus {
-    let flock_path = watch_flock_path(synrepo_dir);
-    let state_path = watch_daemon_state_path(synrepo_dir);
-    let state_load = load_watch_state_from_path(&state_path);
-
-    if !flock_path.exists() {
-        // No flock file means no live owner. A lingering state file is a
-        // stale/corrupt leftover from a daemon that died uncleanly (or was
-        // manually seeded by a test); cleanup must still sweep it.
-        return match state_load {
-            Ok(state) => WatchServiceStatus::Stale(Some(state)),
-            Err(StateLoadError::NotFound) => WatchServiceStatus::Inactive,
-            Err(StateLoadError::Malformed(e)) => WatchServiceStatus::Corrupt(e),
-        };
-    }
-
-    // Try to take the flock. If we succeed (even non-blockingly), the owner is dead.
-    match fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(&flock_path)
-    {
-        Ok(file) => match file.try_lock_exclusive() {
-            Ok(()) => {
-                // We got the lock, so the previous owner is definitely gone.
-                // The lease is stale.
-                WatchServiceStatus::Stale(state_load.ok())
-            }
-            Err(e) if crate::pipeline::writer::is_lock_contention(&e) => {
-                // Someone else holds the lock. Service is live.
-                match state_load {
-                    Ok(state) => WatchServiceStatus::Running(state),
-                    Err(StateLoadError::NotFound) => WatchServiceStatus::Inactive,
-                    Err(StateLoadError::Malformed(e)) => WatchServiceStatus::Corrupt(e),
-                }
-            }
-            Err(e) => WatchServiceStatus::Corrupt(format!("flock error: {e}")),
-        },
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => WatchServiceStatus::Inactive,
-        Err(e) => WatchServiceStatus::Corrupt(format!("flock open error: {e}")),
-    }
-}
-
-/// Remove stale watch-service artifacts left behind by a dead process.
-///
-/// Also sweeps an orphan control socket when no state file exists: a daemon
-/// that died after `bind()` but before `watch-daemon.json` was written leaves
-/// the socket behind, and without this pass the next `synrepo watch` fails
-/// with "Address already in use".
-pub fn cleanup_stale_watch_artifacts(synrepo_dir: &Path) -> Result<bool, WatchDaemonError> {
-    match watch_service_status(synrepo_dir) {
-        WatchServiceStatus::Running(_) => Ok(false),
-        WatchServiceStatus::Inactive => {
-            remove_ignore_missing(watch_flock_path(synrepo_dir))?;
-            remove_ignore_missing(watch_socket_path(synrepo_dir))
-        }
-        WatchServiceStatus::Stale(_) | WatchServiceStatus::Corrupt(_) => {
-            remove_ignore_missing(watch_daemon_state_path(synrepo_dir))?;
-            remove_ignore_missing(watch_flock_path(synrepo_dir))?;
-            remove_ignore_missing(watch_socket_path(synrepo_dir))?;
-            Ok(true)
-        }
-    }
-}
-
-fn remove_ignore_missing(path: PathBuf) -> Result<bool, WatchDaemonError> {
-    match fs::remove_file(&path) {
-        Ok(()) => Ok(true),
-        Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(false),
-        Err(source) => Err(WatchDaemonError::Io { path, source }),
-    }
 }
 
 /// Canonical path of the persisted watch-service state file.
@@ -631,7 +536,9 @@ pub(super) fn persist_watch_state_at(
     Ok(())
 }
 
-fn load_watch_state_from_path(state_path: &Path) -> Result<WatchDaemonState, StateLoadError> {
+pub(super) fn load_watch_state_from_path(
+    state_path: &Path,
+) -> Result<WatchDaemonState, StateLoadError> {
     let text = fs::read_to_string(state_path).map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
             StateLoadError::NotFound

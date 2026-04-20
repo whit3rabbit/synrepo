@@ -264,3 +264,51 @@ fn watch_service_emits_started_then_finished_events_for_startup_reconcile() {
     let _ = request_watch_control(&synrepo_dir, WatchControlRequest::Stop);
     handle.join().unwrap();
 }
+
+#[cfg(unix)]
+#[test]
+fn watch_service_stop_stays_responsive_after_rapid_source_writes() {
+    let (_dir, repo, config, synrepo_dir) = setup_test_repo();
+    let service_repo = repo.clone();
+    let service_config = config.clone();
+    let service_synrepo = synrepo_dir.clone();
+
+    let handle = thread::spawn(move || {
+        run_watch_service(
+            &service_repo,
+            &service_config,
+            &WatchConfig::default(),
+            &service_synrepo,
+            WatchServiceMode::Foreground,
+            None,
+        )
+        .unwrap();
+    });
+
+    wait_for(
+        || {
+            matches!(
+                super::super::watch_service_status(&synrepo_dir),
+                WatchServiceStatus::Running(_)
+            ) && super::super::watch_socket_path(&synrepo_dir).exists()
+        },
+        Duration::from_secs(5),
+    );
+
+    for idx in 0..200 {
+        fs::write(
+            repo.join("src/lib.rs"),
+            format!("pub fn hello_{idx}() -> usize {{ {idx} }}\n"),
+        )
+        .unwrap();
+    }
+
+    let started = Instant::now();
+    let stop = request_watch_control(&synrepo_dir, WatchControlRequest::Stop).unwrap();
+    assert!(matches!(stop, WatchControlResponse::Ack { .. }));
+    handle.join().unwrap();
+    assert!(
+        started.elapsed() < Duration::from_secs(5),
+        "stop should not sit behind an unbounded watch backlog"
+    );
+}

@@ -107,6 +107,29 @@ fn cleanup_removes_orphan_socket_when_state_file_missing() {
     assert!(!socket_path.exists());
 }
 
+#[test]
+fn lock_held_without_state_is_reported_as_starting_and_not_cleaned() {
+    use crate::pipeline::watch::lease::watch_flock_path;
+    use crate::pipeline::writer::{acquire_write_admission, open_and_try_lock, LockError};
+
+    let (_dir, _repo, _config, synrepo_dir) = setup_test_repo();
+    let state_path = watch_daemon_state_path(&synrepo_dir);
+    let _flock = open_and_try_lock(&state_path)
+        .expect("open+flock must succeed")
+        .expect("watch flock must be free");
+
+    assert!(matches!(
+        watch_service_status(&synrepo_dir),
+        WatchServiceStatus::Starting
+    ));
+    assert!(!cleanup_stale_watch_artifacts(&synrepo_dir).unwrap());
+    assert!(watch_flock_path(&synrepo_dir).exists());
+    assert!(matches!(
+        acquire_write_admission(&synrepo_dir, "reconcile"),
+        Err(LockError::WatchStarting)
+    ));
+}
+
 #[cfg(unix)]
 #[test]
 fn corrupt_state_file_is_reported_and_cleaned() {
