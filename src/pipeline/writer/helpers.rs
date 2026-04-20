@@ -43,7 +43,7 @@ fn lock_depths() -> &'static Mutex<HashMap<PathBuf, ReentrancyState>> {
 /// the depth and return `Ok(Some(ownership))`. Return `Ok(None)` if no entry
 /// exists. Return `Err(LockError::WrongThread)` if another thread holds it.
 pub(super) fn try_reenter(lock_path: &Path) -> Result<Option<WriterOwnership>, LockError> {
-    let mut map = lock_depths().lock().unwrap();
+    let mut map = lock_depths().lock().unwrap_or_else(|p| p.into_inner());
     let current = std::thread::current().id();
     match map.get_mut(lock_path) {
         Some(entry) if entry.owner_thread == current => {
@@ -64,7 +64,7 @@ pub(super) fn insert_initial_lock(
     file: fs::File,
     ownership: WriterOwnership,
 ) -> Result<(), LockError> {
-    let mut map = lock_depths().lock().unwrap();
+    let mut map = lock_depths().lock().unwrap_or_else(|p| p.into_inner());
     let current = std::thread::current().id();
     if map.contains_key(lock_path) {
         // try_reenter is checked before we call this, so a hit here means the
@@ -90,7 +90,7 @@ pub(super) fn insert_initial_lock(
 /// When depth reaches zero the entry is removed, which drops the stored
 /// `File` and releases the kernel advisory lock.
 pub(super) fn decrement_depth(lock_path: &Path) -> usize {
-    let mut map = lock_depths().lock().unwrap();
+    let mut map = lock_depths().lock().unwrap_or_else(|p| p.into_inner());
     let Some(entry) = map.get_mut(lock_path) else {
         return 0;
     };

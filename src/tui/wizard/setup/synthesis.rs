@@ -3,9 +3,12 @@
 //! Kept out of `state.rs` so the state machine file stays under the 400-line
 //! limit and so the synthesis choice + local-endpoint presets have a single
 //! place to live. The plan shape (`SynthesisChoice`) is also what the bin-side
-//! dispatcher pattern-matches on when writing the `[synthesis]` TOML block.
+//! dispatcher pattern-matches on when patching repo-local `.synrepo/config.toml`
+//! and user-scoped `~/.synrepo/config.toml`.
 
 use crossterm::event::{KeyCode, KeyModifiers};
+
+use crate::config::{Config, SynthesisConfig};
 
 /// Cloud synthesis providers offered by the wizard. Maps 1:1 to
 /// `config.synthesis.provider` string values.
@@ -38,15 +41,51 @@ impl CloudProvider {
         }
     }
 
-    /// Human-readable label with the env var the user must set.
+    /// Human-readable label shown in the provider picker.
     pub fn label(&self) -> &'static str {
         match self {
-            CloudProvider::Anthropic => "Anthropic (Claude) — set ANTHROPIC_API_KEY in your shell",
-            CloudProvider::OpenAi => "OpenAI — set OPENAI_API_KEY in your shell",
-            CloudProvider::Gemini => "Gemini — set GEMINI_API_KEY in your shell",
-            CloudProvider::OpenRouter => "OpenRouter — set OPENROUTER_API_KEY in your shell",
-            CloudProvider::Zai => "Z.ai (Zhipu GLM) — set ZAI_API_KEY in your shell",
-            CloudProvider::Minimax => "MiniMax — set MINIMAX_API_KEY in your shell",
+            CloudProvider::Anthropic => "Anthropic (Claude)",
+            CloudProvider::OpenAi => "OpenAI",
+            CloudProvider::Gemini => "Gemini",
+            CloudProvider::OpenRouter => "OpenRouter",
+            CloudProvider::Zai => "Z.ai (Zhipu GLM)",
+            CloudProvider::Minimax => "MiniMax",
+        }
+    }
+
+    /// Matching environment variable name for this provider's API key.
+    pub fn env_var(&self) -> &'static str {
+        match self {
+            CloudProvider::Anthropic => "ANTHROPIC_API_KEY",
+            CloudProvider::OpenAi => "OPENAI_API_KEY",
+            CloudProvider::Gemini => "GEMINI_API_KEY",
+            CloudProvider::OpenRouter => "OPENROUTER_API_KEY",
+            CloudProvider::Zai => "ZAI_API_KEY",
+            CloudProvider::Minimax => "MINIMAX_API_KEY",
+        }
+    }
+
+    /// Key written into `[synthesis]` when setup persists a reusable key in
+    /// `~/.synrepo/config.toml`.
+    pub fn api_key_field(&self) -> &'static str {
+        match self {
+            CloudProvider::Anthropic => "anthropic_api_key",
+            CloudProvider::OpenAi => "openai_api_key",
+            CloudProvider::Gemini => "gemini_api_key",
+            CloudProvider::OpenRouter => "openrouter_api_key",
+            CloudProvider::Zai => "zai_api_key",
+            CloudProvider::Minimax => "minimax_api_key",
+        }
+    }
+
+    fn saved_key<'a>(&self, config: &'a SynthesisConfig) -> Option<&'a str> {
+        match self {
+            CloudProvider::Anthropic => config.anthropic_api_key.as_deref(),
+            CloudProvider::OpenAi => config.openai_api_key.as_deref(),
+            CloudProvider::Gemini => config.gemini_api_key.as_deref(),
+            CloudProvider::OpenRouter => config.openrouter_api_key.as_deref(),
+            CloudProvider::Zai => config.zai_api_key.as_deref(),
+            CloudProvider::Minimax => config.minimax_api_key.as_deref(),
         }
     }
 
@@ -179,6 +218,18 @@ impl LocalPreset {
     pub fn cost_hint(&self) -> &'static str {
         "No API cost: requests stay on your machine. Output quality depends on the model you pulled."
     }
+
+    /// Parse the persisted `local_preset` string.
+    pub fn from_config_value(raw: &str) -> Option<Self> {
+        match raw {
+            "ollama" => Some(LocalPreset::Ollama),
+            "llamacpp" => Some(LocalPreset::LlamaCpp),
+            "lmstudio" => Some(LocalPreset::LmStudio),
+            "vllm" => Some(LocalPreset::Vllm),
+            "custom" => Some(LocalPreset::Custom),
+            _ => None,
+        }
+    }
 }
 
 /// All preset variants in display order.
@@ -190,12 +241,101 @@ pub const LOCAL_PRESETS: &[LocalPreset] = &[
     LocalPreset::Custom,
 ];
 
+/// Where setup resolved a cloud provider's key from.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CloudCredentialSource {
+    /// API key is present in the current shell environment.
+    Env,
+    /// API key already exists in `~/.synrepo/config.toml`.
+    SavedGlobal,
+    /// User typed a new key during setup; apply will persist it globally.
+    EnteredGlobal,
+}
+
+/// Best-effort synthesis defaults observed from the process environment and
+/// user-scoped config before the wizard starts.
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct SynthesisWizardSupport {
+    global_synthesis: SynthesisConfig,
+}
+
+impl SynthesisWizardSupport {
+    /// Construct support state from an explicit global synthesis config. Used
+    /// by unit tests to avoid touching the real home directory.
+    pub fn with_global_synthesis(global_synthesis: SynthesisConfig) -> Self {
+        Self { global_synthesis }
+    }
+
+    /// Read the user-scoped config at `~/.synrepo/config.toml`. Parse errors
+    /// degrade to defaults so setup can still run; apply-time writes still
+    /// fail loudly rather than clobbering invalid TOML.
+    pub fn detect() -> Self {
+        let global_path = Config::global_config_path();
+        let global_synthesis = std::fs::read_to_string(&global_path)
+            .ok()
+            .and_then(|text| {
+                toml::from_str::<crate::config::Config>(&text)
+                    .map(|config| config.synthesis)
+                    .map_err(|error| {
+                        tracing::warn!(
+                            "setup: ignoring unreadable global synthesis config at {} ({error})",
+                            global_path.display()
+                        );
+                        error
+                    })
+                    .ok()
+            })
+            .unwrap_or_default();
+        Self { global_synthesis }
+    }
+
+    /// Resolve whether setup can reuse an existing cloud credential for the
+    /// selected provider.
+    pub fn credential_source_for(&self, provider: CloudProvider) -> Option<CloudCredentialSource> {
+        if std::env::var(provider.env_var())
+            .ok()
+            .filter(|value| !value.is_empty())
+            .is_some()
+        {
+            Some(CloudCredentialSource::Env)
+        } else if provider.saved_key(&self.global_synthesis).is_some() {
+            Some(CloudCredentialSource::SavedGlobal)
+        } else {
+            None
+        }
+    }
+
+    /// Seed the local-provider preset from the user-scoped config when
+    /// present so repeated setup runs start from the last saved endpoint.
+    pub fn local_preset(&self) -> LocalPreset {
+        self.global_synthesis
+            .local_preset
+            .as_deref()
+            .and_then(LocalPreset::from_config_value)
+            .unwrap_or(LocalPreset::Ollama)
+    }
+
+    /// Seed the local-provider endpoint from the user-scoped config when
+    /// present.
+    pub fn local_endpoint(&self) -> Option<&str> {
+        self.global_synthesis.local_endpoint.as_deref()
+    }
+}
+
 /// The user's synthesis decision captured on the plan. `None` on the plan
 /// means the user selected "Skip" (no `[synthesis]` block written).
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SynthesisChoice {
-    /// A cloud provider: writes provider + enabled to config.
-    Cloud(CloudProvider),
+    /// A cloud provider, plus where setup resolved the credential.
+    Cloud {
+        /// Provider to enable.
+        provider: CloudProvider,
+        /// Whether setup is reusing env, reusing saved global config, or
+        /// persisting a newly-entered key on apply.
+        credential_source: CloudCredentialSource,
+        /// Newly-entered API key. Only populated for `EnteredGlobal`.
+        api_key: Option<String>,
+    },
     /// Local provider with the selected preset and the (possibly edited)
     /// endpoint URL.
     Local {

@@ -51,11 +51,6 @@ pub(super) fn resolve_proposed_links(
     let state = if proposed.is_empty() {
         "missing"
     } else {
-        // Technically wait, is the overall state "missing" if all are below threshold?
-        // Let's say "present" because we don't have a single overall freshness like commentary.
-        // We'll just say "present" or "missing" or something. But wait, what does the spec say?
-        // Actually, the spec just says `links_state` is `"budget_withheld"` at Tiny/Normal.
-        // And maybe `"present"` or `"missing"` at Deep. Let's just use "present" if proposed.len() > 0.
         "present"
     };
 

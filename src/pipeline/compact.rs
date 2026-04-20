@@ -188,7 +188,8 @@ pub fn plan_compact(
         if let Ok(store) = crate::store::overlay::SqliteOverlayStore::open_existing(&overlay_dir) {
             // Get commentary count and stale count.
             if let Ok(count) = store.commentary_count() {
-                stats.compactable_commentary = count; // Simplified: treat all as compactable for now.
+                // Upper bound: execution phase applies commentary_retention_days() before deletion.
+                stats.compactable_commentary = count;
             }
             // Cross-link audit row count.
             if let Ok(audit_count) = store.cross_link_audit_count() {
@@ -214,8 +215,7 @@ pub fn plan_compact(
     // Repair-log rotation.
     let log_path = synrepo_dir.join("state/repair-log.jsonl");
     if log_path.exists() {
-        // Check if log has entries beyond retention window.
-        // For now, always include rotation action if log exists.
+        // Rotation is cheap and idempotent; defer the age check to rotate_repair_log().
         actions.push((CompactComponent::RepairLog, CompactAction::RotateRepairLog));
     }
 

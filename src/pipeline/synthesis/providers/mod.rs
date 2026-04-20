@@ -150,35 +150,79 @@ impl ProviderConfig {
                 let key = std::env::var("ANTHROPIC_API_KEY")
                     .or_else(|_| std::env::var("SYNREPO_ANTHROPIC_API_KEY"))
                     .ok()
-                    .filter(|k| !k.is_empty());
+                    .filter(|k| !k.is_empty())
+                    .or_else(|| {
+                        config
+                            .synthesis
+                            .anthropic_api_key
+                            .clone()
+                            .filter(|k| !k.is_empty())
+                    });
                 (key, None, EndpointSource::Default)
             }
             ProviderKind::OpenAi => {
                 let key = std::env::var("OPENAI_API_KEY")
                     .ok()
-                    .filter(|k| !k.is_empty());
+                    .filter(|k| !k.is_empty())
+                    .or_else(|| {
+                        config
+                            .synthesis
+                            .openai_api_key
+                            .clone()
+                            .filter(|k| !k.is_empty())
+                    });
                 (key, None, EndpointSource::Default)
             }
             ProviderKind::Gemini => {
                 let key = std::env::var("GEMINI_API_KEY")
                     .ok()
-                    .filter(|k| !k.is_empty());
+                    .filter(|k| !k.is_empty())
+                    .or_else(|| {
+                        config
+                            .synthesis
+                            .gemini_api_key
+                            .clone()
+                            .filter(|k| !k.is_empty())
+                    });
                 (key, None, EndpointSource::Default)
             }
             ProviderKind::OpenRouter => {
                 let key = std::env::var("OPENROUTER_API_KEY")
                     .ok()
-                    .filter(|k| !k.is_empty());
+                    .filter(|k| !k.is_empty())
+                    .or_else(|| {
+                        config
+                            .synthesis
+                            .openrouter_api_key
+                            .clone()
+                            .filter(|k| !k.is_empty())
+                    });
                 (key, None, EndpointSource::Default)
             }
             ProviderKind::Zai => {
-                let key = std::env::var("ZAI_API_KEY").ok().filter(|k| !k.is_empty());
+                let key = std::env::var("ZAI_API_KEY")
+                    .ok()
+                    .filter(|k| !k.is_empty())
+                    .or_else(|| {
+                        config
+                            .synthesis
+                            .zai_api_key
+                            .clone()
+                            .filter(|k| !k.is_empty())
+                    });
                 (key, None, EndpointSource::Default)
             }
             ProviderKind::Minimax => {
                 let key = std::env::var("MINIMAX_API_KEY")
                     .ok()
-                    .filter(|k| !k.is_empty());
+                    .filter(|k| !k.is_empty())
+                    .or_else(|| {
+                        config
+                            .synthesis
+                            .minimax_api_key
+                            .clone()
+                            .filter(|k| !k.is_empty())
+                    });
                 (key, None, EndpointSource::Default)
             }
             ProviderKind::Local => {
@@ -722,6 +766,27 @@ mod tests {
         use crate::core::ids::{FileNodeId, NodeId};
         let node = NodeId::File(FileNodeId(1));
         assert!(gen.generate(node, "some context").unwrap().is_none());
+    }
+
+    #[test]
+    fn config_key_used_when_env_unset() {
+        let _env = EnvGuard::new();
+        let mut config = enabled_config();
+        config.synthesis.provider = Some("openai".to_string());
+        config.synthesis.openai_api_key = Some("saved-openai-key".to_string());
+        let resolved = ProviderConfig::resolve(ProviderKind::OpenAi, &config, 1024);
+        assert_eq!(resolved.api_key.as_deref(), Some("saved-openai-key"));
+    }
+
+    #[test]
+    fn env_key_wins_over_saved_config_key() {
+        let env = EnvGuard::new();
+        env.set("OPENAI_API_KEY", "env-openai-key");
+        let mut config = enabled_config();
+        config.synthesis.provider = Some("openai".to_string());
+        config.synthesis.openai_api_key = Some("saved-openai-key".to_string());
+        let resolved = ProviderConfig::resolve(ProviderKind::OpenAi, &config, 1024);
+        assert_eq!(resolved.api_key.as_deref(), Some("env-openai-key"));
     }
 
     #[test]

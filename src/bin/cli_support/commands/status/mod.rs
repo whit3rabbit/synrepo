@@ -416,19 +416,14 @@ fn render_synthesis_line(display: &SynthesisDisplay) -> String {
             if let Some(endpoint) = &display.local_endpoint {
                 let source = display.endpoint_source.display_label();
                 write!(line, " @ {endpoint} [source: {source}]").unwrap();
-                if matches!(
-                    display.endpoint_source,
-                    synrepo::pipeline::synthesis::providers::EndpointSource::Config
-                ) {
-                    write!(line, " (CAUTION: shared repo config)").unwrap();
-                }
             }
             line
         }
         SynthesisStatus::DisabledKeyDetected { env_var } => {
             format!(
                 "disabled ({env_var} detected; run 'synrepo setup <tool> --synthesis' \
-                 to enable, or set [synthesis] enabled = true in .synrepo/config.toml)"
+                 to enable, or set [synthesis] enabled = true in .synrepo/config.toml \
+                 and store reusable keys or local endpoints in ~/.synrepo/config.toml)"
             )
         }
         SynthesisStatus::Disabled => "disabled".to_string(),

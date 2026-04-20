@@ -1,4 +1,5 @@
 use std::process::Command;
+use std::sync::Mutex;
 
 use synrepo::bootstrap::bootstrap;
 use synrepo::config::Config;
@@ -12,6 +13,32 @@ use time::OffsetDateTime;
 
 use super::super::commands::status_output;
 use super::support::seed_graph;
+
+static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+struct EnvGuard {
+    _guard: std::sync::MutexGuard<'static, ()>,
+}
+
+impl EnvGuard {
+    fn new() -> Self {
+        let guard = ENV_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        std::env::remove_var("ANTHROPIC_API_KEY");
+        Self { _guard: guard }
+    }
+
+    fn set(&self, key: &str, value: &str) {
+        std::env::set_var(key, value);
+    }
+}
+
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        std::env::remove_var("ANTHROPIC_API_KEY");
+    }
+}
 
 /// Insert one commentary row with the given hash. Freshness classification in
 /// the full path compares this hash against the containing file's current
@@ -122,6 +149,20 @@ fn status_reports_graph_counts_after_bootstrap() {
     assert!(
         text.contains("1 files  1 symbols  1 concepts"),
         "expected graph counts line, got: {text}"
+    );
+}
+
+#[test]
+fn status_synthesis_hint_mentions_global_config_for_reusable_keys() {
+    let env = EnvGuard::new();
+    env.set("ANTHROPIC_API_KEY", "sk-test");
+    let repo = tempdir().unwrap();
+    seed_graph(repo.path());
+
+    let text = status_output(repo.path(), false, false, false).unwrap();
+    assert!(
+        text.contains("~/.synrepo/config.toml"),
+        "expected global synthesis config hint, got: {text}"
     );
 }
 

@@ -7,11 +7,12 @@ use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
 mod synthesis;
 
 use super::state::{SetupStep, SetupWizardState, WIZARD_TARGETS};
-use super::synthesis::SynthesisChoice;
+use super::synthesis::{CloudCredentialSource, SynthesisChoice, SynthesisWizardSupport};
 use crate::tui::app::poll_key;
 use crate::tui::theme::Theme;
 use crate::tui::wizard::{
-    enter_tui, leave_tui, target_artifact_label, target_label, WizardTerminal,
+    enter_tui, leave_tui, target_artifact_label, target_label, target_tier, AgentTargetTier,
+    WizardTerminal,
 };
 
 /// Run the setup wizard until Complete or cancellation.
@@ -21,7 +22,11 @@ pub fn run_setup_wizard_loop(
     detected_targets: Vec<crate::bootstrap::runtime_probe::AgentTargetKind>,
 ) -> anyhow::Result<super::SetupWizardOutcome> {
     let mut terminal = enter_tui()?;
-    let mut state = SetupWizardState::new(default_mode, detected_targets);
+    let mut state = SetupWizardState::with_synthesis_support(
+        default_mode,
+        detected_targets,
+        SynthesisWizardSupport::detect(),
+    );
     let result = render_loop(&mut terminal, &mut state, &theme);
     leave_tui(&mut terminal)?;
     result?;
@@ -35,7 +40,7 @@ pub fn run_setup_wizard_loop(
 /// fields (which are placeholder defaults set by `synthesis_only()`).
 pub fn run_synthesis_only_wizard_loop(theme: Theme) -> anyhow::Result<super::SetupWizardOutcome> {
     let mut terminal = enter_tui()?;
-    let mut state = SetupWizardState::synthesis_only();
+    let mut state = SetupWizardState::synthesis_only_with_support(SynthesisWizardSupport::detect());
     let result = render_loop(&mut terminal, &mut state, &theme);
     leave_tui(&mut terminal)?;
     result?;
@@ -85,6 +90,7 @@ fn draw(frame: &mut ratatui::Frame, state: &SetupWizardState, theme: &Theme) {
             SetupStep::SelectTarget => " synrepo setup — step 3/5: agent integration ",
             SetupStep::ExplainSynthesis => " synrepo setup — step 4/5: what synthesis does ",
             SetupStep::SelectSynthesis => " synrepo setup — step 4/5: LLM synthesis ",
+            SetupStep::EditCloudApiKey => " synrepo setup — step 4a: cloud API key ",
             SetupStep::SelectLocalPreset => " synrepo setup — step 4a: local LLM preset ",
             SetupStep::EditLocalEndpoint => " synrepo setup — step 4b: local endpoint ",
             SetupStep::ReviewSynthesisPlan => " synrepo setup — step 4c: review synthesis plan ",
@@ -108,6 +114,9 @@ fn draw(frame: &mut ratatui::Frame, state: &SetupWizardState, theme: &Theme) {
             synthesis::draw_explain_synthesis_step(frame, outer[1], theme)
         }
         SetupStep::SelectSynthesis => synthesis::draw_synthesis_step(frame, outer[1], state, theme),
+        SetupStep::EditCloudApiKey => {
+            synthesis::draw_cloud_api_key_step(frame, outer[1], state, theme)
+        }
         SetupStep::SelectLocalPreset => {
             synthesis::draw_local_preset_step(frame, outer[1], state, theme)
         }
@@ -127,6 +136,9 @@ fn draw(frame: &mut ratatui::Frame, state: &SetupWizardState, theme: &Theme) {
         | SetupStep::SelectTarget
         | SetupStep::SelectSynthesis
         | SetupStep::SelectLocalPreset => " ↑/↓ move  Enter select  Esc cancel ",
+        SetupStep::EditCloudApiKey => {
+            " type key  Enter accept  Esc back  Ctrl-U clear  Ctrl-C abort "
+        }
         SetupStep::ExplainSynthesis => " Enter continue  b back  Esc cancel ",
         SetupStep::EditLocalEndpoint => {
             " type URL  Enter accept  Esc back  Ctrl-U clear  Ctrl-C abort "
@@ -161,7 +173,11 @@ fn draw_splash_step(frame: &mut ratatui::Frame, area: Rect, theme: &Theme) {
             theme.muted_style(),
         )),
         Line::from(Span::styled(
-            "Nothing leaves your machine. All state lives under .synrepo/.",
+            "Nothing leaves your machine. Runtime state lives under .synrepo/,",
+            theme.muted_style(),
+        )),
+        Line::from(Span::styled(
+            "and reusable synthesis settings may also live under ~/.synrepo/.",
             theme.muted_style(),
         )),
         Line::from(Span::raw("")),
@@ -275,22 +291,44 @@ fn draw_confirm_step(
         )));
         step_no += 1;
         lines.push(Line::from(Span::styled(
-            format!(
-                "  {step_no}. register MCP server for {}",
-                target_label(target)
-            ),
+            match target_tier(target) {
+                AgentTargetTier::Automated => {
+                    format!(
+                        "  {step_no}. register MCP server for {}",
+                        target_label(target)
+                    )
+                }
+                AgentTargetTier::ShimOnly => format!(
+                    "  {step_no}. write manual MCP setup instructions for {}",
+                    target_label(target)
+                ),
+            },
             theme.base_style(),
         )));
         step_no += 1;
     }
     match &state.synthesis {
-        Some(SynthesisChoice::Cloud(provider)) => {
+        Some(SynthesisChoice::Cloud {
+            provider,
+            credential_source,
+            ..
+        }) => {
             lines.push(Line::from(Span::styled(
-                format!(
-                    "  {step_no}. enable synthesis via {} (set {} in your shell)",
-                    provider.config_value(),
-                    synthesis::provider_env_var(*provider),
-                ),
+                match credential_source {
+                    CloudCredentialSource::Env => format!(
+                        "  {step_no}. enable synthesis via {} (use {} from the current shell)",
+                        provider.config_value(),
+                        synthesis::provider_env_var(*provider),
+                    ),
+                    CloudCredentialSource::SavedGlobal => format!(
+                        "  {step_no}. enable synthesis via {} (reuse saved key from ~/.synrepo/config.toml)",
+                        provider.config_value(),
+                    ),
+                    CloudCredentialSource::EnteredGlobal => format!(
+                        "  {step_no}. enable synthesis via {} and save its API key in ~/.synrepo/config.toml",
+                        provider.config_value(),
+                    ),
+                },
                 theme.base_style(),
             )));
             step_no += 1;
@@ -298,7 +336,7 @@ fn draw_confirm_step(
         Some(SynthesisChoice::Local { preset, endpoint }) => {
             lines.push(Line::from(Span::styled(
                 format!(
-                    "  {step_no}. enable local synthesis ({} at {endpoint})",
+                    "  {step_no}. enable local synthesis ({} at {endpoint}) and save the endpoint in ~/.synrepo/config.toml",
                     preset.config_value()
                 ),
                 theme.base_style(),
@@ -318,13 +356,6 @@ fn draw_confirm_step(
         theme.base_style(),
     )));
     lines.push(Line::from(Span::raw("")));
-    if matches!(state.synthesis, Some(SynthesisChoice::Cloud(_))) {
-        lines.push(Line::from(Span::styled(
-            "Reminder: API keys stay in your shell only. synrepo never writes them to disk.",
-            theme.muted_style(),
-        )));
-        lines.push(Line::from(Span::raw("")));
-    }
     lines.push(Line::from(Span::styled(
         "No files have been written yet. Press Enter to apply or b to go back.",
         theme.muted_style(),

@@ -224,8 +224,9 @@ fn execute_setup_plan(repo_root: &Path, plan: SetupPlan) -> anyhow::Result<()> {
 }
 
 /// Launch the synthesis-only sub-wizard after `synrepo setup <tool> --synthesis`,
-/// patching `.synrepo/config.toml` with the chosen `[synthesis]` block. Non-TTY
-/// callers get a pointer to the config file instead of crashing.
+/// patching repo-local `.synrepo/config.toml` plus user-scoped
+/// `~/.synrepo/config.toml` as needed. Non-TTY callers get a pointer to the
+/// relevant config files instead of crashing.
 fn run_synthesis_step(repo_root: &Path, opts: TuiOptions) -> anyhow::Result<()> {
     match run_synthesis_only_wizard(opts)? {
         SetupWizardOutcome::Completed { plan } => {
@@ -233,13 +234,14 @@ fn run_synthesis_step(repo_root: &Path, opts: TuiOptions) -> anyhow::Result<()> 
             Ok(())
         }
         SetupWizardOutcome::Cancelled => {
-            println!("synthesis sub-wizard cancelled; config.toml untouched.");
+            println!("synthesis sub-wizard cancelled; repo and user config untouched.");
             Ok(())
         }
         SetupWizardOutcome::NonTty => {
             println!(
-                "--synthesis requires a TTY. Edit .synrepo/config.toml manually; see \
-                 AGENTS.md for the `[synthesis]` block schema."
+                "--synthesis requires a TTY. Edit .synrepo/config.toml for repo-local \
+                 enablement and ~/.synrepo/config.toml for reusable keys or local endpoints; \
+                 see AGENTS.md for the `[synthesis]` block schema."
             );
             Ok(())
         }

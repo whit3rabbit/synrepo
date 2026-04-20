@@ -3,7 +3,8 @@
 use crossterm::event::{KeyCode, KeyModifiers};
 
 use super::synthesis::{
-    LocalPreset, SynthesisChoice, SynthesisRow, TextInputField, LOCAL_PRESETS, SYNTHESIS_ROWS,
+    CloudCredentialSource, CloudProvider, LocalPreset, SynthesisChoice, SynthesisRow,
+    SynthesisWizardSupport, TextInputField, LOCAL_PRESETS, SYNTHESIS_ROWS,
 };
 use crate::bootstrap::runtime_probe::AgentTargetKind;
 use crate::config::Mode;
@@ -57,6 +58,9 @@ pub enum SetupStep {
     ExplainSynthesis,
     /// Pick synthesis provider (cloud, local, or skip).
     SelectSynthesis,
+    /// Enter an API key for the selected cloud provider. Masked on screen;
+    /// value is held in-memory only until the final apply step.
+    EditCloudApiKey,
     /// Pick a local-LLM preset (Ollama, llama.cpp, LM Studio, vLLM, Custom).
     SelectLocalPreset,
     /// Edit the local-LLM endpoint URL. Pre-filled from the preset default.
@@ -108,9 +112,15 @@ pub struct SetupWizardState {
     /// Text input buffer used by `EditLocalEndpoint`. Seeded with the preset
     /// default; mutable while the user edits.
     pub endpoint_input: TextInputField,
+    /// Text input buffer used by `EditCloudApiKey`. Always masked on screen.
+    pub api_key_input: TextInputField,
     /// Preset selected on `SelectLocalPreset`. Used by `EditLocalEndpoint` to
     /// build the final [`SynthesisChoice::Local`] on Enter.
     pub local_preset: LocalPreset,
+    /// Cloud provider currently being configured.
+    pub pending_cloud_provider: Option<CloudProvider>,
+    /// Observed reusable synthesis defaults from env/global config.
+    pub synthesis_support: SynthesisWizardSupport,
     /// Deterministic ordered list of agent targets detected from repo /
     /// `$HOME` hints. Used to pre-select the target cursor.
     pub detected_targets: Vec<AgentTargetKind>,
@@ -125,6 +135,20 @@ impl SetupWizardState {
     /// target, falling back to position 0 (the first target in
     /// [`WIZARD_TARGETS`]).
     pub fn new(default_mode: Mode, detected_targets: Vec<AgentTargetKind>) -> Self {
+        Self::with_synthesis_support(
+            default_mode,
+            detected_targets,
+            SynthesisWizardSupport::default(),
+        )
+    }
+
+    /// Same as [`SetupWizardState::new`], but seeds the synthesis flow with
+    /// observed env/global config support from the caller.
+    pub fn with_synthesis_support(
+        default_mode: Mode,
+        detected_targets: Vec<AgentTargetKind>,
+        synthesis_support: SynthesisWizardSupport,
+    ) -> Self {
         let mode_cursor = match default_mode {
             Mode::Auto => 0,
             Mode::Curated => 1,
@@ -133,17 +157,28 @@ impl SetupWizardState {
             .first()
             .and_then(|t| WIZARD_TARGETS.iter().position(|wt| wt == t))
             .unwrap_or(0);
+        let local_preset = synthesis_support.local_preset();
+        let local_preset_cursor = LOCAL_PRESETS
+            .iter()
+            .position(|preset| *preset == local_preset)
+            .unwrap_or(0);
+        let endpoint_seed = synthesis_support
+            .local_endpoint()
+            .unwrap_or(local_preset.default_endpoint());
         Self {
             step: SetupStep::Splash,
             mode_cursor,
             target_cursor,
             synthesis_cursor: 0,
-            local_preset_cursor: 0,
+            local_preset_cursor,
             mode: default_mode,
             target: None,
             synthesis: None,
-            endpoint_input: TextInputField::with_value(LocalPreset::Ollama.default_endpoint()),
-            local_preset: LocalPreset::Ollama,
+            endpoint_input: TextInputField::with_value(endpoint_seed),
+            api_key_input: TextInputField::with_value(""),
+            local_preset,
+            pending_cloud_provider: None,
+            synthesis_support,
             detected_targets,
             cancelled: false,
         }
@@ -154,7 +189,16 @@ impl SetupWizardState {
     /// plan's `mode`/`target` fields are placeholders — the caller must only
     /// consume `plan.synthesis`.
     pub fn synthesis_only() -> Self {
-        let mut s = Self::new(Mode::Auto, vec![]);
+        let mut s =
+            Self::with_synthesis_support(Mode::Auto, vec![], SynthesisWizardSupport::default());
+        s.step = SetupStep::SelectSynthesis;
+        s
+    }
+
+    /// Same as [`SetupWizardState::synthesis_only`], but seeds the synthesis
+    /// flow with observed env/global config support from the caller.
+    pub fn synthesis_only_with_support(synthesis_support: SynthesisWizardSupport) -> Self {
+        let mut s = Self::with_synthesis_support(Mode::Auto, vec![], synthesis_support);
         s.step = SetupStep::SelectSynthesis;
         s
     }
@@ -277,14 +321,29 @@ impl SetupWizardState {
                         match SYNTHESIS_ROWS.get(self.synthesis_cursor).copied() {
                             Some(SynthesisRow::Skip) => {
                                 self.synthesis = None;
+                                self.pending_cloud_provider = None;
                                 // Nothing to review when synthesis is off.
                                 self.step = SetupStep::Confirm;
                             }
                             Some(SynthesisRow::Cloud(provider)) => {
-                                self.synthesis = Some(SynthesisChoice::Cloud(provider));
-                                self.step = SetupStep::ReviewSynthesisPlan;
+                                self.pending_cloud_provider = Some(provider);
+                                self.api_key_input.reset("");
+                                if let Some(credential_source) =
+                                    self.synthesis_support.credential_source_for(provider)
+                                {
+                                    self.synthesis = Some(SynthesisChoice::Cloud {
+                                        provider,
+                                        credential_source,
+                                        api_key: None,
+                                    });
+                                    self.step = SetupStep::ReviewSynthesisPlan;
+                                } else {
+                                    self.synthesis = None;
+                                    self.step = SetupStep::EditCloudApiKey;
+                                }
                             }
                             Some(SynthesisRow::Local) => {
+                                self.pending_cloud_provider = None;
                                 self.step = SetupStep::SelectLocalPreset;
                             }
                             None => {}
@@ -292,6 +351,40 @@ impl SetupWizardState {
                         true
                     }
                     _ => false,
+                }
+            }
+            SetupStep::EditCloudApiKey => {
+                let is_abort =
+                    code == KeyCode::Char('c') && modifiers.contains(KeyModifiers::CONTROL);
+                if is_abort {
+                    self.cancelled = true;
+                    self.step = SetupStep::Complete;
+                    return true;
+                }
+                match code {
+                    KeyCode::Esc => {
+                        self.pending_cloud_provider = None;
+                        self.api_key_input.reset("");
+                        self.step = SetupStep::SelectSynthesis;
+                        true
+                    }
+                    KeyCode::Enter => {
+                        let api_key = self.api_key_input.value().trim().to_string();
+                        if api_key.is_empty() {
+                            return false;
+                        }
+                        let provider = self
+                            .pending_cloud_provider
+                            .unwrap_or(CloudProvider::Anthropic);
+                        self.synthesis = Some(SynthesisChoice::Cloud {
+                            provider,
+                            credential_source: CloudCredentialSource::EnteredGlobal,
+                            api_key: Some(api_key),
+                        });
+                        self.step = SetupStep::ReviewSynthesisPlan;
+                        true
+                    }
+                    _ => self.api_key_input.handle_key(code, modifiers),
                 }
             }
             SetupStep::SelectLocalPreset => {
@@ -375,6 +468,8 @@ impl SetupWizardState {
                         // committed choice so a back-forward round trip never
                         // silently reuses a stale selection.
                         self.synthesis = None;
+                        self.pending_cloud_provider = None;
+                        self.api_key_input.reset("");
                         self.step = SetupStep::SelectSynthesis;
                         true
                     }

@@ -2,16 +2,66 @@
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Mutex;
+
     use crate::bootstrap::runtime_probe::AgentTargetKind;
-    use crate::config::Mode;
+    use crate::config::{Mode, SynthesisConfig};
     use crate::tui::wizard::setup::state::{SetupStep, SetupWizardState, WIZARD_TARGETS};
     use crate::tui::wizard::setup::synthesis::{
-        CloudProvider, LocalPreset, SynthesisChoice, SynthesisRow, SYNTHESIS_ROWS,
+        CloudCredentialSource, CloudProvider, LocalPreset, SynthesisChoice, SynthesisRow,
+        SynthesisWizardSupport, SYNTHESIS_ROWS,
     };
     use crossterm::event::{KeyCode, KeyModifiers};
 
+    const RELEVANT_ENV: &[&str] = &[
+        "ANTHROPIC_API_KEY",
+        "OPENAI_API_KEY",
+        "GEMINI_API_KEY",
+        "OPENROUTER_API_KEY",
+        "ZAI_API_KEY",
+        "MINIMAX_API_KEY",
+    ];
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    struct EnvGuard {
+        _guard: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl EnvGuard {
+        fn new() -> Self {
+            let guard = ENV_LOCK
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            for var in RELEVANT_ENV {
+                std::env::remove_var(var);
+            }
+            Self { _guard: guard }
+        }
+
+        fn set(&self, key: &str, value: &str) {
+            std::env::set_var(key, value);
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            for var in RELEVANT_ENV {
+                std::env::remove_var(var);
+            }
+        }
+    }
+
     fn press(state: &mut SetupWizardState, code: KeyCode) {
         state.handle_key(code, KeyModifiers::empty());
+    }
+
+    fn support_with_saved_anthropic() -> SynthesisWizardSupport {
+        let config = SynthesisConfig {
+            anthropic_api_key: Some("saved-anthropic-key".to_string()),
+            ..Default::default()
+        };
+        SynthesisWizardSupport::with_global_synthesis(config)
     }
 
     #[test]
@@ -135,7 +185,11 @@ mod tests {
 
     #[test]
     fn b_at_confirm_after_provider_goes_back_to_review() {
-        let mut s = SetupWizardState::new(Mode::Auto, vec![]);
+        let mut s = SetupWizardState::with_synthesis_support(
+            Mode::Auto,
+            vec![],
+            support_with_saved_anthropic(),
+        );
         press(&mut s, KeyCode::Enter); // splash → mode
         press(&mut s, KeyCode::Enter); // mode → target
         press(&mut s, KeyCode::Enter); // target → explain
@@ -298,7 +352,8 @@ mod tests {
     }
 
     #[test]
-    fn synthesis_cloud_anthropic_confirms_with_choice() {
+    fn synthesis_cloud_anthropic_without_detected_key_prompts_for_entry() {
+        let _env = EnvGuard::new();
         let mut s = SetupWizardState::new(Mode::Auto, vec![]);
         drive_to_synthesis(&mut s);
         press(&mut s, KeyCode::Down); // Skip → Anthropic (index 1)
@@ -307,6 +362,11 @@ mod tests {
             SynthesisRow::Cloud(CloudProvider::Anthropic)
         );
         press(&mut s, KeyCode::Enter);
+        assert_eq!(s.step, SetupStep::EditCloudApiKey);
+        for ch in "sk-entered".chars() {
+            press(&mut s, KeyCode::Char(ch));
+        }
+        press(&mut s, KeyCode::Enter);
         assert_eq!(s.step, SetupStep::ReviewSynthesisPlan);
         press(&mut s, KeyCode::Enter); // review → confirm
         assert_eq!(s.step, SetupStep::Confirm);
@@ -314,8 +374,89 @@ mod tests {
         let plan = s.finalize().expect("plan");
         assert_eq!(
             plan.synthesis,
-            Some(SynthesisChoice::Cloud(CloudProvider::Anthropic))
+            Some(SynthesisChoice::Cloud {
+                provider: CloudProvider::Anthropic,
+                credential_source: CloudCredentialSource::EnteredGlobal,
+                api_key: Some("sk-entered".to_string()),
+            })
         );
+    }
+
+    #[test]
+    fn synthesis_cloud_anthropic_with_env_key_skips_key_entry() {
+        let env = EnvGuard::new();
+        env.set("ANTHROPIC_API_KEY", "sk-env");
+
+        let mut s = SetupWizardState::new(Mode::Auto, vec![]);
+        drive_to_synthesis(&mut s);
+        press(&mut s, KeyCode::Down); // Skip → Anthropic
+        press(&mut s, KeyCode::Enter);
+        assert_eq!(s.step, SetupStep::ReviewSynthesisPlan);
+        press(&mut s, KeyCode::Enter);
+        press(&mut s, KeyCode::Enter);
+
+        let plan = s.finalize().expect("plan");
+        assert_eq!(
+            plan.synthesis,
+            Some(SynthesisChoice::Cloud {
+                provider: CloudProvider::Anthropic,
+                credential_source: CloudCredentialSource::Env,
+                api_key: None,
+            })
+        );
+    }
+
+    #[test]
+    fn synthesis_cloud_anthropic_with_saved_global_key_skips_key_entry() {
+        let _env = EnvGuard::new();
+        let mut s = SetupWizardState::with_synthesis_support(
+            Mode::Auto,
+            vec![],
+            support_with_saved_anthropic(),
+        );
+        drive_to_synthesis(&mut s);
+        press(&mut s, KeyCode::Down); // Skip → Anthropic
+        press(&mut s, KeyCode::Enter);
+        assert_eq!(s.step, SetupStep::ReviewSynthesisPlan);
+        press(&mut s, KeyCode::Enter);
+        press(&mut s, KeyCode::Enter);
+
+        let plan = s.finalize().expect("plan");
+        assert_eq!(
+            plan.synthesis,
+            Some(SynthesisChoice::Cloud {
+                provider: CloudProvider::Anthropic,
+                credential_source: CloudCredentialSource::SavedGlobal,
+                api_key: None,
+            })
+        );
+    }
+
+    #[test]
+    fn synthesis_cloud_key_entry_escape_returns_to_selector_without_cancel() {
+        let _env = EnvGuard::new();
+        let mut s = SetupWizardState::new(Mode::Auto, vec![]);
+        drive_to_synthesis(&mut s);
+        press(&mut s, KeyCode::Down); // Skip → Anthropic
+        press(&mut s, KeyCode::Enter);
+        assert_eq!(s.step, SetupStep::EditCloudApiKey);
+        press(&mut s, KeyCode::Esc);
+        assert_eq!(s.step, SetupStep::SelectSynthesis);
+        assert!(!s.cancelled);
+        assert!(s.synthesis.is_none());
+    }
+
+    #[test]
+    fn synthesis_cloud_key_entry_empty_input_refuses_enter() {
+        let _env = EnvGuard::new();
+        let mut s = SetupWizardState::new(Mode::Auto, vec![]);
+        drive_to_synthesis(&mut s);
+        press(&mut s, KeyCode::Down); // Skip → Anthropic
+        press(&mut s, KeyCode::Enter);
+        assert_eq!(s.step, SetupStep::EditCloudApiKey);
+        press(&mut s, KeyCode::Enter);
+        assert_eq!(s.step, SetupStep::EditCloudApiKey);
+        assert!(s.synthesis.is_none());
     }
 
     #[test]
@@ -476,7 +617,11 @@ mod tests {
 
     #[test]
     fn review_synthesis_plan_b_clears_choice_and_returns_to_selector() {
-        let mut s = SetupWizardState::new(Mode::Auto, vec![]);
+        let mut s = SetupWizardState::with_synthesis_support(
+            Mode::Auto,
+            vec![],
+            support_with_saved_anthropic(),
+        );
         drive_to_synthesis(&mut s);
         press(&mut s, KeyCode::Down); // Skip → Anthropic
         press(&mut s, KeyCode::Enter); // commit → review

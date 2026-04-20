@@ -12,14 +12,45 @@
 //! pre-existing `synrepo` entry with a different value is replaced.
 
 use std::fs;
+use std::sync::Mutex;
 use tempfile::tempdir;
 
 use crate::cli_support::agent_shims::{AgentTool, AutomationTier};
 use crate::cli_support::commands::{
     setup_claude_mcp, setup_codex_mcp, setup_cursor_mcp, setup_opencode_mcp, setup_roo_mcp,
-    setup_windsurf_mcp, step_apply_integration, step_ensure_ready, step_init, step_register_mcp,
-    step_write_shim, StepOutcome,
+    setup_windsurf_mcp, step_apply_integration, step_apply_synthesis, step_ensure_ready, step_init,
+    step_register_mcp, step_write_shim, StepOutcome,
 };
+use synrepo::tui::wizard::setup::synthesis::{CloudProvider, LocalPreset};
+use synrepo::tui::{CloudCredentialSource, SynthesisChoice};
+
+static HOME_LOCK: Mutex<()> = Mutex::new(());
+
+struct HomeEnvGuard {
+    _guard: std::sync::MutexGuard<'static, ()>,
+}
+
+impl HomeEnvGuard {
+    fn new(path: &std::path::Path) -> Self {
+        let guard = HOME_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        #[cfg(unix)]
+        std::env::set_var("HOME", path);
+        #[cfg(windows)]
+        std::env::set_var("USERPROFILE", path);
+        Self { _guard: guard }
+    }
+}
+
+impl Drop for HomeEnvGuard {
+    fn drop(&mut self) {
+        #[cfg(unix)]
+        std::env::remove_var("HOME");
+        #[cfg(windows)]
+        std::env::remove_var("USERPROFILE");
+    }
+}
 
 // ---------- Claude: .mcp.json ----------
 
@@ -629,6 +660,96 @@ fn step_init_skips_when_already_initialized() {
     // Re-running without force must be an AlreadyCurrent no-op.
     let again = step_init(dir.path(), None, false, false).unwrap();
     assert_eq!(again, StepOutcome::AlreadyCurrent);
+}
+
+#[test]
+fn step_apply_synthesis_cloud_with_env_key_writes_only_repo_local_config() {
+    let home = tempdir().unwrap();
+    let _home = HomeEnvGuard::new(home.path());
+    let repo = tempdir().unwrap();
+    step_init(repo.path(), None, false, false).unwrap();
+
+    let choice = SynthesisChoice::Cloud {
+        provider: CloudProvider::Anthropic,
+        credential_source: CloudCredentialSource::Env,
+        api_key: None,
+    };
+
+    let outcome = step_apply_synthesis(repo.path(), Some(&choice)).unwrap();
+    assert_eq!(outcome, StepOutcome::Applied);
+
+    let local = fs::read_to_string(repo.path().join(".synrepo/config.toml")).unwrap();
+    assert!(local.contains("enabled = true"));
+    assert!(local.contains("provider = \"anthropic\""));
+    assert!(!local.contains("anthropic_api_key"));
+
+    let global_path = home.path().join(".synrepo/config.toml");
+    assert!(
+        !global_path.exists(),
+        "env-backed setup must not create a global config file"
+    );
+}
+
+#[test]
+fn step_apply_synthesis_cloud_with_new_key_saves_global_key_only() {
+    let home = tempdir().unwrap();
+    let _home = HomeEnvGuard::new(home.path());
+    fs::create_dir_all(home.path().join(".synrepo")).unwrap();
+    fs::write(
+        home.path().join(".synrepo/config.toml"),
+        "[synthesis]\nlocal_preset = \"ollama\"\n",
+    )
+    .unwrap();
+
+    let repo = tempdir().unwrap();
+    step_init(repo.path(), None, false, false).unwrap();
+    fs::write(
+        repo.path().join(".synrepo/config.toml"),
+        "[synthesis]\nenabled = false\nopenai_api_key = \"should-not-stay-local\"\n",
+    )
+    .unwrap();
+
+    let choice = SynthesisChoice::Cloud {
+        provider: CloudProvider::OpenAi,
+        credential_source: CloudCredentialSource::EnteredGlobal,
+        api_key: Some("sk-entered-openai".to_string()),
+    };
+
+    let outcome = step_apply_synthesis(repo.path(), Some(&choice)).unwrap();
+    assert_eq!(outcome, StepOutcome::Applied);
+
+    let local = fs::read_to_string(repo.path().join(".synrepo/config.toml")).unwrap();
+    assert!(local.contains("provider = \"openai\""));
+    assert!(!local.contains("openai_api_key"));
+
+    let global = fs::read_to_string(home.path().join(".synrepo/config.toml")).unwrap();
+    assert!(global.contains("openai_api_key = \"sk-entered-openai\""));
+    assert!(global.contains("local_preset = \"ollama\""));
+}
+
+#[test]
+fn step_apply_synthesis_local_saves_endpoint_in_global_config() {
+    let home = tempdir().unwrap();
+    let _home = HomeEnvGuard::new(home.path());
+    let repo = tempdir().unwrap();
+    step_init(repo.path(), None, false, false).unwrap();
+
+    let choice = SynthesisChoice::Local {
+        preset: LocalPreset::Custom,
+        endpoint: "http://gpu-box:9000/v1/chat/completions".to_string(),
+    };
+
+    let outcome = step_apply_synthesis(repo.path(), Some(&choice)).unwrap();
+    assert_eq!(outcome, StepOutcome::Applied);
+
+    let local = fs::read_to_string(repo.path().join(".synrepo/config.toml")).unwrap();
+    assert!(local.contains("provider = \"local\""));
+    assert!(!local.contains("local_endpoint"));
+    assert!(!local.contains("local_preset"));
+
+    let global = fs::read_to_string(home.path().join(".synrepo/config.toml")).unwrap();
+    assert!(global.contains("local_endpoint = \"http://gpu-box:9000/v1/chat/completions\""));
+    assert!(global.contains("local_preset = \"custom\""));
 }
 
 #[test]

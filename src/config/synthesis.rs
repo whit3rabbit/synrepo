@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 /// `.synrepo/config.toml`. All fields are optional with serde defaults so
 /// older config files load unchanged; missing or absent block means
 /// "disabled, no preferences set".
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SynthesisConfig {
     /// When false, synthesis is disabled regardless of env keys. Set
     /// `SYNREPO_LLM_ENABLED=1` as a one-shot env override without persisting.
@@ -23,6 +23,36 @@ pub struct SynthesisConfig {
     /// `SYNREPO_LLM_PROVIDER` env var overrides this when set.
     #[serde(default)]
     pub provider: Option<String>,
+
+    /// Anthropic API key. Shared user-scoped default lives in
+    /// `~/.synrepo/config.toml`; env still wins.
+    #[serde(default)]
+    pub anthropic_api_key: Option<String>,
+
+    /// OpenAI API key. Shared user-scoped default lives in
+    /// `~/.synrepo/config.toml`; env still wins.
+    #[serde(default)]
+    pub openai_api_key: Option<String>,
+
+    /// Gemini API key. Shared user-scoped default lives in
+    /// `~/.synrepo/config.toml`; env still wins.
+    #[serde(default)]
+    pub gemini_api_key: Option<String>,
+
+    /// OpenRouter API key. Shared user-scoped default lives in
+    /// `~/.synrepo/config.toml`; env still wins.
+    #[serde(default)]
+    pub openrouter_api_key: Option<String>,
+
+    /// Z.ai API key. Shared user-scoped default lives in
+    /// `~/.synrepo/config.toml`; env still wins.
+    #[serde(default)]
+    pub zai_api_key: Option<String>,
+
+    /// MiniMax API key. Shared user-scoped default lives in
+    /// `~/.synrepo/config.toml`; env still wins.
+    #[serde(default)]
+    pub minimax_api_key: Option<String>,
 
     /// Model override. `SYNREPO_LLM_MODEL` env var overrides this.
     #[serde(default)]
@@ -51,6 +81,24 @@ impl SynthesisConfig {
         }
         if other.provider.is_some() {
             self.provider = other.provider;
+        }
+        if other.anthropic_api_key.is_some() {
+            self.anthropic_api_key = other.anthropic_api_key;
+        }
+        if other.openai_api_key.is_some() {
+            self.openai_api_key = other.openai_api_key;
+        }
+        if other.gemini_api_key.is_some() {
+            self.gemini_api_key = other.gemini_api_key;
+        }
+        if other.openrouter_api_key.is_some() {
+            self.openrouter_api_key = other.openrouter_api_key;
+        }
+        if other.zai_api_key.is_some() {
+            self.zai_api_key = other.zai_api_key;
+        }
+        if other.minimax_api_key.is_some() {
+            self.minimax_api_key = other.minimax_api_key;
         }
         if other.model.is_some() {
             self.model = other.model;
@@ -82,6 +130,12 @@ mod tests {
         let config = Config::load(dir.path()).unwrap();
         assert!(!config.synthesis.enabled);
         assert!(config.synthesis.provider.is_none());
+        assert!(config.synthesis.anthropic_api_key.is_none());
+        assert!(config.synthesis.openai_api_key.is_none());
+        assert!(config.synthesis.gemini_api_key.is_none());
+        assert!(config.synthesis.openrouter_api_key.is_none());
+        assert!(config.synthesis.zai_api_key.is_none());
+        assert!(config.synthesis.minimax_api_key.is_none());
         assert!(config.synthesis.model.is_none());
         assert!(config.synthesis.local_endpoint.is_none());
         assert!(config.synthesis.local_preset.is_none());
@@ -96,6 +150,7 @@ mod tests {
             [synthesis]
             enabled = true
             provider = "local"
+            openai_api_key = "sk-test"
             model = "llama3"
             local_endpoint = "http://localhost:11434/api/chat"
             local_preset = "ollama"
@@ -105,6 +160,7 @@ mod tests {
         let config = Config::load(dir.path()).unwrap();
         assert!(config.synthesis.enabled);
         assert_eq!(config.synthesis.provider.as_deref(), Some("local"));
+        assert_eq!(config.synthesis.openai_api_key.as_deref(), Some("sk-test"));
         assert_eq!(config.synthesis.model.as_deref(), Some("llama3"));
         assert_eq!(
             config.synthesis.local_endpoint.as_deref(),
@@ -134,10 +190,12 @@ mod tests {
         let mut base = SynthesisConfig {
             enabled: false,
             provider: Some("anthropic".to_string()),
+            anthropic_api_key: Some("global-key".to_string()),
             ..Default::default()
         };
         let other = SynthesisConfig {
             enabled: true,
+            openai_api_key: Some("local-key".to_string()),
             model: Some("gpt-4".to_string()),
             ..Default::default()
         };
@@ -146,6 +204,8 @@ mod tests {
 
         assert!(base.enabled);
         assert_eq!(base.provider.as_deref(), Some("anthropic"));
+        assert_eq!(base.anthropic_api_key.as_deref(), Some("global-key"));
+        assert_eq!(base.openai_api_key.as_deref(), Some("local-key"));
         assert_eq!(base.model.as_deref(), Some("gpt-4"));
     }
 }

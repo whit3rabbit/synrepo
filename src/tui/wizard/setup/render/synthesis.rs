@@ -8,7 +8,9 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
 
 use super::super::state::SetupWizardState;
-use super::super::synthesis::{CloudProvider, SynthesisChoice, LOCAL_PRESETS, SYNTHESIS_ROWS};
+use super::super::synthesis::{
+    CloudCredentialSource, CloudProvider, SynthesisChoice, LOCAL_PRESETS, SYNTHESIS_ROWS,
+};
 use crate::tui::theme::Theme;
 
 /// Canonical commentary example used in the explainer step. Drawn from a real
@@ -137,16 +139,57 @@ pub(super) fn draw_local_endpoint_step(
     frame.render_widget(Paragraph::new(lines).block(block), area);
 }
 
+/// Draw the masked cloud-provider API-key entry step.
+pub(super) fn draw_cloud_api_key_step(
+    frame: &mut ratatui::Frame,
+    area: Rect,
+    state: &SetupWizardState,
+    theme: &Theme,
+) {
+    let provider = state
+        .pending_cloud_provider
+        .unwrap_or(CloudProvider::Anthropic);
+    let buffer = state.api_key_input.value();
+    let cursor = state.api_key_input.cursor();
+    let masked: String = buffer.chars().map(|_| '*').collect();
+    let prefix: String = masked.chars().take(cursor).collect();
+    let suffix: String = masked.chars().skip(cursor).collect();
+    let input_line = Line::from(vec![
+        Span::styled(prefix, theme.base_style()),
+        Span::styled("│", theme.agent_style()),
+        Span::styled(suffix, theme.base_style()),
+    ]);
+
+    let lines: Vec<Line> = vec![
+        Line::from(Span::styled(
+            format!("Provider: {}", provider.label()),
+            theme.muted_style(),
+        )),
+        Line::from(Span::raw("")),
+        Line::from(Span::styled(
+            format!(
+                "No {} was detected in the current shell or ~/.synrepo/config.toml.",
+                provider.env_var()
+            ),
+            theme.base_style(),
+        )),
+        Line::from(Span::styled(
+            "Enter an API key now to save it in ~/.synrepo/config.toml on apply:",
+            theme.base_style(),
+        )),
+        input_line,
+    ];
+
+    let block = Block::default()
+        .title(" cloud API key ")
+        .borders(Borders::ALL)
+        .border_style(theme.border_style());
+    frame.render_widget(Paragraph::new(lines).block(block), area);
+}
+
 /// Map a [`CloudProvider`] to the env-var name the user must export.
 pub(super) fn provider_env_var(provider: CloudProvider) -> &'static str {
-    match provider {
-        CloudProvider::Anthropic => "ANTHROPIC_API_KEY",
-        CloudProvider::OpenAi => "OPENAI_API_KEY",
-        CloudProvider::Gemini => "GEMINI_API_KEY",
-        CloudProvider::OpenRouter => "OPENROUTER_API_KEY",
-        CloudProvider::Zai => "ZAI_API_KEY",
-        CloudProvider::Minimax => "MINIMAX_API_KEY",
-    }
+    provider.env_var()
 }
 
 /// Draw the static "what synthesis does" explainer. Renders a real commentary
@@ -228,7 +271,11 @@ pub(super) fn draw_review_synthesis_plan_step(
     lines.push(Line::from(Span::raw("")));
 
     match &state.synthesis {
-        Some(SynthesisChoice::Cloud(provider)) => {
+        Some(SynthesisChoice::Cloud {
+            provider,
+            credential_source,
+            ..
+        }) => {
             lines.push(Line::from(Span::styled(
                 format!("Provider: {}", provider.config_value()),
                 theme.base_style(),
@@ -242,10 +289,19 @@ pub(super) fn draw_review_synthesis_plan_step(
                 theme.muted_style(),
             )));
             lines.push(Line::from(Span::styled(
-                format!(
-                    "  Auth: export {} in your shell before running sync.",
-                    provider_env_var(*provider)
-                ),
+                match credential_source {
+                    CloudCredentialSource::Env => format!(
+                        "  Auth: use {} from the current shell.",
+                        provider_env_var(*provider)
+                    ),
+                    CloudCredentialSource::SavedGlobal => {
+                        "  Auth: reuse the saved key in ~/.synrepo/config.toml.".to_string()
+                    }
+                    CloudCredentialSource::EnteredGlobal => {
+                        "  Auth: save the newly entered key into ~/.synrepo/config.toml on apply."
+                            .to_string()
+                    }
+                },
                 theme.muted_style(),
             )));
         }
@@ -264,6 +320,10 @@ pub(super) fn draw_review_synthesis_plan_step(
             )));
             lines.push(Line::from(Span::styled(
                 format!("  {}", preset.cost_hint()),
+                theme.muted_style(),
+            )));
+            lines.push(Line::from(Span::styled(
+                "  Endpoint persistence: save in ~/.synrepo/config.toml on apply.".to_string(),
                 theme.muted_style(),
             )));
         }
@@ -309,7 +369,7 @@ pub(super) fn draw_review_synthesis_plan_step(
         theme.muted_style(),
     )));
     lines.push(Line::from(Span::styled(
-        "  • persist your API key — keys stay in the shell environment only",
+        "  • write anything before you confirm this setup",
         theme.muted_style(),
     )));
 

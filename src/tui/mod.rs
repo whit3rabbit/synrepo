@@ -25,9 +25,9 @@ use crate::bootstrap::runtime_probe::{probe, AgentIntegration, Missing};
 use crate::config::Mode;
 
 pub use self::wizard::{
-    IntegrationPlan, IntegrationWizardOutcome, RepairPlan, RepairWizardOutcome, SetupPlan,
-    SetupWizardOutcome, SynthesisChoice, UninstallActionKind, UninstallPlan,
-    UninstallWizardOutcome,
+    CloudCredentialSource, IntegrationPlan, IntegrationWizardOutcome, RepairPlan,
+    RepairWizardOutcome, SetupPlan, SetupWizardOutcome, SynthesisChoice, SynthesisWizardSupport,
+    UninstallActionKind, UninstallPlan, UninstallWizardOutcome,
 };
 
 pub mod actions;
@@ -133,9 +133,11 @@ pub fn run_setup_wizard(repo_root: &Path, opts: TuiOptions) -> anyhow::Result<Se
 
 /// Open the synthesis-only sub-wizard. Used by `synrepo setup --synthesis`
 /// after the non-interactive setup flow has initialized the repo. Walks the
-/// operator through SelectSynthesis → (SelectLocalPreset → EditLocalEndpoint)
-/// → Confirm and returns a [`SetupWizardOutcome`]; only the plan's
-/// `synthesis` field is meaningful.
+/// operator through SelectSynthesis → (EditCloudApiKey | SelectLocalPreset →
+/// EditLocalEndpoint) → Review → Confirm and returns a
+/// [`SetupWizardOutcome`]. Only the plan's `synthesis` field is meaningful;
+/// apply-time code decides whether to patch repo-local `.synrepo/config.toml`,
+/// user-scoped `~/.synrepo/config.toml`, or both.
 pub fn run_synthesis_only_wizard(opts: TuiOptions) -> anyhow::Result<SetupWizardOutcome> {
     if !stdout_is_tty() {
         return Ok(SetupWizardOutcome::NonTty);

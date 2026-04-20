@@ -36,8 +36,8 @@ pub use repair::{
     RepairWizardOutcome, RepairWizardState,
 };
 pub use setup::{
-    run_setup_wizard_loop, run_synthesis_only_wizard_loop, SetupPlan, SetupWizardOutcome,
-    SetupWizardState, SynthesisChoice, WIZARD_TARGETS,
+    run_setup_wizard_loop, run_synthesis_only_wizard_loop, CloudCredentialSource, SetupPlan,
+    SetupWizardOutcome, SetupWizardState, SynthesisChoice, SynthesisWizardSupport, WIZARD_TARGETS,
 };
 pub use uninstall::{
     run_uninstall_wizard_loop, UninstallActionKind, UninstallActionRow, UninstallPlan,

@@ -96,7 +96,8 @@ pub(crate) enum Command {
         #[arg(long)]
         force: bool,
         /// After the normal setup steps complete, launch the synthesis sub-wizard
-        /// and patch `.synrepo/config.toml` with the chosen `[synthesis]` block.
+        /// and patch repo-local `.synrepo/config.toml` plus user-scoped
+        /// `~/.synrepo/config.toml` as needed.
         /// Off by default; opt-in makes the key-detected hint in `synrepo status`
         /// actionable without requiring the user to hand-edit config.
         #[arg(long)]

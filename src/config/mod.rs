@@ -496,6 +496,8 @@ mod tests {
             [synthesis]
             enabled = true
             provider = "anthropic"
+            anthropic_api_key = "global-anthropic"
+            local_endpoint = "http://global-llm:11434/api/chat"
         "#;
         std::fs::write(home.path().join(".synrepo/config.toml"), global_toml).unwrap();
 
@@ -519,6 +521,14 @@ mod tests {
         assert_eq!(config.mode, Mode::Auto);
         assert!(config.synthesis.enabled);
         assert_eq!(config.synthesis.provider.as_deref(), Some("openai"));
+        assert_eq!(
+            config.synthesis.anthropic_api_key.as_deref(),
+            Some("global-anthropic")
+        );
+        assert_eq!(
+            config.synthesis.local_endpoint.as_deref(),
+            Some("http://global-llm:11434/api/chat")
+        );
 
         #[cfg(unix)]
         std::env::remove_var("HOME");
