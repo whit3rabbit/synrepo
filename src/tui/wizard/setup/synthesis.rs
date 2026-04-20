@@ -19,6 +19,10 @@ pub enum CloudProvider {
     Gemini,
     /// OpenRouter.
     OpenRouter,
+    /// Z.ai (Zhipu GLM).
+    Zai,
+    /// MiniMax (international endpoint).
+    Minimax,
 }
 
 impl CloudProvider {
@@ -29,6 +33,8 @@ impl CloudProvider {
             CloudProvider::OpenAi => "openai",
             CloudProvider::Gemini => "gemini",
             CloudProvider::OpenRouter => "openrouter",
+            CloudProvider::Zai => "zai",
+            CloudProvider::Minimax => "minimax",
         }
     }
 
@@ -39,6 +45,8 @@ impl CloudProvider {
             CloudProvider::OpenAi => "OpenAI — set OPENAI_API_KEY in your shell",
             CloudProvider::Gemini => "Gemini — set GEMINI_API_KEY in your shell",
             CloudProvider::OpenRouter => "OpenRouter — set OPENROUTER_API_KEY in your shell",
+            CloudProvider::Zai => "Z.ai (Zhipu GLM) — set ZAI_API_KEY in your shell",
+            CloudProvider::Minimax => "MiniMax — set MINIMAX_API_KEY in your shell",
         }
     }
 
@@ -57,6 +65,12 @@ impl CloudProvider {
             }
             CloudProvider::OpenRouter => {
                 "Unified billing across dozens of frontier and open-source models via one key."
+            }
+            CloudProvider::Zai => {
+                "Zhipu's GLM models via Z.ai's OpenAI-compatible endpoint. GLM-4.6 is the current agentic-coding flagship."
+            }
+            CloudProvider::Minimax => {
+                "MiniMax's OpenAI-compatible endpoint. MiniMax-M2 is positioned as an inexpensive agentic-coding option."
             }
         }
     }
@@ -78,6 +92,12 @@ impl CloudProvider {
             }
             CloudProvider::OpenRouter => {
                 "Cost depends entirely on which underlying model you pick; OpenRouter's docs list live rates."
+            }
+            CloudProvider::Zai => {
+                "GLM-4.6 lists at ~$0.60 input / $2.20 output per 1M tokens; GLM-4.5-Air is ~3x cheaper."
+            }
+            CloudProvider::Minimax => {
+                "MiniMax-M2 lists at ~$0.30 input / $1.20 output per 1M tokens at launch; cheaper than most frontier models."
             }
         }
     }
@@ -206,6 +226,8 @@ pub const SYNTHESIS_ROWS: &[SynthesisRow] = &[
     SynthesisRow::Cloud(CloudProvider::OpenAi),
     SynthesisRow::Cloud(CloudProvider::Gemini),
     SynthesisRow::Cloud(CloudProvider::OpenRouter),
+    SynthesisRow::Cloud(CloudProvider::Zai),
+    SynthesisRow::Cloud(CloudProvider::Minimax),
     SynthesisRow::Local,
 ];
 

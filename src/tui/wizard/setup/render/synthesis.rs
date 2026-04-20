@@ -144,6 +144,8 @@ pub(super) fn provider_env_var(provider: CloudProvider) -> &'static str {
         CloudProvider::OpenAi => "OPENAI_API_KEY",
         CloudProvider::Gemini => "GEMINI_API_KEY",
         CloudProvider::OpenRouter => "OPENROUTER_API_KEY",
+        CloudProvider::Zai => "ZAI_API_KEY",
+        CloudProvider::Minimax => "MINIMAX_API_KEY",
     }
 }
 

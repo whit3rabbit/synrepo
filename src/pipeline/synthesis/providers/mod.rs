@@ -1,10 +1,11 @@
 //! Synthesis provider abstraction layer.
 //!
-//! Supports multiple LLM providers: Anthropic, OpenAI, Gemini, and local
-//! (Ollama/vLLM/llama.cpp/LM Studio). Factory functions gate activation on
-//! `config.synthesis.enabled` (persisted in `.synrepo/config.toml`) or the
-//! `SYNREPO_LLM_ENABLED=1` one-shot env override. Without opt-in, synthesis
-//! is a no-op even if provider API keys are present in the environment.
+//! Supports multiple LLM providers: Anthropic, OpenAI, Gemini, OpenRouter,
+//! Z.ai (Zhipu GLM), MiniMax, and local (Ollama/vLLM/llama.cpp/LM Studio).
+//! Factory functions gate activation on `config.synthesis.enabled`
+//! (persisted in `.synrepo/config.toml`) or the `SYNREPO_LLM_ENABLED=1`
+//! one-shot env override. Without opt-in, synthesis is a no-op even if
+//! provider API keys are present in the environment.
 //!
 //! Precedence for provider / model / local endpoint is: env var > config
 //! value > compiled default. This lets persistent defaults live in the
@@ -20,8 +21,10 @@ pub mod anthropic;
 pub mod gemini;
 pub mod http;
 pub mod local;
+pub mod minimax;
 pub mod openai;
 pub mod openrouter;
+pub mod zai;
 
 /// Available synthesis providers.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -35,6 +38,10 @@ pub enum ProviderKind {
     Gemini,
     /// OpenRouter provider
     OpenRouter,
+    /// Z.ai (Zhipu GLM) provider
+    Zai,
+    /// MiniMax provider (international endpoint)
+    Minimax,
     /// Local provider (Ollama, vLLM, llama.cpp, LM Studio)
     Local,
     /// Explicitly disabled - always returns NoOp generators
@@ -48,6 +55,8 @@ impl ProviderKind {
             "openai" => Some(ProviderKind::OpenAi),
             "gemini" => Some(ProviderKind::Gemini),
             "openrouter" => Some(ProviderKind::OpenRouter),
+            "zai" => Some(ProviderKind::Zai),
+            "minimax" => Some(ProviderKind::Minimax),
             "local" => Some(ProviderKind::Local),
             "none" => Some(ProviderKind::None),
             _ => None,
@@ -79,6 +88,8 @@ impl ProviderKind {
             ProviderKind::OpenAi => "openai",
             ProviderKind::Gemini => "gemini",
             ProviderKind::OpenRouter => "openrouter",
+            ProviderKind::Zai => "zai",
+            ProviderKind::Minimax => "minimax",
             ProviderKind::Local => "local",
             ProviderKind::None => "none",
         }
@@ -156,6 +167,16 @@ impl ProviderConfig {
             }
             ProviderKind::OpenRouter => {
                 let key = std::env::var("OPENROUTER_API_KEY")
+                    .ok()
+                    .filter(|k| !k.is_empty());
+                (key, None, EndpointSource::Default)
+            }
+            ProviderKind::Zai => {
+                let key = std::env::var("ZAI_API_KEY").ok().filter(|k| !k.is_empty());
+                (key, None, EndpointSource::Default)
+            }
+            ProviderKind::Minimax => {
+                let key = std::env::var("MINIMAX_API_KEY")
                     .ok()
                     .filter(|k| !k.is_empty());
                 (key, None, EndpointSource::Default)
@@ -276,6 +297,36 @@ pub fn build_commentary_generator(
                 Box::new(NoOpGenerator)
             }
         }
+        ProviderKind::Zai => {
+            if let Some(key) = resolved.api_key {
+                let model = resolved
+                    .model
+                    .unwrap_or_else(|| zai::DEFAULT_MODEL.to_string());
+                tracing::info!("synthesis: zai (model: {})", model);
+                Box::new(zai::ZaiCommentaryGenerator::new(
+                    key,
+                    model,
+                    max_tokens_per_call,
+                ))
+            } else {
+                Box::new(NoOpGenerator)
+            }
+        }
+        ProviderKind::Minimax => {
+            if let Some(key) = resolved.api_key {
+                let model = resolved
+                    .model
+                    .unwrap_or_else(|| minimax::DEFAULT_MODEL.to_string());
+                tracing::info!("synthesis: minimax (model: {})", model);
+                Box::new(minimax::MinimaxCommentaryGenerator::new(
+                    key,
+                    model,
+                    max_tokens_per_call,
+                ))
+            } else {
+                Box::new(NoOpGenerator)
+            }
+        }
         ProviderKind::Local => {
             let model = resolved
                 .model
@@ -382,6 +433,36 @@ pub fn build_cross_link_generator(
                 Box::new(NoOpCrossLinkGenerator)
             }
         }
+        ProviderKind::Zai => {
+            if let Some(key) = resolved.api_key {
+                let model = resolved
+                    .model
+                    .unwrap_or_else(|| zai::DEFAULT_MODEL.to_string());
+                Box::new(zai::ZaiCrossLinkGenerator::new(
+                    key,
+                    model,
+                    max_tokens_per_call,
+                    thresholds,
+                ))
+            } else {
+                Box::new(NoOpCrossLinkGenerator)
+            }
+        }
+        ProviderKind::Minimax => {
+            if let Some(key) = resolved.api_key {
+                let model = resolved
+                    .model
+                    .unwrap_or_else(|| minimax::DEFAULT_MODEL.to_string());
+                Box::new(minimax::MinimaxCrossLinkGenerator::new(
+                    key,
+                    model,
+                    max_tokens_per_call,
+                    thresholds,
+                ))
+            } else {
+                Box::new(NoOpCrossLinkGenerator)
+            }
+        }
         ProviderKind::Local => {
             let model = resolved
                 .model
@@ -445,6 +526,8 @@ pub fn describe_active_provider(config: &SynrepoConfig) -> ActiveProvider {
         ProviderKind::OpenAi => ("openai", Some(openai::DEFAULT_MODEL)),
         ProviderKind::Gemini => ("gemini", Some(gemini::DEFAULT_MODEL)),
         ProviderKind::OpenRouter => ("openrouter", Some(openrouter::DEFAULT_MODEL)),
+        ProviderKind::Zai => ("zai", Some(zai::DEFAULT_MODEL)),
+        ProviderKind::Minimax => ("minimax", Some(minimax::DEFAULT_MODEL)),
         ProviderKind::Local => ("local", Some(local::DEFAULT_MODEL)),
         ProviderKind::None => ("none", None),
     };
@@ -482,6 +565,8 @@ fn detect_provider_key_env() -> Option<&'static str> {
         "OPENAI_API_KEY",
         "GEMINI_API_KEY",
         "OPENROUTER_API_KEY",
+        "ZAI_API_KEY",
+        "MINIMAX_API_KEY",
     ];
     for name in CANDIDATES {
         if let Ok(value) = std::env::var(name) {
@@ -497,8 +582,10 @@ fn detect_provider_key_env() -> Option<&'static str> {
 pub use anthropic::{AnthropicCommentaryGenerator, AnthropicCrossLinkGenerator};
 pub use gemini::{GeminiCommentaryGenerator, GeminiCrossLinkGenerator};
 pub use local::{LocalCommentaryGenerator, LocalCrossLinkGenerator};
+pub use minimax::{MinimaxCommentaryGenerator, MinimaxCrossLinkGenerator};
 pub use openai::{OpenAiCommentaryGenerator, OpenAiCrossLinkGenerator};
 pub use openrouter::{OpenRouterCommentaryGenerator, OpenRouterCrossLinkGenerator};
+pub use zai::{ZaiCommentaryGenerator, ZaiCrossLinkGenerator};
 
 // Legacy type aliases for compatibility
 /// Alias for [`anthropic::AnthropicCommentaryGenerator`] - kept for backward compatibility.
@@ -526,6 +613,8 @@ mod tests {
         "OPENAI_API_KEY",
         "GEMINI_API_KEY",
         "OPENROUTER_API_KEY",
+        "ZAI_API_KEY",
+        "MINIMAX_API_KEY",
     ];
 
     // Global lock: env is process-wide shared state. Every test in this

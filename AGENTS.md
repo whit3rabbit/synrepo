@@ -291,6 +291,9 @@ The synthesis pipeline supports multiple LLM providers for commentary and cross-
 | Anthropic (default) | `ANTHROPIC_API_KEY` | `claude-sonnet-4-6` | Required |
 | OpenAI | `OPENAI_API_KEY` | `gpt-4o-mini` | Required |
 | Gemini | `GEMINI_API_KEY` | `gemini-1.5-flash` | Required |
+| OpenRouter | `OPENROUTER_API_KEY` | `google/gemma-4-31b-it:free` | Required |
+| Z.ai (Zhipu GLM) | `ZAI_API_KEY` | `glm-4.6` | Required |
+| MiniMax | `MINIMAX_API_KEY` | `MiniMax-M2` | Required |
 | Local (Ollama/llama.cpp/LM Studio/vLLM) | `SYNREPO_LLM_LOCAL_ENDPOINT` | `llama3` | None |
 
 Config block (all fields optional, serde-defaulted so older configs load unchanged):
@@ -298,7 +301,7 @@ Config block (all fields optional, serde-defaulted so older configs load unchang
 ```toml
 [synthesis]
 enabled = true
-provider = "anthropic"    # "anthropic" | "openai" | "gemini" | "local" | "none"
+provider = "anthropic"    # "anthropic" | "openai" | "gemini" | "openrouter" | "zai" | "minimax" | "local" | "none"
 model = "claude-sonnet-4-6"
 local_endpoint = "http://localhost:11434/api/chat"
 local_preset = "ollama"   # informational only; local_endpoint is authoritative

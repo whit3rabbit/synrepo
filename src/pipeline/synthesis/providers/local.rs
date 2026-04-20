@@ -133,8 +133,7 @@ impl CommentaryGenerator for LocalCommentaryGenerator {
                             .filter(|u| u.prompt_tokens > 0 || u.completion_tokens > 0)
                             .map(|u| (u.prompt_tokens, u.completion_tokens)),
                         estimated_tokens,
-                        &resp
-                            .choices
+                        resp.choices
                             .first()
                             .map(|c| c.message.content.as_str())
                             .unwrap_or_default(),
@@ -307,8 +306,7 @@ impl LocalCrossLinkGenerator {
                             .filter(|u| u.prompt_tokens > 0 || u.completion_tokens > 0)
                             .map(|u| (u.prompt_tokens, u.completion_tokens)),
                         estimated_tokens,
-                        &resp
-                            .choices
+                        resp.choices
                             .first()
                             .map(|c| c.message.content.as_str())
                             .unwrap_or_default(),

@@ -208,6 +208,8 @@ pub(crate) fn step_apply_synthesis(
                 CloudProvider::OpenAi => "openai",
                 CloudProvider::Gemini => "gemini",
                 CloudProvider::OpenRouter => "openrouter",
+                CloudProvider::Zai => "zai",
+                CloudProvider::Minimax => "minimax",
             };
             synthesis.insert("provider", Item::Value(TomlValue::from(name)));
             synthesis.remove("local_endpoint");

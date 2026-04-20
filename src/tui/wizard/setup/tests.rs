@@ -263,9 +263,11 @@ mod tests {
     // ---- Synthesis step coverage ----
     //
     // These exercise the 4-to-7-step synthesis sub-flow introduced in the
-    // opt-in safeguard change. `SYNTHESIS_ROWS` is `[Skip, Anthropic, OpenAI,
-    // Gemini, Local]` at index time — the tests pin positions explicitly so a
-    // future reorder of the row list fails loud rather than silently shifting.
+    // opt-in safeguard change. `SYNTHESIS_ROWS` is
+    // `[Skip, Anthropic, OpenAI, Gemini, OpenRouter, Zai, Minimax, Local]` at
+    // index time — the tests pin positions for Skip (0) and Anthropic (1)
+    // explicitly, and locate Local dynamically, so adding more cloud rows in
+    // the middle is safe.
 
     /// Drive the wizard from Splash to SelectSynthesis using the defaults
     /// (auto mode, skip target). Passes through the `ExplainSynthesis`

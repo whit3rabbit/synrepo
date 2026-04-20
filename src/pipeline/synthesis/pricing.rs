@@ -103,6 +103,34 @@ const RATES: &[Rate] = &[
         input_per_1m_usd: 1.25,
         output_per_1m_usd: 5.0,
     },
+    // Z.ai (Zhipu GLM) — transcribed from docs.z.ai/guides/overview/pricing.
+    Rate {
+        provider: "zai",
+        model: "glm-4.6",
+        input_per_1m_usd: 0.60,
+        output_per_1m_usd: 2.20,
+    },
+    Rate {
+        provider: "zai",
+        model: "glm-4.5",
+        input_per_1m_usd: 0.60,
+        output_per_1m_usd: 2.20,
+    },
+    Rate {
+        provider: "zai",
+        model: "glm-4.5-air",
+        input_per_1m_usd: 0.20,
+        output_per_1m_usd: 1.10,
+    },
+    // MiniMax — transcribed from the MiniMax-M2 launch announcement
+    // (www.minimax.io/news/minimax-m2). Other MiniMax models not yet listed;
+    // unknown (provider, model) pairs record `usd_cost: null` by design.
+    Rate {
+        provider: "minimax",
+        model: "MiniMax-M2",
+        input_per_1m_usd: 0.30,
+        output_per_1m_usd: 1.20,
+    },
     // Local models always cost $0 from the user's wallet; record it so the
     // Health tab shows $0 instead of "unknown", which would be misleading.
     Rate {
@@ -238,6 +266,20 @@ mod tests {
             cost_for_call("anthropic", "claude-sonnet-4-6", 0, 0),
             Some(0.0)
         );
+    }
+
+    #[test]
+    fn zai_glm_4_6_cost_matches_published_rate() {
+        // 1M input + 1M output on glm-4.6 = 0.60 + 2.20 = 2.80 USD.
+        let cost = cost_for_call("zai", "glm-4.6", 1_000_000, 1_000_000).unwrap();
+        assert!((cost - 2.80).abs() < 1e-9, "got {cost}");
+    }
+
+    #[test]
+    fn minimax_m2_cost_matches_published_rate() {
+        // 1M input + 1M output on MiniMax-M2 = 0.30 + 1.20 = 1.50 USD.
+        let cost = cost_for_call("minimax", "MiniMax-M2", 1_000_000, 1_000_000).unwrap();
+        assert!((cost - 1.50).abs() < 1e-9, "got {cost}");
     }
 
     #[test]

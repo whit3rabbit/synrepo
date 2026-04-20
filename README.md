@@ -64,6 +64,9 @@ Supported providers:
 | Anthropic | `ANTHROPIC_API_KEY` | `claude-sonnet-4-6` |
 | OpenAI | `OPENAI_API_KEY` | `gpt-4o-mini` |
 | Gemini | `GEMINI_API_KEY` | `gemini-1.5-flash` |
+| OpenRouter | `OPENROUTER_API_KEY` | `google/gemma-4-31b-it:free` |
+| Z.ai (Zhipu GLM) | `ZAI_API_KEY` | `glm-4.6` |
+| MiniMax | `MINIMAX_API_KEY` | `MiniMax-M2` |
 | Local (Ollama, llama.cpp, LM Studio, vLLM) | none | `llama3` |
 
 API keys live in the shell environment only. `synrepo` never writes keys to `.synrepo/config.toml` or any on-disk cache.
@@ -73,7 +76,7 @@ API keys live in the shell environment only. `synrepo` never writes keys to `.sy
 ```toml
 [synthesis]
 enabled = true
-provider = "anthropic"   # or "openai" | "gemini" | "local"
+provider = "anthropic"   # or "openai" | "gemini" | "openrouter" | "zai" | "minimax" | "local"
 # model = "claude-sonnet-4-6"
 # local_endpoint = "http://localhost:11434/api/chat"
 ```
@@ -88,7 +91,7 @@ The suffix `/v1/chat/completions` selects the OpenAI-compatible request shape; a
 **One-shot env overrides** (precedence: env > config > default):
 
 - `SYNREPO_LLM_ENABLED=1` — enable without editing config
-- `SYNREPO_LLM_PROVIDER=anthropic|openai|gemini|local|none`
+- `SYNREPO_LLM_PROVIDER=anthropic|openai|gemini|openrouter|zai|minimax|local|none`
 - `SYNREPO_LLM_MODEL=<model>`
 - `SYNREPO_LLM_LOCAL_ENDPOINT=<url>`
 
