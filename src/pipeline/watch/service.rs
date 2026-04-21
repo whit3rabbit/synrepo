@@ -2,8 +2,9 @@
 // Unix domain sockets on Unix, Windows named pipes on Windows. One blocking
 // protocol implementation backs both.
 
+#[cfg(unix)]
+use std::fs;
 use std::{
-    fs,
     io::BufReader,
     path::Path,
     sync::{

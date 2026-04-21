@@ -349,6 +349,10 @@ fn detach_daemon_process(command: &mut Command) {
         // leave it vulnerable to terminal hangup and stale leases.
         command.process_group(0);
     }
+    #[cfg(not(unix))]
+    {
+        let _ = command;
+    }
 }
 
 fn wait_for_watch_shutdown(synrepo_dir: &Path) -> anyhow::Result<()> {

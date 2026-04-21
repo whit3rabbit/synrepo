@@ -384,6 +384,10 @@ fn detach_daemon_process(command: &mut std::process::Command) {
     {
         command.process_group(0);
     }
+    #[cfg(not(unix))]
+    {
+        let _ = command;
+    }
 }
 
 /// Convert a `ReconcileOutcome` from an in-process or delegated pass into a
