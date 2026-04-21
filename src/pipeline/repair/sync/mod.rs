@@ -2,9 +2,11 @@
 //!
 //! - `handlers.rs` — action handlers extracted from sync.rs
 
+mod commentary;
 pub mod handlers;
 
-pub use handlers::{refresh_commentary, ActionContext};
+pub use commentary::{normalize_scope_prefixes, path_matches_any_prefix, refresh_commentary};
+pub use handlers::ActionContext;
 
 use std::path::Path;
 

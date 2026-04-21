@@ -356,9 +356,12 @@ mod tests {
         let repo = make_repo();
         let (_done_tx, done_rx) = mpsc::channel::<anyhow::Result<()>>();
         let started = Instant::now();
-        let err =
-            wait_for_service_ready(&repo.path().join(".synrepo"), Duration::from_millis(100), &done_rx)
-                .unwrap_err();
+        let err = wait_for_service_ready(
+            &repo.path().join(".synrepo"),
+            Duration::from_millis(100),
+            &done_rx,
+        )
+        .unwrap_err();
         assert!(matches!(err, WatcherError::StartTimeout { .. }));
         assert!(
             started.elapsed() < Duration::from_secs(1),

@@ -12,6 +12,7 @@ use super::super::{
     structural::{run_structural_compile, CompileSummary},
     writer::{acquire_writer_lock, now_rfc3339, LockError},
 };
+use super::post_compile::{finish_runtime_surfaces, RepoIndexStrategy};
 
 const RECONCILE_STATE_FILENAME: &str = "reconcile-state.json";
 static NEXT_RECONCILE_STATE_TMP_ID: AtomicU64 = AtomicU64::new(0);
@@ -78,6 +79,15 @@ pub fn run_reconcile_pass(
     config: &Config,
     synrepo_dir: &Path,
 ) -> ReconcileOutcome {
+    run_reconcile_pass_with_touched_paths(repo_root, config, synrepo_dir, None)
+}
+
+pub(crate) fn run_reconcile_pass_with_touched_paths(
+    repo_root: &Path,
+    config: &Config,
+    synrepo_dir: &Path,
+    touched_paths: Option<&[PathBuf]>,
+) -> ReconcileOutcome {
     let _lock = match acquire_writer_lock(synrepo_dir) {
         Ok(lock) => lock,
         Err(LockError::HeldByOther { pid, .. }) => {
@@ -100,23 +110,15 @@ pub fn run_reconcile_pass(
             if let Err(err) = emit_symbol_revisions_pass(repo_root, config, &mut graph) {
                 tracing::warn!(error = %err, "symbol revision derivation failed; continuing");
             }
-            if let Err(err) = crate::substrate::build_index(config, repo_root) {
-                return ReconcileOutcome::Failed(format!("index rebuild failed: {err}"));
-            }
-
-            // Rebuild embedding index if semantic triage is enabled
-            #[cfg(feature = "semantic-triage")]
+            let repo_index_strategy = match touched_paths.filter(|paths| !paths.is_empty()) {
+                Some(paths) => RepoIndexStrategy::Incremental(paths),
+                None => RepoIndexStrategy::FullRebuild,
+            };
+            if let Err(err) =
+                finish_runtime_surfaces(repo_root, config, synrepo_dir, &graph, repo_index_strategy)
             {
-                if config.enable_semantic_triage {
-                    if let Err(err) =
-                        crate::substrate::build_embedding_index(&mut graph, config, synrepo_dir)
-                    {
-                        tracing::warn!(error = %err, "embedding index rebuild skipped");
-                    }
-                }
+                return ReconcileOutcome::Failed(format!("surface maintenance failed: {err}"));
             }
-
-            prune_overlay_orphans(synrepo_dir, &graph);
             ReconcileOutcome::Completed(summary)
         }
         Err(err) => ReconcileOutcome::Failed(err.to_string()),
@@ -184,49 +186,6 @@ pub fn emit_symbol_revisions_pass(
     }
     graph.commit()?;
     Ok(())
-}
-
-fn prune_overlay_orphans(synrepo_dir: &Path, graph: &SqliteGraphStore) {
-    use crate::core::ids::NodeId;
-    use crate::overlay::OverlayStore;
-    use crate::store::overlay::SqliteOverlayStore;
-
-    let overlay_dir = synrepo_dir.join("overlay");
-    let overlay_db = SqliteOverlayStore::db_path(&overlay_dir);
-    if !overlay_db.exists() {
-        return;
-    }
-
-    let mut live: Vec<NodeId> = Vec::new();
-    if let Ok(files) = graph.all_file_paths() {
-        live.extend(files.into_iter().map(|(_, id)| NodeId::File(id)));
-    }
-    if let Ok(concepts) = graph.all_concept_paths() {
-        live.extend(concepts.into_iter().map(|(_, id)| NodeId::Concept(id)));
-    }
-    if let Ok(symbols) = graph.all_symbol_names() {
-        live.extend(symbols.into_iter().map(|(id, _, _)| NodeId::Symbol(id)));
-    }
-
-    let mut overlay = match SqliteOverlayStore::open_existing(&overlay_dir) {
-        Ok(o) => o,
-        Err(err) => {
-            tracing::warn!(error = %err, "overlay: open failed, skipping orphan prune");
-            return;
-        }
-    };
-    match overlay.prune_orphans(&live) {
-        Ok(n) if n > 0 => {
-            tracing::debug!(
-                pruned = n,
-                "overlay: pruned orphaned rows (commentary + cross-links)"
-            )
-        }
-        Ok(_) => {}
-        Err(err) => {
-            tracing::warn!(error = %err, "overlay: prune failed");
-        }
-    }
 }
 
 /// Persist a reconcile outcome to `.synrepo/state/reconcile-state.json`.

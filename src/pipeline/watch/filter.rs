@@ -20,6 +20,30 @@ pub(crate) fn filter_repo_events(
         .collect()
 }
 
+pub(crate) fn collect_repo_paths(
+    events: &[DebouncedEvent],
+    repo_root: &Path,
+    synrepo_dir: &Path,
+) -> Vec<PathBuf> {
+    let git_dir = repo_root.join(".git");
+    let mut paths = std::collections::BTreeSet::new();
+    for event in events {
+        for path in &event.paths {
+            if !path.starts_with(repo_root) {
+                continue;
+            }
+            if path.starts_with(synrepo_dir) || path.starts_with(&git_dir) {
+                continue;
+            }
+            if matches!(fs::metadata(path), Ok(md) if md.is_dir()) {
+                continue;
+            }
+            paths.insert(path.clone());
+        }
+    }
+    paths.into_iter().collect()
+}
+
 fn path_matches_runtime(
     path: &Path,
     synrepo_dir: &Path,

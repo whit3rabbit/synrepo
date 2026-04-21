@@ -139,6 +139,24 @@ fn refresh_commentary_persists_new_entry() {
         .unwrap();
     assert_eq!(text.as_deref(), Some("Freshly generated."));
 
+    let synrepo_dir = repo.path().join(".synrepo");
+    let doc_path = synrepo_dir
+        .join("synthesis-docs")
+        .join("symbols")
+        .join(format!("{}.md", NodeId::Symbol(sym_id)));
+    assert!(
+        doc_path.exists(),
+        "expected synthesized doc at {}",
+        doc_path.display()
+    );
+    let hits = crate::pipeline::synthesis::docs::search_commentary_index(
+        &synrepo_dir,
+        "Freshly generated.",
+        10,
+    )
+    .unwrap();
+    assert_eq!(hits.len(), 1);
+
     // Verify it's now fresh in the card.
     let card = compiler.symbol_card(sym_id, Budget::Deep).unwrap();
     assert_eq!(card.commentary_state.as_deref(), Some("fresh"));

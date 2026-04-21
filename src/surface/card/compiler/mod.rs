@@ -34,7 +34,7 @@ use super::{
 use crate::{
     config::Config,
     core::ids::{FileNodeId, NodeId, SymbolNodeId},
-    overlay::OverlayStore,
+    overlay::{FreshnessState, OverlayStore},
     pipeline::{git_intelligence::GitPathHistoryInsights, synthesis::CommentaryGenerator},
     store::sqlite::SqliteGraphStore,
     structure::graph::{with_graph_read_snapshot, Graph, GraphReader, GraphStore},
@@ -59,7 +59,7 @@ mod test_surface;
 #[cfg(test)]
 mod test_support;
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;
 
 /// A `CardCompiler` backed by a `GraphStore` reference.
 ///
@@ -206,7 +206,7 @@ impl GraphCardCompiler {
         match id {
             NodeId::Symbol(sym_id) => {
                 // Pin a graph snapshot to read the card context safely.
-                let (prompt, content_hash) = self.with_reader(|graph| {
+                let (prompt, content_hash, doc_metadata) = self.with_reader(|graph| {
                     let card = symbol::symbol_card(
                         symbol::SymbolCardContext {
                             compiler: self,
@@ -228,15 +228,36 @@ impl GraphCardCompiler {
                     Ok((
                         symbol::build_generation_context(&card),
                         file.content_hash.clone(),
+                        crate::pipeline::synthesis::docs::CommentaryDocSymbolMetadata {
+                            qualified_name: symbol.qualified_name.clone(),
+                            source_path: file.path.clone(),
+                        },
                     ))
                 })?;
 
                 match generator.generate(id, &prompt)? {
                     Some(mut entry) => {
                         // Fill in the source content hash so the entry is immediately Fresh.
-                        entry.provenance.source_content_hash = content_hash;
+                        entry.provenance.source_content_hash = content_hash.clone();
                         let text = entry.text.clone();
-                        overlay.lock().insert_commentary(entry)?;
+                        overlay.lock().insert_commentary(entry.clone())?;
+                        if let Some(repo_root) = self.repo_root.as_ref() {
+                            let synrepo_dir = Config::synrepo_dir(repo_root);
+                            if let Some(path) =
+                                crate::pipeline::synthesis::docs::upsert_commentary_doc(
+                                    &synrepo_dir,
+                                    id,
+                                    &entry,
+                                    FreshnessState::Fresh,
+                                    &doc_metadata,
+                                )?
+                            {
+                                crate::pipeline::synthesis::docs::sync_commentary_index(
+                                    &synrepo_dir,
+                                    &[path],
+                                )?;
+                            }
+                        }
                         Ok(Some(text))
                     }
                     None => Ok(None),

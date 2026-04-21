@@ -12,17 +12,21 @@ use ratatui::widgets::{Block, Borders, List, ListItem, Widget};
 
 use crate::pipeline::synthesis::providers::SynthesisStatus;
 use crate::surface::status_snapshot::StatusSnapshot;
-use crate::tui::app::FolderPickerState;
+use crate::tui::app::{describe_pending_mode, ConfirmStopWatchState, FolderPickerState};
 use crate::tui::theme::Theme;
 
 /// Synthesis tab widget. Branches on `SynthesisStatus` to render either the
 /// empty-state onboarding hint or the configured status + action menu. When
-/// `picker` is `Some`, the folder-picker sub-view replaces the main body.
+/// `picker` is `Some`, the folder-picker sub-view replaces the main body. When
+/// `confirm_stop_watch` is `Some`, a blocking confirm prompt replaces the main
+/// body and preempts the picker.
 pub struct SynthesisTabWidget<'a> {
     /// Current status snapshot.
     pub snapshot: &'a StatusSnapshot,
     /// Active folder-picker state, when the sub-view is open.
     pub picker: Option<&'a FolderPickerState>,
+    /// Active confirm-stop-watch modal state, when the sub-view is open.
+    pub confirm_stop_watch: Option<&'a ConfirmStopWatchState>,
     /// Active theme.
     pub theme: &'a Theme,
 }
@@ -34,7 +38,9 @@ impl Widget for SynthesisTabWidget<'_> {
             .borders(Borders::ALL)
             .border_style(self.theme.border_style());
 
-        let lines = if let Some(picker) = self.picker {
+        let lines = if let Some(confirm) = self.confirm_stop_watch {
+            render_confirm_stop_watch(confirm, self.theme)
+        } else if let Some(picker) = self.picker {
             render_folder_picker(picker, self.theme)
         } else {
             let status = self.snapshot.synthesis_provider.as_ref().map(|d| &d.status);
@@ -161,6 +167,33 @@ fn render_folder_picker(picker: &FolderPickerState, theme: &Theme) -> Vec<Line<'
         ]));
     }
     lines
+}
+
+fn render_confirm_stop_watch(confirm: &ConfirmStopWatchState, theme: &Theme) -> Vec<Line<'static>> {
+    let scope = describe_pending_mode(&confirm.pending_mode);
+    vec![
+        Line::from(Span::styled(
+            "Watch service is active.".to_string(),
+            theme.stale_style(),
+        )),
+        Line::from(""),
+        Line::from(Span::styled(
+            "  Synthesis needs the writer lock, which watch currently holds.".to_string(),
+            theme.muted_style(),
+        )),
+        Line::from(Span::styled(
+            "  Stop watch to run synthesis; restart it later with `synrepo watch`.".to_string(),
+            theme.muted_style(),
+        )),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  Scope: ".to_string(), theme.muted_style()),
+            Span::styled(scope, theme.base_style()),
+        ]),
+        Line::from(""),
+        action_line("y", "Stop watch and run synthesis", theme),
+        action_line("n", "Cancel", theme),
+    ]
 }
 
 fn render_not_configured(env_hint: Option<&'static str>, theme: &Theme) -> Vec<Line<'static>> {

@@ -15,7 +15,10 @@ use synrepo::{
         git::GitIntelligenceContext,
         git_intelligence::analyze_recent_history,
         maintenance::plan_maintenance,
-        repair::{refresh_commentary, resolve_commentary_node, ActionContext},
+        repair::{
+            normalize_scope_prefixes, path_matches_any_prefix, refresh_commentary,
+            resolve_commentary_node, ActionContext,
+        },
         writer::{acquire_write_admission, map_lock_error},
     },
     store::{overlay::SqliteOverlayStore, sqlite::SqliteGraphStore},
@@ -142,22 +145,4 @@ fn print_dry_run(synrepo_dir: &Path, scope: Option<&[PathBuf]>) -> anyhow::Resul
         }
     }
     Ok(())
-}
-
-fn normalize_scope_prefixes(paths: &[PathBuf]) -> Vec<String> {
-    paths
-        .iter()
-        .map(|p| {
-            let mut s = p.to_string_lossy().replace('\\', "/");
-            if !s.is_empty() && !s.ends_with('/') {
-                s.push('/');
-            }
-            s
-        })
-        .collect()
-}
-
-fn path_matches_any_prefix(file_path: &str, prefixes: &[String]) -> bool {
-    let normalized = file_path.replace('\\', "/");
-    prefixes.iter().any(|p| normalized.starts_with(p.as_str()))
 }

@@ -222,8 +222,7 @@ impl AppState {
                     return Some(true);
                 }
                 self.picker = None;
-                self.launch_synthesize = Some(SynthesizeMode::Paths(paths));
-                self.should_exit = true;
+                self.queue_synthesize(SynthesizeMode::Paths(paths));
                 Some(true)
             }
             KeyCode::Esc => {

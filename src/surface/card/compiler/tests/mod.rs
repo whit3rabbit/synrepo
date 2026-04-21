@@ -1,4 +1,4 @@
-mod fixtures;
+pub(crate) mod fixtures;
 
 mod basic;
 mod call_path;

@@ -7,17 +7,20 @@
 mod control;
 mod filter;
 pub(crate) mod lease;
+mod pending;
+mod post_compile;
 pub(crate) mod reconcile;
 mod service;
 mod status;
 
 pub use control::{request_watch_control, WatchControlRequest, WatchControlResponse};
+#[doc(hidden)]
+pub use lease::{hold_watch_flock_with_state, TestWatchFlockHolder};
 pub use lease::{
     watch_daemon_state_path, watch_socket_path, WatchDaemonError, WatchDaemonState,
     WatchServiceMode,
 };
-#[doc(hidden)]
-pub use lease::{hold_watch_flock_with_state, TestWatchFlockHolder};
+pub(crate) use post_compile::{finish_runtime_surfaces, RepoIndexStrategy};
 pub use reconcile::{
     emit_cochange_edges_pass, emit_symbol_revisions_pass, load_reconcile_state,
     persist_reconcile_state, reconcile_state_path, run_reconcile_pass, ReconcileOutcome,

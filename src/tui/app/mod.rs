@@ -2,11 +2,13 @@
 //! between dashboard (poll / live) mode and the various wizards. Wizard
 //! rendering still lives in `wizard.rs`; this module only owns the loop.
 
+mod confirm_stop_watch;
 mod synthesis_events;
 mod synthesis_picker;
 mod view_state;
 mod watch_events;
 
+pub use confirm_stop_watch::{describe_pending_mode, ConfirmStopWatchState};
 pub use synthesis_events::synthesis_event_to_log_entry;
 pub use synthesis_picker::{FolderEntry, FolderPickerState};
 pub use view_state::ActiveTab;
@@ -107,6 +109,14 @@ pub struct AppState {
     pub launch_synthesis_setup: bool,
     /// When set, the caller should run `synrepo synthesize` with the given mode.
     pub launch_synthesize: Option<SynthesizeMode>,
+    /// Set to `true` when `launch_synthesize` was set after stopping an active
+    /// watch service via the confirm-stop-watch modal. The post-TUI handler
+    /// uses this to remind the operator that watch is not running anymore.
+    pub synthesis_stopped_watch: bool,
+    /// Confirm-stop-watch modal state. `Some` when the operator asked to run
+    /// synthesis while watch was still active; holds the pending mode until
+    /// the operator answers yes (stop watch + launch) or no (cancel).
+    pub confirm_stop_watch: Option<ConfirmStopWatchState>,
     /// Folder-picker sub-view state. `Some` while the operator is choosing
     /// which top-level directories to scope `synrepo synthesize` to; cleared
     /// on Esc, Enter, or any tab switch.
@@ -171,7 +181,14 @@ pub enum DashboardExit {
     /// Operator asked for the synthesis setup sub-wizard.
     LaunchSynthesisSetup,
     /// Operator asked to run `synrepo synthesize` with the given scope.
-    RunSynthesize(SynthesizeMode),
+    /// `stopped_watch` is `true` when the dashboard stopped an active watch
+    /// service on the operator's behalf to clear the writer lock.
+    RunSynthesize {
+        /// Scope of the synthesis run.
+        mode: SynthesizeMode,
+        /// `true` when the dashboard stopped an active watch service.
+        stopped_watch: bool,
+    },
 }
 
 impl AppState {
@@ -255,6 +272,8 @@ impl AppState {
             launch_integration: false,
             launch_synthesis_setup: false,
             launch_synthesize: None,
+            synthesis_stopped_watch: false,
+            confirm_stop_watch: None,
             picker: None,
             active_tab: ActiveTab::Live,
             scroll_offset: 0,
@@ -290,7 +309,10 @@ impl AppState {
     /// Compute the post-loop exit intent. Called after the render loop unwinds.
     pub fn exit_intent(&self) -> DashboardExit {
         if let Some(mode) = &self.launch_synthesize {
-            return DashboardExit::RunSynthesize(mode.clone());
+            return DashboardExit::RunSynthesize {
+                mode: mode.clone(),
+                stopped_watch: self.synthesis_stopped_watch,
+            };
         }
         if self.launch_synthesis_setup {
             return DashboardExit::LaunchSynthesisSetup;
@@ -401,6 +423,15 @@ impl AppState {
 
     /// Handle a key event. Returns true when the event was consumed.
     pub fn handle_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> bool {
+        // Confirm-stop-watch modal takes precedence: it is a blocking decision
+        // point ("stop watch and run synthesis?") that must be answered before
+        // any other key can have effect. Tab switches and global quit fall
+        // through below so the operator is never trapped.
+        if self.confirm_stop_watch.is_some() {
+            if let Some(consumed) = self.handle_confirm_stop_watch_key(code, modifiers) {
+                return consumed;
+            }
+        }
         // Folder-picker modal: consumes navigation/toggle/commit/cancel keys
         // before anything else. Global quit (q/Ctrl-C) and tab switches still
         // fall through below so the operator is never trapped.
@@ -455,13 +486,11 @@ impl AppState {
                     return true;
                 }
                 KeyCode::Char('r') => {
-                    self.launch_synthesize = Some(SynthesizeMode::AllStale);
-                    self.should_exit = true;
+                    self.queue_synthesize(SynthesizeMode::AllStale);
                     return true;
                 }
                 KeyCode::Char('c') => {
-                    self.launch_synthesize = Some(SynthesizeMode::Changed);
-                    self.should_exit = true;
+                    self.queue_synthesize(SynthesizeMode::Changed);
                     return true;
                 }
                 KeyCode::Char('f') => {

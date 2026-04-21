@@ -437,3 +437,130 @@ fn picker_quit_key_falls_through() {
     assert!(consumed);
     assert!(state.should_exit, "q must quit even with picker open");
 }
+
+#[test]
+fn queue_synthesize_without_watch_sets_launch_and_exits() {
+    let (_repo, mut state) = make_ready_poll_state();
+    state.queue_synthesize(SynthesizeMode::AllStale);
+    assert!(
+        state.confirm_stop_watch.is_none(),
+        "no watch running, modal must not open"
+    );
+    assert!(state.should_exit, "queue_synthesize should request exit");
+    assert!(
+        !state.synthesis_stopped_watch,
+        "stopped_watch stays false when no watch was running"
+    );
+    assert!(matches!(
+        state.launch_synthesize,
+        Some(SynthesizeMode::AllStale)
+    ));
+}
+
+#[test]
+fn queue_synthesize_with_watch_opens_confirm_modal() {
+    let _guard = crate::test_support::global_test_lock("tui-app-watch-toggle");
+    let tempdir = tempfile::tempdir().unwrap();
+    crate::bootstrap::bootstrap(tempdir.path(), None, false).expect("bootstrap");
+    let ctx = ActionContext::new(tempdir.path());
+    let start = crate::tui::actions::start_watch_daemon(&ctx);
+    assert!(
+        matches!(start, ActionOutcome::Ack { .. }),
+        "setup start must succeed, got {start:?}"
+    );
+
+    let mut state = AppState::new_poll(tempdir.path(), Theme::plain(), AgentIntegration::Absent);
+    state.queue_synthesize(SynthesizeMode::Changed);
+    assert!(
+        state.confirm_stop_watch.is_some(),
+        "watch running must open confirm modal"
+    );
+    assert!(
+        state.launch_synthesize.is_none(),
+        "launch must be gated on confirm modal"
+    );
+    assert!(!state.should_exit, "modal open, must not exit yet");
+    let pending = state.confirm_stop_watch.as_ref().unwrap();
+    assert_eq!(pending.pending_mode, SynthesizeMode::Changed);
+
+    // Cleanup: stop the daemon before the tempdir drops.
+    let stop = stop_watch(&ctx);
+    assert!(
+        matches!(
+            stop,
+            ActionOutcome::Ack { .. } | ActionOutcome::Completed { .. }
+        ),
+        "cleanup stop must succeed, got {stop:?}"
+    );
+}
+
+#[test]
+fn confirm_modal_y_stops_watch_and_launches_synthesize() {
+    let _guard = crate::test_support::global_test_lock("tui-app-watch-toggle");
+    let tempdir = tempfile::tempdir().unwrap();
+    crate::bootstrap::bootstrap(tempdir.path(), None, false).expect("bootstrap");
+    let ctx = ActionContext::new(tempdir.path());
+    let start = crate::tui::actions::start_watch_daemon(&ctx);
+    assert!(
+        matches!(start, ActionOutcome::Ack { .. }),
+        "setup start must succeed, got {start:?}"
+    );
+
+    let mut state = AppState::new_poll(tempdir.path(), Theme::plain(), AgentIntegration::Absent);
+    state.queue_synthesize(SynthesizeMode::AllStale);
+    assert!(state.confirm_stop_watch.is_some());
+
+    let consumed = state.handle_key(KeyCode::Char('y'), KeyModifiers::NONE);
+    assert!(consumed);
+    assert!(
+        state.should_exit,
+        "y after watch-stop success should request exit"
+    );
+    assert!(
+        state.synthesis_stopped_watch,
+        "y path marks stopped_watch so CLI can remind the operator"
+    );
+    assert!(matches!(
+        state.launch_synthesize,
+        Some(SynthesizeMode::AllStale)
+    ));
+    assert!(
+        state.confirm_stop_watch.is_none(),
+        "modal cleared after commit"
+    );
+}
+
+#[test]
+fn confirm_modal_n_cancels_without_stopping_watch() {
+    let _guard = crate::test_support::global_test_lock("tui-app-watch-toggle");
+    let tempdir = tempfile::tempdir().unwrap();
+    crate::bootstrap::bootstrap(tempdir.path(), None, false).expect("bootstrap");
+    let ctx = ActionContext::new(tempdir.path());
+    let start = crate::tui::actions::start_watch_daemon(&ctx);
+    assert!(matches!(start, ActionOutcome::Ack { .. }));
+
+    let mut state = AppState::new_poll(tempdir.path(), Theme::plain(), AgentIntegration::Absent);
+    state.queue_synthesize(SynthesizeMode::AllStale);
+    assert!(state.confirm_stop_watch.is_some());
+
+    let consumed = state.handle_key(KeyCode::Char('n'), KeyModifiers::NONE);
+    assert!(consumed);
+    assert!(state.confirm_stop_watch.is_none(), "n clears the modal");
+    assert!(!state.should_exit);
+    assert!(state.launch_synthesize.is_none());
+
+    // Watch must still be running; n is a pure cancel.
+    assert!(matches!(
+        crate::pipeline::watch::watch_service_status(&ctx.synrepo_dir),
+        crate::pipeline::watch::WatchServiceStatus::Running(_)
+    ));
+
+    let stop = stop_watch(&ctx);
+    assert!(
+        matches!(
+            stop,
+            ActionOutcome::Ack { .. } | ActionOutcome::Completed { .. }
+        ),
+        "cleanup stop must succeed, got {stop:?}"
+    );
+}

@@ -40,7 +40,10 @@ pub use log::{
 };
 pub use report::build_repair_report;
 pub use report::surfaces::{scan_commentary_staleness, CommentaryScan};
-pub use sync::{execute_sync, refresh_commentary, ActionContext};
+pub use sync::{
+    execute_sync, normalize_scope_prefixes, path_matches_any_prefix, refresh_commentary,
+    ActionContext,
+};
 pub use types::{
     DriftClass, RepairAction, RepairFinding, RepairReport, RepairSurface, ResolutionLogEntry,
     Severity, SyncOptions, SyncOutcome, SyncSummary,

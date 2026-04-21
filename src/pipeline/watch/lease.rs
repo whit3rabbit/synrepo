@@ -16,8 +16,8 @@ use interprocess::local_socket::{GenericNamespaced, ToNsName};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
-use crate::pipeline::writer::{now_rfc3339, open_and_try_lock};
 use super::status::StateLoadError;
+use crate::pipeline::writer::{now_rfc3339, open_and_try_lock};
 
 const WATCH_DAEMON_FILENAME: &str = "watch-daemon.json";
 

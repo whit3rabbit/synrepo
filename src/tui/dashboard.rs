@@ -148,6 +148,7 @@ fn draw_dashboard(frame: &mut ratatui::Frame, state: &AppState) {
             let synthesis = SynthesisTabWidget {
                 snapshot: &state.snapshot,
                 picker: state.picker.as_ref(),
+                confirm_stop_watch: state.confirm_stop_watch.as_ref(),
                 theme: &state.theme,
             };
             frame.render_widget(synthesis, content_area);

@@ -23,7 +23,7 @@ pub(super) fn make_compiler(
     GraphCardCompiler::new(Box::new(graph), Some(repo.path()))
 }
 
-pub(super) fn fresh_symbol_fixture() -> (tempfile::TempDir, SqliteGraphStore, SymbolNodeId) {
+pub(crate) fn fresh_symbol_fixture() -> (tempfile::TempDir, SqliteGraphStore, SymbolNodeId) {
     let repo = tempdir().unwrap();
     fs::create_dir_all(repo.path().join("src")).unwrap();
     fs::write(
@@ -51,7 +51,7 @@ pub(super) fn current_content_hash(graph: &SqliteGraphStore, path: &str) -> Stri
     graph.file_by_path(path).unwrap().unwrap().content_hash
 }
 
-pub(super) fn make_overlay_store(repo: &tempfile::TempDir) -> Arc<Mutex<dyn OverlayStore>> {
+pub(crate) fn make_overlay_store(repo: &tempfile::TempDir) -> Arc<Mutex<dyn OverlayStore>> {
     let overlay_dir = repo.path().join(".synrepo/overlay");
     let store = SqliteOverlayStore::open(&overlay_dir).unwrap();
     Arc::new(Mutex::new(store))

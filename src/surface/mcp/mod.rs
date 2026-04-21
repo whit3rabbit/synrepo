@@ -21,6 +21,7 @@ use crate::surface::card::compiler::GraphCardCompiler;
 
 pub mod audit;
 pub mod cards;
+pub mod docs;
 pub mod helpers;
 pub mod primitives;
 pub mod search;

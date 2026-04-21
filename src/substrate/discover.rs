@@ -112,7 +112,10 @@ pub fn discover(repo_root: &Path, config: &Config) -> crate::Result<Vec<Discover
     Ok(discovered.into_values().collect())
 }
 
-fn build_redaction_matcher(repo_root: &Path, globs: &[String]) -> crate::Result<Gitignore> {
+pub(crate) fn build_redaction_matcher(
+    repo_root: &Path,
+    globs: &[String],
+) -> crate::Result<Gitignore> {
     let mut builder = GitignoreBuilder::new(repo_root);
     for glob in globs {
         builder.add_line(None, glob).map_err(|err| {
@@ -124,7 +127,7 @@ fn build_redaction_matcher(repo_root: &Path, globs: &[String]) -> crate::Result<
         .map_err(|err| crate::Error::Config(format!("invalid redaction matcher: {err}")))
 }
 
-fn read_file_head(path: &Path) -> crate::Result<Vec<u8>> {
+pub(crate) fn read_file_head(path: &Path) -> crate::Result<Vec<u8>> {
     let mut file = File::open(path)?;
     let mut buffer = vec![0_u8; SNIFF_HEAD_BYTES];
     let bytes_read = file.read(&mut buffer)?;
@@ -136,7 +139,7 @@ fn normalize_relative_path(path: &Path) -> String {
     path.to_string_lossy().replace('\\', "/")
 }
 
-fn is_within_configured_roots(path: &Path, roots: &[String]) -> bool {
+pub(crate) fn is_within_configured_roots(path: &Path, roots: &[String]) -> bool {
     roots.iter().any(|root| {
         if root == "." || root.is_empty() {
             return true;

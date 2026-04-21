@@ -16,6 +16,7 @@
 
 pub mod accounting;
 pub mod cross_link;
+pub mod docs;
 pub mod pricing;
 pub mod providers;
 pub mod stub;

@@ -19,6 +19,18 @@ synrepo SHALL define lexical indexing as an exact search substrate that supports
 - **THEN** the substrate contract guarantees deterministic exact-search behavior
 - **AND** it does not require LLM synthesis to answer the query
 
+### Requirement: Allow incremental lexical index maintenance for watch mode
+synrepo SHALL allow watch-driven lexical index maintenance from a bounded touched-path set when the watch service has a trustworthy coalesced batch of repo-relative file changes. The incremental path SHALL skip `.synrepo/` and `.git/`, ignore directories, respect configured roots and redaction policy, and evict entries whose paths are now out of policy or deleted. When no trustworthy touched-path set exists, or when the underlying syntext index is missing, corrupt, lock-conflicted, or overlay-full, synrepo SHALL fall back to a full rebuild.
+
+#### Scenario: Watch service reconciles a bounded touched-path batch
+- **WHEN** the watch service completes a coalesced reconcile with a concrete touched-path set
+- **THEN** the substrate contract permits incremental syntext updates for changed and deleted files
+- **AND** `.synrepo/` and `.git/` runtime noise does not dirty the repo lexical index
+
+#### Scenario: Startup or manual reconcile has no trustworthy touched-path set
+- **WHEN** synrepo runs startup reconcile or an operator-triggered reconcile without a concrete touched-path batch
+- **THEN** the substrate contract requires a conservative full lexical rebuild instead of incremental sync
+
 ### Requirement: Define encoding and lifecycle boundaries
 synrepo SHALL define how encodings, long lines, index compaction, and ignore-policy boundaries are handled so storage behavior remains stable enough for the graph layer to build on.
 

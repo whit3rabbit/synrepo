@@ -7,8 +7,8 @@ use std::{
     io::BufReader,
     path::Path,
     sync::{
-        atomic::{AtomicBool, AtomicUsize, Ordering},
-        mpsc, Arc,
+        atomic::{AtomicBool, Ordering},
+        mpsc, Arc, Mutex,
     },
     thread,
     time::Duration,
@@ -27,11 +27,16 @@ use super::{
     control::{
         read_control_request, write_control_response, WatchControlRequest, WatchControlResponse,
     },
+    filter::collect_repo_paths,
     lease::{
         acquire_watch_daemon_lease, watch_control_endpoint, watch_control_socket_name,
         WatchServiceMode, WatchStateHandle,
     },
-    reconcile::{persist_reconcile_state, run_reconcile_pass, ReconcileOutcome},
+    pending::PendingWatchChanges,
+    reconcile::{
+        persist_reconcile_state, run_reconcile_pass, run_reconcile_pass_with_touched_paths,
+        ReconcileOutcome,
+    },
 };
 
 /// Event emitted by the watch service for each reconcile attempt and error.
@@ -134,35 +139,44 @@ pub fn run_watch_service(
         triggering_events: 0,
     });
 
-    let pending_watch_events = Arc::new(AtomicUsize::new(0));
+    let pending_watch = Arc::new(Mutex::new(PendingWatchChanges::default()));
+    let callback_repo_root = repo_root.to_path_buf();
     let callback_synrepo_dir = synrepo_dir.to_path_buf();
     let callback_state_handle = state_handle.clone();
     let callback_events = events.clone();
-    let pending_watch_events_for_callback = pending_watch_events.clone();
-    let mut debouncer = new_debouncer(watch_config.debounce_timeout, None, move |result| {
-        match result {
-            Ok(watcher_events) => {
-                let filtered = filter_repo_events(watcher_events, &callback_synrepo_dir);
-                if filtered.is_empty() {
-                    return;
+    let pending_watch_for_callback = pending_watch.clone();
+    let max_events_per_cycle = watch_config.max_events_per_cycle;
+    let mut debouncer =
+        new_debouncer(
+            watch_config.debounce_timeout,
+            None,
+            move |result| match result {
+                Ok(watcher_events) => {
+                    let filtered = filter_repo_events(watcher_events, &callback_synrepo_dir);
+                    if filtered.is_empty() {
+                        return;
+                    }
+                    let touched_paths =
+                        collect_repo_paths(&filtered, &callback_repo_root, &callback_synrepo_dir);
+                    callback_state_handle.note_event();
+                    if let Ok(mut pending) = pending_watch_for_callback.lock() {
+                        pending.record(filtered.len(), touched_paths, max_events_per_cycle);
+                    }
                 }
-                callback_state_handle.note_event();
-                pending_watch_events_for_callback.fetch_add(filtered.len(), Ordering::Relaxed);
-            }
-            Err(errors) => {
-                for error in &errors {
-                    tracing::warn!("watcher error: {error}");
-                    emit_event(&callback_events, |now| WatchEvent::Error {
-                        at: now,
-                        message: format!("watcher error: {error}"),
-                    });
+                Err(errors) => {
+                    for error in &errors {
+                        tracing::warn!("watcher error: {error}");
+                        emit_event(&callback_events, |now| WatchEvent::Error {
+                            at: now,
+                            message: format!("watcher error: {error}"),
+                        });
+                    }
                 }
-            }
-        }
-    })
-    .map_err(|error| {
-        crate::Error::Other(anyhow::anyhow!("failed to create file watcher: {error}"))
-    })?;
+            },
+        )
+        .map_err(|error| {
+            crate::Error::Other(anyhow::anyhow!("failed to create file watcher: {error}"))
+        })?;
 
     debouncer
         .watcher()
@@ -181,8 +195,18 @@ pub fn run_watch_service(
                 _ => break,
             },
             Err(mpsc::RecvTimeoutError::Timeout) => {
-                let event_count =
-                    pending_watch_events.swap(0, Ordering::Relaxed).min(watch_config.max_events_per_cycle);
+                let batch = match pending_watch.lock() {
+                    Ok(mut pending) => {
+                        if pending.is_empty() {
+                            continue;
+                        }
+                        let batch = pending.take(watch_config.max_events_per_cycle);
+                        pending.clear_paths();
+                        batch
+                    }
+                    Err(_) => continue,
+                };
+                let event_count = batch.event_count;
                 if event_count == 0 {
                     continue;
                 }
@@ -191,7 +215,12 @@ pub fn run_watch_service(
                     at: now,
                     triggering_events: event_count,
                 });
-                let outcome = run_reconcile_pass(repo_root, config, synrepo_dir);
+                let outcome = run_reconcile_pass_with_touched_paths(
+                    repo_root,
+                    config,
+                    synrepo_dir,
+                    (!batch.touched_paths.is_empty()).then_some(batch.touched_paths.as_slice()),
+                );
                 persist_reconcile_state(synrepo_dir, &outcome, event_count);
                 state_handle.note_reconcile(&outcome, event_count);
                 tracing::info!(

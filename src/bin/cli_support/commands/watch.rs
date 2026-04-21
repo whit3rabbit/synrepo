@@ -176,9 +176,9 @@ fn recover_stop_transport_error(
             println!("Watch service already stopped (pid {}).", pid);
             Ok(())
         }
-        WatchServiceStatus::Starting => {
-            Err(anyhow::anyhow!("stop request failed while watch service is still starting: {err}"))
-        }
+        WatchServiceStatus::Starting => Err(anyhow::anyhow!(
+            "stop request failed while watch service is still starting: {err}"
+        )),
         WatchServiceStatus::Stale(_) | WatchServiceStatus::Corrupt(_) => {
             cleanup_stale_watch_artifacts(synrepo_dir)?;
             println!(
@@ -268,7 +268,10 @@ fn render_watch_status_snapshot(snapshot: &WatchDaemonState) {
 
 fn wait_for_watch_startup_settle(synrepo_dir: &Path) -> anyhow::Result<()> {
     for _ in 0..100 {
-        if !matches!(watch_service_status(synrepo_dir), WatchServiceStatus::Starting) {
+        if !matches!(
+            watch_service_status(synrepo_dir),
+            WatchServiceStatus::Starting
+        ) {
             return Ok(());
         }
         thread::sleep(Duration::from_millis(50));

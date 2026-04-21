@@ -28,7 +28,7 @@ Keep `src/bin/cli_support/commands/mcp.rs` as the single registration file. The 
 Current registrations (see `mcp.rs` for schemas):
 
 **High-level / agent-facing:**
-`synrepo_overview`, `synrepo_card`, `synrepo_search`, `synrepo_where_to_edit`, `synrepo_change_impact`, `synrepo_change_risk`, `synrepo_entrypoints`, `synrepo_test_surface`, `synrepo_module_card`, `synrepo_public_api`, `synrepo_minimum_context`, `synrepo_call_path`, `synrepo_refresh_commentary`, `synrepo_findings`, `synrepo_recent_activity`, `synrepo_next_actions`
+`synrepo_overview`, `synrepo_card`, `synrepo_search`, `synrepo_docs_search`, `synrepo_where_to_edit`, `synrepo_change_impact`, `synrepo_change_risk`, `synrepo_entrypoints`, `synrepo_test_surface`, `synrepo_module_card`, `synrepo_public_api`, `synrepo_minimum_context`, `synrepo_call_path`, `synrepo_refresh_commentary`, `synrepo_findings`, `synrepo_recent_activity`, `synrepo_next_actions`
 
 **Low-level primitives:**
 `synrepo_node`, `synrepo_edges`, `synrepo_query`, `synrepo_overlay`, `synrepo_provenance`
@@ -47,6 +47,7 @@ The overview blurb in `mcp.rs` and `skill/SKILL.md` are the two surfaces agents 
 ## Invariants
 
 - Graph content is primary; overlay is advisory.
+- `synrepo_docs_search` returns advisory synthesized commentary only. It is searchable overlay output, not canonical graph state or synthesis input.
 - Multi-query reads run under `with_graph_read_snapshot` / `with_overlay_read_snapshot`. The re-entrant depth counter lets handlers and card compilers nest snapshots safely (see hard invariant 8 in the root `AGENTS.md`).
 - Overlay promotion to graph edges is curated-mode-only.
 - Budget tiers: `tiny` → `normal` → `deep`. Default is `tiny`.

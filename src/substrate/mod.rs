@@ -4,6 +4,7 @@
 
 pub mod classify;
 pub mod discover;
+pub mod incremental;
 pub mod index;
 
 #[cfg(feature = "semantic-triage")]
@@ -11,6 +12,7 @@ pub mod embedding;
 
 pub use classify::{classify, FileClass, SkipReason};
 pub use discover::{discover, DiscoveredFile};
+pub use incremental::{sync_index_incremental, IndexSyncMode, IndexSyncReport};
 pub use index::{build_index, search, search_with_options, IndexBuildReport};
 
 #[cfg(feature = "semantic-triage")]

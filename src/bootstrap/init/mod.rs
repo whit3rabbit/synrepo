@@ -4,6 +4,9 @@ use std::{fs, path::Path};
 
 use crate::config::{Config, Mode};
 use crate::pipeline::structural::run_structural_compile;
+use crate::pipeline::watch::{
+    emit_cochange_edges_pass, finish_runtime_surfaces, RepoIndexStrategy,
+};
 use crate::pipeline::writer::{acquire_writer_lock, LockError};
 use crate::store::compatibility::{self, CompatibilityReport};
 use crate::store::sqlite::SqliteGraphStore;
@@ -104,22 +107,16 @@ pub fn bootstrap(
 
     // Co-change edge emission is best-effort during bootstrap. Failure is
     // non-fatal: the graph is structurally complete without co-change edges.
-    if let Err(err) =
-        crate::pipeline::watch::emit_cochange_edges_pass(repo_root, &config, &mut graph)
-    {
+    if let Err(err) = emit_cochange_edges_pass(repo_root, &config, &mut graph) {
         tracing::warn!(error = %err, "co-change edge emission skipped during bootstrap");
     }
-
-    // Build embedding index AFTER structural compile so graph has symbols and concepts
-    #[cfg(feature = "semantic-triage")]
-    {
-        if config.enable_semantic_triage {
-            if let Err(err) = crate::substrate::build_embedding_index(&graph, &config, &synrepo_dir)
-            {
-                tracing::warn!(error = %err, "embedding index build skipped during bootstrap");
-            }
-        }
-    }
+    finish_runtime_surfaces(
+        repo_root,
+        &config,
+        &synrepo_dir,
+        &graph,
+        RepoIndexStrategy::Skip,
+    )?;
 
     compatibility::write_runtime_snapshot(&synrepo_dir, &config)?;
     let health = match action {

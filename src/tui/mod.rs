@@ -38,8 +38,8 @@ pub mod actions;
 pub mod app;
 pub mod dashboard;
 pub mod probe;
-mod watcher;
 pub mod theme;
+mod watcher;
 pub mod widgets;
 pub mod wizard;
 
@@ -94,8 +94,16 @@ pub enum TuiOutcome {
     LaunchSynthesisSetupRequested,
     /// Dashboard exited with a request to run `synrepo synthesize` with the
     /// given scope. The caller should invoke the command function directly and
-    /// then re-open the dashboard so the new snapshot is visible.
-    RunSynthesizeRequested(SynthesizeMode),
+    /// then re-open the dashboard so the new snapshot is visible. When
+    /// `stopped_watch` is `true`, the dashboard stopped an active watch
+    /// service to free the writer lock; the caller should remind the operator
+    /// that watch is no longer running after synthesis completes.
+    RunSynthesizeRequested {
+        /// Scope of the synthesis run.
+        mode: SynthesizeMode,
+        /// `true` when the dashboard stopped an active watch service.
+        stopped_watch: bool,
+    },
 }
 
 /// Open the poll-mode dashboard on a ready repo. See `run_live_watch_dashboard`
@@ -127,7 +135,13 @@ pub fn run_dashboard(
         app::DashboardExit::Quit => Ok(TuiOutcome::Exited),
         app::DashboardExit::LaunchIntegration => Ok(TuiOutcome::LaunchIntegrationRequested),
         app::DashboardExit::LaunchSynthesisSetup => Ok(TuiOutcome::LaunchSynthesisSetupRequested),
-        app::DashboardExit::RunSynthesize(mode) => Ok(TuiOutcome::RunSynthesizeRequested(mode)),
+        app::DashboardExit::RunSynthesize {
+            mode,
+            stopped_watch,
+        } => Ok(TuiOutcome::RunSynthesizeRequested {
+            mode,
+            stopped_watch,
+        }),
     }
 }
 
@@ -285,7 +299,10 @@ mod live {
     //! the unix-only plumbing does not pollute the rest of `tui::mod`.
     use std::path::Path;
 
-    use super::{dashboard::run_poll_dashboard, theme::Theme, watcher::WatcherSupervisor, TuiOptions, TuiOutcome};
+    use super::{
+        dashboard::run_poll_dashboard, theme::Theme, watcher::WatcherSupervisor, TuiOptions,
+        TuiOutcome,
+    };
     use crate::bootstrap::runtime_probe::probe as bootstrap_probe;
     use crate::tui::app::DashboardExit;
 
@@ -316,7 +333,13 @@ mod live {
             DashboardExit::Quit => Ok(TuiOutcome::Exited),
             DashboardExit::LaunchIntegration => Ok(TuiOutcome::LaunchIntegrationRequested),
             DashboardExit::LaunchSynthesisSetup => Ok(TuiOutcome::LaunchSynthesisSetupRequested),
-            DashboardExit::RunSynthesize(mode) => Ok(TuiOutcome::RunSynthesizeRequested(mode)),
+            DashboardExit::RunSynthesize {
+                mode,
+                stopped_watch,
+            } => Ok(TuiOutcome::RunSynthesizeRequested {
+                mode,
+                stopped_watch,
+            }),
         }
     }
 }

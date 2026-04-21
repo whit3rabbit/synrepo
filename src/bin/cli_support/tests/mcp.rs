@@ -216,6 +216,37 @@ fn refresh_commentary_via_mcp_records_synthesis_accounting() {
         "unexpected MCP output: {output}"
     );
     assert_eq!(json["commentary"], "Generated commentary.");
+    let node_id = json["node_id"]
+        .as_str()
+        .expect("refresh_commentary should return node_id");
+    let doc_path = synrepo_dir
+        .join("synthesis-docs")
+        .join("symbols")
+        .join(format!("{node_id}.md"));
+    assert!(
+        doc_path.exists(),
+        "refresh_commentary should materialize advisory docs at {}",
+        doc_path.display()
+    );
+
+    let docs_output = synrepo::surface::mcp::docs::handle_docs_search(
+        &state,
+        "Generated commentary.".to_string(),
+        10,
+    );
+    let docs_json: serde_json::Value =
+        serde_json::from_str(&docs_output).expect("docs_search should return JSON");
+    let results = docs_json["results"]
+        .as_array()
+        .expect("docs_search should return a results array");
+    assert_eq!(
+        results.len(),
+        1,
+        "unexpected docs search output: {docs_output}"
+    );
+    assert_eq!(results[0]["node_id"], node_id);
+    assert_eq!(results[0]["source_store"], "overlay");
+    assert_eq!(results[0]["content"], "Generated commentary.");
 
     server.join().expect("join synthesis stub");
 
@@ -240,6 +271,16 @@ fn refresh_commentary_via_mcp_records_synthesis_accounting() {
     assert!(!totals.any_unpriced);
 
     drop(dir);
+}
+
+#[test]
+fn mcp_source_registers_docs_search_tool() {
+    let source = fs::read_to_string("src/bin/cli_support/commands/mcp.rs")
+        .expect("read MCP registration source");
+    assert!(
+        source.contains("name = \"synrepo_docs_search\""),
+        "MCP registration must include synrepo_docs_search"
+    );
 }
 
 #[test]

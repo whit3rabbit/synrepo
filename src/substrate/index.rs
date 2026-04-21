@@ -24,6 +24,36 @@ pub fn build_index(
     config: &crate::config::Config,
     repo_root: &Path,
 ) -> crate::Result<IndexBuildReport> {
+    build_index_with_retry(config, repo_root)
+}
+
+fn build_index_with_retry(
+    config: &crate::config::Config,
+    repo_root: &Path,
+) -> crate::Result<IndexBuildReport> {
+    match build_index_once(config, repo_root) {
+        Ok(report) => Ok(report),
+        Err(err @ crate::Error::Other(_)) if is_lock_conflict(&err) => {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            match build_index_once(config, repo_root) {
+                Ok(report) => Ok(report),
+                Err(retry_err @ crate::Error::Other(_)) if is_lock_conflict(&retry_err) => {
+                    let index_dir = crate::config::Config::synrepo_dir(repo_root).join("index");
+                    let _ = std::fs::remove_dir_all(&index_dir);
+                    std::fs::create_dir_all(&index_dir)?;
+                    build_index_once(config, repo_root)
+                }
+                Err(retry_err) => Err(retry_err),
+            }
+        }
+        Err(err) => Err(err),
+    }
+}
+
+fn build_index_once(
+    config: &crate::config::Config,
+    repo_root: &Path,
+) -> crate::Result<IndexBuildReport> {
     let discovered = crate::substrate::discover::discover(repo_root, config)?;
     let records = discovered
         .iter()
@@ -39,6 +69,10 @@ pub fn build_index(
     Ok(IndexBuildReport {
         indexed_files: discovered.len(),
     })
+}
+
+fn is_lock_conflict(error: &crate::Error) -> bool {
+    matches!(error, crate::Error::Other(err) if err.to_string().contains("locked by another process"))
 }
 
 /// Executes an exact lexical search against the current substrate index.

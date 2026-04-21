@@ -9,6 +9,7 @@
 
 mod cli_support;
 
+use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::Path;
 
 use clap::Parser;
@@ -150,11 +151,11 @@ fn run_dashboard_with_sub_wizards(
                 run_synthesis_step(repo_root, tui_opts)?;
                 opts.welcome_banner = false;
             }
-            TuiOutcome::RunSynthesizeRequested(mode) => {
-                let (paths, changed) = synthesize_mode_to_args(mode);
-                if let Err(err) = synthesize(repo_root, paths, changed, false) {
-                    eprintln!("synthesize failed: {err}");
-                }
+            TuiOutcome::RunSynthesizeRequested {
+                mode,
+                stopped_watch,
+            } => {
+                run_synthesize_with_pause(repo_root, mode, stopped_watch);
                 opts.welcome_banner = false;
             }
             outcome @ (TuiOutcome::WizardCompleted | TuiOutcome::WizardCancelled) => {
@@ -178,6 +179,79 @@ fn synthesize_mode_to_args(mode: SynthesizeMode) -> (Vec<String>, bool) {
         SynthesizeMode::Changed => (Vec::new(), true),
         SynthesizeMode::Paths(paths) => (paths, false),
     }
+}
+
+/// Run `synthesize()` behind a start banner and a terminal "Press Enter"
+/// pause, so the streamed output is not immediately buried by the dashboard
+/// re-opening over the alt-screen. `stopped_watch` controls whether the exit
+/// reminder mentions restarting `synrepo watch`.
+fn run_synthesize_with_pause(repo_root: &Path, mode: SynthesizeMode, stopped_watch: bool) {
+    let scope = describe_synthesize_scope(&mode);
+    println!();
+    println!("synrepo synthesize: {scope}");
+    println!("This can take a while; each call hits the configured LLM provider.");
+    println!();
+
+    let (paths, changed) = synthesize_mode_to_args(mode);
+    let result = synthesize(repo_root, paths, changed, false);
+
+    println!();
+    match &result {
+        Ok(()) => println!("synthesis: ok."),
+        Err(err) => eprintln!("synthesis: failed ({err})."),
+    }
+    if stopped_watch {
+        println!(
+            "watch was stopped to free the writer lock; restart it with `synrepo watch` when you want auto-reconcile back."
+        );
+    }
+
+    pause_for_enter("Press Enter to return to dashboard, or Ctrl-C to exit.");
+}
+
+/// Describe a `SynthesizeMode` in a single line suitable for the start banner.
+fn describe_synthesize_scope(mode: &SynthesizeMode) -> String {
+    match mode {
+        SynthesizeMode::AllStale => "refreshing all stale commentary".to_string(),
+        SynthesizeMode::Changed => {
+            "refreshing commentary for files changed in the last 50 commits".to_string()
+        }
+        SynthesizeMode::Paths(paths) if paths.is_empty() => {
+            "refreshing commentary for selected folders".to_string()
+        }
+        SynthesizeMode::Paths(paths) => {
+            format!("refreshing commentary for: {}", paths.join(", "))
+        }
+    }
+}
+
+/// Block the bare TUI handoff on an Enter from stdin so the operator can read
+/// synthesis output before the dashboard re-opens. Skipped when stdin or
+/// stdout is not a TTY (scripted and piped invocations).
+fn pause_for_enter(prompt: &str) {
+    let stdout = io::stdout();
+    let stdin = io::stdin();
+    if !stdout.is_terminal() || !stdin.is_terminal() {
+        return;
+    }
+    let mut handle = stdout.lock();
+    let _ = write!(handle, "{prompt} ");
+    let _ = handle.flush();
+    let mut buf = String::new();
+    let _ = stdin.lock().read_line(&mut buf);
+}
+
+/// Post-setup discovery hint advertising `synrepo synthesize` and the
+/// dashboard Synthesis tab. Printed after both the wizard-driven and
+/// scripted synthesis-enablement paths so the operator always sees the
+/// follow-up command.
+fn print_synthesis_discovery_hint() {
+    println!();
+    println!("Synthesis configured. Run it later with:");
+    println!("  synrepo synthesize                 # refresh all stale commentary");
+    println!("  synrepo synthesize --changed       # changed files in last 50 commits");
+    println!("  synrepo synthesize src/            # scope to specific paths");
+    println!("Or open the Synthesis tab in the dashboard and press r / f / c.");
 }
 
 /// Execute a completed [`IntegrationPlan`] after the TUI alt-screen has been
@@ -236,6 +310,7 @@ fn execute_setup_plan(repo_root: &Path, plan: SetupPlan) -> anyhow::Result<()> {
     }
     if plan.synthesis.is_some() {
         step_apply_synthesis(repo_root, plan.synthesis.as_ref())?;
+        print_synthesis_discovery_hint();
     }
     if plan.reconcile_after {
         // Setup promises an operationally ready repo, not just a populated
@@ -255,6 +330,7 @@ fn run_synthesis_step(repo_root: &Path, opts: TuiOptions) -> anyhow::Result<()> 
     match run_synthesis_only_wizard(opts)? {
         SetupWizardOutcome::Completed { plan } => {
             step_apply_synthesis(repo_root, plan.synthesis.as_ref())?;
+            print_synthesis_discovery_hint();
             Ok(())
         }
         SetupWizardOutcome::Cancelled => {

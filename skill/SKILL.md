@@ -37,6 +37,7 @@ Rule of thumb: `tiny` to find, `normal` to understand, `deep` to write.
 
 - Graph content is primary.
 - Overlay content is advisory.
+- Materialized synthesized docs are advisory overlay output, not canonical graph facts.
 - If overlay and graph disagree, trust the graph.
 - Freshness is explicit. A stale label is information, not an error; it is not silently refreshed on read.
 
@@ -52,6 +53,7 @@ Rule of thumb: `tiny` to find, `normal` to understand, `deep` to write.
 - `synrepo_overview()` — first call on an unfamiliar repo
 - `synrepo_card(target, budget?)` — card for a symbol or file
 - `synrepo_search(query, limit?)` — lexical search
+- `synrepo_docs_search(query, limit?)` — advisory synthesized commentary search
 - `synrepo_where_to_edit(task, limit?)` — ranked edit candidates
 - `synrepo_change_impact(target)` — first-pass dependents
 - `synrepo_change_risk(target)` — composite risk signal
