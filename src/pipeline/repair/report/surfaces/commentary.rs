@@ -26,7 +26,11 @@ pub fn scan_commentary_staleness(synrepo_dir: &std::path::Path) -> crate::Result
     use crate::store::sqlite::SqliteGraphStore;
     use std::str::FromStr;
 
-    let overlay = SqliteOverlayStore::open_existing(&synrepo_dir.join("overlay"))?;
+    let overlay_dir = synrepo_dir.join("overlay");
+    if !SqliteOverlayStore::db_path(&overlay_dir).exists() {
+        return Ok(CommentaryScan { total: 0, stale: 0 });
+    }
+    let overlay = SqliteOverlayStore::open_existing(&overlay_dir)?;
     let rows = overlay.commentary_hashes()?;
 
     let graph = SqliteGraphStore::open_existing(&synrepo_dir.join("graph"))?;

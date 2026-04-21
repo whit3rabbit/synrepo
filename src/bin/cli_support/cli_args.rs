@@ -148,12 +148,14 @@ pub(crate) enum Command {
 
     /// Refresh commentary synthesis against stale rows, optionally scoped to paths.
     ///
-    /// With no arguments or flags, refreshes every stale commentary entry (same as
-    /// the `RefreshCommentary` repair action in `synrepo sync`). Positional `<paths>`
-    /// scopes the refresh to files whose path starts with one of the given prefixes.
+    /// With no arguments or flags, generates commentary for all graph nodes that
+    /// lack an overlay entry, then refreshes any stale entries (same as the
+    /// `RefreshCommentary` repair action in `synrepo sync`). Positional `<paths>`
+    /// scopes the run to files whose path starts with one of the given prefixes.
     /// `--changed` derives the scope from hotspots in the last 50 commits via git
     /// intelligence. `--dry-run` prints the target set without calling any provider.
-    Synthesize {
+    #[command(alias = "synthesize")]
+    Synthesis {
         /// Repo-root-relative path prefixes to scope to. Empty = all stale.
         paths: Vec<String>,
         /// Use recent-commit hotspots as the scope (ignores positional paths).

@@ -188,7 +188,7 @@ fn synthesize_mode_to_args(mode: SynthesizeMode) -> (Vec<String>, bool) {
 fn run_synthesize_with_pause(repo_root: &Path, mode: SynthesizeMode, stopped_watch: bool) {
     let scope = describe_synthesize_scope(&mode);
     println!();
-    println!("synrepo synthesize: {scope}");
+    println!("synrepo synthesis: {scope}");
     println!("This can take a while; each call hits the configured LLM provider.");
     println!();
 
@@ -565,7 +565,7 @@ fn dispatch(command: Command, repo_root: &Path, tui_opts: TuiOptions) -> anyhow:
             regenerate_cross_links,
             reset_synthesis_totals,
         ),
-        Command::Synthesize {
+        Command::Synthesis {
             paths,
             changed,
             dry_run,
