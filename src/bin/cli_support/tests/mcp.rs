@@ -285,6 +285,14 @@ fn mcp_source_registers_docs_search_tool() {
 
 #[test]
 fn prepare_state_fails_on_uninitialized_repo() {
+    // Config::load falls back to ~/.synrepo/config.toml; redirect HOME to an
+    // empty tempdir under the shared lock so the developer's real user-scoped
+    // config can't satisfy the load and hide the uninitialized state.
+    let _lock =
+        synrepo::test_support::global_test_lock(synrepo::config::test_home::HOME_ENV_TEST_LOCK);
+    let home = tempdir().unwrap();
+    let _home_guard = synrepo::config::test_home::HomeEnvGuard::redirect_to(home.path());
+
     let dir = tempdir().unwrap();
     let repo = dir.path().to_path_buf();
     // Deliberately no `synrepo init` / `bootstrap` — the server must refuse

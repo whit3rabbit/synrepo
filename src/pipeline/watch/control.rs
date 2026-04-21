@@ -127,3 +127,56 @@ fn io_err(endpoint: &str, source: std::io::Error) -> WatchDaemonError {
         source,
     }
 }
+
+/// Probe whether the per-repo watch control endpoint is bound and accepting
+/// connections.
+///
+/// `WatchServiceStatus::Running` only proves the daemon holds the lease and
+/// has written its state file; the listener thread may not have bound the
+/// control socket yet. A client calling [`request_watch_control`] in that
+/// window gets ENOENT, which is indistinguishable from a dead daemon from
+/// the client's point of view. Callers that care about readiness (e.g.
+/// [`crate::tui::actions::stop_watch`]) should gate on this probe instead of
+/// on status alone.
+pub fn control_endpoint_reachable(synrepo_dir: &Path) -> bool {
+    let endpoint = watch_control_endpoint(synrepo_dir);
+    let name = match watch_control_socket_name(&endpoint) {
+        Ok(name) => name,
+        Err(_) => return false,
+    };
+    Stream::connect(name).is_ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use interprocess::local_socket::{ListenerNonblockingMode, ListenerOptions};
+
+    #[test]
+    fn endpoint_unreachable_when_no_listener_bound() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let synrepo_dir = tempdir.path().join(".synrepo");
+        std::fs::create_dir_all(&synrepo_dir).unwrap();
+
+        assert!(!control_endpoint_reachable(&synrepo_dir));
+    }
+
+    #[test]
+    fn endpoint_reachable_once_listener_is_bound() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let synrepo_dir = tempdir.path().join(".synrepo");
+        std::fs::create_dir_all(&synrepo_dir).unwrap();
+
+        let endpoint = watch_control_endpoint(&synrepo_dir);
+        #[cfg(unix)]
+        let _ = std::fs::remove_file(&endpoint);
+        let name = watch_control_socket_name(&endpoint).unwrap();
+        let _listener = ListenerOptions::new()
+            .name(name)
+            .nonblocking(ListenerNonblockingMode::Accept)
+            .create_sync()
+            .unwrap();
+
+        assert!(control_endpoint_reachable(&synrepo_dir));
+    }
+}

@@ -86,6 +86,14 @@ fn cli_text_and_dashboard_vm_agree_on_key_fields() {
 
 #[test]
 fn uninitialized_parity_not_initialized_on_both_surfaces() {
+    // Config::load falls back to ~/.synrepo/config.toml; redirect HOME to an
+    // empty tempdir under the shared lock so the developer's real user-scoped
+    // config can't satisfy the load and make the tempdir look initialized.
+    let _lock =
+        synrepo::test_support::global_test_lock(synrepo::config::test_home::HOME_ENV_TEST_LOCK);
+    let home = tempdir().unwrap();
+    let _home_guard = synrepo::config::test_home::HomeEnvGuard::redirect_to(home.path());
+
     let repo = tempdir().unwrap();
     // No bootstrap: snapshot will report `initialized=false`.
     let snapshot = build_status_snapshot(

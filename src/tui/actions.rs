@@ -18,8 +18,9 @@ use std::os::unix::process::CommandExt;
 
 use crate::config::Config;
 use crate::pipeline::watch::{
-    cleanup_stale_watch_artifacts, request_watch_control, run_reconcile_pass, watch_service_status,
-    ReconcileOutcome, WatchControlRequest, WatchControlResponse, WatchServiceStatus,
+    cleanup_stale_watch_artifacts, control_endpoint_reachable, request_watch_control,
+    run_reconcile_pass, watch_service_status, ReconcileOutcome, WatchControlRequest,
+    WatchControlResponse, WatchServiceStatus,
 };
 use crate::pipeline::writer::{
     acquire_write_admission, current_ownership, live_owner_pid, LockError, WriterOwnershipError,
@@ -266,9 +267,13 @@ pub fn start_watch_daemon(ctx: &ActionContext) -> ActionOutcome {
 }
 
 fn wait_for_watch_running(synrepo_dir: &Path) -> Result<(), String> {
+    // `Running` says the daemon holds its lease and has written state, but
+    // the listener thread may not have bound the control socket yet. Poll for
+    // endpoint reachability so callers never observe the `Running`-but-ENOENT
+    // race window that used to turn `stop_watch` into a spurious error.
     wait_for_watch_transition(synrepo_dir, WATCH_START_TIMEOUT, |status| match status {
-        WatchServiceStatus::Running(_) => Ok(Some(())),
-        WatchServiceStatus::Starting => Ok(None),
+        WatchServiceStatus::Running(_) if control_endpoint_reachable(synrepo_dir) => Ok(Some(())),
+        WatchServiceStatus::Running(_) | WatchServiceStatus::Starting => Ok(None),
         WatchServiceStatus::Corrupt(e) => {
             Err(format!("watch state became corrupt during startup: {e}"))
         }

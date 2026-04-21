@@ -121,6 +121,14 @@ mod tests {
 
     #[test]
     fn missing_block_loads_with_defaults() {
+        // Config::load reads ~/.synrepo/config.toml; redirect HOME to an empty
+        // tempdir under the shared lock so the developer's real user-scoped
+        // credentials cannot leak defaults into these assertions.
+        let _lock =
+            crate::test_support::global_test_lock(crate::config::test_home::HOME_ENV_TEST_LOCK);
+        let home = tempdir().unwrap();
+        let _home_guard = crate::config::test_home::HomeEnvGuard::redirect_to(home.path());
+
         let dir = tempdir().unwrap();
         let synrepo_dir = Config::synrepo_dir(dir.path());
         fs::create_dir_all(&synrepo_dir).unwrap();
@@ -143,6 +151,11 @@ mod tests {
 
     #[test]
     fn populated_block_round_trips() {
+        let _lock =
+            crate::test_support::global_test_lock(crate::config::test_home::HOME_ENV_TEST_LOCK);
+        let home = tempdir().unwrap();
+        let _home_guard = crate::config::test_home::HomeEnvGuard::redirect_to(home.path());
+
         let dir = tempdir().unwrap();
         let synrepo_dir = Config::synrepo_dir(dir.path());
         fs::create_dir_all(&synrepo_dir).unwrap();
@@ -171,6 +184,11 @@ mod tests {
 
     #[test]
     fn partial_block_fills_unset_with_defaults() {
+        let _lock =
+            crate::test_support::global_test_lock(crate::config::test_home::HOME_ENV_TEST_LOCK);
+        let home = tempdir().unwrap();
+        let _home_guard = crate::config::test_home::HomeEnvGuard::redirect_to(home.path());
+
         let dir = tempdir().unwrap();
         let synrepo_dir = Config::synrepo_dir(dir.path());
         fs::create_dir_all(&synrepo_dir).unwrap();

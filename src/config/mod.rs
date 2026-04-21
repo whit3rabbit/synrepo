@@ -385,6 +385,57 @@ pub fn home_dir() -> Option<PathBuf> {
     }
 }
 
+#[doc(hidden)]
+pub mod test_home {
+    //! RAII guard that redirects the user's home directory (as read by
+    //! [`super::home_dir`]) to a caller-chosen path for the lifetime of the
+    //! guard, restoring the prior value on drop.
+    //!
+    //! Tests that exercise `Config::load` (which merges
+    //! `~/.synrepo/config.toml` into the repo-local config) MUST take both
+    //! this guard and the shared cross-process test lock
+    //! [`HOME_ENV_TEST_LOCK`] so they don't leak the developer's real
+    //! persisted credentials into assertions.
+    //!
+    //! Exposed as `pub #[doc(hidden)]` (not `pub(crate)` or `#[cfg(test)]`)
+    //! so bin-crate tests — which compile the library without `cfg(test)` —
+    //! can also take the guard. Same pattern as
+    //! `pipeline::writer::hold_writer_flock_with_ownership`.
+
+    use std::ffi::OsString;
+    use std::path::Path;
+
+    /// Shared label for `crate::test_support::global_test_lock` — all tests
+    /// that mutate the home-directory env var must serialize on this label.
+    pub const HOME_ENV_TEST_LOCK: &str = "config-home-env";
+
+    #[cfg(unix)]
+    const HOME_VAR: &str = "HOME";
+    #[cfg(windows)]
+    const HOME_VAR: &str = "USERPROFILE";
+
+    pub struct HomeEnvGuard {
+        original: Option<OsString>,
+    }
+
+    impl HomeEnvGuard {
+        pub fn redirect_to(path: &Path) -> Self {
+            let original = std::env::var_os(HOME_VAR);
+            std::env::set_var(HOME_VAR, path);
+            Self { original }
+        }
+    }
+
+    impl Drop for HomeEnvGuard {
+        fn drop(&mut self) {
+            match &self.original {
+                Some(value) => std::env::set_var(HOME_VAR, value),
+                None => std::env::remove_var(HOME_VAR),
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -393,6 +444,13 @@ mod tests {
 
     #[test]
     fn load_missing_file_returns_error() {
+        // Config::load falls back to ~/.synrepo/config.toml when the repo-local
+        // file is missing; redirect HOME under the shared lock so the user's
+        // real global config can't satisfy the load and mask NotInitialized.
+        let _lock = crate::test_support::global_test_lock(super::test_home::HOME_ENV_TEST_LOCK);
+        let home = tempdir().unwrap();
+        let _home_guard = super::test_home::HomeEnvGuard::redirect_to(home.path());
+
         let dir = tempdir().unwrap();
         let err = Config::load(dir.path()).unwrap_err();
         assert!(matches!(err, crate::Error::NotInitialized(_)));
@@ -400,6 +458,10 @@ mod tests {
 
     #[test]
     fn load_valid_file_overrides_defaults() {
+        let _lock = crate::test_support::global_test_lock(super::test_home::HOME_ENV_TEST_LOCK);
+        let home = tempdir().unwrap();
+        let _home_guard = super::test_home::HomeEnvGuard::redirect_to(home.path());
+
         let dir = tempdir().unwrap();
         let synrepo_dir = Config::synrepo_dir(dir.path());
         fs::create_dir_all(&synrepo_dir).unwrap();
@@ -423,6 +485,10 @@ mod tests {
 
     #[test]
     fn cross_link_fields_round_trip_through_toml() {
+        let _lock = crate::test_support::global_test_lock(super::test_home::HOME_ENV_TEST_LOCK);
+        let home = tempdir().unwrap();
+        let _home_guard = super::test_home::HomeEnvGuard::redirect_to(home.path());
+
         let dir = tempdir().unwrap();
         let synrepo_dir = Config::synrepo_dir(dir.path());
         fs::create_dir_all(&synrepo_dir).unwrap();
@@ -448,6 +514,10 @@ mod tests {
 
     #[test]
     fn load_invalid_toml_returns_error() {
+        let _lock = crate::test_support::global_test_lock(super::test_home::HOME_ENV_TEST_LOCK);
+        let home = tempdir().unwrap();
+        let _home_guard = super::test_home::HomeEnvGuard::redirect_to(home.path());
+
         let dir = tempdir().unwrap();
         let synrepo_dir = Config::synrepo_dir(dir.path());
         fs::create_dir_all(&synrepo_dir).unwrap();
@@ -486,8 +556,10 @@ mod tests {
     }
     #[test]
     fn load_merges_global_and_local() {
+        let _lock = crate::test_support::global_test_lock(super::test_home::HOME_ENV_TEST_LOCK);
         let home = tempdir().unwrap();
         let repo = tempdir().unwrap();
+        let _home_guard = super::test_home::HomeEnvGuard::redirect_to(home.path());
         std::fs::create_dir_all(home.path().join(".synrepo")).unwrap();
         std::fs::create_dir_all(repo.path().join(".synrepo")).unwrap();
 
@@ -508,13 +580,6 @@ mod tests {
         "#;
         std::fs::write(repo.path().join(".synrepo/config.toml"), local_toml).unwrap();
 
-        // Simulate global config path via the same env var `home_dir()` reads:
-        // `$HOME` on Unix, `%USERPROFILE%` on Windows.
-        #[cfg(unix)]
-        std::env::set_var("HOME", home.path());
-        #[cfg(windows)]
-        std::env::set_var("USERPROFILE", home.path());
-
         // Config::load should merge: mode is auto (local wins), synthesis enabled is true (global preserved), synthesis provider is openai (local wins)
         let config = Config::load(repo.path()).expect("load must succeed");
 
@@ -529,10 +594,5 @@ mod tests {
             config.synthesis.local_endpoint.as_deref(),
             Some("http://global-llm:11434/api/chat")
         );
-
-        #[cfg(unix)]
-        std::env::remove_var("HOME");
-        #[cfg(windows)]
-        std::env::remove_var("USERPROFILE");
     }
 }

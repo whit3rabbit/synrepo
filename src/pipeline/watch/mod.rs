@@ -13,7 +13,9 @@ pub(crate) mod reconcile;
 mod service;
 mod status;
 
-pub use control::{request_watch_control, WatchControlRequest, WatchControlResponse};
+pub use control::{
+    control_endpoint_reachable, request_watch_control, WatchControlRequest, WatchControlResponse,
+};
 #[doc(hidden)]
 pub use lease::{hold_watch_flock_with_state, TestWatchFlockHolder};
 pub use lease::{
