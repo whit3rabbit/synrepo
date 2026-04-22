@@ -87,7 +87,7 @@ impl SynthesisProgressUi {
                 .to_string()
         };
         let output_files =
-            "updates the overlay DB plus .synrepo/synthesis-docs/ and .synrepo/synthesis-index/"
+            "writes completed items into .synrepo/overlay/overlay.db; reconciles docs/index at end"
                 .to_string();
         Self {
             theme,
@@ -123,7 +123,7 @@ impl SynthesisProgressUi {
                 self.planned_symbols = symbol_seed_candidates;
                 self.max_targets = max_targets;
                 self.current =
-                    "Calling the provider API and updating advisory commentary under .synrepo/."
+                    "Calling the provider API; completed items write into overlay.db, docs/index reconcile at end."
                         .to_string();
                 self.push_recent(format!(
                     "Planned {refresh} stale item(s), {file_seeds} file(s) without commentary, {symbol_seed_candidates} symbol candidate(s)."

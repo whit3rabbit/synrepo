@@ -200,11 +200,11 @@ pub(super) fn render_run_intro(
     }
     writeln!(
         stderr,
-        "  output files: markdown commentary files under .synrepo/synthesis-docs/ plus the searchable commentary index under .synrepo/synthesis-index/"
+        "  write flow: completed commentary rows write into .synrepo/overlay/overlay.db as items finish; docs and index reconcile at the end"
     )?;
     writeln!(
         stderr,
-        "  storage: advisory commentary is stored under .synrepo/ and does not edit tracked source files"
+        "  output files: reconciled markdown docs under .synrepo/synthesis-docs/ plus the searchable index under .synrepo/synthesis-index/"
     )?;
     Ok(())
 }
