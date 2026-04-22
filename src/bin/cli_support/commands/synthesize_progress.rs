@@ -132,9 +132,15 @@ pub(super) fn render_telemetry_summary(
 }
 
 fn repo_relative(repo_root: &Path, path: &Path) -> String {
-    path.strip_prefix(repo_root)
+    let rendered = path
+        .strip_prefix(repo_root)
         .map(|p| p.display().to_string())
-        .unwrap_or_else(|_| path.display().to_string())
+        .unwrap_or_else(|_| path.display().to_string());
+    if cfg!(windows) {
+        rendered.replace('\\', "/")
+    } else {
+        rendered
+    }
 }
 
 fn start_label(phase: CommentaryWorkPhase) -> &'static str {
