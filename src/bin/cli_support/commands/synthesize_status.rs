@@ -34,7 +34,7 @@ pub(crate) fn synthesize_status_output(
     .unwrap();
     writeln!(
         out,
-        "  output files: markdown commentary files under `.synrepo/synthesis-docs/`, searchable index under `.synrepo/synthesis-index/`"
+        "  output files: overlay-backed commentary under `.synrepo/`, markdown docs under `.synrepo/synthesis-docs/`, searchable index under `.synrepo/synthesis-index/`"
     )
     .unwrap();
     writeln!(

@@ -39,6 +39,7 @@ pub fn refresh_commentary(
     actions_taken: &mut Vec<String>,
     scope: Option<&[PathBuf]>,
     progress: Option<&mut dyn FnMut(CommentaryProgressEvent)>,
+    should_stop: Option<&mut dyn FnMut() -> bool>,
 ) -> crate::Result<()> {
     let overlay_dir = context.synrepo_dir.join("overlay");
     let mut overlay = SqliteOverlayStore::open(&overlay_dir)?;
@@ -56,6 +57,7 @@ pub fn refresh_commentary(
         rows,
         plan,
         progress,
+        should_stop,
     )
 }
 
@@ -69,6 +71,7 @@ fn refresh_commentary_with_generator(
     rows: Vec<(String, String)>,
     plan: CommentaryWorkPlan,
     mut progress: Option<&mut dyn FnMut(CommentaryProgressEvent)>,
+    mut should_stop: Option<&mut dyn FnMut() -> bool>,
 ) -> crate::Result<()> {
     emit(
         &mut progress,
@@ -99,8 +102,13 @@ fn refresh_commentary_with_generator(
     let mut refresh_generated = 0usize;
     let mut seed_attempted = 0usize;
     let mut seed_generated = 0usize;
+    let mut stopped = false;
 
     for item in &plan.refresh {
+        if stop_requested(&mut should_stop) {
+            stopped = true;
+            break;
+        }
         attempted += 1;
         refresh_attempted += 1;
         emit_target_started(&mut progress, item, attempted);
@@ -125,6 +133,10 @@ fn refresh_commentary_with_generator(
     );
 
     for item in &plan.file_seeds {
+        if stop_requested(&mut should_stop) {
+            stopped = true;
+            break;
+        }
         if commented.contains(&item.node_id) {
             continue;
         }
@@ -143,6 +155,10 @@ fn refresh_commentary_with_generator(
     }
 
     for item in &plan.symbol_seed_candidates {
+        if stop_requested(&mut should_stop) {
+            stopped = true;
+            break;
+        }
         if commented.contains(&item.node_id) || commented.contains(&NodeId::File(item.file_id)) {
             continue;
         }
@@ -195,12 +211,25 @@ fn refresh_commentary_with_generator(
             seeded,
             not_generated,
             attempted,
+            stopped,
         },
     );
+    let stop_suffix = if stopped {
+        " (stopped by operator)"
+    } else {
+        ""
+    };
     actions_taken.push(format!(
-        "commentary: {seeded} seeded, {refreshed} refreshed, {not_generated} not generated"
+        "commentary: {seeded} seeded, {refreshed} refreshed, {not_generated} not generated{stop_suffix}"
     ));
     Ok(())
+}
+
+fn stop_requested(should_stop: &mut Option<&mut dyn FnMut() -> bool>) -> bool {
+    match should_stop.as_mut() {
+        Some(should_stop) => should_stop(),
+        None => false,
+    }
 }
 
 fn execute_item(

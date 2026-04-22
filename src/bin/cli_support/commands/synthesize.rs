@@ -118,8 +118,10 @@ fn synthesize_with_writers(
     }
 
     render_run_intro(stderr, &context)?;
-    let (actions_taken, tracker) =
-        execute_synthesize_run(repo_root, &context, |repo_root, tracker, event| {
+    let (actions_taken, tracker) = execute_synthesize_run(
+        repo_root,
+        &context,
+        |repo_root, tracker, event| {
             let _ = render_progress_event(
                 stderr,
                 repo_root,
@@ -127,7 +129,9 @@ fn synthesize_with_writers(
                 context.progress_api_label().as_deref(),
                 event,
             );
-        })?;
+        },
+        None,
+    )?;
     render_telemetry_summary(stderr, &tracker)?;
     write_actions_taken(stdout, &actions_taken)
 }
@@ -136,6 +140,7 @@ pub(super) fn execute_synthesize_run(
     repo_root: &Path,
     context: &SynthesizeRunContext,
     mut on_progress: impl FnMut(&Path, &mut TelemetryTracker, CommentaryProgressEvent),
+    should_stop: Option<&mut dyn FnMut() -> bool>,
 ) -> anyhow::Result<(Vec<String>, TelemetryTracker)> {
     let maint_plan = plan_maintenance(&context.synrepo_dir, &context.config);
     let _writer_lock = acquire_write_admission(&context.synrepo_dir, "synthesize")
@@ -162,6 +167,7 @@ pub(super) fn execute_synthesize_run(
         &mut actions_taken,
         context.scope.as_deref(),
         Some(&mut render_progress),
+        should_stop,
     )?;
     tracker.drain();
     Ok((actions_taken, tracker))
@@ -198,7 +204,7 @@ pub(super) fn render_run_intro(
     )?;
     writeln!(
         stderr,
-        "  storage: commentary is also stored in the overlay database under .synrepo/"
+        "  storage: advisory commentary is stored under .synrepo/ and does not edit tracked source files"
     )?;
     Ok(())
 }

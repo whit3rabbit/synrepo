@@ -94,9 +94,10 @@ pub(super) fn render_progress_event(
             seeded,
             not_generated,
             attempted,
+            stopped,
         } => writeln!(
             stderr,
-            "summary: attempted={attempted} refreshed={refreshed} generated={seeded} not_generated={not_generated}"
+            "summary: attempted={attempted} refreshed={refreshed} generated={seeded} not_generated={not_generated} stopped={stopped}"
         )?,
     }
     Ok(())

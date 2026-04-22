@@ -131,7 +131,7 @@ pub fn handle_actionable_finding(
             }
         }
         RepairAction::RefreshCommentary => {
-            match super::commentary::refresh_commentary(context, actions_taken, None, None) {
+            match super::commentary::refresh_commentary(context, actions_taken, None, None, None) {
                 Ok(()) => repaired.push(finding.clone()),
                 Err(err) => {
                     actions_taken.push(format!(

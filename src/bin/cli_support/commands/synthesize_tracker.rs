@@ -58,6 +58,7 @@ pub(super) struct TelemetryTracker {
     rx: Receiver<SynthesisEvent>,
     terminal_by_node: HashMap<String, TerminalEvent>,
     max_targets: Option<usize>,
+    active_calls: u64,
     calls: u64,
     failures: u64,
     budget_blocked: u64,
@@ -74,6 +75,7 @@ impl TelemetryTracker {
             rx,
             terminal_by_node: HashMap::new(),
             max_targets: None,
+            active_calls: 0,
             calls: 0,
             failures: 0,
             budget_blocked: 0,
@@ -125,7 +127,9 @@ impl TelemetryTracker {
     pub(super) fn drain(&mut self) {
         while let Ok(event) = self.rx.try_recv() {
             match event {
-                SynthesisEvent::CallStarted { .. } => {}
+                SynthesisEvent::CallStarted { .. } => {
+                    self.active_calls += 1;
+                }
                 SynthesisEvent::CallCompleted {
                     provider,
                     model,
@@ -163,6 +167,7 @@ impl TelemetryTracker {
                             },
                         );
                     }
+                    self.finish_call();
                 }
                 SynthesisEvent::BudgetBlocked {
                     target,
@@ -180,6 +185,7 @@ impl TelemetryTracker {
                             },
                         );
                     }
+                    self.finish_call();
                 }
                 SynthesisEvent::CallFailed {
                     target,
@@ -192,6 +198,7 @@ impl TelemetryTracker {
                         self.terminal_by_node
                             .insert(node_id, TerminalEvent::Failed { duration_ms, error });
                     }
+                    self.finish_call();
                 }
             }
         }
@@ -233,6 +240,19 @@ impl TelemetryTracker {
         summary
     }
 
+    pub(super) fn usage_label(&self) -> String {
+        if self.active_calls == 0 {
+            return self.summary_label();
+        }
+        if self.total_calls() == 0 {
+            return format!(
+                "{} provider call(s) in flight, waiting for first response",
+                self.active_calls
+            );
+        }
+        format!("{}, {} in flight", self.summary_label(), self.active_calls)
+    }
+
     pub(super) fn take_status(
         &mut self,
         node_id: synrepo::NodeId,
@@ -266,6 +286,10 @@ impl TelemetryTracker {
             None => RenderedStatus::skipped("provider returned no commentary".to_string()),
         }
     }
+
+    fn finish_call(&mut self) {
+        self.active_calls = self.active_calls.saturating_sub(1);
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -290,5 +314,37 @@ fn commentary_target_key(target: &SynthesisTarget) -> Option<String> {
     match target {
         SynthesisTarget::Commentary { node } => Some(node.to_string()),
         SynthesisTarget::CrossLink { .. } => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use synrepo::core::ids::{NodeId, SymbolNodeId};
+    use synrepo::pipeline::synthesis::telemetry::SynthesisTarget;
+
+    fn sample_target() -> SynthesisTarget {
+        SynthesisTarget::Commentary {
+            node: NodeId::Symbol(SymbolNodeId(1)),
+        }
+    }
+
+    #[test]
+    fn usage_label_reports_in_flight_before_first_response() {
+        let (tx, rx) = crossbeam_channel::unbounded();
+        let mut tracker = TelemetryTracker::new(rx);
+        tx.send(SynthesisEvent::CallStarted {
+            call_id: 1,
+            provider: "minimax",
+            model: "MiniMax-M2".to_string(),
+            target: sample_target(),
+            started_at_ms: 0,
+        })
+        .expect("send started event");
+        tracker.drain();
+        assert_eq!(
+            tracker.usage_label(),
+            "1 provider call(s) in flight, waiting for first response"
+        );
     }
 }

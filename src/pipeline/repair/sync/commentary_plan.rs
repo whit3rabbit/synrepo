@@ -111,6 +111,7 @@ pub enum CommentaryProgressEvent {
         seeded: usize,
         not_generated: usize,
         attempted: usize,
+        stopped: bool,
     },
 }
 

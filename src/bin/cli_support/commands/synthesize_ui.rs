@@ -11,13 +11,17 @@ use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Gauge, List, ListItem, Paragraph};
 use ratatui::Terminal;
-use synrepo::pipeline::repair::{CommentaryProgressEvent, CommentaryWorkItem, CommentaryWorkPhase};
+use synrepo::pipeline::repair::CommentaryProgressEvent;
 use synrepo::pipeline::synthesis::describe_active_provider;
 use synrepo::tui::theme::Theme;
 
 use super::synthesize::{execute_synthesize_run, write_actions_taken, SynthesizeRunContext};
 use super::synthesize_progress::render_telemetry_summary;
 use super::synthesize_tracker::TelemetryTracker;
+use super::synthesize_ui_input::StopKeyState;
+use super::synthesize_ui_text::{
+    phase_summary_label, progress_label, provider_name, render_target, start_label, success_label,
+};
 
 type SynthesisTerminal = Terminal<CrosstermBackend<Stdout>>;
 
@@ -28,11 +32,19 @@ pub(super) fn run_synthesize_tui(
     let mut terminal = enter_tui()?;
     let theme = Theme::from_no_color(std::env::var_os("NO_COLOR").is_some());
     let mut ui = SynthesisProgressUi::new(&context, theme);
-    ui.draw(&mut terminal, &TelemetryTracker::empty())?;
-    let result = execute_synthesize_run(repo_root, &context, |_, tracker, event| {
-        ui.apply_event(event);
-        let _ = ui.draw(&mut terminal, tracker);
-    });
+    let stop = StopKeyState::default();
+    ui.draw(&mut terminal, &TelemetryTracker::empty(), stop.requested())?;
+    let mut should_stop = || stop.poll();
+    let result = execute_synthesize_run(
+        repo_root,
+        &context,
+        |_, tracker, event| {
+            ui.apply_event(event);
+            let _ = stop.poll();
+            let _ = ui.draw(&mut terminal, tracker, stop.requested());
+        },
+        Some(&mut should_stop),
+    );
     let leave_result = leave_tui(&mut terminal);
     leave_result?;
     let (actions_taken, tracker) = result?;
@@ -90,15 +102,15 @@ impl SynthesisProgressUi {
             || matches!(std::env::var("SYNREPO_LLM_ENABLED").as_deref(), Ok("1"))
         {
             format!(
-                "sends commentary requests to [{}], which may cost money depending on provider billing",
+                "calls [{}] to write advisory commentary under .synrepo/, never your tracked source files",
                 active.provider
             )
         } else {
-            "provider requests are disabled, only existing overlay content can be reused"
+            "provider requests are disabled, only existing overlay commentary can be reused"
                 .to_string()
         };
         let output_files =
-            "writes markdown commentary files to .synrepo/synthesis-docs/ and updates .synrepo/synthesis-index/"
+            "updates the overlay DB plus .synrepo/synthesis-docs/ and .synrepo/synthesis-index/"
                 .to_string();
         Self {
             theme,
@@ -114,7 +126,7 @@ impl SynthesisProgressUi {
             refreshed: 0,
             generated: 0,
             not_generated: 0,
-            current: "Planning commentary work...".to_string(),
+            current: "Planning commentary work under .synrepo/...".to_string(),
             phase_summary: String::new(),
             finished: false,
             recent: VecDeque::new(),
@@ -134,7 +146,7 @@ impl SynthesisProgressUi {
                 self.planned_symbols = symbol_seed_candidates;
                 self.max_targets = max_targets;
                 self.current =
-                    "Calling the provider API and writing markdown commentary output as items complete."
+                    "Calling the provider API and updating advisory commentary under .synrepo/."
                         .to_string();
                 self.push_recent(format!(
                     "Planned {refresh} stale item(s), {file_seeds} file(s) without commentary, {symbol_seed_candidates} symbol candidate(s)."
@@ -215,13 +227,18 @@ impl SynthesisProgressUi {
                 seeded,
                 not_generated,
                 attempted,
+                stopped,
             } => {
                 self.refreshed = refreshed;
                 self.generated = seeded;
                 self.not_generated = not_generated;
                 self.attempted = attempted;
                 self.finished = true;
-                self.current = "Synthesis finished. Finalizing docs and index output.".to_string();
+                self.current = if stopped {
+                    "Stop requested, finalizing overlay docs and index output.".to_string()
+                } else {
+                    "Synthesis finished. Finalizing overlay docs and index output.".to_string()
+                };
                 self.push_recent(format!(
                     "Finished: refreshed {refreshed}, generated {seeded}, not generated {not_generated}."
                 ));
@@ -233,6 +250,7 @@ impl SynthesisProgressUi {
         &self,
         terminal: &mut SynthesisTerminal,
         tracker: &TelemetryTracker,
+        stop_requested: bool,
     ) -> anyhow::Result<()> {
         terminal.draw(|frame| {
             let area = frame.area();
@@ -241,7 +259,7 @@ impl SynthesisProgressUi {
                 .constraints([
                     Constraint::Length(6),
                     Constraint::Length(3),
-                    Constraint::Length(5),
+                    Constraint::Length(6),
                     Constraint::Min(0),
                 ])
                 .split(area);
@@ -266,7 +284,11 @@ impl SynthesisProgressUi {
             ])
             .block(
                 Block::default()
-                    .title(" synthesis ")
+                    .title(if stop_requested {
+                        " synthesis [stopping after current item] "
+                    } else {
+                        " synthesis [q/Esc stop after current item] "
+                    })
                     .borders(Borders::ALL)
                     .border_style(self.theme.border_style()),
             )
@@ -288,17 +310,18 @@ impl SynthesisProgressUi {
                         .border_style(self.theme.border_style()),
                 )
                 .gauge_style(self.theme.watch_active_style())
-                .label(format!(
-                    "{} attempted / <= {} planned",
-                    self.attempted, self.max_targets
+                .label(progress_label(
+                    self.attempted,
+                    self.max_targets,
+                    self.finished,
                 ))
                 .ratio(ratio);
             frame.render_widget(gauge, layout[1]);
 
             let usage = if tracker.total_calls() == 0 {
-                "no provider calls recorded yet".to_string()
+                tracker.usage_label()
             } else {
-                tracker.summary_label()
+                tracker.usage_label()
             };
             let status = Paragraph::new(vec![
                 Line::from(vec![
@@ -357,36 +380,4 @@ impl SynthesisProgressUi {
         }
         self.recent.push_back(line);
     }
-}
-
-fn render_target(item: &CommentaryWorkItem) -> String {
-    match &item.qualified_name {
-        Some(name) => format!("{} :: {}", item.path, name),
-        None => item.path.clone(),
-    }
-}
-
-fn start_label(item: &CommentaryWorkItem) -> &'static str {
-    match item.phase {
-        CommentaryWorkPhase::Refresh => "Refreshing stale commentary",
-        CommentaryWorkPhase::Seed => "Generating missing commentary",
-    }
-}
-
-fn success_label(phase: CommentaryWorkPhase) -> &'static str {
-    match phase {
-        CommentaryWorkPhase::Refresh => "refreshed",
-        CommentaryWorkPhase::Seed => "generated",
-    }
-}
-
-fn phase_summary_label(phase: CommentaryWorkPhase) -> &'static str {
-    match phase {
-        CommentaryWorkPhase::Refresh => "Refresh phase",
-        CommentaryWorkPhase::Seed => "Missing commentary phase",
-    }
-}
-
-fn provider_name(provider_label: &str) -> &str {
-    provider_label.split(" / ").next().unwrap_or(provider_label)
 }

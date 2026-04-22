@@ -172,7 +172,7 @@ fn provider_label(active: &ActiveProvider) -> String {
 fn api_status_line(status: &SynthesisStatus, provider: &str) -> String {
     match status {
         SynthesisStatus::Enabled => format!(
-            "yes, [{provider}] may be called for commentary generation and that may cost money depending on provider billing"
+            "yes, [{provider}] may be called to generate advisory commentary under .synrepo/, and that may cost money depending on provider billing"
         ),
         SynthesisStatus::Disabled => {
             "no, synthesis is disabled so no provider requests will be made".to_string()

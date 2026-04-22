@@ -288,7 +288,7 @@ pub fn build_commentary_generator(
                 let model = resolved
                     .model
                     .unwrap_or_else(|| anthropic::DEFAULT_MODEL.to_string());
-                tracing::info!("synthesis: anthropic (model: {})", model);
+                tracing::debug!("synthesis: anthropic (model: {})", model);
                 Box::new(anthropic::AnthropicCommentaryGenerator::new(
                     key,
                     model,
@@ -303,7 +303,7 @@ pub fn build_commentary_generator(
                 let model = resolved
                     .model
                     .unwrap_or_else(|| openai::DEFAULT_MODEL.to_string());
-                tracing::info!("synthesis: openai (model: {})", model);
+                tracing::debug!("synthesis: openai (model: {})", model);
                 openai::new_commentary(key, model, max_tokens_per_call)
             } else {
                 Box::new(NoOpGenerator)
@@ -314,7 +314,7 @@ pub fn build_commentary_generator(
                 let model = resolved
                     .model
                     .unwrap_or_else(|| gemini::DEFAULT_MODEL.to_string());
-                tracing::info!("synthesis: gemini (model: {})", model);
+                tracing::debug!("synthesis: gemini (model: {})", model);
                 Box::new(gemini::GeminiCommentaryGenerator::new(
                     key,
                     model,
@@ -329,7 +329,7 @@ pub fn build_commentary_generator(
                 let model = resolved
                     .model
                     .unwrap_or_else(|| openrouter::DEFAULT_MODEL.to_string());
-                tracing::info!("synthesis: openrouter (model: {})", model);
+                tracing::debug!("synthesis: openrouter (model: {})", model);
                 openrouter::new_commentary(key, model, max_tokens_per_call)
             } else {
                 Box::new(NoOpGenerator)
@@ -340,7 +340,7 @@ pub fn build_commentary_generator(
                 let model = resolved
                     .model
                     .unwrap_or_else(|| zai::DEFAULT_MODEL.to_string());
-                tracing::info!("synthesis: zai (model: {})", model);
+                tracing::debug!("synthesis: zai (model: {})", model);
                 zai::new_commentary(key, model, max_tokens_per_call)
             } else {
                 Box::new(NoOpGenerator)
@@ -351,7 +351,7 @@ pub fn build_commentary_generator(
                 let model = resolved
                     .model
                     .unwrap_or_else(|| minimax::DEFAULT_MODEL.to_string());
-                tracing::info!("synthesis: minimax (model: {})", model);
+                tracing::debug!("synthesis: minimax (model: {})", model);
                 minimax::new_commentary(key, model, max_tokens_per_call)
             } else {
                 Box::new(NoOpGenerator)
@@ -363,7 +363,7 @@ pub fn build_commentary_generator(
                 .unwrap_or_else(|| local::DEFAULT_MODEL.to_string());
             match resolved.local_endpoint {
                 Some(endpoint) => {
-                    tracing::info!(
+                    tracing::debug!(
                         "synthesis: local (model: {}, endpoint: {})",
                         model,
                         endpoint
@@ -375,7 +375,7 @@ pub fn build_commentary_generator(
                     ))
                 }
                 None => {
-                    tracing::info!("synthesis: local (model: {}, endpoint: default)", model);
+                    tracing::debug!("synthesis: local (model: {}, endpoint: default)", model);
                     Box::new(local::LocalCommentaryGenerator::new(
                         model,
                         max_tokens_per_call,
