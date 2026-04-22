@@ -39,9 +39,14 @@ pub(super) fn run_synthesize_tui(
         },
         Some(&mut should_stop),
     );
+    let (actions_taken, tracker) = result?;
+    // Redraw with final state so the user can see the result before we exit.
+    ui.set_finished_prompt();
+    let _ = ui.draw(&mut terminal, &tracker, stop.requested());
+    // Block until any keypress so the finished state is visible.
+    let _ = crossterm::event::read();
     let leave_result = leave_tui(&mut terminal);
     leave_result?;
-    let (actions_taken, tracker) = result?;
     let mut stdout = io::stdout().lock();
     let mut stderr = io::stderr().lock();
     render_telemetry_summary(&mut stderr, &tracker)?;
@@ -65,6 +70,7 @@ struct SynthesisProgressUi {
     current: String,
     phase_summary: String,
     finished: bool,
+    finished_prompt: bool,
     recent: VecDeque<String>,
 }
 
@@ -106,8 +112,13 @@ impl SynthesisProgressUi {
             current: "Planning commentary work under .synrepo/...".to_string(),
             phase_summary: String::new(),
             finished: false,
+            finished_prompt: false,
             recent: VecDeque::new(),
         }
+    }
+
+    fn set_finished_prompt(&mut self) {
+        self.finished_prompt = true;
     }
 
     fn apply_event(&mut self, event: CommentaryProgressEvent) {
@@ -276,7 +287,9 @@ impl SynthesisProgressUi {
             ])
             .block(
                 Block::default()
-                    .title(if stop_requested {
+                    .title(if self.finished_prompt {
+                        " synthesis complete [press any key to exit] "
+                    } else if stop_requested {
                         " synthesis [stopping after current item] "
                     } else {
                         " synthesis [q/Esc stop after current item] "

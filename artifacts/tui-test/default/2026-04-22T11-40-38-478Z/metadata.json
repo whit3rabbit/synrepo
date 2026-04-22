@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "sessionId": "default",
+  "capturedAt": "2026-04-22T11:40:38.478Z",
+  "mode": "buffer",
+  "exitCode": 0,
+  "dimensions": {
+    "cols": 120,
+    "rows": 36
+  },
+  "workspaceRoot": "/Users/whit3rabbit/Documents/GitHub/synrepo",
+  "artifactDir": "/Users/whit3rabbit/Documents/GitHub/synrepo/artifacts/tui-test/default/2026-04-22T11-40-38-478Z",
+  "relativeArtifactDir": "artifacts/tui-test/default/2026-04-22T11-40-38-478Z",
+  "files": {
+    "metadata": "/Users/whit3rabbit/Documents/GitHub/synrepo/artifacts/tui-test/default/2026-04-22T11-40-38-478Z/metadata.json",
+    "trace": "/Users/whit3rabbit/Documents/GitHub/synrepo/artifacts/tui-test/default/2026-04-22T11-40-38-478Z/trace.json",
+    "screen": "/Users/whit3rabbit/Documents/GitHub/synrepo/artifacts/tui-test/default/2026-04-22T11-40-38-478Z/screen.txt",
+    "transcript": "/Users/whit3rabbit/Documents/GitHub/synrepo/artifacts/tui-test/default/2026-04-22T11-40-38-478Z/transcript.ansi"
+  },
+  "relativeFiles": {
+    "metadata": "artifacts/tui-test/default/2026-04-22T11-40-38-478Z/metadata.json",
+    "trace": "artifacts/tui-test/default/2026-04-22T11-40-38-478Z/trace.json",
+    "screen": "artifacts/tui-test/default/2026-04-22T11-40-38-478Z/screen.txt",
+    "transcript": "artifacts/tui-test/default/2026-04-22T11-40-38-478Z/transcript.ansi"
+  },
+  "traceEventCount": 6,
+  "rendered": {
+    "format": "html",
+    "path": "/Users/whit3rabbit/Documents/GitHub/synrepo/artifacts/tui-test/default/2026-04-22T11-40-38-478Z/screen.html",
+    "relativePath": "artifacts/tui-test/default/2026-04-22T11-40-38-478Z/screen.html"
+  }
+}
