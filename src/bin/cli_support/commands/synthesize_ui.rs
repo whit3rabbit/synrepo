@@ -4,18 +4,18 @@ use std::path::Path;
 
 use crossterm::{
     execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Gauge, List, ListItem, Paragraph};
+use ratatui::Terminal;
 use synrepo::pipeline::repair::{CommentaryProgressEvent, CommentaryWorkItem, CommentaryWorkPhase};
 use synrepo::pipeline::synthesis::describe_active_provider;
 use synrepo::tui::theme::Theme;
 
-use super::synthesize::{SynthesizeRunContext, execute_synthesize_run, write_actions_taken};
+use super::synthesize::{execute_synthesize_run, write_actions_taken, SynthesizeRunContext};
 use super::synthesize_progress::render_telemetry_summary;
 use super::synthesize_tracker::TelemetryTracker;
 

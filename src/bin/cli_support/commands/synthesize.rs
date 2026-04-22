@@ -16,12 +16,13 @@ use synrepo::{
         git_intelligence::analyze_recent_history,
         maintenance::plan_maintenance,
         repair::{
-            ActionContext, CommentaryProgressEvent, CommentaryWorkItem, load_commentary_work_plan,
-            refresh_commentary,
+            load_commentary_work_plan, refresh_commentary, ActionContext, CommentaryProgressEvent,
+            CommentaryWorkItem,
         },
         synthesis::{
-            SynthesisStatus, describe_active_provider,
+            describe_active_provider,
             telemetry::{self},
+            SynthesisStatus,
         },
         writer::{acquire_write_admission, map_lock_error},
     },
@@ -46,12 +47,34 @@ pub(crate) fn synthesize(
     changed: bool,
     dry_run: bool,
 ) -> anyhow::Result<()> {
+    synthesize_with_mode(repo_root, paths, changed, dry_run, true)
+}
+
+/// Refresh commentary synthesis without re-entering the progress alt-screen.
+/// Used by the dashboard handoff, which has already exited its own TUI and
+/// should run the plain command output directly in the calling terminal.
+pub(crate) fn synthesize_without_tui(
+    repo_root: &Path,
+    paths: Vec<String>,
+    changed: bool,
+    dry_run: bool,
+) -> anyhow::Result<()> {
+    synthesize_with_mode(repo_root, paths, changed, dry_run, false)
+}
+
+fn synthesize_with_mode(
+    repo_root: &Path,
+    paths: Vec<String>,
+    changed: bool,
+    dry_run: bool,
+    allow_tui: bool,
+) -> anyhow::Result<()> {
     let context = load_run_context(repo_root, paths, changed)?;
     if context.changed_scope_is_empty() {
         println!("No changed files found in last 50 commits, nothing to refresh.");
         return Ok(());
     }
-    if !dry_run && std::io::stdout().is_terminal() && std::io::stderr().is_terminal() {
+    if allow_tui && !dry_run && std::io::stdout().is_terminal() && std::io::stderr().is_terminal() {
         match run_synthesize_tui(repo_root, context.clone()) {
             Ok(()) => return Ok(()),
             Err(err) => {

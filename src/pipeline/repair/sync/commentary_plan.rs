@@ -150,7 +150,8 @@ pub(crate) fn build_commentary_work_plan(
         let Some(snap) = resolve_commentary_node(graph, node_id)? else {
             continue;
         };
-        if !in_scope(&snap.file.path, scope_prefixes.as_deref()) || snap.content_hash == *stored_hash
+        if !in_scope(&snap.file.path, scope_prefixes.as_deref())
+            || snap.content_hash == *stored_hash
         {
             continue;
         }

@@ -18,6 +18,7 @@ mod setup_synthesis;
 mod status;
 mod synthesize;
 mod synthesize_progress;
+mod synthesize_status;
 mod synthesize_tracker;
 mod synthesize_ui;
 mod upgrade;
@@ -29,12 +30,12 @@ pub(crate) use basic::{agent_setup, change_risk, init};
 pub(crate) use compact::compact;
 pub(crate) use export::export;
 pub(crate) use handoffs::handoffs;
+pub(crate) use links::{findings, links_accept, links_list, links_reject, links_review};
 #[cfg(test)]
 pub(crate) use links::{
-    CommitArgs, LinksCommitStore, RealLinksStore, findings_output, links_accept_commit,
-    links_list_output, links_review_output,
+    findings_output, links_accept_commit, links_list_output, links_review_output, CommitArgs,
+    LinksCommitStore, RealLinksStore,
 };
-pub(crate) use links::{findings, links_accept, links_list, links_reject, links_review};
 #[cfg(test)]
 pub(crate) use mcp::prepare_state as prepare_mcp_state;
 pub(crate) use mcp::run_mcp_server;
@@ -43,8 +44,8 @@ pub(crate) use repair::{check, reconcile, sync};
 pub(crate) use setup::setup;
 #[cfg(test)]
 pub(crate) use setup::{
-    StepOutcome, setup_claude_mcp, setup_codex_mcp, setup_cursor_mcp, setup_opencode_mcp,
-    setup_roo_mcp, setup_windsurf_mcp,
+    setup_claude_mcp, setup_codex_mcp, setup_cursor_mcp, setup_opencode_mcp, setup_roo_mcp,
+    setup_windsurf_mcp, StepOutcome,
 };
 pub(crate) use setup::{
     step_apply_integration, step_ensure_ready, step_init, step_register_mcp, step_write_shim,
@@ -55,6 +56,10 @@ pub(crate) use status::{status, status_output};
 pub(crate) use synthesize::synthesize;
 #[cfg(test)]
 pub(crate) use synthesize::synthesize_output;
+pub(crate) use synthesize::synthesize_without_tui;
+pub(crate) use synthesize_status::synthesize_status;
+#[cfg(test)]
+pub(crate) use synthesize_status::synthesize_status_output;
 #[cfg(test)]
 pub(crate) use upgrade::report_reconcile_outcome;
 pub(crate) use upgrade::upgrade;

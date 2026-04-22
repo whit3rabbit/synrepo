@@ -5,12 +5,14 @@
 mod confirm_stop_watch;
 mod synthesis_events;
 mod synthesis_picker;
+mod synthesis_preview;
 mod view_state;
 mod watch_events;
 
 pub use confirm_stop_watch::{describe_pending_mode, ConfirmStopWatchState};
 pub use synthesis_events::synthesis_event_to_log_entry;
 pub use synthesis_picker::{FolderEntry, FolderPickerState};
+pub use synthesis_preview::{SynthesisPreviewPanel, SynthesisPreviewState};
 pub use view_state::ActiveTab;
 pub use watch_events::watch_event_to_log_entry;
 
@@ -121,6 +123,8 @@ pub struct AppState {
     /// which top-level directories to scope `synrepo synthesize` to; cleared
     /// on Esc, Enter, or any tab switch.
     pub picker: Option<FolderPickerState>,
+    /// Cached synthesize-status preview used by the Synthesis tab.
+    pub synthesis_preview: Option<SynthesisPreviewPanel>,
     /// Currently selected dashboard tab.
     pub active_tab: ActiveTab,
     /// Rows-up-from-bottom for the Live tab. `0` pins the view to the newest
@@ -142,6 +146,9 @@ pub struct AppState {
     pub snapshot_refresh_interval: Duration,
     /// Last time we rebuilt the snapshot.
     last_refresh: Instant,
+    /// How long a cached synthesis preview stays fresh while the Synthesis
+    /// tab is open before we recompute it.
+    pub synthesis_preview_refresh_interval: Duration,
     /// Transient footer message. Set by `r` so a refresh gives the operator
     /// confirmation even when the snapshot was already current.
     toast: Option<(String, Instant)>,
@@ -275,6 +282,7 @@ impl AppState {
             synthesis_stopped_watch: false,
             confirm_stop_watch: None,
             picker: None,
+            synthesis_preview: None,
             active_tab: ActiveTab::Live,
             scroll_offset: 0,
             follow_mode: true,
@@ -283,6 +291,7 @@ impl AppState {
             poll_timeout: Duration::from_millis(125),
             snapshot_refresh_interval: Duration::from_secs(2),
             last_refresh: Instant::now(),
+            synthesis_preview_refresh_interval: Duration::from_secs(10),
             toast: None,
             events_rx,
             synthesis_rx: telemetry::subscribe(),
@@ -402,6 +411,9 @@ impl AppState {
             },
         );
         self.quick_actions = quick_actions_for(&self.mode, &self.snapshot);
+        if matches!(self.active_tab, ActiveTab::Synthesis) {
+            self.refresh_synthesis_preview(false);
+        }
         self.last_refresh = Instant::now();
     }
 

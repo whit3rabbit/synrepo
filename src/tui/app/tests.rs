@@ -212,6 +212,10 @@ fn handle_key_switches_tabs() {
     assert_eq!(state.active_tab, ActiveTab::Health);
     state.handle_key(KeyCode::Char('3'), KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Synthesis);
+    assert!(
+        state.synthesis_preview.is_some(),
+        "entering the Synthesis tab should load the inline preview"
+    );
     state.handle_key(KeyCode::Char('4'), KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Actions);
     state.handle_key(KeyCode::Char('1'), KeyModifiers::NONE);
