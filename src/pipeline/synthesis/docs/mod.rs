@@ -9,5 +9,8 @@ pub use corpus::{
     reconcile_commentary_docs, repo_relative_doc_path, upsert_commentary_doc,
     CommentaryDocSymbolMetadata,
 };
-pub use index::{search_commentary_index, sync_commentary_index};
+pub use index::{
+    search_commentary_index, sync_commentary_index, CommentaryIndexSyncMode,
+    CommentaryIndexSyncSummary,
+};
 pub use search::{search_commentary_docs, CommentaryDocHit};

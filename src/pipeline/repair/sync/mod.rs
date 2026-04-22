@@ -3,9 +3,14 @@
 //! - `handlers.rs` — action handlers extracted from sync.rs
 
 mod commentary;
+mod commentary_plan;
 pub mod handlers;
 
-pub use commentary::{normalize_scope_prefixes, path_matches_any_prefix, refresh_commentary};
+pub use commentary::refresh_commentary;
+pub use commentary_plan::{
+    load_commentary_work_plan, normalize_scope_prefixes, path_matches_any_prefix,
+    CommentaryProgressEvent, CommentaryWorkItem, CommentaryWorkPhase, CommentaryWorkPlan,
+};
 pub use handlers::ActionContext;
 
 use std::path::Path;

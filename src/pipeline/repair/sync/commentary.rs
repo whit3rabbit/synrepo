@@ -1,7 +1,7 @@
 //! Commentary refresh helpers for repair sync.
 
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use crate::{
@@ -11,7 +11,10 @@ use crate::{
         repair::commentary::{resolve_commentary_node, CommentaryNodeSnapshot},
         synthesis::{
             build_commentary_generator,
-            docs::{reconcile_commentary_docs, sync_commentary_index},
+            docs::{
+                docs_root, index_dir, reconcile_commentary_docs, sync_commentary_index,
+                CommentaryIndexSyncMode,
+            },
             CommentaryGenerator,
         },
     },
@@ -19,6 +22,10 @@ use crate::{
 };
 
 use super::handlers::ActionContext;
+use super::commentary_plan::{
+    build_commentary_work_plan, CommentaryProgressEvent, CommentaryWorkItem,
+    CommentaryWorkPhase, CommentaryWorkPlan,
+};
 
 /// Generate or refresh commentary entries.
 ///
@@ -31,120 +38,290 @@ pub fn refresh_commentary(
     context: &ActionContext<'_>,
     actions_taken: &mut Vec<String>,
     scope: Option<&[PathBuf]>,
+    progress: Option<&mut dyn FnMut(CommentaryProgressEvent)>,
 ) -> crate::Result<()> {
     let overlay_dir = context.synrepo_dir.join("overlay");
     let mut overlay = SqliteOverlayStore::open(&overlay_dir)?;
     let graph = SqliteGraphStore::open_existing(&context.synrepo_dir.join("graph"))?;
     let generator: Box<dyn CommentaryGenerator> =
         build_commentary_generator(context.config, context.config.commentary_cost_limit);
-
-    let scope_prefixes: Option<Vec<String>> = scope.map(normalize_scope_prefixes);
-
-    // Phase 1: refresh existing stale entries.
     let rows = overlay.commentary_hashes()?;
+    let plan = build_commentary_work_plan(&graph, &rows, scope)?;
+    refresh_commentary_with_generator(
+        context,
+        actions_taken,
+        &graph,
+        &mut overlay,
+        &*generator,
+        rows,
+        plan,
+        progress,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn refresh_commentary_with_generator(
+    context: &ActionContext<'_>,
+    actions_taken: &mut Vec<String>,
+    graph: &SqliteGraphStore,
+    overlay: &mut SqliteOverlayStore,
+    generator: &dyn CommentaryGenerator,
+    rows: Vec<(String, String)>,
+    plan: CommentaryWorkPlan,
+    mut progress: Option<&mut dyn FnMut(CommentaryProgressEvent)>,
+) -> crate::Result<()> {
+    emit(
+        &mut progress,
+        CommentaryProgressEvent::PlanReady {
+            refresh: plan.refresh_count(),
+            file_seeds: plan.file_seed_count(),
+            symbol_seed_candidates: plan.symbol_seed_candidate_count(),
+            max_targets: plan.max_target_count(),
+        },
+    );
+
+    let docs_root_path = docs_root(context.synrepo_dir);
+    let docs_symbols_dir = docs_root_path.join("symbols");
+    let index_dir_path = index_dir(context.synrepo_dir);
+    let docs_root_existed = docs_root_path.exists();
+    let docs_symbols_existed = docs_symbols_dir.exists();
+    let index_dir_existed = index_dir_path.exists();
+
     let mut commented: HashSet<NodeId> = rows
         .iter()
         .filter_map(|(id, _)| NodeId::from_str(id).ok())
         .collect();
+    let mut attempted = 0usize;
     let mut refreshed = 0usize;
-    let mut skipped = 0usize;
-    let mut out_of_scope = 0usize;
-
-    for (node_id_str, stored_hash) in &rows {
-        let Ok(node_id) = NodeId::from_str(node_id_str) else {
-            skipped += 1;
-            continue;
-        };
-        let Some(snap) = resolve_commentary_node(&graph, node_id)? else {
-            skipped += 1;
-            continue;
-        };
-        if !in_scope(&snap.file.path, scope_prefixes.as_deref()) {
-            out_of_scope += 1;
-            continue;
-        }
-        if snap.content_hash == *stored_hash {
-            continue;
-        }
-        if generate_and_insert(&*generator, &mut overlay, node_id, &snap)? {
-            refreshed += 1;
-        } else {
-            skipped += 1;
-        }
-    }
-
-    // Phase 2: seed commentary for nodes that lack an overlay entry.
     let mut seeded = 0usize;
-    let mut seed_skipped = 0usize;
+    let mut not_generated = 0usize;
+    let mut refresh_attempted = 0usize;
+    let mut refresh_generated = 0usize;
+    let mut seed_attempted = 0usize;
+    let mut seed_generated = 0usize;
 
-    let file_nodes = graph.all_file_paths()?;
-    let symbol_nodes = graph.all_symbols_summary()?;
-
-    for (path, file_id) in &file_nodes {
-        let node_id = NodeId::File(*file_id);
-        if commented.contains(&node_id) {
-            continue;
-        }
-        if !in_scope(path, scope_prefixes.as_deref()) {
-            continue;
-        }
-        let Some(snap) = resolve_commentary_node(&graph, node_id)? else {
-            continue;
-        };
-        if generate_and_insert(&*generator, &mut overlay, node_id, &snap)? {
-            commented.insert(node_id);
-            seeded += 1;
+    for item in &plan.refresh {
+        attempted += 1;
+        refresh_attempted += 1;
+        emit_target_started(&mut progress, item, attempted);
+        let generated = execute_item(graph, overlay, generator, item)?;
+        if generated {
+            refreshed += 1;
+            refresh_generated += 1;
         } else {
-            seed_skipped += 1;
+            not_generated += 1;
         }
+        emit_target_finished(&mut progress, item, attempted, generated);
     }
 
-    for (sym_id, _file_id, qualified_name, _kind, _body_hash) in &symbol_nodes {
-        if qualified_name.is_empty() {
+    emit(
+        &mut progress,
+        CommentaryProgressEvent::PhaseSummary {
+            phase: CommentaryWorkPhase::Refresh,
+            attempted: refresh_attempted,
+            generated: refresh_generated,
+            not_generated: refresh_attempted.saturating_sub(refresh_generated),
+        },
+    );
+
+    for item in &plan.file_seeds {
+        if commented.contains(&item.node_id) {
             continue;
         }
-        let node_id = NodeId::Symbol(*sym_id);
-        if commented.contains(&node_id) {
-            continue;
-        }
-        let Some(snap) = resolve_commentary_node(&graph, node_id)? else {
-            continue;
-        };
-        if !in_scope(&snap.file.path, scope_prefixes.as_deref()) {
-            continue;
-        }
-        // Skip symbols whose containing file already has commentary covering
-        // the same source context, including files seeded in the loop above.
-        if commented.contains(&NodeId::File(snap.file.id)) {
-            continue;
-        }
-        if generate_and_insert(&*generator, &mut overlay, node_id, &snap)? {
-            commented.insert(node_id);
+        attempted += 1;
+        seed_attempted += 1;
+        emit_target_started(&mut progress, item, attempted);
+        let generated = execute_item(graph, overlay, generator, item)?;
+        if generated {
+            commented.insert(item.node_id);
             seeded += 1;
+            seed_generated += 1;
         } else {
-            seed_skipped += 1;
+            not_generated += 1;
         }
+        emit_target_finished(&mut progress, item, attempted, generated);
     }
 
-    let touched = reconcile_commentary_docs(context.synrepo_dir, &graph, Some(&overlay))?;
-    sync_commentary_index(context.synrepo_dir, &touched)?;
+    for item in &plan.symbol_seed_candidates {
+        if commented.contains(&item.node_id) || commented.contains(&NodeId::File(item.file_id)) {
+            continue;
+        }
+        attempted += 1;
+        seed_attempted += 1;
+        emit_target_started(&mut progress, item, attempted);
+        let generated = execute_item(graph, overlay, generator, item)?;
+        if generated {
+            commented.insert(item.node_id);
+            seeded += 1;
+            seed_generated += 1;
+        } else {
+            not_generated += 1;
+        }
+        emit_target_finished(&mut progress, item, attempted, generated);
+    }
 
-    let scope_note = if scope_prefixes.is_some() {
-        format!(", {out_of_scope} outside scope")
-    } else {
-        String::new()
-    };
+    emit(
+        &mut progress,
+        CommentaryProgressEvent::PhaseSummary {
+            phase: CommentaryWorkPhase::Seed,
+            attempted: seed_attempted,
+            generated: seed_generated,
+            not_generated: seed_attempted.saturating_sub(seed_generated),
+        },
+    );
+
+    let touched = reconcile_commentary_docs(context.synrepo_dir, graph, Some(overlay))?;
+    let index_summary = sync_commentary_index(context.synrepo_dir, &touched)?;
+    emit_docs_events(
+        &mut progress,
+        &docs_root_path,
+        &docs_symbols_dir,
+        docs_root_existed,
+        docs_symbols_existed,
+        &touched,
+    );
+    emit_index_events(
+        &mut progress,
+        &index_dir_path,
+        index_dir_existed,
+        index_summary.mode,
+        index_summary.touched_paths,
+    );
+
+    emit(
+        &mut progress,
+        CommentaryProgressEvent::RunSummary {
+            refreshed,
+            seeded,
+            not_generated,
+            attempted,
+        },
+    );
     actions_taken.push(format!(
-        "commentary: {seeded} seeded, {refreshed} refreshed, {} skipped{scope_note}",
-        skipped + seed_skipped,
+        "commentary: {seeded} seeded, {refreshed} refreshed, {not_generated} not generated"
     ));
     Ok(())
 }
 
-fn in_scope(path: &str, prefixes: Option<&[String]>) -> bool {
-    match prefixes {
-        None => true,
-        Some(p) => path_matches_any_prefix(path, p),
+fn execute_item(
+    graph: &SqliteGraphStore,
+    overlay: &mut SqliteOverlayStore,
+    generator: &dyn CommentaryGenerator,
+    item: &CommentaryWorkItem,
+) -> crate::Result<bool> {
+    let Some(snap) = resolve_commentary_node(graph, item.node_id)? else {
+        return Ok(false);
+    };
+    generate_and_insert(generator, overlay, item.node_id, &snap)
+}
+
+fn emit(
+    progress: &mut Option<&mut dyn FnMut(CommentaryProgressEvent)>,
+    event: CommentaryProgressEvent,
+) {
+    if let Some(progress) = progress.as_mut() {
+        progress(event);
+    }
+}
+
+fn emit_target_started(
+    progress: &mut Option<&mut dyn FnMut(CommentaryProgressEvent)>,
+    item: &CommentaryWorkItem,
+    current: usize,
+) {
+    emit(
+        progress,
+        CommentaryProgressEvent::TargetStarted {
+            item: item.clone(),
+            current,
+        },
+    );
+}
+
+fn emit_target_finished(
+    progress: &mut Option<&mut dyn FnMut(CommentaryProgressEvent)>,
+    item: &CommentaryWorkItem,
+    current: usize,
+    generated: bool,
+) {
+    emit(
+        progress,
+        CommentaryProgressEvent::TargetFinished {
+            item: item.clone(),
+            current,
+            generated,
+        },
+    );
+}
+
+fn emit_docs_events(
+    progress: &mut Option<&mut dyn FnMut(CommentaryProgressEvent)>,
+    docs_root_path: &Path,
+    docs_symbols_dir: &Path,
+    docs_root_existed: bool,
+    docs_symbols_existed: bool,
+    touched: &[PathBuf],
+) {
+    if !docs_root_existed && docs_root_path.exists() {
+        emit(
+            progress,
+            CommentaryProgressEvent::DocsDirCreated {
+                path: docs_root_path.to_path_buf(),
+            },
+        );
+    }
+    if !docs_symbols_existed && docs_symbols_dir.exists() {
+        emit(
+            progress,
+            CommentaryProgressEvent::DocsDirCreated {
+                path: docs_symbols_dir.to_path_buf(),
+            },
+        );
+    }
+
+    let mut touched_sorted = touched.to_vec();
+    touched_sorted.sort();
+    for path in touched_sorted {
+        let event = if path.exists() {
+            CommentaryProgressEvent::DocWritten { path }
+        } else {
+            CommentaryProgressEvent::DocDeleted { path }
+        };
+        emit(progress, event);
+    }
+}
+
+fn emit_index_events(
+    progress: &mut Option<&mut dyn FnMut(CommentaryProgressEvent)>,
+    index_dir_path: &Path,
+    index_dir_existed: bool,
+    mode: CommentaryIndexSyncMode,
+    touched_paths: usize,
+) {
+    if !index_dir_existed && index_dir_path.exists() {
+        emit(
+            progress,
+            CommentaryProgressEvent::IndexDirCreated {
+                path: index_dir_path.to_path_buf(),
+            },
+        );
+    }
+    match mode {
+        CommentaryIndexSyncMode::NoChange => {}
+        CommentaryIndexSyncMode::Updated => emit(
+            progress,
+            CommentaryProgressEvent::IndexUpdated {
+                path: index_dir_path.to_path_buf(),
+                touched_paths,
+            },
+        ),
+        CommentaryIndexSyncMode::Rebuilt => emit(
+            progress,
+            CommentaryProgressEvent::IndexRebuilt {
+                path: index_dir_path.to_path_buf(),
+                touched_paths,
+            },
+        ),
     }
 }
 
@@ -176,68 +353,5 @@ fn build_context_text(snap: &CommentaryNodeSnapshot) -> String {
             sym.doc_comment.clone().unwrap_or_default(),
         ),
         None => format!("File: {}", snap.file.path),
-    }
-}
-
-/// Convert scope `PathBuf`s into `/`-normalized, trailing-slash-terminated
-/// string prefixes so a prefix-match cannot spuriously accept sibling
-/// directories (`src` matching `src-extra/...`).
-pub fn normalize_scope_prefixes(paths: &[PathBuf]) -> Vec<String> {
-    paths
-        .iter()
-        .map(|p| {
-            let mut s = p.to_string_lossy().replace('\\', "/");
-            if !s.is_empty() && !s.ends_with('/') {
-                s.push('/');
-            }
-            s
-        })
-        .collect()
-}
-
-/// True if `file_path` (stored as recorded in the graph, possibly with
-/// backslashes on Windows) starts with any of the normalized prefixes.
-pub fn path_matches_any_prefix(file_path: &str, prefixes: &[String]) -> bool {
-    let normalized = file_path.replace('\\', "/");
-    prefixes.iter().any(|p| normalized.starts_with(p.as_str()))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn prefix_is_terminated_with_slash() {
-        let prefixes = normalize_scope_prefixes(&[PathBuf::from("src")]);
-        assert_eq!(prefixes, vec!["src/".to_string()]);
-    }
-
-    #[test]
-    fn prefix_sibling_does_not_match() {
-        let prefixes = normalize_scope_prefixes(&[PathBuf::from("src")]);
-        assert!(path_matches_any_prefix("src/lib.rs", &prefixes));
-        assert!(!path_matches_any_prefix("src-extra/lib.rs", &prefixes));
-    }
-
-    #[test]
-    fn backslash_paths_match_forward_slash_prefix() {
-        let prefixes = normalize_scope_prefixes(&[PathBuf::from("src")]);
-        assert!(path_matches_any_prefix("src\\lib.rs", &prefixes));
-    }
-
-    #[test]
-    fn empty_scope_matches_nothing() {
-        let prefixes = normalize_scope_prefixes(&[]);
-        assert!(!path_matches_any_prefix("src/lib.rs", &prefixes));
-    }
-
-    #[test]
-    fn nested_prefix_match() {
-        let prefixes = normalize_scope_prefixes(&[PathBuf::from("crates/core/src")]);
-        assert!(path_matches_any_prefix("crates/core/src/lib.rs", &prefixes));
-        assert!(!path_matches_any_prefix(
-            "crates/core/tests/a.rs",
-            &prefixes
-        ));
     }
 }

@@ -11,8 +11,28 @@ use walkdir::WalkDir;
 use super::corpus::{docs_root, index_dir};
 use crate::substrate::incremental::should_rebuild;
 
+/// How the commentary-doc index was maintained on this call.
+#[allow(missing_docs)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CommentaryIndexSyncMode {
+    NoChange,
+    Updated,
+    Rebuilt,
+}
+
+/// Small summary for callers that want to surface index maintenance progress.
+#[allow(missing_docs)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CommentaryIndexSyncSummary {
+    pub mode: CommentaryIndexSyncMode,
+    pub touched_paths: usize,
+}
+
 /// Incrementally sync the commentary-doc index, rebuilding when necessary.
-pub fn sync_commentary_index(synrepo_dir: &Path, touched_paths: &[PathBuf]) -> crate::Result<()> {
+pub fn sync_commentary_index(
+    synrepo_dir: &Path,
+    touched_paths: &[PathBuf],
+) -> crate::Result<CommentaryIndexSyncSummary> {
     let docs_root = docs_root(synrepo_dir);
     fs::create_dir_all(&docs_root)?;
     let index_dir = index_dir(synrepo_dir);
@@ -20,18 +40,27 @@ pub fn sync_commentary_index(synrepo_dir: &Path, touched_paths: &[PathBuf]) -> c
 
     if !manifest_path(&index_dir).exists() {
         rebuild_commentary_index(&docs_root, &index_dir)?;
-        return Ok(());
+        return Ok(CommentaryIndexSyncSummary {
+            mode: CommentaryIndexSyncMode::Rebuilt,
+            touched_paths: touched_paths.len(),
+        });
     }
 
     if touched_paths.is_empty() {
-        return Ok(());
+        return Ok(CommentaryIndexSyncSummary {
+            mode: CommentaryIndexSyncMode::NoChange,
+            touched_paths: 0,
+        });
     }
 
     let index = match Index::open(config.clone()) {
         Ok(index) => index,
         Err(err) if should_rebuild(&err) => {
             rebuild_commentary_index(&docs_root, &index_dir)?;
-            return Ok(());
+            return Ok(CommentaryIndexSyncSummary {
+                mode: CommentaryIndexSyncMode::Rebuilt,
+                touched_paths: touched_paths.len(),
+            });
         }
         Err(err) => return Err(map_index_error(err)),
     };
@@ -50,13 +79,19 @@ pub fn sync_commentary_index(synrepo_dir: &Path, touched_paths: &[PathBuf]) -> c
             if let Err(err) = index.maybe_compact() {
                 tracing::warn!(error = %err, "commentary-doc index compaction skipped");
             }
-            Ok(())
+            Ok(CommentaryIndexSyncSummary {
+                mode: CommentaryIndexSyncMode::Updated,
+                touched_paths: touched_paths.len(),
+            })
         }
         Err(err)
             if should_rebuild(&err) || matches!(err, syntext::IndexError::OverlayFull { .. }) =>
         {
             rebuild_commentary_index(&docs_root, &index_dir)?;
-            Ok(())
+            Ok(CommentaryIndexSyncSummary {
+                mode: CommentaryIndexSyncMode::Rebuilt,
+                touched_paths: touched_paths.len(),
+            })
         }
         Err(err) => Err(map_index_error(err)),
     }
