@@ -97,22 +97,55 @@ These must hold across all changes:
 
 ### File size and module structure
 
-- **Every `.rs` file must stay under 400 lines.** Split into a sub-module directory before exceeding that limit. **Over-limit (split before adding):**
-  - `src/pipeline/watch/lease.rs` (651)
+- **Every `.rs` file must stay under 400 lines.** Split into a sub-module directory before exceeding that limit. **Over-limit (split before adding, rated by ease of split):**
+
+  **Easy** (clear natural boundaries):
+  - `src/pipeline/synthesis/providers/mod.rs` (839) — provider dispatch, config, selection cleanly separable
+  - `src/bin/cli.rs` (687) — commands cleanly dispatched to handler functions
+  - `src/pipeline/synthesis/telemetry.rs` (631) — event defs, publication, accounting separable
+  - `src/tui/wizard/setup/synthesis.rs` (568) — provider enum and config handling separable
+  - `src/pipeline/repair/cross_link_verify.rs` (532) — verification and hash computation separable
+  - `src/pipeline/synthesis/providers/local.rs` (529) — HTTP client, Ollama vs OpenAI paths separable
+  - `src/pipeline/synthesis/providers/gemini.rs` (506) — generator impl, URL building, token counting
+  - `src/pipeline/synthesis/accounting.rs` (501) — data structs and file I/O separable
+  - `src/pipeline/synthesis/providers/openrouter.rs` (489) — standard provider pattern
+  - `src/pipeline/synthesis/providers/anthropic.rs` (471) — generator, token counting, API constants
+  - `src/bin/cli_support/agent_shims/shims.rs` (449) — static strings, per-tool sections distinct
+  - `src/pipeline/synthesis/providers/minimax.rs` (419) — standard provider pattern
+  - `src/pipeline/synthesis/providers/zai.rs` (417) — OpenAI-compatible pattern
+  - `src/pipeline/synthesis/providers/openai.rs` (413) — standard request/response pattern
+
+  **Medium** (separable but interdependent):
+  - `src/bootstrap/runtime_probe.rs` (757) — distinct probe phases mixed in one file
+  - `src/tui/actions.rs` (702) — actions grouped by feature but overlapping error handling
+  - `src/tui/app/mod.rs` (651) — prefer new `src/tui/app/` submodule over growing further
+  - `src/overlay/mod.rs` (579) — epistemic kinds, edge kinds, cited spans could split out
+  - `src/tui/mod.rs` (543) — components already partially modularized
+  - `src/tui/wizard/setup/state.rs` (518) — data structs mixed with wizard transition logic
+  - `src/bin/cli_support/commands/setup.rs` (465) — step outcomes mixed with setup logic
+  - `src/bin/cli_support/commands/status/mod.rs` (463)
+  - `src/bin/cli_support/cli_args.rs` (455)
+  - `src/tui/probe.rs` (426) — view models mixed with conversion logic
+  - `src/surface/card/compiler/public_api.rs` (417) — compilation mixed with per-language visibility rules
+  - `src/bin/cli_support/commands/synthesize_progress.rs` (411) — progress rendering mixed with telemetry
+
+  **Hard** (tightly coupled, needs design thought):
+  - `src/pipeline/structural/stage4.rs` (820) — monolithic resolution algorithm with coupled scoring
+  - `src/surface/status_snapshot.rs` (446) — complex data structures mixed with snapshot building
+
+  **Not yet rated** (previously tracked):
   - `src/pipeline/maintenance.rs` (622)
-  - `src/tui/app/mod.rs` (622) — prefer a new `src/tui/app/` submodule (see below) over growing this further
   - `src/pipeline/compact.rs` (563)
+  - `src/pipeline/watch/lease.rs` (558)
   - `src/pipeline/diagnostics.rs` (540)
   - `src/substrate/embedding/index.rs` (535)
-  - `src/config/mod.rs` (528)
+  - `src/config/mod.rs` (598)
   - `src/structure/identity.rs` (517)
   - `src/pipeline/structural/stages.rs` (501)
   - `src/pipeline/synthesis/cross_link/triage/deterministic.rs` (470)
-  - `src/bin/cli_support/commands/status/mod.rs` (453)
   - `src/surface/card/git.rs` (446)
-  - `src/bin/cli_support/cli_args.rs` (434)
 
-  **Watchlist (approaching limit):** `src/tui/app/synthesis_picker.rs` (391), `src/structure/graph/store.rs` (369), `src/pipeline/recent_activity/mod.rs` (364), `src/surface/card/compiler/call_path.rs` (358).
+  **Watchlist (370-399, approaching limit):** `src/pipeline/watch/service.rs` (391), `src/pipeline/synthesis/docs/corpus.rs` (391), `src/tui/app/synthesis_picker.rs` (390), `src/pipeline/writer/helpers.rs` (390), `src/substrate/incremental.rs` (387), `src/pipeline/git/mod.rs` (382), `src/tui/wizard/setup/render/synthesis.rs` (381), `src/bin/cli_support/commands/watch.rs` (375), `src/substrate/index.rs` (374), `src/bin/cli_support/commands/synthesize_ui.rs` (374), `src/store/overlay/commentary.rs` (372), `src/tui/watcher.rs` (371).
 
 - **`src/structure/parse/extract/` is already a sub-module directory** (`mod.rs` ~363 lines, `qualname.rs` ~88). Do not add more code to `mod.rs` without splitting further.
 - **`src/tui/app/` sub-modules can own `impl AppState` blocks** for feature-specific state and handlers (see `synthesis_picker.rs` for the folder-picker modal). Keep `AppState` fields on the struct in `mod.rs`; put feature methods, helpers, and tests in the submodule.

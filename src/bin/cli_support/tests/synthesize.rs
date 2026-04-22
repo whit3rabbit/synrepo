@@ -64,7 +64,7 @@ fn synthesize_dry_run_reports_missing_file_seed_targets() {
 
     let (stdout, stderr) = synthesize_output(&repo, Vec::new(), false, true).unwrap();
     assert!(
-        stdout.contains("file seed targets: 1"),
+        stdout.contains("files missing commentary: 1"),
         "expected file seed count in dry-run output, got: {stdout}"
     );
     assert!(
@@ -87,7 +87,7 @@ fn synthesize_dry_run_reports_missing_symbol_seed_candidates() {
 
     let (stdout, _) = synthesize_output(&repo, Vec::new(), false, true).unwrap();
     assert!(
-        stdout.contains("symbol seed candidates: 1"),
+        stdout.contains("symbols missing commentary: 1"),
         "expected symbol seed candidate count, got: {stdout}"
     );
     assert!(
@@ -114,18 +114,40 @@ fn synthesize_emits_live_progress_and_writes_accounting() {
     server.join().expect("join synthesis stub");
 
     assert!(
-        stderr.contains("plan: refresh=1 file_seeds=0 symbol_seed_candidates=0 max_targets=1"),
+        stderr.contains(
+            "plan: 1 stale item(s), 0 file(s) missing commentary, 0 symbol candidate(s) missing commentary, up to 1 target(s)"
+        ),
         "expected planned-work line, got: {stderr}"
     );
+    assert!(
+        stderr.contains("synthesis: refresh stale commentary and generate missing commentary"),
+        "expected run intro in stderr, got: {stderr}"
+    );
+    assert!(
+        stderr.contains(
+            "api calls: yes, synrepo will send commentary requests to [local], and those requests may cost money depending on your provider billing"
+        ),
+        "expected api cost guidance in stderr, got: {stderr}"
+    );
+    assert!(
+        stderr.contains(
+            "output files: markdown commentary files under .synrepo/synthesis-docs/ plus the searchable commentary index under .synrepo/synthesis-index/"
+        ),
+        "expected output file guidance in stderr, got: {stderr}"
+    );
     let start = stderr
-        .find(&format!("[1] refresh start: src/lib.rs :: {symbol_name}"))
+        .find(&format!(
+            "[1 / <= 1] [local API] refresh stale commentary: src/lib.rs :: {symbol_name}"
+        ))
         .expect("missing start progress line");
     let done = stderr
-        .find(&format!("[1] refresh ok: src/lib.rs :: {symbol_name}"))
+        .find(&format!(
+            "[1 / <= 1] [local API] refreshed: src/lib.rs :: {symbol_name}"
+        ))
         .expect("missing finish progress line");
     assert!(start < done, "start should appear before finish: {stderr}");
     assert!(
-        stderr.contains("write .synrepo/synthesis-docs/symbols/"),
+        stderr.contains("output file: .synrepo/synthesis-docs/symbols/"),
         "expected doc write line in stderr, got: {stderr}"
     );
     assert!(
@@ -133,7 +155,7 @@ fn synthesize_emits_live_progress_and_writes_accounting() {
         "expected symbol docs dir creation in stderr, got: {stderr}"
     );
     assert!(
-        stderr.contains("index: updated .synrepo/synthesis-index"),
+        stderr.contains("output index: updated .synrepo/synthesis-index"),
         "expected index update line in stderr, got: {stderr}"
     );
     assert!(
