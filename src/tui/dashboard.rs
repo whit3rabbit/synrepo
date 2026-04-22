@@ -149,6 +149,7 @@ fn draw_dashboard(frame: &mut ratatui::Frame, state: &AppState) {
                 snapshot: &state.snapshot,
                 picker: state.picker.as_ref(),
                 confirm_stop_watch: state.confirm_stop_watch.as_ref(),
+                preview_panel: state.synthesis_preview.as_ref(),
                 theme: &state.theme,
             };
             frame.render_widget(synthesis, content_area);

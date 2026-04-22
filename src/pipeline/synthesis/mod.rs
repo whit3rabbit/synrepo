@@ -19,6 +19,8 @@ pub mod cross_link;
 pub mod docs;
 pub mod pricing;
 pub mod providers;
+/// Shared queued-work preview used by `synrepo synthesize status` and the TUI.
+pub mod status_preview;
 pub mod stub;
 pub mod telemetry;
 
@@ -28,6 +30,9 @@ pub use cross_link::{
 pub use providers::{
     build_commentary_generator, build_cross_link_generator, describe_active_provider,
     ActiveProvider, ProviderConfig, ProviderKind, SynthesisStatus,
+};
+pub use status_preview::{
+    build_synthesis_preview, SynthesisPreview, SynthesisPreviewGroup, SAMPLE_LIMIT_PER_GROUP,
 };
 // Re-export provider implementations for compatibility
 pub use providers::{

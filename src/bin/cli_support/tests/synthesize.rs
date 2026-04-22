@@ -16,7 +16,7 @@ use synrepo::pipeline::synthesis::accounting;
 use synrepo::store::overlay::SqliteOverlayStore;
 use synrepo::store::sqlite::SqliteGraphStore;
 
-use super::super::commands::synthesize_output;
+use super::super::commands::{synthesize_output, synthesize_status_output};
 use super::support::git;
 
 const SYNTHESIS_ENV: &[&str] = &[
@@ -178,6 +178,45 @@ fn synthesize_emits_live_progress_and_writes_accounting() {
         accounting::totals_path(&synrepo_dir).exists(),
         "expected synthesis totals at {}",
         accounting::totals_path(&synrepo_dir).display()
+    );
+
+    drop(dir);
+}
+
+#[test]
+fn synthesize_status_reports_pending_targets_and_summary() {
+    let _env = EnvGuard::new();
+    let (dir, repo) = setup_bootstrapped_repo("pub fn run() {}\n");
+
+    let output = synthesize_status_output(&repo, Vec::new(), false).unwrap();
+
+    assert!(
+        output.contains("Synthesis status:"),
+        "expected status heading, got: {output}"
+    );
+    assert!(
+        output.contains("scope: the whole repository"),
+        "expected whole-repo scope, got: {output}"
+    );
+    assert!(
+        output.contains("files missing commentary: 1"),
+        "expected queued file seed count, got: {output}"
+    );
+    assert!(
+        output.contains("symbols missing commentary: 1"),
+        "expected queued symbol seed count, got: {output}"
+    );
+    assert!(
+        output.contains("sample pending targets"),
+        "expected sample target section, got: {output}"
+    );
+    assert!(
+        output.contains("src/lib.rs"),
+        "expected repo path in sample targets, got: {output}"
+    );
+    assert!(
+        output.contains("would be reconsidered if you run `synrepo synthesize` now"),
+        "expected summary line, got: {output}"
     );
 
     drop(dir);

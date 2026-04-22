@@ -34,7 +34,8 @@ use cli_support::commands::{
     init, links_accept, links_list, links_reject, links_review, node, reconcile, remove,
     run_mcp_server, search, setup, status, status_output, step_apply_integration,
     step_apply_synthesis, step_backup_mcp_config, step_ensure_ready, step_init, step_register_mcp,
-    step_write_shim, sync, synthesize, upgrade, watch, watch_internal, watch_status, watch_stop,
+    step_write_shim, sync, synthesize, synthesize_status, synthesize_without_tui, upgrade, watch,
+    watch_internal, watch_status, watch_stop,
 };
 
 fn main() -> anyhow::Result<()> {
@@ -193,7 +194,7 @@ fn run_synthesize_with_pause(repo_root: &Path, mode: SynthesizeMode, stopped_wat
     println!();
 
     let (paths, changed) = synthesize_mode_to_args(mode);
-    let result = synthesize(repo_root, paths, changed, false);
+    let result = synthesize_without_tui(repo_root, paths, changed, false);
 
     println!();
     match &result {
@@ -249,6 +250,7 @@ fn print_synthesis_discovery_hint() {
     println!();
     println!("Synthesis configured. Run it later with:");
     println!("  synrepo synthesize                 # refresh all stale commentary");
+    println!("  synrepo synthesize status          # preview stale / missing commentary work");
     println!("  synrepo synthesize --changed       # changed files in last 50 commits");
     println!("  synrepo synthesize src/            # scope to specific paths");
     println!("Or open the Synthesis tab in the dashboard and press r / f / c.");
@@ -569,7 +571,19 @@ fn dispatch(command: Command, repo_root: &Path, tui_opts: TuiOptions) -> anyhow:
             paths,
             changed,
             dry_run,
-        } => synthesize(repo_root, paths, changed, dry_run),
+        } => {
+            if let Some((first, rest)) = paths.split_first() {
+                if first == "status" {
+                    if dry_run {
+                        anyhow::bail!(
+                            "`synrepo synthesize status` is already a preview; `--dry-run` does not apply"
+                        );
+                    }
+                    return synthesize_status(repo_root, rest.to_vec(), changed);
+                }
+            }
+            synthesize(repo_root, paths, changed, dry_run)
+        }
         Command::Search {
             query,
             ignore_case,

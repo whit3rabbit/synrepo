@@ -23,7 +23,9 @@ pub mod http;
 pub mod local;
 pub mod minimax;
 pub mod openai;
+pub mod openai_compat;
 pub mod openrouter;
+pub mod shared;
 pub mod zai;
 
 /// Available synthesis providers.
@@ -302,11 +304,7 @@ pub fn build_commentary_generator(
                     .model
                     .unwrap_or_else(|| openai::DEFAULT_MODEL.to_string());
                 tracing::info!("synthesis: openai (model: {})", model);
-                Box::new(openai::OpenAiCommentaryGenerator::new(
-                    key,
-                    model,
-                    max_tokens_per_call,
-                ))
+                openai::new_commentary(key, model, max_tokens_per_call)
             } else {
                 Box::new(NoOpGenerator)
             }
@@ -332,11 +330,7 @@ pub fn build_commentary_generator(
                     .model
                     .unwrap_or_else(|| openrouter::DEFAULT_MODEL.to_string());
                 tracing::info!("synthesis: openrouter (model: {})", model);
-                Box::new(openrouter::OpenRouterCommentaryGenerator::new(
-                    key,
-                    model,
-                    max_tokens_per_call,
-                ))
+                openrouter::new_commentary(key, model, max_tokens_per_call)
             } else {
                 Box::new(NoOpGenerator)
             }
@@ -347,11 +341,7 @@ pub fn build_commentary_generator(
                     .model
                     .unwrap_or_else(|| zai::DEFAULT_MODEL.to_string());
                 tracing::info!("synthesis: zai (model: {})", model);
-                Box::new(zai::ZaiCommentaryGenerator::new(
-                    key,
-                    model,
-                    max_tokens_per_call,
-                ))
+                zai::new_commentary(key, model, max_tokens_per_call)
             } else {
                 Box::new(NoOpGenerator)
             }
@@ -362,11 +352,7 @@ pub fn build_commentary_generator(
                     .model
                     .unwrap_or_else(|| minimax::DEFAULT_MODEL.to_string());
                 tracing::info!("synthesis: minimax (model: {})", model);
-                Box::new(minimax::MinimaxCommentaryGenerator::new(
-                    key,
-                    model,
-                    max_tokens_per_call,
-                ))
+                minimax::new_commentary(key, model, max_tokens_per_call)
             } else {
                 Box::new(NoOpGenerator)
             }
@@ -437,12 +423,7 @@ pub fn build_cross_link_generator(
                 let model = resolved
                     .model
                     .unwrap_or_else(|| openai::DEFAULT_MODEL.to_string());
-                Box::new(openai::OpenAiCrossLinkGenerator::new(
-                    key,
-                    model,
-                    max_tokens_per_call,
-                    thresholds,
-                ))
+                openai::new_cross_link(key, model, max_tokens_per_call, thresholds)
             } else {
                 Box::new(NoOpCrossLinkGenerator)
             }
@@ -467,12 +448,7 @@ pub fn build_cross_link_generator(
                 let model = resolved
                     .model
                     .unwrap_or_else(|| openrouter::DEFAULT_MODEL.to_string());
-                Box::new(openrouter::OpenRouterCrossLinkGenerator::new(
-                    key,
-                    model,
-                    max_tokens_per_call,
-                    thresholds,
-                ))
+                openrouter::new_cross_link(key, model, max_tokens_per_call, thresholds)
             } else {
                 Box::new(NoOpCrossLinkGenerator)
             }
@@ -482,12 +458,7 @@ pub fn build_cross_link_generator(
                 let model = resolved
                     .model
                     .unwrap_or_else(|| zai::DEFAULT_MODEL.to_string());
-                Box::new(zai::ZaiCrossLinkGenerator::new(
-                    key,
-                    model,
-                    max_tokens_per_call,
-                    thresholds,
-                ))
+                zai::new_cross_link(key, model, max_tokens_per_call, thresholds)
             } else {
                 Box::new(NoOpCrossLinkGenerator)
             }
@@ -497,12 +468,7 @@ pub fn build_cross_link_generator(
                 let model = resolved
                     .model
                     .unwrap_or_else(|| minimax::DEFAULT_MODEL.to_string());
-                Box::new(minimax::MinimaxCrossLinkGenerator::new(
-                    key,
-                    model,
-                    max_tokens_per_call,
-                    thresholds,
-                ))
+                minimax::new_cross_link(key, model, max_tokens_per_call, thresholds)
             } else {
                 Box::new(NoOpCrossLinkGenerator)
             }

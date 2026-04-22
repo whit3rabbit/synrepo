@@ -46,7 +46,9 @@ impl AppState {
         if self.active_tab != tab {
             self.active_tab = tab;
             self.picker = None;
-            if matches!(tab, ActiveTab::Live) {
+            if matches!(tab, ActiveTab::Synthesis) {
+                self.refresh_synthesis_preview(false);
+            } else if matches!(tab, ActiveTab::Live) {
                 // Re-enter Live pinned to the tail so operators always see
                 // the most recent entries on tab switch.
                 self.scroll_offset = 0;

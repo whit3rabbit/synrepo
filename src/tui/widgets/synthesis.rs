@@ -1,18 +1,17 @@
-//! Synthesis tab: provider/totals/commentary status plus an action menu.
-//!
-//! Driven entirely by `StatusSnapshot`: no live overlay probe happens from the
-//! render path. Commentary staleness comes from `status_snapshot.commentary_coverage`
-//! when a full scan was performed, falling back to "N entries" when only the
-//! cheap count is available.
+//! Synthesis tab: provider/totals/commentary status plus an action menu and
+//! inline queued-work preview.
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, Widget};
 
-use crate::pipeline::synthesis::providers::SynthesisStatus;
+use crate::pipeline::synthesis::{SynthesisPreviewGroup, SynthesisStatus};
 use crate::surface::status_snapshot::StatusSnapshot;
-use crate::tui::app::{describe_pending_mode, ConfirmStopWatchState, FolderPickerState};
+use crate::tui::app::{
+    describe_pending_mode, ConfirmStopWatchState, FolderPickerState, SynthesisPreviewPanel,
+    SynthesisPreviewState,
+};
 use crate::tui::theme::Theme;
 
 /// Synthesis tab widget. Branches on `SynthesisStatus` to render either the
@@ -27,6 +26,8 @@ pub struct SynthesisTabWidget<'a> {
     pub picker: Option<&'a FolderPickerState>,
     /// Active confirm-stop-watch modal state, when the sub-view is open.
     pub confirm_stop_watch: Option<&'a ConfirmStopWatchState>,
+    /// Cached queued-work preview for the tab.
+    pub preview_panel: Option<&'a SynthesisPreviewPanel>,
     /// Active theme.
     pub theme: &'a Theme,
 }
@@ -45,11 +46,15 @@ impl Widget for SynthesisTabWidget<'_> {
         } else {
             let status = self.snapshot.synthesis_provider.as_ref().map(|d| &d.status);
             match status {
-                Some(SynthesisStatus::Enabled) => render_configured(self.snapshot, self.theme),
-                Some(SynthesisStatus::DisabledKeyDetected { env_var }) => {
-                    render_not_configured(Some(env_var), self.theme)
+                Some(SynthesisStatus::Enabled) => {
+                    render_configured(self.snapshot, self.preview_panel, self.theme)
                 }
-                Some(SynthesisStatus::Disabled) | None => render_not_configured(None, self.theme),
+                Some(SynthesisStatus::DisabledKeyDetected { env_var }) => {
+                    render_not_configured(Some(env_var), self.preview_panel, self.theme)
+                }
+                Some(SynthesisStatus::Disabled) | None => {
+                    render_not_configured(None, self.preview_panel, self.theme)
+                }
             }
         };
 
@@ -61,7 +66,11 @@ impl Widget for SynthesisTabWidget<'_> {
     }
 }
 
-fn render_configured(snapshot: &StatusSnapshot, theme: &Theme) -> Vec<Line<'static>> {
+fn render_configured(
+    snapshot: &StatusSnapshot,
+    preview_panel: Option<&SynthesisPreviewPanel>,
+    theme: &Theme,
+) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = Vec::new();
 
     let display = snapshot
@@ -108,9 +117,14 @@ fn render_configured(snapshot: &StatusSnapshot, theme: &Theme) -> Vec<Line<'stat
         snapshot.commentary_coverage.display.clone(),
         theme,
     ));
+    append_preview_panel(&mut lines, preview_panel, theme, false);
 
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled("Actions:", theme.muted_style())));
+    lines.push(Line::from(Span::styled(
+        "  Running r / c / f exits the dashboard and runs `synrepo synthesize`.".to_string(),
+        theme.muted_style(),
+    )));
     lines.push(action_line("r", "Refresh all stale commentary", theme));
     lines.push(action_line("f", "Refresh specific folders...", theme));
     lines.push(action_line(
@@ -120,6 +134,123 @@ fn render_configured(snapshot: &StatusSnapshot, theme: &Theme) -> Vec<Line<'stat
     ));
     lines.push(action_line("s", "Re-run synthesis setup", theme));
     lines
+}
+
+fn append_preview_panel(
+    lines: &mut Vec<Line<'static>>,
+    preview_panel: Option<&SynthesisPreviewPanel>,
+    theme: &Theme,
+    disabled_mode: bool,
+) {
+    lines.push(Line::from(""));
+    let heading = if disabled_mode {
+        "Current backlog if you enable synthesis:"
+    } else {
+        "Preview if you run now:"
+    };
+    lines.push(Line::from(Span::styled(
+        heading.to_string(),
+        theme.muted_style(),
+    )));
+
+    let Some(preview_panel) = preview_panel else {
+        lines.push(Line::from(Span::styled(
+            "  Preview not loaded yet.".to_string(),
+            theme.muted_style(),
+        )));
+        return;
+    };
+
+    append_preview_scope(
+        lines,
+        "[r] whole repo",
+        &preview_panel.whole_repo,
+        true,
+        theme,
+    );
+    append_preview_scope(
+        lines,
+        "[c] recent changes",
+        &preview_panel.changed,
+        false,
+        theme,
+    );
+}
+
+fn append_preview_scope(
+    lines: &mut Vec<Line<'static>>,
+    label: &str,
+    state: &SynthesisPreviewState,
+    show_samples: bool,
+    theme: &Theme,
+) {
+    match state {
+        SynthesisPreviewState::Ready(preview) => {
+            lines.push(Line::from(vec![
+                Span::styled(format!("  {label}: "), theme.agent_style()),
+                Span::styled(preview.overlay_freshness_line.clone(), theme.base_style()),
+            ]));
+            lines.push(Line::from(Span::styled(
+                format!(
+                    "    queued {} stale, {} file(s), {} symbol(s), up to {} target(s)",
+                    preview.refresh.total_count,
+                    preview.file_seeds.total_count,
+                    preview.symbol_seeds.total_count,
+                    preview.max_target_count
+                ),
+                theme.base_style(),
+            )));
+            if show_samples && preview.max_target_count > 0 {
+                append_group_sample(lines, &preview.refresh, theme);
+                append_group_sample(lines, &preview.file_seeds, theme);
+                append_group_sample(lines, &preview.symbol_seeds, theme);
+            } else {
+                lines.push(Line::from(Span::styled(
+                    format!("    {}", preview.summary_line),
+                    theme.muted_style(),
+                )));
+            }
+        }
+        SynthesisPreviewState::Unavailable(message) => {
+            lines.push(Line::from(vec![
+                Span::styled(format!("  {label}: "), theme.agent_style()),
+                Span::styled(format!("unavailable ({message})"), theme.stale_style()),
+            ]));
+        }
+    }
+}
+
+fn append_group_sample(
+    lines: &mut Vec<Line<'static>>,
+    group: &SynthesisPreviewGroup,
+    theme: &Theme,
+) {
+    if group.total_count == 0 {
+        return;
+    }
+    if let Some(first) = group.items.first() {
+        let suffix = if group.remaining_count > 0 {
+            format!(" (+{} more)", group.remaining_count)
+        } else {
+            String::new()
+        };
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("    {}: ", compact_group_label(group.label)),
+                theme.muted_style(),
+            ),
+            Span::styled(format!("{first}{suffix}"), theme.base_style()),
+        ]));
+    }
+}
+
+fn compact_group_label(label: &str) -> &'static str {
+    match label {
+        "stale commentary to refresh" => "stale",
+        "files missing commentary" => "files",
+        "symbols missing commentary" => "symbols",
+        _ => "targets",
+    }
 }
 
 fn render_folder_picker(picker: &FolderPickerState, theme: &Theme) -> Vec<Line<'static>> {
@@ -196,7 +327,11 @@ fn render_confirm_stop_watch(confirm: &ConfirmStopWatchState, theme: &Theme) -> 
     ]
 }
 
-fn render_not_configured(env_hint: Option<&'static str>, theme: &Theme) -> Vec<Line<'static>> {
+fn render_not_configured(
+    env_hint: Option<&'static str>,
+    preview_panel: Option<&SynthesisPreviewPanel>,
+    theme: &Theme,
+) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = vec![
         Line::from(Span::styled(
             "Synthesis is off.".to_string(),
@@ -222,6 +357,7 @@ fn render_not_configured(env_hint: Option<&'static str>, theme: &Theme) -> Vec<L
             theme.agent_style(),
         )));
     }
+    append_preview_panel(&mut lines, preview_panel, theme, true);
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled(
         "Actions:".to_string(),
