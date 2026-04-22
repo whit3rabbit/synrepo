@@ -242,6 +242,9 @@ impl TelemetryTracker {
 
     pub(super) fn usage_label(&self) -> String {
         if self.active_calls == 0 {
+            if self.total_calls() == 0 {
+                return "waiting for first provider response".to_string();
+            }
             return self.summary_label();
         }
         if self.total_calls() == 0 {

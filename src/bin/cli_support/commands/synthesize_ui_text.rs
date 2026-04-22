@@ -42,3 +42,14 @@ pub(super) fn progress_label(attempted: usize, max_targets: usize, finished: boo
     let percent = ((attempted as f64 / max_targets as f64) * 100.0).round() as usize;
     format!("{attempted}/{max_targets} attempted ({percent}%)")
 }
+
+pub(super) fn fit_value(value: &str, max_width: usize) -> String {
+    if value.len() <= max_width {
+        return value.to_string();
+    }
+    if max_width <= 3 {
+        return ".".repeat(max_width);
+    }
+    let keep = max_width - 3;
+    format!("{}...", &value[..keep])
+}

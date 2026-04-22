@@ -1,16 +1,10 @@
 use std::collections::VecDeque;
-use std::io::{self, Stdout};
+use std::io;
 use std::path::Path;
 
-use crossterm::{
-    execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-};
-use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Gauge, List, ListItem, Paragraph};
-use ratatui::Terminal;
 use synrepo::pipeline::repair::CommentaryProgressEvent;
 use synrepo::pipeline::synthesis::describe_active_provider;
 use synrepo::tui::theme::Theme;
@@ -19,11 +13,11 @@ use super::synthesize::{execute_synthesize_run, write_actions_taken, SynthesizeR
 use super::synthesize_progress::render_telemetry_summary;
 use super::synthesize_tracker::TelemetryTracker;
 use super::synthesize_ui_input::StopKeyState;
+use super::synthesize_ui_terminal::{enter_tui, leave_tui, SynthesisTerminal};
 use super::synthesize_ui_text::{
-    phase_summary_label, progress_label, provider_name, render_target, start_label, success_label,
+    fit_value, phase_summary_label, progress_label, provider_name, render_target, start_label,
+    success_label,
 };
-
-type SynthesisTerminal = Terminal<CrosstermBackend<Stdout>>;
 
 pub(super) fn run_synthesize_tui(
     repo_root: &Path,
@@ -52,23 +46,6 @@ pub(super) fn run_synthesize_tui(
     let mut stderr = io::stderr().lock();
     render_telemetry_summary(&mut stderr, &tracker)?;
     write_actions_taken(&mut stdout, &actions_taken)
-}
-
-fn enter_tui() -> anyhow::Result<SynthesisTerminal> {
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
-    terminal.hide_cursor()?;
-    Ok(terminal)
-}
-
-fn leave_tui(terminal: &mut SynthesisTerminal) -> anyhow::Result<()> {
-    disable_raw_mode().ok();
-    execute!(terminal.backend_mut(), LeaveAlternateScreen).ok();
-    terminal.show_cursor().ok();
-    Ok(())
 }
 
 struct SynthesisProgressUi {
@@ -263,23 +240,38 @@ impl SynthesisProgressUi {
                     Constraint::Min(0),
                 ])
                 .split(area);
+            let intro_value_width = layout[0].width.saturating_sub(14) as usize;
+            let status_value_width = layout[2].width.saturating_sub(10) as usize;
+            let recent_width = layout[3].width.saturating_sub(2) as usize;
 
             let intro = Paragraph::new(vec![
                 Line::from(vec![
                     Span::styled("Scope: ", self.theme.muted_style()),
-                    Span::styled(self.scope.clone(), self.theme.base_style()),
+                    Span::styled(
+                        fit_value(&self.scope, intro_value_width),
+                        self.theme.base_style(),
+                    ),
                 ]),
                 Line::from(vec![
                     Span::styled("Provider: ", self.theme.muted_style()),
-                    Span::styled(self.provider.clone(), self.theme.base_style()),
+                    Span::styled(
+                        fit_value(&self.provider, intro_value_width),
+                        self.theme.base_style(),
+                    ),
                 ]),
                 Line::from(vec![
                     Span::styled("API calls: ", self.theme.muted_style()),
-                    Span::styled(self.api_calls.clone(), self.theme.base_style()),
+                    Span::styled(
+                        fit_value(&self.api_calls, intro_value_width),
+                        self.theme.base_style(),
+                    ),
                 ]),
                 Line::from(vec![
                     Span::styled("Output files: ", self.theme.muted_style()),
-                    Span::styled(self.output_files.clone(), self.theme.base_style()),
+                    Span::styled(
+                        fit_value(&self.output_files, intro_value_width),
+                        self.theme.base_style(),
+                    ),
                 ]),
             ])
             .block(
@@ -318,33 +310,41 @@ impl SynthesisProgressUi {
                 .ratio(ratio);
             frame.render_widget(gauge, layout[1]);
 
-            let usage = if tracker.total_calls() == 0 {
-                tracker.usage_label()
-            } else {
-                tracker.usage_label()
-            };
+            let usage = tracker.usage_label();
             let status = Paragraph::new(vec![
                 Line::from(vec![
                     Span::styled("Plan: ", self.theme.muted_style()),
                     Span::styled(
-                        format!(
+                        fit_value(
+                            &format!(
                             "{} stale, {} files missing commentary, {} symbols missing commentary",
                             self.planned_refresh, self.planned_files, self.planned_symbols
+                            ),
+                            status_value_width,
                         ),
                         self.theme.base_style(),
                     ),
                 ]),
                 Line::from(vec![
                     Span::styled("Current: ", self.theme.muted_style()),
-                    Span::styled(self.current.clone(), self.theme.base_style()),
+                    Span::styled(
+                        fit_value(&self.current, status_value_width),
+                        self.theme.base_style(),
+                    ),
                 ]),
                 Line::from(vec![
                     Span::styled("Usage: ", self.theme.muted_style()),
-                    Span::styled(usage, self.theme.base_style()),
+                    Span::styled(
+                        fit_value(&usage, status_value_width),
+                        self.theme.base_style(),
+                    ),
                 ]),
                 Line::from(vec![
                     Span::styled("Latest: ", self.theme.muted_style()),
-                    Span::styled(self.phase_summary.clone(), self.theme.base_style()),
+                    Span::styled(
+                        fit_value(&self.phase_summary, status_value_width),
+                        self.theme.base_style(),
+                    ),
                 ]),
             ])
             .block(
@@ -359,7 +359,7 @@ impl SynthesisProgressUi {
             let items: Vec<ListItem> = self
                 .recent
                 .iter()
-                .map(|line| ListItem::new(Line::from(line.clone())))
+                .map(|line| ListItem::new(Line::from(fit_value(line, recent_width))))
                 .collect();
             let recent = List::new(items)
                 .block(

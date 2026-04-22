@@ -22,6 +22,7 @@ mod synthesize_status;
 mod synthesize_tracker;
 mod synthesize_ui;
 mod synthesize_ui_input;
+mod synthesize_ui_terminal;
 mod synthesize_ui_text;
 mod upgrade;
 mod watch;
