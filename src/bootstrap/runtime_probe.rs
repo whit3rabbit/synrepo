@@ -26,7 +26,7 @@ pub enum Missing {
         /// Human-readable explanation (I/O error or TOML parse error).
         detail: String,
     },
-    /// The graph store directory `.synrepo/graph/` is missing or empty.
+    /// The graph SQLite file `.synrepo/graph/nodes.db` is missing.
     GraphStore,
     /// Storage-compatibility evaluation reports a blocking action
     /// (`migrate-required` or `block` on a canonical store).
@@ -243,7 +243,10 @@ fn classify_partial_or_ready(synrepo_dir: &Path) -> (RuntimeClassification, Opti
         }
     };
 
-    // Check graph store layout (directory exists and is non-empty).
+    // Check graph store readiness (`nodes.db` exists and can plausibly be
+    // opened). This is intentionally tighter than
+    // `compatibility::evaluate::store_is_materialized`, which only cares
+    // whether the store path exists for migration-policy decisions.
     if !graph_store_materialized(synrepo_dir) {
         missing.push(Missing::GraphStore);
     }
@@ -274,16 +277,7 @@ fn classify_partial_or_ready(synrepo_dir: &Path) -> (RuntimeClassification, Opti
 }
 
 fn graph_store_materialized(synrepo_dir: &Path) -> bool {
-    let graph_dir = synrepo_dir.join("graph");
-    if !graph_dir.exists() {
-        return false;
-    }
-    // Directory with any entry counts as materialized; this mirrors the
-    // `store_is_materialized` check in `compatibility::evaluate`.
-    match fs::read_dir(&graph_dir) {
-        Ok(mut entries) => entries.next().is_some(),
-        Err(_) => false,
-    }
+    synrepo_dir.join("graph").join("nodes.db").exists()
 }
 
 fn detect_agent_integration(
@@ -534,9 +528,29 @@ mod tests {
     }
 
     #[test]
+    fn graph_store_materialized_requires_nodes_db() {
+        let dir = tempdir().unwrap();
+        let synrepo = Config::synrepo_dir(dir.path());
+        let graph_dir = synrepo.join("graph");
+        fs::create_dir_all(&graph_dir).unwrap();
+        fs::write(graph_dir.join("stray.tmp"), b"not-a-db").unwrap();
+
+        assert!(
+            !graph_store_materialized(&synrepo),
+            "stray files must not count as a materialized graph store"
+        );
+
+        fs::write(graph_dir.join("nodes.db"), b"db").unwrap();
+        assert!(
+            graph_store_materialized(&synrepo),
+            "nodes.db must count as a materialized graph store"
+        );
+    }
+
+    #[test]
     fn fully_populated_repo_classifies_as_ready() {
         // A minimal "ready" layout from the probe's perspective: config.toml +
-        // a non-empty graph/ directory + compat-clean snapshot. We reuse the
+        // a materialized graph/nodes.db + compat-clean snapshot. We reuse the
         // real bootstrap() helper so the runtime is exactly what `synrepo init`
         // would produce.
         let dir = tempdir().unwrap();

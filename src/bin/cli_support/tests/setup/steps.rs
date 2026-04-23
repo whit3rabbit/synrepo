@@ -1,5 +1,5 @@
-use std::fs;
 use std::ffi::OsString;
+use std::fs;
 use tempfile::tempdir;
 
 use crate::cli_support::agent_shims::{AgentTool, AutomationTier};
@@ -57,8 +57,7 @@ fn step_apply_synthesis_cloud_with_env_key_writes_only_repo_local_config() {
     let _home_lock =
         synrepo::test_support::global_test_lock(synrepo::config::test_home::HOME_ENV_TEST_LOCK);
     let _home_guard = synrepo::config::test_home::HomeEnvGuard::redirect_to(home.path());
-    let _global_path_guard =
-        GlobalConfigPathGuard::new(&home.path().join(".synrepo/config.toml"));
+    let _global_path_guard = GlobalConfigPathGuard::new(&home.path().join(".synrepo/config.toml"));
     let repo = tempdir().unwrap();
     step_init(repo.path(), None, false, false).unwrap();
 
@@ -89,8 +88,7 @@ fn step_apply_synthesis_cloud_with_new_key_saves_global_key_only() {
     let _home_lock =
         synrepo::test_support::global_test_lock(synrepo::config::test_home::HOME_ENV_TEST_LOCK);
     let _home_guard = synrepo::config::test_home::HomeEnvGuard::redirect_to(home.path());
-    let _global_path_guard =
-        GlobalConfigPathGuard::new(&home.path().join(".synrepo/config.toml"));
+    let _global_path_guard = GlobalConfigPathGuard::new(&home.path().join(".synrepo/config.toml"));
     fs::create_dir_all(home.path().join(".synrepo")).unwrap();
     fs::write(
         home.path().join(".synrepo/config.toml"),
@@ -120,10 +118,7 @@ fn step_apply_synthesis_cloud_with_new_key_saves_global_key_only() {
     assert!(!local.contains("openai_api_key"));
 
     let global_path = home.path().join(".synrepo/config.toml");
-    let global: Value = fs::read_to_string(&global_path)
-        .unwrap()
-        .parse()
-        .unwrap();
+    let global: Value = fs::read_to_string(&global_path).unwrap().parse().unwrap();
     let synthesis = global
         .get("synthesis")
         .and_then(Value::as_table)
@@ -144,8 +139,7 @@ fn step_apply_synthesis_local_saves_endpoint_in_global_config() {
     let _home_lock =
         synrepo::test_support::global_test_lock(synrepo::config::test_home::HOME_ENV_TEST_LOCK);
     let _home_guard = synrepo::config::test_home::HomeEnvGuard::redirect_to(home.path());
-    let _global_path_guard =
-        GlobalConfigPathGuard::new(&home.path().join(".synrepo/config.toml"));
+    let _global_path_guard = GlobalConfigPathGuard::new(&home.path().join(".synrepo/config.toml"));
     let repo = tempdir().unwrap();
     step_init(repo.path(), None, false, false).unwrap();
 
@@ -229,6 +223,38 @@ fn step_write_shim_writes_claude_shim() {
     let outcome = step_write_shim(dir.path(), AgentTool::Claude, false).unwrap();
     assert_eq!(outcome, StepOutcome::Applied);
     assert!(AgentTool::Claude.output_path(dir.path()).exists());
+}
+
+#[test]
+fn step_write_shim_preserves_user_edited_shim_when_overwrite_false() {
+    let dir = tempdir().unwrap();
+    let shim_path = AgentTool::Claude.output_path(dir.path());
+    step_write_shim(dir.path(), AgentTool::Claude, false).unwrap();
+    fs::write(&shim_path, "user-edited shim\n").unwrap();
+
+    let outcome = step_write_shim(dir.path(), AgentTool::Claude, false).unwrap();
+
+    assert_eq!(outcome, StepOutcome::AlreadyCurrent);
+    assert_eq!(
+        fs::read_to_string(&shim_path).unwrap(),
+        "user-edited shim\n"
+    );
+}
+
+#[test]
+fn step_write_shim_updates_stale_shim_when_overwrite_true() {
+    let dir = tempdir().unwrap();
+    let shim_path = AgentTool::Claude.output_path(dir.path());
+    step_write_shim(dir.path(), AgentTool::Claude, false).unwrap();
+    fs::write(&shim_path, "user-edited shim\n").unwrap();
+
+    let outcome = step_write_shim(dir.path(), AgentTool::Claude, true).unwrap();
+
+    assert_eq!(outcome, StepOutcome::Updated);
+    assert_eq!(
+        fs::read_to_string(&shim_path).unwrap(),
+        AgentTool::Claude.shim_content()
+    );
 }
 
 #[test]

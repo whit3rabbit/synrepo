@@ -90,7 +90,7 @@ pub(super) fn render_synthesis_preview(
         preview.max_target_count
     )
     .unwrap();
-    write_samples(&mut out, &preview)?;
+    write_samples(&mut out, preview)?;
     writeln!(out, "  summary: {}", preview.summary_line).unwrap();
 
     Ok(out)

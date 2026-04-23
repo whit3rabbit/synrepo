@@ -101,20 +101,47 @@ pub(crate) fn step_init(
     }
 }
 
-/// Write the agent integration shim for `target`. Delegates to the existing
-/// `agent_setup` helper in regen mode so re-runs are idempotent.
+/// Write the agent integration shim for `target`.
+///
+/// Missing shims are always written. Existing shims are preserved unless the
+/// caller explicitly opts into overwrite behavior, in which case the helper
+/// reuses `agent_setup(..., force = true, regen = true)` to refresh stale
+/// content without blindly rewriting identical files.
 pub(crate) fn step_write_shim(
     repo_root: &Path,
     target: AgentTool,
-    force: bool,
+    overwrite: bool,
 ) -> anyhow::Result<StepOutcome> {
+    let out_path = target.output_path(repo_root);
     println!(
         "  Writing {} {}...",
         target.display_name(),
         target.artifact_label()
     );
-    agent_setup(repo_root, target, force, true)?;
-    Ok(StepOutcome::Applied)
+
+    if !out_path.exists() {
+        agent_setup(repo_root, target, false, false)?;
+        return Ok(StepOutcome::Applied);
+    }
+
+    if !overwrite {
+        println!(
+            "  Existing {} {} preserved: overwrite not requested.",
+            target.display_name(),
+            target.artifact_label()
+        );
+        return Ok(StepOutcome::AlreadyCurrent);
+    }
+
+    let was_current = fs::read_to_string(&out_path)
+        .map(|existing| existing == target.shim_content())
+        .unwrap_or(false);
+    agent_setup(repo_root, target, true, true)?;
+    Ok(if was_current {
+        StepOutcome::AlreadyCurrent
+    } else {
+        StepOutcome::Updated
+    })
 }
 
 /// Register the synrepo MCP server in the target agent's project config.
@@ -151,7 +178,7 @@ pub(crate) fn step_apply_integration(
     let shim = step_write_shim(repo_root, target, force)?;
     let mcp = step_register_mcp(repo_root, target)?;
     Ok(match (shim, mcp) {
-        (StepOutcome::Applied, _) => StepOutcome::Applied,
+        (StepOutcome::Applied | StepOutcome::Updated, _) => StepOutcome::Applied,
         (_, StepOutcome::Applied) | (_, StepOutcome::Updated) => StepOutcome::Applied,
         (_, StepOutcome::NotAutomated) => StepOutcome::NotAutomated,
         _ => StepOutcome::AlreadyCurrent,

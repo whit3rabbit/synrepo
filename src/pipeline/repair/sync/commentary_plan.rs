@@ -300,10 +300,10 @@ fn maybe_emit_scan_progress(
 ) {
     let should_emit = if symbol_phase {
         symbols_scanned == symbols_total
-            || (interval > 0 && symbols_scanned > 0 && symbols_scanned % interval == 0)
+            || (interval > 0 && symbols_scanned > 0 && symbols_scanned.is_multiple_of(interval))
     } else {
         files_scanned == files_total
-            || (interval > 0 && files_scanned > 0 && files_scanned % interval == 0)
+            || (interval > 0 && files_scanned > 0 && files_scanned.is_multiple_of(interval))
     };
     if should_emit {
         emit_scan_progress(

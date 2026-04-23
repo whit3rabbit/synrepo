@@ -14,6 +14,7 @@ use std::path::Path;
 
 use clap::Parser;
 use synrepo::bootstrap::runtime_probe::{probe, Missing, RoutingDecision};
+use synrepo::config::Config;
 use synrepo::tui::{
     run_dashboard, run_integration_wizard, run_live_watch_dashboard, run_repair_wizard,
     run_setup_wizard, run_synthesis_only_wizard, stdout_is_tty, DashboardOptions, IntegrationPlan,
@@ -107,6 +108,13 @@ fn run_bare_entrypoint(repo_root: &Path, opts: TuiOptions) -> anyhow::Result<()>
 /// Non-TTY plain-text summary printed when bare `synrepo` runs on a ready
 /// repo behind a pipe or redirect. Mirrors the key lines from `synrepo status`.
 fn bare_ready_summary(repo_root: &Path) -> anyhow::Result<String> {
+    let synrepo_dir = Config::synrepo_dir(repo_root);
+    if !synrepo_dir.exists() {
+        anyhow::bail!(
+            "repo is not initialized: {} is missing",
+            synrepo_dir.display()
+        );
+    }
     status_output(repo_root, false, false, false)
 }
 
@@ -371,10 +379,15 @@ fn open_dashboard_after_wizard(repo_root: &Path, opts: TuiOptions) -> anyhow::Re
         _ => {
             // Setup completed but probe still sees the repo as non-ready
             // (unusual — e.g. a compat-advisory left the store in a blocked
-            // state). Print a status summary so the operator has something
-            // actionable and exit cleanly.
-            print!("{}", bare_ready_summary(repo_root).unwrap_or_default());
-            Ok(())
+            // state). Surface the status summary when possible and fail
+            // honestly so scripts do not treat the repo as operational.
+            match bare_ready_summary(repo_root) {
+                Ok(summary) => print!("{summary}"),
+                Err(err) => eprintln!(
+                    "Setup completed but the repo is not yet operational, and the status summary failed: {err:#}"
+                ),
+            }
+            std::process::exit(2);
         }
     }
 }
@@ -458,7 +471,7 @@ fn missing_label(m: &Missing) -> String {
     match m {
         Missing::ConfigFile => ".synrepo/config.toml missing".to_string(),
         Missing::ConfigUnreadable { detail } => format!("config.toml unreadable: {detail}"),
-        Missing::GraphStore => ".synrepo/graph/ missing or empty".to_string(),
+        Missing::GraphStore => ".synrepo/graph/nodes.db missing".to_string(),
         Missing::CompatBlocked { guidance } => {
             if let Some(first) = guidance.first() {
                 format!("store compat action required: {first}")
@@ -697,5 +710,22 @@ fn dispatch(command: Command, repo_root: &Path, tui_opts: TuiOptions) -> anyhow:
             keep_synrepo_dir,
             force,
         } => remove(repo_root, tool, apply, json, keep_synrepo_dir, force),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tempfile::tempdir;
+
+    use super::bare_ready_summary;
+
+    #[test]
+    fn bare_ready_summary_returns_error_when_synrepo_is_missing() {
+        let dir = tempdir().unwrap();
+        let err = bare_ready_summary(dir.path());
+        assert!(
+            err.is_err(),
+            "status summary must surface the missing .synrepo error"
+        );
     }
 }
