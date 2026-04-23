@@ -48,7 +48,7 @@ The overview blurb in `mcp.rs` and `skill/SKILL.md` are the two surfaces agents 
 ## Invariants
 
 - Graph content is primary; overlay is advisory.
-- `synrepo_docs_search` returns advisory synthesized commentary only. It is searchable overlay output, not canonical graph state or synthesis input.
+- `synrepo_docs_search` returns advisory explained commentary only. It is searchable overlay output, not canonical graph state or explain input.
 - Multi-query reads run under `with_graph_read_snapshot` / `with_overlay_read_snapshot`. The re-entrant depth counter lets handlers and card compilers nest snapshots safely (see hard invariant 8 in the root `AGENTS.md`).
 - Overlay promotion to graph edges is curated-mode-only.
 - Budget tiers: `tiny` → `normal` → `deep`. Default is `tiny`.

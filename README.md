@@ -53,7 +53,7 @@ synrepo
 - `synrepo watch --daemon`: keep the local repo model fresh as files change.
 - `synrepo status`: verify health, freshness, and whether anything needs attention.
 - `synrepo mcp`: serve read-only repo intelligence to the agent over stdio.
-- `synrepo synthesis`: refresh advisory commentary when you want machine-authored summaries for missing or stale areas.
+- The dashboard Explain tab refreshes advisory commentary when you want machine-authored summaries for missing or stale areas.
 
 ## Daily Workflow
 
@@ -61,7 +61,7 @@ synrepo
 2. Keep `synrepo watch --daemon` running while you work if you want automatic refresh.
 3. Use `synrepo status` when you want a quick health check.
 4. Let the agent query `synrepo mcp` for cards, search, entrypoints, and change impact instead of opening large files first.
-5. Run `synrepo synthesis --changed` or `synrepo synthesis <path-prefix>` if you want fresh commentary on the parts of the repo that just moved.
+5. Use the dashboard Explain tab if you want fresh commentary on the parts of the repo that just moved.
 6. Use `synrepo check` and `synrepo sync` when health or repair surfaces need manual attention.
 
 ## Trust Model
@@ -92,7 +92,7 @@ Use `synrepo agent-setup <tool>` if you only want to regenerate the instruction 
 | `synrepo watch --daemon` | Keep the repo model fresh in the background |
 | `synrepo status` | Quick operational health check |
 | `synrepo mcp` | Serve read-only repo intelligence to the agent |
-| `synrepo synthesis` | Refresh advisory commentary for missing or stale areas |
+| Dashboard Explain tab | Refresh advisory commentary for missing or stale areas |
 | `synrepo check` | Read-only drift and repair report |
 | `synrepo sync` | Apply auto-fixable repair actions |
 | `synrepo search "query"` | Lexical search through the repo index |
@@ -102,7 +102,7 @@ Use `synrepo agent-setup <tool>` if you only want to regenerate the instruction 
 
 Everything above works locally without any LLM. Advisory commentary and cross-link suggestion generation are separate, opt-in features.
 
-- `synrepo synthesis` refreshes machine-authored commentary for files and symbols that are missing summaries or have gone stale.
+- The dashboard Explain tab refreshes machine-authored commentary for files and symbols that are missing summaries or have gone stale.
 - `synrepo sync --generate-cross-links` and `synrepo sync --regenerate-cross-links` generate machine-authored suggestions linking design docs to code.
 - Commentary and link suggestions stay in the overlay store. They never become canonical graph facts unless a human explicitly accepts a suggested link.
 
@@ -122,10 +122,10 @@ API keys stay in your shell environment. `synrepo` does not write them into `.sy
 
 ### Enable It
 
-Add a `[synthesis]` block to `.synrepo/config.toml`, or let `synrepo setup` configure it through the optional synthesis sub-wizard:
+Add an `[explain]` block to `.synrepo/config.toml`, or let `synrepo setup` configure it through the optional explain sub-wizard:
 
 ```toml
-[synthesis]
+[explain]
 enabled = true
 provider = "anthropic"   # or "openai" | "gemini" | "openrouter" | "zai" | "minimax" | "local"
 # model = "claude-sonnet-4-6"
@@ -152,9 +152,9 @@ One-shot env overrides:
 
 ### Usage And Accounting
 
-- Every commentary call appends to `.synrepo/state/synthesis-log.jsonl`.
-- Aggregated totals live in `.synrepo/state/synthesis-totals.json`.
-- `synrepo sync --reset-synthesis-totals` rotates the log and zeroes the totals snapshot.
+- Every commentary call appends to `.synrepo/state/explain-log.jsonl`.
+- Aggregated totals live in `.synrepo/state/explain-totals.json`.
+- `synrepo sync --reset-explain-totals` rotates the log and zeroes the totals snapshot.
 - The dashboard surfaces live commentary activity and accumulated usage in the Live and Health views.
 
 ## Supported Languages
@@ -186,7 +186,7 @@ If your main problem is "help the agent understand this repo without brute-forci
 - [docs/FOUNDATION.md](docs/FOUNDATION.md): product intent, trust model, and design boundaries
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): layer architecture and storage layout
 - [docs/CONFIG.md](docs/CONFIG.md): config fields and defaults
-- [docs/SYNTHESIS.md](docs/SYNTHESIS.md): synthesis providers, API keys, and telemetry
+- [docs/EXPLAIN.md](docs/EXPLAIN.md): explain providers, API keys, and telemetry
 - [docs/ADDING-LANGUAGE.md](docs/ADDING-LANGUAGE.md): adding a new tree-sitter language
 
 <details>

@@ -1,7 +1,7 @@
 //! Export pipeline: compile card state to static markdown or JSON snapshots.
 //!
 //! Exports are convenience surfaces produced by `synrepo export`. They are
-//! never used as synthesis input (invariant 2). The export directory
+//! never used as explain input (invariant 2). The export directory
 //! (`synrepo-context/` by default) contains:
 //! - `symbols.md` / `files.md` / `decisions.md` (markdown format)
 //! - `index.json` (JSON format, all card types in one file)

@@ -13,5 +13,4 @@ mod search;
 mod setup;
 mod status;
 mod support;
-mod synthesize;
 mod upgrade;

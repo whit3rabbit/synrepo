@@ -39,14 +39,14 @@ synrepo SHALL extract structured rationale from human-authored markdown in conce
 - **AND** the ConceptNode is still produced
 
 ### Requirement: Define Governs edge emission rules
-synrepo SHALL emit `EdgeKind::Governs` only from human-authored ADR or pattern frontmatter `governs` arrays. Governs edges SHALL be labeled `HumanDeclared`. Inline `# DECISION:` markers are stored on the containing `FileNode` and do not emit `Governs` edges in this change. The synthesis pipeline and overlay store SHALL NOT emit Governs edges.
+synrepo SHALL emit `EdgeKind::Governs` only from human-authored ADR or pattern frontmatter `governs` arrays. Governs edges SHALL be labeled `HumanDeclared`. Inline `# DECISION:` markers are stored on the containing `FileNode` and do not emit `Governs` edges in this change. The explain pipeline and overlay store SHALL NOT emit Governs edges.
 
 #### Scenario: Governs edge from frontmatter
 - **WHEN** an ADR frontmatter contains `governs: [src/store/sqlite/mod.rs]`
 - **THEN** the compile emits a `Governs` edge from the ConceptNode to the FileNode for `src/store/sqlite/mod.rs`
 - **AND** the edge is labeled `HumanDeclared`
 
-#### Scenario: No synthesized Governs edges
+#### Scenario: No machine-authored Governs edges
 - **WHEN** the overlay contains machine-authored content referencing a code node
 - **THEN** no `Governs` edge is emitted from that reference
 - **AND** the Governs edge count in the graph is unchanged

@@ -31,7 +31,7 @@ pub struct FileCard {
     pub approx_tokens: usize,
     /// Source store.
     pub source_store: SourceStore,
-    /// Proposed cross-links authored by the synthesis layer.
+    /// Proposed cross-links authored by the explain layer.
     pub proposed_links: Option<Vec<ProposedLink>>,
     /// State of the proposed links.
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -10,7 +10,7 @@ use super::epistemic::Epistemic;
 
 /// Kind of a graph edge.
 ///
-/// Restricted to observed relationships. Edge types the synthesis layer
+/// Restricted to observed relationships. Edge types the explain layer
 /// proposes live on [`crate::overlay::OverlayEdgeKind`] instead.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

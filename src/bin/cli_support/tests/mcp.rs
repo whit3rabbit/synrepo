@@ -13,14 +13,14 @@ use tempfile::tempdir;
 
 use synrepo::bootstrap::bootstrap;
 use synrepo::config::Config;
-use synrepo::pipeline::synthesis::{accounting, telemetry};
+use synrepo::pipeline::explain::{accounting, telemetry};
 use synrepo::store::compatibility::snapshot_path;
 use synrepo::store::overlay::SqliteOverlayStore;
 
 use super::support::git;
 use crate::prepare_mcp_state;
 
-const SYNTHESIS_ENV: &[&str] = &[
+const EXPLAIN_ENV: &[&str] = &[
     "SYNREPO_LLM_ENABLED",
     "SYNREPO_LLM_PROVIDER",
     "SYNREPO_LLM_MODEL",
@@ -43,7 +43,7 @@ impl EnvGuard {
         let guard = ENV_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        for key in SYNTHESIS_ENV {
+        for key in EXPLAIN_ENV {
             std::env::remove_var(key);
         }
         Self { _guard: guard }
@@ -52,7 +52,7 @@ impl EnvGuard {
 
 impl Drop for EnvGuard {
     fn drop(&mut self) {
-        for key in SYNTHESIS_ENV {
+        for key in EXPLAIN_ENV {
             std::env::remove_var(key);
         }
     }
@@ -76,10 +76,10 @@ fn setup_bootstrapped_repo() -> (tempfile::TempDir, std::path::PathBuf) {
 }
 
 fn spawn_openai_compat_server(body: &'static str) -> (String, thread::JoinHandle<()>) {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("bind test synthesis server");
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind test explain server");
     let addr = listener.local_addr().expect("read test server address");
     let handle = thread::spawn(move || {
-        let (mut stream, _) = listener.accept().expect("accept synthesis request");
+        let (mut stream, _) = listener.accept().expect("accept explain request");
         stream
             .set_read_timeout(Some(Duration::from_secs(2)))
             .expect("set read timeout");
@@ -88,7 +88,7 @@ fn spawn_openai_compat_server(body: &'static str) -> (String, thread::JoinHandle
         let mut buffer = [0u8; 1024];
         let mut body_len = None;
         loop {
-            let read = stream.read(&mut buffer).expect("read synthesis request");
+            let read = stream.read(&mut buffer).expect("read explain request");
             if read == 0 {
                 break;
             }
@@ -109,7 +109,7 @@ fn spawn_openai_compat_server(body: &'static str) -> (String, thread::JoinHandle
         );
         stream
             .write_all(response.as_bytes())
-            .expect("write synthesis response");
+            .expect("write explain response");
         if let Some(expected) = body_len {
             assert!(expected > 0, "expected non-empty JSON request body");
         }
@@ -140,19 +140,19 @@ fn parse_content_length(headers: &[u8]) -> usize {
         .unwrap_or(0)
 }
 
-fn write_local_synthesis_config(repo: &std::path::Path, endpoint: &str) {
+fn write_local_explain_config(repo: &std::path::Path, endpoint: &str) {
     let mut config = Config::load(repo).expect("load bootstrapped config");
     config.commentary_cost_limit = 50_000;
-    config.synthesis.enabled = true;
-    config.synthesis.provider = Some("local".to_string());
-    config.synthesis.model = Some("test-local".to_string());
-    config.synthesis.local_endpoint = Some(endpoint.to_string());
-    config.synthesis.local_preset = Some("custom".to_string());
+    config.explain.enabled = true;
+    config.explain.provider = Some("local".to_string());
+    config.explain.model = Some("test-local".to_string());
+    config.explain.local_endpoint = Some(endpoint.to_string());
+    config.explain.local_preset = Some("custom".to_string());
     fs::write(
         Config::synrepo_dir(repo).join("config.toml"),
         toml::to_string_pretty(&config).expect("serialize config"),
     )
-    .expect("write synthesis config");
+    .expect("write explain config");
 }
 
 fn materialize_overlay(repo: &std::path::Path) {
@@ -191,16 +191,16 @@ fn prepare_state_fails_when_compatibility_snapshot_is_missing() {
 }
 
 #[test]
-fn refresh_commentary_via_mcp_records_synthesis_accounting() {
+fn refresh_commentary_via_mcp_records_explain_accounting() {
     let _env = EnvGuard::new();
     let (dir, repo) = setup_bootstrapped_repo();
     let (endpoint, server) = spawn_openai_compat_server(
         r#"{"choices":[{"message":{"content":"Generated commentary."}}],"usage":{"prompt_tokens":11,"completion_tokens":7}}"#,
     );
-    write_local_synthesis_config(&repo, &endpoint);
+    write_local_explain_config(&repo, &endpoint);
     materialize_overlay(&repo);
 
-    let state = prepare_mcp_state(&repo).expect("MCP state should load with synthesis enabled");
+    let state = prepare_mcp_state(&repo).expect("MCP state should load with explain enabled");
     let synrepo_dir = Config::synrepo_dir(&repo);
     assert_eq!(
         telemetry::synrepo_dir().as_deref(),
@@ -220,7 +220,7 @@ fn refresh_commentary_via_mcp_records_synthesis_accounting() {
         .as_str()
         .expect("refresh_commentary should return node_id");
     let doc_path = synrepo_dir
-        .join("synthesis-docs")
+        .join("explain-docs")
         .join("symbols")
         .join(format!("{node_id}.md"));
     assert!(
@@ -248,18 +248,18 @@ fn refresh_commentary_via_mcp_records_synthesis_accounting() {
     assert_eq!(results[0]["source_store"], "overlay");
     assert_eq!(results[0]["content"], "Generated commentary.");
 
-    server.join().expect("join synthesis stub");
+    server.join().expect("join explain stub");
 
     let log = fs::read_to_string(accounting::log_path(&synrepo_dir))
-        .expect("refresh_commentary should write synthesis log");
+        .expect("refresh_commentary should write explain log");
     assert!(
         log.contains("\"provider\":\"local\"") && log.contains("\"outcome\":\"success\""),
-        "expected successful local synthesis log entry, got: {log}"
+        "expected successful local explain log entry, got: {log}"
     );
 
-    let totals: accounting::SynthesisTotals = serde_json::from_slice(
+    let totals: accounting::ExplainTotals = serde_json::from_slice(
         &fs::read(accounting::totals_path(&synrepo_dir))
-            .expect("refresh_commentary should write synthesis totals"),
+            .expect("refresh_commentary should write explain totals"),
     )
     .expect("totals file should parse");
     assert_eq!(totals.calls, 1);

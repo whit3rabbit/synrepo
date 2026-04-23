@@ -30,7 +30,7 @@ synrepo handles both with two modes selected at `synrepo init`:
 | Findings | Surfaced via MCP only when asked | Also written to `findings.md` for review |
 | Default card tier | `tiny` | `tiny` |
 
-The **hard invariant** survives in both modes: the synthesis layer never reads its own previous output as retrieval input. This is enforced physically (graph and overlay are separate sqlite stores) and reinforced at the retrieval layer (synthesis queries filter on `source_store = graph`). LLM-authored content sits in the overlay where agents can see it, but the synthesis pipeline cannot. The contamination guarantee is structural, not merely labeled.
+The **hard invariant** survives in both modes: the explain layer never reads its own previous output as retrieval input. This is enforced physically (graph and overlay are separate sqlite stores) and reinforced at the retrieval layer (explain queries filter on `source_store = graph`). LLM-authored content sits in the overlay where agents can see it, but the explain pipeline cannot. The contamination guarantee is structural, not merely labeled.
 
 ---
 
@@ -40,7 +40,7 @@ The **hard invariant** survives in both modes: the synthesis layer never reads i
 | --- | --- | --- |
 | **Separation** | Graph and overlay stores must stay physically separate. | Implemented via `nodes.db` and `overlay.db`. |
 | **Doctrine** | One obvious path: `tiny` → `normal` → `deep`. | Enforced in shims, docs, and MCP descriptions. |
-| **Synthesis** | LLM content is supplemental and strictly off the critical path. | Commentary is only fetched at `Deep` budget. |
+| **Explain** | LLM content is supplemental and strictly off the critical path. | Commentary is only fetched at `Deep` budget. |
 | **Background** | No magic background writes without user/agent opt-in. | Commentary refresh is an explicit requested operation. |
 | **Change Risk** | Signals must be derived from structural drift and co-change. | Shipped as a composite signal (beta fidelity). |
 | **Fills** | Empty concept dirs must not break code orientation. | Code-only mode is the benchmark default. |
@@ -79,9 +79,9 @@ Do-not rules, asserted uniformly across surfaces:
 
 - do not open large files first;
 - do not treat commentary as canonical;
-- do not trigger synthesis unless the task justifies it;
+- do not trigger explain unless the task justifies it;
 - do not expect watch or background behavior unless explicitly enabled;
-- **explicit refresh required for fresh commentary**: tools return stale content with tag, never blocking for new synthesis.
+- **explicit refresh required for fresh commentary**: tools return stale content with tag, never blocking for new explain.
 
 The existing context-budget protocol is the substrate for this doctrine; the doctrine makes the protocol visible at every entry point an agent can hit.
 
@@ -178,7 +178,7 @@ Four layers, bottom to top.
 
 **Structure layer.** The unified graph for code and prose. Code symbols from tree-sitter via per-language Rust crates. Prose links from a Markdown parser (standard links, wiki-links, anchors, frontmatter). The graph store is sqlite, single source of truth, no in-memory mirror in v1. SQLite handles two-hop queries in milliseconds and is fine for the vast majority of MCP traversals. If a specific query class crosses a measured latency threshold, an in-memory petgraph layer can be added *later* for that specific query type without rearchitecting. Single source of truth saves debugging weeks.
 
-**Overlay layer.** LLM-authored content lives here, physically separate from the graph. The overlay holds proposed cross-links (with cited evidence and confidence), optional card commentary tiers, and findings. The overlay is queryable via MCP so agents can see it, but the synthesis pipeline never reads it as input for subsequent passes. This is the contamination invariant.
+**Overlay layer.** LLM-authored content lives here, physically separate from the graph. The overlay holds proposed cross-links (with cited evidence and confidence), optional card commentary tiers, and findings. The overlay is queryable via MCP so agents can see it, but the explain pipeline never reads it as input for subsequent passes. This is the contamination invariant.
 
 **Surface layer.** The CLI, the MCP server, and a thin skill bundle for Claude. The CLI is for humans and CI. The MCP server is a separate stdio server that serves cards and graph primitives to agents. Optional watch mode is a per-repo local service started explicitly with `synrepo watch` or `synrepo watch --daemon`. The skill is a discoverability layer that tells Claude when to reach for the MCP server.
 
@@ -194,7 +194,7 @@ Three node types, all with `epistemic_status` ∈ `{parser_observed, human_decla
 
 - **File nodes** — anything on disk. Identity is content-hash plus path-history, with AST-based rename detection as the primary mechanism.
 - **Symbol nodes** — functions, classes, methods, types, exports. Extracted via tree-sitter queries. Identity is `(file_node_id, qualified_name, kind, body_hash)`.
-- **Concept nodes** — *only* created from human-authored Markdown files in configured directories (default `docs/concepts/`, `docs/adr/`, `docs/decisions/`). **The synthesis layer cannot mint concept nodes in any mode.** For vibe coder repos with no concept directories, concept nodes simply don't exist — and that's fine, because cards cover the common case without needing an ontology layer.
+- **Concept nodes** — *only* created from human-authored Markdown files in configured directories (default `docs/concepts/`, `docs/adr/`, `docs/decisions/`). **The explain layer cannot mint concept nodes in any mode.** For vibe coder repos with no concept directories, concept nodes simply don't exist — and that's fine, because cards cover the common case without needing an ontology layer.
 
 ### Graph edges (canonical)
 
@@ -208,7 +208,7 @@ LLM-authored content lives in `.synrepo/overlay/` with `epistemic_status` ∈ `{
 - **Card commentary** — optional LLM prose layered on top of structural cards when requested.
 - **Findings** — inconsistencies, stale rationale candidates, contradictions.
 
-The overlay is queryable via MCP — `synrepo_card(target, deep)` returns structural card + overlay commentary (clearly labeled). The synthesis pipeline filters overlay content out of its retrieval inputs.
+The overlay is queryable via MCP — `synrepo_card(target, deep)` returns structural card + overlay commentary (clearly labeled). The explain pipeline filters overlay content out of its retrieval inputs.
 
 ### Recent-activity surface
 
@@ -236,11 +236,11 @@ The data already exists: `.synrepo/state/reconcile-state.json`, `.synrepo/state/
 
 **Structural pipeline (hot path, no LLM).** Runs on every change, synchronously, seconds even on thousand-file refactors. Walks the configured roots, parses code via tree-sitter (supporting Rust, Python, TypeScript/TSX, and Go), parses prose via the Markdown parser, mines git history, computes derived structural facts (reachability, dead code, hidden coupling, drift scores), commits to sqlite and syntext. Stage 4 resolution is **scoped and scored (`stage4-call-scope-narrowing-v1`)**, using a rubric (same file, imports, visibility, kind, prefix) to drastically narrow `Calls` edges. Visibility (`Public`, `Crate`, `Private`) is a first-class, cross-language field (`cross-language-symbol-visibility-v1`). Changed files are upserted in place (preserving stable node identity), and stale observations are soft-retired rather than cascade-deleted, so drift scoring and provenance remain coherent across revisions. That's the whole critical path — no cascade budget, no deferral, no nightly queue. A 1,000-file refactor gets its graph updated in a few seconds of tree-sitter plus the graph write. Agents never read stale structural state.
 
-**Synthesis pipeline (cold path, LLM-driven, lazy).** Never blocks the structural pipeline. Never blocks MCP queries. Runs in three triggering modes: on-demand (an MCP tool asked for commentary or a card at `deep` tier), background (low-priority worker regenerating overlay during idle time), or explicit (the user ran `synrepo sync --generate-cross-links`). Produces card commentary, proposes cross-links, runs lint. Everything it produces goes into the overlay. Input never includes other overlay content, enforced at the retrieval layer.
+**Explain pipeline (cold path, LLM-driven, lazy).** Never blocks the structural pipeline. Never blocks MCP queries. Runs in three triggering modes: on-demand (an MCP tool asked for commentary or a card at `deep` tier), background (low-priority worker regenerating overlay during idle time), or explicit (the user ran `synrepo sync --generate-cross-links`). Produces card commentary, proposes cross-links, runs lint. Everything it produces goes into the overlay. Input never includes other overlay content, enforced at the retrieval layer.
 
-*Current shape.* `src/pipeline/synthesis/` defines two trait boundaries: `CommentaryGenerator` and `CrossLinkGenerator`. Default installs use `NoOpGenerator` and `NoOpCrossLinkGenerator` (both return empty results), so the product stays deterministic and LLM-free out of the box. Setting `SYNREPO_ANTHROPIC_API_KEY` swaps in `ClaudeCommentaryGenerator` and the Claude-backed cross-link generator. The trait boundary is a real improvement over the earlier "stub" posture: it lets an operator opt into synthesis without threading a new code path through the rest of the pipeline, and it keeps every test fixture LLM-free by default.
+*Current shape.* `src/pipeline/explain/` defines two trait boundaries: `CommentaryGenerator` and `CrossLinkGenerator`. Default installs use `NoOpGenerator` and `NoOpCrossLinkGenerator` (both return empty results), so the product stays deterministic and LLM-free out of the box. Setting `SYNREPO_ANTHROPIC_API_KEY` swaps in `ClaudeCommentaryGenerator` and the Claude-backed cross-link generator. The trait boundary is a real improvement over the earlier "stub" posture: it lets an operator opt into explain without threading a new code path through the rest of the pipeline, and it keeps every test fixture LLM-free by default.
 
-Staleness is explicit. Every overlay entry carries the content hash of the sources it was generated from. If the sources have changed, the card response marks the entry as `stale`. Agents can request fresh synthesis explicitly via the `synrepo_refresh_commentary` tool. **The default behavior is non-blocking stale retrieval; lazy background synthesis is not part of the v1 contract to keep the read path deterministic.**
+Staleness is explicit. Every overlay entry carries the content hash of the sources it was generated from. If the sources have changed, the card response marks the entry as `stale`. Agents can request fresh explain explicitly via the `synrepo_refresh_commentary` tool. **The default behavior is non-blocking stale retrieval; lazy background explain is not part of the v1 contract to keep the read path deterministic.**
 
 ---
 
@@ -324,7 +324,7 @@ When the structural pipeline detects a file disappearance and one or more new fi
 2. **Symbol-set split.** If a disappeared file's symbols are split across multiple new files (e.g. `auth.rs` -> `jwt.rs` + `session.rs`), split the file node. The original retains its ID and points to the largest-overlap new file; a new node is created for the other with `split_from` provenance edges. Refactors heal automatically when there's structural evidence.
 3. **Symbol-set merge.** Symmetric: multiple disappeared files' symbols all in one new file -> new node with `merged_from` edges.
 4. **Git rename fallback.** When symbol evidence is inconclusive, fall back to a deterministic `gix` rename detection pass.
-5. **Accept breakage as last resort.** When neither symbol nor git evidence connects an old file to a new one, treat it as delete + add. Log a finding. The system is designed to tolerate this gracefully: broken edges become candidates for the next synthesis pass.
+5. **Accept breakage as last resort.** When neither symbol nor git evidence connects an old file to a new one, treat it as delete + add. Log a finding. The system is designed to tolerate this gracefully: broken edges become candidates for the next explain pass.
 
 Physical deletion is reserved for files genuinely absent from the repository after the identity cascade, and for the compaction maintenance pass that removes retired observations older than the configured retention window (`retain_retired_revisions`, default 10 compile revisions).
 
@@ -332,7 +332,7 @@ Physical deletion is reserved for files genuinely absent from the repository aft
 
 **Observation lifecycle.** Every parser-emitted symbol and edge carries an `owner_file_id` (the file whose parse pass produced it) and observation-window fields (`last_observed_rev`, `retired_at_rev`). This **soft-retirement lifecycle (`graph-lifecycle-v1`)** ensures that stale observations are marked retired rather than cascade-deleted, preserving the audit trail. Recompiling a file retires only observations owned by that file that were not re-emitted, leaving observations owned by other files untouched. Human-declared facts (`Epistemic::HumanDeclared`) are never retired by a parser pass. Retired observations remain physically present and visible to drift scoring (shipped in Stage 7) until compacted. Drift scoring uses Jaccard distance on persisted structural fingerprints in the sidecar `edge_drift` table.
 
-This is much stronger than a git-only approach but it is not bedrock. Pathological refactors (path moves + symbol renames + body rewrites in one commit) will still defeat it. The system degrades gracefully: broken edges become findings, the synthesis pipeline can re-propose them lazily.
+This is much stronger than a git-only approach but it is not bedrock. Pathological refactors (path moves + symbol renames + body rewrites in one commit) will still defeat it. The system degrades gracefully: broken edges become findings, the explain pipeline can re-propose them lazily.
 
 ---
 
@@ -412,7 +412,7 @@ Use only when task-shaped tools aren't returning what's needed.
 
 Every card response is tagged with `epistemic_status` (per field) and `source_store` (`graph` or `overlay`). Graph-sourced fields are always fresh. Overlay-sourced commentary is tagged `fresh | stale | missing`.
 
-**Default is non-blocking.** Tools return current cached content immediately with a staleness tag and fire background synthesis for stale items. The agent passes `require_freshness=true` explicitly when about to write code that depends on fresh commentary. The SKILL.md tells the agent when to escalate. Autonomy goes to the agent because the agent knows what task it is performing; the tool does not.
+**Default is non-blocking.** Tools return current cached content immediately with a staleness tag and fire background explain for stale items. The agent passes `require_freshness=true` explicitly when about to write code that depends on fresh commentary. The SKILL.md tells the agent when to escalate. Autonomy goes to the agent because the agent knows what task it is performing; the tool does not.
 
 ### Inspectability
 
@@ -521,13 +521,13 @@ Every graph row and every overlay entry carries provenance:
 provenance:
   created_at: 2026-04-09T14:23:01Z
   source_revision: a1b2c3d4
-  created_by: structural_pipeline | synthesis_pipeline | human | bootstrap
+  created_by: structural_pipeline | explain_pipeline | human | bootstrap
   pass: parse_code | parse_prose | git_mine | propose_link | summarize | ...
   source_artifacts:
     - id: file_0042
       path: src/auth/middleware.rs
       content_hash: sha256:...
-  # synthesis rows only:
+  # explain rows only:
   prompt_version: v3.1
   model: claude-sonnet-4-6
   cost_tokens: 1843
@@ -548,13 +548,13 @@ Verbose on purpose. Auditability is the value proposition versus RAG. Every cros
 1. **Wrong links to real nodes with real citations.** Cited-evidence verification proves citations are real, not that the inferred relationship is correct. Defenses: link-type allowlists, confidence scoring, lint anomaly detection, overlay-not-graph placement. Not bulletproof.
 2. **The verbatim citation trap.** LLMs alter whitespace, expand tabs, normalize endings, capitalize quote starts, drop punctuation, smarten quotes. Byte-exact matching produces catastrophic false-rejection. Defense: normalization + fuzzy LCS (default 90%, provider-tunable) + snap-to-actual-span.
 3. **Context window explosion in cross-linking.** Naively passing 20 full candidates is 50–100k tokens. Defense: two-stage triage (signatures → full source for 2–3 picks). ~80% cost reduction.
-4. **Stale-summary agent loops.** Agents reflexively calling synthesize on every stale item. Defense: non-blocking by default, `require_freshness=true` opt-in, SKILL.md guidance.
+4. **Stale-summary agent loops.** Agents reflexively calling explain on every stale item. Defense: non-blocking by default, `require_freshness=true` opt-in, SKILL.md guidance.
 5. **Empty-repository bootstrap.** Code-only repos have no prose side. In auto mode, this is fine because cards cover the common case; concept nodes simply don't exist. No canonical/overlay invariant breakage.
-6. **Feedback contamination.** If synthesis reads its own output, errors compound. Defense: physical separation (graph vs overlay tables) plus retrieval-layer filter on synthesis input.
+6. **Feedback contamination.** If explain reads its own output, errors compound. Defense: physical separation (graph vs overlay tables) plus retrieval-layer filter on explain input.
 7. **Canonical vs overlay leakage.** Agents may blur the line. Defense: MCP responses clearly label every field with `source_store` and `epistemic_status`; behavioral metrics track whether agents actually respect the labels.
 8. **Ontology sprawl from auto-minted concepts.** Defense: concept nodes are only ever human-declared, in any mode. Cards cover the common case for vibe coders.
-9. **Cost runaway.** `max_cost_per_synthesis_cycle` hard stop; LLM response cache; two-stage triage; zero-temperature lint.
-10. **Synthesis write loops.** Content-hash check before every overlay write; `.synrepo/` excluded from the watcher's observed set.
+9. **Cost runaway.** `max_cost_per_explain_cycle` hard stop; LLM response cache; two-stage triage; zero-temperature lint.
+10. **Explain write loops.** Content-hash check before every overlay write; `.synrepo/` excluded from the watcher's observed set.
 11. **Stale ADRs.** Drift scoring on `governs` edges, computed by the structural pipeline on every commit, surfaced in card responses. Agent sees drift without any LLM work.
 12. **Heavy-refactor identity breakage.** AST-based detection handles splits, merges, simple renames. Pathological cases produce findings and lazy re-linking.
 13. **Encoding edge cases.** Sniff and skip; never panic.
@@ -587,7 +587,7 @@ Real problems the design does not fully solve, listed honestly.
 
 **Cross-repo linking.** Out of scope. A multi-repo workspace cannot have synrepo-managed links between components.
 
-**LLM provider availability.** Hosted LLM outages halt synthesis. Structural pipeline keeps running; agents continue to get fresh graph facts; overlay refresh halts. Fully-local Ollama backend mitigates for users with local infrastructure.
+**LLM provider availability.** Hosted LLM outages halt explain. Structural pipeline keeps running; agents continue to get fresh graph facts; overlay refresh halts. Fully-local Ollama backend mitigates for users with local infrastructure.
 
 **Security model is single-user-local in v1.** Mixed-sensitivity monorepos where different users should see different parts of the graph are out of scope. The MCP server runs as the local user with local filesystem permissions.
 
@@ -611,14 +611,14 @@ Real problems the design does not fully solve, listed honestly.
 | Identity stability, simple renames | 100% |
 | Identity stability, split refactors with ≥80% symbol overlap | ≥ 95% |
 
-### Synthesis pipeline (probabilistic)
+### Explain pipeline (probabilistic)
 
 | Metric | Target |
 | --- | --- |
 | Citation hallucination rate (post fuzzy match) | < 5% |
 | Cross-link precision (survives verification AND human-correct) | > 80% |
 | Cross-link recall (correct links missed) | > 60% |
-| Cost per synthesis cycle, 1000-file repo | < $5 (Sonnet) / < $0.50 (local) |
+| Cost per explain cycle, 1000-file repo | < $5 (Sonnet) / < $0.50 (local) |
 | Wrong-but-cited link rate | < 2% |
 
 ### Agent task metrics (the ones that actually matter)
@@ -640,7 +640,7 @@ Real problems the design does not fully solve, listed honestly.
 ### Anti-metrics
 
 - Findings growth rate vs resolution rate
-- Background synthesis queue depth trend
+- Background explain queue depth trend
 - Median drift score trend
 - `.synrepo/` disk growth per week
 
@@ -679,7 +679,7 @@ The key principle: agent usefulness arrives at phase 2 with zero LLM involvement
 
 **Phase 3 — git intelligence and co-change (shipped).** Shipped: file-scoped history, hotspots, ownership, co-change via `gix`; inline `# DECISION:` marker parsing; DecisionCard; graph-level `CoChangesWith` edges.
 
-**Phase 4 — card commentary tier (shipped).** LLM synthesis is trait-shaped (`CommentaryGenerator`), defaults to `NoOpGenerator`, opts into `ClaudeCommentaryGenerator` when `SYNREPO_ANTHROPIC_API_KEY` is set. Commentary lands in overlay, never in graph. Freshness labels (fresh / stale / missing / unsupported / invalid / budget_withheld) are enforced at the card surface.
+**Phase 4 — card commentary tier (shipped).** LLM explain is trait-shaped (`CommentaryGenerator`), defaults to `NoOpGenerator`, opts into `ClaudeCommentaryGenerator` when `SYNREPO_ANTHROPIC_API_KEY` is set. Commentary lands in overlay, never in graph. Freshness labels (fresh / stale / missing / unsupported / invalid / budget_withheld) are enforced at the card surface.
 
 **Phase 5 — overlay cross-linking (shipped).** Shipped: graph-distance plus prose-identifier candidate triage, two-stage Claude-backed LLM proposal, normalized fuzzy verification (3-stage cascade), confidence tiers, review queue, card surfacing at Deep tier, curated-mode promotion that creates `Governs` edges with `Epistemic::HumanDeclared`. The embedding model (`all-MiniLM-L6-v2` via `ort`) is fully integrated for semantic triage.
 

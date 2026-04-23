@@ -8,8 +8,7 @@ use crate::{
     core::ids::NodeId,
     overlay::{CommentaryProvenance, OverlayStore},
     pipeline::{
-        repair::commentary::{resolve_commentary_node, CommentaryNodeSnapshot},
-        synthesis::{
+        explain::{
             build_commentary_generator,
             docs::{
                 docs_root, index_dir, reconcile_commentary_docs, sync_commentary_index,
@@ -17,6 +16,7 @@ use crate::{
             },
             CommentaryGenerator,
         },
+        repair::commentary::{resolve_commentary_node, CommentaryNodeSnapshot},
     },
     store::{overlay::SqliteOverlayStore, sqlite::SqliteGraphStore},
 };

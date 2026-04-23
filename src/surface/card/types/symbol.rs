@@ -40,7 +40,7 @@ pub struct SymbolCard {
     pub source_body: Option<String>,
     /// Approximate token count of this card.
     pub approx_tokens: usize,
-    /// Every field in this card came from the graph; synthesis commentary
+    /// Every field in this card came from the graph; explain commentary
     /// is a separate field below if present.
     pub source_store: SourceStore,
     /// Epistemic origin of the primary fields.
@@ -56,7 +56,7 @@ pub struct SymbolCard {
     /// deserializing the nested object.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub commentary_state: Option<String>,
-    /// Proposed cross-links authored by the synthesis layer with evidence verification.
+    /// Proposed cross-links authored by the explain layer with evidence verification.
     /// Only populated at Deep budget.
     pub proposed_links: Option<Vec<ProposedLink>>,
     /// State of the proposed links (e.g., "budget_withheld", "fresh", etc.)

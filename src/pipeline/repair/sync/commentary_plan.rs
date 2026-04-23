@@ -29,7 +29,7 @@ pub struct CommentaryWorkItem {
     pub qualified_name: Option<String>,
 }
 
-/// Plan for one `synrepo synthesize` run.
+/// Plan for one `synrepo explain` run.
 #[allow(missing_docs)]
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct CommentaryWorkPlan {

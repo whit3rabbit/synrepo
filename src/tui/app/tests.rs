@@ -5,7 +5,9 @@ use super::*;
 use crate::bootstrap::runtime_probe::AgentIntegration;
 use crate::pipeline::watch::{ReconcileOutcome, WatchEvent};
 use crate::tui::actions::{stop_watch, ActionContext, ActionOutcome};
+use crate::tui::probe::Severity;
 use crate::tui::theme::Theme;
+use crossterm::event::{KeyCode, KeyModifiers};
 
 fn make_poll_state() -> AppState {
     let tempdir = tempfile::tempdir().unwrap();
@@ -27,6 +29,12 @@ fn make_ready_poll_state() -> (tempfile::TempDir, AppState) {
     crate::bootstrap::bootstrap(tempdir.path(), None, false).expect("bootstrap");
     let state = AppState::new_poll(tempdir.path(), Theme::plain(), AgentIntegration::Absent);
     (tempdir, state)
+}
+
+fn isolated_home() -> (tempfile::TempDir, crate::config::test_home::HomeEnvGuard) {
+    let home = tempfile::tempdir().unwrap();
+    let guard = crate::config::test_home::HomeEnvGuard::redirect_to(home.path());
+    (home, guard)
 }
 
 #[test]
@@ -108,6 +116,7 @@ fn pressing_r_sets_refresh_toast() {
 #[test]
 fn pressing_w_starts_watch_sets_toast_log_and_refreshes_snapshot() {
     let _guard = crate::test_support::global_test_lock("tui-app-watch-toggle");
+    let (_home, _home_guard) = isolated_home();
     let (tempdir, mut state) = make_ready_poll_state();
     assert_eq!(state.watch_toggle_label(), Some("start"));
 
@@ -152,6 +161,7 @@ fn pressing_w_starts_watch_sets_toast_log_and_refreshes_snapshot() {
 #[test]
 fn pressing_w_stops_watch_from_actions_tab_and_sets_feedback() {
     let _guard = crate::test_support::global_test_lock("tui-app-watch-toggle");
+    let (_home, _home_guard) = isolated_home();
     let tempdir = tempfile::tempdir().unwrap();
     crate::bootstrap::bootstrap(tempdir.path(), None, false).expect("bootstrap");
     let ctx = ActionContext::new(tempdir.path());
@@ -211,10 +221,10 @@ fn handle_key_switches_tabs() {
     state.handle_key(KeyCode::Char('2'), KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Health);
     state.handle_key(KeyCode::Char('3'), KeyModifiers::NONE);
-    assert_eq!(state.active_tab, ActiveTab::Synthesis);
+    assert_eq!(state.active_tab, ActiveTab::Explain);
     assert!(
-        state.synthesis_preview.is_some(),
-        "entering the Synthesis tab should load the inline preview"
+        state.explain_preview.is_some(),
+        "entering the Explain tab should load the inline preview"
     );
     state.handle_key(KeyCode::Char('4'), KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Actions);
@@ -223,7 +233,7 @@ fn handle_key_switches_tabs() {
     state.handle_key(KeyCode::Tab, KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Health);
     state.handle_key(KeyCode::Tab, KeyModifiers::NONE);
-    assert_eq!(state.active_tab, ActiveTab::Synthesis);
+    assert_eq!(state.active_tab, ActiveTab::Explain);
     state.handle_key(KeyCode::Tab, KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Actions);
 }
@@ -358,25 +368,28 @@ fn prime_picker(state: &mut AppState) {
 #[test]
 fn picker_esc_clears_without_exit() {
     let (_repo, mut state) = make_ready_poll_state();
-    state.set_tab(ActiveTab::Synthesis);
+    state.set_tab(ActiveTab::Explain);
     prime_picker(&mut state);
     let consumed = state.handle_key(KeyCode::Esc, KeyModifiers::NONE);
     assert!(consumed);
     assert!(state.picker.is_none());
     assert!(!state.should_exit, "Esc in picker must not exit the loop");
-    assert!(state.launch_synthesize.is_none());
+    assert!(state.pending_explain.is_none());
 }
 
 #[test]
-fn picker_enter_with_selection_exits_with_paths_mode() {
+fn picker_enter_with_selection_queues_paths_mode() {
     let (_repo, mut state) = make_ready_poll_state();
-    state.set_tab(ActiveTab::Synthesis);
+    state.set_tab(ActiveTab::Explain);
     prime_picker(&mut state);
     let consumed = state.handle_key(KeyCode::Enter, KeyModifiers::NONE);
     assert!(consumed);
-    assert!(state.should_exit);
-    match &state.launch_synthesize {
-        Some(SynthesizeMode::Paths(paths)) => {
+    assert!(!state.should_exit);
+    match &state.pending_explain {
+        Some(PendingExplainRun {
+            mode: ExplainMode::Paths(paths),
+            stopped_watch: false,
+        }) => {
             assert_eq!(paths, &vec!["src/".to_string()]);
         }
         other => panic!("expected Paths(..), got {other:?}"),
@@ -390,7 +403,7 @@ fn picker_enter_with_selection_exits_with_paths_mode() {
 #[test]
 fn picker_enter_with_empty_selection_stays_open() {
     let (_repo, mut state) = make_ready_poll_state();
-    state.set_tab(ActiveTab::Synthesis);
+    state.set_tab(ActiveTab::Explain);
     prime_picker(&mut state);
     // Uncheck the only checked entry.
     state.handle_key(KeyCode::Char(' '), KeyModifiers::NONE);
@@ -401,13 +414,13 @@ fn picker_enter_with_empty_selection_stays_open() {
         "empty-selection Enter must keep picker open"
     );
     assert!(!state.should_exit);
-    assert!(state.launch_synthesize.is_none());
+    assert!(state.pending_explain.is_none());
 }
 
 #[test]
 fn picker_navigation_and_toggle_move_cursor() {
     let (_repo, mut state) = make_ready_poll_state();
-    state.set_tab(ActiveTab::Synthesis);
+    state.set_tab(ActiveTab::Explain);
     prime_picker(&mut state);
     // Start at row 0. Down should move to row 1.
     state.handle_key(KeyCode::Down, KeyModifiers::NONE);
@@ -425,7 +438,7 @@ fn picker_navigation_and_toggle_move_cursor() {
 #[test]
 fn picker_tab_switch_clears_it() {
     let (_repo, mut state) = make_ready_poll_state();
-    state.set_tab(ActiveTab::Synthesis);
+    state.set_tab(ActiveTab::Explain);
     prime_picker(&mut state);
     state.handle_key(KeyCode::Char('1'), KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Live);
@@ -435,7 +448,7 @@ fn picker_tab_switch_clears_it() {
 #[test]
 fn picker_quit_key_falls_through() {
     let (_repo, mut state) = make_ready_poll_state();
-    state.set_tab(ActiveTab::Synthesis);
+    state.set_tab(ActiveTab::Explain);
     prime_picker(&mut state);
     let consumed = state.handle_key(KeyCode::Char('q'), KeyModifiers::NONE);
     assert!(consumed);
@@ -443,27 +456,27 @@ fn picker_quit_key_falls_through() {
 }
 
 #[test]
-fn queue_synthesize_without_watch_sets_launch_and_exits() {
+fn queue_explain_without_watch_sets_pending_run() {
     let (_repo, mut state) = make_ready_poll_state();
-    state.queue_synthesize(SynthesizeMode::AllStale);
+    state.queue_explain(ExplainMode::AllStale);
     assert!(
         state.confirm_stop_watch.is_none(),
         "no watch running, modal must not open"
     );
-    assert!(state.should_exit, "queue_synthesize should request exit");
-    assert!(
-        !state.synthesis_stopped_watch,
-        "stopped_watch stays false when no watch was running"
-    );
     assert!(matches!(
-        state.launch_synthesize,
-        Some(SynthesizeMode::AllStale)
+        state.pending_explain,
+        Some(PendingExplainRun {
+            mode: ExplainMode::AllStale,
+            stopped_watch: false,
+        })
     ));
+    assert!(!state.should_exit, "explain runs inside the dashboard");
 }
 
 #[test]
-fn queue_synthesize_with_watch_opens_confirm_modal() {
+fn queue_explain_with_watch_opens_confirm_modal() {
     let _guard = crate::test_support::global_test_lock("tui-app-watch-toggle");
+    let (_home, _home_guard) = isolated_home();
     let tempdir = tempfile::tempdir().unwrap();
     crate::bootstrap::bootstrap(tempdir.path(), None, false).expect("bootstrap");
     let ctx = ActionContext::new(tempdir.path());
@@ -474,18 +487,18 @@ fn queue_synthesize_with_watch_opens_confirm_modal() {
     );
 
     let mut state = AppState::new_poll(tempdir.path(), Theme::plain(), AgentIntegration::Absent);
-    state.queue_synthesize(SynthesizeMode::Changed);
+    state.queue_explain(ExplainMode::Changed);
     assert!(
         state.confirm_stop_watch.is_some(),
         "watch running must open confirm modal"
     );
     assert!(
-        state.launch_synthesize.is_none(),
+        state.pending_explain.is_none(),
         "launch must be gated on confirm modal"
     );
     assert!(!state.should_exit, "modal open, must not exit yet");
     let pending = state.confirm_stop_watch.as_ref().unwrap();
-    assert_eq!(pending.pending_mode, SynthesizeMode::Changed);
+    assert_eq!(pending.pending_mode, ExplainMode::Changed);
 
     // Cleanup: stop the daemon before the tempdir drops.
     let stop = stop_watch(&ctx);
@@ -499,8 +512,9 @@ fn queue_synthesize_with_watch_opens_confirm_modal() {
 }
 
 #[test]
-fn confirm_modal_y_stops_watch_and_launches_synthesize() {
+fn confirm_modal_y_stops_watch_and_queues_explain() {
     let _guard = crate::test_support::global_test_lock("tui-app-watch-toggle");
+    let (_home, _home_guard) = isolated_home();
     let tempdir = tempfile::tempdir().unwrap();
     crate::bootstrap::bootstrap(tempdir.path(), None, false).expect("bootstrap");
     let ctx = ActionContext::new(tempdir.path());
@@ -511,22 +525,18 @@ fn confirm_modal_y_stops_watch_and_launches_synthesize() {
     );
 
     let mut state = AppState::new_poll(tempdir.path(), Theme::plain(), AgentIntegration::Absent);
-    state.queue_synthesize(SynthesizeMode::AllStale);
+    state.queue_explain(ExplainMode::AllStale);
     assert!(state.confirm_stop_watch.is_some());
 
     let consumed = state.handle_key(KeyCode::Char('y'), KeyModifiers::NONE);
     assert!(consumed);
-    assert!(
-        state.should_exit,
-        "y after watch-stop success should request exit"
-    );
-    assert!(
-        state.synthesis_stopped_watch,
-        "y path marks stopped_watch so CLI can remind the operator"
-    );
+    assert!(!state.should_exit, "explain runs inside the dashboard");
     assert!(matches!(
-        state.launch_synthesize,
-        Some(SynthesizeMode::AllStale)
+        state.pending_explain,
+        Some(PendingExplainRun {
+            mode: ExplainMode::AllStale,
+            stopped_watch: true,
+        })
     ));
     assert!(
         state.confirm_stop_watch.is_none(),
@@ -537,6 +547,7 @@ fn confirm_modal_y_stops_watch_and_launches_synthesize() {
 #[test]
 fn confirm_modal_n_cancels_without_stopping_watch() {
     let _guard = crate::test_support::global_test_lock("tui-app-watch-toggle");
+    let (_home, _home_guard) = isolated_home();
     let tempdir = tempfile::tempdir().unwrap();
     crate::bootstrap::bootstrap(tempdir.path(), None, false).expect("bootstrap");
     let ctx = ActionContext::new(tempdir.path());
@@ -544,14 +555,14 @@ fn confirm_modal_n_cancels_without_stopping_watch() {
     assert!(matches!(start, ActionOutcome::Ack { .. }));
 
     let mut state = AppState::new_poll(tempdir.path(), Theme::plain(), AgentIntegration::Absent);
-    state.queue_synthesize(SynthesizeMode::AllStale);
+    state.queue_explain(ExplainMode::AllStale);
     assert!(state.confirm_stop_watch.is_some());
 
     let consumed = state.handle_key(KeyCode::Char('n'), KeyModifiers::NONE);
     assert!(consumed);
     assert!(state.confirm_stop_watch.is_none(), "n clears the modal");
     assert!(!state.should_exit);
-    assert!(state.launch_synthesize.is_none());
+    assert!(state.pending_explain.is_none());
 
     // Watch must still be running; n is a pure cancel.
     assert!(matches!(

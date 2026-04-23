@@ -25,7 +25,7 @@ Files must stay under 400 lines; split into sub-modules before they grow past th
 - `rationale.rs` — inline `// DECISION:` marker extraction from code files; results stored on `FileNode.inline_decisions`; cannot produce `ConceptNode` (invariant 7)
 - Spec: `openspec/specs/graph/spec.md`
 
-Node types: `FileNode` (content-hash identity), `SymbolNode` (tree-sitter extracted), `ConceptNode` (only from human-authored markdown in configured dirs such as `docs/concepts/`, `docs/adr/`; synthesis cannot create these).
+Node types: `FileNode` (content-hash identity), `SymbolNode` (tree-sitter extracted), `ConceptNode` (only from human-authored markdown in configured dirs such as `docs/concepts/`, `docs/adr/`; explain cannot create these).
 
 **3. Overlay** (`src/overlay/mod.rs`) — LLM-authored content in a physically separate SQLite database from the graph. Defines `OverlayStore`, `OverlayLink`, `OverlayEpistemic` (`machine_authored_high_conf` | `machine_authored_low_conf`), `CitedSpan`. Phase 4+ only; the module exists to establish the architectural boundary from the start.
 - Spec: `openspec/specs/overlay/spec.md`
@@ -45,10 +45,10 @@ Node types: `FileNode` (content-hash identity), `SymbolNode` (tree-sitter extrac
 
 ## Pipeline
 
-`src/pipeline/` — `structural/` defines the 8-stage compile cycle. `mod.rs` owns transaction orchestration and `CompileSummary`; `stages.rs` owns stages 1–3 (discover → parse code → parse prose); `stage4.rs` owns cross-file edge resolution. Stage 5 (git mining) runs via `src/pipeline/git/` and `src/pipeline/git_intelligence/`. Stage 6 (identity cascade: content-hash, split, merge, git rename fallback, breakage) is wired. Stage 7 (drift scoring via Jaccard distance on persisted structural fingerprints) is wired and writes to the sidecar `edge_drift` and `file_fingerprints` tables. Stage 8 publishes the immutable in-memory graph snapshot via `ArcSwap<Graph>` after the SQLite commit succeeds. `synthesis/` defines the `CommentaryGenerator` trait boundary with `stub.rs` (`NoOpGenerator`, default) and `providers/` for the configured synthesis backends; called explicitly via `synrepo_refresh_commentary` or sync repair actions.
+`src/pipeline/` — `structural/` defines the 8-stage compile cycle. `mod.rs` owns transaction orchestration and `CompileSummary`; `stages.rs` owns stages 1–3 (discover → parse code → parse prose); `stage4.rs` owns cross-file edge resolution. Stage 5 (git mining) runs via `src/pipeline/git/` and `src/pipeline/git_intelligence/`. Stage 6 (identity cascade: content-hash, split, merge, git rename fallback, breakage) is wired. Stage 7 (drift scoring via Jaccard distance on persisted structural fingerprints) is wired and writes to the sidecar `edge_drift` and `file_fingerprints` tables. Stage 8 publishes the immutable in-memory graph snapshot via `ArcSwap<Graph>` after the SQLite commit succeeds. `explain/` defines the `CommentaryGenerator` trait boundary with `stub.rs` (`NoOpGenerator`, default) and `providers/` for the configured explain backends; called explicitly via `synrepo_refresh_commentary` or sync repair actions.
 
 - `maintenance.rs` — storage-compatibility cleanup and compaction hooks; driven by `sync`.
-- `repair/` — `mod.rs` is a thin façade. `report/` holds the drift-report builder with `surfaces/` (10 `SurfaceCheck` implementations split into `mod.rs`, `commentary.rs`, `cross_links.rs`, `drift.rs`, `rationale.rs`). `sync.rs` drives auto-repair, `cross_links.rs` runs the cross-link generation pass, `log.rs` appends JSONL resolution records, `declared_links.rs` verifies `Governs` targets, `commentary.rs` is the commentary-refresh repair action that calls the synthesis generator, and `types/` holds the stable enums plus report/log payload types.
+- `repair/` — `mod.rs` is a thin façade. `report/` holds the drift-report builder with `surfaces/` (10 `SurfaceCheck` implementations split into `mod.rs`, `commentary.rs`, `cross_links.rs`, `drift.rs`, `rationale.rs`). `sync.rs` drives auto-repair, `cross_links.rs` runs the cross-link generation pass, `log.rs` appends JSONL resolution records, `declared_links.rs` verifies `Governs` targets, `commentary.rs` is the commentary-refresh repair action that calls the explain generator, and `types/` holds the stable enums plus report/log payload types.
 - `git_intelligence/` — `mod.rs` is a thin façade. `types.rs` defines the public Git-intelligence payloads, `analysis.rs` derives history/hotspot/ownership/co-change summaries, `emit.rs` emits `CoChangesWith` edges into the graph after each git pass, `symbol_revisions/` tracks per-symbol `first_seen_rev`/`last_modified_rev` via body-hash diffing, and `tests/` is split by status, history, path, and shared support helpers.
 - `watch/` — reconcile backstop, watch lease/control plane, and watch loop production logic; tests live in `src/pipeline/watch/tests.rs`.
 - `writer.rs` — single-writer lock production logic; tests live in `src/pipeline/writer/tests.rs`.
@@ -94,9 +94,9 @@ Stages 1–4 run in a single atomic SQLite transaction (`run_structural_compile`
 - `.synrepo/state/watch.sock` — Unix-only control socket for active daemon watch mode (on Windows the control plane is a named pipe `synrepo-watch-<hash>` with no on-disk artifact)
 - `.synrepo/state/reconcile-state.json` — last reconcile outcome, timestamp, and discovered/symbol counts
 - `.synrepo/state/repair-log.jsonl` — append-only resolution log written by `synrepo sync`; one JSON object per line
-- `.synrepo/state/synthesis-log.jsonl` — append-only per-call synthesis telemetry (see `docs/SYNTHESIS.md`)
-- `.synrepo/state/synthesis-totals.json` — aggregates snapshot consumed by the Health tab; written transactionally (temp + rename) after each call
-- `.synrepo/state/synthesis-scope.json` — folder-picker persisted selection for `synrepo synthesize` (UI state, not operator config); load failures fall back to the heuristic rather than crashing
+- `.synrepo/state/explain-log.jsonl` — append-only per-call explain telemetry (see `docs/EXPLAIN.md`)
+- `.synrepo/state/explain-totals.json` — aggregates snapshot consumed by the Health tab; written transactionally (temp + rename) after each call
+- `.synrepo/state/explain-scope.json` — folder-picker persisted selection for `synrepo explain` (UI state, not operator config); load failures fall back to the heuristic rather than crashing
 - `openspec/` — planning artifacts only, not runtime
 
 Code that opens the graph store uses `SqliteGraphStore::open(&graph_dir)` where `graph_dir` is `.synrepo/graph/`; the `nodes.db` name is internal to `src/store/sqlite/mod.rs`.

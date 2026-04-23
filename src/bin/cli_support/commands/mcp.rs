@@ -12,7 +12,7 @@ use rmcp::{
     ServerHandler, ServiceExt as _,
 };
 use synrepo::config::Config;
-use synrepo::pipeline::synthesis::telemetry;
+use synrepo::pipeline::explain::telemetry;
 use synrepo::store::compatibility::StoreId;
 use synrepo::surface::handoffs::HandoffsRequest;
 use synrepo::surface::handoffs::{collect_handoffs, to_json as handoffs_to_json};
@@ -64,7 +64,7 @@ impl ServerHandler for SynrepoServer {
              synrepo_findings to see machine-authored relationship candidates, \
              synrepo_recent_activity for bounded operational event history, \
              synrepo_refresh_commentary to generate or update LLM commentary for a symbol, \
-             synrepo_docs_search to search advisory synthesized commentary docs. \
+             synrepo_docs_search to search advisory explained commentary docs. \
              Low-level primitives: synrepo_node, synrepo_edges, synrepo_query, \
              synrepo_overlay, synrepo_provenance for direct graph and overlay access.",
         )
@@ -91,7 +91,7 @@ impl SynrepoServer {
 
     #[tool(
         name = "synrepo_docs_search",
-        description = "Search advisory synthesized commentary docs materialized under .synrepo/. Results are overlay-backed, freshness-labeled, and never canonical graph facts."
+        description = "Search advisory explained commentary docs materialized under .synrepo/. Results are overlay-backed, freshness-labeled, and never canonical graph facts."
     )]
     async fn synrepo_docs_search(
         &self,

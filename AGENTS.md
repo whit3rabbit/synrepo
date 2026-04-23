@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) and other coding age
 |-------|------|
 | Layer architecture, pipeline stages, storage layout, snapshot rules | `docs/ARCHITECTURE.md` |
 | Config fields and defaults | `docs/CONFIG.md` |
-| Synthesis providers, API keys, telemetry | `docs/SYNTHESIS.md` |
+| Explain providers, API keys, telemetry | `docs/EXPLAIN.md` |
 | Adding a new tree-sitter language | `docs/ADDING-LANGUAGE.md` |
 | Full foundational design (data model, trust model, evaluation) | `docs/FOUNDATION.md` |
 
@@ -62,8 +62,8 @@ cargo run -- watch --daemon        # detached per-repo watch service
 cargo run -- watch status          # watch ownership and reconcile telemetry
 cargo run -- watch stop            # stop active watch service or clean stale watch artifacts
 cargo run -- agent-setup <tool>    # write integration shim; automated tier (writes shim + MCP config): claude, codex, open-code, cursor, windsurf, roo; shim-only tier (writes shim only): copilot, generic, gemini, goose, kiro, qwen, junie, tabnine, trae; --regen to update if stale
-cargo run -- setup                 # full onboarding: interactive TUI wizard (mode + agent target + synthesis)
-cargo run -- setup <tool>          # full onboarding: scripted (init + shim + MCP register + first reconcile); --synthesis appends the synthesis sub-wizard
+cargo run -- setup                 # full onboarding: interactive TUI wizard (mode + agent target + explain)
+cargo run -- setup <tool>          # full onboarding: scripted (init + shim + MCP register + first reconcile); --explain appends the explain sub-wizard
 cargo run -- search <query>        # lexical search
 cargo run -- graph query "outbound <node_id> [edge_kind]"  # graph traversal
 cargo run -- graph stats           # node/edge counts
@@ -85,12 +85,12 @@ Instead of grep or ripgrep use 'st' instead (syntext binary compatible with grep
 These must hold across all changes:
 
 1. `graph::Epistemic` has three variants: `ParserObserved`, `HumanDeclared`, `GitObserved`. Machine-authored content uses `overlay::OverlayEpistemic` instead. The type boundary is enforced by the type system — do not add machine variants to `Epistemic`.
-2. The synthesis pipeline queries the graph with `source_store = "graph"` filtered at the retrieval layer. It never reads overlay output as input. This is structural, not just labeled.
+2. The explain pipeline queries the graph with `source_store = "graph"` filtered at the retrieval layer. It never reads overlay output as input. This is structural, not just labeled.
 3. `FileNodeId` is stable across renames. For new files it is derived from the content hash of the first-seen version (`derive_file_id` in `pipeline/structural/ids.rs`). For existing files the stored ID is always reused. Content-hash rename detection (stage 6) is implemented: a file moved to a new path with identical content preserves its `FileNodeId` and records the old path in `path_history`. Do not derive `FileNodeId` from path.
 4. `ConceptNodeId` is path-derived (`derive_concept_id` in `structure/prose.rs`), making it stable across content edits but not renames. This differs from `FileNodeId` — do not confuse the two.
 5. `SymbolNodeId` is keyed on `(file_node_id, qualified_name, kind, body_hash)`. A body rewrite changes the hash but keeps the node's graph slot via upsert.
 6. `EdgeKind::Governs` is only created from human-authored frontmatter or inline `# DECISION:` markers, never inferred.
-7. `ConceptNode` is only created from human-authored markdown in configured directories (`docs/concepts/`, `docs/adr/`, `docs/decisions/` by default). The synthesis pipeline cannot mint concept nodes in any mode.
+7. `ConceptNode` is only created from human-authored markdown in configured directories (`docs/concepts/`, `docs/adr/`, `docs/decisions/` by default). The explain pipeline cannot mint concept nodes in any mode.
 8. Any multi-query read through a `GraphStore` or `OverlayStore` must run under `with_graph_read_snapshot` / `with_overlay_read_snapshot` (or the trait's `begin_read_snapshot`/`end_read_snapshot` pair). Without a snapshot, a writer commit between queries leaves the reader observing two committed epochs in one operation, which is how cards end up citing nodes and edges from different generations.
 
 ## Gotchas
@@ -100,67 +100,42 @@ These must hold across all changes:
 - **Every `.rs` file must stay under 400 lines.** Split into a sub-module directory before exceeding that limit. **Over-limit (split before adding, rated by ease of split):**
 
   **Easy** (clear natural boundaries):
-  - `src/pipeline/synthesis/providers/mod.rs` (839) — provider dispatch, config, selection cleanly separable
-  - `src/bin/cli.rs` (687) — commands cleanly dispatched to handler functions
-  - `src/pipeline/synthesis/telemetry.rs` (631) — event defs, publication, accounting separable
-  - `src/tui/wizard/setup/synthesis.rs` (568) — provider enum and config handling separable
-  - `src/pipeline/repair/cross_link_verify.rs` (532) — verification and hash computation separable
-  - `src/pipeline/synthesis/providers/local.rs` (529) — HTTP client, Ollama vs OpenAI paths separable
-  - `src/pipeline/synthesis/providers/gemini.rs` (506) — generator impl, URL building, token counting
-  - `src/pipeline/synthesis/accounting.rs` (501) — data structs and file I/O separable
-  - `src/pipeline/synthesis/providers/openrouter.rs` (489) — standard provider pattern
-  - `src/pipeline/synthesis/providers/anthropic.rs` (471) — generator, token counting, API constants
-  - `src/bin/cli_support/agent_shims/shims.rs` (449) — static strings, per-tool sections distinct
-  - `src/pipeline/synthesis/providers/minimax.rs` (419) — standard provider pattern
-  - `src/pipeline/synthesis/providers/zai.rs` (417) — OpenAI-compatible pattern
-  - `src/pipeline/synthesis/providers/openai.rs` (413) — standard request/response pattern
-
-  **Medium** (separable but interdependent):
-  - `src/bootstrap/runtime_probe.rs` (757) — distinct probe phases mixed in one file
-  - `src/tui/actions.rs` (702) — actions grouped by feature but overlapping error handling
-  - `src/tui/app/mod.rs` (651) — prefer new `src/tui/app/` submodule over growing further
   - `src/overlay/mod.rs` (579) — epistemic kinds, edge kinds, cited spans could split out
   - `src/tui/mod.rs` (543) — components already partially modularized
   - `src/tui/wizard/setup/state.rs` (518) — data structs mixed with wizard transition logic
-  - `src/bin/cli_support/commands/setup.rs` (465) — step outcomes mixed with setup logic
+  - `src/bin/cli_support/commands/setup.rs` (492) — step outcomes mixed with setup logic
   - `src/bin/cli_support/commands/status/mod.rs` (463)
-  - `src/bin/cli_support/cli_args.rs` (455)
+  - `src/bin/cli_support/cli_args.rs` (463)
+  - `src/bin/cli_support/commands/explain_ui.rs` (454) — progress rendering mixed with telemetry
   - `src/tui/probe.rs` (426) — view models mixed with conversion logic
   - `src/surface/card/compiler/public_api.rs` (417) — compilation mixed with per-language visibility rules
-  - `src/bin/cli_support/commands/synthesize_progress.rs` (411) — progress rendering mixed with telemetry
+  - `src/surface/status_snapshot.rs` (446) — complex data structures mixed with snapshot building
+
+  **Medium** (separable but interdependent):
+  - `src/substrate/embedding/index.rs` (535)
+  - `src/structure/identity.rs` (517)
+  - `src/pipeline/structural/stages.rs` (501)
+  - `src/surface/card/git.rs` (446)
 
   **Hard** (tightly coupled, needs design thought):
   - `src/pipeline/structural/stage4.rs` (820) — monolithic resolution algorithm with coupled scoring
-  - `src/surface/status_snapshot.rs` (446) — complex data structures mixed with snapshot building
 
-  **Not yet rated** (previously tracked):
-  - `src/pipeline/maintenance.rs` (622)
-  - `src/pipeline/compact.rs` (563)
-  - `src/pipeline/watch/lease.rs` (558)
-  - `src/pipeline/diagnostics.rs` (540)
-  - `src/substrate/embedding/index.rs` (535)
-  - `src/config/mod.rs` (598)
-  - `src/structure/identity.rs` (517)
-  - `src/pipeline/structural/stages.rs` (501)
-  - `src/pipeline/synthesis/cross_link/triage/deterministic.rs` (470)
-  - `src/surface/card/git.rs` (446)
-
-  **Watchlist (370-399, approaching limit):** `src/pipeline/watch/service.rs` (391), `src/pipeline/synthesis/docs/corpus.rs` (391), `src/tui/app/synthesis_picker.rs` (390), `src/pipeline/writer/helpers.rs` (390), `src/substrate/incremental.rs` (387), `src/pipeline/git/mod.rs` (382), `src/tui/wizard/setup/render/synthesis.rs` (381), `src/bin/cli_support/commands/watch.rs` (375), `src/substrate/index.rs` (374), `src/bin/cli_support/commands/synthesize_ui.rs` (374), `src/store/overlay/commentary.rs` (372), `src/tui/watcher.rs` (371).
+  **Watchlist (370-399, approaching limit):** `src/pipeline/watch/service.rs` (391), `src/pipeline/explain/docs/corpus.rs` (391), `src/tui/app/explain_picker.rs` (390), `src/pipeline/writer/helpers.rs` (390), `src/substrate/incremental.rs` (387), `src/pipeline/git/mod.rs` (382), `src/tui/wizard/setup/render/explain.rs` (381), `src/bin/cli_support/commands/watch.rs` (375), `src/substrate/index.rs` (374), `src/store/overlay/commentary.rs` (372), `src/tui/watcher.rs` (371).
 
 - **`src/structure/parse/extract/` is already a sub-module directory** (`mod.rs` ~363 lines, `qualname.rs` ~88). Do not add more code to `mod.rs` without splitting further.
-- **`src/tui/app/` sub-modules can own `impl AppState` blocks** for feature-specific state and handlers (see `synthesis_picker.rs` for the folder-picker modal). Keep `AppState` fields on the struct in `mod.rs`; put feature methods, helpers, and tests in the submodule.
+- **`src/tui/app/` sub-modules can own `impl AppState` blocks** for feature-specific state and handlers (see `explain_picker.rs` for the folder-picker modal). Keep `AppState` fields on the struct in `mod.rs`; put feature methods, helpers, and tests in the submodule.
 
 ### Agent shims and MCP
 
 - **Agent-doctrine text lives in `src/bin/cli_support/agent_shims/doctrine.rs`** as a `doctrine_block!()` macro. Every shim in `shims.rs` embeds it via `concat!`. Edits touching escalation rules, do-not rules, or the product-boundary paragraph MUST go through `doctrine_block!`; the byte-identical test in `tests.rs` (`every_shim_embeds_doctrine_block`) enforces this. The escalation-line source-scan test reads `src/bin/cli_support/commands/mcp.rs` — do not move the MCP tool registration out of that file without updating the test path. Edit target-specific sections (tool list framing, CLI fallback examples, file paths) directly in `shims.rs`.
 - **Shim output paths have three sync sites.** `AgentTool::output_path()` in `src/bin/cli_support/agent_shims/mod.rs` is canonical, but `shim_output_path()` in `src/bootstrap/runtime_probe.rs` duplicates the match (library can't import bin-private modules), and `KNOWN_SHIM_PATHS` in `src/bootstrap/report.rs` drives the doctrine-pointer lookup. Changing a shim path requires all three.
 
-### Links, repair, synthesis
+### Links, repair, explain
 
 - **`src/bin/cli_support/commands/links/accept.rs` owns the curated `links accept` 3-phase commit path** and the debug-only crash failpoints used by the soak suite. Keep `SYNREPO_TEST_CRASH_AT=links_accept:after_pending` and `links_accept:after_graph_insert` test-only, and prefer extending the submodule instead of growing `commands/links.rs` again.
 - **`repair/types/` has dual string mappings**: `RepairSurface`, `DriftClass`, `Severity`, and `RepairAction` each have `#[serde(rename_all = "snake_case")]` AND a manual `as_str()` in `src/pipeline/repair/types/stable.rs`. Adding a new variant requires updating both. `RepairSurface::ProposedLinksOverlay`, `RepairSurface::ExportSurface`, `RepairAction::RevalidateLinks`, and `RepairAction::RegenerateExports` follow the same rule. The stable-identifier tests in `src/pipeline/repair/types/tests.rs` catch `as_str()` divergence from literals but do not cross-check serde output.
 - **Commentary freshness is computed in two places**: `src/bin/cli_support/commands/status.rs::commentary_coverage_full` (status `--full`) and `src/pipeline/repair/report/surfaces/commentary.rs::scan_commentary_staleness` (repair surface). Both walk `commentary_hashes()` against `resolve_commentary_node`. The repair version is `pub(super) struct CommentaryScan { total, stale }`; unifying requires promoting it to `pub` in the repair module.
-- **Synthesized docs are advisory overlay output only.** Materialized commentary docs live under `.synrepo/synthesis-docs/` with a dedicated syntext index at `.synrepo/synthesis-index/`. They are searchable through `synrepo_docs_search`, but they are never canonical graph facts and never used as synthesis input.
+- **Explain docs are advisory overlay output only.** Materialized commentary docs live under `.synrepo/explain-docs/` with a dedicated syntext index at `.synrepo/explain-index/`. They are searchable through `synrepo_docs_search`, but they are never canonical graph facts and never used as explain input.
 
 ### Graph semantics
 

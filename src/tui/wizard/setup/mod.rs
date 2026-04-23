@@ -1,6 +1,6 @@
 //! Setup wizard: guided first-run flow for uninitialized repos.
 //!
-//! Multi-step guided flow: splash, graph mode, agent target, synthesis choice,
+//! Multi-step guided flow: splash, graph mode, agent target, explain choice,
 //! optional cloud-key or local-endpoint details, and final confirm. The wizard
 //! returns a [`SetupPlan`] the bin-side dispatcher executes.
 //! Cancellation at any point before Confirm guarantees zero writes. The state
@@ -8,14 +8,14 @@
 //! tests can exercise it by driving `handle_key` with crafted key events and
 //! asserting on the resulting plan.
 
+pub mod explain;
 pub mod render;
 pub mod state;
-pub mod synthesis;
 mod tests;
 
-pub use render::{run_setup_wizard_loop, run_synthesis_only_wizard_loop};
-pub use state::{SetupPlan, SetupWizardOutcome, SetupWizardState, WIZARD_TARGETS};
-pub use synthesis::{
-    CloudCredentialSource, CloudProvider, LocalPreset, SynthesisChoice, SynthesisRow,
-    SynthesisWizardSupport, TextInputField, LOCAL_PRESETS, SYNTHESIS_ROWS,
+pub use explain::{
+    CloudCredentialSource, CloudProvider, ExplainChoice, ExplainRow, ExplainWizardSupport,
+    LocalPreset, TextInputField, EXPLAIN_ROWS, LOCAL_PRESETS,
 };
+pub use render::{run_explain_only_wizard_loop, run_setup_wizard_loop};
+pub use state::{SetupPlan, SetupWizardOutcome, SetupWizardState, WIZARD_TARGETS};

@@ -38,7 +38,7 @@ Rule of thumb: `tiny` to find, `normal` to understand, `deep` to write.
 
 - Graph content is primary.
 - Overlay content is advisory.
-- Materialized synthesized docs are advisory overlay output, not canonical graph facts.
+- Materialized advisory explain docs are advisory overlay output, not canonical graph facts.
 - If overlay and graph disagree, trust the graph.
 - Freshness is explicit. A stale label is information, not an error; it is not silently refreshed on read.
 
@@ -46,7 +46,7 @@ Rule of thumb: `tiny` to find, `normal` to understand, `deep` to write.
 
 - Do not open large files first. Start at `tiny` and escalate only when a specific field forces it.
 - Do not treat overlay commentary as canonical. It is advisory prose layered on structural cards.
-- Do not trigger synthesis (`--generate-cross-links`, deep commentary refresh) unless the task justifies the cost.
+- Do not trigger explain (`--generate-cross-links`, deep commentary refresh) unless the task justifies the cost.
 - Do not expect watch or background behavior unless `synrepo watch` is explicitly running.
 
 ## Core tools
@@ -54,7 +54,7 @@ Rule of thumb: `tiny` to find, `normal` to understand, `deep` to write.
 - `synrepo_overview()` — first call on an unfamiliar repo
 - `synrepo_card(target, budget?)` — card for a symbol or file
 - `synrepo_search(query, limit?)` — lexical search
-- `synrepo_docs_search(query, limit?)` — advisory synthesized commentary search
+- `synrepo_docs_search(query, limit?)` — advisory advisory commentary search
 - `synrepo_where_to_edit(task, limit?)` — ranked edit candidates
 - `synrepo_change_impact(target)` — first-pass dependents
 - `synrepo_change_risk(target)` — composite risk signal

@@ -5,6 +5,12 @@ use crate::store::compatibility::{self, StoreId};
 use crate::store::sqlite::SqliteGraphStore;
 use tempfile::tempdir;
 
+fn isolated_home() -> (tempfile::TempDir, crate::config::test_home::HomeEnvGuard) {
+    let home = tempfile::tempdir().unwrap();
+    let guard = crate::config::test_home::HomeEnvGuard::redirect_to(home.path());
+    (home, guard)
+}
+
 #[test]
 fn bootstrap_fresh_repo_reports_healthy_summary() {
     let repo = tempdir().unwrap();
@@ -26,6 +32,7 @@ fn bootstrap_fresh_repo_reports_healthy_summary() {
 
 #[test]
 fn bootstrap_selects_curated_when_rationale_markdown_exists() {
+    let (_home, _home_guard) = isolated_home();
     let repo = tempdir().unwrap();
     let adr_dir = repo.path().join("docs/adr");
     std::fs::create_dir_all(&adr_dir).unwrap();
@@ -44,6 +51,7 @@ fn bootstrap_selects_curated_when_rationale_markdown_exists() {
 
 #[test]
 fn bootstrap_rerun_refreshes_existing_runtime() {
+    let (_home, _home_guard) = isolated_home();
     let repo = tempdir().unwrap();
     std::fs::write(repo.path().join("README.md"), "before refresh\n").unwrap();
     bootstrap(repo.path(), None, false).unwrap();
@@ -81,6 +89,7 @@ fn bootstrap_repairs_partial_runtime_and_reports_degraded() {
 
 #[test]
 fn bootstrap_reports_graph_sensitive_config_drift_without_blocking() {
+    let (_home, _home_guard) = isolated_home();
     let repo = tempdir().unwrap();
     std::fs::write(repo.path().join("README.md"), "compat token\n").unwrap();
     bootstrap(repo.path(), None, false).unwrap();
@@ -122,6 +131,7 @@ fn bootstrap_blocks_on_invalid_existing_config() {
 
 #[test]
 fn bootstrap_explicit_mode_overrides_existing_config_on_refresh() {
+    let (_home, _home_guard) = isolated_home();
     let repo = tempdir().unwrap();
     std::fs::write(repo.path().join("README.md"), "mode token\n").unwrap();
     bootstrap(repo.path(), Some(Mode::Curated), false).unwrap();
@@ -135,6 +145,7 @@ fn bootstrap_explicit_mode_overrides_existing_config_on_refresh() {
 
 #[test]
 fn bootstrap_honors_explicit_auto_with_curated_recommendation() {
+    let (_home, _home_guard) = isolated_home();
     let repo = tempdir().unwrap();
     let adr_dir = repo.path().join("docs/adr");
     std::fs::create_dir_all(&adr_dir).unwrap();
@@ -153,6 +164,7 @@ fn bootstrap_honors_explicit_auto_with_curated_recommendation() {
 
 #[test]
 fn bootstrap_blocks_on_newer_graph_store_version() {
+    let (_home, _home_guard) = isolated_home();
     let repo = tempdir().unwrap();
     std::fs::write(repo.path().join("README.md"), "graph token\n").unwrap();
     bootstrap(repo.path(), None, false).unwrap();

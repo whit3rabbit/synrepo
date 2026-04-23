@@ -3,13 +3,13 @@ use std::process::Command;
 use synrepo::config::Config;
 use synrepo::core::ids::{NodeId, SymbolNodeId};
 use synrepo::overlay::{CommentaryEntry, CommentaryProvenance, OverlayStore};
-use synrepo::pipeline::synthesis::accounting::{ProviderTotals, SynthesisTotals};
+use synrepo::pipeline::explain::accounting::{ExplainTotals, ProviderTotals};
 use synrepo::pipeline::writer::{writer_lock_path, WriterOwnership};
 use synrepo::store::overlay::SqliteOverlayStore;
 use tempfile::tempdir;
 use time::OffsetDateTime;
 
-use super::{seed_graph, status_output, write_synthesis_totals, EnvGuard};
+use super::{seed_graph, status_output, write_explain_totals, EnvGuard};
 
 #[test]
 fn status_reports_graph_counts_after_bootstrap() {
@@ -36,7 +36,7 @@ fn status_reports_graph_counts_after_bootstrap() {
 }
 
 #[test]
-fn status_synthesis_hint_mentions_global_config_for_reusable_keys() {
+fn status_explain_hint_mentions_global_config_for_reusable_keys() {
     let env = EnvGuard::new();
     env.set("ANTHROPIC_API_KEY", "sk-test");
     let repo = tempdir().unwrap();
@@ -45,7 +45,7 @@ fn status_synthesis_hint_mentions_global_config_for_reusable_keys() {
     let text = status_output(repo.path(), false, false, false).unwrap();
     assert!(
         text.contains("~/.synrepo/config.toml"),
-        "expected global synthesis config hint, got: {text}"
+        "expected global explain config hint, got: {text}"
     );
 }
 
@@ -54,9 +54,9 @@ fn status_json_reports_static_pricing_basis_without_openrouter_live_cost() {
     let repo = tempdir().unwrap();
     seed_graph(repo.path());
 
-    write_synthesis_totals(
+    write_explain_totals(
         repo.path(),
-        &SynthesisTotals {
+        &ExplainTotals {
             calls: 1,
             input_tokens: 120,
             output_tokens: 30,
@@ -70,7 +70,7 @@ fn status_json_reports_static_pricing_basis_without_openrouter_live_cost() {
                 },
             ))
             .collect(),
-            ..SynthesisTotals::default()
+            ..ExplainTotals::default()
         },
     );
 
@@ -81,14 +81,14 @@ fn status_json_reports_static_pricing_basis_without_openrouter_live_cost() {
     )
     .unwrap();
     assert_eq!(
-        json["synthesis_totals"]["openrouter_live_pricing_used"],
+        json["explain_totals"]["openrouter_live_pricing_used"],
         serde_json::json!(false)
     );
     assert_eq!(
-        json["synthesis_totals"]["pricing_basis"],
+        json["explain_totals"]["pricing_basis"],
         serde_json::json!(format!(
             "static table as of {}",
-            synrepo::pipeline::synthesis::pricing::LAST_UPDATED
+            synrepo::pipeline::explain::pricing::LAST_UPDATED
         ))
     );
 }
@@ -98,9 +98,9 @@ fn status_json_reports_live_openrouter_pricing_basis_when_openrouter_cost_presen
     let repo = tempdir().unwrap();
     seed_graph(repo.path());
 
-    write_synthesis_totals(
+    write_explain_totals(
         repo.path(),
-        &SynthesisTotals {
+        &ExplainTotals {
             calls: 2,
             input_tokens: 300,
             output_tokens: 90,
@@ -114,7 +114,7 @@ fn status_json_reports_live_openrouter_pricing_basis_when_openrouter_cost_presen
                 },
             ))
             .collect(),
-            ..SynthesisTotals::default()
+            ..ExplainTotals::default()
         },
     );
 
@@ -125,14 +125,14 @@ fn status_json_reports_live_openrouter_pricing_basis_when_openrouter_cost_presen
     )
     .unwrap();
     assert_eq!(
-        json["synthesis_totals"]["openrouter_live_pricing_used"],
+        json["explain_totals"]["openrouter_live_pricing_used"],
         serde_json::json!(true)
     );
     assert_eq!(
-        json["synthesis_totals"]["pricing_basis"],
+        json["explain_totals"]["pricing_basis"],
         serde_json::json!(format!(
             "static table as of {}; OpenRouter live",
-            synrepo::pipeline::synthesis::pricing::LAST_UPDATED
+            synrepo::pipeline::explain::pricing::LAST_UPDATED
         ))
     );
 }

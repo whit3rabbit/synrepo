@@ -17,7 +17,7 @@ synrepo SHALL define lexical indexing as an exact search substrate that supports
 #### Scenario: Resolve a name lookup without semantic search
 - **WHEN** an agent or internal component needs lexical fallback
 - **THEN** the substrate contract guarantees deterministic exact-search behavior
-- **AND** it does not require LLM synthesis to answer the query
+- **AND** it does not require Explain to answer the query
 
 ### Requirement: Allow incremental lexical index maintenance for watch mode
 synrepo SHALL allow watch-driven lexical index maintenance from a bounded touched-path set when the watch service has a trustworthy coalesced batch of repo-relative file changes. The incremental path SHALL skip `.synrepo/` and `.git/`, ignore directories, respect configured roots and redaction policy, and evict entries whose paths are now out of policy or deleted. When no trustworthy touched-path set exists, or when the underlying syntext index is missing, corrupt, lock-conflicted, or overlay-full, synrepo SHALL fall back to a full rebuild.

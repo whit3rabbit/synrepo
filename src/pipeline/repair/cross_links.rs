@@ -7,7 +7,7 @@ use crate::{
         derive_link_freshness, ConfidenceTier, CrossLinkFreshness, OverlayEpistemic, OverlayLink,
         OverlayStore,
     },
-    pipeline::synthesis::{
+    pipeline::explain::{
         build_cross_link_generator, score, CandidatePair, CandidateScope, CrossLinkGenerator,
     },
     store::{overlay::SqliteOverlayStore, sqlite::SqliteGraphStore},
@@ -134,7 +134,7 @@ fn select_generation_pairs(
     generate_new: bool,
     regenerate_stale: bool,
 ) -> crate::Result<Vec<CandidatePair>> {
-    use crate::pipeline::synthesis::cross_link::triage::{candidate_pairs, TriageScope};
+    use crate::pipeline::explain::cross_link::triage::{candidate_pairs, TriageScope};
 
     let concepts = graph
         .all_concept_paths()?
@@ -155,7 +155,7 @@ fn select_generation_pairs(
     // If semantic triage is enabled, also run semantic prefilter on unmatched concepts
     #[cfg(feature = "semantic-triage")]
     {
-        use crate::pipeline::synthesis::cross_link::triage::semantic_candidates;
+        use crate::pipeline::explain::cross_link::triage::semantic_candidates;
 
         if _config.enable_semantic_triage {
             // Find concepts that were matched by deterministic

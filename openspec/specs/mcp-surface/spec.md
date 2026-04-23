@@ -93,17 +93,17 @@ synrepo SHALL define an MCP surface centered on task-first tools for orientation
 - **AND** the tool contract does not require raw graph traversal knowledge from the caller
 
 ### Requirement: Expose synrepo_docs_search as an advisory docs-search tool
-synrepo SHALL expose `synrepo_docs_search(query, limit?)` as an MCP tool that searches materialized synthesized commentary docs under `.synrepo/synthesis-docs/`. The tool SHALL return overlay-backed advisory results only, never canonical graph facts. Each result SHALL include `node_id`, `qualified_name`, `source_path`, `path`, `line`, `content`, `commentary_state`, `generated_at`, `model_identity`, and `source_store: "overlay"`.
+synrepo SHALL expose `synrepo_docs_search(query, limit?)` as an MCP tool that searches materialized explain commentary docs under `.synrepo/explain-docs/`. The tool SHALL return overlay-backed advisory results only, never canonical graph facts. Each result SHALL include `node_id`, `qualified_name`, `source_path`, `path`, `line`, `content`, `commentary_state`, `generated_at`, `model_identity`, and `source_store: "overlay"`.
 
-#### Scenario: Agent searches synthesized commentary docs
+#### Scenario: Agent searches explain commentary docs
 - **WHEN** an agent invokes `synrepo_docs_search` with `query: "retry loop"` and `limit: 10`
-- **THEN** the tool returns only commentary-doc matches from the synthesized-doc corpus
+- **THEN** the tool returns only commentary-doc matches from the explain-doc corpus
 - **AND** each result is labeled as overlay-backed advisory content rather than graph-backed structure
 
 #### Scenario: Tool registration appears in MCP capabilities
 - **WHEN** an MCP client connects and enumerates available tools
 - **THEN** `synrepo_docs_search` appears in the tool list
-- **AND** the description states that the results are advisory synthesized docs, freshness-labeled, and not canonical graph facts
+- **AND** the description states that the results are advisory explain docs, freshness-labeled, and not canonical graph facts
 
 ### Requirement: Require provenance and freshness in responses
 synrepo SHALL define MCP response contracts that expose provenance, source-store labeling, and freshness behavior for all graph-backed and overlay-backed content. For overlay commentary specifically, the contract SHALL define the observable behavior for each commentary state: present-and-fresh, present-and-stale, absent, and budget-withheld. For overlay cross-link candidates specifically, the contract SHALL define the observable behavior for each candidate state: present-fresh-high-tier (included with source label and tier), present-fresh-review-tier (included at `deep` budget with explicit review-queue label), present-stale (included with staleness label regardless of tier), present-source-deleted (included with `source_deleted` label, indicating the candidate refers to a node that no longer exists), absent (no candidates exist for the queried node, label marked missing), and budget-withheld (candidates were not included due to budget; labeled as withheld, not as absent). Below-threshold candidates SHALL NOT appear in card-shaped MCP responses; they are retrievable only through the dedicated findings tool.
@@ -124,7 +124,7 @@ synrepo SHALL define MCP response contracts that expose provenance, source-store
 - **AND** the caller can distinguish budget-withheld from absent
 
 #### Scenario: Receive a response from synrepo_docs_search
-- **WHEN** `synrepo_docs_search` returns a synthesized commentary match
+- **WHEN** `synrepo_docs_search` returns an explain commentary match
 - **THEN** the response includes `commentary_state`, `generated_at`, `model_identity`, and `source_store: "overlay"`
 - **AND** the result is clearly advisory and does not claim graph-backed truth
 

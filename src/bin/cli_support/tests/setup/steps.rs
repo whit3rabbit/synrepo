@@ -4,11 +4,11 @@ use tempfile::tempdir;
 
 use crate::cli_support::agent_shims::{AgentTool, AutomationTier};
 use crate::cli_support::commands::{
-    step_apply_integration, step_apply_synthesis, step_ensure_ready, step_init, step_register_mcp,
+    step_apply_explain, step_apply_integration, step_ensure_ready, step_init, step_register_mcp,
     step_write_shim, StepOutcome,
 };
-use synrepo::tui::wizard::setup::synthesis::{CloudProvider, LocalPreset};
-use synrepo::tui::{CloudCredentialSource, SynthesisChoice};
+use synrepo::tui::wizard::setup::explain::{CloudProvider, LocalPreset};
+use synrepo::tui::{CloudCredentialSource, ExplainChoice};
 use toml::Value;
 
 const TEST_GLOBAL_CONFIG_PATH_ENV: &str = "SYNREPO_TEST_GLOBAL_CONFIG_PATH";
@@ -52,7 +52,7 @@ fn step_init_skips_when_already_initialized() {
 }
 
 #[test]
-fn step_apply_synthesis_cloud_with_env_key_writes_only_repo_local_config() {
+fn step_apply_explain_cloud_with_env_key_writes_only_repo_local_config() {
     let home = tempdir().unwrap();
     let _home_lock =
         synrepo::test_support::global_test_lock(synrepo::config::test_home::HOME_ENV_TEST_LOCK);
@@ -61,13 +61,13 @@ fn step_apply_synthesis_cloud_with_env_key_writes_only_repo_local_config() {
     let repo = tempdir().unwrap();
     step_init(repo.path(), None, false, false).unwrap();
 
-    let choice = SynthesisChoice::Cloud {
+    let choice = ExplainChoice::Cloud {
         provider: CloudProvider::Anthropic,
         credential_source: CloudCredentialSource::Env,
         api_key: None,
     };
 
-    let outcome = step_apply_synthesis(repo.path(), Some(&choice)).unwrap();
+    let outcome = step_apply_explain(repo.path(), Some(&choice)).unwrap();
     assert_eq!(outcome, StepOutcome::Applied);
 
     let local = fs::read_to_string(repo.path().join(".synrepo/config.toml")).unwrap();
@@ -83,7 +83,7 @@ fn step_apply_synthesis_cloud_with_env_key_writes_only_repo_local_config() {
 }
 
 #[test]
-fn step_apply_synthesis_cloud_with_new_key_saves_global_key_only() {
+fn step_apply_explain_cloud_with_new_key_saves_global_key_only() {
     let home = tempdir().unwrap();
     let _home_lock =
         synrepo::test_support::global_test_lock(synrepo::config::test_home::HOME_ENV_TEST_LOCK);
@@ -92,7 +92,7 @@ fn step_apply_synthesis_cloud_with_new_key_saves_global_key_only() {
     fs::create_dir_all(home.path().join(".synrepo")).unwrap();
     fs::write(
         home.path().join(".synrepo/config.toml"),
-        "[synthesis]\nlocal_preset = \"ollama\"\n",
+        "[explain]\nlocal_preset = \"ollama\"\n",
     )
     .unwrap();
 
@@ -100,17 +100,17 @@ fn step_apply_synthesis_cloud_with_new_key_saves_global_key_only() {
     step_init(repo.path(), None, false, false).unwrap();
     fs::write(
         repo.path().join(".synrepo/config.toml"),
-        "[synthesis]\nenabled = false\nopenai_api_key = \"should-not-stay-local\"\n",
+        "[explain]\nenabled = false\nopenai_api_key = \"should-not-stay-local\"\n",
     )
     .unwrap();
 
-    let choice = SynthesisChoice::Cloud {
+    let choice = ExplainChoice::Cloud {
         provider: CloudProvider::OpenAi,
         credential_source: CloudCredentialSource::EnteredGlobal,
         api_key: Some("sk-entered-openai".to_string()),
     };
 
-    let outcome = step_apply_synthesis(repo.path(), Some(&choice)).unwrap();
+    let outcome = step_apply_explain(repo.path(), Some(&choice)).unwrap();
     assert_eq!(outcome, StepOutcome::Applied);
 
     let local = fs::read_to_string(repo.path().join(".synrepo/config.toml")).unwrap();
@@ -119,22 +119,22 @@ fn step_apply_synthesis_cloud_with_new_key_saves_global_key_only() {
 
     let global_path = home.path().join(".synrepo/config.toml");
     let global: Value = fs::read_to_string(&global_path).unwrap().parse().unwrap();
-    let synthesis = global
-        .get("synthesis")
+    let explain = global
+        .get("explain")
         .and_then(Value::as_table)
-        .expect("global config should keep a [synthesis] table");
+        .expect("global config should keep a [explain] table");
     assert_eq!(
-        synthesis.get("openai_api_key").and_then(Value::as_str),
+        explain.get("openai_api_key").and_then(Value::as_str),
         Some("sk-entered-openai")
     );
     assert_eq!(
-        synthesis.get("local_preset").and_then(Value::as_str),
+        explain.get("local_preset").and_then(Value::as_str),
         Some("ollama")
     );
 }
 
 #[test]
-fn step_apply_synthesis_local_saves_endpoint_in_global_config() {
+fn step_apply_explain_local_saves_endpoint_in_global_config() {
     let home = tempdir().unwrap();
     let _home_lock =
         synrepo::test_support::global_test_lock(synrepo::config::test_home::HOME_ENV_TEST_LOCK);
@@ -143,12 +143,12 @@ fn step_apply_synthesis_local_saves_endpoint_in_global_config() {
     let repo = tempdir().unwrap();
     step_init(repo.path(), None, false, false).unwrap();
 
-    let choice = SynthesisChoice::Local {
+    let choice = ExplainChoice::Local {
         preset: LocalPreset::Custom,
         endpoint: "http://gpu-box:9000/v1/chat/completions".to_string(),
     };
 
-    let outcome = step_apply_synthesis(repo.path(), Some(&choice)).unwrap();
+    let outcome = step_apply_explain(repo.path(), Some(&choice)).unwrap();
     assert_eq!(outcome, StepOutcome::Applied);
 
     let local = fs::read_to_string(repo.path().join(".synrepo/config.toml")).unwrap();

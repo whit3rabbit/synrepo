@@ -127,6 +127,8 @@ mod tests {
     // "transaction within a transaction" errors or JSON `error` payloads.
     #[test]
     fn state_supports_concurrent_tool_calls() {
+        let home = tempfile::tempdir().unwrap();
+        let _home_guard = crate::config::test_home::HomeEnvGuard::redirect_to(home.path());
         let dir = tempfile::tempdir().unwrap();
         let repo = dir.path();
         fs::create_dir_all(repo.join("src")).unwrap();

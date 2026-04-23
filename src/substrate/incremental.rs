@@ -284,19 +284,31 @@ mod tests {
     use crate::config::Config;
     use tempfile::tempdir;
 
-    fn bootstrap_repo() -> (tempfile::TempDir, Config) {
+    fn isolated_home() -> (tempfile::TempDir, crate::config::test_home::HomeEnvGuard) {
+        let home = tempfile::tempdir().unwrap();
+        let guard = crate::config::test_home::HomeEnvGuard::redirect_to(home.path());
+        (home, guard)
+    }
+
+    fn bootstrap_repo() -> (
+        tempfile::TempDir,
+        Config,
+        tempfile::TempDir,
+        crate::config::test_home::HomeEnvGuard,
+    ) {
+        let (home, home_guard) = isolated_home();
         let repo = tempdir().unwrap();
         fs::create_dir_all(repo.path().join("src")).unwrap();
         fs::write(repo.path().join("src/lib.rs"), "pub fn alpha() {}\n").unwrap();
         fs::create_dir_all(repo.path().join(".git")).unwrap();
         crate::bootstrap::bootstrap(repo.path(), None, false).unwrap();
         let config = Config::load(repo.path()).unwrap();
-        (repo, config)
+        (repo, config, home, home_guard)
     }
 
     #[test]
     fn incremental_sync_makes_new_token_searchable() {
-        let (repo, config) = bootstrap_repo();
+        let (repo, config, _home, _home_guard) = bootstrap_repo();
         fs::write(
             repo.path().join("src/lib.rs"),
             "pub fn alpha() {}\npub fn beta_token() {}\n",
@@ -317,7 +329,7 @@ mod tests {
 
     #[test]
     fn incremental_sync_evicts_deleted_file() {
-        let (repo, config) = bootstrap_repo();
+        let (repo, config, _home, _home_guard) = bootstrap_repo();
         fs::remove_file(repo.path().join("src/lib.rs")).unwrap();
 
         let report =
@@ -330,7 +342,7 @@ mod tests {
 
     #[test]
     fn incremental_sync_skips_git_and_synrepo_runtime_paths() {
-        let (repo, config) = bootstrap_repo();
+        let (repo, config, _home, _home_guard) = bootstrap_repo();
         fs::write(repo.path().join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
         fs::create_dir_all(repo.path().join(".synrepo/state")).unwrap();
         fs::write(repo.path().join(".synrepo/state/noise.txt"), "ignored").unwrap();
@@ -352,6 +364,7 @@ mod tests {
 
     #[test]
     fn incremental_sync_refuses_redacted_files() {
+        let (_home, _home_guard) = isolated_home();
         let repo = tempdir().unwrap();
         fs::write(repo.path().join("notes.txt"), "visible").unwrap();
         crate::bootstrap::bootstrap(repo.path(), None, false).unwrap();
@@ -369,7 +382,7 @@ mod tests {
 
     #[test]
     fn incremental_sync_falls_back_to_rebuild_when_manifest_is_missing() {
-        let (repo, config) = bootstrap_repo();
+        let (repo, config, _home, _home_guard) = bootstrap_repo();
         fs::remove_file(manifest_path(&config, repo.path())).unwrap();
         fs::write(
             repo.path().join("src/lib.rs"),

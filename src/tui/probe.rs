@@ -5,7 +5,7 @@
 use crate::bootstrap::runtime_probe::{AgentIntegration, AgentTargetKind};
 use crate::config::home_dir;
 use crate::pipeline::diagnostics::{ReconcileHealth, WriterStatus};
-use crate::pipeline::synthesis::SynthesisStatus;
+use crate::pipeline::explain::ExplainStatus;
 use crate::pipeline::watch::WatchServiceStatus;
 use crate::surface::status_snapshot::StatusSnapshot;
 
@@ -199,33 +199,30 @@ pub fn build_health_vm(snapshot: &StatusSnapshot) -> HealthVm {
         severity: Severity::Healthy,
     });
 
-    // Synthesis row: expected-off is Healthy; a detected but unused key
+    // Explain row: expected-off is Healthy; a detected but unused key
     // escalates to Stale so the dashboard nudges the user toward opt-in.
-    if let Some(synthesis) = &snapshot.synthesis_provider {
-        let (value, severity) = match &synthesis.status {
-            SynthesisStatus::Enabled => {
-                let model = synthesis
+    if let Some(explain) = &snapshot.explain_provider {
+        let (value, severity) = match &explain.status {
+            ExplainStatus::Enabled => {
+                let model = explain
                     .model
                     .as_deref()
                     .map(|m| format!(" ({m})"))
                     .unwrap_or_default();
-                (
-                    format!("{}{}", synthesis.provider, model),
-                    Severity::Healthy,
-                )
+                (format!("{}{}", explain.provider, model), Severity::Healthy)
             }
-            SynthesisStatus::DisabledKeyDetected { env_var } => {
+            ExplainStatus::DisabledKeyDetected { env_var } => {
                 (format!("disabled ({env_var} detected)"), Severity::Stale)
             }
-            SynthesisStatus::Disabled => ("disabled".to_string(), Severity::Healthy),
+            ExplainStatus::Disabled => ("disabled".to_string(), Severity::Healthy),
         };
         rows.push(HealthRow {
-            label: "synthesis".to_string(),
+            label: "explain".to_string(),
             value,
             severity,
         });
 
-        if let Some(totals) = &snapshot.synthesis_totals {
+        if let Some(totals) = &snapshot.explain_totals {
             let calls = totals.calls + totals.failures + totals.budget_blocked;
             if calls > 0 {
                 let openrouter_live = totals
@@ -247,19 +244,19 @@ pub fn build_health_vm(snapshot: &StatusSnapshot) -> HealthVm {
                     format!("{} in / {} out", totals.input_tokens, totals.output_tokens)
                 };
                 rows.push(HealthRow {
-                    label: "synthesis usage".to_string(),
+                    label: "explain usage".to_string(),
                     value: format!(
                         "{} calls · {} · {} ({})",
                         calls,
                         tokens,
                         cost,
-                        crate::pipeline::synthesis::pricing::pricing_basis_label(openrouter_live)
+                        crate::pipeline::explain::pricing::pricing_basis_label(openrouter_live)
                     ),
                     severity: Severity::Healthy,
                 });
                 if totals.failures > 0 || totals.budget_blocked > 0 {
                     rows.push(HealthRow {
-                        label: "synthesis skipped".to_string(),
+                        label: "explain skipped".to_string(),
                         value: format!(
                             "{} failed · {} budget-blocked",
                             totals.failures, totals.budget_blocked

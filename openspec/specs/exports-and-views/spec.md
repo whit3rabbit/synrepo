@@ -1,5 +1,5 @@
 ## Purpose
-Define generated exports and runtime views as convenience surfaces that remain subordinate to graph truth and are never used as canonical synthesis input.
+Define generated exports and runtime views as convenience surfaces that remain subordinate to graph truth and are never used as canonical explain input.
 
 ## Requirements
 
@@ -20,15 +20,15 @@ synrepo SHALL define freshness labeling, stale-state handling, and repair-loop p
 - **AND** the repair behavior does not require a full system rebuild
 
 ### Requirement: Prevent export feedback contamination
-synrepo SHALL prevent generated exports and views from becoming synthesis input or graph truth unless they are separately promoted through human-authored source material.
+synrepo SHALL prevent generated exports and views from becoming explain input or graph truth unless they are separately promoted through human-authored source material.
 
-#### Scenario: Reuse generated output during synthesis
-- **WHEN** a synthesis or retrieval pipeline encounters generated export material
-- **THEN** the pipeline excludes it from canonical graph input and default synthesis input
+#### Scenario: Reuse generated output during explain
+- **WHEN** an explain or retrieval pipeline encounters generated export material
+- **THEN** the pipeline excludes it from canonical graph input and default explain input
 - **AND** any later promotion requires an explicit human-authored source path
 
 ### Requirement: Define export command contract
-synrepo SHALL provide a `synrepo export` command that produces human-readable and machine-readable convenience snapshots of current card state. Exports SHALL be written to a configurable directory (default: `synrepo-context/` at the repo root) and SHALL never be used as synthesis input, graph truth, or canonical planning material.
+synrepo SHALL provide a `synrepo export` command that produces human-readable and machine-readable convenience snapshots of current card state. Exports SHALL be written to a configurable directory (default: `synrepo-context/` at the repo root) and SHALL never be used as explain input, graph truth, or canonical planning material.
 
 #### Scenario: Run export on an initialized repository
 - **WHEN** a user runs `synrepo export` in an initialized repository

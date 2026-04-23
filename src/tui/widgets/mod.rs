@@ -9,19 +9,19 @@ use crate::tui::probe::Severity;
 use crate::tui::theme::Theme;
 
 pub mod actions;
+pub mod explain;
 pub mod footer;
 pub mod header;
 pub mod health;
 pub mod live;
-pub mod synthesis;
 pub mod tabs;
 
 pub use actions::ActionsTabWidget;
+pub use explain::ExplainTabWidget;
 pub use footer::FooterWidget;
 pub use header::HeaderWidget;
 pub use health::HealthWidget;
 pub use live::LiveFeedWidget;
-pub use synthesis::SynthesisTabWidget;
 pub use tabs::DashboardTabsWidget;
 
 /// One ring-buffer entry for the event/notification log pane. Shared between

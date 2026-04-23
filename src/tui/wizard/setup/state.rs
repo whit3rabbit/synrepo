@@ -2,9 +2,9 @@
 
 use crossterm::event::{KeyCode, KeyModifiers};
 
-use super::synthesis::{
-    CloudCredentialSource, CloudProvider, LocalPreset, SynthesisChoice, SynthesisRow,
-    SynthesisWizardSupport, TextInputField, LOCAL_PRESETS, SYNTHESIS_ROWS,
+use super::explain::{
+    CloudCredentialSource, CloudProvider, ExplainChoice, ExplainRow, ExplainWizardSupport,
+    LocalPreset, TextInputField, EXPLAIN_ROWS, LOCAL_PRESETS,
 };
 use crate::bootstrap::runtime_probe::AgentTargetKind;
 use crate::config::Mode;
@@ -17,9 +17,9 @@ pub struct SetupPlan {
     pub mode: Mode,
     /// Optional agent-integration target. `None` means the user chose "skip".
     pub target: Option<AgentTargetKind>,
-    /// Synthesis decision. `None` means the user picked "Skip" (no
-    /// `[synthesis]` block is written; keys in env stay untouched).
-    pub synthesis: Option<SynthesisChoice>,
+    /// Explain decision. `None` means the user picked "Skip" (no
+    /// `[explain]` block is written; keys in env stay untouched).
+    pub explain: Option<ExplainChoice>,
     /// Whether to run a reconcile pass after init finishes. Always `true` for
     /// v1 so the first-run experience is complete; kept as a field so future
     /// "fast-path" flows can opt out without widening the plan shape.
@@ -53,11 +53,11 @@ pub enum SetupStep {
     SelectMode,
     /// Pick agent-integration target or "skip".
     SelectTarget,
-    /// Static explainer: what synthesis produces, how it is triggered, what it
-    /// costs, and the privacy posture. Always shown before `SelectSynthesis`.
-    ExplainSynthesis,
-    /// Pick synthesis provider (cloud, local, or skip).
-    SelectSynthesis,
+    /// Static explainer: what explain produces, how it is triggered, what it
+    /// costs, and the privacy posture. Always shown before `SelectExplain`.
+    ExplainExplain,
+    /// Pick explain provider (cloud, local, or skip).
+    SelectExplain,
     /// Enter an API key for the selected cloud provider. Masked on screen;
     /// value is held in-memory only until the final apply step.
     EditCloudApiKey,
@@ -65,10 +65,10 @@ pub enum SetupStep {
     SelectLocalPreset,
     /// Edit the local-LLM endpoint URL. Pre-filled from the preset default.
     EditLocalEndpoint,
-    /// "What you'll get / what you won't" review of the committed synthesis
+    /// "What you'll get / what you won't" review of the committed explain
     /// choice. Shown between committing a provider and the final `Confirm`
-    /// step; skipped when synthesis is disabled.
-    ReviewSynthesisPlan,
+    /// step; skipped when explain is disabled.
+    ReviewExplainPlan,
     /// Review the plan and press Enter to apply.
     Confirm,
     /// Render loop should exit; outcome is already captured.
@@ -97,30 +97,30 @@ pub struct SetupWizardState {
     pub mode_cursor: usize,
     /// Cursor index in the target list: 0..N for targets, N for "Skip".
     pub target_cursor: usize,
-    /// Cursor index into [`SYNTHESIS_ROWS`].
-    pub synthesis_cursor: usize,
+    /// Cursor index into [`EXPLAIN_ROWS`].
+    pub explain_cursor: usize,
     /// Cursor index into [`LOCAL_PRESETS`].
     pub local_preset_cursor: usize,
     /// Committed mode (set on Enter at `SelectMode`).
     pub mode: Mode,
     /// Committed target (set on Enter at `SelectTarget`). `None` means skip.
     pub target: Option<AgentTargetKind>,
-    /// Committed synthesis choice. `None` means the user picked "Skip" on
-    /// `SelectSynthesis`. Set on Enter at `SelectSynthesis` for cloud/skip or
+    /// Committed explain choice. `None` means the user picked "Skip" on
+    /// `SelectExplain`. Set on Enter at `SelectExplain` for cloud/skip or
     /// at `EditLocalEndpoint` for local.
-    pub synthesis: Option<SynthesisChoice>,
+    pub explain: Option<ExplainChoice>,
     /// Text input buffer used by `EditLocalEndpoint`. Seeded with the preset
     /// default; mutable while the user edits.
     pub endpoint_input: TextInputField,
     /// Text input buffer used by `EditCloudApiKey`. Always masked on screen.
     pub api_key_input: TextInputField,
     /// Preset selected on `SelectLocalPreset`. Used by `EditLocalEndpoint` to
-    /// build the final [`SynthesisChoice::Local`] on Enter.
+    /// build the final [`ExplainChoice::Local`] on Enter.
     pub local_preset: LocalPreset,
     /// Cloud provider currently being configured.
     pub pending_cloud_provider: Option<CloudProvider>,
-    /// Observed reusable synthesis defaults from env/global config.
-    pub synthesis_support: SynthesisWizardSupport,
+    /// Observed reusable explain defaults from env/global config.
+    pub explain_support: ExplainWizardSupport,
     /// Deterministic ordered list of agent targets detected from repo /
     /// `$HOME` hints. Used to pre-select the target cursor.
     pub detected_targets: Vec<AgentTargetKind>,
@@ -135,19 +135,19 @@ impl SetupWizardState {
     /// target, falling back to position 0 (the first target in
     /// [`WIZARD_TARGETS`]).
     pub fn new(default_mode: Mode, detected_targets: Vec<AgentTargetKind>) -> Self {
-        Self::with_synthesis_support(
+        Self::with_explain_support(
             default_mode,
             detected_targets,
-            SynthesisWizardSupport::default(),
+            ExplainWizardSupport::default(),
         )
     }
 
-    /// Same as [`SetupWizardState::new`], but seeds the synthesis flow with
+    /// Same as [`SetupWizardState::new`], but seeds the explain flow with
     /// observed env/global config support from the caller.
-    pub fn with_synthesis_support(
+    pub fn with_explain_support(
         default_mode: Mode,
         detected_targets: Vec<AgentTargetKind>,
-        synthesis_support: SynthesisWizardSupport,
+        explain_support: ExplainWizardSupport,
     ) -> Self {
         let mode_cursor = match default_mode {
             Mode::Auto => 0,
@@ -157,49 +157,48 @@ impl SetupWizardState {
             .first()
             .and_then(|t| WIZARD_TARGETS.iter().position(|wt| wt == t))
             .unwrap_or(0);
-        let local_preset = synthesis_support.local_preset();
+        let local_preset = explain_support.local_preset();
         let local_preset_cursor = LOCAL_PRESETS
             .iter()
             .position(|preset| *preset == local_preset)
             .unwrap_or(0);
-        let endpoint_seed = synthesis_support
+        let endpoint_seed = explain_support
             .local_endpoint()
             .unwrap_or(local_preset.default_endpoint());
         Self {
             step: SetupStep::Splash,
             mode_cursor,
             target_cursor,
-            synthesis_cursor: 0,
+            explain_cursor: 0,
             local_preset_cursor,
             mode: default_mode,
             target: None,
-            synthesis: None,
+            explain: None,
             endpoint_input: TextInputField::with_value(endpoint_seed),
             api_key_input: TextInputField::with_value(""),
             local_preset,
             pending_cloud_provider: None,
-            synthesis_support,
+            explain_support,
             detected_targets,
             cancelled: false,
         }
     }
 
-    /// Build a state positioned directly at `SelectSynthesis`, used by
-    /// `synrepo setup --synthesis` to run only the synthesis sub-flow. The
+    /// Build a state positioned directly at `SelectExplain`, used by
+    /// `synrepo setup --explain` to run only the explain sub-flow. The
     /// plan's `mode`/`target` fields are placeholders — the caller must only
-    /// consume `plan.synthesis`.
-    pub fn synthesis_only() -> Self {
-        let mut s =
-            Self::with_synthesis_support(Mode::Auto, vec![], SynthesisWizardSupport::default());
-        s.step = SetupStep::SelectSynthesis;
+    /// consume `plan.explain`.
+    pub fn explain_only() -> Self {
+        let mut s = Self::with_explain_support(Mode::Auto, vec![], ExplainWizardSupport::default());
+        s.step = SetupStep::SelectExplain;
         s
     }
 
-    /// Same as [`SetupWizardState::synthesis_only`], but seeds the synthesis
+    /// Same as [`SetupWizardState::explain_only`], but seeds the explain
     /// flow with observed env/global config support from the caller.
-    pub fn synthesis_only_with_support(synthesis_support: SynthesisWizardSupport) -> Self {
-        let mut s = Self::with_synthesis_support(Mode::Auto, vec![], synthesis_support);
-        s.step = SetupStep::SelectSynthesis;
+    pub fn explain_only_with_support(explain_support: ExplainWizardSupport) -> Self {
+        let mut s = Self::with_explain_support(Mode::Auto, vec![], explain_support);
+        s.step = SetupStep::SelectExplain;
         s
     }
 
@@ -275,13 +274,13 @@ impl SetupWizardState {
                     }
                     KeyCode::Enter => {
                         self.target = WIZARD_TARGETS.get(self.target_cursor).copied();
-                        self.step = SetupStep::ExplainSynthesis;
+                        self.step = SetupStep::ExplainExplain;
                         true
                     }
                     _ => false,
                 }
             }
-            SetupStep::ExplainSynthesis => {
+            SetupStep::ExplainExplain => {
                 if is_quit {
                     self.cancelled = true;
                     self.step = SetupStep::Complete;
@@ -289,7 +288,7 @@ impl SetupWizardState {
                 }
                 match code {
                     KeyCode::Enter => {
-                        self.step = SetupStep::SelectSynthesis;
+                        self.step = SetupStep::SelectExplain;
                         true
                     }
                     KeyCode::Char('b') => {
@@ -299,50 +298,50 @@ impl SetupWizardState {
                     _ => false,
                 }
             }
-            SetupStep::SelectSynthesis => {
+            SetupStep::SelectExplain => {
                 if is_quit {
                     self.cancelled = true;
                     self.step = SetupStep::Complete;
                     return true;
                 }
-                let max = SYNTHESIS_ROWS.len().saturating_sub(1);
+                let max = EXPLAIN_ROWS.len().saturating_sub(1);
                 match code {
                     KeyCode::Up | KeyCode::Char('k') => {
-                        self.synthesis_cursor = self.synthesis_cursor.saturating_sub(1);
+                        self.explain_cursor = self.explain_cursor.saturating_sub(1);
                         true
                     }
                     KeyCode::Down | KeyCode::Char('j') => {
-                        if self.synthesis_cursor < max {
-                            self.synthesis_cursor += 1;
+                        if self.explain_cursor < max {
+                            self.explain_cursor += 1;
                         }
                         true
                     }
                     KeyCode::Enter => {
-                        match SYNTHESIS_ROWS.get(self.synthesis_cursor).copied() {
-                            Some(SynthesisRow::Skip) => {
-                                self.synthesis = None;
+                        match EXPLAIN_ROWS.get(self.explain_cursor).copied() {
+                            Some(ExplainRow::Skip) => {
+                                self.explain = None;
                                 self.pending_cloud_provider = None;
-                                // Nothing to review when synthesis is off.
+                                // Nothing to review when explain is off.
                                 self.step = SetupStep::Confirm;
                             }
-                            Some(SynthesisRow::Cloud(provider)) => {
+                            Some(ExplainRow::Cloud(provider)) => {
                                 self.pending_cloud_provider = Some(provider);
                                 self.api_key_input.reset("");
                                 if let Some(credential_source) =
-                                    self.synthesis_support.credential_source_for(provider)
+                                    self.explain_support.credential_source_for(provider)
                                 {
-                                    self.synthesis = Some(SynthesisChoice::Cloud {
+                                    self.explain = Some(ExplainChoice::Cloud {
                                         provider,
                                         credential_source,
                                         api_key: None,
                                     });
-                                    self.step = SetupStep::ReviewSynthesisPlan;
+                                    self.step = SetupStep::ReviewExplainPlan;
                                 } else {
-                                    self.synthesis = None;
+                                    self.explain = None;
                                     self.step = SetupStep::EditCloudApiKey;
                                 }
                             }
-                            Some(SynthesisRow::Local) => {
+                            Some(ExplainRow::Local) => {
                                 self.pending_cloud_provider = None;
                                 self.step = SetupStep::SelectLocalPreset;
                             }
@@ -365,7 +364,7 @@ impl SetupWizardState {
                     KeyCode::Esc => {
                         self.pending_cloud_provider = None;
                         self.api_key_input.reset("");
-                        self.step = SetupStep::SelectSynthesis;
+                        self.step = SetupStep::SelectExplain;
                         true
                     }
                     KeyCode::Enter => {
@@ -376,12 +375,12 @@ impl SetupWizardState {
                         let provider = self
                             .pending_cloud_provider
                             .unwrap_or(CloudProvider::Anthropic);
-                        self.synthesis = Some(SynthesisChoice::Cloud {
+                        self.explain = Some(ExplainChoice::Cloud {
                             provider,
                             credential_source: CloudCredentialSource::EnteredGlobal,
                             api_key: Some(api_key),
                         });
-                        self.step = SetupStep::ReviewSynthesisPlan;
+                        self.step = SetupStep::ReviewExplainPlan;
                         true
                     }
                     _ => self.api_key_input.handle_key(code, modifiers),
@@ -442,17 +441,17 @@ impl SetupWizardState {
                             // hint at this. Keep the step unchanged.
                             return false;
                         }
-                        self.synthesis = Some(SynthesisChoice::Local {
+                        self.explain = Some(ExplainChoice::Local {
                             preset: self.local_preset,
                             endpoint,
                         });
-                        self.step = SetupStep::ReviewSynthesisPlan;
+                        self.step = SetupStep::ReviewExplainPlan;
                         true
                     }
                     _ => self.endpoint_input.handle_key(code, modifiers),
                 }
             }
-            SetupStep::ReviewSynthesisPlan => {
+            SetupStep::ReviewExplainPlan => {
                 if is_quit {
                     self.cancelled = true;
                     self.step = SetupStep::Complete;
@@ -467,10 +466,10 @@ impl SetupWizardState {
                         // Jump back to the provider-selection step. Clear the
                         // committed choice so a back-forward round trip never
                         // silently reuses a stale selection.
-                        self.synthesis = None;
+                        self.explain = None;
                         self.pending_cloud_provider = None;
                         self.api_key_input.reset("");
-                        self.step = SetupStep::SelectSynthesis;
+                        self.step = SetupStep::SelectExplain;
                         true
                     }
                     _ => false,
@@ -483,11 +482,11 @@ impl SetupWizardState {
                 }
                 KeyCode::Esc | KeyCode::Char('b') => {
                     // Back one step: to the review screen when a provider was
-                    // chosen, otherwise all the way to the synthesis list.
-                    self.step = if self.synthesis.is_some() {
-                        SetupStep::ReviewSynthesisPlan
+                    // chosen, otherwise all the way to the explain list.
+                    self.step = if self.explain.is_some() {
+                        SetupStep::ReviewExplainPlan
                     } else {
-                        SetupStep::SelectSynthesis
+                        SetupStep::SelectExplain
                     };
                     true
                 }
@@ -511,7 +510,7 @@ impl SetupWizardState {
         Some(SetupPlan {
             mode: self.mode,
             target: self.target,
-            synthesis: self.synthesis.clone(),
+            explain: self.explain.clone(),
             reconcile_after: true,
         })
     }

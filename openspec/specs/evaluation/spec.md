@@ -38,7 +38,7 @@ Metrics to track:
 - token budget spent per card tier (Phase 2+)
 - agent-facing request hit/miss rates against the graph vs. overlay (Phase 2+)
 
-This store is for operator visibility and system health monitoring. It must never be read by the synthesis pipeline or used as input to graph production.
+This store is for operator visibility and system health monitoring. It must never be read by the explain pipeline or used as input to graph production.
 
 #### Scenario: Inspect compile performance over time
 - **WHEN** an operator wants to understand whether the structural compile is keeping up with repository churn

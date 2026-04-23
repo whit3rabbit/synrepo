@@ -11,7 +11,7 @@ use crate::{
         CitedSpan, ConfidenceTier, CrossLinkProvenance, OverlayEdgeKind, OverlayEpistemic,
         OverlayLink,
     },
-    pipeline::synthesis::CrossLinkGenerator,
+    pipeline::explain::CrossLinkGenerator,
     store::{overlay::SqliteOverlayStore, sqlite::SqliteGraphStore},
     structure::graph::{
         ConceptNode, Edge, EdgeKind, Epistemic, FileNode, GraphStore, SymbolKind, SymbolNode,
@@ -29,7 +29,7 @@ struct FakeGenerator {
 impl CrossLinkGenerator for FakeGenerator {
     fn generate_candidates(
         &self,
-        scope: &crate::pipeline::synthesis::CandidateScope,
+        scope: &crate::pipeline::explain::CandidateScope,
     ) -> crate::Result<Vec<OverlayLink>> {
         Ok(self
             .links

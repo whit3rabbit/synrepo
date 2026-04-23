@@ -18,7 +18,7 @@ pub struct CommentaryScan {
 
 /// Compare every commentary row in the overlay against the live graph and
 /// return a fresh-vs-stale count. Used by both the repair surface check and
-/// the TUI Synthesis tab.
+/// the TUI Explain tab.
 pub fn scan_commentary_staleness(synrepo_dir: &std::path::Path) -> crate::Result<CommentaryScan> {
     use crate::core::ids::NodeId;
     use crate::pipeline::repair::commentary::resolve_commentary_node;

@@ -11,7 +11,7 @@ synrepo SHALL define the purpose, durability class, and compatibility owner of t
 - **THEN** the contract identifies which stores are canonical, supplemental, rebuildable, disposable, or ephemeral
 - **AND** it distinguishes what may be deleted and rebuilt from what must be migrated or preserved
 - **AND** it defines the default compatibility action for each current store, including `graph`, `overlay`, `index`, `embeddings`, `cache/llm-responses`, and `state`
-- **AND** it recognises synthesis telemetry files `state/synthesis-log.jsonl` (append-only per-call records) and `state/synthesis-totals.json` (aggregates snapshot) as operational state that is disposable and rotatable without affecting canonical graph or overlay data
+- **AND** it recognises explain telemetry files `state/explain-log.jsonl` (append-only per-call records) and `state/explain-totals.json` (aggregates snapshot) as operational state that is disposable and rotatable without affecting canonical graph or overlay data
 
 ### Requirement: Define migration and rebuild policy
 synrepo SHALL define when schema or format changes require in-place migration, full rebuild, cache invalidation, clear-and-recreate, safe continue, or explicit user action.
@@ -100,7 +100,7 @@ synrepo SHALL extend the `OverlayStore` trait with methods for querying compacta
 - **AND** the returned summary includes the count of rows summarized and dropped
 
 ### Requirement: Define compatibility-sensitive configuration
-synrepo SHALL define which configuration fields affect on-disk compatibility, indexing semantics, graph semantics, or synthesis behavior strongly enough to require rebuild, invalidation, warning, or migration decisions.
+synrepo SHALL define which configuration fields affect on-disk compatibility, indexing semantics, graph semantics, or explain behavior strongly enough to require rebuild, invalidation, warning, or migration decisions.
 
 #### Scenario: Change a compatibility-sensitive setting
 - **WHEN** a user modifies a config field that changes indexing or storage semantics

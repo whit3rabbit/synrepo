@@ -17,7 +17,7 @@ When a repository is initialized, `synrepo` loads the global config first and th
 
 - **Boolean/Numeric/String Fields**: The local value completely replaces the global value if it differs from the compiled default.
 - **Vectors (e.g., `roots`, `redact_globs`)**: The local vector replaces the global vector if it differs from the compiled default.
-- **Synthesis Config (`[synthesis]`)**: Merged field-by-field. For example, if the global config has `provider = "anthropic"` and local has `enabled = true`, the resulting config will be enabled with the Anthropic provider.
+- **Explain Config (`[explain]`)**: Merged field-by-field. For example, if the global config has `provider = "anthropic"` and local has `enabled = true`, the resulting config will be enabled with the Anthropic provider.
 
 ## Gitignore Integration
 

@@ -1,5 +1,5 @@
 //! System-health pane: graph counts, export freshness, commentary coverage,
-//! overlay cost, synthesis state. Each row is a label/value pair with a
+//! overlay cost, explain state. Each row is a label/value pair with a
 //! severity color on the value.
 
 use ratatui::buffer::Buffer;

@@ -91,7 +91,7 @@ pub(crate) enum Command {
     /// project's local configuration when that integration is automated.
     /// Without a `<tool>` argument it launches the interactive TUI wizard,
     /// which prompts for repo mode, agent target, and optional commentary
-    /// provider before applying the same steps. The `--force`, `--synthesis`,
+    /// provider before applying the same steps. The `--force`, `--explain`,
     /// and `--gitignore` flags only apply to the scripted flow; passing them
     /// without a tool is rejected.
     Setup {
@@ -100,13 +100,13 @@ pub(crate) enum Command {
         /// Force re-initialization and overwrite existing configs.
         #[arg(long)]
         force: bool,
-        /// After the normal setup steps complete, launch the synthesis sub-wizard
+        /// After the normal setup steps complete, launch the explain sub-wizard
         /// and patch repo-local `.synrepo/config.toml` plus user-scoped
         /// `~/.synrepo/config.toml` as needed.
         /// Off by default; opt-in makes the key-detected hint in `synrepo status`
         /// actionable without requiring the user to hand-edit config.
         #[arg(long)]
-        synthesis: bool,
+        explain: bool,
         /// Add .synrepo/ to the root .gitignore file.
         #[arg(long)]
         gitignore: bool,
@@ -145,31 +145,10 @@ pub(crate) enum Command {
         /// Re-run generation for stale candidates.
         #[arg(long)]
         regenerate_cross_links: bool,
-        /// Rotate the synthesis call log and zero the per-repo totals snapshot.
+        /// Rotate the explain call log and zero the per-repo totals snapshot.
         /// Does not run repair; returns after the reset.
         #[arg(long)]
-        reset_synthesis_totals: bool,
-    },
-
-    /// Refresh advisory commentary for missing or stale rows, optionally scoped to paths.
-    ///
-    /// With no arguments or flags, generates commentary for all graph nodes
-    /// that lack a machine-authored summary, then refreshes any stale entries
-    /// (same as the `RefreshCommentary` repair action in `synrepo sync`).
-    /// Positional `<paths>` scopes the run to files whose path starts with one
-    /// of the given prefixes. `--changed` derives the scope from hotspots in
-    /// the last 50 commits via git intelligence. `--dry-run` prints the
-    /// target set without calling any provider.
-    #[command(alias = "synthesize")]
-    Synthesis {
-        /// Repo-root-relative path prefixes to scope to. Empty = all stale.
-        paths: Vec<String>,
-        /// Use recent-commit hotspots as the scope (ignores positional paths).
-        #[arg(long)]
-        changed: bool,
-        /// Print the planned target set without calling any provider.
-        #[arg(long)]
-        dry_run: bool,
+        reset_explain_totals: bool,
     },
 
     /// Lexical search via the syntext index.

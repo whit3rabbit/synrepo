@@ -23,7 +23,7 @@
 //!
 //! The canonical/overlay separation is **structural**, not merely labeled:
 //! graph data lives in `graph/*.db`, overlay data lives in `overlay/*.db`,
-//! and synthesis queries filter at the retrieval layer so the synthesis
+//! and explain queries filter at the retrieval layer so the explain
 //! pipeline never reads its own previous output.
 //!
 //! See `docs/FOUNDATION.md` and `docs/FOUNDATION-SPEC.md` for design documentation.

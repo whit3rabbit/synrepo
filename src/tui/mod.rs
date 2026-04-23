@@ -27,16 +27,16 @@ use crate::pipeline::watch::{watch_service_status, WatchServiceStatus};
 use crate::tui::actions::{outcome_to_log, start_watch_daemon, ActionContext, ActionOutcome};
 use crate::tui::widgets::LogEntry;
 
-pub use self::app::SynthesizeMode;
 pub use self::wizard::{
-    CloudCredentialSource, IntegrationPlan, IntegrationWizardOutcome, RepairPlan,
-    RepairWizardOutcome, SetupPlan, SetupWizardOutcome, SynthesisChoice, SynthesisWizardSupport,
+    CloudCredentialSource, ExplainChoice, ExplainWizardSupport, IntegrationPlan,
+    IntegrationWizardOutcome, RepairPlan, RepairWizardOutcome, SetupPlan, SetupWizardOutcome,
     UninstallActionKind, UninstallPlan, UninstallWizardOutcome,
 };
 
 pub mod actions;
 pub mod app;
 pub mod dashboard;
+mod explain_run;
 pub mod probe;
 pub mod theme;
 mod watcher;
@@ -88,22 +88,10 @@ pub enum TuiOutcome {
     /// The caller should run `run_integration_wizard` and — on successful
     /// completion — re-open the dashboard.
     LaunchIntegrationRequested,
-    /// Dashboard exited with a request to launch the synthesis setup wizard.
-    /// The caller should run `run_synthesis_only_wizard` and then re-open the
+    /// Dashboard exited with a request to launch the explain setup wizard.
+    /// The caller should run `run_explain_only_wizard` and then re-open the
     /// dashboard.
-    LaunchSynthesisSetupRequested,
-    /// Dashboard exited with a request to run `synrepo synthesize` with the
-    /// given scope. The caller should invoke the command function directly and
-    /// then re-open the dashboard so the new snapshot is visible. When
-    /// `stopped_watch` is `true`, the dashboard stopped an active watch
-    /// service to free the writer lock; the caller should remind the operator
-    /// that watch is no longer running after synthesis completes.
-    RunSynthesizeRequested {
-        /// Scope of the synthesis run.
-        mode: SynthesizeMode,
-        /// `true` when the dashboard stopped an active watch service.
-        stopped_watch: bool,
-    },
+    LaunchExplainSetupRequested,
 }
 
 /// Open the poll-mode dashboard on a ready repo. See `run_live_watch_dashboard`
@@ -134,14 +122,7 @@ pub fn run_dashboard(
     match intent {
         app::DashboardExit::Quit => Ok(TuiOutcome::Exited),
         app::DashboardExit::LaunchIntegration => Ok(TuiOutcome::LaunchIntegrationRequested),
-        app::DashboardExit::LaunchSynthesisSetup => Ok(TuiOutcome::LaunchSynthesisSetupRequested),
-        app::DashboardExit::RunSynthesize {
-            mode,
-            stopped_watch,
-        } => Ok(TuiOutcome::RunSynthesizeRequested {
-            mode,
-            stopped_watch,
-        }),
+        app::DashboardExit::LaunchExplainSetup => Ok(TuiOutcome::LaunchExplainSetupRequested),
     }
 }
 
@@ -183,19 +164,19 @@ pub fn run_setup_wizard(repo_root: &Path, opts: TuiOptions) -> anyhow::Result<Se
     wizard::run_setup_wizard_loop(theme, default_mode, probe_report.detected_agent_targets)
 }
 
-/// Open the synthesis-only sub-wizard. Used by `synrepo setup --synthesis`
+/// Open the explain-only sub-wizard. Used by `synrepo setup --explain`
 /// after the non-interactive setup flow has initialized the repo. Walks the
-/// operator through SelectSynthesis → (EditCloudApiKey | SelectLocalPreset →
+/// operator through SelectExplain → (EditCloudApiKey | SelectLocalPreset →
 /// EditLocalEndpoint) → Review → Confirm and returns a
-/// [`SetupWizardOutcome`]. Only the plan's `synthesis` field is meaningful;
+/// [`SetupWizardOutcome`]. Only the plan's `explain` field is meaningful;
 /// apply-time code decides whether to patch repo-local `.synrepo/config.toml`,
 /// user-scoped `~/.synrepo/config.toml`, or both.
-pub fn run_synthesis_only_wizard(opts: TuiOptions) -> anyhow::Result<SetupWizardOutcome> {
+pub fn run_explain_only_wizard(opts: TuiOptions) -> anyhow::Result<SetupWizardOutcome> {
     if !stdout_is_tty() {
         return Ok(SetupWizardOutcome::NonTty);
     }
     let theme = theme::Theme::from_no_color(opts.no_color);
-    wizard::run_synthesis_only_wizard_loop(theme)
+    wizard::run_explain_only_wizard_loop(theme)
 }
 
 /// Detect whether the repo contains any of the canonical concept / ADR
@@ -332,14 +313,7 @@ mod live {
         match intent {
             DashboardExit::Quit => Ok(TuiOutcome::Exited),
             DashboardExit::LaunchIntegration => Ok(TuiOutcome::LaunchIntegrationRequested),
-            DashboardExit::LaunchSynthesisSetup => Ok(TuiOutcome::LaunchSynthesisSetupRequested),
-            DashboardExit::RunSynthesize {
-                mode,
-                stopped_watch,
-            } => Ok(TuiOutcome::RunSynthesizeRequested {
-                mode,
-                stopped_watch,
-            }),
+            DashboardExit::LaunchExplainSetup => Ok(TuiOutcome::LaunchExplainSetupRequested),
         }
     }
 }
@@ -450,6 +424,8 @@ mod tests {
     #[test]
     fn ensure_watch_daemon_starts_watch_for_ready_repo_without_log_noise() {
         let _guard = crate::test_support::global_test_lock("tui-ensure-watch-daemon");
+        let home = tempfile::tempdir().unwrap();
+        let _home_guard = crate::config::test_home::HomeEnvGuard::redirect_to(home.path());
         let tempdir = tempfile::tempdir().unwrap();
         crate::bootstrap::bootstrap(tempdir.path(), None, false).expect("bootstrap");
 
@@ -481,6 +457,8 @@ mod tests {
     #[test]
     fn ensure_watch_daemon_preserves_existing_running_service() {
         let _guard = crate::test_support::global_test_lock("tui-ensure-watch-daemon");
+        let home = tempfile::tempdir().unwrap();
+        let _home_guard = crate::config::test_home::HomeEnvGuard::redirect_to(home.path());
         let tempdir = tempfile::tempdir().unwrap();
         crate::bootstrap::bootstrap(tempdir.path(), None, false).expect("bootstrap");
         let ctx = crate::tui::actions::ActionContext::new(tempdir.path());

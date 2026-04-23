@@ -1,30 +1,15 @@
 //! Configuration loading. Reads `.synrepo/config.toml`.
 
+mod explain;
+mod mode;
+mod thresholds;
+
+pub use explain::ExplainConfig;
+pub use mode::Mode;
+pub use thresholds::CrossLinkConfidenceThresholds;
+
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
-
-mod synthesis;
-
-pub use synthesis::SynthesisConfig;
-
-/// Which operational mode synrepo runs in.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Mode {
-    /// Bootstrap defaults here when repository inspection does not find
-    /// rationale markdown under the configured concept directories.
-    /// Synthesis runs automatically in the background and writes to the
-    /// overlay. Concept nodes are disabled unless human-authored concept
-    /// directories exist.
-    #[default]
-    Auto,
-    /// Bootstrap recommends or selects this when repository inspection
-    /// finds rationale markdown under the configured concept directories,
-    /// unless an explicit or already-configured mode is kept instead.
-    /// Synthesis proposals go to a review queue. Concept nodes are
-    /// enabled when human-authored ADR directories exist.
-    Curated,
-}
 
 /// Top-level config read from `.synrepo/config.toml`.
 //
@@ -74,7 +59,7 @@ pub struct Config {
     #[serde(default = "default_commentary_cost_limit")]
     pub commentary_cost_limit: u32,
 
-    /// Maximum number of LLM cross-link generation calls the synthesis pass
+    /// Maximum number of LLM cross-link generation calls the explain pass
     /// may make in one `synrepo sync --generate-cross-links` invocation.
     /// Once the limit is reached, remaining candidate pairs are surfaced as
     /// `blocked` without a model call.
@@ -124,60 +109,11 @@ pub struct Config {
     #[serde(default = "default_semantic_similarity_threshold")]
     pub semantic_similarity_threshold: f64,
 
-    /// LLM synthesis configuration. Off by default; opting in is required
+    /// LLM explain configuration. Off by default; opting in is required
     /// even when provider API keys are present in the env. See
-    /// [`SynthesisConfig`].
+    /// [`ExplainConfig`].
     #[serde(default)]
-    pub synthesis: SynthesisConfig,
-}
-
-/// TOML-friendly mirror of `overlay::ConfidenceThresholds`. Lives in this
-/// module so config loading does not pull the overlay types into the config
-/// layer; `From` conversions in both directions keep the two in sync.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-pub struct CrossLinkConfidenceThresholds {
-    /// Scores at or above this value classify as `High`.
-    #[serde(default = "default_high_threshold")]
-    pub high: f32,
-    /// Scores at or above this value (and below `high`) classify as
-    /// `ReviewQueue`; anything lower is `BelowThreshold`.
-    #[serde(default = "default_review_queue_threshold")]
-    pub review_queue: f32,
-}
-
-impl Default for CrossLinkConfidenceThresholds {
-    fn default() -> Self {
-        Self {
-            high: default_high_threshold(),
-            review_queue: default_review_queue_threshold(),
-        }
-    }
-}
-
-impl From<CrossLinkConfidenceThresholds> for crate::overlay::ConfidenceThresholds {
-    fn from(c: CrossLinkConfidenceThresholds) -> Self {
-        crate::overlay::ConfidenceThresholds {
-            high: c.high,
-            review_queue: c.review_queue,
-        }
-    }
-}
-
-impl From<crate::overlay::ConfidenceThresholds> for CrossLinkConfidenceThresholds {
-    fn from(c: crate::overlay::ConfidenceThresholds) -> Self {
-        CrossLinkConfidenceThresholds {
-            high: c.high,
-            review_queue: c.review_queue,
-        }
-    }
-}
-
-fn default_high_threshold() -> f32 {
-    0.85
-}
-
-fn default_review_queue_threshold() -> f32 {
-    0.6
+    pub explain: ExplainConfig,
 }
 
 fn default_roots() -> Vec<String> {
@@ -240,15 +176,6 @@ fn default_semantic_similarity_threshold() -> f64 {
     0.6
 }
 
-impl std::fmt::Display for Mode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Mode::Auto => f.write_str("auto"),
-            Mode::Curated => f.write_str("curated"),
-        }
-    }
-}
-
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -268,7 +195,7 @@ impl Default for Config {
             semantic_model: default_semantic_model(),
             embedding_dim: default_embedding_dim(),
             semantic_similarity_threshold: default_semantic_similarity_threshold(),
-            synthesis: SynthesisConfig::default(),
+            explain: ExplainConfig::default(),
         }
     }
 }
@@ -288,6 +215,7 @@ impl Config {
 
         let mut config = if global_path.exists() {
             let text = std::fs::read_to_string(&global_path)?;
+            reject_legacy_explain_block(&text, &global_path)?;
             toml::from_str(&text).map_err(|e| crate::Error::Config(e.to_string()))?
         } else {
             Self::default()
@@ -295,6 +223,7 @@ impl Config {
 
         if local_path.exists() {
             let text = std::fs::read_to_string(&local_path)?;
+            reject_legacy_explain_block(&text, &local_path)?;
             let local_config: Config =
                 toml::from_str(&text).map_err(|e| crate::Error::Config(e.to_string()))?;
             config.merge(local_config);
@@ -362,9 +291,22 @@ impl Config {
         }
         self.cross_link_confidence_thresholds = other.cross_link_confidence_thresholds;
 
-        // Synthesis merge is more complex (nested)
-        self.synthesis.merge(other.synthesis);
+        // Explain merge is more complex (nested)
+        self.explain.merge(other.explain);
     }
+}
+
+fn reject_legacy_explain_block(text: &str, path: &Path) -> crate::Result<()> {
+    let Ok(value) = text.parse::<toml::Value>() else {
+        return Ok(());
+    };
+    if value.get("synthesis").is_some() {
+        return Err(crate::Error::Config(format!(
+            "{} uses legacy [synthesis]; rename it to [explain]",
+            path.display()
+        )));
+    }
+    Ok(())
 }
 
 /// Best-effort home-directory resolver: `$HOME` on Unix, `%USERPROFILE%` on
@@ -447,162 +389,4 @@ pub mod test_home {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-    use tempfile::tempdir;
-
-    #[test]
-    fn load_missing_file_returns_error() {
-        // Config::load falls back to ~/.synrepo/config.toml when the repo-local
-        // file is missing; redirect HOME under the shared lock so the user's
-        // real global config can't satisfy the load and mask NotInitialized.
-        let _lock = crate::test_support::global_test_lock(super::test_home::HOME_ENV_TEST_LOCK);
-        let home = tempdir().unwrap();
-        let _home_guard = super::test_home::HomeEnvGuard::redirect_to(home.path());
-
-        let dir = tempdir().unwrap();
-        let err = Config::load(dir.path()).unwrap_err();
-        assert!(matches!(err, crate::Error::NotInitialized(_)));
-    }
-
-    #[test]
-    fn load_valid_file_overrides_defaults() {
-        let _lock = crate::test_support::global_test_lock(super::test_home::HOME_ENV_TEST_LOCK);
-        let home = tempdir().unwrap();
-        let _home_guard = super::test_home::HomeEnvGuard::redirect_to(home.path());
-
-        let dir = tempdir().unwrap();
-        let synrepo_dir = Config::synrepo_dir(dir.path());
-        fs::create_dir_all(&synrepo_dir).unwrap();
-
-        let custom_toml = r#"
-        mode = "curated"
-        roots = ["src"]
-        git_commit_depth = 100
-        "#;
-        fs::write(synrepo_dir.join("config.toml"), custom_toml).unwrap();
-
-        let config = Config::load(dir.path()).unwrap();
-
-        assert_eq!(config.mode, Mode::Curated);
-        assert_eq!(config.roots, vec!["src".to_string()]);
-        assert_eq!(config.git_commit_depth, 100);
-
-        // Ensure defaults are kept for unmentioned fields
-        assert_eq!(config.max_file_size_bytes, 1024 * 1024);
-    }
-
-    #[test]
-    fn cross_link_fields_round_trip_through_toml() {
-        let _lock = crate::test_support::global_test_lock(super::test_home::HOME_ENV_TEST_LOCK);
-        let home = tempdir().unwrap();
-        let _home_guard = super::test_home::HomeEnvGuard::redirect_to(home.path());
-
-        let dir = tempdir().unwrap();
-        let synrepo_dir = Config::synrepo_dir(dir.path());
-        fs::create_dir_all(&synrepo_dir).unwrap();
-
-        let custom_toml = r#"
-            cross_link_cost_limit = 42
-            [cross_link_confidence_thresholds]
-            high = 0.9
-            review_queue = 0.55
-        "#;
-        fs::write(synrepo_dir.join("config.toml"), custom_toml).unwrap();
-
-        let config = Config::load(dir.path()).unwrap();
-        assert_eq!(config.cross_link_cost_limit, 42);
-        assert!((config.cross_link_confidence_thresholds.high - 0.9).abs() < 1e-6);
-        assert!((config.cross_link_confidence_thresholds.review_queue - 0.55).abs() < 1e-6);
-
-        // Defaults kick in when the TOML omits the cross-link keys.
-        let default = Config::default();
-        assert_eq!(default.cross_link_cost_limit, 200);
-        assert!((default.cross_link_confidence_thresholds.high - 0.85).abs() < 1e-6);
-    }
-
-    #[test]
-    fn load_invalid_toml_returns_error() {
-        let _lock = crate::test_support::global_test_lock(super::test_home::HOME_ENV_TEST_LOCK);
-        let home = tempdir().unwrap();
-        let _home_guard = super::test_home::HomeEnvGuard::redirect_to(home.path());
-
-        let dir = tempdir().unwrap();
-        let synrepo_dir = Config::synrepo_dir(dir.path());
-        fs::create_dir_all(&synrepo_dir).unwrap();
-
-        fs::write(synrepo_dir.join("config.toml"), "mode = [").unwrap();
-
-        let err = Config::load(dir.path()).unwrap_err();
-        assert!(err.to_string().starts_with("config error:"));
-    }
-
-    #[test]
-    fn merge_overrides_fields() {
-        let mut base = Config::default();
-        base.git_commit_depth = 100;
-        base.mode = Mode::Auto;
-
-        let mut other = Config::default();
-        other.git_commit_depth = 200;
-        other.mode = Mode::Curated;
-
-        base.merge(other);
-
-        assert_eq!(base.git_commit_depth, 200);
-        assert_eq!(base.mode, Mode::Curated);
-    }
-
-    #[test]
-    fn merge_preserves_unmodified_fields() {
-        let mut base = Config::default();
-        base.commentary_cost_limit = 1000;
-
-        let other = Config::default(); // default commentary_cost_limit is 5000
-        base.merge(other);
-
-        assert_eq!(base.commentary_cost_limit, 1000);
-    }
-    #[test]
-    fn load_merges_global_and_local() {
-        let _lock = crate::test_support::global_test_lock(super::test_home::HOME_ENV_TEST_LOCK);
-        let home = tempdir().unwrap();
-        let repo = tempdir().unwrap();
-        let _home_guard = super::test_home::HomeEnvGuard::redirect_to(home.path());
-        std::fs::create_dir_all(home.path().join(".synrepo")).unwrap();
-        std::fs::create_dir_all(repo.path().join(".synrepo")).unwrap();
-
-        let global_toml = r#"
-            mode = "curated"
-            [synthesis]
-            enabled = true
-            provider = "anthropic"
-            anthropic_api_key = "global-anthropic"
-            local_endpoint = "http://global-llm:11434/api/chat"
-        "#;
-        std::fs::write(home.path().join(".synrepo/config.toml"), global_toml).unwrap();
-
-        let local_toml = r#"
-            mode = "auto"
-            [synthesis]
-            provider = "openai"
-        "#;
-        std::fs::write(repo.path().join(".synrepo/config.toml"), local_toml).unwrap();
-
-        // Config::load should merge: mode is auto (local wins), synthesis enabled is true (global preserved), synthesis provider is openai (local wins)
-        let config = Config::load(repo.path()).expect("load must succeed");
-
-        assert_eq!(config.mode, Mode::Auto);
-        assert!(config.synthesis.enabled);
-        assert_eq!(config.synthesis.provider.as_deref(), Some("openai"));
-        assert_eq!(
-            config.synthesis.anthropic_api_key.as_deref(),
-            Some("global-anthropic")
-        );
-        assert_eq!(
-            config.synthesis.local_endpoint.as_deref(),
-            Some("http://global-llm:11434/api/chat")
-        );
-    }
-}
+mod tests;

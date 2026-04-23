@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use crate::config::Config;
 use crate::core::ids::NodeId;
 use crate::overlay::OverlayStore;
-use crate::pipeline::synthesis::docs::{reconcile_commentary_docs, sync_commentary_index};
+use crate::pipeline::explain::docs::{reconcile_commentary_docs, sync_commentary_index};
 use crate::store::overlay::SqliteOverlayStore;
 use crate::store::sqlite::SqliteGraphStore;
 

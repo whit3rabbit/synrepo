@@ -18,13 +18,14 @@ use ratatui::Terminal;
 use crate::bootstrap::runtime_probe::AgentIntegration;
 use crate::pipeline::watch::WatchEvent;
 use crate::tui::app::{poll_key, ActiveTab, AppState, DashboardExit};
+use crate::tui::explain_run::run_explain_in_dashboard;
 use crate::tui::probe::{
     build_activity_vm, build_header_vm, build_health_vm, build_next_actions, display_repo_path,
 };
 use crate::tui::theme::Theme;
 use crate::tui::widgets::{
-    ActionsTabWidget, DashboardTabsWidget, FooterWidget, HeaderWidget, HealthWidget,
-    LiveFeedWidget, LogEntry, SynthesisTabWidget,
+    ActionsTabWidget, DashboardTabsWidget, ExplainTabWidget, FooterWidget, HeaderWidget,
+    HealthWidget, LiveFeedWidget, LogEntry,
 };
 
 /// Terminal alias used by the render loop.
@@ -88,6 +89,9 @@ fn render_loop(terminal: &mut DashboardTerminal, state: &mut AppState) -> anyhow
         if let Some((code, mods)) = poll_key(state.poll_timeout)? {
             state.handle_key(code, mods);
         }
+        if let Some(pending) = state.take_pending_explain() {
+            run_explain_in_dashboard(terminal, state, pending)?;
+        }
     }
     Ok(())
 }
@@ -144,15 +148,15 @@ fn draw_dashboard(frame: &mut ratatui::Frame, state: &AppState) {
             };
             frame.render_widget(health, content_area);
         }
-        ActiveTab::Synthesis => {
-            let synthesis = SynthesisTabWidget {
+        ActiveTab::Explain => {
+            let explain = ExplainTabWidget {
                 snapshot: &state.snapshot,
                 picker: state.picker.as_ref(),
                 confirm_stop_watch: state.confirm_stop_watch.as_ref(),
-                preview_panel: state.synthesis_preview.as_ref(),
+                preview_panel: state.explain_preview.as_ref(),
                 theme: &state.theme,
             };
-            frame.render_widget(synthesis, content_area);
+            frame.render_widget(explain, content_area);
         }
         ActiveTab::Actions => {
             let next_actions = build_next_actions(&state.snapshot, &state.integration);

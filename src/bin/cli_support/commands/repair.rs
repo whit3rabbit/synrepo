@@ -3,8 +3,8 @@ use std::path::Path;
 use synrepo::{
     config::Config,
     pipeline::{
+        explain::{accounting, telemetry},
         repair::{build_repair_report, execute_sync, SyncOptions},
-        synthesis::{accounting, telemetry},
         watch::{request_watch_control, WatchControlRequest, WatchControlResponse},
     },
 };
@@ -42,7 +42,7 @@ pub(crate) fn sync(
     json_output: bool,
     generate_cross_links: bool,
     regenerate_cross_links: bool,
-    reset_synthesis_totals: bool,
+    reset_explain_totals: bool,
 ) -> anyhow::Result<()> {
     let config = Config::load(repo_root).map_err(|error| {
         anyhow::anyhow!("sync: not initialized — run `synrepo init` first ({error})")
@@ -50,13 +50,13 @@ pub(crate) fn sync(
     let synrepo_dir = Config::synrepo_dir(repo_root);
     telemetry::set_synrepo_dir(&synrepo_dir);
 
-    if reset_synthesis_totals {
+    if reset_explain_totals {
         accounting::reset(&synrepo_dir)
-            .map_err(|error| anyhow::anyhow!("sync: failed to reset synthesis totals ({error})"))?;
+            .map_err(|error| anyhow::anyhow!("sync: failed to reset explain totals ({error})"))?;
         if json_output {
-            println!("{}", serde_json::json!({ "reset_synthesis_totals": true }));
+            println!("{}", serde_json::json!({ "reset_explain_totals": true }));
         } else {
-            println!("Synthesis totals reset. Call log rotated to `.bak` with timestamp.");
+            println!("Explain totals reset. Call log rotated to `.bak` with timestamp.");
         }
         return Ok(());
     }

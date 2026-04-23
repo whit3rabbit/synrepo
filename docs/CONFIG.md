@@ -18,4 +18,4 @@ Runtime config lives in `.synrepo/config.toml`; the struct is `Config` in `src/c
 - Adding a fourth `concept_directories` entry (e.g. `architecture/decisions`) triggers a config-sensitive compatibility check — the compat report raises a graph advisory.
 - `max_graph_snapshot_bytes` is advisory. Oversized snapshots still publish with a warning; set to `0` to force readers onto the SQLite path.
 - `redact_globs` is hard: matched files are never indexed and never reach any parser, so they cannot leak into cards, exports, or overlay candidates.
-- Synthesis config (`[synthesis]`) lives in the same file; see `docs/SYNTHESIS.md`.
+- Explain config (`[explain]`) lives in the same file; see `docs/EXPLAIN.md`.

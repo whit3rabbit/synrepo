@@ -6,7 +6,7 @@ use super::fixtures::{current_content_hash, fresh_symbol_fixture, make_overlay_s
 use crate::{
     core::ids::NodeId,
     overlay::{CommentaryEntry, CommentaryProvenance},
-    pipeline::synthesis::CommentaryGenerator,
+    pipeline::explain::CommentaryGenerator,
     surface::card::{CardCompiler, Freshness},
 };
 use time::OffsetDateTime;
@@ -141,15 +141,15 @@ fn refresh_commentary_persists_new_entry() {
 
     let synrepo_dir = repo.path().join(".synrepo");
     let doc_path = synrepo_dir
-        .join("synthesis-docs")
+        .join("explain-docs")
         .join("symbols")
         .join(format!("{}.md", NodeId::Symbol(sym_id)));
     assert!(
         doc_path.exists(),
-        "expected synthesized doc at {}",
+        "expected explained doc at {}",
         doc_path.display()
     );
-    let hits = crate::pipeline::synthesis::docs::search_commentary_index(
+    let hits = crate::pipeline::explain::docs::search_commentary_index(
         &synrepo_dir,
         "Freshly generated.",
         10,

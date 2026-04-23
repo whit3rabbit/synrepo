@@ -15,8 +15,8 @@ use crate::core::ids::FileNodeId;
 pub enum CreatedBy {
     /// The structural pipeline (tree-sitter parse, markdown parse, git mine, drift scoring).
     StructuralPipeline,
-    /// The synthesis pipeline (LLM-driven, produces overlay content only).
-    SynthesisPipeline,
+    /// The explain pipeline (LLM-driven, produces overlay content only).
+    ExplainPipeline,
     /// A human acting via the CLI (e.g. `synrepo concept promote`).
     Human,
     /// The bootstrap command, for first-run initialization.

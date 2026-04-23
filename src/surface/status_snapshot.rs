@@ -13,13 +13,13 @@ use crate::{
     pipeline::{
         compact::load_last_compaction_timestamp,
         diagnostics::{collect_diagnostics, RuntimeDiagnostics},
+        explain::{
+            accounting::{load_totals, ExplainTotals},
+            describe_active_provider, ExplainStatus,
+        },
         export::load_manifest,
         recent_activity::{read_recent_activity, ActivityEntry, RecentActivityQuery},
         repair::{read_repair_log_degraded_marker, resolve_commentary_node, RepairLogDegraded},
-        synthesis::{
-            accounting::{load_totals, SynthesisTotals},
-            describe_active_provider, SynthesisStatus,
-        },
         watch::load_reconcile_state,
     },
     store::{
@@ -52,11 +52,11 @@ pub enum RepairAuditState {
     },
 }
 
-/// Display-ready summary of synthesis state. Carries both the resolved
+/// Display-ready summary of explain state. Carries both the resolved
 /// provider identity (what would run if enabled) and the enablement status
 /// (whether it actually will run, and why not when it won't).
 #[derive(Clone, Debug)]
-pub struct SynthesisDisplay {
+pub struct ExplainDisplay {
     /// Provider name (e.g. `anthropic`, `local`).
     pub provider: String,
     /// Default model for the provider, if one exists.
@@ -64,9 +64,9 @@ pub struct SynthesisDisplay {
     /// Active local endpoint, if using ProviderKind::Local.
     pub local_endpoint: Option<String>,
     /// Source of the local endpoint.
-    pub endpoint_source: crate::pipeline::synthesis::providers::EndpointSource,
+    pub endpoint_source: crate::pipeline::explain::providers::EndpointSource,
     /// Resolved enablement status.
-    pub status: SynthesisStatus,
+    pub status: ExplainStatus,
 }
 
 /// Commentary-coverage summary. `total` is always present when the overlay was
@@ -130,13 +130,13 @@ pub struct StatusSnapshot {
     pub overlay_cost_summary: String,
     /// Commentary coverage.
     pub commentary_coverage: CommentaryCoverage,
-    /// Synthesis provider information, including enablement status and
+    /// Explain provider information, including enablement status and
     /// whether a provider API key was detected in the environment.
-    pub synthesis_provider: Option<SynthesisDisplay>,
-    /// Per-repo synthesis accounting totals loaded from
-    /// `.synrepo/state/synthesis-totals.json`. `None` when the file is
+    pub explain_provider: Option<ExplainDisplay>,
+    /// Per-repo explain accounting totals loaded from
+    /// `.synrepo/state/explain-totals.json`. `None` when the file is
     /// missing, unreadable, or the repo is uninitialized.
-    pub synthesis_totals: Option<SynthesisTotals>,
+    pub explain_totals: Option<ExplainTotals>,
     /// Last compaction timestamp, if any.
     pub last_compaction: Option<OffsetDateTime>,
     /// Repair audit state.
@@ -164,8 +164,8 @@ pub fn build_status_snapshot(repo_root: &Path, opts: StatusOptions) -> StatusSna
                 export_freshness: String::new(),
                 overlay_cost_summary: String::new(),
                 commentary_coverage: CommentaryCoverage::unavailable("not initialized"),
-                synthesis_provider: None,
-                synthesis_totals: None,
+                explain_provider: None,
+                explain_totals: None,
                 last_compaction: None,
                 repair_audit: RepairAuditState::Ok,
                 recent_activity: None,
@@ -193,14 +193,14 @@ pub fn build_status_snapshot(repo_root: &Path, opts: StatusOptions) -> StatusSna
     let last_compaction = load_last_compaction_timestamp(&synrepo_dir);
     let repair_audit = load_repair_audit_state(&synrepo_dir);
     let active = describe_active_provider(config_ref);
-    let synthesis_provider = Some(SynthesisDisplay {
+    let explain_provider = Some(ExplainDisplay {
         provider: active.provider.to_string(),
         model: active.model,
         local_endpoint: active.local_endpoint,
         endpoint_source: active.endpoint_source,
         status: active.status,
     });
-    let synthesis_totals = load_totals(&synrepo_dir).ok().flatten();
+    let explain_totals = load_totals(&synrepo_dir).ok().flatten();
 
     let recent_activity = if opts.recent {
         let query = RecentActivityQuery {
@@ -222,8 +222,8 @@ pub fn build_status_snapshot(repo_root: &Path, opts: StatusOptions) -> StatusSna
         export_freshness,
         overlay_cost_summary,
         commentary_coverage,
-        synthesis_provider,
-        synthesis_totals,
+        explain_provider,
+        explain_totals,
         last_compaction,
         repair_audit,
         recent_activity,

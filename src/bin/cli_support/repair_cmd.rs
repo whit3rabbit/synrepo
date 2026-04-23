@@ -1,0 +1,135 @@
+use std::path::Path;
+
+use synrepo::bootstrap::runtime_probe::{probe, AgentIntegration};
+use synrepo::tui::{
+    run_dashboard, run_integration_wizard, DashboardOptions, IntegrationPlan,
+    IntegrationWizardOutcome, RepairPlan, TuiOptions, TuiOutcome,
+};
+
+use super::agent_shims::{registry as shim_registry, AgentTool, AutomationTier};
+use super::commands::{
+    reconcile, step_apply_integration, step_backup_mcp_config, step_init, step_register_mcp,
+    step_write_shim, upgrade,
+};
+use super::setup_cmd::run_explain_step;
+
+/// Run the poll-mode dashboard in a loop so dashboard-launched sub-wizards can
+/// tear down the alt-screen, execute their plan, and re-open the dashboard
+/// with a fresh probe and integration signal. Returns once the operator quits
+/// the dashboard normally or a non-TTY fallback fires.
+pub(crate) fn run_dashboard_with_sub_wizards(
+    repo_root: &Path,
+    mut integration: AgentIntegration,
+    mut opts: DashboardOptions,
+) -> anyhow::Result<()> {
+    loop {
+        // Exhaustive match flags future TuiOutcome additions at compile time.
+        match run_dashboard(repo_root, integration.clone(), opts)? {
+            TuiOutcome::Exited | TuiOutcome::NonTtyFallback => return Ok(()),
+            TuiOutcome::LaunchIntegrationRequested => {
+                // Tear-down of the alt-screen has already happened inside
+                // `run_dashboard`; safe to print and prompt now.
+                let tui_opts = TuiOptions {
+                    no_color: opts.no_color,
+                };
+                match run_integration_wizard(repo_root, integration.clone(), tui_opts)? {
+                    IntegrationWizardOutcome::Completed { plan } => {
+                        execute_integration_plan(repo_root, plan)?;
+                    }
+                    IntegrationWizardOutcome::Cancelled => {
+                        println!("integration wizard cancelled; no changes applied.");
+                    }
+                    IntegrationWizardOutcome::NonTty => return Ok(()),
+                }
+                // Re-probe so the dashboard reflects the new integration
+                // state on re-open. Suppress the welcome banner on re-open —
+                // the banner is a first-run-only affordance.
+                let report = probe(repo_root);
+                integration = report.agent_integration;
+                opts.welcome_banner = false;
+            }
+            TuiOutcome::LaunchExplainSetupRequested => {
+                let tui_opts = TuiOptions {
+                    no_color: opts.no_color,
+                };
+                run_explain_step(repo_root, tui_opts)?;
+                opts.welcome_banner = false;
+            }
+            outcome @ (TuiOutcome::WizardCompleted | TuiOutcome::WizardCancelled) => {
+                debug_assert!(
+                    false,
+                    "run_dashboard returned unexpected outcome: {outcome:?}"
+                );
+                return Ok(());
+            }
+        }
+    }
+}
+
+/// Execute a completed [`RepairPlan`] after the TUI alt-screen has been torn
+/// down. Actions run in order: write config, upgrade-apply, reconcile, shim.
+/// The probe is re-run between mutating steps so later steps see fresh state
+/// and a transient success transitions cleanly to the dashboard on the next
+/// bare-`synrepo` run.
+pub(crate) fn execute_repair_plan(repo_root: &Path, plan: RepairPlan) -> anyhow::Result<()> {
+    if plan.is_empty() {
+        println!("synrepo repair: plan empty, nothing to do.");
+        return Ok(());
+    }
+    println!("synrepo repair: applying plan.");
+    if plan.write_config {
+        println!("  Writing default config.toml...");
+        // `step_init` with force=false is idempotent on an existing repo and
+        // creates `.synrepo/config.toml` if missing. It is the canonical path
+        // for config bootstrap.
+        step_init(repo_root, None, false, false)?;
+        let _ = probe(repo_root);
+    }
+    if plan.run_upgrade_apply {
+        println!("  Running `synrepo upgrade --apply`...");
+        upgrade(repo_root, true)?;
+        let _ = probe(repo_root);
+    }
+    if plan.run_reconcile {
+        println!("  Running reconcile pass...");
+        reconcile(repo_root)?;
+        let _ = probe(repo_root);
+    }
+    if let Some(target) = plan.write_shim_for {
+        let tool = AgentTool::from_target_kind(target);
+        println!(
+            "  Writing {} {}...",
+            tool.display_name(),
+            tool.artifact_label()
+        );
+        let backup = step_backup_mcp_config(repo_root, tool)?;
+        step_apply_integration(repo_root, tool, false)?;
+        let wrote_mcp = matches!(tool.automation_tier(), AutomationTier::Automated);
+        shim_registry::record_install_best_effort(repo_root, tool, wrote_mcp, backup);
+    }
+    println!("Repair complete.");
+    Ok(())
+}
+
+/// Execute a completed [`IntegrationPlan`] after the TUI alt-screen has been
+/// torn down. Splits the plan so the wizard can request shim-only, MCP-only,
+/// or both — `step_apply_integration` would force both.
+pub(crate) fn execute_integration_plan(
+    repo_root: &Path,
+    plan: IntegrationPlan,
+) -> anyhow::Result<()> {
+    let tool = AgentTool::from_target_kind(plan.target);
+    if plan.write_shim {
+        step_write_shim(repo_root, tool, plan.overwrite_shim)?;
+    }
+    let mut backup: Option<String> = None;
+    if plan.register_mcp {
+        backup = step_backup_mcp_config(repo_root, tool)?;
+        step_register_mcp(repo_root, tool)?;
+    }
+    let wrote_mcp =
+        plan.register_mcp && matches!(tool.automation_tier(), AutomationTier::Automated);
+    shim_registry::record_install_best_effort(repo_root, tool, wrote_mcp, backup);
+    println!("Integration complete.");
+    Ok(())
+}

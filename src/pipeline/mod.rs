@@ -1,4 +1,4 @@
-//! Pipeline module: structural compile, watch/reconcile, and synthesis.
+//! Pipeline module: structural compile, watch/reconcile, and explain.
 //!
 //! ## Module responsibilities
 //!
@@ -19,10 +19,13 @@
 //! - `compact` — compaction operations for overlay, state, and index stores.
 //! - `git_intelligence` — the deterministic entry point for future
 //!   history-derived routing and change-risk enrichment.
-//! - `synthesis` — LLM-driven overlay pipeline (phase 4+).
+//! - `explain` — LLM-driven overlay pipeline (phase 4+).
 
 pub mod compact;
+/// Operational diagnostics surface for reconcile health, writer ownership,
+/// and store compatibility.
 pub mod diagnostics;
+pub mod explain;
 pub mod export;
 pub mod git;
 pub mod git_intelligence;
@@ -30,6 +33,5 @@ pub mod maintenance;
 pub mod recent_activity;
 pub mod repair;
 pub mod structural;
-pub mod synthesis;
 pub mod watch;
 pub mod writer;

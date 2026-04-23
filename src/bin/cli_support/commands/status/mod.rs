@@ -12,11 +12,11 @@ use std::path::Path;
 use synrepo::{
     pipeline::{
         diagnostics::{EmbeddingHealth, ReconcileHealth, WriterStatus},
-        synthesis::SynthesisStatus,
+        explain::ExplainStatus,
     },
     surface::status_snapshot::{
-        build_status_snapshot, CommentaryCoverage, GraphSnapshotStatus, RepairAuditState,
-        StatusOptions, StatusSnapshot, SynthesisDisplay,
+        build_status_snapshot, CommentaryCoverage, ExplainDisplay, GraphSnapshotStatus,
+        RepairAuditState, StatusOptions, StatusSnapshot,
     },
 };
 
@@ -179,13 +179,13 @@ fn write_status_text(out: &mut String, snapshot: &StatusSnapshot, full: bool) {
     )
     .unwrap();
 
-    // Synthesis provider status
-    if let Some(synthesis) = &snapshot.synthesis_provider {
-        writeln!(out, "  synthesis:    {}", render_synthesis_line(synthesis)).unwrap();
+    // Explain provider status
+    if let Some(explain) = &snapshot.explain_provider {
+        writeln!(out, "  explain:    {}", render_explain_line(explain)).unwrap();
     } else {
-        writeln!(out, "  synthesis:    not initialized").unwrap();
+        writeln!(out, "  explain:    not initialized").unwrap();
     }
-    if let Some(totals) = &snapshot.synthesis_totals {
+    if let Some(totals) = &snapshot.explain_totals {
         let total_calls = totals.calls + totals.failures + totals.budget_blocked;
         if total_calls > 0 {
             let openrouter_live = openrouter_live_pricing_used(totals);
@@ -203,7 +203,7 @@ fn write_status_text(out: &mut String, snapshot: &StatusSnapshot, full: bool) {
                 totals.output_tokens,
                 est,
                 cost,
-                synrepo::pipeline::synthesis::pricing::pricing_basis_label(openrouter_live)
+                synrepo::pipeline::explain::pricing::pricing_basis_label(openrouter_live)
             )
             .unwrap();
             if totals.failures > 0 || totals.budget_blocked > 0 {
@@ -329,8 +329,8 @@ fn write_status_json(out: &mut String, snapshot: &StatusSnapshot) -> anyhow::Res
         },
         "commentary_coverage": commentary_json,
         "graph_snapshot": graph_snapshot_json(&snapshot.graph_snapshot),
-        "synthesis_provider": snapshot.synthesis_provider.as_ref().map(synthesis_json),
-        "synthesis_totals": snapshot.synthesis_totals.as_ref().map(|t| serde_json::json!({
+        "explain_provider": snapshot.explain_provider.as_ref().map(explain_json),
+        "explain_totals": snapshot.explain_totals.as_ref().map(|t| serde_json::json!({
             "since": t.since,
             "updated_at": t.updated_at,
             "calls": t.calls,
@@ -342,10 +342,10 @@ fn write_status_json(out: &mut String, snapshot: &StatusSnapshot) -> anyhow::Res
             "any_estimated": t.any_estimated,
             "any_unpriced": t.any_unpriced,
             "openrouter_live_pricing_used": openrouter_live_pricing_used(t),
-            "pricing_basis": synrepo::pipeline::synthesis::pricing::pricing_basis_label(
+            "pricing_basis": synrepo::pipeline::explain::pricing::pricing_basis_label(
                 openrouter_live_pricing_used(t)
             ),
-            "pricing_last_updated": synrepo::pipeline::synthesis::pricing::LAST_UPDATED,
+            "pricing_last_updated": synrepo::pipeline::explain::pricing::LAST_UPDATED,
             "per_provider": t.per_provider,
         })),
         "recent_activity": activity_json,
@@ -358,7 +358,7 @@ fn write_status_json(out: &mut String, snapshot: &StatusSnapshot) -> anyhow::Res
 }
 
 fn openrouter_live_pricing_used(
-    totals: &synrepo::pipeline::synthesis::accounting::SynthesisTotals,
+    totals: &synrepo::pipeline::explain::accounting::ExplainTotals,
 ) -> bool {
     totals
         .per_provider
@@ -405,13 +405,13 @@ fn render_snapshot_size(size_bytes: usize) -> String {
     }
 }
 
-fn render_synthesis_line(display: &SynthesisDisplay) -> String {
+fn render_explain_line(display: &ExplainDisplay) -> String {
     let provider_and_model = match &display.model {
         Some(m) => format!("{} ({})", display.provider, m),
         None => display.provider.clone(),
     };
     match &display.status {
-        SynthesisStatus::Enabled => {
+        ExplainStatus::Enabled => {
             let mut line = provider_and_model;
             if let Some(endpoint) = &display.local_endpoint {
                 let source = display.endpoint_source.display_label();
@@ -419,24 +419,22 @@ fn render_synthesis_line(display: &SynthesisDisplay) -> String {
             }
             line
         }
-        SynthesisStatus::DisabledKeyDetected { env_var } => {
+        ExplainStatus::DisabledKeyDetected { env_var } => {
             format!(
-                "disabled ({env_var} detected; run 'synrepo setup <tool> --synthesis' \
-                 to enable, or set [synthesis] enabled = true in .synrepo/config.toml \
+                "disabled ({env_var} detected; run 'synrepo setup <tool> --explain' \
+                 to enable, or set [explain] enabled = true in .synrepo/config.toml \
                  and store reusable keys or local endpoints in ~/.synrepo/config.toml)"
             )
         }
-        SynthesisStatus::Disabled => "disabled".to_string(),
+        ExplainStatus::Disabled => "disabled".to_string(),
     }
 }
 
-fn synthesis_json(display: &SynthesisDisplay) -> serde_json::Value {
+fn explain_json(display: &ExplainDisplay) -> serde_json::Value {
     let (status_str, detected_env_var) = match &display.status {
-        SynthesisStatus::Enabled => ("enabled", None),
-        SynthesisStatus::DisabledKeyDetected { env_var } => {
-            ("disabled_key_detected", Some(*env_var))
-        }
-        SynthesisStatus::Disabled => ("disabled", None),
+        ExplainStatus::Enabled => ("enabled", None),
+        ExplainStatus::DisabledKeyDetected { env_var } => ("disabled_key_detected", Some(*env_var)),
+        ExplainStatus::Disabled => ("disabled", None),
     };
     serde_json::json!({
         "provider": display.provider,

@@ -35,7 +35,7 @@ use crate::{
     config::Config,
     core::ids::{FileNodeId, NodeId, SymbolNodeId},
     overlay::{FreshnessState, OverlayStore},
-    pipeline::{git_intelligence::GitPathHistoryInsights, synthesis::CommentaryGenerator},
+    pipeline::{explain::CommentaryGenerator, git_intelligence::GitPathHistoryInsights},
     store::sqlite::SqliteGraphStore,
     structure::graph::{with_graph_read_snapshot, Graph, GraphReader, GraphStore},
 };
@@ -228,7 +228,7 @@ impl GraphCardCompiler {
                     Ok((
                         symbol::build_generation_context(&card),
                         file.content_hash.clone(),
-                        crate::pipeline::synthesis::docs::CommentaryDocSymbolMetadata {
+                        crate::pipeline::explain::docs::CommentaryDocSymbolMetadata {
                             qualified_name: symbol.qualified_name.clone(),
                             source_path: file.path.clone(),
                         },
@@ -244,7 +244,7 @@ impl GraphCardCompiler {
                         if let Some(repo_root) = self.repo_root.as_ref() {
                             let synrepo_dir = Config::synrepo_dir(repo_root);
                             if let Some(path) =
-                                crate::pipeline::synthesis::docs::upsert_commentary_doc(
+                                crate::pipeline::explain::docs::upsert_commentary_doc(
                                     &synrepo_dir,
                                     id,
                                     &entry,
@@ -252,7 +252,7 @@ impl GraphCardCompiler {
                                     &doc_metadata,
                                 )?
                             {
-                                crate::pipeline::synthesis::docs::sync_commentary_index(
+                                crate::pipeline::explain::docs::sync_commentary_index(
                                     &synrepo_dir,
                                     &[path],
                                 )?;

@@ -4,10 +4,10 @@ Define machine-authored commentary storage, provenance, freshness, retrieval bou
 ## Requirements
 
 ### Requirement: Define overlay-only machine-authored content
-synrepo SHALL define machine-authored commentary as overlay content that annotates graph nodes without overriding graph-backed truth. Commentary covers synthesized explanations, usage summaries, and contextual annotations. Evidence-verified proposed cross-links are out of scope for this spec; see `openspec/specs/overlay-links/spec.md`.
+synrepo SHALL define machine-authored commentary as overlay content that annotates graph nodes without overriding graph-backed truth. Commentary covers generated explanations, usage summaries, and contextual annotations. Evidence-verified proposed cross-links are out of scope for this spec; see `openspec/specs/overlay-links/spec.md`.
 
-#### Scenario: Record a synthesized explanation
-- **WHEN** the synthesis pipeline creates commentary for a card
+#### Scenario: Record a generated explanation
+- **WHEN** the explain pipeline creates commentary for a card
 - **THEN** the resulting content is stored and surfaced as overlay data
 - **AND** the product does not present it as canonical graph truth
 
@@ -84,7 +84,7 @@ synrepo SHALL define budget limits, lazy versus eager generation policy, and ref
 #### Scenario: Withhold commentary when budget is exceeded
 - **WHEN** a commentary generation or inclusion request would exceed the configured cost limit
 - **THEN** the overlay contract withholds the commentary and labels the response accordingly
-- **AND** no partial or truncated commentary is synthesized or surfaced
+- **AND** no partial or truncated commentary is generated or surfaced
 
 ### Requirement: Expose a reader-consistent snapshot over multi-query overlay reads
 The overlay store SHALL expose a paired `begin_read_snapshot` / `end_read_snapshot` API mirroring the graph store's contract: any logical operation issuing multiple overlay queries through a single handle observes exactly one committed epoch for the entire scope, and nested snapshots on the same handle share the outermost epoch.

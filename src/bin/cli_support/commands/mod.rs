@@ -13,17 +13,9 @@ pub(crate) mod mcp;
 mod remove;
 mod repair;
 mod setup;
+mod setup_explain;
 mod setup_mcp_backup;
-mod setup_synthesis;
 mod status;
-mod synthesize;
-mod synthesize_progress;
-mod synthesize_status;
-mod synthesize_tracker;
-mod synthesize_ui;
-mod synthesize_ui_input;
-mod synthesize_ui_terminal;
-mod synthesize_ui_text;
 mod upgrade;
 mod watch;
 
@@ -53,16 +45,9 @@ pub(crate) use setup::{
 pub(crate) use setup::{
     step_apply_integration, step_ensure_ready, step_init, step_register_mcp, step_write_shim,
 };
+pub(crate) use setup_explain::step_apply_explain;
 pub(crate) use setup_mcp_backup::{mcp_config_has_synrepo, step_backup_mcp_config};
-pub(crate) use setup_synthesis::step_apply_synthesis;
 pub(crate) use status::{status, status_output};
-pub(crate) use synthesize::synthesize;
-#[cfg(test)]
-pub(crate) use synthesize::synthesize_output;
-pub(crate) use synthesize::synthesize_without_tui;
-pub(crate) use synthesize_status::synthesize_status;
-#[cfg(test)]
-pub(crate) use synthesize_status::synthesize_status_output;
 #[cfg(test)]
 pub(crate) use upgrade::report_reconcile_outcome;
 pub(crate) use upgrade::upgrade;

@@ -4,10 +4,10 @@
 //! entries (with provenance, freshness derivation, and staleness repair), plus
 //! cross-link proposals (stubbed; activated in phase 5+).
 //!
-//! The key invariant: the synthesis pipeline never reads its own previous
+//! The key invariant: the explain pipeline never reads its own previous
 //! output as retrieval input. This is enforced both physically (overlay
 //! lives in a separate sqlite database from the graph) and at the retrieval
-//! layer (synthesis queries filter on `source_store = "graph"`).
+//! layer (explain queries filter on `source_store = "graph"`).
 //!
 
 use serde::{Deserialize, Serialize};
@@ -27,7 +27,7 @@ pub enum OverlayEpistemic {
     MachineAuthoredLowConf,
 }
 
-/// Kinds of edges the synthesis layer can propose. These land in the
+/// Kinds of edges the explain layer can propose. These land in the
 /// overlay's `cross_links` table, never in the canonical graph's `edges` table.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

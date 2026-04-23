@@ -29,13 +29,13 @@ synrepo is a code-context compiler. When `.synrepo/` exists in the repo root, pr
 3. Use `normal` cards to understand a neighborhood.
 4. Use `deep` cards only before writing code, or when exact source or body details matter.
 
-Overlay commentary, synthesized docs, and proposed cross-links are advisory, labeled machine-authored, and freshness-sensitive. Treat stale labels as information, not as errors. **Refresh is explicit**: every tool returns what is currently in the overlay. To get fresh commentary after a code change, you must call `synrepo_refresh_commentary(target)`.
+Overlay commentary, explain docs, and proposed cross-links are advisory, labeled machine-authored, and freshness-sensitive. Treat stale labels as information, not as errors. **Refresh is explicit**: every tool returns what is currently in the overlay. To get fresh commentary after a code change, you must call `synrepo_refresh_commentary(target)`.
 
 ### Do not
 
 - Do not open large files first. Start at `tiny` and escalate only when a specific field forces it.
 - Do not treat overlay commentary as canonical. It is advisory prose layered on structural cards.
-- Do not trigger synthesis (`--generate-cross-links`, deep commentary refresh) unless the task justifies the cost.
+- Do not trigger explain (`--generate-cross-links`, deep commentary refresh) unless the task justifies the cost.
 - Do not expect watch or background behavior unless `synrepo watch` is explicitly running.
 
 ### Product boundary

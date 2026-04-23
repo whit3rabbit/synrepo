@@ -1,14 +1,14 @@
 //! Confirm-stop-watch modal.
 //!
-//! Shown when the operator triggers a synthesis run while a watch service is
-//! active. Synthesis must acquire the writer lock, which watch owns, so the
+//! Shown when the operator triggers a explain run while a watch service is
+//! active. Explain must acquire the writer lock, which watch owns, so the
 //! run would fail at `acquire_write_admission` with `LockError::WatchOwned`.
 //! Before exiting the TUI we give the operator a chance to stop watch (the
 //! only safe way to release the lock) or cancel.
 
 use crossterm::event::{KeyCode, KeyModifiers};
 
-use super::{AppState, SynthesizeMode};
+use super::{AppState, ExplainMode, PendingExplainRun};
 use crate::config::Config;
 use crate::pipeline::watch::{watch_service_status, WatchServiceStatus};
 use crate::tui::actions::{outcome_to_log, stop_watch, ActionContext, ActionOutcome};
@@ -16,26 +16,27 @@ use crate::tui::actions::{outcome_to_log, stop_watch, ActionContext, ActionOutco
 /// Modal state. Owned by `AppState` while the confirm prompt is visible.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConfirmStopWatchState {
-    /// Synthesis mode the operator was about to launch when we detected a
+    /// Explain mode the operator was about to launch when we detected a
     /// running watch service. Preserved so the confirm handler can hand it to
-    /// `launch_synthesize` after the stop succeeds.
-    pub pending_mode: SynthesizeMode,
+    /// `launch_explain` after the stop succeeds.
+    pub pending_mode: ExplainMode,
 }
 
 impl AppState {
-    /// Gate a synthesis launch on watch-service status. Replaces the previous
-    /// three direct assignments to `launch_synthesize` (picker Enter, `r`, `c`)
+    /// Gate a explain launch on watch-service status. Replaces the previous
+    /// three direct assignments to `launch_explain` (picker Enter, `r`, `c`)
     /// so every path runs through the same watch check.
-    pub(super) fn queue_synthesize(&mut self, mode: SynthesizeMode) {
+    pub(super) fn queue_explain(&mut self, mode: ExplainMode) {
         let synrepo_dir = Config::synrepo_dir(&self.repo_root);
         match watch_service_status(&synrepo_dir) {
             WatchServiceStatus::Running(_) | WatchServiceStatus::Starting => {
                 self.confirm_stop_watch = Some(ConfirmStopWatchState { pending_mode: mode });
             }
             _ => {
-                self.launch_synthesize = Some(mode);
-                self.synthesis_stopped_watch = false;
-                self.should_exit = true;
+                self.pending_explain = Some(PendingExplainRun {
+                    mode,
+                    stopped_watch: false,
+                });
             }
         }
     }
@@ -75,9 +76,10 @@ impl AppState {
                 self.log.push(outcome_to_log("watch", &outcome));
                 match &outcome {
                     ActionOutcome::Ack { .. } | ActionOutcome::Completed { .. } => {
-                        self.launch_synthesize = Some(pending.pending_mode);
-                        self.synthesis_stopped_watch = true;
-                        self.should_exit = true;
+                        self.pending_explain = Some(PendingExplainRun {
+                            mode: pending.pending_mode,
+                            stopped_watch: true,
+                        });
                     }
                     ActionOutcome::Conflict { guidance, .. } => {
                         self.set_toast(format!("watch stop blocked: {guidance}"));
@@ -100,11 +102,11 @@ impl AppState {
 }
 
 /// Human-readable description of a pending mode, used by the render path.
-pub fn describe_pending_mode(mode: &SynthesizeMode) -> String {
+pub fn describe_pending_mode(mode: &ExplainMode) -> String {
     match mode {
-        SynthesizeMode::AllStale => "all stale commentary".to_string(),
-        SynthesizeMode::Changed => "files changed in the last 50 commits".to_string(),
-        SynthesizeMode::Paths(paths) => {
+        ExplainMode::AllStale => "all stale commentary".to_string(),
+        ExplainMode::Changed => "files changed in the last 50 commits".to_string(),
+        ExplainMode::Paths(paths) => {
             if paths.is_empty() {
                 "selected folders".to_string()
             } else {

@@ -2,14 +2,14 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::{config::Config, pipeline::synthesis::docs::search_commentary_docs};
+use crate::{config::Config, pipeline::explain::docs::search_commentary_docs};
 
 use super::{helpers::render_result, SynrepoState};
 
 /// Parameters for the `synrepo_docs_search` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct DocsSearchParams {
-    /// Lexical query string against synthesized commentary docs.
+    /// Lexical query string against explaind commentary docs.
     pub query: String,
     /// Maximum number of results to return. Defaults to 20.
     #[serde(default = "default_limit")]

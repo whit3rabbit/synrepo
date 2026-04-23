@@ -3,7 +3,7 @@ use std::sync::Mutex;
 use synrepo::config::Config;
 use synrepo::core::ids::NodeId;
 use synrepo::overlay::{CommentaryEntry, CommentaryProvenance, OverlayStore};
-use synrepo::pipeline::synthesis::accounting::{self, SynthesisTotals};
+use synrepo::pipeline::explain::accounting::{self, ExplainTotals};
 use synrepo::store::overlay::SqliteOverlayStore;
 use time::OffsetDateTime;
 
@@ -54,7 +54,7 @@ pub(super) fn write_malformed_config(repo: &std::path::Path) {
     std::fs::write(synrepo_dir.join("config.toml"), "not = valid = toml").unwrap();
 }
 
-pub(super) fn write_synthesis_totals(repo: &std::path::Path, totals: &SynthesisTotals) {
+pub(super) fn write_explain_totals(repo: &std::path::Path, totals: &ExplainTotals) {
     let synrepo_dir = Config::synrepo_dir(repo);
     std::fs::create_dir_all(synrepo_dir.join("state")).unwrap();
     std::fs::write(

@@ -63,7 +63,7 @@ fn skill_md_includes_doctrine_lines_verbatim() {
         "Use `deep` cards only before writing code, or when exact source or body details matter.",
         "Do not open large files first. Start at `tiny` and escalate only when a specific field forces it.",
         "Do not treat overlay commentary as canonical. It is advisory prose layered on structural cards.",
-        "Do not trigger synthesis (`--generate-cross-links`, deep commentary refresh) unless the task justifies the cost.",
+        "Do not trigger explain (`--generate-cross-links`, deep commentary refresh) unless the task justifies the cost.",
         "Do not expect watch or background behavior unless `synrepo watch` is explicitly running.",
         "synrepo stores code facts and bounded operational memory. It is not a task tracker, not session memory, and not cross-session agent memory.",
         "Any handoff or next-action list is a derived recommendation regenerated from repo state. External task systems own assignment, status, and collaboration.",

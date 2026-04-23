@@ -219,7 +219,7 @@ pub fn handle_change_risk(state: &SynrepoState, target: String, budget: String) 
 }
 
 pub fn handle_refresh_commentary(state: &SynrepoState, target: String) -> String {
-    use crate::pipeline::synthesis::build_commentary_generator;
+    use crate::pipeline::explain::build_commentary_generator;
     use serde_json::json;
 
     let result = (|| {
