@@ -22,8 +22,8 @@ use crate::{
 };
 
 use super::commentary_plan::{
-    build_commentary_work_plan, CommentaryProgressEvent, CommentaryWorkItem, CommentaryWorkPhase,
-    CommentaryWorkPlan,
+    build_commentary_work_plan_with_progress, CommentaryProgressEvent, CommentaryWorkItem,
+    CommentaryWorkPhase, CommentaryWorkPlan,
 };
 use super::handlers::ActionContext;
 
@@ -38,7 +38,7 @@ pub fn refresh_commentary(
     context: &ActionContext<'_>,
     actions_taken: &mut Vec<String>,
     scope: Option<&[PathBuf]>,
-    progress: Option<&mut dyn FnMut(CommentaryProgressEvent)>,
+    mut progress: Option<&mut dyn FnMut(CommentaryProgressEvent)>,
     should_stop: Option<&mut dyn FnMut() -> bool>,
 ) -> crate::Result<()> {
     let overlay_dir = context.synrepo_dir.join("overlay");
@@ -47,7 +47,12 @@ pub fn refresh_commentary(
     let generator: Box<dyn CommentaryGenerator> =
         build_commentary_generator(context.config, context.config.commentary_cost_limit);
     let rows = overlay.commentary_hashes()?;
-    let plan = build_commentary_work_plan(&graph, &rows, scope)?;
+    let plan = match progress.as_mut() {
+        Some(progress) => {
+            build_commentary_work_plan_with_progress(&graph, &rows, scope, Some(&mut **progress))?
+        }
+        None => build_commentary_work_plan_with_progress(&graph, &rows, scope, None)?,
+    };
     refresh_commentary_with_generator(
         context,
         actions_taken,
@@ -79,6 +84,8 @@ fn refresh_commentary_with_generator(
             refresh: plan.refresh_count(),
             file_seeds: plan.file_seed_count(),
             symbol_seed_candidates: plan.symbol_seed_candidate_count(),
+            scoped_files: plan.scoped_file_count(),
+            scoped_symbols: plan.scoped_symbol_count(),
             max_targets: plan.max_target_count(),
         },
     );

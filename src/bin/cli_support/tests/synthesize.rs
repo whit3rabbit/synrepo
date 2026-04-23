@@ -64,6 +64,14 @@ fn synthesize_dry_run_reports_missing_file_seed_targets() {
 
     let (stdout, stderr) = synthesize_output(&repo, Vec::new(), false, true).unwrap();
     assert!(
+        stdout.contains("Synthesis dry run:"),
+        "expected dry-run heading, got: {stdout}"
+    );
+    assert!(
+        stdout.contains("repo scan if you run now: 1 file(s), 1 symbol(s) in scope"),
+        "expected repo scan counts in dry-run output, got: {stdout}"
+    );
+    assert!(
         stdout.contains("files missing commentary: 1"),
         "expected file seed count in dry-run output, got: {stdout}"
     );
@@ -99,6 +107,43 @@ fn synthesize_dry_run_reports_missing_symbol_seed_candidates() {
 }
 
 #[test]
+fn synthesize_dry_run_reports_zero_work_summary() {
+    let _env = EnvGuard::new();
+    let (dir, repo) = setup_bootstrapped_repo("pub fn run() {}\n");
+    let (file_id, _symbol_id, _symbol_name, file_hash) = lookup_ids(&repo);
+    insert_commentary(&repo, NodeId::File(file_id), &file_hash);
+
+    let (stdout, stderr) = synthesize_output(&repo, Vec::new(), false, true).unwrap();
+
+    assert!(
+        stdout.contains("Synthesis dry run:"),
+        "expected dry-run heading, got: {stdout}"
+    );
+    assert!(
+        stdout.contains("repo scan if you run now: 1 file(s), 1 symbol(s) in scope"),
+        "expected repo scan counts in dry-run output, got: {stdout}"
+    );
+    assert!(
+        stdout.contains("max targets in this snapshot: 0"),
+        "expected zero queued targets in dry-run output, got: {stdout}"
+    );
+    assert!(
+        stdout.contains("nothing currently needs synthesis for this scope"),
+        "expected no-work summary in dry-run output, got: {stdout}"
+    );
+    assert!(
+        !stdout.contains("No commentary work planned."),
+        "expected dry-run to explain checked scope instead of the old no-op line, got: {stdout}"
+    );
+    assert!(
+        stderr.is_empty(),
+        "dry-run should not emit live progress to stderr, got: {stderr}"
+    );
+
+    drop(dir);
+}
+
+#[test]
 fn synthesize_emits_live_progress_and_writes_accounting() {
     let _env = EnvGuard::new();
     let (dir, repo) = setup_bootstrapped_repo("pub fn run() {}\n");
@@ -114,8 +159,12 @@ fn synthesize_emits_live_progress_and_writes_accounting() {
     server.join().expect("join synthesis stub");
 
     assert!(
+        stderr.contains("scan: checked 1/1 file(s), 1/1 symbol(s)"),
+        "expected final scan line, got: {stderr}"
+    );
+    assert!(
         stderr.contains(
-            "plan: 1 stale item(s), 0 file(s) missing commentary, 0 symbol candidate(s) missing commentary, up to 1 target(s)"
+            "queued: checked 1 file(s) and 1 symbol(s) in scope; 1 item(s) need commentary (1 outdated, 0 files missing commentary, 0 symbol candidate(s))"
         ),
         "expected planned-work line, got: {stderr}"
     );
@@ -131,18 +180,18 @@ fn synthesize_emits_live_progress_and_writes_accounting() {
     );
     assert!(
         stderr.contains(
-            "output files: markdown commentary files under .synrepo/synthesis-docs/ plus the searchable commentary index under .synrepo/synthesis-index/"
+            "output files: symbol commentary docs under .synrepo/synthesis-docs/ plus the searchable index under .synrepo/synthesis-index/"
         ),
         "expected output file guidance in stderr, got: {stderr}"
     );
     let start = stderr
         .find(&format!(
-            "[1 / <= 1] [local API] refresh stale commentary: src/lib.rs :: {symbol_name}"
+            "[1 / <= 1] [local API] update commentary for: src/lib.rs :: {symbol_name}"
         ))
         .expect("missing start progress line");
     let done = stderr
         .find(&format!(
-            "[1 / <= 1] [local API] refreshed: src/lib.rs :: {symbol_name}"
+            "[1 / <= 1] [local API] updated: src/lib.rs :: {symbol_name}"
         ))
         .expect("missing finish progress line");
     assert!(start < done, "start should appear before finish: {stderr}");
@@ -159,7 +208,7 @@ fn synthesize_emits_live_progress_and_writes_accounting() {
         "expected index update line in stderr, got: {stderr}"
     );
     assert!(
-        stderr.contains("usage: calls=1 ok=1 failed=0 budget_blocked=0 in=11 out=7"),
+        stderr.contains("provider activity: calls=1 ok=1 failed=0 budget_blocked=0 in=11 out=7"),
         "expected telemetry summary, got: {stderr}"
     );
 
@@ -184,6 +233,37 @@ fn synthesize_emits_live_progress_and_writes_accounting() {
 }
 
 #[test]
+fn synthesize_plain_output_summarizes_zero_work_cleanly() {
+    let _env = EnvGuard::new();
+    let (dir, repo) = setup_bootstrapped_repo("pub fn run() {}\n");
+    let (file_id, _symbol_id, _symbol_name, file_hash) = lookup_ids(&repo);
+    insert_commentary(&repo, NodeId::File(file_id), &file_hash);
+
+    let (_stdout, stderr) = synthesize_output(&repo, Vec::new(), false, false).unwrap();
+
+    assert!(
+        stderr.contains(
+            "queued: checked 1 file(s) and 1 symbol(s) in scope; nothing currently needs commentary"
+        ),
+        "expected no-work queued summary, got: {stderr}"
+    );
+    assert!(
+        stderr.contains("summary: no commentary changes were needed"),
+        "expected no-work final summary, got: {stderr}"
+    );
+    assert!(
+        !stderr.contains("outdated items: attempted=0 generated=0 not_generated=0"),
+        "expected zero-work refresh summary to be suppressed, got: {stderr}"
+    );
+    assert!(
+        !stderr.contains("missing commentary: attempted=0 generated=0 not_generated=0"),
+        "expected zero-work seed summary to be suppressed, got: {stderr}"
+    );
+
+    drop(dir);
+}
+
+#[test]
 fn synthesize_status_reports_pending_targets_and_summary() {
     let _env = EnvGuard::new();
     let (dir, repo) = setup_bootstrapped_repo("pub fn run() {}\n");
@@ -197,6 +277,10 @@ fn synthesize_status_reports_pending_targets_and_summary() {
     assert!(
         output.contains("scope: the whole repository"),
         "expected whole-repo scope, got: {output}"
+    );
+    assert!(
+        output.contains("repo scan if you run now: 1 file(s), 1 symbol(s) in scope"),
+        "expected repo scan counts, got: {output}"
     );
     assert!(
         output.contains("files missing commentary: 1"),
@@ -213,6 +297,10 @@ fn synthesize_status_reports_pending_targets_and_summary() {
     assert!(
         output.contains("src/lib.rs"),
         "expected repo path in sample targets, got: {output}"
+    );
+    assert!(
+        output.contains("checked 1 file(s) and 1 symbol(s) in scope."),
+        "expected checked-count summary prefix, got: {output}"
     );
     assert!(
         output.contains("would be reconsidered if you run `synrepo synthesize` now"),

@@ -241,6 +241,9 @@ impl TelemetryTracker {
     }
 
     pub(super) fn usage_label(&self) -> String {
+        if self.max_targets == Some(0) && self.active_calls == 0 && self.total_calls() == 0 {
+            return "no provider calls needed for this scope".to_string();
+        }
         if self.active_calls == 0 {
             if self.total_calls() == 0 {
                 return "waiting for first provider response".to_string();

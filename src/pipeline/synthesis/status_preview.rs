@@ -44,6 +44,10 @@ pub struct SynthesisPreview {
     pub file_seeds: SynthesisPreviewGroup,
     /// Symbols lacking commentary that would be seeded.
     pub symbol_seeds: SynthesisPreviewGroup,
+    /// Files in scope that the planner checked.
+    pub scoped_file_count: usize,
+    /// Symbols in scope that the planner checked.
+    pub scoped_symbol_count: usize,
     /// Upper bound on total targets considered for this scope.
     pub max_target_count: usize,
     /// Number of samples retained per group.
@@ -75,9 +79,16 @@ pub fn build_synthesis_preview(
         refresh: build_group("stale commentary to refresh", &plan.refresh),
         file_seeds: build_group("files missing commentary", &plan.file_seeds),
         symbol_seeds: build_group("symbols missing commentary", &plan.symbol_seed_candidates),
+        scoped_file_count: plan.scoped_file_count(),
+        scoped_symbol_count: plan.scoped_symbol_count(),
         max_target_count: plan.max_target_count(),
         sample_limit_per_group: SAMPLE_LIMIT_PER_GROUP,
-        summary_line: summary_line(plan.max_target_count(), plan.is_empty()),
+        summary_line: summary_line(
+            plan.scoped_file_count(),
+            plan.scoped_symbol_count(),
+            plan.max_target_count(),
+            plan.is_empty(),
+        ),
     })
 }
 
@@ -95,12 +106,19 @@ fn build_group(label: &'static str, items: &[CommentaryWorkItem]) -> SynthesisPr
     }
 }
 
-fn summary_line(max_target_count: usize, plan_is_empty: bool) -> String {
+fn summary_line(
+    scoped_file_count: usize,
+    scoped_symbol_count: usize,
+    max_target_count: usize,
+    plan_is_empty: bool,
+) -> String {
     if plan_is_empty {
-        "nothing currently needs synthesis for this scope.".to_string()
+        format!(
+            "checked {scoped_file_count} file(s) and {scoped_symbol_count} symbol(s) in scope. nothing currently needs synthesis for this scope."
+        )
     } else {
         format!(
-            "{max_target_count} target(s) would be reconsidered if you run `synrepo synthesize` now."
+            "checked {scoped_file_count} file(s) and {scoped_symbol_count} symbol(s) in scope. {max_target_count} target(s) would be reconsidered if you run `synrepo synthesize` now."
         )
     }
 }

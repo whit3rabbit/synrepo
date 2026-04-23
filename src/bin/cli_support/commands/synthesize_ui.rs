@@ -15,8 +15,8 @@ use super::synthesize_tracker::TelemetryTracker;
 use super::synthesize_ui_input::StopKeyState;
 use super::synthesize_ui_terminal::{enter_tui, leave_tui, SynthesisTerminal};
 use super::synthesize_ui_text::{
-    fit_value, phase_summary_label, progress_label, provider_name, render_target, start_label,
-    success_label,
+    fit_value, phase_summary_label, progress_label, render_target, scan_progress_label,
+    scan_work_label, start_label, success_label, work_found_label,
 };
 
 pub(super) fn run_synthesize_tui(
@@ -62,13 +62,14 @@ struct SynthesisProgressUi {
     planned_refresh: usize,
     planned_files: usize,
     planned_symbols: usize,
+    scoped_files: usize,
+    scoped_symbols: usize,
+    file_scan: (usize, usize),
+    symbol_scan: (usize, usize),
     max_targets: usize,
     attempted: usize,
-    refreshed: usize,
-    generated: usize,
-    not_generated: usize,
+    step: String,
     current: String,
-    phase_summary: String,
     finished: bool,
     finished_prompt: bool,
     recent: VecDeque<String>,
@@ -77,24 +78,22 @@ struct SynthesisProgressUi {
 impl SynthesisProgressUi {
     fn new(context: &SynthesizeRunContext, theme: Theme) -> Self {
         let active = describe_active_provider(&context.config);
-        let provider = match active.model {
-            Some(model) => format!("{} / {model}", active.provider),
-            None => active.provider.to_string(),
-        };
+        let provider = active.model.map_or_else(
+            || active.provider.to_string(),
+            |model| format!("{} / {model}", active.provider),
+        );
         let api_calls = if context.config.synthesis.enabled
             || matches!(std::env::var("SYNREPO_LLM_ENABLED").as_deref(), Ok("1"))
         {
             format!(
-                "calls [{}] to write advisory commentary under .synrepo/, never your tracked source files",
+                "[{}] is only called for items that need new commentary",
                 active.provider
             )
         } else {
-            "provider requests are disabled, only existing overlay commentary can be reused"
+            "provider calls are off, so synthesis can only reuse commentary already in .synrepo/"
                 .to_string()
         };
-        let output_files =
-            "writes completed items into .synrepo/overlay/overlay.db; reconciles docs/index at end"
-                .to_string();
+        let output_files = "saves commentary in .synrepo/overlay/overlay.db; markdown docs exist only for symbol commentary".to_string();
         Self {
             theme,
             scope: context.scope_label(),
@@ -104,13 +103,15 @@ impl SynthesisProgressUi {
             planned_refresh: 0,
             planned_files: 0,
             planned_symbols: 0,
+            scoped_files: 0,
+            scoped_symbols: 0,
+            file_scan: (0, 0),
+            symbol_scan: (0, 0),
             max_targets: 0,
             attempted: 0,
-            refreshed: 0,
-            generated: 0,
-            not_generated: 0,
-            current: "Planning commentary work under .synrepo/...".to_string(),
-            phase_summary: String::new(),
+            step: "1/4 Scan repository".to_string(),
+            current: "Scanning the repository for files and symbols that need commentary."
+                .to_string(),
             finished: false,
             finished_prompt: false,
             recent: VecDeque::new(),
@@ -123,31 +124,53 @@ impl SynthesisProgressUi {
 
     fn apply_event(&mut self, event: CommentaryProgressEvent) {
         match event {
+            CommentaryProgressEvent::ScanProgress {
+                files_scanned,
+                files_total,
+                symbols_scanned,
+                symbols_total,
+            } => {
+                self.file_scan = (files_scanned, files_total);
+                self.symbol_scan = (symbols_scanned, symbols_total);
+                self.current =
+                    "Checking repository coverage before generating commentary.".to_string();
+            }
             CommentaryProgressEvent::PlanReady {
                 refresh,
                 file_seeds,
                 symbol_seed_candidates,
+                scoped_files,
+                scoped_symbols,
                 max_targets,
             } => {
                 self.planned_refresh = refresh;
                 self.planned_files = file_seeds;
                 self.planned_symbols = symbol_seed_candidates;
+                self.scoped_files = scoped_files;
+                self.scoped_symbols = scoped_symbols;
                 self.max_targets = max_targets;
-                self.current =
-                    "Calling the provider API; completed items write into overlay.db, docs/index reconcile at end."
-                        .to_string();
-                self.push_recent(format!(
-                    "Planned {refresh} stale item(s), {file_seeds} file(s) without commentary, {symbol_seed_candidates} symbol candidate(s)."
+                self.step = if max_targets == 0 {
+                    "2/4 Nothing to generate".to_string()
+                } else {
+                    "2/4 Generate commentary".to_string()
+                };
+                self.current = if max_targets == 0 {
+                    "Repository scan complete. Everything in this scope already has commentary."
+                        .to_string()
+                } else {
+                    format!("Repository scan complete. Found {max_targets} item(s) that need commentary.")
+                };
+                self.push_recent(work_found_label(
+                    scoped_files,
+                    scoped_symbols,
+                    refresh,
+                    file_seeds,
+                    symbol_seed_candidates,
                 ));
             }
             CommentaryProgressEvent::TargetStarted { item, current } => {
                 self.attempted = current;
-                self.current = format!(
-                    "[{} API] {}: {}",
-                    provider_name(&self.provider),
-                    start_label(&item),
-                    render_target(&item)
-                );
+                self.current = format!("{} {}", start_label(&item), render_target(&item));
                 self.push_recent(self.current.clone());
             }
             CommentaryProgressEvent::TargetFinished {
@@ -159,32 +182,26 @@ impl SynthesisProgressUi {
                 let verb = if generated {
                     success_label(item.phase)
                 } else {
-                    "skipped"
+                    "Skipped"
                 };
-                self.current = format!(
-                    "[{} API] {verb}: {}",
-                    provider_name(&self.provider),
-                    render_target(&item)
-                );
+                self.current = format!("{verb} {}", render_target(&item));
                 self.push_recent(self.current.clone());
             }
-            CommentaryProgressEvent::DocsDirCreated { path } => {
-                self.push_recent(format!("Created {}", path.display()));
+            CommentaryProgressEvent::DocsDirCreated { path }
+            | CommentaryProgressEvent::IndexDirCreated { path } => {
+                self.note_write_result(format!("Created {}", path.display()));
             }
             CommentaryProgressEvent::DocWritten { path } => {
-                self.push_recent(format!("Output file {}", path.display()));
+                self.note_write_result(format!("Output file {}", path.display()));
             }
             CommentaryProgressEvent::DocDeleted { path } => {
-                self.push_recent(format!("Removed {}", path.display()));
-            }
-            CommentaryProgressEvent::IndexDirCreated { path } => {
-                self.push_recent(format!("Created {}", path.display()));
+                self.note_write_result(format!("Removed {}", path.display()));
             }
             CommentaryProgressEvent::IndexUpdated {
                 path,
                 touched_paths,
             } => {
-                self.push_recent(format!(
+                self.note_write_result(format!(
                     "Output index updated {} ({touched_paths} paths)",
                     path.display()
                 ));
@@ -193,7 +210,7 @@ impl SynthesisProgressUi {
                 path,
                 touched_paths,
             } => {
-                self.push_recent(format!(
+                self.note_write_result(format!(
                     "Output index rebuilt {} ({touched_paths} paths)",
                     path.display()
                 ));
@@ -204,32 +221,24 @@ impl SynthesisProgressUi {
                 generated,
                 not_generated,
             } => {
-                self.phase_summary = format!(
-                    "{}: attempted {attempted}, generated {generated}, not generated {not_generated}",
-                    phase_summary_label(phase)
-                );
-                self.push_recent(self.phase_summary.clone());
+                self.push_recent(format!("{}: attempted {attempted}, generated {generated}, not generated {not_generated}", phase_summary_label(phase)));
             }
             CommentaryProgressEvent::RunSummary {
+                attempted,
+                stopped,
                 refreshed,
                 seeded,
                 not_generated,
-                attempted,
-                stopped,
             } => {
-                self.refreshed = refreshed;
-                self.generated = seeded;
-                self.not_generated = not_generated;
                 self.attempted = attempted;
                 self.finished = true;
+                self.step = "4/4 Done".to_string();
                 self.current = if stopped {
-                    "Stop requested, finalizing overlay docs and index output.".to_string()
+                    "Stop requested. Finished writing the results already generated.".to_string()
                 } else {
-                    "Synthesis finished. Finalizing overlay docs and index output.".to_string()
+                    "Synthesis complete. Results are now available under .synrepo/.".to_string()
                 };
-                self.push_recent(format!(
-                    "Finished: refreshed {refreshed}, generated {seeded}, not generated {not_generated}."
-                ));
+                self.push_recent(format!("Finished: refreshed {refreshed}, generated {seeded}, not generated {not_generated}."));
             }
         }
     }
@@ -271,14 +280,14 @@ impl SynthesisProgressUi {
                     ),
                 ]),
                 Line::from(vec![
-                    Span::styled("API calls: ", self.theme.muted_style()),
+                    Span::styled("Generation: ", self.theme.muted_style()),
                     Span::styled(
                         fit_value(&self.api_calls, intro_value_width),
                         self.theme.base_style(),
                     ),
                 ]),
                 Line::from(vec![
-                    Span::styled("Output files: ", self.theme.muted_style()),
+                    Span::styled("Results: ", self.theme.muted_style()),
                     Span::styled(
                         fit_value(&self.output_files, intro_value_width),
                         self.theme.base_style(),
@@ -300,7 +309,14 @@ impl SynthesisProgressUi {
             .style(self.theme.base_style());
             frame.render_widget(intro, layout[0]);
 
-            let ratio = if self.finished {
+            let ratio = if self.scanning() {
+                let total = self.file_scan.1 + self.symbol_scan.1;
+                if total == 0 {
+                    0.0
+                } else {
+                    (self.file_scan.0 + self.symbol_scan.0) as f64 / total as f64
+                }
+            } else if self.finished {
                 1.0
             } else if self.max_targets == 0 {
                 0.0
@@ -310,31 +326,73 @@ impl SynthesisProgressUi {
             let gauge = Gauge::default()
                 .block(
                     Block::default()
-                        .title(" progress ")
+                        .title(" codebase progress ")
                         .borders(Borders::ALL)
                         .border_style(self.theme.border_style()),
                 )
                 .gauge_style(self.theme.watch_active_style())
-                .label(progress_label(
-                    self.attempted,
-                    self.max_targets,
-                    self.finished,
-                ))
+                .label(if self.scanning() {
+                    scan_progress_label(
+                        self.file_scan.0,
+                        self.file_scan.1,
+                        self.symbol_scan.0,
+                        self.symbol_scan.1,
+                    )
+                } else {
+                    progress_label(
+                        self.attempted,
+                        self.max_targets,
+                        self.finished,
+                        self.scoped_files,
+                        self.scoped_symbols,
+                    )
+                })
                 .ratio(ratio);
             frame.render_widget(gauge, layout[1]);
 
-            let usage = tracker.usage_label();
+            let scanning = self.scanning();
+            let provider_activity = if scanning {
+                "waiting for repository scan to finish".to_string()
+            } else if self.max_targets == 0 {
+                "no provider calls needed for this scope".to_string()
+            } else {
+                tracker.usage_label()
+            };
+            let work_found = if scanning {
+                scan_work_label(
+                    self.file_scan.0,
+                    self.file_scan.1,
+                    self.symbol_scan.0,
+                    self.symbol_scan.1,
+                )
+            } else {
+                work_found_label(
+                    self.scoped_files,
+                    self.scoped_symbols,
+                    self.planned_refresh,
+                    self.planned_files,
+                    self.planned_symbols,
+                )
+            };
             let status = Paragraph::new(vec![
                 Line::from(vec![
-                    Span::styled("Plan: ", self.theme.muted_style()),
+                    Span::styled("Step: ", self.theme.muted_style()),
                     Span::styled(
-                        fit_value(
-                            &format!(
-                            "{} stale, {} files missing commentary, {} symbols missing commentary",
-                            self.planned_refresh, self.planned_files, self.planned_symbols
-                            ),
-                            status_value_width,
-                        ),
+                        fit_value(&self.step, status_value_width),
+                        self.theme.base_style(),
+                    ),
+                ]),
+                Line::from(vec![
+                    Span::styled("Work: ", self.theme.muted_style()),
+                    Span::styled(
+                        fit_value(&work_found, status_value_width),
+                        self.theme.base_style(),
+                    ),
+                ]),
+                Line::from(vec![
+                    Span::styled("Provider: ", self.theme.muted_style()),
+                    Span::styled(
+                        fit_value(&provider_activity, status_value_width),
                         self.theme.base_style(),
                     ),
                 ]),
@@ -342,20 +400,6 @@ impl SynthesisProgressUi {
                     Span::styled("Current: ", self.theme.muted_style()),
                     Span::styled(
                         fit_value(&self.current, status_value_width),
-                        self.theme.base_style(),
-                    ),
-                ]),
-                Line::from(vec![
-                    Span::styled("Usage: ", self.theme.muted_style()),
-                    Span::styled(
-                        fit_value(&usage, status_value_width),
-                        self.theme.base_style(),
-                    ),
-                ]),
-                Line::from(vec![
-                    Span::styled("Latest: ", self.theme.muted_style()),
-                    Span::styled(
-                        fit_value(&self.phase_summary, status_value_width),
                         self.theme.base_style(),
                     ),
                 ]),
@@ -377,7 +421,7 @@ impl SynthesisProgressUi {
             let recent = List::new(items)
                 .block(
                     Block::default()
-                        .title(" recent activity ")
+                        .title(" recent updates ")
                         .borders(Borders::ALL)
                         .border_style(self.theme.border_style()),
                 )
@@ -392,5 +436,19 @@ impl SynthesisProgressUi {
             self.recent.pop_front();
         }
         self.recent.push_back(line);
+    }
+
+    fn scanning(&self) -> bool {
+        self.step.starts_with("1/4")
+    }
+
+    fn enter_write_results(&mut self) {
+        self.step = "3/4 Write results".to_string();
+        self.current = "Writing docs and search index.".to_string();
+    }
+
+    fn note_write_result(&mut self, line: String) {
+        self.enter_write_results();
+        self.push_recent(line);
     }
 }

@@ -7,7 +7,8 @@ description: Use synrepo in repositories with a .synrepo/ directory. Prefer synr
 
 Use this skill only when the current repository contains a `.synrepo/` directory.
 
-synrepo is a context compiler. It exposes small structural cards and graph tools through MCP so you can orient, route edits, and estimate first-pass impact without opening large files first.
+For product overview, setup flow, and operator-facing docs, start with [`README.md`](../README.md).
+This file is the agent operating guide: how to query synrepo safely once the repo is already wired.
 
 ## Use when
 

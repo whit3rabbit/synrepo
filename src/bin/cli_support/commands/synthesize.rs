@@ -15,10 +15,7 @@ use synrepo::{
         git::GitIntelligenceContext,
         git_intelligence::analyze_recent_history,
         maintenance::plan_maintenance,
-        repair::{
-            load_commentary_work_plan, refresh_commentary, ActionContext, CommentaryProgressEvent,
-            CommentaryWorkItem,
-        },
+        repair::{refresh_commentary, ActionContext, CommentaryProgressEvent},
         synthesis::{
             describe_active_provider,
             telemetry::{self},
@@ -28,7 +25,8 @@ use synrepo::{
     },
 };
 
-use super::synthesize_progress::{render_progress_event, render_telemetry_summary};
+use super::synthesize_progress::{render_telemetry_summary, PlainProgressRenderer};
+use super::synthesize_status::synthesize_status_output_with_heading;
 use super::synthesize_tracker::TelemetryTracker;
 use super::synthesize_ui::run_synthesize_tui;
 
@@ -38,6 +36,7 @@ pub(super) struct SynthesizeRunContext {
     pub synrepo_dir: PathBuf,
     pub scope: Option<Vec<PathBuf>>,
     pub changed: bool,
+    pub requested_paths: Vec<String>,
 }
 
 /// Refresh commentary synthesis. Optional `paths`/`changed`/`dry_run` scope the run.
@@ -84,9 +83,17 @@ fn synthesize_with_mode(
             }
         }
     }
+    let stderr_is_terminal = std::io::stderr().is_terminal();
     let mut stdout = std::io::stdout().lock();
     let mut stderr = std::io::stderr().lock();
-    synthesize_with_writers(repo_root, context, dry_run, &mut stdout, &mut stderr)
+    synthesize_with_writers(
+        repo_root,
+        context,
+        dry_run,
+        stderr_is_terminal,
+        &mut stdout,
+        &mut stderr,
+    )
 }
 
 #[cfg(test)]
@@ -99,7 +106,7 @@ pub(crate) fn synthesize_output(
     let context = load_run_context(repo_root, paths, changed)?;
     let mut stdout = Vec::new();
     let mut stderr = Vec::new();
-    synthesize_with_writers(repo_root, context, dry_run, &mut stdout, &mut stderr)?;
+    synthesize_with_writers(repo_root, context, dry_run, false, &mut stdout, &mut stderr)?;
     Ok((
         String::from_utf8(stdout).expect("stdout should be valid UTF-8"),
         String::from_utf8(stderr).expect("stderr should be valid UTF-8"),
@@ -110,19 +117,21 @@ fn synthesize_with_writers(
     repo_root: &Path,
     context: SynthesizeRunContext,
     dry_run: bool,
+    stderr_is_terminal: bool,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
 ) -> anyhow::Result<()> {
     if dry_run {
-        return print_dry_run(&context.synrepo_dir, context.scope.as_deref(), stdout);
+        return print_dry_run(repo_root, &context, stdout);
     }
 
     render_run_intro(stderr, &context)?;
+    let mut progress_renderer = PlainProgressRenderer::new(stderr_is_terminal);
     let (actions_taken, tracker) = execute_synthesize_run(
         repo_root,
         &context,
         |repo_root, tracker, event| {
-            let _ = render_progress_event(
+            let _ = progress_renderer.render_event(
                 stderr,
                 repo_root,
                 tracker,
@@ -132,6 +141,7 @@ fn synthesize_with_writers(
         },
         None,
     )?;
+    progress_renderer.finish_live_line(stderr)?;
     render_telemetry_summary(stderr, &tracker)?;
     write_actions_taken(stdout, &actions_taken)
 }
@@ -204,7 +214,7 @@ pub(super) fn render_run_intro(
     )?;
     writeln!(
         stderr,
-        "  output files: reconciled markdown docs under .synrepo/synthesis-docs/ plus the searchable index under .synrepo/synthesis-index/"
+        "  output files: symbol commentary docs under .synrepo/synthesis-docs/ plus the searchable index under .synrepo/synthesis-index/"
     )?;
     Ok(())
 }
@@ -232,12 +242,13 @@ fn load_run_context(
         anyhow::anyhow!("synthesize: not initialized — run `synrepo init` first ({e})")
     })?;
     let synrepo_dir = Config::synrepo_dir(repo_root);
-    let scope = compute_scope(repo_root, &config, paths, changed)?;
+    let scope = compute_scope(repo_root, &config, paths.clone(), changed)?;
     Ok(SynthesizeRunContext {
         config,
         synrepo_dir,
         scope,
         changed,
+        requested_paths: paths,
     })
 }
 
@@ -265,69 +276,18 @@ fn compute_scope(
 }
 
 fn print_dry_run(
-    synrepo_dir: &Path,
-    scope: Option<&[PathBuf]>,
+    repo_root: &Path,
+    context: &SynthesizeRunContext,
     stdout: &mut dyn Write,
 ) -> anyhow::Result<()> {
-    let plan = load_commentary_work_plan(synrepo_dir, scope)
-        .map_err(|e| anyhow::anyhow!("synthesize --dry-run: cannot plan commentary work ({e})"))?;
-    if plan.is_empty() {
-        writeln!(stdout, "No commentary work planned.")?;
-        return Ok(());
-    }
-
-    writeln!(stdout, "Planned commentary work:")?;
-    writeln!(
-        stdout,
-        "  stale commentary to refresh: {}",
-        plan.refresh_count()
+    let output = synthesize_status_output_with_heading(
+        repo_root,
+        context.requested_paths.clone(),
+        context.changed,
+        "Synthesis dry run:",
     )?;
-    writeln!(
-        stdout,
-        "  files missing commentary: {}",
-        plan.file_seed_count()
-    )?;
-    writeln!(
-        stdout,
-        "  symbols missing commentary: {}",
-        plan.symbol_seed_candidate_count()
-    )?;
-    writeln!(
-        stdout,
-        "  max targets in this snapshot: {}",
-        plan.max_target_count()
-    )?;
-
-    print_plan_group(stdout, "Refresh stale commentary", &plan.refresh)?;
-    print_plan_group(stdout, "Files missing commentary", &plan.file_seeds)?;
-    print_plan_group(
-        stdout,
-        "Symbols missing commentary",
-        &plan.symbol_seed_candidates,
-    )?;
+    write!(stdout, "{output}")?;
     Ok(())
-}
-
-fn print_plan_group(
-    stdout: &mut dyn Write,
-    label: &str,
-    items: &[CommentaryWorkItem],
-) -> anyhow::Result<()> {
-    if items.is_empty() {
-        return Ok(());
-    }
-    writeln!(stdout, "{label}:")?;
-    for item in items {
-        writeln!(stdout, "  {}", render_target(item))?;
-    }
-    Ok(())
-}
-
-fn render_target(item: &CommentaryWorkItem) -> String {
-    match &item.qualified_name {
-        Some(name) => format!("{} :: {}", item.path, name),
-        None => item.path.clone(),
-    }
 }
 
 impl SynthesizeRunContext {

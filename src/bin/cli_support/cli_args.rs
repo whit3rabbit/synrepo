@@ -13,7 +13,10 @@ use super::agent_shims::AgentTool;
 
 #[derive(Parser)]
 #[command(name = "synrepo")]
-#[command(about = "A context compiler for AI coding agents", long_about = None)]
+#[command(
+    about = "A local repository map for AI coding agents",
+    long_about = None
+)]
 #[command(version)]
 pub(crate) struct Cli {
     /// Override the repo root. Defaults to the current directory.
@@ -42,10 +45,11 @@ pub(crate) enum Command {
         gitignore: bool,
     },
 
-    /// Print operational health: mode, graph node counts, last reconcile outcome, and writer lock state.
+    /// Verify repo health, freshness, and readiness for agent use.
     ///
     /// Reads only; never acquires the writer lock or mutates any store.
     /// Safe to run at any time, including while a reconcile is in progress.
+    /// Use this as the quick "is synrepo healthy?" check.
     Status {
         /// Emit JSON instead of human-readable output.
         #[arg(long)]
@@ -79,16 +83,17 @@ pub(crate) enum Command {
         regen: bool,
     },
 
-    /// full onboarding flow.
+    /// Set up synrepo for this repo and wire an agent.
     ///
     /// This is the recommended first-run command. With a `<tool>` argument it
     /// runs the scripted flow: `synrepo init`, writes the client-specific skill
     /// or instructions file, and registers the synrepo MCP server in the
-    /// project's local configuration (where supported). Without a `<tool>`
-    /// argument it launches the interactive TUI wizard, which prompts for the
-    /// graph mode, agent target, and synthesis provider before applying the
-    /// same steps. The `--force`, `--synthesis`, and `--gitignore` flags only
-    /// apply to the scripted flow; passing them without a tool is rejected.
+    /// project's local configuration when that integration is automated.
+    /// Without a `<tool>` argument it launches the interactive TUI wizard,
+    /// which prompts for repo mode, agent target, and optional commentary
+    /// provider before applying the same steps. The `--force`, `--synthesis`,
+    /// and `--gitignore` flags only apply to the scripted flow; passing them
+    /// without a tool is rejected.
     Setup {
         /// Target client to set up. Omit to launch the interactive wizard.
         tool: Option<AgentTool>,
@@ -146,14 +151,15 @@ pub(crate) enum Command {
         reset_synthesis_totals: bool,
     },
 
-    /// Refresh commentary synthesis against stale rows, optionally scoped to paths.
+    /// Refresh advisory commentary for missing or stale rows, optionally scoped to paths.
     ///
-    /// With no arguments or flags, generates commentary for all graph nodes that
-    /// lack an overlay entry, then refreshes any stale entries (same as the
-    /// `RefreshCommentary` repair action in `synrepo sync`). Positional `<paths>`
-    /// scopes the run to files whose path starts with one of the given prefixes.
-    /// `--changed` derives the scope from hotspots in the last 50 commits via git
-    /// intelligence. `--dry-run` prints the target set without calling any provider.
+    /// With no arguments or flags, generates commentary for all graph nodes
+    /// that lack a machine-authored summary, then refreshes any stale entries
+    /// (same as the `RefreshCommentary` repair action in `synrepo sync`).
+    /// Positional `<paths>` scopes the run to files whose path starts with one
+    /// of the given prefixes. `--changed` derives the scope from hotspots in
+    /// the last 50 commits via git intelligence. `--dry-run` prints the
+    /// target set without calling any provider.
     #[command(alias = "synthesize")]
     Synthesis {
         /// Repo-root-relative path prefixes to scope to. Empty = all stale.
@@ -306,11 +312,13 @@ pub(crate) enum Command {
     #[command(name = "watch-internal", hide = true)]
     WatchInternal,
 
-    /// Open the operator dashboard.
+    /// Open the guided operator dashboard.
     ///
-    /// Explicit alias for bare `synrepo` on a ready repo. Exits non-zero with
-    /// a pointer to the correct subcommand when the repo is uninitialized or
-    /// partial, instead of routing to the setup or repair wizard.
+    /// Explicit alias for bare `synrepo` on a ready repo. Use it to inspect
+    /// health, watch activity, commentary usage, and next actions. Exits
+    /// non-zero with a pointer to the correct subcommand when the repo is
+    /// uninitialized or partial, instead of routing to the setup or repair
+    /// wizard.
     Dashboard,
 
     /// Start the MCP server over stdio.

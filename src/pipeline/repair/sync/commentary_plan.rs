@@ -1,6 +1,6 @@
 //! Commentary work planning and scope helpers.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
@@ -36,6 +36,8 @@ pub struct CommentaryWorkPlan {
     pub refresh: Vec<CommentaryWorkItem>,
     pub file_seeds: Vec<CommentaryWorkItem>,
     pub symbol_seed_candidates: Vec<CommentaryWorkItem>,
+    pub scoped_files: usize,
+    pub scoped_symbols: usize,
 }
 
 #[allow(missing_docs)]
@@ -56,6 +58,14 @@ impl CommentaryWorkPlan {
         self.refresh_count() + self.file_seed_count() + self.symbol_seed_candidate_count()
     }
 
+    pub fn scoped_file_count(&self) -> usize {
+        self.scoped_files
+    }
+
+    pub fn scoped_symbol_count(&self) -> usize {
+        self.scoped_symbols
+    }
+
     pub fn is_empty(&self) -> bool {
         self.max_target_count() == 0
     }
@@ -65,10 +75,18 @@ impl CommentaryWorkPlan {
 #[allow(missing_docs)]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CommentaryProgressEvent {
+    ScanProgress {
+        files_scanned: usize,
+        files_total: usize,
+        symbols_scanned: usize,
+        symbols_total: usize,
+    },
     PlanReady {
         refresh: usize,
         file_seeds: usize,
         symbol_seed_candidates: usize,
+        scoped_files: usize,
+        scoped_symbols: usize,
         max_targets: usize,
     },
     TargetStarted {
@@ -135,6 +153,15 @@ pub(crate) fn build_commentary_work_plan(
     rows: &[(String, String)],
     scope: Option<&[PathBuf]>,
 ) -> crate::Result<CommentaryWorkPlan> {
+    build_commentary_work_plan_with_progress(graph, rows, scope, None)
+}
+
+pub(crate) fn build_commentary_work_plan_with_progress(
+    graph: &SqliteGraphStore,
+    rows: &[(String, String)],
+    scope: Option<&[PathBuf]>,
+    mut progress: Option<&mut dyn FnMut(CommentaryProgressEvent)>,
+) -> crate::Result<CommentaryWorkPlan> {
     let scope_prefixes = scope.map(normalize_scope_prefixes);
     let commented: HashSet<NodeId> = rows
         .iter()
@@ -143,6 +170,23 @@ pub(crate) fn build_commentary_work_plan(
     let mut refresh = Vec::new();
     let mut file_seeds = Vec::new();
     let mut symbol_seed_candidates = Vec::new();
+    let mut scoped_files = 0usize;
+    let mut scoped_symbols = 0usize;
+    let mut file_paths = HashMap::new();
+    let mut files_scanned = 0usize;
+    let mut symbols_scanned = 0usize;
+    let file_rows = graph.all_file_paths()?;
+    let symbol_rows = graph.all_symbols_summary()?;
+    let file_total = file_rows.len();
+    let symbol_total = symbol_rows.len();
+
+    emit_scan_progress(
+        &mut progress,
+        files_scanned,
+        file_total,
+        symbols_scanned,
+        symbol_total,
+    );
 
     for (node_id_str, stored_hash) in rows {
         let Ok(node_id) = NodeId::from_str(node_id_str) else {
@@ -159,9 +203,24 @@ pub(crate) fn build_commentary_work_plan(
         refresh.push(work_item(node_id, &snap, CommentaryWorkPhase::Refresh));
     }
 
-    for (path, file_id) in graph.all_file_paths()? {
+    for (path, file_id) in file_rows {
+        files_scanned += 1;
+        maybe_emit_scan_progress(
+            &mut progress,
+            files_scanned,
+            file_total,
+            symbols_scanned,
+            symbol_total,
+            scan_emit_interval(file_total),
+            false,
+        );
+        let scoped = in_scope(&path, scope_prefixes.as_deref());
+        file_paths.insert(file_id, path.clone());
+        if scoped {
+            scoped_files += 1;
+        }
         let node_id = NodeId::File(file_id);
-        if commented.contains(&node_id) || !in_scope(&path, scope_prefixes.as_deref()) {
+        if commented.contains(&node_id) || !scoped {
             continue;
         }
         let Some(snap) = resolve_commentary_node(graph, node_id)? else {
@@ -170,10 +229,27 @@ pub(crate) fn build_commentary_work_plan(
         file_seeds.push(work_item(node_id, &snap, CommentaryWorkPhase::Seed));
     }
 
-    for (sym_id, _file_id, qualified_name, _kind, _body_hash) in graph.all_symbols_summary()? {
+    for (sym_id, _file_id, qualified_name, _kind, _body_hash) in symbol_rows {
+        symbols_scanned += 1;
+        maybe_emit_scan_progress(
+            &mut progress,
+            files_scanned,
+            file_total,
+            symbols_scanned,
+            symbol_total,
+            scan_emit_interval(symbol_total),
+            true,
+        );
         if qualified_name.is_empty() {
             continue;
         }
+        let Some(path) = file_paths.get(&_file_id) else {
+            continue;
+        };
+        if !in_scope(path, scope_prefixes.as_deref()) {
+            continue;
+        }
+        scoped_symbols += 1;
         let node_id = NodeId::Symbol(sym_id);
         if commented.contains(&node_id) {
             continue;
@@ -181,9 +257,7 @@ pub(crate) fn build_commentary_work_plan(
         let Some(snap) = resolve_commentary_node(graph, node_id)? else {
             continue;
         };
-        if !in_scope(&snap.file.path, scope_prefixes.as_deref())
-            || commented.contains(&NodeId::File(snap.file.id))
-        {
+        if commented.contains(&NodeId::File(snap.file.id)) {
             continue;
         }
         symbol_seed_candidates.push(work_item(node_id, &snap, CommentaryWorkPhase::Seed));
@@ -193,7 +267,60 @@ pub(crate) fn build_commentary_work_plan(
         refresh,
         file_seeds,
         symbol_seed_candidates,
+        scoped_files,
+        scoped_symbols,
     })
+}
+
+fn emit_scan_progress(
+    progress: &mut Option<&mut dyn FnMut(CommentaryProgressEvent)>,
+    files_scanned: usize,
+    files_total: usize,
+    symbols_scanned: usize,
+    symbols_total: usize,
+) {
+    if let Some(progress) = progress.as_mut() {
+        progress(CommentaryProgressEvent::ScanProgress {
+            files_scanned,
+            files_total,
+            symbols_scanned,
+            symbols_total,
+        });
+    }
+}
+
+fn maybe_emit_scan_progress(
+    progress: &mut Option<&mut dyn FnMut(CommentaryProgressEvent)>,
+    files_scanned: usize,
+    files_total: usize,
+    symbols_scanned: usize,
+    symbols_total: usize,
+    interval: usize,
+    symbol_phase: bool,
+) {
+    let should_emit = if symbol_phase {
+        symbols_scanned == symbols_total
+            || (interval > 0 && symbols_scanned > 0 && symbols_scanned % interval == 0)
+    } else {
+        files_scanned == files_total
+            || (interval > 0 && files_scanned > 0 && files_scanned % interval == 0)
+    };
+    if should_emit {
+        emit_scan_progress(
+            progress,
+            files_scanned,
+            files_total,
+            symbols_scanned,
+            symbols_total,
+        );
+    }
+}
+
+fn scan_emit_interval(total: usize) -> usize {
+    match total {
+        0..=20 => 1,
+        _ => (total / 20).max(1),
+    }
 }
 
 fn in_scope(path: &str, prefixes: Option<&[String]>) -> bool {
@@ -277,5 +404,14 @@ mod tests {
             "crates/core/tests/a.rs",
             &prefixes
         ));
+    }
+
+    #[test]
+    fn scan_emit_interval_scales_with_repo_size() {
+        assert_eq!(scan_emit_interval(0), 1);
+        assert_eq!(scan_emit_interval(20), 1);
+        assert_eq!(scan_emit_interval(21), 1);
+        assert_eq!(scan_emit_interval(100), 5);
+        assert_eq!(scan_emit_interval(4000), 200);
     }
 }

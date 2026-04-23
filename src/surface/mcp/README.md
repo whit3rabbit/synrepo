@@ -1,6 +1,7 @@
 # synrepo MCP server
 
-Tool handlers and shared state for the MCP surface exposed by `synrepo mcp`.
+Front-door product docs live in [`README.md`](../../../README.md).
+This file stays focused on the MCP surface exposed by `synrepo mcp`: handler layout, tool registration, and invariants.
 
 ## Run
 

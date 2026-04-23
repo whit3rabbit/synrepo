@@ -20,10 +20,25 @@ pub(crate) fn synthesize_status_output(
     paths: Vec<String>,
     changed: bool,
 ) -> anyhow::Result<String> {
-    let preview = build_synthesis_preview(repo_root, paths, changed)?;
+    synthesize_status_output_with_heading(repo_root, paths, changed, "Synthesis status:")
+}
 
+pub(super) fn synthesize_status_output_with_heading(
+    repo_root: &Path,
+    paths: Vec<String>,
+    changed: bool,
+    heading: &str,
+) -> anyhow::Result<String> {
+    let preview = build_synthesis_preview(repo_root, paths, changed)?;
+    render_synthesis_preview(&preview, heading)
+}
+
+pub(super) fn render_synthesis_preview(
+    preview: &SynthesisPreview,
+    heading: &str,
+) -> anyhow::Result<String> {
     let mut out = String::new();
-    writeln!(out, "Synthesis status:").unwrap();
+    writeln!(out, "{heading}").unwrap();
     writeln!(out, "  scope: {}", preview.scope_label).unwrap();
     writeln!(out, "  provider: {}", preview.provider_label).unwrap();
     writeln!(
@@ -34,13 +49,19 @@ pub(crate) fn synthesize_status_output(
     .unwrap();
     writeln!(
         out,
-        "  write flow: completed commentary rows write into `.synrepo/overlay/overlay.db`; markdown docs and the search index reconcile when the run finishes"
+        "  write flow: completed commentary rows write into `.synrepo/overlay/overlay.db`; symbol commentary docs and the search index reconcile when the run finishes"
     )
     .unwrap();
     writeln!(
         out,
         "  overlay freshness (whole repo): {}",
         preview.overlay_freshness_line
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "  repo scan if you run now: {} file(s), {} symbol(s) in scope",
+        preview.scoped_file_count, preview.scoped_symbol_count
     )
     .unwrap();
 
