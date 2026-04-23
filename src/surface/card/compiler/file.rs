@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use crate::{
     core::ids::{FileNodeId, NodeId},
     structure::graph::{Edge, EdgeKind, GraphReader},
+    surface::card::accounting::{raw_file_token_estimate, ContextAccounting},
     surface::card::git::FileGitIntelligence,
 };
 
@@ -143,6 +144,7 @@ pub(super) fn file_card(
         git_intelligence,
         drift_flag: None,
         approx_tokens: 0,
+        context_accounting: ContextAccounting::placeholder(budget),
         source_store: SourceStore::Graph,
         proposed_links: None,
         links_state: None,
@@ -164,6 +166,12 @@ pub(super) fn file_card(
     }
 
     card.approx_tokens = estimate_tokens_file(&card);
+    card.context_accounting = ContextAccounting::new(
+        budget,
+        card.approx_tokens,
+        raw_file_token_estimate(compiler.repo_root.as_deref(), &file.path),
+        vec![file.content_hash],
+    );
     Ok(card)
 }
 

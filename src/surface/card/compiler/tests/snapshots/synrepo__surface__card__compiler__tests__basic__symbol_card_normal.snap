@@ -15,6 +15,17 @@ expression: normal
   "drift_flag": null,
   "source_body": null,
   "approx_tokens": 19,
+  "context_accounting": {
+    "budget_tier": "normal",
+    "token_estimate": 19,
+    "raw_file_token_estimate": 18,
+    "estimated_savings_ratio": 0.0,
+    "source_hashes": [
+      "b4356aa41bdf49e16928ee9ac7250734edf3783218a56fccac863c02c5994064"
+    ],
+    "stale": false,
+    "truncation_applied": false
+  },
   "source_store": "graph",
   "epistemic": "parser_observed",
   "overlay_commentary": null,

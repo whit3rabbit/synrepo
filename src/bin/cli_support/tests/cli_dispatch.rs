@@ -8,7 +8,7 @@
 
 use clap::Parser;
 
-use super::super::cli_args::{Cli, Command, WatchCommand};
+use super::super::cli_args::{BenchCommand, Cli, Command, StatsCommand, WatchCommand};
 
 fn parse(args: &[&str]) -> Cli {
     let mut full = vec!["synrepo"];
@@ -173,6 +173,91 @@ fn mcp_dispatches_to_mcp_variant() {
     assert!(
         matches!(cli.command, Some(Command::Mcp)),
         "mcp should parse to Command::Mcp"
+    );
+}
+
+#[test]
+fn context_aliases_parse_numeric_budget() {
+    let cards = parse(&["cards", "--query", "where is auth", "--budget", "1500"]);
+    let Some(Command::Cards { query, budget }) = cards.command else {
+        panic!("cards should parse");
+    };
+    assert_eq!(query, "where is auth");
+    assert_eq!(budget, Some(1500));
+
+    let explain = parse(&["explain", "src/lib.rs", "--budget", "1000"]);
+    assert!(
+        matches!(
+            explain.command,
+            Some(Command::Explain {
+                budget: Some(1000),
+                ..
+            })
+        ),
+        "explain should parse numeric budget"
+    );
+
+    let impact = parse(&["impact", "src/lib.rs", "--budget", "2000"]);
+    assert!(
+        matches!(
+            impact.command,
+            Some(Command::Impact {
+                budget: Some(2000),
+                ..
+            })
+        ),
+        "impact should parse numeric budget"
+    );
+
+    let tests = parse(&["tests", "src/lib.rs", "--budget", "1200"]);
+    assert!(
+        matches!(
+            tests.command,
+            Some(Command::Tests {
+                budget: Some(1200),
+                ..
+            })
+        ),
+        "tests should parse numeric budget"
+    );
+
+    let risks = parse(&["risks", "src/lib.rs", "--budget", "1200"]);
+    assert!(
+        matches!(
+            risks.command,
+            Some(Command::Risks {
+                budget: Some(1200),
+                ..
+            })
+        ),
+        "risks should parse numeric budget"
+    );
+}
+
+#[test]
+fn stats_and_bench_context_parse() {
+    let stats = parse(&["stats", "context", "--json"]);
+    assert!(
+        matches!(
+            stats.command,
+            Some(Command::Stats(StatsCommand::Context { json: true }))
+        ),
+        "stats context --json should parse"
+    );
+
+    let bench = parse(&[
+        "bench",
+        "context",
+        "--tasks",
+        "benches/tasks/*.json",
+        "--json",
+    ]);
+    assert!(
+        matches!(
+            bench.command,
+            Some(Command::Bench(BenchCommand::Context { json: true, .. }))
+        ),
+        "bench context --json should parse"
     );
 }
 

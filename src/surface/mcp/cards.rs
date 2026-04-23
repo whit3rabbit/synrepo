@@ -1,8 +1,10 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
+use std::time::Instant;
 
 use crate::{core::ids::NodeId, surface::card::CardCompiler};
 
+use super::card_accounting::{finalize_card_json, record_embedded_card_metrics};
 use super::helpers::{
     attach_decision_cards, lift_commentary_text, parse_budget, with_mcp_compiler,
 };
@@ -17,6 +19,11 @@ pub struct CardParams {
     /// Budget tier: "tiny" (default), "normal", or "deep".
     #[serde(default = "default_budget")]
     pub budget: String,
+    /// Optional numeric token cap. Single-card responses report truncation
+    /// when the estimate exceeds the cap; card-set tools may drop lower-ranked
+    /// cards before returning.
+    #[serde(default)]
+    pub budget_tokens: Option<usize>,
 }
 
 pub fn default_budget() -> String {
@@ -31,6 +38,8 @@ pub struct EntrypointsParams {
     /// Budget tier: "tiny" (default), "normal", or "deep".
     #[serde(default = "default_budget")]
     pub budget: String,
+    #[serde(default)]
+    pub budget_tokens: Option<usize>,
 }
 
 /// Parameters for the `synrepo_module_card` tool.
@@ -41,6 +50,8 @@ pub struct ModuleCardParams {
     /// Budget tier: "tiny" (default), "normal", or "deep".
     #[serde(default = "default_budget")]
     pub budget: String,
+    #[serde(default)]
+    pub budget_tokens: Option<usize>,
 }
 
 /// Parameters for the `synrepo_public_api` tool.
@@ -51,6 +62,8 @@ pub struct PublicAPICardParams {
     /// Budget tier: "tiny" (default), "normal", or "deep".
     #[serde(default = "default_budget")]
     pub budget: String,
+    #[serde(default)]
+    pub budget_tokens: Option<usize>,
 }
 
 /// Parameters for the `synrepo_minimum_context` tool.
@@ -61,6 +74,8 @@ pub struct MinimumContextParams {
     /// Budget tier: "tiny", "normal", or "deep". Defaults to "normal".
     #[serde(default = "default_budget")]
     pub budget: String,
+    #[serde(default)]
+    pub budget_tokens: Option<usize>,
 }
 
 /// Parameters for the `synrepo_call_path` tool.
@@ -71,6 +86,8 @@ pub struct CallPathParams {
     /// Budget tier: "tiny" (default), "normal", or "deep".
     #[serde(default = "default_budget")]
     pub budget: String,
+    #[serde(default)]
+    pub budget_tokens: Option<usize>,
 }
 
 /// Parameters for the `synrepo_test_surface` tool.
@@ -81,6 +98,8 @@ pub struct TestSurfaceParams {
     /// Budget tier: "tiny" (default), "normal", or "deep".
     #[serde(default = "default_budget")]
     pub budget: String,
+    #[serde(default)]
+    pub budget_tokens: Option<usize>,
 }
 
 /// Parameters for the `synrepo_change_risk` tool.
@@ -91,6 +110,8 @@ pub struct ChangeRiskParams {
     /// Budget tier: "tiny" (default), "normal", or "deep".
     #[serde(default = "default_budget")]
     pub budget: String,
+    #[serde(default)]
+    pub budget_tokens: Option<usize>,
 }
 
 /// Parameters for the `synrepo_refresh_commentary` tool.
@@ -100,7 +121,13 @@ pub struct RefreshCommentaryParams {
     pub target: String,
 }
 
-pub fn handle_card(state: &SynrepoState, target: String, budget: String) -> String {
+pub fn handle_card(
+    state: &SynrepoState,
+    target: String,
+    budget: String,
+    budget_tokens: Option<usize>,
+) -> String {
+    let start = Instant::now();
     let budget = parse_budget(&budget);
     with_mcp_compiler(state, |compiler| {
         let node_id = compiler
@@ -118,7 +145,7 @@ pub fn handle_card(state: &SynrepoState, target: String, budget: String) -> Stri
                     compiler.reader(),
                     budget,
                 )?;
-                Ok(json_val)
+                Ok(finalize_card_json(state, json_val, budget_tokens, start, false))
             }
             NodeId::File(file_id) => {
                 let card = compiler.file_card(file_id, budget)?;
@@ -129,7 +156,7 @@ pub fn handle_card(state: &SynrepoState, target: String, budget: String) -> Stri
                     compiler.reader(),
                     budget,
                 )?;
-                Ok(json_val)
+                Ok(finalize_card_json(state, json_val, budget_tokens, start, false))
             }
             NodeId::Concept(concept_id) => {
                 let concept = compiler
@@ -142,40 +169,93 @@ pub fn handle_card(state: &SynrepoState, target: String, budget: String) -> Stri
     })
 }
 
-pub fn handle_entrypoints(state: &SynrepoState, scope: Option<String>, budget: String) -> String {
+pub fn handle_entrypoints(
+    state: &SynrepoState,
+    scope: Option<String>,
+    budget: String,
+    budget_tokens: Option<usize>,
+) -> String {
+    let start = Instant::now();
     let budget = parse_budget(&budget);
     with_mcp_compiler(state, |compiler| {
         let card = compiler.entry_point_card(scope.as_deref(), budget)?;
-        Ok(serde_json::to_value(&card)?)
+        Ok(finalize_card_json(
+            state,
+            serde_json::to_value(&card)?,
+            budget_tokens,
+            start,
+            false,
+        ))
     })
 }
 
-pub fn handle_module_card(state: &SynrepoState, path: String, budget: String) -> String {
+pub fn handle_module_card(
+    state: &SynrepoState,
+    path: String,
+    budget: String,
+    budget_tokens: Option<usize>,
+) -> String {
+    let start = Instant::now();
     let budget = parse_budget(&budget);
     with_mcp_compiler(state, |compiler| {
         let card = compiler.module_card(&path, budget)?;
-        Ok(serde_json::to_value(&card)?)
+        Ok(finalize_card_json(
+            state,
+            serde_json::to_value(&card)?,
+            budget_tokens,
+            start,
+            false,
+        ))
     })
 }
 
-pub fn handle_public_api(state: &SynrepoState, path: String, budget: String) -> String {
+pub fn handle_public_api(
+    state: &SynrepoState,
+    path: String,
+    budget: String,
+    budget_tokens: Option<usize>,
+) -> String {
+    let start = Instant::now();
     let budget = parse_budget(&budget);
     with_mcp_compiler(state, |compiler| {
         let card = compiler.public_api_card(&path, budget)?;
-        Ok(serde_json::to_value(&card)?)
+        Ok(finalize_card_json(
+            state,
+            serde_json::to_value(&card)?,
+            budget_tokens,
+            start,
+            false,
+        ))
     })
 }
 
-pub fn handle_minimum_context(state: &SynrepoState, target: String, budget: String) -> String {
+pub fn handle_minimum_context(
+    state: &SynrepoState,
+    target: String,
+    budget: String,
+    budget_tokens: Option<usize>,
+) -> String {
+    let start = Instant::now();
     let budget = parse_budget(&budget);
     with_mcp_compiler(state, |compiler| {
-        let response =
+        let mut response =
             crate::surface::card::neighborhood::resolve_neighborhood(compiler, &target, budget)?;
-        Ok(serde_json::to_value(&response)?)
+        if let Some(cap) = budget_tokens {
+            response.apply_numeric_cap(cap);
+        }
+        let json = serde_json::to_value(&response)?;
+        record_embedded_card_metrics(state, &json, start, false);
+        Ok(json)
     })
 }
 
-pub fn handle_call_path(state: &SynrepoState, target: String, budget: String) -> String {
+pub fn handle_call_path(
+    state: &SynrepoState,
+    target: String,
+    budget: String,
+    budget_tokens: Option<usize>,
+) -> String {
+    let start = Instant::now();
     let budget = parse_budget(&budget);
     with_mcp_compiler(state, |compiler| {
         // Resolve target to a symbol node ID.
@@ -194,19 +274,44 @@ pub fn handle_call_path(state: &SynrepoState, target: String, budget: String) ->
         };
 
         let card = compiler.call_path_card(sym_id, budget)?;
-        Ok(serde_json::to_value(&card)?)
+        Ok(finalize_card_json(
+            state,
+            serde_json::to_value(&card)?,
+            budget_tokens,
+            start,
+            false,
+        ))
     })
 }
 
-pub fn handle_test_surface(state: &SynrepoState, scope: String, budget: String) -> String {
+pub fn handle_test_surface(
+    state: &SynrepoState,
+    scope: String,
+    budget: String,
+    budget_tokens: Option<usize>,
+) -> String {
+    let start = Instant::now();
     let budget = parse_budget(&budget);
     with_mcp_compiler(state, |compiler| {
         let card = compiler.test_surface_card(&scope, budget)?;
-        Ok(serde_json::to_value(&card)?)
+        let test_hit = card.test_symbol_count > 0 || card.test_file_count > 0;
+        Ok(finalize_card_json(
+            state,
+            serde_json::to_value(&card)?,
+            budget_tokens,
+            start,
+            test_hit,
+        ))
     })
 }
 
-pub fn handle_change_risk(state: &SynrepoState, target: String, budget: String) -> String {
+pub fn handle_change_risk(
+    state: &SynrepoState,
+    target: String,
+    budget: String,
+    budget_tokens: Option<usize>,
+) -> String {
+    let start = Instant::now();
     let budget = parse_budget(&budget);
     with_mcp_compiler(state, |compiler| {
         let node_id = compiler
@@ -214,7 +319,13 @@ pub fn handle_change_risk(state: &SynrepoState, target: String, budget: String) 
             .ok_or_else(|| anyhow::anyhow!("target not found: {target}"))?;
 
         let card = compiler.change_risk_card(node_id, budget)?;
-        Ok(serde_json::to_value(&card)?)
+        Ok(finalize_card_json(
+            state,
+            serde_json::to_value(&card)?,
+            budget_tokens,
+            start,
+            false,
+        ))
     })
 }
 

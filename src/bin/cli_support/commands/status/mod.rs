@@ -217,6 +217,19 @@ fn write_status_text(out: &mut String, snapshot: &StatusSnapshot, full: bool) {
         }
     }
 
+    if let Some(metrics) = &snapshot.context_metrics {
+        if metrics.cards_served_total > 0 {
+            writeln!(
+                out,
+                "  context:    {} card(s), {:.1} avg tokens/card, {} est. tokens avoided",
+                metrics.cards_served_total,
+                metrics.card_tokens_avg(),
+                metrics.estimated_tokens_saved_total
+            )
+            .unwrap();
+        }
+    }
+
     writeln!(
         out,
         "  next step:    {}",
@@ -347,6 +360,19 @@ fn write_status_json(out: &mut String, snapshot: &StatusSnapshot) -> anyhow::Res
             ),
             "pricing_last_updated": synrepo::pipeline::explain::pricing::LAST_UPDATED,
             "per_provider": t.per_provider,
+        })),
+        "context_metrics": snapshot.context_metrics.as_ref().map(|m| serde_json::json!({
+            "cards_served_total": m.cards_served_total,
+            "card_tokens_total": m.card_tokens_total,
+            "card_tokens_avg": m.card_tokens_avg(),
+            "raw_file_tokens_total": m.raw_file_tokens_total,
+            "estimated_tokens_saved_total": m.estimated_tokens_saved_total,
+            "budget_tier_usage": m.budget_tier_usage,
+            "truncation_applied_total": m.truncation_applied_total,
+            "stale_responses_total": m.stale_responses_total,
+            "test_surface_hits_total": m.test_surface_hits_total,
+            "changed_files_total": m.changed_files_total,
+            "context_query_latency_ms_avg": m.context_query_latency_ms_avg(),
         })),
         "recent_activity": activity_json,
         "last_compaction_timestamp": snapshot.last_compaction.map(|ts| ts.to_string()),

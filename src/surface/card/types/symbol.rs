@@ -6,7 +6,7 @@ use crate::structure::graph::Epistemic;
 
 use super::super::git::SymbolLastChange;
 use super::refs::SymbolRef;
-use super::SourceStore;
+use super::{ContextAccounting, SourceStore};
 
 /// SymbolCard — answers "what is this function/class, how is it connected?"
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -40,6 +40,8 @@ pub struct SymbolCard {
     pub source_body: Option<String>,
     /// Approximate token count of this card.
     pub approx_tokens: usize,
+    /// Context-accounting metadata for this card.
+    pub context_accounting: ContextAccounting,
     /// Every field in this card came from the graph; explain commentary
     /// is a separate field below if present.
     pub source_store: SourceStore,

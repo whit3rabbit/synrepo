@@ -1,0 +1,49 @@
+---
+source: src/surface/card/compiler/tests/links.rs
+assertion_line: 46
+expression: json
+---
+{
+  "symbol": "sym_6aeed050165175727f73e633a1a15fd8",
+  "name": "annotated",
+  "qualified_name": "annotated",
+  "defined_at": "src/lib.rs:10",
+  "signature": "pub fn annotated() -> u32",
+  "doc_comment": "Docs.",
+  "callers": [],
+  "callees": [],
+  "tests_touching": [],
+  "drift_flag": null,
+  "source_body": "pub fn annotated() -> u32 { 7 }",
+  "approx_tokens": 23,
+  "context_accounting": {
+    "budget_tier": "deep",
+    "token_estimate": 23,
+    "raw_file_token_estimate": 10,
+    "estimated_savings_ratio": 0.0,
+    "source_hashes": [
+      "ada598f4d7bb2f9e60803fe40a978335b582df452c433f1b4c4f5872dcafbaab"
+    ],
+    "stale": false,
+    "truncation_applied": false
+  },
+  "source_store": "graph",
+  "epistemic": "parser_observed",
+  "overlay_commentary": null,
+  "commentary_state": "missing",
+  "proposed_links": [
+    {
+      "source": {
+        "Symbol": "sym_6aeed050165175727f73e633a1a15fd8"
+      },
+      "target": {
+        "File": "file_a244943efc82b187fe5aec18077ba87b"
+      },
+      "kind": "references",
+      "tier": "high",
+      "freshness": "fresh",
+      "span_count": 2
+    }
+  ],
+  "links_state": "present"
+}

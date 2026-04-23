@@ -9,7 +9,9 @@ use std::collections::HashSet;
 
 use crate::{
     structure::graph::GraphReader,
-    surface::card::{types::ModuleCard, Budget, FileRef, SourceStore, SymbolRef},
+    surface::card::{
+        types::ModuleCard, Budget, ContextAccounting, FileRef, SourceStore, SymbolRef,
+    },
 };
 
 /// Compile a `ModuleCard` for the given directory path.
@@ -76,6 +78,7 @@ pub(super) fn module_card_impl(
         public_symbols,
         total_symbol_count,
         approx_tokens,
+        context_accounting: ContextAccounting::new(budget, approx_tokens, 0, vec![]),
         source_store: SourceStore::Graph,
     })
 }

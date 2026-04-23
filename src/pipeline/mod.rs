@@ -22,6 +22,7 @@
 //! - `explain` — LLM-driven overlay pipeline (phase 4+).
 
 pub mod compact;
+pub mod context_metrics;
 /// Operational diagnostics surface for reconcile health, writer ownership,
 /// and store compatibility.
 pub mod diagnostics;

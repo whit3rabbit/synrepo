@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::ids::{FileNodeId, NodeId, SymbolNodeId};
 
+pub mod accounting;
 pub mod compiler;
 pub mod decision;
 /// Git-derived intelligence types for cards.
@@ -26,6 +27,7 @@ pub(crate) fn truncate_chars(s: &str, max_chars: usize) -> String {
     }
 }
 
+pub use accounting::ContextAccounting;
 pub use decision::DecisionCard;
 pub use git::{
     FileGitCoChange, FileGitCommit, FileGitIntelligence, FileGitOwnership, LastChangeGranularity,

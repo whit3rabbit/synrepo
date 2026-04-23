@@ -6,10 +6,12 @@ use super::graph::{check_store_ready, graph_query_output, graph_stats_output, no
 
 mod basic;
 mod compact;
+mod context;
 mod export;
 mod handoffs;
 mod links;
 pub(crate) mod mcp;
+mod mcp_runtime;
 mod remove;
 mod repair;
 mod setup;
@@ -23,6 +25,10 @@ mod watch;
 pub(crate) use basic::change_risk_output;
 pub(crate) use basic::{agent_setup, change_risk, init};
 pub(crate) use compact::compact;
+pub(crate) use context::{
+    bench_context, cards_alias, explain_alias, impact_alias, risks_alias, stats_context,
+    tests_alias,
+};
 pub(crate) use export::export;
 pub(crate) use handoffs::handoffs;
 pub(crate) use links::{findings, links_accept, links_list, links_reject, links_review};
@@ -32,8 +38,8 @@ pub(crate) use links::{
     LinksCommitStore, RealLinksStore,
 };
 #[cfg(test)]
-pub(crate) use mcp::prepare_state as prepare_mcp_state;
-pub(crate) use mcp::run_mcp_server;
+pub(crate) use mcp_runtime::prepare_state as prepare_mcp_state;
+pub(crate) use mcp_runtime::run_mcp_server;
 pub(crate) use remove::remove;
 pub(crate) use repair::{check, reconcile, sync};
 pub(crate) use setup::setup;

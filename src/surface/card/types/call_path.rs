@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::{SourceStore, SymbolRef};
+use super::{ContextAccounting, SourceStore, SymbolRef};
 
 /// A single edge in a call path from entry point to target.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -41,6 +41,8 @@ pub struct CallPathCard {
     pub paths_omitted: usize,
     /// Approximate token count of this card.
     pub approx_tokens: usize,
+    /// Context-accounting metadata for this card.
+    pub context_accounting: ContextAccounting,
     /// Source store (always `Graph` for call-path cards).
     pub source_store: SourceStore,
 }

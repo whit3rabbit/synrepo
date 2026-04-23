@@ -25,4 +25,4 @@ pub use symbol::{Freshness, OverlayCommentary, ProposedLink, SymbolCard};
 pub use test_surface::{TestAssociation, TestEntry, TestSurfaceCard};
 
 // Re-export SourceStore from sibling module.
-pub use super::SourceStore;
+pub use super::{ContextAccounting, SourceStore};

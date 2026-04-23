@@ -184,6 +184,60 @@ pub(crate) enum Command {
         json: bool,
     },
 
+    /// Return bounded card suggestions for a task query.
+    Cards {
+        /// Plain-language query.
+        #[arg(long)]
+        query: String,
+        /// Numeric token cap.
+        #[arg(long)]
+        budget: Option<usize>,
+    },
+
+    /// Explain a file or symbol with a bounded card.
+    Explain {
+        /// Target file path or symbol name.
+        target: String,
+        /// Numeric token cap.
+        #[arg(long)]
+        budget: Option<usize>,
+    },
+
+    /// Inspect change impact/risk before editing.
+    Impact {
+        /// Target file path or symbol name.
+        target: String,
+        /// Numeric token cap.
+        #[arg(long)]
+        budget: Option<usize>,
+    },
+
+    /// Discover tests constraining a file or directory.
+    Tests {
+        /// Target file path or directory.
+        target: String,
+        /// Numeric token cap.
+        #[arg(long)]
+        budget: Option<usize>,
+    },
+
+    /// Composite risk signal for a file or symbol.
+    Risks {
+        /// Target file path or symbol name.
+        target: String,
+        /// Numeric token cap.
+        #[arg(long)]
+        budget: Option<usize>,
+    },
+
+    /// Aggregate synrepo statistics.
+    #[command(subcommand)]
+    Stats(StatsCommand),
+
+    /// Reproducible benchmarks.
+    #[command(subcommand)]
+    Bench(BenchCommand),
+
     /// Graph-level queries and inspection.
     #[command(subcommand)]
     Graph(GraphCommand),
@@ -392,6 +446,29 @@ pub(crate) enum GraphCommand {
 
     /// Print graph statistics (node count by type, edge count by kind).
     Stats,
+}
+
+#[derive(Subcommand)]
+pub(crate) enum StatsCommand {
+    /// Context-serving metrics.
+    Context {
+        /// Emit JSON instead of human-readable output.
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub(crate) enum BenchCommand {
+    /// Benchmark context savings and target hit rate.
+    Context {
+        /// Glob for JSON task fixtures.
+        #[arg(long)]
+        tasks: String,
+        /// Emit JSON instead of human-readable output.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Clone, Copy, Debug, clap::ValueEnum)]

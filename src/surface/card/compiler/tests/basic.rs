@@ -87,6 +87,10 @@ fn symbol_card_tiny_has_no_source_body() {
         "tiny budget must not include source body"
     );
     assert!(tiny.approx_tokens > 0);
+    assert_eq!(tiny.context_accounting.budget_tier, Budget::Tiny);
+    assert_eq!(tiny.context_accounting.token_estimate, tiny.approx_tokens);
+    assert!(tiny.context_accounting.raw_file_token_estimate > 0);
+    assert_eq!(tiny.context_accounting.source_hashes.len(), 1);
     assert_eq!(tiny.source_store, SourceStore::Graph);
 
     let graph2 = {

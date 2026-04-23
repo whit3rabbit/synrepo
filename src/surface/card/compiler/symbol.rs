@@ -5,6 +5,7 @@ use crate::{
     core::ids::{NodeId, SymbolNodeId},
     overlay::{FreshnessState, OverlayStore},
     structure::graph::GraphReader,
+    surface::card::accounting::{raw_file_token_estimate, ContextAccounting},
     surface::card::git::symbol_last_change_from_insights,
     surface::card::types::{Freshness, OverlayCommentary},
 };
@@ -80,6 +81,7 @@ pub(super) fn symbol_card(
         drift_flag: None,
         source_body,
         approx_tokens: 0,
+        context_accounting: ContextAccounting::placeholder(budget),
         source_store: SourceStore::Graph,
         epistemic: symbol.epistemic,
         overlay_commentary: None,
@@ -118,6 +120,12 @@ pub(super) fn symbol_card(
     }
 
     card.approx_tokens = estimate_tokens_symbol(&card);
+    card.context_accounting = ContextAccounting::new(
+        budget,
+        card.approx_tokens,
+        raw_file_token_estimate(ctx.repo_root.as_deref(), &file.path),
+        vec![file.content_hash],
+    );
     Ok(card)
 }
 

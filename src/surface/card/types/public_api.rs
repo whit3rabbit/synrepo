@@ -4,7 +4,7 @@ use crate::core::ids::SymbolNodeId;
 use crate::structure::graph::SymbolKind;
 
 use super::super::git::SymbolLastChange;
-use super::SourceStore;
+use super::{ContextAccounting, SourceStore};
 
 /// One exported symbol in a `PublicAPICard`.
 ///
@@ -57,6 +57,8 @@ pub struct PublicAPICard {
     pub recent_api_changes: Vec<PublicAPIEntry>,
     /// Approximate token count of this card.
     pub approx_tokens: usize,
+    /// Context-accounting metadata for this card.
+    pub context_accounting: ContextAccounting,
     /// Source store (always `Graph` for public-API cards).
     pub source_store: SourceStore,
 }

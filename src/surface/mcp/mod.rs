@@ -20,6 +20,7 @@ use crate::structure::graph::snapshot;
 use crate::surface::card::compiler::GraphCardCompiler;
 
 pub mod audit;
+pub mod card_accounting;
 pub mod cards;
 pub mod docs;
 pub mod helpers;
@@ -148,7 +149,7 @@ mod tests {
         for _ in 0..8 {
             let state = Arc::clone(&state);
             handles.push(thread::spawn(move || {
-                let out = super::cards::handle_entrypoints(&state, None, "tiny".to_string());
+                let out = super::cards::handle_entrypoints(&state, None, "tiny".to_string(), None);
                 let val: serde_json::Value =
                     serde_json::from_str(&out).expect("handler returned valid json");
                 assert!(

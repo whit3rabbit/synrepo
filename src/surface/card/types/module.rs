@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::{FileRef, SourceStore, SymbolRef};
+use super::{ContextAccounting, FileRef, SourceStore, SymbolRef};
 
 /// ModuleCard — answers "what lives in this directory/module?"
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -18,6 +18,8 @@ pub struct ModuleCard {
     pub total_symbol_count: usize,
     /// Approximate token count.
     pub approx_tokens: usize,
+    /// Context-accounting metadata for this card.
+    pub context_accounting: ContextAccounting,
     /// Source store.
     pub source_store: SourceStore,
 }

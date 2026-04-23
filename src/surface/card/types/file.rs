@@ -6,7 +6,7 @@ use super::super::git::FileGitIntelligence;
 use super::refs::FileRef;
 use super::refs::SymbolRef;
 use super::symbol::ProposedLink;
-use super::SourceStore;
+use super::{ContextAccounting, SourceStore};
 
 /// FileCard — answers "what's in this file, what depends on it?"
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -29,6 +29,8 @@ pub struct FileCard {
     pub drift_flag: Option<String>,
     /// Approximate token count.
     pub approx_tokens: usize,
+    /// Context-accounting metadata for this card.
+    pub context_accounting: ContextAccounting,
     /// Source store.
     pub source_store: SourceStore,
     /// Proposed cross-links authored by the explain layer.

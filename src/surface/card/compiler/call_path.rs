@@ -7,7 +7,7 @@ use crate::{
     structure::graph::{Edge, EdgeKind, GraphReader, SymbolKind, SymbolNode},
     surface::card::{
         types::{CallPath, CallPathCard, SymbolRef},
-        Budget, SourceStore,
+        Budget, ContextAccounting, SourceStore,
     },
 };
 
@@ -29,6 +29,7 @@ pub(super) fn call_path_card_impl(
             paths: vec![],
             paths_omitted: 0,
             approx_tokens: 0,
+            context_accounting: ContextAccounting::new(budget, 0, 0, vec![]),
             source_store: SourceStore::Graph,
         });
     };
@@ -65,6 +66,7 @@ pub(super) fn call_path_card_impl(
         paths: call_paths,
         paths_omitted: total_omitted,
         approx_tokens,
+        context_accounting: ContextAccounting::new(budget, approx_tokens, 0, vec![]),
         source_store: SourceStore::Graph,
     })
 }

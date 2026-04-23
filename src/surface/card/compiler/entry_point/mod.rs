@@ -19,7 +19,7 @@ use crate::{
     surface::card::{
         truncate_chars,
         types::{EntryPoint, EntryPointCard, EntryPointKind},
-        Budget, SourceStore,
+        Budget, ContextAccounting, SourceStore,
     },
 };
 
@@ -120,6 +120,7 @@ pub(super) fn entry_point_card_impl(
         scope: scope.map(|s| s.to_string()),
         entry_points,
         approx_tokens,
+        context_accounting: ContextAccounting::new(budget, approx_tokens, 0, vec![]),
         source_store: SourceStore::Graph,
     })
 }

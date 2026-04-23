@@ -8,9 +8,12 @@
 
 It builds a local structural model of the repo, keeps it fresh, and exposes it through read-only MCP tools plus a guided dashboard. It is not session memory and it is not a task tracker. It is repo intelligence for coding agents.
 
+The default agent loop is explicit: orient, find bounded cards, inspect impact, edit, validate tests, then review changed context. Synrepo responses are budgeted by default. Large source files are not the default response unit unless a caller explicitly escalates.
+
 ## Why Use It
 
 - Start agents from cards, search, entrypoints, and impact views instead of dumping full files into prompts.
+- See context accounting on card responses: estimated card tokens, raw-file comparison tokens, source hashes, and truncation state.
 - Keep repository context local, inspectable, and tied to the actual codebase under `.synrepo/`.
 - Use one operational flow: `setup` wires the repo and agent, bare `synrepo` opens the guided UI, `watch` keeps the model fresh, and `status` tells you whether things are healthy.
 - Keep machine-authored commentary separate from canonical repo facts so the trust boundary stays visible.
@@ -60,9 +63,10 @@ synrepo
 1. Run `synrepo` or `synrepo dashboard` to inspect the current repo state.
 2. Keep `synrepo watch --daemon` running while you work if you want automatic refresh.
 3. Use `synrepo status` when you want a quick health check.
-4. Let the agent query `synrepo mcp` for cards, search, entrypoints, and change impact instead of opening large files first.
-5. Use the dashboard Explain tab if you want fresh commentary on the parts of the repo that just moved.
-6. Use `synrepo check` and `synrepo sync` when health or repair surfaces need manual attention.
+4. Let the agent query `synrepo_orient`, `synrepo_find`, `synrepo_explain`, `synrepo_impact`, `synrepo_tests`, and `synrepo_changed` instead of opening large files first.
+5. Use `synrepo explain <target> --budget 1000`, `synrepo impact <target> --budget 2000`, or `synrepo tests <path> --budget 1500` for the same flow outside MCP.
+6. Use the dashboard Explain tab if you want fresh commentary on the parts of the repo that just moved.
+7. Use `synrepo check` and `synrepo sync` when health or repair surfaces need manual attention.
 
 ## Trust Model
 
@@ -96,6 +100,12 @@ Use `synrepo agent-setup <tool>` if you only want to regenerate the instruction 
 | `synrepo check` | Read-only drift and repair report |
 | `synrepo sync` | Apply auto-fixable repair actions |
 | `synrepo search "query"` | Lexical search through the repo index |
+| `synrepo cards --query "task" --budget 1500` | Bounded card suggestions for a task |
+| `synrepo explain <target> --budget 1000` | Bounded card for a file or symbol |
+| `synrepo impact <target> --budget 2000` | Change risk before editing |
+| `synrepo tests <path> --budget 1500` | Test-surface discovery |
+| `synrepo stats context --json` | Context-serving metrics |
+| `synrepo bench context --tasks "benches/tasks/*.json" --json` | Reproducible context-savings benchmark |
 | `synrepo graph stats` | Inspect graph node and edge counts |
 
 ## Optional Advisory Commentary

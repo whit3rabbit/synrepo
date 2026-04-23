@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::ids::SymbolNodeId;
 
-use super::SourceStore;
+use super::{ContextAccounting, SourceStore};
 
 /// Classification of an execution entry point.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -50,6 +50,8 @@ pub struct EntryPointCard {
     pub entry_points: Vec<EntryPoint>,
     /// Approximate token count of this card.
     pub approx_tokens: usize,
+    /// Context-accounting metadata for this card.
+    pub context_accounting: ContextAccounting,
     /// Source store (always `Graph` for entry-point cards).
     pub source_store: SourceStore,
 }

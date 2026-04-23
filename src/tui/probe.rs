@@ -199,6 +199,18 @@ pub fn build_health_vm(snapshot: &StatusSnapshot) -> HealthVm {
         severity: Severity::Healthy,
     });
 
+    if let Some(metrics) = &snapshot.context_metrics {
+        rows.push(HealthRow {
+            label: "context".to_string(),
+            value: format!(
+                "{} cards, {:.1} avg tokens",
+                metrics.cards_served_total,
+                metrics.card_tokens_avg()
+            ),
+            severity: Severity::Healthy,
+        });
+    }
+
     // Explain row: expected-off is Healthy; a detected but unused key
     // escalates to Stale so the dashboard nudges the user toward opt-in.
     if let Some(explain) = &snapshot.explain_provider {

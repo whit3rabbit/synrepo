@@ -15,6 +15,17 @@ expression: deep
   "drift_flag": null,
   "source_body": "pub fn add(a: i32, b: i32) -> i32 { a + b }",
   "approx_tokens": 30,
+  "context_accounting": {
+    "budget_tier": "deep",
+    "token_estimate": 30,
+    "raw_file_token_estimate": 18,
+    "estimated_savings_ratio": 0.0,
+    "source_hashes": [
+      "b4356aa41bdf49e16928ee9ac7250734edf3783218a56fccac863c02c5994064"
+    ],
+    "stale": false,
+    "truncation_applied": false
+  },
   "source_store": "graph",
   "epistemic": "parser_observed",
   "overlay_commentary": null,

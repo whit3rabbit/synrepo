@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::ids::NodeId;
 
-use super::SourceStore;
+use super::{ContextAccounting, SourceStore};
 
 /// Risk level classification for change risk assessment.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -83,6 +83,8 @@ pub struct ChangeRiskCard {
     pub affected_edge_count: Option<usize>,
     /// Approximate token count of this card.
     pub approx_tokens: usize,
+    /// Context-accounting metadata for this card.
+    pub context_accounting: ContextAccounting,
     /// Source store (always `Graph` — ChangeRiskCard uses graph signals only).
     pub source_store: SourceStore,
 }

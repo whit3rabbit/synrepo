@@ -49,6 +49,17 @@ fn default_activity_limit() -> usize {
     20
 }
 
+/// Parameters for the `synrepo_next_actions` tool.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct NextActionsParams {
+    /// Maximum number of items to return. Defaults to 20.
+    #[serde(default)]
+    pub limit: Option<usize>,
+    /// Only include items from the last N days. Defaults to 30.
+    #[serde(default)]
+    pub since_days: Option<u32>,
+}
+
 pub fn handle_findings(
     repo_root: &std::path::Path,
     node_id: Option<String>,

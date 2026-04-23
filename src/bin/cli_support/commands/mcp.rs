@@ -1,47 +1,24 @@
 //! `synrepo mcp` subcommand — starts the MCP server over stdio.
 
-use std::path::Path;
 use std::sync::Arc;
 
-use anyhow::Context as _;
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::{ServerCapabilities, ServerInfo},
-    tool, tool_handler, tool_router,
-    transport::stdio,
-    ServerHandler, ServiceExt as _,
+    tool, tool_handler, tool_router, ServerHandler,
 };
-use synrepo::config::Config;
-use synrepo::pipeline::explain::telemetry;
-use synrepo::store::compatibility::StoreId;
 use synrepo::surface::handoffs::HandoffsRequest;
 use synrepo::surface::handoffs::{collect_handoffs, to_json as handoffs_to_json};
 use synrepo::surface::mcp::{audit, cards, docs, primitives, search, SynrepoState};
 
-use super::super::graph::check_store_ready;
-
-use schemars::JsonSchema;
-use serde::Deserialize;
-
-/// Parameters for the `synrepo_next_actions` tool.
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct NextActionsParams {
-    /// Maximum number of items to return. Defaults to 20.
-    #[serde(default)]
-    pub limit: Option<usize>,
-    /// Only include items from the last N days. Defaults to 30.
-    #[serde(default)]
-    pub since_days: Option<u32>,
-}
-
 #[derive(Clone)]
-struct SynrepoServer {
+pub(crate) struct SynrepoServer {
     state: Arc<SynrepoState>,
     tool_router: ToolRouter<Self>,
 }
 
 impl SynrepoServer {
-    fn new(state: SynrepoState) -> Self {
+    pub(crate) fn new(state: SynrepoState) -> Self {
         Self {
             state: Arc::new(state),
             tool_router: Self::tool_router(),
@@ -54,19 +31,10 @@ impl ServerHandler for SynrepoServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build()).with_instructions(
             "synrepo provides structured code-intelligence context. \
-             Use synrepo_overview to start, synrepo_card for details, \
-             synrepo_where_to_edit to route a task, synrepo_change_impact \
-             before large refactors, synrepo_entrypoints to find execution \
-             roots (binaries, CLI commands, HTTP handlers, library entry points), \
-             synrepo_module_card for directory-level summaries, \
-             synrepo_public_api for exported symbols and public API surface of a directory, \
-             synrepo_change_risk to assess change risk from drift/co-change/hotspot signals, \
-             synrepo_findings to see machine-authored relationship candidates, \
-             synrepo_recent_activity for bounded operational event history, \
-             synrepo_refresh_commentary to generate or update LLM commentary for a symbol, \
-             synrepo_docs_search to search advisory explained commentary docs. \
-             Low-level primitives: synrepo_node, synrepo_edges, synrepo_query, \
-             synrepo_overlay, synrepo_provenance for direct graph and overlay access.",
+             Use synrepo_orient to start, synrepo_find to route a task, \
+             synrepo_explain for details, synrepo_impact before edits, \
+             synrepo_tests before claiming done, and synrepo_changed after edits. \
+             Existing task-first, audit, overlay, and graph primitive tools remain available.",
         )
     }
 }
@@ -78,7 +46,12 @@ impl SynrepoServer {
         description = "Return a structured card describing a file or symbol. Default budget is tiny; escalate to normal for local understanding and deep only before edits."
     )]
     async fn synrepo_card(&self, Parameters(params): Parameters<cards::CardParams>) -> String {
-        cards::handle_card(&self.state, params.target, params.budget)
+        cards::handle_card(
+            &self.state,
+            params.target,
+            params.budget,
+            params.budget_tokens,
+        )
     }
 
     #[tool(
@@ -168,7 +141,7 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<search::WhereToEditParams>,
     ) -> String {
-        search::handle_where_to_edit(&self.state, params.task, params.limit)
+        search::handle_where_to_edit(&self.state, params.task, params.limit, params.budget_tokens)
     }
 
     #[tool(
@@ -190,7 +163,12 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<cards::EntrypointsParams>,
     ) -> String {
-        cards::handle_entrypoints(&self.state, params.scope, params.budget)
+        cards::handle_entrypoints(
+            &self.state,
+            params.scope,
+            params.budget,
+            params.budget_tokens,
+        )
     }
 
     #[tool(
@@ -201,7 +179,12 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<cards::ModuleCardParams>,
     ) -> String {
-        cards::handle_module_card(&self.state, params.path, params.budget)
+        cards::handle_module_card(
+            &self.state,
+            params.path,
+            params.budget,
+            params.budget_tokens,
+        )
     }
 
     #[tool(
@@ -212,7 +195,12 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<cards::PublicAPICardParams>,
     ) -> String {
-        cards::handle_public_api(&self.state, params.path, params.budget)
+        cards::handle_public_api(
+            &self.state,
+            params.path,
+            params.budget,
+            params.budget_tokens,
+        )
     }
 
     #[tool(
@@ -223,7 +211,12 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<cards::MinimumContextParams>,
     ) -> String {
-        cards::handle_minimum_context(&self.state, params.target, params.budget)
+        cards::handle_minimum_context(
+            &self.state,
+            params.target,
+            params.budget,
+            params.budget_tokens,
+        )
     }
 
     #[tool(
@@ -234,7 +227,12 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<cards::CallPathParams>,
     ) -> String {
-        cards::handle_call_path(&self.state, params.target, params.budget)
+        cards::handle_call_path(
+            &self.state,
+            params.target,
+            params.budget,
+            params.budget_tokens,
+        )
     }
 
     #[tool(
@@ -245,7 +243,12 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<cards::TestSurfaceParams>,
     ) -> String {
-        cards::handle_test_surface(&self.state, params.scope, params.budget)
+        cards::handle_test_surface(
+            &self.state,
+            params.scope,
+            params.budget,
+            params.budget_tokens,
+        )
     }
 
     #[tool(
@@ -256,7 +259,81 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<cards::ChangeRiskParams>,
     ) -> String {
-        cards::handle_change_risk(&self.state, params.target, params.budget)
+        cards::handle_change_risk(
+            &self.state,
+            params.target,
+            params.budget,
+            params.budget_tokens,
+        )
+    }
+
+    #[tool(name = "synrepo_orient", description = "Workflow alias: start here.")]
+    async fn synrepo_orient(&self) -> String {
+        search::handle_overview(&self.state)
+    }
+
+    #[tool(
+        name = "synrepo_find",
+        description = "Workflow alias: find task cards."
+    )]
+    async fn synrepo_find(
+        &self,
+        Parameters(params): Parameters<search::WhereToEditParams>,
+    ) -> String {
+        search::handle_where_to_edit(&self.state, params.task, params.limit, params.budget_tokens)
+    }
+
+    #[tool(
+        name = "synrepo_explain",
+        description = "Workflow alias: bounded card lookup."
+    )]
+    async fn synrepo_explain(&self, Parameters(params): Parameters<cards::CardParams>) -> String {
+        cards::handle_card(
+            &self.state,
+            params.target,
+            params.budget,
+            params.budget_tokens,
+        )
+    }
+
+    #[tool(
+        name = "synrepo_impact",
+        description = "Workflow alias: risk before editing."
+    )]
+    async fn synrepo_impact(
+        &self,
+        Parameters(params): Parameters<cards::ChangeRiskParams>,
+    ) -> String {
+        cards::handle_change_risk(
+            &self.state,
+            params.target,
+            params.budget,
+            params.budget_tokens,
+        )
+    }
+
+    #[tool(
+        name = "synrepo_tests",
+        description = "Workflow alias: test discovery."
+    )]
+    async fn synrepo_tests(
+        &self,
+        Parameters(params): Parameters<cards::TestSurfaceParams>,
+    ) -> String {
+        cards::handle_test_surface(
+            &self.state,
+            params.scope,
+            params.budget,
+            params.budget_tokens,
+        )
+    }
+
+    #[tool(
+        name = "synrepo_changed",
+        description = "Workflow alias: changed-context review."
+    )]
+    async fn synrepo_changed(&self) -> String {
+        search::handle_changed(&self.state)
     }
 
     #[tool(
@@ -304,7 +381,7 @@ impl SynrepoServer {
     )]
     async fn synrepo_next_actions(
         &self,
-        Parameters(params): Parameters<NextActionsParams>,
+        Parameters(params): Parameters<audit::NextActionsParams>,
     ) -> String {
         let request = HandoffsRequest {
             limit: params.limit.unwrap_or(20),
@@ -318,47 +395,4 @@ impl SynrepoServer {
             .to_string(),
         }
     }
-}
-
-/// Start the MCP server over stdio for the given repository root.
-///
-/// This is called by `synrepo mcp [--repo <path>]`. It opens the graph and
-/// overlay stores, constructs the card compiler, and serves tools until the
-/// client disconnects.
-pub fn run_mcp_server(repo_root: &Path) -> anyhow::Result<()> {
-    let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
-    rt.block_on(async { serve(repo_root).await })
-}
-
-/// Load config and gate on storage compatibility. Factored out of `serve` so
-/// unit tests can exercise the fail-fast path without spinning up stdio.
-pub(crate) fn prepare_state(repo_root: &Path) -> anyhow::Result<SynrepoState> {
-    let config = Config::load(repo_root).with_context(|| {
-        format!(
-            "Could not load config from {}/.synrepo/config.toml — run `synrepo init` first",
-            repo_root.display()
-        )
-    })?;
-
-    // Fail fast if the on-disk stores are not ready to serve. Without this
-    // check the MCP server accepts clients and only surfaces compatibility
-    // failures per tool call, which confuses the agent and hides the
-    // canonical `synrepo upgrade` remediation path.
-    let synrepo_dir = Config::synrepo_dir(repo_root);
-    check_store_ready(&synrepo_dir, &config, StoreId::Graph)?;
-    check_store_ready(&synrepo_dir, &config, StoreId::Overlay)?;
-    telemetry::set_synrepo_dir(&synrepo_dir);
-
-    Ok(SynrepoState {
-        config,
-        repo_root: repo_root.to_path_buf(),
-    })
-}
-
-async fn serve(repo_root: &Path) -> anyhow::Result<()> {
-    let state = prepare_state(repo_root)?;
-    let server = SynrepoServer::new(state);
-    let transport = stdio();
-    server.serve(transport).await?;
-    Ok(())
 }

@@ -2,6 +2,7 @@
 
 use crate::core::ids::NodeId;
 use crate::structure::graph::{Edge, EdgeKind, GraphReader};
+use crate::surface::card::ContextAccounting;
 
 use super::{
     super::Budget, super::ChangeRiskCard, super::RiskFactor, super::RiskLevel, GraphCardCompiler,
@@ -14,18 +15,37 @@ pub fn change_risk_card(
     target: NodeId,
     budget: Budget,
 ) -> crate::Result<ChangeRiskCard> {
-    let (target_name, target_kind) = match &target {
+    let (target_name, target_kind, source_hashes, raw_file_tokens) = match &target {
         NodeId::File(fid) => {
             let node = graph
                 .get_file(*fid)?
                 .ok_or_else(|| anyhow::anyhow!("file node not found"))?;
-            (node.path.clone(), "file")
+            (
+                node.path.clone(),
+                "file",
+                vec![node.content_hash.clone()],
+                crate::surface::card::accounting::raw_file_token_estimate(
+                    compiler.repo_root.as_deref(),
+                    &node.path,
+                ),
+            )
         }
         NodeId::Symbol(sid) => {
             let node = graph
                 .get_symbol(*sid)?
                 .ok_or_else(|| anyhow::anyhow!("symbol node not found"))?;
-            (node.qualified_name.clone(), "symbol")
+            let file = graph
+                .get_file(node.file_id)?
+                .ok_or_else(|| anyhow::anyhow!("file node not found"))?;
+            (
+                node.qualified_name.clone(),
+                "symbol",
+                vec![file.content_hash.clone()],
+                crate::surface::card::accounting::raw_file_token_estimate(
+                    compiler.repo_root.as_deref(),
+                    &file.path,
+                ),
+            )
         }
         NodeId::Concept(_) => {
             return Err(crate::Error::Other(anyhow::anyhow!(
@@ -111,6 +131,12 @@ pub fn change_risk_card(
         },
         affected_edge_count: affected_edge_count_field,
         approx_tokens,
+        context_accounting: ContextAccounting::new(
+            budget,
+            approx_tokens,
+            raw_file_tokens,
+            source_hashes,
+        ),
         source_store: super::SourceStore::Graph,
     })
 }

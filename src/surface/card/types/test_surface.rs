@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::core::ids::SymbolNodeId;
 
-use super::SourceStore;
+use super::{ContextAccounting, SourceStore};
 
 /// How a test was associated with a source file.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -53,6 +53,8 @@ pub struct TestSurfaceCard {
     pub test_symbol_count: usize,
     /// Approximate token count of this card.
     pub approx_tokens: usize,
+    /// Context-accounting metadata for this card.
+    pub context_accounting: ContextAccounting,
     /// Source store (always `Graph` for test-surface cards).
     pub source_store: SourceStore,
 }

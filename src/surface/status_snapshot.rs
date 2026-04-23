@@ -12,6 +12,7 @@ use crate::{
     core::ids::NodeId,
     pipeline::{
         compact::load_last_compaction_timestamp,
+        context_metrics::{load as load_context_metrics, ContextMetrics},
         diagnostics::{collect_diagnostics, RuntimeDiagnostics},
         explain::{
             accounting::{load_totals, ExplainTotals},
@@ -137,6 +138,8 @@ pub struct StatusSnapshot {
     /// `.synrepo/state/explain-totals.json`. `None` when the file is
     /// missing, unreadable, or the repo is uninitialized.
     pub explain_totals: Option<ExplainTotals>,
+    /// Context-serving metrics loaded from `.synrepo/state/context-metrics.json`.
+    pub context_metrics: Option<ContextMetrics>,
     /// Last compaction timestamp, if any.
     pub last_compaction: Option<OffsetDateTime>,
     /// Repair audit state.
@@ -166,6 +169,7 @@ pub fn build_status_snapshot(repo_root: &Path, opts: StatusOptions) -> StatusSna
                 commentary_coverage: CommentaryCoverage::unavailable("not initialized"),
                 explain_provider: None,
                 explain_totals: None,
+                context_metrics: None,
                 last_compaction: None,
                 repair_audit: RepairAuditState::Ok,
                 recent_activity: None,
@@ -201,6 +205,7 @@ pub fn build_status_snapshot(repo_root: &Path, opts: StatusOptions) -> StatusSna
         status: active.status,
     });
     let explain_totals = load_totals(&synrepo_dir).ok().flatten();
+    let context_metrics = load_context_metrics(&synrepo_dir).ok();
 
     let recent_activity = if opts.recent {
         let query = RecentActivityQuery {
@@ -224,6 +229,7 @@ pub fn build_status_snapshot(repo_root: &Path, opts: StatusOptions) -> StatusSna
         commentary_coverage,
         explain_provider,
         explain_totals,
+        context_metrics,
         last_compaction,
         repair_audit,
         recent_activity,

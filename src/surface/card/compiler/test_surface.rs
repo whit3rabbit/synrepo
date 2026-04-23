@@ -6,6 +6,7 @@ use crate::{
     core::ids::{FileNodeId, NodeId},
     structure::graph::{EdgeKind, GraphReader, SymbolKind, SymbolNode},
     surface::card::{
+        accounting::ContextAccounting,
         types::{TestAssociation, TestEntry, TestSurfaceCard},
         Budget, SourceStore,
     },
@@ -124,6 +125,7 @@ pub(super) fn test_surface_card_impl(
         test_file_count,
         test_symbol_count,
         approx_tokens,
+        context_accounting: ContextAccounting::new(budget, approx_tokens, 0, vec![]),
         source_store: SourceStore::Graph,
     })
 }

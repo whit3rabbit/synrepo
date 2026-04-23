@@ -21,7 +21,7 @@ use crate::{
     surface::card::{
         git::symbol_last_change_from_insights,
         types::{PublicAPICard, PublicAPIEntry},
-        Budget, SourceStore,
+        Budget, ContextAccounting, SourceStore,
     },
 };
 
@@ -147,6 +147,7 @@ pub(super) fn public_api_card_impl(
         public_entry_points,
         recent_api_changes,
         approx_tokens,
+        context_accounting: ContextAccounting::new(budget, approx_tokens, 0, vec![]),
         source_store: SourceStore::Graph,
     })
 }

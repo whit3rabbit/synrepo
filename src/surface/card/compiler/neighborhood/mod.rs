@@ -82,6 +82,30 @@ pub struct MinimumContextResponse {
     pub budget: &'static str,
 }
 
+impl MinimumContextResponse {
+    /// Apply a numeric cap by trimming optional ranked card sets first.
+    pub fn apply_numeric_cap(&mut self, budget_tokens: usize) {
+        let token_estimate = self
+            .focal_card
+            .pointer("/context_accounting/token_estimate")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as usize;
+        if token_estimate <= budget_tokens {
+            return;
+        }
+        self.neighbors = None;
+        self.neighbor_summaries = None;
+        self.decision_cards = None;
+        self.co_change_partners = None;
+        if let Some(accounting) = self
+            .focal_card
+            .pointer_mut("/context_accounting/truncation_applied")
+        {
+            *accounting = serde_json::Value::Bool(true);
+        }
+    }
+}
+
 /// Hard cap on neighbor count across all edge kinds combined.
 const NEIGHBOR_CAP: usize = 20;
 

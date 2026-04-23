@@ -16,15 +16,18 @@ use synrepo::tui::{stdout_is_tty, TuiOptions};
 use syntext::SearchOptions;
 use tracing_subscriber::EnvFilter;
 
-use cli_support::cli_args::{Cli, Command, GraphCommand, LinksCommand, WatchCommand};
+use cli_support::cli_args::{
+    BenchCommand, Cli, Command, GraphCommand, LinksCommand, StatsCommand, WatchCommand,
+};
 #[cfg(test)]
 use cli_support::commands::prepare_mcp_state;
 #[cfg(test)]
 use cli_support::commands::report_reconcile_outcome;
 use cli_support::commands::{
-    agent_setup, change_risk, check, compact, export, findings, graph_query, graph_stats, handoffs,
-    init, links_accept, links_list, links_reject, links_review, node, reconcile, remove,
-    run_mcp_server, search, setup, status, sync, upgrade, watch, watch_internal, watch_status,
+    agent_setup, bench_context, cards_alias, change_risk, check, compact, explain_alias, export,
+    findings, graph_query, graph_stats, handoffs, impact_alias, init, links_accept, links_list,
+    links_reject, links_review, node, reconcile, remove, risks_alias, run_mcp_server, search,
+    setup, stats_context, status, sync, tests_alias, upgrade, watch, watch_internal, watch_status,
     watch_stop,
 };
 use cli_support::entry::{run_bare_entrypoint, run_dashboard_command};
@@ -138,6 +141,15 @@ fn dispatch(command: Command, repo_root: &Path, tui_opts: TuiOptions) -> anyhow:
                 case_insensitive: ignore_case,
             },
         ),
+        Command::Cards { query, budget } => cards_alias(repo_root, &query, budget),
+        Command::Explain { target, budget } => explain_alias(repo_root, &target, budget),
+        Command::Impact { target, budget } => impact_alias(repo_root, &target, budget),
+        Command::Tests { target, budget } => tests_alias(repo_root, &target, budget),
+        Command::Risks { target, budget } => risks_alias(repo_root, &target, budget),
+        Command::Stats(StatsCommand::Context { json }) => stats_context(repo_root, json),
+        Command::Bench(BenchCommand::Context { tasks, json }) => {
+            bench_context(repo_root, &tasks, json)
+        }
         Command::Graph(GraphCommand::Query { q }) => graph_query(repo_root, &q),
         Command::Graph(GraphCommand::Stats) => graph_stats(repo_root),
         Command::Node { id } => node(repo_root, &id),

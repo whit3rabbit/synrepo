@@ -27,10 +27,12 @@ Do not use synrepo for:
 
 ## Default path
 
-1. Start with `synrepo_overview`, `synrepo_search`, `synrepo_where_to_edit`, or `synrepo_entrypoints`.
-2. Use `tiny` cards to orient and route.
-3. Use `normal` cards to understand a neighborhood.
-4. Use `deep` cards only before writing code, or when exact source or body details matter.
+1. Start with `synrepo_orient` before reading the repo cold.
+2. Use `synrepo_find` or `synrepo_search` to find candidate files and symbols.
+3. Use `tiny` cards to route, `normal` cards to understand, and `deep` cards only before writing code.
+4. Use `synrepo_impact` before editing.
+5. Use `synrepo_tests` before claiming done.
+6. Use `synrepo_changed` after edits to review changed context and validation commands.
 
 Rule of thumb: `tiny` to find, `normal` to understand, `deep` to write.
 
@@ -52,6 +54,12 @@ Rule of thumb: `tiny` to find, `normal` to understand, `deep` to write.
 ## Core tools
 
 - `synrepo_overview()` — first call on an unfamiliar repo
+- `synrepo_orient()` — workflow alias for first-call orientation
+- `synrepo_find(task, limit?, budget_tokens?)` — workflow alias for finding candidate cards
+- `synrepo_explain(target, budget?, budget_tokens?)` — workflow alias for bounded card lookup
+- `synrepo_impact(target, budget?, budget_tokens?)` — workflow alias for risk before editing
+- `synrepo_tests(scope, budget?, budget_tokens?)` — workflow alias for test discovery
+- `synrepo_changed()` — workflow alias for changed-context review
 - `synrepo_card(target, budget?)` — card for a symbol or file
 - `synrepo_search(query, limit?)` — lexical search
 - `synrepo_docs_search(query, limit?)` — advisory advisory commentary search
