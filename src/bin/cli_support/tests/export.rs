@@ -106,6 +106,7 @@ fn export_succeeds_after_stale_watch_cleanup() {
 #[cfg(unix)]
 #[test]
 fn export_blocked_when_writer_flock_held_by_foreign_process() {
+    let _lock = synrepo::test_support::global_test_lock("cli-export-writer-lock");
     let dir = tempdir().unwrap();
     let repo = dir.path();
     bootstrap(repo, None, false).unwrap();
@@ -160,6 +161,7 @@ fn export_blocked_when_writer_flock_held_by_foreign_process() {
 #[cfg(unix)]
 #[test]
 fn sync_blocked_when_writer_flock_held_by_foreign_process() {
+    let _lock = synrepo::test_support::global_test_lock("cli-export-writer-lock");
     let dir = tempdir().unwrap();
     let repo = dir.path();
     bootstrap(repo, None, false).unwrap();

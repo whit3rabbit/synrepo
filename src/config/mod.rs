@@ -404,6 +404,7 @@ pub mod test_home {
 
     use std::ffi::OsString;
     use std::path::Path;
+    use std::sync::Mutex;
 
     /// Shared label for `crate::test_support::global_test_lock` — all tests
     /// that mutate the home-directory env var must serialize on this label.
@@ -414,15 +415,24 @@ pub mod test_home {
     #[cfg(windows)]
     const HOME_VAR: &str = "USERPROFILE";
 
+    static HOME_ENV_MUTEX: Mutex<()> = Mutex::new(());
+
     pub struct HomeEnvGuard {
         original: Option<OsString>,
+        _thread_guard: std::sync::MutexGuard<'static, ()>,
     }
 
     impl HomeEnvGuard {
         pub fn redirect_to(path: &Path) -> Self {
+            let thread_guard = HOME_ENV_MUTEX
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
             let original = std::env::var_os(HOME_VAR);
             std::env::set_var(HOME_VAR, path);
-            Self { original }
+            Self {
+                original,
+                _thread_guard: thread_guard,
+            }
         }
     }
 

@@ -1,4 +1,5 @@
 use std::fs;
+use std::ffi::OsString;
 use tempfile::tempdir;
 
 use crate::cli_support::agent_shims::{AgentTool, AutomationTier};
@@ -8,8 +9,30 @@ use crate::cli_support::commands::{
 };
 use synrepo::tui::wizard::setup::synthesis::{CloudProvider, LocalPreset};
 use synrepo::tui::{CloudCredentialSource, SynthesisChoice};
+use toml::Value;
 
-use super::HomeEnvGuard;
+const TEST_GLOBAL_CONFIG_PATH_ENV: &str = "SYNREPO_TEST_GLOBAL_CONFIG_PATH";
+
+struct GlobalConfigPathGuard {
+    original: Option<OsString>,
+}
+
+impl GlobalConfigPathGuard {
+    fn new(path: &std::path::Path) -> Self {
+        let original = std::env::var_os(TEST_GLOBAL_CONFIG_PATH_ENV);
+        std::env::set_var(TEST_GLOBAL_CONFIG_PATH_ENV, path);
+        Self { original }
+    }
+}
+
+impl Drop for GlobalConfigPathGuard {
+    fn drop(&mut self) {
+        match &self.original {
+            Some(value) => std::env::set_var(TEST_GLOBAL_CONFIG_PATH_ENV, value),
+            None => std::env::remove_var(TEST_GLOBAL_CONFIG_PATH_ENV),
+        }
+    }
+}
 
 #[test]
 fn step_init_runs_init_on_empty_repo() {
@@ -31,7 +54,11 @@ fn step_init_skips_when_already_initialized() {
 #[test]
 fn step_apply_synthesis_cloud_with_env_key_writes_only_repo_local_config() {
     let home = tempdir().unwrap();
-    let _home = HomeEnvGuard::new(home.path());
+    let _home_lock =
+        synrepo::test_support::global_test_lock(synrepo::config::test_home::HOME_ENV_TEST_LOCK);
+    let _home_guard = synrepo::config::test_home::HomeEnvGuard::redirect_to(home.path());
+    let _global_path_guard =
+        GlobalConfigPathGuard::new(&home.path().join(".synrepo/config.toml"));
     let repo = tempdir().unwrap();
     step_init(repo.path(), None, false, false).unwrap();
 
@@ -59,7 +86,11 @@ fn step_apply_synthesis_cloud_with_env_key_writes_only_repo_local_config() {
 #[test]
 fn step_apply_synthesis_cloud_with_new_key_saves_global_key_only() {
     let home = tempdir().unwrap();
-    let _home = HomeEnvGuard::new(home.path());
+    let _home_lock =
+        synrepo::test_support::global_test_lock(synrepo::config::test_home::HOME_ENV_TEST_LOCK);
+    let _home_guard = synrepo::config::test_home::HomeEnvGuard::redirect_to(home.path());
+    let _global_path_guard =
+        GlobalConfigPathGuard::new(&home.path().join(".synrepo/config.toml"));
     fs::create_dir_all(home.path().join(".synrepo")).unwrap();
     fs::write(
         home.path().join(".synrepo/config.toml"),
@@ -88,15 +119,33 @@ fn step_apply_synthesis_cloud_with_new_key_saves_global_key_only() {
     assert!(local.contains("provider = \"openai\""));
     assert!(!local.contains("openai_api_key"));
 
-    let global = fs::read_to_string(home.path().join(".synrepo/config.toml")).unwrap();
-    assert!(global.contains("openai_api_key = \"sk-entered-openai\""));
-    assert!(global.contains("local_preset = \"ollama\""));
+    let global_path = home.path().join(".synrepo/config.toml");
+    let global: Value = fs::read_to_string(&global_path)
+        .unwrap()
+        .parse()
+        .unwrap();
+    let synthesis = global
+        .get("synthesis")
+        .and_then(Value::as_table)
+        .expect("global config should keep a [synthesis] table");
+    assert_eq!(
+        synthesis.get("openai_api_key").and_then(Value::as_str),
+        Some("sk-entered-openai")
+    );
+    assert_eq!(
+        synthesis.get("local_preset").and_then(Value::as_str),
+        Some("ollama")
+    );
 }
 
 #[test]
 fn step_apply_synthesis_local_saves_endpoint_in_global_config() {
     let home = tempdir().unwrap();
-    let _home = HomeEnvGuard::new(home.path());
+    let _home_lock =
+        synrepo::test_support::global_test_lock(synrepo::config::test_home::HOME_ENV_TEST_LOCK);
+    let _home_guard = synrepo::config::test_home::HomeEnvGuard::redirect_to(home.path());
+    let _global_path_guard =
+        GlobalConfigPathGuard::new(&home.path().join(".synrepo/config.toml"));
     let repo = tempdir().unwrap();
     step_init(repo.path(), None, false, false).unwrap();
 

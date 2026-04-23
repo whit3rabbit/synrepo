@@ -5,6 +5,9 @@ use toml_edit::{DocumentMut, Item, Table, Value as TomlValue};
 
 use super::setup::StepOutcome;
 
+#[cfg(test)]
+const TEST_GLOBAL_CONFIG_PATH_ENV: &str = "SYNREPO_TEST_GLOBAL_CONFIG_PATH";
+
 const PROVIDER_KEY_FIELDS: &[&str] = &[
     "anthropic_api_key",
     "openai_api_key",
@@ -118,6 +121,11 @@ pub(crate) fn step_apply_synthesis(
 }
 
 fn global_config_path() -> anyhow::Result<std::path::PathBuf> {
+    #[cfg(test)]
+    if let Some(path) = std::env::var_os(TEST_GLOBAL_CONFIG_PATH_ENV) {
+        return Ok(std::path::PathBuf::from(path));
+    }
+
     synrepo::config::home_dir()
         .map(|home| home.join(".synrepo").join("config.toml"))
         .ok_or_else(|| anyhow!("cannot resolve home directory for ~/.synrepo/config.toml"))
