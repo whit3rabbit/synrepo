@@ -34,6 +34,17 @@ impl From<ModeArg> for Mode {
     }
 }
 
+/// Output format for `synrepo stats context`.
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+pub(crate) enum StatFormatArg {
+    /// Human-readable text summary (default).
+    Text,
+    /// Pretty-printed JSON of the raw metrics struct.
+    Json,
+    /// Prometheus text exposition (v0.0.4).
+    Prometheus,
+}
+
 #[derive(Clone, Copy, Debug, clap::ValueEnum)]
 pub(crate) enum CompactPolicyArg {
     Default,

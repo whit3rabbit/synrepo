@@ -76,8 +76,17 @@ pub(crate) enum Command {
     /// For a full onboarding flow (init + skill/instructions + MCP registration),
     /// use `synrepo setup`.
     AgentSetup {
-        /// Target agent CLI.
-        tool: AgentTool,
+        /// Target agent CLI. Omit when using `--only` or `--skip`.
+        #[arg(conflicts_with_all = ["only", "skip"])]
+        tool: Option<AgentTool>,
+        /// Comma-separated list of targets to set up. Mutually exclusive
+        /// with the positional `tool` argument and with `--skip`.
+        #[arg(long, value_delimiter = ',', conflicts_with = "skip")]
+        only: Vec<AgentTool>,
+        /// Apply to every known target except these. Comma-separated.
+        /// Mutually exclusive with the positional `tool` argument and with `--only`.
+        #[arg(long, value_delimiter = ',', conflicts_with = "only")]
+        skip: Vec<AgentTool>,
         /// Overwrite an existing skill or instructions file if one already exists.
         #[arg(long)]
         force: bool,
@@ -98,8 +107,18 @@ pub(crate) enum Command {
     /// and `--gitignore` flags only apply to the scripted flow; passing them
     /// without a tool is rejected.
     Setup {
-        /// Target client to set up. Omit to launch the interactive wizard.
+        /// Target client to set up. Omit to launch the interactive wizard,
+        /// or pair with `--only`/`--skip` for multi-client setup.
+        #[arg(conflicts_with_all = ["only", "skip"])]
         tool: Option<AgentTool>,
+        /// Comma-separated list of targets to set up in one pass. Mutually
+        /// exclusive with the positional `tool` argument and with `--skip`.
+        #[arg(long, value_delimiter = ',', conflicts_with = "skip")]
+        only: Vec<AgentTool>,
+        /// Apply setup to every known target except these. Comma-separated.
+        /// Mutually exclusive with the positional `tool` argument and `--only`.
+        #[arg(long, value_delimiter = ',', conflicts_with = "only")]
+        skip: Vec<AgentTool>,
         /// Force re-initialization and overwrite existing configs.
         #[arg(long)]
         force: bool,
@@ -351,6 +370,18 @@ pub(crate) enum Command {
 
     #[command(name = "watch-internal", hide = true)]
     WatchInternal,
+
+    /// Report only components whose status is not healthy. Exits non-zero if
+    /// any degraded component is found.
+    ///
+    /// Narrow aggregation view over the same status snapshot used by
+    /// `synrepo status` and the dashboard. Intended for CI hooks and
+    /// pre-commit checks where a process-level failure is the signal.
+    Doctor {
+        /// Emit structured JSON instead of the compact text report.
+        #[arg(long)]
+        json: bool,
+    },
 
     /// Open the guided operator dashboard.
     ///

@@ -41,7 +41,7 @@ pub(crate) enum AutomationTier {
 }
 
 /// Agent CLI target for shim generation.
-#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, clap::ValueEnum)]
 pub(crate) enum AgentTool {
     /// Claude Code — writes `.claude/skills/synrepo/SKILL.md`
     Claude,

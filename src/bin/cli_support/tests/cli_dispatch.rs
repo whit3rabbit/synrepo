@@ -261,7 +261,7 @@ fn stats_and_bench_context_parse() {
     assert!(
         matches!(
             stats.command,
-            Some(Command::Stats(StatsCommand::Context { json: true }))
+            Some(Command::Stats(StatsCommand::Context { json: true, .. }))
         ),
         "stats context --json should parse"
     );

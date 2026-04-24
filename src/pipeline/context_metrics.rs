@@ -88,6 +88,97 @@ impl ContextMetrics {
     pub fn record_changed_files(&mut self, count: usize) {
         self.changed_files_total += count as u64;
     }
+
+    /// Emit these metrics in Prometheus text exposition format (version 0.0.4).
+    ///
+    /// Names are prefixed `synrepo_` and counters carry the `_total` suffix
+    /// where appropriate. The metric set is intentionally stable: adding or
+    /// renaming a line is a breaking change for scrapers.
+    pub fn to_prometheus_text(&self) -> String {
+        use std::fmt::Write as _;
+        let mut out = String::new();
+
+        write_counter(
+            &mut out,
+            "synrepo_cards_served_total",
+            "Total number of card-shaped responses served.",
+            self.cards_served_total,
+        );
+        write_counter(
+            &mut out,
+            "synrepo_card_tokens_total",
+            "Sum of estimated tokens in served cards.",
+            self.card_tokens_total,
+        );
+        write_counter(
+            &mut out,
+            "synrepo_raw_file_tokens_total",
+            "Sum of estimated raw-file tokens that served cards replaced.",
+            self.raw_file_tokens_total,
+        );
+        write_counter(
+            &mut out,
+            "synrepo_estimated_tokens_saved_total",
+            "Sum of estimated tokens saved vs raw-file reads.",
+            self.estimated_tokens_saved_total,
+        );
+        write_counter(
+            &mut out,
+            "synrepo_stale_responses_total",
+            "Number of responses that surfaced stale advisory content.",
+            self.stale_responses_total,
+        );
+        write_counter(
+            &mut out,
+            "synrepo_truncation_applied_total",
+            "Number of responses that applied token-budget truncation.",
+            self.truncation_applied_total,
+        );
+        write_counter(
+            &mut out,
+            "synrepo_test_surface_hits_total",
+            "Number of test-surface responses with at least one discovered test.",
+            self.test_surface_hits_total,
+        );
+        write_counter(
+            &mut out,
+            "synrepo_changed_files_total",
+            "Number of changed files observed by synrepo_changed.",
+            self.changed_files_total,
+        );
+
+        writeln!(
+            out,
+            "# HELP synrepo_budget_tier_usage Count of card responses by budget tier."
+        )
+        .unwrap();
+        writeln!(out, "# TYPE synrepo_budget_tier_usage counter").unwrap();
+        for (tier, count) in &self.budget_tier_usage {
+            writeln!(
+                out,
+                "synrepo_budget_tier_usage{{tier=\"{}\"}} {}",
+                escape_label_value(tier),
+                count
+            )
+            .unwrap();
+        }
+
+        out
+    }
+}
+
+fn write_counter(out: &mut String, name: &str, help: &str, value: u64) {
+    use std::fmt::Write as _;
+    writeln!(out, "# HELP {name} {help}").unwrap();
+    writeln!(out, "# TYPE {name} counter").unwrap();
+    writeln!(out, "{name} {value}").unwrap();
+}
+
+fn escape_label_value(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
 }
 
 /// Load context metrics. Missing files return empty metrics.
@@ -191,5 +282,63 @@ mod tests {
         assert_eq!(metrics.estimated_tokens_saved_total, 900);
         assert_eq!(metrics.budget_tier_usage.get("tiny"), Some(&1));
         assert_eq!(metrics.context_query_latency_ms_avg(), 25.0);
+    }
+
+    #[test]
+    fn prometheus_output_matches_golden_string() {
+        let mut metrics = ContextMetrics::default();
+        metrics.cards_served_total = 3;
+        metrics.card_tokens_total = 240;
+        metrics.raw_file_tokens_total = 2_400;
+        metrics.estimated_tokens_saved_total = 2_160;
+        metrics.stale_responses_total = 1;
+        metrics.truncation_applied_total = 0;
+        metrics.test_surface_hits_total = 2;
+        metrics.changed_files_total = 4;
+        metrics.budget_tier_usage.insert("tiny".to_string(), 2);
+        metrics.budget_tier_usage.insert("normal".to_string(), 1);
+
+        let expected = "\
+# HELP synrepo_cards_served_total Total number of card-shaped responses served.\n\
+# TYPE synrepo_cards_served_total counter\n\
+synrepo_cards_served_total 3\n\
+# HELP synrepo_card_tokens_total Sum of estimated tokens in served cards.\n\
+# TYPE synrepo_card_tokens_total counter\n\
+synrepo_card_tokens_total 240\n\
+# HELP synrepo_raw_file_tokens_total Sum of estimated raw-file tokens that served cards replaced.\n\
+# TYPE synrepo_raw_file_tokens_total counter\n\
+synrepo_raw_file_tokens_total 2400\n\
+# HELP synrepo_estimated_tokens_saved_total Sum of estimated tokens saved vs raw-file reads.\n\
+# TYPE synrepo_estimated_tokens_saved_total counter\n\
+synrepo_estimated_tokens_saved_total 2160\n\
+# HELP synrepo_stale_responses_total Number of responses that surfaced stale advisory content.\n\
+# TYPE synrepo_stale_responses_total counter\n\
+synrepo_stale_responses_total 1\n\
+# HELP synrepo_truncation_applied_total Number of responses that applied token-budget truncation.\n\
+# TYPE synrepo_truncation_applied_total counter\n\
+synrepo_truncation_applied_total 0\n\
+# HELP synrepo_test_surface_hits_total Number of test-surface responses with at least one discovered test.\n\
+# TYPE synrepo_test_surface_hits_total counter\n\
+synrepo_test_surface_hits_total 2\n\
+# HELP synrepo_changed_files_total Number of changed files observed by synrepo_changed.\n\
+# TYPE synrepo_changed_files_total counter\n\
+synrepo_changed_files_total 4\n\
+# HELP synrepo_budget_tier_usage Count of card responses by budget tier.\n\
+# TYPE synrepo_budget_tier_usage counter\n\
+synrepo_budget_tier_usage{tier=\"normal\"} 1\n\
+synrepo_budget_tier_usage{tier=\"tiny\"} 2\n";
+
+        assert_eq!(metrics.to_prometheus_text(), expected);
+    }
+
+    #[test]
+    fn prometheus_output_is_empty_when_no_tiers() {
+        let metrics = ContextMetrics::default();
+        let text = metrics.to_prometheus_text();
+        assert!(text.contains("synrepo_cards_served_total 0"));
+        assert!(
+            !text.contains("synrepo_budget_tier_usage{"),
+            "budget tier block must emit no rows when the map is empty"
+        );
     }
 }

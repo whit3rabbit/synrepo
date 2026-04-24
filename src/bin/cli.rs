@@ -25,13 +25,18 @@ use cli_support::commands::prepare_mcp_state;
 #[cfg(test)]
 use cli_support::commands::report_reconcile_outcome;
 use cli_support::commands::{
-    agent_setup, bench_context, cards_alias, change_risk, check, compact, explain_alias, export,
-    findings, graph_query, graph_stats, handoffs, impact_alias, init, links_accept, links_list,
-    links_reject, links_review, node, notes_add, notes_audit, notes_forget, notes_link, notes_list,
-    notes_supersede, notes_verify, reconcile, remove, risks_alias, run_mcp_server, search, setup,
-    stats_context, status, sync, tests_alias, upgrade, watch, watch_internal, watch_status,
-    watch_stop,
+    agent_setup_many, bench_context, cards_alias, change_risk, check, compact, doctor,
+    explain_alias, export, findings, graph_query, graph_stats, handoffs, impact_alias, init,
+    links_accept, links_list, links_reject, links_review, node, notes_add, notes_audit,
+    notes_forget, notes_link, notes_list, notes_supersede, notes_verify, reconcile, remove,
+    resolve_tools, risks_alias, run_mcp_server, search, setup_many, stats_context, status, sync,
+    tests_alias, upgrade, watch, watch_internal, watch_status, watch_stop, StatFormat,
 };
+// Re-exported for `cli_support::tests::agent_setup` via `crate::agent_setup`.
+// cli.rs dispatches through `agent_setup_many` but the test binary compiles
+// without `cfg(test)`, so this import must be unconditional.
+#[allow(unused_imports)]
+use cli_support::commands::agent_setup;
 use cli_support::entry::{run_bare_entrypoint, run_dashboard_command};
 
 fn main() -> anyhow::Result<()> {
@@ -65,52 +70,63 @@ fn dispatch(command: Command, repo_root: &Path, tui_opts: TuiOptions) -> anyhow:
     match command {
         Command::Init { mode, gitignore } => init(repo_root, mode.map(Into::into), gitignore),
         Command::Status { json, recent, full } => status(repo_root, json, recent, full),
-        Command::AgentSetup { tool, force, regen } => agent_setup(repo_root, tool, force, regen),
+        Command::AgentSetup {
+            tool,
+            only,
+            skip,
+            force,
+            regen,
+        } => {
+            let targets = resolve_tools(tool, &only, &skip)?;
+            agent_setup_many(repo_root, &targets, force, regen)
+        }
         Command::Setup {
             tool,
+            only,
+            skip,
             force,
             explain,
             gitignore,
-        } => match tool {
-            Some(tool) => {
-                setup(repo_root, tool, force, gitignore)?;
+        } => {
+            let any_target = tool.is_some() || !only.is_empty() || !skip.is_empty();
+            if any_target {
+                let targets = resolve_tools(tool, &only, &skip)?;
+                setup_many(repo_root, &targets, force, gitignore)?;
                 if explain {
                     cli_support::setup_cmd::run_explain_step(repo_root, tui_opts)?;
                 }
-                Ok(())
+                return Ok(());
             }
-            None => {
-                // Wizard mode owns its own init/explain/gitignore handling
-                // via SetupPlan, so the scripted-only flags have no clean
-                // place to land. Fail loud rather than silently dropping.
-                let mut bad_flags = Vec::new();
-                if force {
-                    bad_flags.push("--force");
-                }
-                if explain {
-                    bad_flags.push("--explain");
-                }
-                if gitignore {
-                    bad_flags.push("--gitignore");
-                }
-                if !bad_flags.is_empty() {
-                    anyhow::bail!(
-                        "`synrepo setup` without a tool launches the interactive wizard; \
-                         {} only applies when a tool is passed (e.g. `synrepo setup claude {}`).",
-                        bad_flags.join(" / "),
-                        bad_flags.join(" "),
-                    );
-                }
-                if !stdout_is_tty() {
-                    eprintln!(
-                        "synrepo setup: interactive wizard requires a TTY. \
-                         Pass a tool for the scripted flow (e.g. `synrepo setup claude`)."
-                    );
-                    std::process::exit(2);
-                }
-                cli_support::setup_cmd::run_wizard_and_apply(repo_root, tui_opts)
+            // Wizard mode owns its own init/explain/gitignore handling via
+            // SetupPlan, so the scripted-only flags have no clean place to
+            // land. Fail loud rather than silently dropping.
+            let mut bad_flags = Vec::new();
+            if force {
+                bad_flags.push("--force");
             }
-        },
+            if explain {
+                bad_flags.push("--explain");
+            }
+            if gitignore {
+                bad_flags.push("--gitignore");
+            }
+            if !bad_flags.is_empty() {
+                anyhow::bail!(
+                    "`synrepo setup` without a tool launches the interactive wizard; \
+                     {} only applies when a tool is passed (e.g. `synrepo setup claude {}`).",
+                    bad_flags.join(" / "),
+                    bad_flags.join(" "),
+                );
+            }
+            if !stdout_is_tty() {
+                eprintln!(
+                    "synrepo setup: interactive wizard requires a TTY. \
+                     Pass a tool for the scripted flow (e.g. `synrepo setup claude`)."
+                );
+                std::process::exit(2);
+            }
+            cli_support::setup_cmd::run_wizard_and_apply(repo_root, tui_opts)
+        }
         Command::Reconcile => reconcile(repo_root),
         Command::Check { json } => check(repo_root, json),
         Command::Sync {
@@ -148,7 +164,9 @@ fn dispatch(command: Command, repo_root: &Path, tui_opts: TuiOptions) -> anyhow:
         Command::Impact { target, budget } => impact_alias(repo_root, &target, budget),
         Command::Tests { target, budget } => tests_alias(repo_root, &target, budget),
         Command::Risks { target, budget } => risks_alias(repo_root, &target, budget),
-        Command::Stats(StatsCommand::Context { json }) => stats_context(repo_root, json),
+        Command::Stats(StatsCommand::Context { format, json }) => {
+            stats_context(repo_root, StatFormat::from_cli(format, json))
+        }
         Command::Bench(BenchCommand::Context { tasks, json }) => {
             bench_context(repo_root, &tasks, json)
         }
@@ -328,6 +346,7 @@ fn dispatch(command: Command, repo_root: &Path, tui_opts: TuiOptions) -> anyhow:
         } => change_risk(repo_root, &target, budget.as_deref(), json),
         Command::Handoffs { limit, since, json } => handoffs(repo_root, limit, since, json),
         Command::WatchInternal => watch_internal(repo_root),
+        Command::Doctor { json } => doctor(repo_root, json),
         Command::Dashboard => run_dashboard_command(repo_root, tui_opts),
         Command::Mcp => run_mcp_server(repo_root),
         Command::Remove {

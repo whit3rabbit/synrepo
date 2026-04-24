@@ -9,6 +9,7 @@ use synrepo::surface::mcp::{cards, search};
 use walkdir::WalkDir;
 
 use super::mcp_runtime::prepare_state;
+use crate::cli_support::cli_args::StatFormatArg;
 
 pub(crate) fn cards_alias(
     repo_root: &Path,
@@ -73,19 +74,53 @@ pub(crate) fn risks_alias(
     impact_alias(repo_root, target, budget_tokens)
 }
 
-pub(crate) fn stats_context(repo_root: &Path, json_output: bool) -> anyhow::Result<()> {
+/// Output selector for `synrepo stats context`.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) enum StatFormat {
+    #[default]
+    Text,
+    Json,
+    Prometheus,
+}
+
+impl From<StatFormatArg> for StatFormat {
+    fn from(arg: StatFormatArg) -> Self {
+        match arg {
+            StatFormatArg::Text => StatFormat::Text,
+            StatFormatArg::Json => StatFormat::Json,
+            StatFormatArg::Prometheus => StatFormat::Prometheus,
+        }
+    }
+}
+
+impl StatFormat {
+    /// Resolve the effective format from the two CLI shapes: the new `--format`
+    /// flag and the legacy `--json` boolean. `--format` wins when set; `--json`
+    /// is the back-compat alias for `--format json`.
+    pub(crate) fn from_cli(format: Option<StatFormatArg>, json: bool) -> Self {
+        match (format, json) {
+            (Some(arg), _) => arg.into(),
+            (None, true) => StatFormat::Json,
+            (None, false) => StatFormat::Text,
+        }
+    }
+}
+
+pub(crate) fn stats_context(repo_root: &Path, format: StatFormat) -> anyhow::Result<()> {
     let synrepo_dir = Config::synrepo_dir(repo_root);
     let metrics = synrepo::pipeline::context_metrics::load(&synrepo_dir)?;
-    if json_output {
-        println!("{}", serde_json::to_string_pretty(&metrics)?);
-    } else {
-        println!("synrepo context stats");
-        println!("  cards served: {}", metrics.cards_served_total);
-        println!("  avg tokens/card: {:.1}", metrics.card_tokens_avg());
-        println!(
-            "  est. tokens avoided: {}",
-            metrics.estimated_tokens_saved_total
-        );
+    match format {
+        StatFormat::Json => println!("{}", serde_json::to_string_pretty(&metrics)?),
+        StatFormat::Prometheus => print!("{}", metrics.to_prometheus_text()),
+        StatFormat::Text => {
+            println!("synrepo context stats");
+            println!("  cards served: {}", metrics.cards_served_total);
+            println!("  avg tokens/card: {:.1}", metrics.card_tokens_avg());
+            println!(
+                "  est. tokens avoided: {}",
+                metrics.estimated_tokens_saved_total
+            );
+        }
     }
     Ok(())
 }

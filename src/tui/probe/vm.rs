@@ -12,6 +12,18 @@ pub enum Severity {
     Blocked,
 }
 
+impl Severity {
+    /// Stable lowercase tag used by `synrepo doctor` JSON output and any other
+    /// serializer that needs a consistent representation.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Severity::Healthy => "healthy",
+            Severity::Stale => "stale",
+            Severity::Blocked => "blocked",
+        }
+    }
+}
+
 /// Flattened header view model consumed by the header widget.
 #[derive(Clone, Debug)]
 pub struct HeaderVm {

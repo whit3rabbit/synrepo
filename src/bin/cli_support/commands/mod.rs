@@ -7,6 +7,7 @@ use super::graph::{check_store_ready, graph_query_output, graph_stats_output, no
 mod basic;
 mod compact;
 mod context;
+mod doctor;
 mod export;
 mod handoffs;
 mod links;
@@ -28,8 +29,9 @@ pub(crate) use basic::{agent_setup, change_risk, init};
 pub(crate) use compact::compact;
 pub(crate) use context::{
     bench_context, cards_alias, explain_alias, impact_alias, risks_alias, stats_context,
-    tests_alias,
+    tests_alias, StatFormat,
 };
+pub(crate) use doctor::doctor;
 pub(crate) use export::export;
 pub(crate) use handoffs::handoffs;
 pub(crate) use links::{findings, links_accept, links_list, links_reject, links_review};
@@ -48,7 +50,7 @@ pub(crate) use notes::{
 pub(crate) use notes::{notes_add_output, notes_list_output};
 pub(crate) use remove::remove;
 pub(crate) use repair::{check, reconcile, sync};
-pub(crate) use setup::setup;
+pub(crate) use setup::{agent_setup_many, resolve_tools, setup_many};
 #[cfg(test)]
 pub(crate) use setup::{
     setup_claude_mcp, setup_codex_mcp, setup_cursor_mcp, setup_opencode_mcp, setup_roo_mcp,

@@ -100,16 +100,9 @@ These must hold across all changes:
 - **Every `.rs` file must stay under 400 lines.** Split into a sub-module directory before exceeding that limit. **Over-limit (split before adding, rated by ease of split):**
 
   **Easy** (clear natural boundaries):
-  - `src/overlay/mod.rs` (579) — epistemic kinds, edge kinds, cited spans could split out
-  - `src/tui/mod.rs` (543) — components already partially modularized
-  - `src/tui/wizard/setup/state.rs` (518) — data structs mixed with wizard transition logic
-  - `src/bin/cli_support/commands/setup.rs` (492) — step outcomes mixed with setup logic
-  - `src/bin/cli_support/commands/status/mod.rs` (463)
-  - `src/bin/cli_support/cli_args.rs` (463)
-  - `src/bin/cli_support/commands/explain_ui.rs` (454) — progress rendering mixed with telemetry
-  - `src/tui/probe.rs` (426) — view models mixed with conversion logic
-  - `src/surface/card/compiler/public_api.rs` (417) — compilation mixed with per-language visibility rules
-  - `src/surface/status_snapshot.rs` (446) — complex data structures mixed with snapshot building
+  - `src/overlay/mod.rs` (315) — epistemic kinds, edge kinds, cited spans could split out
+  - `src/tui/mod.rs` (331) — components already partially modularized
+  - `src/tui/wizard/setup/state.rs` (404) — data structs mixed with wizard transition logic
 
   **Medium** (separable but interdependent):
   - `src/substrate/embedding/index.rs` (535)
@@ -120,7 +113,7 @@ These must hold across all changes:
   **Hard** (tightly coupled, needs design thought):
   - `src/pipeline/structural/stage4.rs` (820) — monolithic resolution algorithm with coupled scoring
 
-  **Watchlist (370-399, approaching limit):** `src/pipeline/watch/service.rs` (391), `src/pipeline/explain/docs/corpus.rs` (391), `src/tui/app/explain_picker.rs` (390), `src/pipeline/writer/helpers.rs` (390), `src/substrate/incremental.rs` (387), `src/pipeline/git/mod.rs` (382), `src/tui/wizard/setup/render/explain.rs` (381), `src/bin/cli_support/commands/watch.rs` (375), `src/substrate/index.rs` (374), `src/store/overlay/commentary.rs` (372), `src/tui/watcher.rs` (371).
+  **Watchlist (370-399, approaching limit):** `src/pipeline/watch/service.rs` (391), `src/pipeline/explain/docs/corpus.rs` (391), `src/tui/app/explain_picker.rs` (390), `src/pipeline/writer/helpers.rs` (390), `src/substrate/incremental.rs` (400), `src/pipeline/git/mod.rs` (382), `src/tui/wizard/setup/render/explain.rs` (381), `src/bin/cli_support/commands/watch.rs` (375), `src/substrate/index.rs` (374), `src/store/overlay/commentary.rs` (429), `src/tui/watcher.rs` (377).
 
 - **`src/structure/parse/extract/` is already a sub-module directory** (`mod.rs` ~363 lines, `qualname.rs` ~88). Do not add more code to `mod.rs` without splitting further.
 - **`src/tui/app/` sub-modules can own `impl AppState` blocks** for feature-specific state and handlers (see `explain_picker.rs` for the folder-picker modal). Keep `AppState` fields on the struct in `mod.rs`; put feature methods, helpers, and tests in the submodule.
