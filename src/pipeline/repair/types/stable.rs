@@ -20,6 +20,8 @@ pub enum RepairSurface {
     /// Proposed cross-link overlay entries (LLM-proposed prose↔code links in
     /// `.synrepo/overlay/overlay.db`).
     ProposedLinksOverlay,
+    /// Advisory agent notes in `.synrepo/overlay/overlay.db`.
+    AgentNotesOverlay,
     /// Export directory freshness tracked via the export manifest.
     ExportSurface,
     /// Graph edges whose drift score indicates structural divergence.
@@ -39,6 +41,7 @@ impl RepairSurface {
             Self::StaleRationale => "stale_rationale",
             Self::CommentaryOverlayEntries => "commentary_overlay_entries",
             Self::ProposedLinksOverlay => "proposed_links_overlay",
+            Self::AgentNotesOverlay => "agent_notes_overlay",
             Self::ExportSurface => "export_surface",
             Self::EdgeDrift => "edge_drift",
             Self::RetiredObservations => "retired_observations",
@@ -139,6 +142,8 @@ pub enum RepairAction {
     RevalidateLinks,
     /// Re-run `write_exports` to refresh the stale export directory.
     RegenerateExports,
+    /// Mark drifted advisory notes stale so normal retrieval labels them.
+    RevalidateAgentNotes,
     /// Run compaction to physically delete retired observations older than
     /// the configured retention window.
     CompactRetired,
@@ -157,6 +162,7 @@ impl RepairAction {
             Self::RefreshCommentary => "refresh_commentary",
             Self::RevalidateLinks => "revalidate_links",
             Self::RegenerateExports => "regenerate_exports",
+            Self::RevalidateAgentNotes => "revalidate_agent_notes",
             Self::CompactRetired => "compact_retired",
         }
     }

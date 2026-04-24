@@ -2,50 +2,18 @@
 //! `crate::surface::status_snapshot` for widget consumption. Kept narrow so
 //! widgets don't import ratatui types into the probe modules.
 
+mod vm;
+pub use vm::*;
+
+#[cfg(test)]
+mod tests;
+
 use crate::bootstrap::runtime_probe::{AgentIntegration, AgentTargetKind};
 use crate::config::home_dir;
 use crate::pipeline::diagnostics::{ReconcileHealth, WriterStatus};
 use crate::pipeline::explain::ExplainStatus;
 use crate::pipeline::watch::WatchServiceStatus;
 use crate::surface::status_snapshot::StatusSnapshot;
-
-/// Severity tag used by the dashboard to pick a color token and pane ordering.
-/// `Healthy` is the baseline; `Stale` and `Blocked` escalate attention.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Severity {
-    /// Healthy, no action required.
-    Healthy,
-    /// Stale or degraded, worth noting but not blocking.
-    Stale,
-    /// Blocked or error — operator action required.
-    Blocked,
-}
-
-/// Flattened header view model consumed by the header widget.
-#[derive(Clone, Debug)]
-pub struct HeaderVm {
-    /// Human-readable repo path.
-    pub repo_display: String,
-    /// Mode label (`auto`, `curated`, `unknown`).
-    pub mode_label: String,
-    /// Reconcile health summary.
-    pub reconcile_label: String,
-    /// Reconcile severity.
-    pub reconcile_severity: Severity,
-    /// Watch summary.
-    pub watch_label: String,
-    /// Watch severity (Healthy when running, Stale when inactive, Blocked on
-    /// corrupt state).
-    pub watch_severity: Severity,
-    /// Writer-lock summary.
-    pub lock_label: String,
-    /// Writer-lock severity.
-    pub lock_severity: Severity,
-    /// MCP readiness label ("registered", "instructions only", "absent", "n/a").
-    pub mcp_label: String,
-    /// MCP severity.
-    pub mcp_severity: Severity,
-}
 
 /// Build a header view model from a pre-built status snapshot and the probe's
 /// agent-integration signal.
@@ -127,24 +95,6 @@ pub fn build_header_vm(
     }
 }
 
-/// Flattened system-health view model.
-#[derive(Clone, Debug)]
-pub struct HealthVm {
-    /// Rows rendered top-to-bottom.
-    pub rows: Vec<HealthRow>,
-}
-
-/// One row in the system-health pane.
-#[derive(Clone, Debug)]
-pub struct HealthRow {
-    /// Label on the left.
-    pub label: String,
-    /// Value on the right.
-    pub value: String,
-    /// Severity driving color.
-    pub severity: Severity,
-}
-
 /// Build a system-health view model from a status snapshot.
 pub fn build_health_vm(snapshot: &StatusSnapshot) -> HealthVm {
     let mut rows: Vec<HealthRow> = Vec::new();
@@ -208,6 +158,21 @@ pub fn build_health_vm(snapshot: &StatusSnapshot) -> HealthVm {
                 metrics.card_tokens_avg()
             ),
             severity: Severity::Healthy,
+        });
+        rows.push(HealthRow {
+            label: "tokens avoided".to_string(),
+            value: format!("{} est.", metrics.estimated_tokens_saved_total),
+            severity: Severity::Healthy,
+        });
+        let stale_severity = if metrics.stale_responses_total > 0 {
+            Severity::Stale
+        } else {
+            Severity::Healthy
+        };
+        rows.push(HealthRow {
+            label: "stale responses".to_string(),
+            value: metrics.stale_responses_total.to_string(),
+            severity: stale_severity,
         });
     }
 
@@ -287,24 +252,6 @@ pub fn build_health_vm(snapshot: &StatusSnapshot) -> HealthVm {
     HealthVm { rows }
 }
 
-/// Recent-activity entry reshaped for rendering.
-#[derive(Clone, Debug)]
-pub struct ActivityVmEntry {
-    /// RFC-3339 timestamp; empty when unknown.
-    pub timestamp: String,
-    /// Short event kind tag.
-    pub kind: String,
-    /// One-line payload.
-    pub payload: String,
-}
-
-/// Recent-activity view model.
-#[derive(Clone, Debug, Default)]
-pub struct ActivityVm {
-    /// Entries newest-first.
-    pub entries: Vec<ActivityVmEntry>,
-}
-
 /// Build a recent-activity view model. Uses snapshot entries when the caller
 /// already opted into `recent`; otherwise returns empty.
 pub fn build_activity_vm(snapshot: &StatusSnapshot) -> ActivityVm {
@@ -321,15 +268,6 @@ pub fn build_activity_vm(snapshot: &StatusSnapshot) -> ActivityVm {
             })
             .collect(),
     }
-}
-
-/// One recommended next-action derived from health signals.
-#[derive(Clone, Debug)]
-pub struct NextAction {
-    /// Short label.
-    pub label: String,
-    /// Severity-driven ordering hint.
-    pub severity: Severity,
 }
 
 /// Derive next-actions from a snapshot + integration signal.

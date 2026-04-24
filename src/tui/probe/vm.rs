@@ -1,0 +1,84 @@
+//! View model struct definitions for the probe module.
+
+/// Severity tag used by the dashboard to pick a color token and pane ordering.
+/// `Healthy` is the baseline; `Stale` and `Blocked` escalate attention.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Severity {
+    /// Healthy, no action required.
+    Healthy,
+    /// Stale or degraded, worth noting but not blocking.
+    Stale,
+    /// Blocked or error — operator action required.
+    Blocked,
+}
+
+/// Flattened header view model consumed by the header widget.
+#[derive(Clone, Debug)]
+pub struct HeaderVm {
+    /// Human-readable repo path.
+    pub repo_display: String,
+    /// Mode label (`auto`, `curated`, `unknown`).
+    pub mode_label: String,
+    /// Reconcile health summary.
+    pub reconcile_label: String,
+    /// Reconcile severity.
+    pub reconcile_severity: Severity,
+    /// Watch summary.
+    pub watch_label: String,
+    /// Watch severity (Healthy when running, Stale when inactive, Blocked on
+    /// corrupt state).
+    pub watch_severity: Severity,
+    /// Writer-lock summary.
+    pub lock_label: String,
+    /// Writer-lock severity.
+    pub lock_severity: Severity,
+    /// MCP readiness label ("registered", "instructions only", "absent", "n/a").
+    pub mcp_label: String,
+    /// MCP severity.
+    pub mcp_severity: Severity,
+}
+
+/// Flattened system-health view model.
+#[derive(Clone, Debug)]
+pub struct HealthVm {
+    /// Rows rendered top-to-bottom.
+    pub rows: Vec<HealthRow>,
+}
+
+/// One row in the system-health pane.
+#[derive(Clone, Debug)]
+pub struct HealthRow {
+    /// Label on the left.
+    pub label: String,
+    /// Value on the right.
+    pub value: String,
+    /// Severity driving color.
+    pub severity: Severity,
+}
+
+/// Recent-activity entry reshaped for rendering.
+#[derive(Clone, Debug)]
+pub struct ActivityVmEntry {
+    /// RFC-3339 timestamp; empty when unknown.
+    pub timestamp: String,
+    /// Short event kind tag.
+    pub kind: String,
+    /// One-line payload.
+    pub payload: String,
+}
+
+/// Recent-activity view model.
+#[derive(Clone, Debug, Default)]
+pub struct ActivityVm {
+    /// Entries newest-first.
+    pub entries: Vec<ActivityVmEntry>,
+}
+
+/// One recommended next-action derived from health signals.
+#[derive(Clone, Debug)]
+pub struct NextAction {
+    /// Short label.
+    pub label: String,
+    /// Severity-driven ordering hint.
+    pub severity: Severity,
+}

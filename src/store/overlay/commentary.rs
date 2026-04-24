@@ -164,6 +164,63 @@ impl OverlayStore for SqliteOverlayStore {
         }
     }
 
+    fn insert_note(
+        &mut self,
+        note: crate::overlay::AgentNote,
+    ) -> crate::Result<crate::overlay::AgentNote> {
+        self.insert_note_impl(note)
+    }
+
+    fn query_notes(
+        &self,
+        query: crate::overlay::AgentNoteQuery,
+    ) -> crate::Result<Vec<crate::overlay::AgentNote>> {
+        self.query_notes_impl_trait(query)
+    }
+
+    fn note_by_id(&self, note_id: &str) -> crate::Result<Option<crate::overlay::AgentNote>> {
+        self.note_by_id_impl(note_id)
+    }
+
+    fn link_note(&mut self, from_note: &str, to_note: &str, actor: &str) -> crate::Result<()> {
+        self.link_note_impl(from_note, to_note, actor)
+    }
+
+    fn supersede_note(
+        &mut self,
+        old_note: &str,
+        replacement: crate::overlay::AgentNote,
+        actor: &str,
+    ) -> crate::Result<crate::overlay::AgentNote> {
+        self.supersede_note_impl(old_note, replacement, actor)
+    }
+
+    fn forget_note(
+        &mut self,
+        note_id: &str,
+        actor: &str,
+        reason: Option<&str>,
+    ) -> crate::Result<()> {
+        self.forget_note_impl(note_id, actor, reason)
+    }
+
+    fn verify_note(
+        &mut self,
+        note_id: &str,
+        actor: &str,
+        graph_revision: Option<u64>,
+    ) -> crate::Result<crate::overlay::AgentNote> {
+        self.verify_note_impl(note_id, actor, graph_revision)
+    }
+
+    fn mark_stale_notes(&mut self, stale_note_ids: &[String], actor: &str) -> crate::Result<usize> {
+        self.mark_stale_notes_impl(stale_note_ids, actor)
+    }
+
+    fn note_counts(&self) -> crate::Result<crate::overlay::AgentNoteCounts> {
+        self.note_counts_impl()
+    }
+
     fn prune_orphans(&mut self, live_nodes: &[NodeId]) -> crate::Result<usize> {
         let live: HashSet<String> = live_nodes.iter().map(|id| id.to_string()).collect();
 

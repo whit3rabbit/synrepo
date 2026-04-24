@@ -57,6 +57,7 @@ pub(super) fn assemble_repair_report(
         &surfaces::StructuralRefreshCheck,
         &surfaces::DeclaredLinksCheck,
         &surfaces::CommentaryOverlayCheck,
+        &surfaces::AgentNotesOverlayCheck,
         &surfaces::ExportSurfaceCheck,
         &surfaces::EdgeDriftCheck,
         &surfaces::RetiredObservationsCheck,

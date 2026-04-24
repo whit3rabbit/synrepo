@@ -236,10 +236,9 @@ fn apply_card_set_cap(
     let mut any_marked = false;
 
     for (idx, card) in cards.iter_mut().enumerate() {
-        let Some(accounting) = card
-            .get("context_accounting")
-            .and_then(|v| serde_json::from_value::<crate::surface::card::ContextAccounting>(v.clone()).ok())
-        else {
+        let Some(accounting) = card.get("context_accounting").and_then(|v| {
+            serde_json::from_value::<crate::surface::card::ContextAccounting>(v.clone()).ok()
+        }) else {
             continue;
         };
         let tokens = accounting.token_estimate;

@@ -173,3 +173,10 @@ synrepo's dashboard SHALL ship exactly one built-in dark palette in v1, with a s
 - **WHEN** the dashboard is opened with `--no-color` or in a terminal that does not support ANSI color
 - **THEN** all output renders without color codes
 - **AND** semantic distinctions (healthy vs. stale vs. blocked) are preserved via text labels or glyphs
+
+### Requirement: Surface context metrics in operator views
+The shared status snapshot SHALL include context metrics so `synrepo status --json` and the dashboard can report card usage and context savings without duplicating logic.
+
+#### Scenario: Dashboard renders context metrics
+- **WHEN** the dashboard opens on a ready repository
+- **THEN** it can display cards served, average card tokens, estimated raw-file tokens avoided, stale-card counts, and budget tier usage from the shared status snapshot

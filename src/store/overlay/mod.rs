@@ -5,6 +5,7 @@
 //! at `.synrepo/graph/nodes.db`. No code path writes commentary data to the
 //! graph, or graph data to the overlay.
 
+mod agent_notes;
 mod commentary;
 mod cross_link_audit;
 mod cross_links;
@@ -16,6 +17,7 @@ mod findings_tests;
 #[cfg(test)]
 mod tests;
 
+pub use agent_notes::current_drifted_note_ids;
 pub use commentary::derive_freshness;
 pub use cross_link_audit::AuditRow;
 pub use cross_links::{CrossLinkHashRow, CrossLinkStateCounts, PendingPromotionRow};
@@ -25,7 +27,7 @@ pub use findings::{
 };
 
 /// Current overlay schema version shipped by this binary (v1: commentary-only;
-/// v2: commentary + cross-links).
+/// v2: commentary + cross-links; v3: agent notes).
 pub const CURRENT_SCHEMA_VERSION: u32 = schema::CURRENT_SCHEMA_VERSION;
 
 use parking_lot::Mutex;

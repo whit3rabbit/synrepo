@@ -49,3 +49,11 @@ This store is for operator visibility and system health monitoring. It must neve
 - **WHEN** the telemetry store is read by any pipeline component
 - **THEN** the read must be rejected at the retrieval layer with an explicit boundary violation
 - **AND** telemetry data must never appear as provenance or epistemic input to any graph node or edge
+
+### Requirement: Require benchmark-backed context claims
+synrepo SHALL only make numeric context-savings claims when backed by reproducible benchmark output.
+
+#### Scenario: README reports context savings
+- **WHEN** documentation includes a numeric context-savings percentage
+- **THEN** the claim cites benchmark dimensions including reduction ratio, target hit rate, stale rate, latency, and test-link coverage
+- **AND** unbenchmarked wording stays qualitative

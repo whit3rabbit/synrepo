@@ -12,6 +12,7 @@ mod handoffs;
 mod links;
 pub(crate) mod mcp;
 mod mcp_runtime;
+mod notes;
 mod remove;
 mod repair;
 mod setup;
@@ -40,6 +41,11 @@ pub(crate) use links::{
 #[cfg(test)]
 pub(crate) use mcp_runtime::prepare_state as prepare_mcp_state;
 pub(crate) use mcp_runtime::run_mcp_server;
+pub(crate) use notes::{
+    notes_add, notes_audit, notes_forget, notes_link, notes_list, notes_supersede, notes_verify,
+};
+#[cfg(test)]
+pub(crate) use notes::{notes_add_output, notes_list_output};
 pub(crate) use remove::remove;
 pub(crate) use repair::{check, reconcile, sync};
 pub(crate) use setup::setup;

@@ -3,13 +3,16 @@
 //! Pure declarative clap derives with zero runtime logic.
 //! The dispatcher lives in `cli.rs`.
 
+mod convert;
+mod subcommands;
+
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
-use synrepo::config::Mode;
-use synrepo::pipeline::export::ExportFormat;
-use synrepo::pipeline::maintenance::CompactPolicy;
 
 use super::agent_shims::AgentTool;
+
+pub(crate) use convert::*;
+pub(crate) use subcommands::*;
 
 #[derive(Parser)]
 #[command(name = "synrepo")]
@@ -265,6 +268,10 @@ pub(crate) enum Command {
     #[command(subcommand)]
     Links(LinksCommand),
 
+    /// Advisory overlay agent notes.
+    #[command(subcommand)]
+    Notes(NotesCommand),
+
     /// Evaluate and apply storage compatibility actions for `.synrepo/`.
     ///
     /// Dry-run by default: prints a plan table (store, action, reason) and exits.
@@ -385,135 +392,4 @@ pub(crate) enum Command {
         #[arg(long)]
         force: bool,
     },
-}
-
-#[derive(Subcommand)]
-pub(crate) enum WatchCommand {
-    /// Show watch-service status for the current repo.
-    Status,
-    /// Stop the active watch service for the current repo.
-    Stop,
-}
-
-#[derive(Subcommand)]
-pub(crate) enum LinksCommand {
-    /// List all generated proposed cross-links.
-    List {
-        /// Filter by confidence tier
-        #[arg(long)]
-        tier: Option<String>,
-        /// Maximum number of candidates to return (default 50; pass 0 to disable the cap).
-        #[arg(long)]
-        limit: Option<usize>,
-        /// Emit JSON instead of human-readable output
-        #[arg(long)]
-        json: bool,
-    },
-    /// Review review-queue candidates awaiting manual acceptance.
-    Review {
-        /// Maximum number of candidates to return
-        #[arg(long)]
-        limit: Option<usize>,
-        /// Emit JSON instead of human-readable output
-        #[arg(long)]
-        json: bool,
-    },
-    /// Accept a proposed cross-link and mutate graph edge (curated mode).
-    Accept {
-        /// The candidate UUID string
-        candidate_id: String,
-        /// Optional reviewer identity
-        #[arg(long)]
-        reviewer: Option<String>,
-    },
-    /// Reject a proposed cross-link.
-    Reject {
-        /// The candidate UUID string
-        candidate_id: String,
-        /// Optional reviewer identity
-        #[arg(long)]
-        reviewer: Option<String>,
-    },
-}
-
-#[derive(Subcommand)]
-pub(crate) enum GraphCommand {
-    /// Run a narrow traversal query against the graph store.
-    Query {
-        /// Query syntax: `<direction> <node_id> [edge_kind]`.
-        q: String,
-    },
-
-    /// Print graph statistics (node count by type, edge count by kind).
-    Stats,
-}
-
-#[derive(Subcommand)]
-pub(crate) enum StatsCommand {
-    /// Context-serving metrics.
-    Context {
-        /// Emit JSON instead of human-readable output.
-        #[arg(long)]
-        json: bool,
-    },
-}
-
-#[derive(Subcommand)]
-pub(crate) enum BenchCommand {
-    /// Benchmark context savings and target hit rate.
-    Context {
-        /// Glob for JSON task fixtures.
-        #[arg(long)]
-        tasks: String,
-        /// Emit JSON instead of human-readable output.
-        #[arg(long)]
-        json: bool,
-    },
-}
-
-#[derive(Clone, Copy, Debug, clap::ValueEnum)]
-pub(crate) enum ModeArg {
-    Auto,
-    Curated,
-}
-
-#[derive(Clone, Copy, Debug, clap::ValueEnum)]
-pub(crate) enum ExportFormatArg {
-    Markdown,
-    Json,
-}
-
-impl From<ExportFormatArg> for ExportFormat {
-    fn from(arg: ExportFormatArg) -> Self {
-        match arg {
-            ExportFormatArg::Markdown => ExportFormat::Markdown,
-            ExportFormatArg::Json => ExportFormat::Json,
-        }
-    }
-}
-
-impl From<ModeArg> for Mode {
-    fn from(mode: ModeArg) -> Self {
-        match mode {
-            ModeArg::Auto => Mode::Auto,
-            ModeArg::Curated => Mode::Curated,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, clap::ValueEnum)]
-pub(crate) enum CompactPolicyArg {
-    Default,
-    Aggressive,
-    AuditHeavy,
-}
-
-impl From<CompactPolicyArg> for CompactPolicy {
-    fn from(arg: CompactPolicyArg) -> Self {
-        match arg {
-            CompactPolicyArg::Default => CompactPolicy::Default,
-            CompactPolicyArg::Aggressive => CompactPolicy::Aggressive,
-            CompactPolicyArg::AuditHeavy => CompactPolicy::AuditHeavy,
-        }
-    }
 }

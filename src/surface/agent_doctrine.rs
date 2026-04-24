@@ -27,7 +27,7 @@ synrepo is a code-context compiler. When `.synrepo/` exists in the repo root, pr
 1. Start with `synrepo_orient` before reading the repo cold.
 2. Use `synrepo_find` or `synrepo_search` to find candidate files and symbols.
 3. Use `tiny` cards to route, `normal` cards to understand, and `deep` cards only before writing code.
-4. Use `synrepo_impact` before editing and `synrepo_tests` before claiming done.
+4. Use `synrepo_impact` (or its shorthand `synrepo_risks`) before editing and `synrepo_tests` before claiming done.
 5. Use `synrepo_changed` after edits to review changed context and validation commands.
 
 Overlay commentary, explain docs, and proposed cross-links are advisory, labeled machine-authored, and freshness-sensitive. Treat stale labels as information, not as errors. **Refresh is explicit**: every tool returns what is currently in the overlay. To get fresh commentary after a code change, you must call `synrepo_refresh_commentary(target)`.

@@ -1,3 +1,4 @@
+mod agent_notes;
 mod commentary;
 mod cross_links;
 mod drift;
@@ -12,6 +13,7 @@ use crate::pipeline::repair::{
 
 use super::{RepairContext, SurfaceCheck};
 
+pub use agent_notes::AgentNotesOverlayCheck;
 pub use commentary::{scan_commentary_staleness, CommentaryOverlayCheck, CommentaryScan};
 pub use cross_links::ProposedLinksOverlayCheck;
 pub use drift::{EdgeDriftCheck, RetiredObservationsCheck};

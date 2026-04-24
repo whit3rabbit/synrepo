@@ -8,7 +8,9 @@
 
 use clap::Parser;
 
-use super::super::cli_args::{BenchCommand, Cli, Command, StatsCommand, WatchCommand};
+use super::super::cli_args::{
+    BenchCommand, Cli, Command, NotesCommand, StatsCommand, WatchCommand,
+};
 
 fn parse(args: &[&str]) -> Cli {
     let mut full = vec!["synrepo"];
@@ -174,6 +176,25 @@ fn mcp_dispatches_to_mcp_variant() {
         matches!(cli.command, Some(Command::Mcp)),
         "mcp should parse to Command::Mcp"
     );
+}
+
+#[test]
+fn notes_add_dispatches_to_notes_variant() {
+    let cli = parse(&[
+        "notes",
+        "add",
+        "--target-kind",
+        "path",
+        "--target",
+        "src/lib.rs",
+        "--claim",
+        "The file owns CLI dispatch.",
+        "--json",
+    ]);
+    let Some(Command::Notes(NotesCommand::Add { json, .. })) = cli.command else {
+        panic!("notes add should parse");
+    };
+    assert!(json);
 }
 
 #[test]

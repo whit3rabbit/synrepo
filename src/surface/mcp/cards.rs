@@ -24,6 +24,9 @@ pub struct CardParams {
     /// cards before returning.
     #[serde(default)]
     pub budget_tokens: Option<usize>,
+    /// Include bounded advisory agent notes under `advisory_notes`.
+    #[serde(default)]
+    pub include_notes: bool,
 }
 
 pub fn default_budget() -> String {
@@ -126,6 +129,7 @@ pub fn handle_card(
     target: String,
     budget: String,
     budget_tokens: Option<usize>,
+    include_notes: bool,
 ) -> String {
     let start = Instant::now();
     let budget = parse_budget(&budget);
@@ -145,7 +149,16 @@ pub fn handle_card(
                     compiler.reader(),
                     budget,
                 )?;
-                Ok(finalize_card_json(state, json_val, budget_tokens, start, false))
+                if include_notes {
+                    super::notes::attach_agent_notes(state, &mut json_val, NodeId::Symbol(sym_id))?;
+                }
+                Ok(finalize_card_json(
+                    state,
+                    json_val,
+                    budget_tokens,
+                    start,
+                    false,
+                ))
             }
             NodeId::File(file_id) => {
                 let card = compiler.file_card(file_id, budget)?;
@@ -156,7 +169,16 @@ pub fn handle_card(
                     compiler.reader(),
                     budget,
                 )?;
-                Ok(finalize_card_json(state, json_val, budget_tokens, start, false))
+                if include_notes {
+                    super::notes::attach_agent_notes(state, &mut json_val, NodeId::File(file_id))?;
+                }
+                Ok(finalize_card_json(
+                    state,
+                    json_val,
+                    budget_tokens,
+                    start,
+                    false,
+                ))
             }
             NodeId::Concept(concept_id) => {
                 let concept = compiler

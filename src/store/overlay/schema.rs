@@ -11,6 +11,8 @@
 //! - `v1`: commentary-only (commentary table + index)
 //! - `v2`: commentary + cross-links (adds `cross_links`, `cross_link_audit`
 //!   tables)
+//! - `v3`: agent notes (adds `agent_notes`, `agent_note_transitions`,
+//!   and `agent_note_links`)
 //!
 //! Migrations from v1 to v2 are additive and non-destructive: they run
 //! `CREATE TABLE IF NOT EXISTS` for the new tables and bump the stored
@@ -19,7 +21,7 @@
 use rusqlite::Connection;
 
 /// Current overlay schema version shipped by this binary.
-pub(super) const CURRENT_SCHEMA_VERSION: u32 = 2;
+pub(super) const CURRENT_SCHEMA_VERSION: u32 = 3;
 
 pub(super) fn init_schema(conn: &Connection) -> crate::Result<()> {
     conn.execute_batch(
@@ -98,6 +100,65 @@ pub(super) fn init_schema(conn: &Connection) -> crate::Result<()> {
 
         CREATE INDEX IF NOT EXISTS idx_cross_link_audit_endpoints
             ON cross_link_audit(from_node, to_node, kind);
+
+        CREATE TABLE IF NOT EXISTS agent_notes (
+            note_id TEXT PRIMARY KEY,
+            target_kind TEXT NOT NULL,
+            target_id TEXT NOT NULL,
+            claim TEXT NOT NULL,
+            evidence_json TEXT NOT NULL,
+            created_by TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            confidence TEXT NOT NULL,
+            status TEXT NOT NULL,
+            source_hashes_json TEXT NOT NULL,
+            graph_revision INTEGER,
+            expires_on_drift INTEGER NOT NULL,
+            supersedes_json TEXT NOT NULL,
+            superseded_by TEXT,
+            verified_at TEXT,
+            verified_by TEXT,
+            invalidated_by TEXT,
+            source_store TEXT NOT NULL DEFAULT 'overlay',
+            advisory INTEGER NOT NULL DEFAULT 1
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_agent_notes_target
+            ON agent_notes(target_kind, target_id);
+        CREATE INDEX IF NOT EXISTS idx_agent_notes_status
+            ON agent_notes(status);
+        CREATE INDEX IF NOT EXISTS idx_agent_notes_updated_at
+            ON agent_notes(updated_at);
+
+        CREATE TABLE IF NOT EXISTS agent_note_transitions (
+            id INTEGER PRIMARY KEY,
+            note_id TEXT NOT NULL,
+            action TEXT NOT NULL,
+            previous_status TEXT,
+            new_status TEXT NOT NULL,
+            actor TEXT NOT NULL,
+            reason TEXT,
+            related_note TEXT,
+            happened_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_agent_note_transitions_note
+            ON agent_note_transitions(note_id);
+
+        CREATE TABLE IF NOT EXISTS agent_note_links (
+            id INTEGER PRIMARY KEY,
+            from_note TEXT NOT NULL,
+            to_note TEXT NOT NULL,
+            actor TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(from_note, to_note)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_agent_note_links_from
+            ON agent_note_links(from_note);
+        CREATE INDEX IF NOT EXISTS idx_agent_note_links_to
+            ON agent_note_links(to_note);
         ",
     )?;
 

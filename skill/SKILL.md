@@ -30,7 +30,7 @@ Do not use synrepo for:
 1. Start with `synrepo_orient` before reading the repo cold.
 2. Use `synrepo_find` or `synrepo_search` to find candidate files and symbols.
 3. Use `tiny` cards to route, `normal` cards to understand, and `deep` cards only before writing code.
-4. Use `synrepo_impact` before editing.
+4. Use `synrepo_impact` (or its shorthand `synrepo_risks`) before editing.
 5. Use `synrepo_tests` before claiming done.
 6. Use `synrepo_changed` after edits to review changed context and validation commands.
 
@@ -58,6 +58,7 @@ Rule of thumb: `tiny` to find, `normal` to understand, `deep` to write.
 - `synrepo_find(task, limit?, budget_tokens?)` — workflow alias for finding candidate cards
 - `synrepo_explain(target, budget?, budget_tokens?)` — workflow alias for bounded card lookup
 - `synrepo_impact(target, budget?, budget_tokens?)` — workflow alias for risk before editing
+- `synrepo_risks(target, budget?, budget_tokens?)` — shorthand for `synrepo_impact`
 - `synrepo_tests(scope, budget?, budget_tokens?)` — workflow alias for test discovery
 - `synrepo_changed()` — workflow alias for changed-context review
 - `synrepo_card(target, budget?)` — card for a symbol or file

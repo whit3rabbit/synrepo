@@ -9,7 +9,7 @@ use rmcp::{
 };
 use synrepo::surface::handoffs::HandoffsRequest;
 use synrepo::surface::handoffs::{collect_handoffs, to_json as handoffs_to_json};
-use synrepo::surface::mcp::{audit, cards, docs, primitives, search, SynrepoState};
+use synrepo::surface::mcp::{audit, cards, docs, notes, primitives, search, SynrepoState};
 
 #[derive(Clone)]
 pub(crate) struct SynrepoServer {
@@ -32,7 +32,7 @@ impl ServerHandler for SynrepoServer {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build()).with_instructions(
             "synrepo provides structured code-intelligence context. \
              Use synrepo_orient to start, synrepo_find to route a task, \
-             synrepo_explain for details, synrepo_impact before edits, \
+             synrepo_explain for details, synrepo_impact (or its shorthand synrepo_risks) before edits, \
              synrepo_tests before claiming done, and synrepo_changed after edits. \
              Existing task-first, audit, overlay, and graph primitive tools remain available.",
         )
@@ -51,6 +51,7 @@ impl SynrepoServer {
             params.target,
             params.budget,
             params.budget_tokens,
+            params.include_notes,
         )
     }
 
@@ -169,6 +170,69 @@ impl SynrepoServer {
             params.budget,
             params.budget_tokens,
         )
+    }
+
+    #[tool(
+        name = "synrepo_note_add",
+        description = "Add an advisory overlay agent note. Notes are labeled source_store=overlay and advisory=true; they never define graph truth."
+    )]
+    async fn synrepo_note_add(
+        &self,
+        Parameters(params): Parameters<notes::NoteAddParams>,
+    ) -> String {
+        notes::handle_note_add(&self.state, params)
+    }
+
+    #[tool(
+        name = "synrepo_note_link",
+        description = "Link two advisory overlay notes while preserving audit history."
+    )]
+    async fn synrepo_note_link(
+        &self,
+        Parameters(params): Parameters<notes::NoteLinkParams>,
+    ) -> String {
+        notes::handle_note_link(&self.state, params)
+    }
+
+    #[tool(
+        name = "synrepo_note_supersede",
+        description = "Supersede an advisory overlay note with a replacement claim."
+    )]
+    async fn synrepo_note_supersede(
+        &self,
+        Parameters(params): Parameters<notes::NoteSupersedeParams>,
+    ) -> String {
+        notes::handle_note_supersede(&self.state, params)
+    }
+
+    #[tool(
+        name = "synrepo_note_forget",
+        description = "Hide an advisory overlay note from normal retrieval while retaining audit history."
+    )]
+    async fn synrepo_note_forget(
+        &self,
+        Parameters(params): Parameters<notes::NoteForgetParams>,
+    ) -> String {
+        notes::handle_note_forget(&self.state, params)
+    }
+
+    #[tool(
+        name = "synrepo_note_verify",
+        description = "Verify an advisory overlay note and return it to active state when anchors match."
+    )]
+    async fn synrepo_note_verify(
+        &self,
+        Parameters(params): Parameters<notes::NoteVerifyParams>,
+    ) -> String {
+        notes::handle_note_verify(&self.state, params)
+    }
+
+    #[tool(
+        name = "synrepo_notes",
+        description = "List bounded advisory overlay notes. Hidden lifecycle states require include_hidden=true."
+    )]
+    async fn synrepo_notes(&self, Parameters(params): Parameters<notes::NotesParams>) -> String {
+        notes::handle_notes(&self.state, params)
     }
 
     #[tool(
@@ -293,6 +357,7 @@ impl SynrepoServer {
             params.target,
             params.budget,
             params.budget_tokens,
+            params.include_notes,
         )
     }
 
@@ -301,6 +366,22 @@ impl SynrepoServer {
         description = "Workflow alias: risk before editing."
     )]
     async fn synrepo_impact(
+        &self,
+        Parameters(params): Parameters<cards::ChangeRiskParams>,
+    ) -> String {
+        cards::handle_change_risk(
+            &self.state,
+            params.target,
+            params.budget,
+            params.budget_tokens,
+        )
+    }
+
+    #[tool(
+        name = "synrepo_risks",
+        description = "Workflow alias: risk shorthand (same output as synrepo_impact)."
+    )]
+    async fn synrepo_risks(
         &self,
         Parameters(params): Parameters<cards::ChangeRiskParams>,
     ) -> String {

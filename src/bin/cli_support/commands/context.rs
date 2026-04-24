@@ -32,7 +32,7 @@ pub(crate) fn explain_alias(
     let budget = tier_for_budget_tokens(budget_tokens);
     print!(
         "{}",
-        cards::handle_card(&state, target.to_string(), budget, budget_tokens)
+        cards::handle_card(&state, target.to_string(), budget, budget_tokens, false)
     );
     Ok(())
 }

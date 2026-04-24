@@ -284,6 +284,27 @@ fn mcp_source_registers_docs_search_tool() {
 }
 
 #[test]
+fn mcp_source_registers_workflow_aliases() {
+    let source = fs::read_to_string("src/bin/cli_support/commands/mcp.rs")
+        .expect("read MCP registration source");
+    for alias in [
+        "synrepo_orient",
+        "synrepo_find",
+        "synrepo_explain",
+        "synrepo_impact",
+        "synrepo_risks",
+        "synrepo_tests",
+        "synrepo_changed",
+    ] {
+        let needle = format!("name = \"{alias}\"");
+        assert!(
+            source.contains(&needle),
+            "MCP registration must include {alias}"
+        );
+    }
+}
+
+#[test]
 fn prepare_state_fails_on_uninitialized_repo() {
     // Config::load falls back to ~/.synrepo/config.toml; redirect HOME to an
     // empty tempdir under the shared lock so the developer's real user-scoped

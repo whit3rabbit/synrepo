@@ -128,7 +128,13 @@ fn collect_tool_outputs(
     symbol_target: String,
 ) -> Vec<String> {
     vec![
-        cards::handle_card(state, file_path.to_string(), "tiny".to_string(), None),
+        cards::handle_card(
+            state,
+            file_path.to_string(),
+            "tiny".to_string(),
+            None,
+            false,
+        ),
         cards::handle_entrypoints(state, None, "tiny".to_string(), None),
         cards::handle_module_card(state, "src".to_string(), "tiny".to_string(), None),
         cards::handle_public_api(state, "src".to_string(), "tiny".to_string(), None),

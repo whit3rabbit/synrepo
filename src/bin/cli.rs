@@ -17,7 +17,8 @@ use syntext::SearchOptions;
 use tracing_subscriber::EnvFilter;
 
 use cli_support::cli_args::{
-    BenchCommand, Cli, Command, GraphCommand, LinksCommand, StatsCommand, WatchCommand,
+    BenchCommand, Cli, Command, GraphCommand, LinksCommand, NotesCommand, StatsCommand,
+    WatchCommand,
 };
 #[cfg(test)]
 use cli_support::commands::prepare_mcp_state;
@@ -26,8 +27,9 @@ use cli_support::commands::report_reconcile_outcome;
 use cli_support::commands::{
     agent_setup, bench_context, cards_alias, change_risk, check, compact, explain_alias, export,
     findings, graph_query, graph_stats, handoffs, impact_alias, init, links_accept, links_list,
-    links_reject, links_review, node, reconcile, remove, risks_alias, run_mcp_server, search,
-    setup, stats_context, status, sync, tests_alias, upgrade, watch, watch_internal, watch_status,
+    links_reject, links_review, node, notes_add, notes_audit, notes_forget, notes_link, notes_list,
+    notes_supersede, notes_verify, reconcile, remove, risks_alias, run_mcp_server, search, setup,
+    stats_context, status, sync, tests_alias, upgrade, watch, watch_internal, watch_status,
     watch_stop,
 };
 use cli_support::entry::{run_bare_entrypoint, run_dashboard_command};
@@ -207,6 +209,96 @@ fn dispatch(command: Command, repo_root: &Path, tui_opts: TuiOptions) -> anyhow:
             candidate_id,
             reviewer,
         }) => links_reject(repo_root, &candidate_id, reviewer.as_deref()),
+        Command::Notes(NotesCommand::Add {
+            target_kind,
+            target,
+            claim,
+            created_by,
+            confidence,
+            evidence_json,
+            source_hashes_json,
+            graph_revision,
+            json,
+        }) => notes_add(
+            repo_root,
+            &target_kind,
+            &target,
+            &claim,
+            &created_by,
+            &confidence,
+            evidence_json.as_deref(),
+            source_hashes_json.as_deref(),
+            graph_revision,
+            json,
+        ),
+        Command::Notes(NotesCommand::List {
+            target_kind,
+            target,
+            limit,
+            include_all,
+            json,
+        }) => notes_list(
+            repo_root,
+            target_kind.as_deref(),
+            target.as_deref(),
+            limit,
+            include_all,
+            json,
+        ),
+        Command::Notes(NotesCommand::Audit {
+            target_kind,
+            target,
+            limit,
+            json,
+        }) => notes_audit(
+            repo_root,
+            target_kind.as_deref(),
+            target.as_deref(),
+            limit,
+            json,
+        ),
+        Command::Notes(NotesCommand::Link {
+            from_note,
+            to_note,
+            actor,
+            json,
+        }) => notes_link(repo_root, &from_note, &to_note, &actor, json),
+        Command::Notes(NotesCommand::Supersede {
+            old_note,
+            target_kind,
+            target,
+            claim,
+            created_by,
+            confidence,
+            evidence_json,
+            source_hashes_json,
+            graph_revision,
+            json,
+        }) => notes_supersede(
+            repo_root,
+            &old_note,
+            &target_kind,
+            &target,
+            &claim,
+            &created_by,
+            &confidence,
+            evidence_json.as_deref(),
+            source_hashes_json.as_deref(),
+            graph_revision,
+            json,
+        ),
+        Command::Notes(NotesCommand::Forget {
+            note_id,
+            actor,
+            reason,
+            json,
+        }) => notes_forget(repo_root, &note_id, &actor, reason.as_deref(), json),
+        Command::Notes(NotesCommand::Verify {
+            note_id,
+            actor,
+            graph_revision,
+            json,
+        }) => notes_verify(repo_root, &note_id, &actor, graph_revision, json),
         Command::Upgrade { apply } => upgrade(repo_root, apply),
         Command::Compact { apply, policy } => compact(repo_root, apply, policy.into()),
         Command::Export {

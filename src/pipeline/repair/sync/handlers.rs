@@ -116,6 +116,20 @@ pub fn handle_actionable_finding(
                 blocked.push(blocked_finding);
             }
         },
+        RepairAction::RevalidateAgentNotes => {
+            match mark_agent_note_stale(finding, context.synrepo_dir, actions_taken) {
+                Ok(()) => repaired.push(finding.clone()),
+                Err(err) => {
+                    actions_taken.push(format!("agent-note revalidation failed: {err}"));
+                    let mut blocked_finding = finding.clone();
+                    blocked_finding.drift_class = DriftClass::Blocked;
+                    blocked_finding.severity = Severity::Blocked;
+                    blocked_finding.recommended_action = RepairAction::ManualReview;
+                    blocked_finding.notes = Some(format!("Agent-note revalidation failed: {err}"));
+                    blocked.push(blocked_finding);
+                }
+            }
+        }
         RepairAction::CompactRetired => {
             match compact_retired_observations(context, actions_taken) {
                 Ok(()) => repaired.push(finding.clone()),
@@ -148,6 +162,23 @@ pub fn handle_actionable_finding(
             }
         }
     }
+    Ok(())
+}
+
+fn mark_agent_note_stale(
+    finding: &RepairFinding,
+    synrepo_dir: &Path,
+    actions_taken: &mut Vec<String>,
+) -> crate::Result<()> {
+    use crate::overlay::OverlayStore;
+    use crate::store::overlay::SqliteOverlayStore;
+
+    let Some(note_id) = finding.target_id.as_ref() else {
+        return Ok(());
+    };
+    let mut overlay = SqliteOverlayStore::open_existing(&synrepo_dir.join("overlay"))?;
+    let changed = overlay.mark_stale_notes(std::slice::from_ref(note_id), "synrepo-sync")?;
+    actions_taken.push(format!("marked {changed} agent note(s) stale"));
     Ok(())
 }
 
