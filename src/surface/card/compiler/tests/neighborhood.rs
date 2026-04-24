@@ -119,3 +119,35 @@ fn neighborhood_overlay_fields_stripped_from_focal_card() {
     assert!(!obj.contains_key("commentary_state"));
     assert!(!obj.contains_key("links_state"));
 }
+
+#[test]
+fn neighborhood_focal_card_retains_escalation_accounting() {
+    // The focal card in a minimum-context response must expose the
+    // accounting metadata agents need to decide whether to escalate from
+    // a bounded card to a deeper card or a full-file read.
+    let (_repo, compiler, _file_id, sym_id) = neighborhood_fixture();
+
+    let resp = resolve_neighborhood(&compiler, &sym_id.to_string(), Budget::Tiny).unwrap();
+    let accounting = resp
+        .focal_card
+        .pointer("/context_accounting")
+        .expect("focal_card must expose context_accounting for escalation decisions");
+    let obj = accounting
+        .as_object()
+        .expect("context_accounting must be an object");
+
+    for key in [
+        "budget_tier",
+        "token_estimate",
+        "raw_file_token_estimate",
+        "estimated_savings_ratio",
+        "source_hashes",
+        "stale",
+        "truncation_applied",
+    ] {
+        assert!(
+            obj.contains_key(key),
+            "context_accounting must retain `{key}` so agents can decide when to escalate"
+        );
+    }
+}

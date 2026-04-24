@@ -9,7 +9,8 @@ use super::{ActiveTab, AppMode, AppState, ExplainMode};
 use crate::pipeline::watch::WatchServiceStatus;
 use crate::surface::status_snapshot::StatusSnapshot;
 use crate::tui::actions::{
-    outcome_to_log, start_watch_daemon, stop_watch, ActionContext, ActionOutcome,
+    outcome_to_log, reconcile_now, set_auto_sync, start_watch_daemon, stop_watch, sync_now,
+    ActionContext, ActionOutcome,
 };
 use crate::tui::widgets::QuickAction;
 
@@ -142,6 +143,9 @@ impl AppState {
                 self.set_toast(format!("Refreshed: {counts}"));
                 true
             }
+            KeyCode::Char('R') => self.handle_reconcile_now(),
+            KeyCode::Char('S') => self.handle_sync_now(),
+            KeyCode::Char('A') => self.handle_toggle_auto_sync(),
             KeyCode::Char('w') => self.handle_watch_toggle(),
             KeyCode::Char('i') => {
                 self.launch_integration = true;
@@ -150,6 +154,44 @@ impl AppState {
             }
             _ => false,
         }
+    }
+
+    fn handle_reconcile_now(&mut self) -> bool {
+        let ctx = ActionContext::new(&self.repo_root);
+        let outcome = reconcile_now(&ctx);
+        self.set_toast(action_outcome_toast("reconcile", &outcome));
+        self.log.push(outcome_to_log("reconcile", &outcome));
+        self.refresh_now();
+        true
+    }
+
+    fn handle_sync_now(&mut self) -> bool {
+        let ctx = ActionContext::new(&self.repo_root);
+        let outcome = sync_now(&ctx);
+        self.set_toast(action_outcome_toast("sync", &outcome));
+        self.log.push(outcome_to_log("sync", &outcome));
+        self.refresh_now();
+        true
+    }
+
+    fn handle_toggle_auto_sync(&mut self) -> bool {
+        let ctx = ActionContext::new(&self.repo_root);
+        // Track the flag on AppState so each press toggles from the last value
+        // the service acked. Default is `true` (matches config default).
+        let desired = !self.auto_sync_enabled;
+        let outcome = set_auto_sync(&ctx, desired);
+        match &outcome {
+            ActionOutcome::Ack { .. } => {
+                self.auto_sync_enabled = desired;
+            }
+            _ => {
+                // Leave the local flag untouched; log the failure so the
+                // operator knows the service did not accept the flip.
+            }
+        }
+        self.set_toast(action_outcome_toast("auto-sync", &outcome));
+        self.log.push(outcome_to_log("auto-sync", &outcome));
+        true
     }
 
     /// Poll-mode dashboards toggle the detached watch daemon with `w`.
@@ -228,10 +270,14 @@ pub(super) fn watch_toggle_label_for(
 }
 
 fn watch_toast_message(outcome: &ActionOutcome) -> String {
+    action_outcome_toast("watch", outcome)
+}
+
+fn action_outcome_toast(verb: &str, outcome: &ActionOutcome) -> String {
     match outcome {
         ActionOutcome::Ack { message } | ActionOutcome::Completed { message } => message.clone(),
-        ActionOutcome::Conflict { guidance, .. } => guidance.clone(),
-        ActionOutcome::Error { message } => message.clone(),
+        ActionOutcome::Conflict { guidance, .. } => format!("{verb}: {guidance}"),
+        ActionOutcome::Error { message } => format!("{verb}: {message}"),
     }
 }
 

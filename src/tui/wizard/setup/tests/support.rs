@@ -83,8 +83,7 @@ pub(super) fn drive_cancel_and_assert_no_writes(drive: impl FnOnce(&mut SetupWiz
     use crate::config::Mode;
 
     let tempdir = tempfile::tempdir().expect("tempdir");
-    std::fs::write(tempdir.path().join("fixture.txt"), b"original content")
-        .expect("seed fixture");
+    std::fs::write(tempdir.path().join("fixture.txt"), b"original content").expect("seed fixture");
     std::fs::create_dir_all(tempdir.path().join("nested/dir")).expect("mkdir");
     std::fs::write(tempdir.path().join("nested/dir/leaf.md"), b"# leaf").expect("seed leaf");
     let before = snapshot_tree(tempdir.path());

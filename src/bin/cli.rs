@@ -25,12 +25,13 @@ use cli_support::commands::prepare_mcp_state;
 #[cfg(test)]
 use cli_support::commands::report_reconcile_outcome;
 use cli_support::commands::{
-    agent_setup_many, bench_context, cards_alias, change_risk, check, compact, doctor,
+    agent_setup_many_resolved, bench_context, cards_alias, change_risk, check, compact, doctor,
     explain_alias, export, findings, graph_query, graph_stats, handoffs, impact_alias, init,
     links_accept, links_list, links_reject, links_review, node, notes_add, notes_audit,
     notes_forget, notes_link, notes_list, notes_supersede, notes_verify, reconcile, remove,
-    resolve_tools, risks_alias, run_mcp_server, search, server, setup_many, stats_context, status,
-    sync, tests_alias, upgrade, watch, watch_internal, watch_status, watch_stop, StatFormat,
+    resolve_tool_resolution, risks_alias, run_mcp_server, search, server, setup_many_resolved,
+    stats_context, status, sync, tests_alias, upgrade, watch, watch_internal, watch_status,
+    watch_stop, StatFormat,
 };
 // Re-exported for `cli_support::tests::agent_setup` via `crate::agent_setup`.
 // cli.rs dispatches through `agent_setup_many` but the test binary compiles
@@ -77,8 +78,8 @@ fn dispatch(command: Command, repo_root: &Path, tui_opts: TuiOptions) -> anyhow:
             force,
             regen,
         } => {
-            let targets = resolve_tools(tool, &only, &skip)?;
-            agent_setup_many(repo_root, &targets, force, regen)
+            let resolution = resolve_tool_resolution(tool, &only, &skip)?;
+            agent_setup_many_resolved(repo_root, &resolution, force, regen)
         }
         Command::Setup {
             tool,
@@ -90,8 +91,8 @@ fn dispatch(command: Command, repo_root: &Path, tui_opts: TuiOptions) -> anyhow:
         } => {
             let any_target = tool.is_some() || !only.is_empty() || !skip.is_empty();
             if any_target {
-                let targets = resolve_tools(tool, &only, &skip)?;
-                setup_many(repo_root, &targets, force, gitignore)?;
+                let resolution = resolve_tool_resolution(tool, &only, &skip)?;
+                setup_many_resolved(repo_root, &resolution, force, gitignore)?;
                 if explain {
                     cli_support::setup_cmd::run_explain_step(repo_root, tui_opts)?;
                 }

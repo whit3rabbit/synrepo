@@ -81,11 +81,8 @@ fn explain_cloud_anthropic_with_env_key_skips_key_entry() {
 #[test]
 fn explain_cloud_anthropic_with_saved_global_key_skips_key_entry() {
     let _env = EnvGuard::new();
-    let mut s = SetupWizardState::with_explain_support(
-        Mode::Auto,
-        vec![],
-        support_with_saved_anthropic(),
-    );
+    let mut s =
+        SetupWizardState::with_explain_support(Mode::Auto, vec![], support_with_saved_anthropic());
     drive_to_explain(&mut s);
     press(&mut s, KeyCode::Down); // Skip → Anthropic
     press(&mut s, KeyCode::Enter);
@@ -133,11 +130,8 @@ fn explain_cloud_key_entry_empty_input_refuses_enter() {
 
 #[test]
 fn review_explain_plan_b_clears_choice_and_returns_to_selector() {
-    let mut s = SetupWizardState::with_explain_support(
-        Mode::Auto,
-        vec![],
-        support_with_saved_anthropic(),
-    );
+    let mut s =
+        SetupWizardState::with_explain_support(Mode::Auto, vec![], support_with_saved_anthropic());
     drive_to_explain(&mut s);
     press(&mut s, KeyCode::Down); // Skip → Anthropic
     press(&mut s, KeyCode::Enter); // commit → review

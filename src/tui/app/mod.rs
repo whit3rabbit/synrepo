@@ -132,6 +132,11 @@ pub struct AppState {
     /// True between a `ReconcileStarted` and its matching
     /// `ReconcileFinished`/`Error`. Drives whether the header spinner renders.
     pub reconcile_active: bool,
+    /// Cached auto-sync flag reflecting the last ack from the watch service.
+    /// Seeded from `Config::auto_sync_enabled` at TUI startup; flipped by the
+    /// `A` keybinding when the watch service acknowledges the control request.
+    /// Does NOT persist to `config.toml`.
+    pub auto_sync_enabled: bool,
     /// How long `poll_key` waits for a key event before returning. Set short
     /// so the spinner and snapshot refresh feel live.
     pub poll_timeout: Duration,

@@ -13,13 +13,17 @@ use std::path::{Path, PathBuf};
 
 use crate::config::Config;
 
+mod auto_sync;
 mod helpers;
 mod reconcile;
+mod sync;
 mod watch;
 
+pub use auto_sync::set_auto_sync;
 pub(crate) use helpers::now_rfc3339;
 pub use helpers::{outcome_to_log, writer_lock_hint};
 pub use reconcile::reconcile_now;
+pub use sync::sync_now;
 pub use watch::{start_watch_daemon, stop_watch};
 
 /// Context passed to every action dispatcher. Keeps the callsite in the render

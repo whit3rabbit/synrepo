@@ -131,12 +131,27 @@ fn daemon_watch_delegates_reconcile_and_surfaces_status() {
 
 #[cfg(unix)]
 #[test]
-fn sync_fails_fast_while_watch_service_is_active() {
+fn sync_delegates_to_watch_service_when_active() {
+    // Regression guard: `synrepo sync` used to fail fast with "watch service
+    // is active" while the daemon held the lease. As of the
+    // sync-watch-delegation-v1 change, it delegates over the control socket
+    // and returns the same SyncSummary the watch service produced.
     let repo = init_repo();
     let _guard = WatchGuard::daemon(repo.path());
 
     let output = command(repo.path()).args(["sync"]).output().unwrap();
-    assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("watch service is active"));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        output.status.success(),
+        "sync should succeed via delegation; stderr={stderr} stdout={stdout}"
+    );
+    assert!(
+        stderr.contains("Delegated sync to active watch service"),
+        "expected delegation banner on stderr; stderr={stderr}"
+    );
+    assert!(
+        stdout.contains("sync:"),
+        "expected sync summary on stdout; stdout={stdout}"
+    );
 }

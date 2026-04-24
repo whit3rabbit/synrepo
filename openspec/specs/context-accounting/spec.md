@@ -11,12 +11,17 @@ synrepo SHALL attach a shared `context_accounting` object to every card-shaped C
 - **AND** the accounting metadata is derived from source, graph, or response shape rather than LLM output
 
 ### Requirement: Track context metrics outside graph truth
-synrepo SHALL persist context usage metrics under `.synrepo/state/` and SHALL NOT store them in the graph or overlay stores.
+synrepo SHALL persist context usage metrics under `.synrepo/state/` and SHALL NOT store them in the graph or overlay stores. Metrics SHALL be inspectable as structured text (default), JSON, and Prometheus exposition format.
 
 #### Scenario: Metrics are inspected
 - **WHEN** an operator runs a context metrics command
 - **THEN** synrepo returns card counts, token estimate totals, raw-file comparison totals, budget tier usage, escalation counts, latency summaries, stale counts, changed-file counts, and test-surface hits
 - **AND** the synthesis pipeline cannot read these metrics as source facts
+
+#### Scenario: Metrics are exported as Prometheus text
+- **WHEN** an operator runs `synrepo stats context --format prometheus`
+- **THEN** synrepo emits Prometheus exposition text with counters `synrepo_cards_served_total`, `synrepo_card_tokens_total`, `synrepo_raw_file_tokens_total`, `synrepo_estimated_tokens_saved_total`, and `synrepo_stale_responses_total`
+- **AND** the output is scrapeable by standard Prometheus tooling without post-processing
 
 ### Requirement: Benchmark context savings and usefulness
 synrepo SHALL provide a reproducible benchmark for context tasks that reports both compression and whether expected files, symbols, or tests were included.
@@ -59,4 +64,17 @@ Context accounting SHALL provide aggregate fields suitable for dashboard trust r
 - **WHEN** no context metrics file or counters exist
 - **THEN** the snapshot reports the metric group as absent
 - **AND** renderers can distinguish absent metrics from zero-value metrics
+
+### Requirement: Track observable workflow usage counters
+Context accounting SHALL track observable workflow tool usage separately from estimated context-savings counters.
+
+#### Scenario: Workflow tools are used
+- **WHEN** an agent invokes orient, find, explain, impact, risks, tests, changed, or minimum-context through synrepo
+- **THEN** context metrics can report per-tool usage counts
+- **AND** those counts are labeled as observed synrepo calls
+
+#### Scenario: Cold-read avoidance is estimated
+- **WHEN** synrepo reports full-file-read avoidance or estimated raw tokens avoided
+- **THEN** the metric is labeled as estimated from card accounting data
+- **AND** it is not presented as proof that an external agent did not read files outside synrepo
 

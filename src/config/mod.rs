@@ -114,6 +114,16 @@ pub struct Config {
     /// [`ExplainConfig`].
     #[serde(default)]
     pub explain: ExplainConfig,
+
+    /// Run cheap auto-sync surfaces (export regeneration, retired-observation
+    /// compaction) automatically after every reconcile pass the watch service
+    /// completes. Commentary refresh and other token-cost surfaces are NOT
+    /// auto-run regardless of this flag. Only honored while `synrepo watch`
+    /// is active; standalone CLI sync is not affected. Default is `true`.
+    /// The TUI `A` keybinding flips this flag in-memory without persisting;
+    /// to change the persistent default, edit this field and restart watch.
+    #[serde(default = "default_auto_sync_enabled")]
+    pub auto_sync_enabled: bool,
 }
 
 fn default_roots() -> Vec<String> {
@@ -176,6 +186,10 @@ fn default_semantic_similarity_threshold() -> f64 {
     0.6
 }
 
+fn default_auto_sync_enabled() -> bool {
+    true
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -196,6 +210,7 @@ impl Default for Config {
             embedding_dim: default_embedding_dim(),
             semantic_similarity_threshold: default_semantic_similarity_threshold(),
             explain: ExplainConfig::default(),
+            auto_sync_enabled: default_auto_sync_enabled(),
         }
     }
 }

@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use super::stable::{DriftClass, RepairAction, RepairSurface, Severity};
 
 /// One repair finding: a named surface, its drift class, severity, and recommended action.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct RepairFinding {
     /// The named surface this finding applies to.
     pub surface: RepairSurface,
@@ -29,11 +29,13 @@ pub struct RepairReport {
 }
 
 /// Options for `synrepo sync`.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SyncOptions {
     /// If true, generate new cross-link candidates for the whole repository.
+    #[serde(default)]
     pub generate_cross_links: bool,
     /// If true, re-run generation for stale candidates.
+    #[serde(default)]
     pub regenerate_cross_links: bool,
 }
 
@@ -73,7 +75,7 @@ impl RepairReport {
 }
 
 /// Summary of one `synrepo sync` execution.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SyncSummary {
     /// RFC 3339 UTC timestamp of when the sync ran.
     pub synced_at: String,
@@ -149,4 +151,72 @@ pub struct ResolutionLogEntry {
     pub actions_taken: Vec<String>,
     /// Final outcome of the sync run.
     pub outcome: SyncOutcome,
+}
+
+/// Structured progress event emitted while `execute_sync_locked` runs.
+///
+/// Serialized across the watch event channel and the watch control socket, so
+/// every variant must be plain serde-compatible data. Commentary-level
+/// granularity is exposed as summary counters rather than the internal
+/// `CommentaryProgressEvent` to keep the wire format stable.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum SyncProgress {
+    /// A surface handler is about to run. Emitted before dispatch.
+    SurfaceStarted {
+        /// Surface the handler is about to repair.
+        surface: RepairSurface,
+        /// Action the handler will attempt.
+        action: RepairAction,
+    },
+    /// A surface handler has returned. Emitted after dispatch.
+    SurfaceFinished {
+        /// Surface that just ran.
+        surface: RepairSurface,
+        /// How the surface bucketed in the summary.
+        outcome: SurfaceOutcome,
+    },
+    /// Commentary refresh planning complete.
+    CommentaryPlan {
+        /// Entries scheduled for refresh because the source hash changed.
+        refresh: usize,
+        /// File-scope seeds scheduled.
+        file_seeds: usize,
+        /// Symbol-scope seeds scheduled.
+        symbol_seed_candidates: usize,
+    },
+    /// Commentary refresh is making per-target progress.
+    CommentaryItem {
+        /// Current target index (1-based).
+        current: usize,
+        /// Whether the generator produced content for this target.
+        generated: bool,
+    },
+    /// Commentary refresh completed. Counts mirror the internal summary.
+    CommentarySummary {
+        /// Entries refreshed successfully.
+        refreshed: usize,
+        /// New seeds materialized.
+        seeded: usize,
+        /// Targets attempted but not produced (budget or skip).
+        not_generated: usize,
+        /// Total targets attempted.
+        attempted: usize,
+        /// True if the operator requested a stop partway through.
+        stopped: bool,
+    },
+}
+
+/// How a surface bucketed in the resulting `SyncSummary`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SurfaceOutcome {
+    /// Action succeeded; finding moved to `repaired`.
+    Repaired,
+    /// Action was report-only; finding moved to `report_only`.
+    ReportOnly,
+    /// Action was blocked; finding moved to `blocked`.
+    Blocked,
+    /// Finding was skipped because a surface filter excluded it.
+    FilteredOut,
 }

@@ -1,9 +1,7 @@
 ## Purpose
 
 Define the canonical agent-doctrine block, its distribution across agent-facing surfaces, and the enforcement mechanisms that prevent wording drift.
-
 ## Requirements
-
 ### Requirement: Maintain a single canonical agent-doctrine block
 synrepo SHALL maintain a single canonical agent-doctrine block as a compile-time constant in the repository. Every agent-facing surface (agent-setup shim, `skill/SKILL.md`, card-returning MCP tool descriptions, first-run bootstrap success output) SHALL include the block verbatim or reference it through a compile-time mechanism (`concat!`, `include_str!`, or a shared constant).
 
@@ -50,3 +48,30 @@ Agent-facing doctrine SHALL teach the workflow as orient, find cards, inspect im
 - **WHEN** an agent reads the generated synrepo doctrine or skill file
 - **THEN** the instructions tell the agent to start with synrepo context before large cold file reads
 - **AND** the instructions identify the workflow aliases (including `synrepo_risks` as a shorthand for `synrepo_impact`) and the budget escalation rule
+
+### Requirement: Require bounded-context workflow guidance
+The canonical agent doctrine SHALL state the preferred workflow: orient first, find bounded cards, inspect impact or risks before edits, validate tests, and check changed context before claiming completion.
+
+#### Scenario: Generated shim includes workflow guidance
+- **WHEN** synrepo generates or regenerates an agent shim
+- **THEN** the shim includes the bounded-context workflow guidance
+- **AND** the guidance tells agents to use full-file reads only after cards identify the relevant target or when bounded cards are insufficient
+
+#### Scenario: Doctrine remains source-truth safe
+- **WHEN** the workflow guidance mentions overlay notes, commentary, or advisory content
+- **THEN** it states that graph-backed structural facts remain authoritative
+- **AND** it does not imply overlay content can define source truth
+
+### Requirement: Use canonical doctrine for shim freshness checks
+Generated shim freshness SHALL be evaluated against the canonical agent doctrine and current target-specific template content.
+
+#### Scenario: Doctrine block changes
+- **WHEN** the canonical doctrine block changes after a shim was generated
+- **THEN** setup or agent-setup can classify the existing shim as stale
+- **AND** the report points to `--regen` or the existing regeneration flow rather than embedding divergent doctrine text
+
+#### Scenario: Shim is current
+- **WHEN** an existing generated shim matches the current canonical doctrine and target template
+- **THEN** setup reports the shim as current
+- **AND** no write is performed for that shim
+

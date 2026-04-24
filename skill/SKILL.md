@@ -27,12 +27,15 @@ Do not use synrepo for:
 
 ## Default path
 
+The required sequence is orient, find, impact or risks, edit, tests, changed.
+
 1. Start with `synrepo_orient` before reading the repo cold.
 2. Use `synrepo_find` or `synrepo_search` to find candidate files and symbols.
-3. Use `tiny` cards to route, `normal` cards to understand, and `deep` cards only before writing code.
+3. Use `tiny` cards to route and `normal` cards to understand. Use `synrepo_minimum_context` as the bounded neighborhood step when a focal target is known but the surrounding risk is unclear.
 4. Use `synrepo_impact` (or its shorthand `synrepo_risks`) before editing.
 5. Use `synrepo_tests` before claiming done.
 6. Use `synrepo_changed` after edits to review changed context and validation commands.
+7. Read full source files or request `deep` cards only after bounded cards identify the target or when the card content is insufficient. Full-file reads are an explicit escalation, not the default first step.
 
 Rule of thumb: `tiny` to find, `normal` to understand, `deep` to write.
 
@@ -67,6 +70,7 @@ Rule of thumb: `tiny` to find, `normal` to understand, `deep` to write.
 - `synrepo_where_to_edit(task, limit?)` — ranked edit candidates
 - `synrepo_change_impact(target)` — first-pass dependents
 - `synrepo_change_risk(target)` — composite risk signal
+- `synrepo_minimum_context(target, budget?)` — bounded neighborhood step before deep inspection or full-file reads
 - `synrepo_entrypoints(scope?, budget?)` — entrypoint discovery
 - `synrepo_test_surface(scope)` — test discovery
 

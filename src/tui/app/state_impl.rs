@@ -9,6 +9,7 @@ use crossbeam_channel::{Receiver, TryRecvError};
 
 use super::{ActiveTab, AppMode, AppState, DashboardExit, EventLog, PendingExplainRun};
 use crate::bootstrap::runtime_probe::AgentIntegration;
+use crate::config::Config;
 use crate::pipeline::explain::telemetry;
 use crate::pipeline::watch::WatchEvent;
 use crate::surface::status_snapshot::{build_status_snapshot, StatusOptions};
@@ -110,6 +111,9 @@ impl AppState {
             follow_mode: true,
             frame: 0,
             reconcile_active: false,
+            auto_sync_enabled: Config::load(repo_root)
+                .map(|c| c.auto_sync_enabled)
+                .unwrap_or(true),
             poll_timeout: Duration::from_millis(125),
             snapshot_refresh_interval: Duration::from_secs(2),
             last_refresh: Instant::now(),
@@ -185,10 +189,13 @@ impl AppState {
             match rx.try_recv() {
                 Ok(event) => {
                     match &event {
-                        WatchEvent::ReconcileStarted { .. } => self.reconcile_active = true,
-                        WatchEvent::ReconcileFinished { .. } | WatchEvent::Error { .. } => {
-                            self.reconcile_active = false
+                        WatchEvent::ReconcileStarted { .. } | WatchEvent::SyncStarted { .. } => {
+                            self.reconcile_active = true
                         }
+                        WatchEvent::ReconcileFinished { .. }
+                        | WatchEvent::SyncFinished { .. }
+                        | WatchEvent::Error { .. } => self.reconcile_active = false,
+                        WatchEvent::SyncProgress { .. } => {}
                     }
                     self.log.push(super::watch_event_to_log_entry(event));
                 }

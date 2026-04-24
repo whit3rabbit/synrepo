@@ -10,6 +10,7 @@ mod stable;
 mod tests;
 
 pub use models::{
-    RepairFinding, RepairReport, ResolutionLogEntry, SyncOptions, SyncOutcome, SyncSummary,
+    RepairFinding, RepairReport, ResolutionLogEntry, SurfaceOutcome, SyncOptions, SyncOutcome,
+    SyncProgress, SyncSummary,
 };
 pub use stable::{DriftClass, RepairAction, RepairSurface, Severity};

@@ -1,8 +1,6 @@
 ## Purpose
 Define first-run initialization, generated assistant-facing setup, and post-init health behavior for synrepo bootstrap flows.
-
 ## Requirements
-
 ### Requirement: Define first-run initialization flow
 synrepo SHALL define a first-run bootstrap flow that initializes project state, inspects the repository, selects the appropriate mode, and guides the user to the first useful output.
 
@@ -92,7 +90,7 @@ synrepo SHALL provide a `synrepo upgrade` command that detects `.synrepo/` versi
 - **AND** the warning is not suppressed silently
 
 ### Requirement: Define agent-setup target expansion
-synrepo SHALL support `cursor`, `codex`, and `windsurf` as named targets for `synrepo agent-setup`, in addition to the existing `claude`, `copilot`, and `generic` targets. A `--regen` flag SHALL update an existing shim file in place when its content differs from the current template.
+synrepo SHALL support `cursor`, `codex`, and `windsurf` as named targets for `synrepo agent-setup`, in addition to the existing `claude`, `copilot`, and `generic` targets. A `--regen` flag SHALL update an existing shim file in place when its content differs from the current template. The `synrepo setup` and `synrepo agent-setup` commands SHALL accept `--only <tool,tool>` and `--skip <tool,tool>` for multi-client invocation, and SHALL reject the combination of both flags as a usage error.
 
 #### Scenario: Generate a cursor shim
 - **WHEN** a user runs `synrepo agent-setup cursor`
@@ -110,6 +108,26 @@ synrepo SHALL support `cursor`, `codex`, and `windsurf` as named targets for `sy
 - **THEN** synrepo writes a shim to `.codex/skills/synrepo/SKILL.md` describing the MCP server and tool list
 - **AND** the shim begins with YAML frontmatter containing `name: synrepo` and a `description` so Codex CLI auto-discovers it as a skill
 - **AND** the shim notes how to configure the MCP server for codex usage
+
+#### Scenario: Multi-client setup with --only
+- **WHEN** a user runs `synrepo setup --only claude,cursor`
+- **THEN** synrepo configures both clients in sequence and prints a per-tool outcome summary
+- **AND** a single-tool positional invocation (`synrepo setup claude`) continues to work unchanged
+
+#### Scenario: Multi-client setup with --skip
+- **WHEN** a user runs `synrepo agent-setup --skip copilot,generic`
+- **THEN** synrepo configures every other supported tool for which the host has detection signals
+- **AND** the per-tool summary names every skipped tool
+
+#### Scenario: Conflicting flags rejected
+- **WHEN** a user runs `synrepo setup --only claude --skip claude`
+- **THEN** synrepo rejects the invocation with a usage error naming the conflict
+- **AND** no shim or MCP registration is written
+
+#### Scenario: Unknown tool rejected
+- **WHEN** a user runs `synrepo setup --only claude,nonesuch`
+- **THEN** synrepo rejects the invocation with an error naming `nonesuch` and listing supported tools
+- **AND** no partial configuration is left on disk
 
 ### Requirement: Enrich status output with export and overlay cost summary
 synrepo SHALL include export freshness state and overlay cost-to-date in `synrepo status` output so users can assess the health of convenience surfaces and LLM usage without running a full `check`.
@@ -171,3 +189,33 @@ Bootstrap success and repair output SHALL report degraded optional and core capa
 - **WHEN** bootstrap completes but parser failures or stale index state limit graph coverage
 - **THEN** the output reports the degraded capability and next action
 - **AND** it does not claim full readiness for the affected surface
+
+### Requirement: Report per-client setup outcomes
+`synrepo setup` and `synrepo agent-setup` SHALL report a per-client outcome summary for resolved agent targets.
+
+#### Scenario: Multi-client setup completes
+- **WHEN** a user runs setup or agent-setup for multiple targets
+- **THEN** the output lists each resolved target with an outcome such as written, registered, current, skipped, unsupported, stale, or failed
+- **AND** the output includes the relevant project or global config path when a path is known
+
+#### Scenario: Single-client behavior is used
+- **WHEN** a user runs an existing positional invocation such as `synrepo setup claude`
+- **THEN** the command preserves existing behavior
+- **AND** it may add the per-client outcome summary without changing which files are written
+
+### Requirement: Distinguish detection from mutation
+Client detection during setup SHALL be observational until the existing setup confirmation or command execution path performs writes.
+
+#### Scenario: Clients are detected
+- **WHEN** setup detects one or more supported clients on the host
+- **THEN** the output labels them as detected candidates
+- **AND** no shim or MCP config is written solely because detection occurred
+
+### Requirement: Report shim freshness without silent overwrite
+Setup reporting SHALL distinguish current, missing, and stale generated shims, and SHALL NOT overwrite stale shims unless the existing `--regen` policy allows it.
+
+#### Scenario: Generated shim is stale
+- **WHEN** a generated shim differs from the current template and the user did not request regeneration
+- **THEN** setup reports the shim as stale and names the regeneration action
+- **AND** the existing shim content is not overwritten silently
+

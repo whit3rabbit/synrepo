@@ -24,6 +24,15 @@ impl SynrepoServer {
             tool_router: Self::tool_router(),
         }
     }
+
+    /// Best-effort recording of a workflow alias call. Keeps
+    /// `workflow_calls_total` in the context-metrics file separate from
+    /// card-level counters so the two categories never collapse into a
+    /// single aggregate.
+    fn record_workflow(&self, tool: &str) {
+        let synrepo_dir = synrepo::config::Config::synrepo_dir(&self.state.repo_root);
+        synrepo::pipeline::context_metrics::record_workflow_call_best_effort(&synrepo_dir, tool);
+    }
 }
 
 #[tool_handler(router = self.tool_router)]
@@ -31,9 +40,13 @@ impl ServerHandler for SynrepoServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build()).with_instructions(
             "synrepo provides structured code-intelligence context. \
-             Use synrepo_orient to start, synrepo_find to route a task, \
-             synrepo_explain for details, synrepo_impact (or its shorthand synrepo_risks) before edits, \
+             Required workflow: synrepo_orient to start, synrepo_find to route a task, \
+             synrepo_explain for bounded details, synrepo_impact (or its shorthand synrepo_risks) before edits, \
              synrepo_tests before claiming done, and synrepo_changed after edits. \
+             Use synrepo_minimum_context as the bounded neighborhood step once a focal target is known. \
+             Read full source files only after card routing identifies the target or when a bounded card is insufficient; \
+             that is an explicit escalation, not the default first step. \
+             Graph-backed structural facts are authoritative; overlay commentary and advisory notes never define source truth. \
              Existing task-first, audit, overlay, and graph primitive tools remain available.",
         )
     }
@@ -269,12 +282,13 @@ impl SynrepoServer {
 
     #[tool(
         name = "synrepo_minimum_context",
-        description = "Return the minimum-useful context neighborhood for a symbol or file: focal card, outbound structural neighbors, governing decisions, and co-change partners. Default budget is tiny; escalate to normal for local understanding and deep only before edits."
+        description = "Bounded neighborhood step for a focal symbol or file: focal card, outbound structural neighbors, governing decisions, and co-change partners. Use before deep cards or full-file reads when a target is known but surrounding risk is unclear. Default budget is tiny; escalate to normal for local understanding and deep only before edits."
     )]
     async fn synrepo_minimum_context(
         &self,
         Parameters(params): Parameters<cards::MinimumContextParams>,
     ) -> String {
+        self.record_workflow("minimum_context");
         cards::handle_minimum_context(
             &self.state,
             params.target,
@@ -331,27 +345,33 @@ impl SynrepoServer {
         )
     }
 
-    #[tool(name = "synrepo_orient", description = "Workflow alias: start here.")]
+    #[tool(
+        name = "synrepo_orient",
+        description = "Workflow step 1: orient before reading the repo cold. Run before any cold file reads."
+    )]
     async fn synrepo_orient(&self) -> String {
+        self.record_workflow("orient");
         search::handle_overview(&self.state)
     }
 
     #[tool(
         name = "synrepo_find",
-        description = "Workflow alias: find task cards."
+        description = "Workflow step 2: find bounded candidate cards for a plain-language task. Run before opening source files."
     )]
     async fn synrepo_find(
         &self,
         Parameters(params): Parameters<search::WhereToEditParams>,
     ) -> String {
+        self.record_workflow("find");
         search::handle_where_to_edit(&self.state, params.task, params.limit, params.budget_tokens)
     }
 
     #[tool(
         name = "synrepo_explain",
-        description = "Workflow alias: bounded card lookup."
+        description = "Workflow step 3: bounded card lookup for a file or symbol. Prefer this over a full-file read; full-file reads are an explicit escalation."
     )]
     async fn synrepo_explain(&self, Parameters(params): Parameters<cards::CardParams>) -> String {
+        self.record_workflow("explain");
         cards::handle_card(
             &self.state,
             params.target,
@@ -363,12 +383,13 @@ impl SynrepoServer {
 
     #[tool(
         name = "synrepo_impact",
-        description = "Workflow alias: risk before editing."
+        description = "Workflow step 4: risk assessment before editing."
     )]
     async fn synrepo_impact(
         &self,
         Parameters(params): Parameters<cards::ChangeRiskParams>,
     ) -> String {
+        self.record_workflow("impact");
         cards::handle_change_risk(
             &self.state,
             params.target,
@@ -379,12 +400,13 @@ impl SynrepoServer {
 
     #[tool(
         name = "synrepo_risks",
-        description = "Workflow alias: risk shorthand (same output as synrepo_impact)."
+        description = "Workflow step 4 (shorthand): risk assessment before editing. Same output as synrepo_impact."
     )]
     async fn synrepo_risks(
         &self,
         Parameters(params): Parameters<cards::ChangeRiskParams>,
     ) -> String {
+        self.record_workflow("risks");
         cards::handle_change_risk(
             &self.state,
             params.target,
@@ -395,12 +417,13 @@ impl SynrepoServer {
 
     #[tool(
         name = "synrepo_tests",
-        description = "Workflow alias: test discovery."
+        description = "Workflow step 5: test discovery before claiming done."
     )]
     async fn synrepo_tests(
         &self,
         Parameters(params): Parameters<cards::TestSurfaceParams>,
     ) -> String {
+        self.record_workflow("tests");
         cards::handle_test_surface(
             &self.state,
             params.scope,
@@ -411,9 +434,10 @@ impl SynrepoServer {
 
     #[tool(
         name = "synrepo_changed",
-        description = "Workflow alias: changed-context review."
+        description = "Workflow step 6: changed-context review after edits. Use to confirm validation commands and changed files before handoff."
     )]
     async fn synrepo_changed(&self) -> String {
+        self.record_workflow("changed");
         search::handle_changed(&self.state)
     }
 

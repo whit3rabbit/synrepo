@@ -1,4 +1,10 @@
 //! Best-effort operational metrics for context-serving behavior.
+//!
+//! `ContextMetrics` distinguishes **observed** counters (direct counts of
+//! calls or responses synrepo served) from **estimated** counters (values
+//! derived from card-accounting comparisons). Callers that persist or render
+//! these metrics MUST preserve that separation — see
+//! [`ContextMetrics`] field docs and [`prometheus`] for the wire format.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -8,33 +14,49 @@ use serde::{Deserialize, Serialize};
 
 use crate::surface::card::{Budget, ContextAccounting};
 
+mod prometheus;
+
 const METRICS_FILE: &str = "context-metrics.json";
 
 /// Aggregated context-serving metrics stored under `.synrepo/state/`.
+///
+/// Fields split into two categories. Fields marked **observed** are counts
+/// of calls or responses synrepo directly handled. Fields marked **estimated**
+/// are derived from card-accounting comparisons (raw-file token estimates
+/// vs. card token estimates) and are not proof that an external agent did
+/// not read files outside synrepo.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct ContextMetrics {
-    /// Number of card-shaped responses served.
+    /// **Observed**: number of card-shaped responses served.
     pub cards_served_total: u64,
-    /// Sum of estimated card tokens.
+    /// **Estimated**: sum of estimated card tokens.
     pub card_tokens_total: u64,
-    /// Sum of estimated raw-file tokens.
+    /// **Estimated**: sum of estimated raw-file tokens that cards replaced.
     pub raw_file_tokens_total: u64,
-    /// Sum of estimated saved raw-file tokens.
+    /// **Estimated**: cold-file-read avoidance derived from raw-file vs. card
+    /// token comparisons. Not a direct observation of external agent reads.
     pub estimated_tokens_saved_total: u64,
-    /// Count of responses by budget tier.
+    /// **Observed**: count of responses by budget tier.
     pub budget_tier_usage: BTreeMap<String, u64>,
-    /// Number of responses that report truncation.
+    /// **Observed**: number of responses that report truncation.
     pub truncation_applied_total: u64,
-    /// Number of responses that surfaced stale advisory content.
+    /// **Observed**: number of responses that surfaced stale advisory content.
     pub stale_responses_total: u64,
-    /// Number of test-surface responses with at least one discovered test.
+    /// **Observed**: number of test-surface responses with at least one
+    /// discovered test.
     pub test_surface_hits_total: u64,
-    /// Number of changed files observed by `synrepo_changed`.
+    /// **Observed**: number of changed files observed by `synrepo_changed`.
     pub changed_files_total: u64,
-    /// Total request latency recorded by card handlers.
+    /// **Observed**: total request latency recorded by card handlers.
     pub context_query_latency_ms_total: u64,
-    /// Number of request latency samples.
+    /// **Observed**: number of request latency samples.
     pub context_query_latency_samples: u64,
+    /// **Observed**: workflow tool-call counts keyed by workflow alias name
+    /// (`orient`, `find`, `explain`, `impact`, `risks`, `tests`, `changed`,
+    /// `minimum_context`). Populated when an agent invokes one of these
+    /// aliases through the MCP surface.
+    #[serde(default)]
+    pub workflow_calls_total: BTreeMap<String, u64>,
 }
 
 impl ContextMetrics {
@@ -89,96 +111,16 @@ impl ContextMetrics {
         self.changed_files_total += count as u64;
     }
 
-    /// Emit these metrics in Prometheus text exposition format (version 0.0.4).
-    ///
-    /// Names are prefixed `synrepo_` and counters carry the `_total` suffix
-    /// where appropriate. The metric set is intentionally stable: adding or
-    /// renaming a line is a breaking change for scrapers.
-    pub fn to_prometheus_text(&self) -> String {
-        use std::fmt::Write as _;
-        let mut out = String::new();
-
-        write_counter(
-            &mut out,
-            "synrepo_cards_served_total",
-            "Total number of card-shaped responses served.",
-            self.cards_served_total,
-        );
-        write_counter(
-            &mut out,
-            "synrepo_card_tokens_total",
-            "Sum of estimated tokens in served cards.",
-            self.card_tokens_total,
-        );
-        write_counter(
-            &mut out,
-            "synrepo_raw_file_tokens_total",
-            "Sum of estimated raw-file tokens that served cards replaced.",
-            self.raw_file_tokens_total,
-        );
-        write_counter(
-            &mut out,
-            "synrepo_estimated_tokens_saved_total",
-            "Sum of estimated tokens saved vs raw-file reads.",
-            self.estimated_tokens_saved_total,
-        );
-        write_counter(
-            &mut out,
-            "synrepo_stale_responses_total",
-            "Number of responses that surfaced stale advisory content.",
-            self.stale_responses_total,
-        );
-        write_counter(
-            &mut out,
-            "synrepo_truncation_applied_total",
-            "Number of responses that applied token-budget truncation.",
-            self.truncation_applied_total,
-        );
-        write_counter(
-            &mut out,
-            "synrepo_test_surface_hits_total",
-            "Number of test-surface responses with at least one discovered test.",
-            self.test_surface_hits_total,
-        );
-        write_counter(
-            &mut out,
-            "synrepo_changed_files_total",
-            "Number of changed files observed by synrepo_changed.",
-            self.changed_files_total,
-        );
-
-        writeln!(
-            out,
-            "# HELP synrepo_budget_tier_usage Count of card responses by budget tier."
-        )
-        .unwrap();
-        writeln!(out, "# TYPE synrepo_budget_tier_usage counter").unwrap();
-        for (tier, count) in &self.budget_tier_usage {
-            writeln!(
-                out,
-                "synrepo_budget_tier_usage{{tier=\"{}\"}} {}",
-                escape_label_value(tier),
-                count
-            )
-            .unwrap();
-        }
-
-        out
+    /// Record a workflow alias call by canonical tool name (for example
+    /// `"orient"`, `"find"`, `"minimum_context"`). Stored as an **observed**
+    /// counter; callers that serve the call are responsible for invoking
+    /// this.
+    pub fn record_workflow_call(&mut self, tool: &str) {
+        *self
+            .workflow_calls_total
+            .entry(tool.to_string())
+            .or_default() += 1;
     }
-}
-
-fn write_counter(out: &mut String, name: &str, help: &str, value: u64) {
-    use std::fmt::Write as _;
-    writeln!(out, "# HELP {name} {help}").unwrap();
-    writeln!(out, "# TYPE {name} counter").unwrap();
-    writeln!(out, "{name} {value}").unwrap();
-}
-
-fn escape_label_value(value: &str) -> String {
-    value
-        .replace('\\', "\\\\")
-        .replace('"', "\\\"")
-        .replace('\n', "\\n")
 }
 
 /// Load context metrics. Missing files return empty metrics.
@@ -264,6 +206,20 @@ pub fn record_changed_files_best_effort(synrepo_dir: &Path, count: usize) {
     }
 }
 
+/// Best-effort recording of a workflow alias call (e.g. `"orient"`,
+/// `"find"`, `"minimum_context"`). Canonical tool names are lowercase and
+/// use underscore-separated form so they remain stable across client
+/// surfaces. Failures are debug-only.
+pub fn record_workflow_call_best_effort(synrepo_dir: &Path, tool: &str) {
+    if let Err(error) = (|| -> anyhow::Result<()> {
+        let mut metrics = load(synrepo_dir)?;
+        metrics.record_workflow_call(tool);
+        save(synrepo_dir, &metrics)
+    })() {
+        tracing::debug!(%error, tool, "context workflow-call metrics record failed");
+    }
+}
+
 fn metrics_path(synrepo_dir: &Path) -> std::path::PathBuf {
     synrepo_dir.join("state").join(METRICS_FILE)
 }
@@ -295,60 +251,16 @@ mod tests {
     }
 
     #[test]
-    fn prometheus_output_matches_golden_string() {
+    fn record_workflow_call_increments_per_tool() {
         let mut metrics = ContextMetrics::default();
-        metrics.cards_served_total = 3;
-        metrics.card_tokens_total = 240;
-        metrics.raw_file_tokens_total = 2_400;
-        metrics.estimated_tokens_saved_total = 2_160;
-        metrics.stale_responses_total = 1;
-        metrics.truncation_applied_total = 0;
-        metrics.test_surface_hits_total = 2;
-        metrics.changed_files_total = 4;
-        metrics.budget_tier_usage.insert("tiny".to_string(), 2);
-        metrics.budget_tier_usage.insert("normal".to_string(), 1);
+        metrics.record_workflow_call("orient");
+        metrics.record_workflow_call("orient");
+        metrics.record_workflow_call("minimum_context");
 
-        let expected = "\
-# HELP synrepo_cards_served_total Total number of card-shaped responses served.\n\
-# TYPE synrepo_cards_served_total counter\n\
-synrepo_cards_served_total 3\n\
-# HELP synrepo_card_tokens_total Sum of estimated tokens in served cards.\n\
-# TYPE synrepo_card_tokens_total counter\n\
-synrepo_card_tokens_total 240\n\
-# HELP synrepo_raw_file_tokens_total Sum of estimated raw-file tokens that served cards replaced.\n\
-# TYPE synrepo_raw_file_tokens_total counter\n\
-synrepo_raw_file_tokens_total 2400\n\
-# HELP synrepo_estimated_tokens_saved_total Sum of estimated tokens saved vs raw-file reads.\n\
-# TYPE synrepo_estimated_tokens_saved_total counter\n\
-synrepo_estimated_tokens_saved_total 2160\n\
-# HELP synrepo_stale_responses_total Number of responses that surfaced stale advisory content.\n\
-# TYPE synrepo_stale_responses_total counter\n\
-synrepo_stale_responses_total 1\n\
-# HELP synrepo_truncation_applied_total Number of responses that applied token-budget truncation.\n\
-# TYPE synrepo_truncation_applied_total counter\n\
-synrepo_truncation_applied_total 0\n\
-# HELP synrepo_test_surface_hits_total Number of test-surface responses with at least one discovered test.\n\
-# TYPE synrepo_test_surface_hits_total counter\n\
-synrepo_test_surface_hits_total 2\n\
-# HELP synrepo_changed_files_total Number of changed files observed by synrepo_changed.\n\
-# TYPE synrepo_changed_files_total counter\n\
-synrepo_changed_files_total 4\n\
-# HELP synrepo_budget_tier_usage Count of card responses by budget tier.\n\
-# TYPE synrepo_budget_tier_usage counter\n\
-synrepo_budget_tier_usage{tier=\"normal\"} 1\n\
-synrepo_budget_tier_usage{tier=\"tiny\"} 2\n";
-
-        assert_eq!(metrics.to_prometheus_text(), expected);
-    }
-
-    #[test]
-    fn prometheus_output_is_empty_when_no_tiers() {
-        let metrics = ContextMetrics::default();
-        let text = metrics.to_prometheus_text();
-        assert!(text.contains("synrepo_cards_served_total 0"));
-        assert!(
-            !text.contains("synrepo_budget_tier_usage{"),
-            "budget tier block must emit no rows when the map is empty"
+        assert_eq!(metrics.workflow_calls_total.get("orient"), Some(&2));
+        assert_eq!(
+            metrics.workflow_calls_total.get("minimum_context"),
+            Some(&1)
         );
     }
 }

@@ -4,8 +4,10 @@ use super::support::setup_repo_for_sync;
 #[cfg(unix)]
 use super::support::write_foreign_lock;
 use crate::pipeline::repair::{
-    execute_sync, repair_log_path, RepairSurface, ResolutionLogEntry, SyncOptions, SyncOutcome,
+    execute_sync, execute_sync_locked, repair_log_path, RepairSurface, ResolutionLogEntry,
+    SurfaceOutcome, SyncOptions, SyncOutcome, SyncProgress,
 };
+use crate::pipeline::writer::acquire_write_admission;
 use crate::{
     config::Config,
     pipeline::watch::{persist_reconcile_state, ReconcileOutcome},
@@ -273,4 +275,89 @@ fn sync_does_not_report_structural_refresh_as_repaired_when_reconcile_fails() {
     let decoded: ResolutionLogEntry =
         serde_json::from_str(log_content.lines().next().unwrap()).unwrap();
     assert_eq!(decoded.outcome, SyncOutcome::Partial);
+}
+
+#[test]
+fn execute_sync_locked_surface_filter_and_progress_callback() {
+    // Regression guard: `execute_sync_locked` must
+    // 1. invoke its progress callback once per surface with both a
+    //    `SurfaceStarted` and a `SurfaceFinished` event, and
+    // 2. bucket findings excluded by `surface_filter` as
+    //    `SurfaceOutcome::FilteredOut` without letting their handler run.
+    let _guard = crate::test_support::global_test_lock("repair-sync-surface-filter");
+    let dir = tempdir().unwrap();
+    let (repo, synrepo_dir) = setup_repo_for_sync(&dir);
+
+    // Force a stale structural refresh so at least one surface is actionable.
+    persist_reconcile_state(
+        &synrepo_dir,
+        &ReconcileOutcome::Failed("forced stale".to_string()),
+        0,
+    );
+
+    let _lock = acquire_write_admission(&synrepo_dir, "test").unwrap();
+
+    let mut events: Vec<SyncProgress> = Vec::new();
+    let allow_list = [RepairSurface::ExportSurface];
+    let filter: Option<&[RepairSurface]> = Some(&allow_list);
+
+    let summary = {
+        let mut cb = |ev: SyncProgress| events.push(ev);
+        let mut progress: Option<&mut dyn FnMut(SyncProgress)> = Some(&mut cb);
+        execute_sync_locked(
+            &repo,
+            &synrepo_dir,
+            &Config::default(),
+            SyncOptions::default(),
+            &mut progress,
+            filter,
+        )
+        .unwrap()
+    };
+
+    // Structural refresh was forced stale but is NOT in the allow list, so it
+    // must show up as `FilteredOut` rather than in `repaired`.
+    assert!(
+        events.iter().any(|e| matches!(
+            e,
+            SyncProgress::SurfaceFinished {
+                surface: RepairSurface::StructuralRefresh,
+                outcome: SurfaceOutcome::FilteredOut,
+            }
+        )),
+        "structural refresh should be filtered out when not in allow list; got {events:?}"
+    );
+    assert!(
+        !summary
+            .repaired
+            .iter()
+            .any(|f| f.surface == RepairSurface::StructuralRefresh),
+        "filtered-out surface must not appear in repaired: {:?}",
+        summary.repaired
+    );
+
+    // Each SurfaceStarted should be paired with a SurfaceFinished for the
+    // same surface. Collect pairs by counting.
+    let started: Vec<RepairSurface> = events
+        .iter()
+        .filter_map(|e| match e {
+            SyncProgress::SurfaceStarted { surface, .. } => Some(*surface),
+            _ => None,
+        })
+        .collect();
+    let finished: Vec<RepairSurface> = events
+        .iter()
+        .filter_map(|e| match e {
+            SyncProgress::SurfaceFinished { surface, .. } => Some(*surface),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        started, finished,
+        "every SurfaceStarted should have a matching SurfaceFinished"
+    );
+    assert!(
+        !started.is_empty(),
+        "at least one surface must fire when there is actionable drift"
+    );
 }

@@ -155,6 +155,9 @@ pub(crate) fn watch_stop(repo_root: &Path) -> anyhow::Result<()> {
                 Ok(WatchControlResponse::Reconcile { .. }) => Err(anyhow::anyhow!(
                     "stop request returned a reconcile response instead of an acknowledgement"
                 )),
+                Ok(WatchControlResponse::Sync { .. }) => Err(anyhow::anyhow!(
+                    "stop request returned a sync response instead of an acknowledgement"
+                )),
                 Err(err) => recover_stop_transport_error(&synrepo_dir, err, state.pid),
             }
         }

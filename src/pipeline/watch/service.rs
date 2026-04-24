@@ -21,7 +21,16 @@ use notify_debouncer_full::{
     notify::{RecursiveMode, Watcher},
 };
 
-use crate::config::Config;
+use crate::{
+    config::Config,
+    pipeline::{
+        repair::{
+            execute_sync_locked, RepairSurface, SyncOptions, SyncProgress, SyncSummary,
+            CHEAP_AUTO_SYNC_SURFACES,
+        },
+        writer::{acquire_writer_lock, LockError, WriterLock},
+    },
+};
 
 pub(super) use super::filter::filter_repo_events;
 use super::{
@@ -39,6 +48,16 @@ use super::{
         ReconcileOutcome,
     },
 };
+
+/// Why a sync pass is running inside the watch service.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SyncTrigger {
+    /// CLI sent `SyncNow` over the control socket, or the TUI pressed `S`.
+    Manual,
+    /// The reconcile loop opted into auto-sync for cheap surfaces.
+    AutoPostReconcile,
+}
 
 /// Event emitted by the watch service for each reconcile attempt and error.
 ///
@@ -64,6 +83,29 @@ pub enum WatchEvent {
         outcome: ReconcileOutcome,
         /// Number of debounced filesystem events that triggered this pass.
         triggering_events: usize,
+    },
+    /// Emitted before a repair sync pass runs inside the watch service.
+    SyncStarted {
+        /// RFC 3339 UTC timestamp when the pass started.
+        at: String,
+        /// Whether this is an operator-requested or auto-triggered sync.
+        trigger: SyncTrigger,
+    },
+    /// Emitted for each surface boundary and commentary sub-event during sync.
+    SyncProgress {
+        /// RFC 3339 UTC timestamp when the progress event was emitted.
+        at: String,
+        /// The structured progress payload.
+        progress: SyncProgress,
+    },
+    /// Emitted when a sync pass finishes, with the resulting summary.
+    SyncFinished {
+        /// RFC 3339 UTC timestamp when the pass finished.
+        at: String,
+        /// Why the sync ran.
+        trigger: SyncTrigger,
+        /// Completed summary (empty vectors if no findings).
+        summary: SyncSummary,
     },
     /// Emitted for watcher-level errors (debouncer failures). Reconcile
     /// failures surface as `ReconcileFinished { outcome: Failed(_) }`.
@@ -99,6 +141,10 @@ pub(super) enum LoopMessage {
     ReconcileNow {
         respond_to: mpsc::Sender<WatchControlResponse>,
     },
+    SyncNow {
+        respond_to: mpsc::Sender<WatchControlResponse>,
+        options: SyncOptions,
+    },
 }
 
 /// Run the watch service in the current process.
@@ -118,12 +164,15 @@ pub fn run_watch_service(
         .map_err(|error| crate::Error::Other(anyhow::anyhow!(error.to_string())))?;
 
     let stop_flag = Arc::new(AtomicBool::new(false));
+    let auto_sync_enabled = Arc::new(AtomicBool::new(config.auto_sync_enabled));
+    let auto_sync_blocked = Arc::new(AtomicBool::new(false));
     let (tx, rx) = mpsc::channel::<LoopMessage>();
     let socket_thread = spawn_control_listener(
         synrepo_dir,
         state_handle.clone(),
         tx.clone(),
         stop_flag.clone(),
+        auto_sync_enabled.clone(),
     )?;
 
     emit_event(&events, |now| WatchEvent::ReconcileStarted {
@@ -234,6 +283,15 @@ pub fn run_watch_service(
                     outcome: outcome.clone(),
                     triggering_events: event_count,
                 });
+                maybe_run_post_reconcile_auto_sync(
+                    repo_root,
+                    config,
+                    synrepo_dir,
+                    &outcome,
+                    &auto_sync_enabled,
+                    &auto_sync_blocked,
+                    &events,
+                );
             }
             Ok(LoopMessage::Stop) => {
                 break;
@@ -251,10 +309,35 @@ pub fn run_watch_service(
                     outcome: outcome.clone(),
                     triggering_events: 0,
                 });
+                let outcome_for_response = outcome.clone();
                 let _ = respond_to.send(WatchControlResponse::Reconcile {
-                    outcome,
+                    outcome: outcome_for_response,
                     triggering_events: 0,
                 });
+                maybe_run_post_reconcile_auto_sync(
+                    repo_root,
+                    config,
+                    synrepo_dir,
+                    &outcome,
+                    &auto_sync_enabled,
+                    &auto_sync_blocked,
+                    &events,
+                );
+            }
+            Ok(LoopMessage::SyncNow {
+                respond_to,
+                options,
+            }) => {
+                let response = run_sync_under_watch_lock(
+                    repo_root,
+                    config,
+                    synrepo_dir,
+                    options,
+                    None,
+                    SyncTrigger::Manual,
+                    &events,
+                );
+                let _ = respond_to.send(response);
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         }
@@ -299,6 +382,7 @@ fn spawn_control_listener(
     state_handle: WatchStateHandle,
     tx: mpsc::Sender<LoopMessage>,
     stop_flag: Arc<AtomicBool>,
+    auto_sync_enabled: Arc<AtomicBool>,
 ) -> crate::Result<thread::JoinHandle<()>> {
     let endpoint = watch_control_endpoint(synrepo_dir);
 
@@ -338,6 +422,18 @@ fn spawn_control_listener(
                         },
                         Ok(WatchControlRequest::Stop) => bridge_stop_request(&tx, &stop_flag),
                         Ok(WatchControlRequest::ReconcileNow) => bridge_reconcile_request(&tx),
+                        Ok(WatchControlRequest::SyncNow { options }) => {
+                            bridge_sync_request(&tx, options)
+                        }
+                        Ok(WatchControlRequest::SetAutoSync { enabled }) => {
+                            auto_sync_enabled.store(enabled, Ordering::Relaxed);
+                            WatchControlResponse::Ack {
+                                message: format!(
+                                    "auto-sync {}",
+                                    if enabled { "on" } else { "off" }
+                                ),
+                            }
+                        }
                         Err(error) => WatchControlResponse::Error {
                             message: error.to_string(),
                         },
@@ -388,4 +484,166 @@ fn bridge_reconcile_request(tx: &mpsc::Sender<LoopMessage>) -> WatchControlRespo
         .unwrap_or_else(|_| WatchControlResponse::Error {
             message: "watch loop did not answer the control request in time".to_string(),
         })
+}
+
+fn bridge_sync_request(
+    tx: &mpsc::Sender<LoopMessage>,
+    options: SyncOptions,
+) -> WatchControlResponse {
+    let (respond_to, recv_from_loop) = mpsc::channel();
+    if tx
+        .send(LoopMessage::SyncNow {
+            respond_to,
+            options,
+        })
+        .is_err()
+    {
+        return WatchControlResponse::Error {
+            message: "watch loop is no longer accepting control messages".to_string(),
+        };
+    }
+
+    // Sync may invoke LLM-backed commentary refresh; allow a longer wait than
+    // reconcile's 30 seconds. A wedged loop still surfaces eventually.
+    recv_from_loop
+        .recv_timeout(Duration::from_secs(600))
+        .unwrap_or_else(|_| WatchControlResponse::Error {
+            message: "watch loop did not answer the sync request in time".to_string(),
+        })
+}
+
+/// Acquire the raw writer lock and run one sync pass inline. Runs on the
+/// watch main-loop thread. Emits `SyncStarted`/`SyncProgress`/`SyncFinished`
+/// events and returns the appropriate `WatchControlResponse`.
+fn run_sync_under_watch_lock(
+    repo_root: &Path,
+    config: &Config,
+    synrepo_dir: &Path,
+    options: SyncOptions,
+    surface_filter: Option<&'static [RepairSurface]>,
+    trigger: SyncTrigger,
+    events: &Option<crossbeam_channel::Sender<WatchEvent>>,
+) -> WatchControlResponse {
+    emit_event(events, |now| WatchEvent::SyncStarted { at: now, trigger });
+
+    let _lock: WriterLock = match acquire_writer_lock(synrepo_dir) {
+        Ok(lock) => lock,
+        Err(LockError::HeldByOther { pid, .. }) => {
+            let msg =
+                format!("sync: writer lock held by pid {pid}; watch main loop could not acquire");
+            emit_event(events, |now| WatchEvent::SyncFinished {
+                at: now,
+                trigger,
+                summary: empty_sync_summary(),
+            });
+            return WatchControlResponse::Error { message: msg };
+        }
+        Err(err) => {
+            emit_event(events, |now| WatchEvent::SyncFinished {
+                at: now,
+                trigger,
+                summary: empty_sync_summary(),
+            });
+            return WatchControlResponse::Error {
+                message: format!("sync: could not acquire writer lock: {err}"),
+            };
+        }
+    };
+
+    let events_for_cb = events.clone();
+    let mut progress_cb = move |progress: SyncProgress| {
+        emit_event(&events_for_cb, |now| WatchEvent::SyncProgress {
+            at: now,
+            progress: progress.clone(),
+        });
+    };
+
+    let mut progress: Option<&mut dyn FnMut(SyncProgress)> = Some(&mut progress_cb);
+
+    let summary = match execute_sync_locked(
+        repo_root,
+        synrepo_dir,
+        config,
+        options,
+        &mut progress,
+        surface_filter,
+    ) {
+        Ok(summary) => summary,
+        Err(err) => {
+            emit_event(events, |now| WatchEvent::SyncFinished {
+                at: now,
+                trigger,
+                summary: empty_sync_summary(),
+            });
+            return WatchControlResponse::Error {
+                message: format!("sync failed: {err}"),
+            };
+        }
+    };
+
+    emit_event(events, |now| WatchEvent::SyncFinished {
+        at: now,
+        trigger,
+        summary: summary.clone(),
+    });
+
+    WatchControlResponse::Sync { summary }
+}
+
+fn empty_sync_summary() -> SyncSummary {
+    SyncSummary {
+        synced_at: crate::pipeline::writer::now_rfc3339(),
+        repaired: Vec::new(),
+        report_only: Vec::new(),
+        blocked: Vec::new(),
+    }
+}
+
+/// Call the auto-sync hook if it is enabled and the reconcile pass produced a
+/// non-failure outcome. Skips on prior-pass blocked findings to avoid tight
+/// retry loops.
+fn maybe_run_post_reconcile_auto_sync(
+    repo_root: &Path,
+    config: &Config,
+    synrepo_dir: &Path,
+    outcome: &ReconcileOutcome,
+    auto_sync_enabled: &AtomicBool,
+    auto_sync_blocked: &AtomicBool,
+    events: &Option<crossbeam_channel::Sender<WatchEvent>>,
+) {
+    if !auto_sync_enabled.load(Ordering::Relaxed) {
+        return;
+    }
+    if !matches!(outcome, ReconcileOutcome::Completed(_)) {
+        return;
+    }
+    if auto_sync_blocked.load(Ordering::Relaxed) {
+        // A previous auto-sync hit a blocked finding on a cheap surface. Skip
+        // until the operator intervenes (runs `synrepo sync` manually or
+        // toggles the flag off and on).
+        return;
+    }
+
+    let response = run_sync_under_watch_lock(
+        repo_root,
+        config,
+        synrepo_dir,
+        SyncOptions::default(),
+        Some(CHEAP_AUTO_SYNC_SURFACES),
+        SyncTrigger::AutoPostReconcile,
+        events,
+    );
+
+    if let WatchControlResponse::Sync { summary } = response {
+        if !summary.blocked.is_empty() {
+            tracing::warn!(
+                "auto-sync produced blocked findings on cheap surfaces; pausing auto-sync until reconcile succeeds cleanly"
+            );
+            auto_sync_blocked.store(true, Ordering::Relaxed);
+        } else {
+            // Successful auto-sync re-enables the loop if a previous block
+            // cleared without operator intervention.
+            auto_sync_blocked.store(false, Ordering::Relaxed);
+        }
+    }
 }

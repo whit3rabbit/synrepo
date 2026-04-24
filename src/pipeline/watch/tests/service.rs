@@ -330,3 +330,82 @@ fn watch_service_stop_stays_responsive_after_rapid_source_writes() {
         "stop should not sit behind an unbounded watch backlog"
     );
 }
+
+/// Regression guard for sync-watch-delegation-v1: the watch control socket
+/// handles `SyncNow` (responding with a `Sync { summary }`) and `SetAutoSync`
+/// (responding with an `Ack`). Without this test the asymmetry that prompted
+/// the change package could silently return.
+#[cfg(unix)]
+#[test]
+fn watch_service_handles_sync_now_and_set_auto_sync() {
+    use crate::pipeline::repair::SyncOptions;
+
+    let _guard = watch_service_guard();
+    let (_dir, repo, config, synrepo_dir) = setup_test_repo();
+    // Disable auto-sync for this test to prevent background auto-sync from
+    // racing with the explicit `SyncNow` call.
+    let mut config = config;
+    config.auto_sync_enabled = false;
+
+    let service_repo = repo.clone();
+    let service_config = config.clone();
+    let service_synrepo = synrepo_dir.clone();
+
+    let handle = thread::spawn(move || {
+        run_watch_service(
+            &service_repo,
+            &service_config,
+            &WatchConfig::default(),
+            &service_synrepo,
+            WatchServiceMode::Foreground,
+            None,
+        )
+        .unwrap();
+    });
+
+    wait_for(
+        || {
+            matches!(
+                super::super::watch_service_status(&synrepo_dir),
+                WatchServiceStatus::Running(_)
+            ) && super::super::watch_socket_path(&synrepo_dir).exists()
+        },
+        Duration::from_secs(5),
+    );
+
+    let sync_response = request_watch_control(
+        &synrepo_dir,
+        WatchControlRequest::SyncNow {
+            options: SyncOptions::default(),
+        },
+    )
+    .unwrap();
+    assert!(
+        matches!(sync_response, WatchControlResponse::Sync { .. }),
+        "expected Sync response, got {:?}",
+        sync_response
+    );
+
+    let auto_off = request_watch_control(
+        &synrepo_dir,
+        WatchControlRequest::SetAutoSync { enabled: false },
+    )
+    .unwrap();
+    match auto_off {
+        WatchControlResponse::Ack { message } => assert!(message.contains("off")),
+        other => panic!("expected Ack for SetAutoSync(off), got {:?}", other),
+    }
+
+    let auto_on = request_watch_control(
+        &synrepo_dir,
+        WatchControlRequest::SetAutoSync { enabled: true },
+    )
+    .unwrap();
+    match auto_on {
+        WatchControlResponse::Ack { message } => assert!(message.contains("on")),
+        other => panic!("expected Ack for SetAutoSync(on), got {:?}", other),
+    }
+
+    let _ = request_watch_control(&synrepo_dir, WatchControlRequest::Stop);
+    handle.join().unwrap();
+}

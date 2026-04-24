@@ -41,11 +41,11 @@ pub use log::{
 pub use report::build_repair_report;
 pub use report::surfaces::{scan_commentary_staleness, CommentaryScan};
 pub use sync::{
-    execute_sync, load_commentary_work_plan, normalize_scope_prefixes, path_matches_any_prefix,
-    refresh_commentary, ActionContext, CommentaryProgressEvent, CommentaryWorkItem,
-    CommentaryWorkPhase, CommentaryWorkPlan,
+    execute_sync, execute_sync_locked, load_commentary_work_plan, normalize_scope_prefixes,
+    path_matches_any_prefix, refresh_commentary, ActionContext, CommentaryProgressEvent,
+    CommentaryWorkItem, CommentaryWorkPhase, CommentaryWorkPlan, CHEAP_AUTO_SYNC_SURFACES,
 };
 pub use types::{
     DriftClass, RepairAction, RepairFinding, RepairReport, RepairSurface, ResolutionLogEntry,
-    Severity, SyncOptions, SyncOutcome, SyncSummary,
+    Severity, SurfaceOutcome, SyncOptions, SyncOutcome, SyncProgress, SyncSummary,
 };

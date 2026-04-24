@@ -26,21 +26,60 @@ use crate::{
 use crate::pipeline::repair::{
     append_resolution_log, cross_links::run_cross_link_generation, report::assemble_repair_report,
     DriftClass, RepairAction, RepairFinding, RepairSurface, ResolutionLogEntry, Severity,
-    SyncOptions, SyncOutcome, SyncSummary,
+    SurfaceOutcome, SyncOptions, SyncOutcome, SyncProgress, SyncSummary,
 };
 
+/// Surfaces the watch auto-sync hook is allowed to repair inline after
+/// reconcile. Intentionally hard-coded: promoting a surface is a visible source
+/// change, never a silent config tweak. Commentary, proposed cross-links,
+/// declared links, and edge drift stay out of this list because they cost
+/// tokens or require human review.
+pub const CHEAP_AUTO_SYNC_SURFACES: &[RepairSurface] = &[
+    RepairSurface::ExportSurface,
+    RepairSurface::RetiredObservations,
+];
+
 /// Execute a targeted sync: repair auto-fixable findings from `build_repair_report`.
+///
+/// Acquires the writer lock via `acquire_write_admission`, which rejects the
+/// call when a watch service is active for this repo. In-process callers that
+/// already hold the writer lock (the watch service itself) SHALL use
+/// [`execute_sync_locked`] directly instead of calling this function.
 pub fn execute_sync(
     repo_root: &Path,
     synrepo_dir: &Path,
     config: &Config,
     options: SyncOptions,
 ) -> crate::Result<SyncSummary> {
-    let maint_plan = plan_maintenance(synrepo_dir, config);
-    let report = assemble_repair_report(synrepo_dir, config, &maint_plan);
-
     let _writer_lock =
         acquire_write_admission(synrepo_dir, "sync").map_err(|err| map_lock_error("sync", err))?;
+
+    execute_sync_locked(repo_root, synrepo_dir, config, options, &mut None, None)
+}
+
+/// Execute a targeted sync assuming the caller already holds the writer lock.
+///
+/// Used by the watch service, which takes the raw writer lock itself before
+/// dispatching control-plane sync requests. External callers should prefer
+/// [`execute_sync`] unless they explicitly hold the lock.
+///
+/// - `progress`: optional callback invoked once per surface boundary and once
+///   per commentary sub-event. `None` preserves the pre-change silent
+///   behavior.
+/// - `surface_filter`: when `Some(allow_list)`, only findings whose surface is
+///   in the allow list are dispatched to their handlers; other actionable
+///   findings are bucketed as `SurfaceOutcome::FilteredOut` and left untouched.
+///   `None` processes every actionable finding, matching prior behavior.
+pub fn execute_sync_locked(
+    repo_root: &Path,
+    synrepo_dir: &Path,
+    config: &Config,
+    options: SyncOptions,
+    progress: &mut Option<&mut dyn FnMut(SyncProgress)>,
+    surface_filter: Option<&[RepairSurface]>,
+) -> crate::Result<SyncSummary> {
+    let maint_plan = plan_maintenance(synrepo_dir, config);
+    let report = assemble_repair_report(synrepo_dir, config, &maint_plan);
 
     let now = now_rfc3339();
 
@@ -61,6 +100,39 @@ pub fn execute_sync(
             Severity::Blocked => blocked.push(finding.clone()),
             Severity::ReportOnly | Severity::Unsupported => report_only.push(finding.clone()),
             Severity::Actionable => {
+                let allowed = surface_filter
+                    .map(|list| list.contains(&finding.surface))
+                    .unwrap_or(true);
+                if !allowed {
+                    emit_progress(
+                        progress,
+                        SyncProgress::SurfaceStarted {
+                            surface: finding.surface,
+                            action: finding.recommended_action,
+                        },
+                    );
+                    emit_progress(
+                        progress,
+                        SyncProgress::SurfaceFinished {
+                            surface: finding.surface,
+                            outcome: SurfaceOutcome::FilteredOut,
+                        },
+                    );
+                    continue;
+                }
+
+                emit_progress(
+                    progress,
+                    SyncProgress::SurfaceStarted {
+                        surface: finding.surface,
+                        action: finding.recommended_action,
+                    },
+                );
+
+                let repaired_before = repaired.len();
+                let report_only_before = report_only.len();
+                let blocked_before = blocked.len();
+
                 handlers::handle_actionable_finding(
                     finding,
                     &action_context,
@@ -68,7 +140,28 @@ pub fn execute_sync(
                     &mut report_only,
                     &mut blocked,
                     &mut actions_taken,
+                    progress,
                 )?;
+
+                let outcome = if repaired.len() > repaired_before {
+                    SurfaceOutcome::Repaired
+                } else if blocked.len() > blocked_before {
+                    SurfaceOutcome::Blocked
+                } else if report_only.len() > report_only_before {
+                    SurfaceOutcome::ReportOnly
+                } else {
+                    // Handler chose not to bucket this finding (e.g. RunMaintenance
+                    // path where the plan had no work). Treat as report-only for
+                    // observability without mutating the summary.
+                    SurfaceOutcome::ReportOnly
+                };
+                emit_progress(
+                    progress,
+                    SyncProgress::SurfaceFinished {
+                        surface: finding.surface,
+                        outcome,
+                    },
+                );
             }
         }
     }
@@ -143,6 +236,12 @@ pub fn execute_sync(
         report_only,
         blocked,
     })
+}
+
+fn emit_progress(sink: &mut Option<&mut dyn FnMut(SyncProgress)>, event: SyncProgress) {
+    if let Some(cb) = sink.as_deref_mut() {
+        cb(event);
+    }
 }
 
 /// Resolve cross-link rows stuck in `pending_promotion` state.

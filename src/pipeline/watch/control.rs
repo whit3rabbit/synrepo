@@ -6,13 +6,15 @@ use std::{
 use interprocess::local_socket::{traits::Stream as _, Stream};
 use serde::{Deserialize, Serialize};
 
+use crate::pipeline::repair::{SyncOptions, SyncSummary};
+
 use super::lease::{
     watch_control_endpoint, watch_control_socket_name, WatchDaemonError, WatchDaemonState,
 };
 use super::reconcile::ReconcileOutcome;
 
 /// Control message sent over the per-repo watch control endpoint.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "command", rename_all = "snake_case")]
 pub enum WatchControlRequest {
     /// Return the current service snapshot.
@@ -21,10 +23,22 @@ pub enum WatchControlRequest {
     Stop,
     /// Run one reconcile pass immediately.
     ReconcileNow,
+    /// Run one repair sync pass immediately, under the watch's writer lock.
+    SyncNow {
+        /// Sync-level options (cross-link generation toggles). Surface-level
+        /// filtering is not exposed over the control plane; callers that need
+        /// it use the in-process entry point directly.
+        options: SyncOptions,
+    },
+    /// Flip the in-memory auto-sync flag. Does not write to `config.toml`.
+    SetAutoSync {
+        /// Desired runtime state.
+        enabled: bool,
+    },
 }
 
 /// Control response returned by the watch service.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum WatchControlResponse {
     /// Simple acknowledgement without a payload.
@@ -43,6 +57,11 @@ pub enum WatchControlResponse {
         outcome: ReconcileOutcome,
         /// Triggering events (usually 0 for manual calls).
         triggering_events: usize,
+    },
+    /// Repair sync outcome.
+    Sync {
+        /// Summary of the completed sync pass.
+        summary: SyncSummary,
     },
     /// Request failed.
     Error {

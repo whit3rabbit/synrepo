@@ -319,3 +319,16 @@ MCP card and workflow aliases SHALL accept `budget_tokens` where the response co
 - **WHEN** an agent invokes a card-set MCP alias with `budget_tokens`
 - **THEN** synrepo treats that value as a hard response ceiling where the tool can safely truncate ranked results
 - **AND** the returned accounting metadata reports whether truncation occurred
+
+### Requirement: Expose workflow guidance in MCP descriptions
+The MCP server SHALL expose concise workflow guidance in server info and relevant task-first tool descriptions.
+
+#### Scenario: MCP client lists tools
+- **WHEN** an MCP client enumerates synrepo tools
+- **THEN** task-first tools such as orient, find, explain, impact, risks, tests, changed, and minimum-context include concise guidance about bounded context and escalation
+- **AND** descriptions remain short enough to avoid bloating tool-list responses
+
+#### Scenario: MCP server info is requested
+- **WHEN** a client requests synrepo server info or instructions
+- **THEN** the response names the orient, find, impact or risks, edit, tests, changed workflow
+- **AND** it tells agents to read full files only after card routing or explicit insufficiency

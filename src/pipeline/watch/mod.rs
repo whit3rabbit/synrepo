@@ -28,7 +28,7 @@ pub use reconcile::{
     persist_reconcile_state, reconcile_state_path, run_reconcile_pass, ReconcileOutcome,
     ReconcileState, ReconcileStateError,
 };
-pub use service::{run_watch_loop, run_watch_service, WatchConfig, WatchEvent};
+pub use service::{run_watch_loop, run_watch_service, SyncTrigger, WatchConfig, WatchEvent};
 pub use status::{
     cleanup_stale_watch_artifacts, load_watch_state, watch_service_status, StateLoadError,
     WatchServiceStatus,

@@ -128,11 +128,8 @@ fn b_at_confirm_after_skip_goes_back_to_explain_selection() {
 
 #[test]
 fn b_at_confirm_after_provider_goes_back_to_review() {
-    let mut s = SetupWizardState::with_explain_support(
-        Mode::Auto,
-        vec![],
-        support_with_saved_anthropic(),
-    );
+    let mut s =
+        SetupWizardState::with_explain_support(Mode::Auto, vec![], support_with_saved_anthropic());
     press(&mut s, KeyCode::Enter); // splash → mode
     press(&mut s, KeyCode::Enter); // mode → target
     press(&mut s, KeyCode::Enter); // target → explain

@@ -115,10 +115,27 @@ pub(crate) fn stats_context(repo_root: &Path, format: StatFormat) -> anyhow::Res
         StatFormat::Prometheus => print!("{}", metrics.to_prometheus_text()),
         StatFormat::Text => {
             println!("synrepo context stats");
-            println!("  cards served: {}", metrics.cards_served_total);
-            println!("  avg tokens/card: {:.1}", metrics.card_tokens_avg());
+            println!("  observed:");
+            println!("    cards served: {}", metrics.cards_served_total);
+            println!("    changed files: {}", metrics.changed_files_total);
+            println!("    stale responses: {}", metrics.stale_responses_total);
             println!(
-                "  est. tokens avoided: {}",
+                "    truncation applied: {}",
+                metrics.truncation_applied_total
+            );
+            println!("    test surface hits: {}", metrics.test_surface_hits_total);
+            if metrics.workflow_calls_total.is_empty() {
+                println!("    workflow calls: (none recorded)");
+            } else {
+                println!("    workflow calls:");
+                for (tool, count) in &metrics.workflow_calls_total {
+                    println!("      {tool}: {count}");
+                }
+            }
+            println!("  estimated (from card accounting):");
+            println!("    avg tokens/card: {:.1}", metrics.card_tokens_avg());
+            println!(
+                "    cold-file tokens avoided: {}",
                 metrics.estimated_tokens_saved_total
             );
         }

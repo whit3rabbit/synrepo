@@ -1,9 +1,19 @@
 use anyhow::anyhow;
 use std::path::Path;
 
+use super::report::{
+    entry_after_failure, entry_after_success, render_client_setup_summary,
+    render_detected_client_summary, ClientBefore, ClientSetupEntry,
+};
 use super::steps::setup;
 use crate::cli_support::agent_shims::AgentTool;
 use crate::cli_support::commands::basic::agent_setup;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ToolResolution {
+    pub selected: Vec<AgentTool>,
+    pub skipped: Vec<AgentTool>,
+}
 
 /// Resolve the list of agent targets from the three CLI shapes we accept:
 /// a single positional `tool`, `--only <tool,tool>`, or `--skip <tool,tool>`.
@@ -15,21 +25,36 @@ use crate::cli_support::commands::basic::agent_setup;
 /// internal fan-out) in case the clap annotations drift.
 ///
 /// `--skip` expands to every known `AgentTool` minus the skipped set.
+#[cfg(test)]
 pub(crate) fn resolve_tools(
     tool: Option<AgentTool>,
     only: &[AgentTool],
     skip: &[AgentTool],
 ) -> anyhow::Result<Vec<AgentTool>> {
+    Ok(resolve_tool_resolution(tool, only, skip)?.selected)
+}
+
+pub(crate) fn resolve_tool_resolution(
+    tool: Option<AgentTool>,
+    only: &[AgentTool],
+    skip: &[AgentTool],
+) -> anyhow::Result<ToolResolution> {
     if tool.is_some() && (!only.is_empty() || !skip.is_empty()) {
         anyhow::bail!("positional tool cannot be combined with --only or --skip; pick one shape");
     }
     if let Some(tool) = tool {
-        return Ok(vec![tool]);
+        return Ok(ToolResolution {
+            selected: vec![tool],
+            skipped: vec![],
+        });
     }
     if !only.is_empty() {
         let mut list = only.to_vec();
         dedup_preserve_order(&mut list);
-        return Ok(list);
+        return Ok(ToolResolution {
+            selected: list,
+            skipped: vec![],
+        });
     }
     if !skip.is_empty() {
         use clap::ValueEnum;
@@ -42,7 +67,9 @@ pub(crate) fn resolve_tools(
         if selected.is_empty() {
             anyhow::bail!("--skip excludes every known target; nothing to set up");
         }
-        return Ok(selected);
+        let mut skipped = skip.to_vec();
+        dedup_preserve_order(&mut skipped);
+        return Ok(ToolResolution { selected, skipped });
     }
     Err(anyhow!(
         "no target selected: pass a positional tool, `--only <tool,tool>`, or `--skip <tool,tool>`"
@@ -54,30 +81,79 @@ fn dedup_preserve_order(list: &mut Vec<AgentTool>) {
     list.retain(|tool| seen.insert(*tool));
 }
 
-/// Shared fan-out over a resolved list of agent targets. For a single target
-/// the per-tool closure is invoked directly so its error surfaces unchanged.
-/// For multiple targets, per-tool failures are collected and reported at the
-/// end; the batch never short-circuits on a single failing target. `kind`
-/// only labels the header and summary text, so both `setup` and
-/// `agent-setup` can share the same progress shape.
-fn run_many<F>(tools: &[AgentTool], kind: &str, mut run_one: F) -> anyhow::Result<()>
+fn run_many_with_skipped<F>(
+    repo_root: &Path,
+    tools: &[AgentTool],
+    skipped: &[AgentTool],
+    kind: &str,
+    mut run_one: F,
+) -> anyhow::Result<()>
 where
     F: FnMut(AgentTool) -> anyhow::Result<()>,
 {
+    let detected = detected_tools(repo_root);
+    print!(
+        "{}",
+        render_detected_client_summary(&detected, tools, skipped)
+    );
+
+    let mut entries: Vec<ClientSetupEntry> = skipped
+        .iter()
+        .copied()
+        .map(|tool| ClientSetupEntry::skipped(repo_root, tool, detected.contains(&tool)))
+        .collect();
+
     if let [single] = tools {
-        return run_one(*single);
+        let before = ClientBefore::observe(repo_root, *single);
+        return match run_one(*single) {
+            Ok(()) => {
+                entries.push(entry_after_success(
+                    repo_root,
+                    *single,
+                    before,
+                    detected.contains(single),
+                ));
+                print!("{}", render_client_setup_summary(repo_root, kind, &entries));
+                Ok(())
+            }
+            Err(err) => {
+                entries.push(entry_after_failure(
+                    repo_root,
+                    *single,
+                    detected.contains(single),
+                    &err,
+                ));
+                print!("{}", render_client_setup_summary(repo_root, kind, &entries));
+                Err(err)
+            }
+        };
     }
     let mut failures: Vec<(AgentTool, anyhow::Error)> = Vec::new();
     for (idx, tool) in tools.iter().copied().enumerate() {
+        let before = ClientBefore::observe(repo_root, tool);
         println!(
             "\n=== [{}/{}] {} ===",
             idx + 1,
             tools.len(),
             tool.display_name()
         );
-        if let Err(err) = run_one(tool) {
-            eprintln!("  error: {err:#}");
-            failures.push((tool, err));
+        match run_one(tool) {
+            Ok(()) => entries.push(entry_after_success(
+                repo_root,
+                tool,
+                before,
+                detected.contains(&tool),
+            )),
+            Err(err) => {
+                eprintln!("  error: {err:#}");
+                entries.push(entry_after_failure(
+                    repo_root,
+                    tool,
+                    detected.contains(&tool),
+                    &err,
+                ));
+                failures.push((tool, err));
+            }
         }
     }
     let succeeded = tools.len() - failures.len();
@@ -85,6 +161,7 @@ where
         "\nmulti-client {kind}: {succeeded}/{total} succeeded",
         total = tools.len()
     );
+    print!("{}", render_client_setup_summary(repo_root, kind, &entries));
     if !failures.is_empty() {
         let names: Vec<&'static str> = failures.iter().map(|(t, _)| t.display_name()).collect();
         anyhow::bail!("{kind} failed for: {}", names.join(", "));
@@ -92,32 +169,42 @@ where
     Ok(())
 }
 
-/// Run `setup` across a resolved list of agent targets. Init and first reconcile
-/// happen once (via the first `setup()` call's idempotent steps); later tools
-/// reuse the now-initialized `.synrepo/` and only perform shim + MCP work.
-pub(crate) fn setup_many(
+fn detected_tools(repo_root: &Path) -> Vec<AgentTool> {
+    synrepo::bootstrap::runtime_probe::probe(repo_root)
+        .detected_agent_targets
+        .into_iter()
+        .map(AgentTool::from_target_kind)
+        .collect()
+}
+
+pub(crate) fn setup_many_resolved(
     repo_root: &Path,
-    tools: &[AgentTool],
+    resolution: &ToolResolution,
     force: bool,
     gitignore: bool,
 ) -> anyhow::Result<()> {
-    run_many(tools, "setup", |tool| {
-        setup(repo_root, tool, force, gitignore)
-    })
+    run_many_with_skipped(
+        repo_root,
+        &resolution.selected,
+        &resolution.skipped,
+        "setup",
+        |tool| setup(repo_root, tool, force, gitignore),
+    )
 }
 
-/// Run `agent_setup` across a resolved list of agent targets. Shares its
-/// progress shape with [`setup_many`] so operators see a consistent multi-
-/// client view across both commands.
-pub(crate) fn agent_setup_many(
+pub(crate) fn agent_setup_many_resolved(
     repo_root: &Path,
-    tools: &[AgentTool],
+    resolution: &ToolResolution,
     force: bool,
     regen: bool,
 ) -> anyhow::Result<()> {
-    run_many(tools, "agent-setup", |tool| {
-        agent_setup(repo_root, tool, force, regen)
-    })
+    run_many_with_skipped(
+        repo_root,
+        &resolution.selected,
+        &resolution.skipped,
+        "agent-setup",
+        |tool| agent_setup(repo_root, tool, force, regen),
+    )
 }
 
 #[cfg(test)]

@@ -52,11 +52,13 @@ pub(crate) use notes::{notes_add_output, notes_list_output};
 pub(crate) use remove::remove;
 pub(crate) use repair::{check, reconcile, sync};
 pub(crate) use server::server;
-pub(crate) use setup::{agent_setup_many, resolve_tools, setup_many};
+pub(crate) use setup::{agent_setup_many_resolved, resolve_tool_resolution, setup_many_resolved};
 #[cfg(test)]
 pub(crate) use setup::{
-    setup_claude_mcp, setup_codex_mcp, setup_cursor_mcp, setup_opencode_mcp, setup_roo_mcp,
-    setup_windsurf_mcp, StepOutcome,
+    classify_mcp_registration, classify_shim_freshness, entry_after_failure, entry_after_success,
+    render_client_setup_summary, setup_claude_mcp, setup_codex_mcp, setup_cursor_mcp,
+    setup_opencode_mcp, setup_roo_mcp, setup_windsurf_mcp, ClientBefore, ClientSetupEntry,
+    McpRegistration, ShimFreshness, StepOutcome,
 };
 pub(crate) use setup::{
     step_apply_integration, step_ensure_ready, step_init, step_register_mcp, step_write_shim,

@@ -19,7 +19,11 @@ use crate::{
     structure::graph::GraphStore,
 };
 
-use crate::pipeline::repair::{DriftClass, RepairAction, RepairFinding, RepairSurface, Severity};
+use crate::pipeline::repair::{
+    DriftClass, RepairAction, RepairFinding, RepairSurface, Severity, SyncProgress,
+};
+
+use super::commentary_plan::{CommentaryProgressEvent, CommentaryWorkPhase};
 
 /// Context for action handlers.
 pub struct ActionContext<'a> {
@@ -48,6 +52,7 @@ pub fn run_maintenance_if_needed(
 }
 
 /// Handle actionable finding based on recommended action.
+#[allow(clippy::too_many_arguments)]
 pub fn handle_actionable_finding(
     finding: &RepairFinding,
     context: &ActionContext<'_>,
@@ -55,7 +60,15 @@ pub fn handle_actionable_finding(
     report_only: &mut Vec<RepairFinding>,
     blocked: &mut Vec<RepairFinding>,
     actions_taken: &mut Vec<String>,
+    progress: &mut Option<&mut dyn FnMut(SyncProgress)>,
 ) -> crate::Result<()> {
+    let _span = tracing::info_span!(
+        "sync_surface",
+        surface = finding.surface.as_str(),
+        action = finding.recommended_action.as_str()
+    )
+    .entered();
+
     match finding.recommended_action {
         RepairAction::None => {}
         RepairAction::RunMaintenance => {
@@ -145,7 +158,23 @@ pub fn handle_actionable_finding(
             }
         }
         RepairAction::RefreshCommentary => {
-            match super::commentary::refresh_commentary(context, actions_taken, None, None, None) {
+            let result = if let Some(sink) = progress.as_deref_mut() {
+                let mut adapter = |event: CommentaryProgressEvent| {
+                    if let Some(mapped) = commentary_event_to_sync_progress(&event) {
+                        sink(mapped);
+                    }
+                };
+                super::commentary::refresh_commentary(
+                    context,
+                    actions_taken,
+                    None,
+                    Some(&mut adapter),
+                    None,
+                )
+            } else {
+                super::commentary::refresh_commentary(context, actions_taken, None, None, None)
+            };
+            match result {
                 Ok(()) => repaired.push(finding.clone()),
                 Err(err) => {
                     actions_taken.push(format!(
@@ -163,6 +192,55 @@ pub fn handle_actionable_finding(
         }
     }
     Ok(())
+}
+
+/// Adapt the internal commentary progress stream to the wire-serializable
+/// [`SyncProgress`] stream. Low-signal events (e.g. docs dir creation) are
+/// dropped because they do not meaningfully help operators watching sync.
+fn commentary_event_to_sync_progress(event: &CommentaryProgressEvent) -> Option<SyncProgress> {
+    match event {
+        CommentaryProgressEvent::PlanReady {
+            refresh,
+            file_seeds,
+            symbol_seed_candidates,
+            ..
+        } => Some(SyncProgress::CommentaryPlan {
+            refresh: *refresh,
+            file_seeds: *file_seeds,
+            symbol_seed_candidates: *symbol_seed_candidates,
+        }),
+        CommentaryProgressEvent::TargetFinished {
+            current, generated, ..
+        } => Some(SyncProgress::CommentaryItem {
+            current: *current,
+            generated: *generated,
+        }),
+        CommentaryProgressEvent::RunSummary {
+            refreshed,
+            seeded,
+            not_generated,
+            attempted,
+            stopped,
+        } => Some(SyncProgress::CommentarySummary {
+            refreshed: *refreshed,
+            seeded: *seeded,
+            not_generated: *not_generated,
+            attempted: *attempted,
+            stopped: *stopped,
+        }),
+        CommentaryProgressEvent::ScanProgress { .. }
+        | CommentaryProgressEvent::TargetStarted { .. }
+        | CommentaryProgressEvent::DocsDirCreated { .. }
+        | CommentaryProgressEvent::DocWritten { .. }
+        | CommentaryProgressEvent::DocDeleted { .. }
+        | CommentaryProgressEvent::IndexDirCreated { .. }
+        | CommentaryProgressEvent::IndexUpdated { .. }
+        | CommentaryProgressEvent::IndexRebuilt { .. }
+        | CommentaryProgressEvent::PhaseSummary { .. } => {
+            let _ = CommentaryWorkPhase::Refresh;
+            None
+        }
+    }
 }
 
 fn mark_agent_note_stale(

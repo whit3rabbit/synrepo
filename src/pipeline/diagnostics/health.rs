@@ -10,9 +10,7 @@ use std::path::Path;
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
-use super::types::{
-    EmbeddingHealth, ReconcileHealth, ReconcileStaleness, WriterStatus,
-};
+use super::types::{EmbeddingHealth, ReconcileHealth, ReconcileStaleness, WriterStatus};
 use crate::config::Config;
 use crate::pipeline::watch::{ReconcileState, ReconcileStateError};
 use crate::pipeline::writer::{current_ownership, WriterOwnership, WriterOwnershipError};
