@@ -53,7 +53,7 @@ fn backup_path_for(path: &Path) -> PathBuf {
 fn prompt_backup_mcp(path: &Path, bak: &Path) -> bool {
     use std::io::{self, BufRead, Write};
 
-    if !synrepo::tui::stdout_is_tty() {
+    if !prompt_stdout_is_tty() {
         return false;
     }
     print!(
@@ -67,6 +67,45 @@ fn prompt_backup_mcp(path: &Path, bak: &Path) -> bool {
         return false;
     }
     matches!(line.trim().to_ascii_lowercase().as_str(), "" | "y" | "yes")
+}
+
+fn prompt_stdout_is_tty() -> bool {
+    #[cfg(test)]
+    if let Some(is_tty) = test_stdout_is_tty_override() {
+        return is_tty;
+    }
+
+    synrepo::tui::stdout_is_tty()
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_STDOUT_IS_TTY_OVERRIDE: std::cell::Cell<Option<bool>> =
+        const { std::cell::Cell::new(None) };
+}
+
+#[cfg(test)]
+fn test_stdout_is_tty_override() -> Option<bool> {
+    TEST_STDOUT_IS_TTY_OVERRIDE.with(std::cell::Cell::get)
+}
+
+#[cfg(test)]
+fn force_stdout_is_tty_for_test(is_tty: bool) -> TestStdoutIsTtyGuard {
+    let previous = test_stdout_is_tty_override();
+    TEST_STDOUT_IS_TTY_OVERRIDE.with(|override_slot| override_slot.set(Some(is_tty)));
+    TestStdoutIsTtyGuard { previous }
+}
+
+#[cfg(test)]
+struct TestStdoutIsTtyGuard {
+    previous: Option<bool>,
+}
+
+#[cfg(test)]
+impl Drop for TestStdoutIsTtyGuard {
+    fn drop(&mut self) {
+        TEST_STDOUT_IS_TTY_OVERRIDE.with(|override_slot| override_slot.set(self.previous));
+    }
 }
 
 /// Return the backup path when a `.bak` now exists (freshly created or
@@ -175,8 +214,9 @@ mod tests {
         let dir = tempdir().unwrap();
         let path = dir.path().join(".mcp.json");
         fs::write(&path, "{\"mcpServers\":{\"other\":{}}}").unwrap();
-        // Tests run with stdout redirected, so `stdout_is_tty()` is false
-        // and `prompt_backup_mcp` returns false without reading stdin.
+        let _stdout = force_stdout_is_tty_for_test(false);
+        // Simulate piped stdout so `prompt_backup_mcp` returns false without
+        // reading stdin.
         assert!(maybe_backup_mcp_config(&path).unwrap().is_none());
         assert!(!backup_path_for(&path).exists());
     }
