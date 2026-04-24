@@ -16,6 +16,7 @@ mod mcp_runtime;
 mod notes;
 mod remove;
 mod repair;
+mod server;
 mod setup;
 mod setup_explain;
 mod setup_mcp_backup;
@@ -50,6 +51,7 @@ pub(crate) use notes::{
 pub(crate) use notes::{notes_add_output, notes_list_output};
 pub(crate) use remove::remove;
 pub(crate) use repair::{check, reconcile, sync};
+pub(crate) use server::server;
 pub(crate) use setup::{agent_setup_many, resolve_tools, setup_many};
 #[cfg(test)]
 pub(crate) use setup::{

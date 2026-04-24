@@ -13,7 +13,10 @@ use crate::store::sqlite::SqliteGraphStore;
 use crate::util::atomic_write;
 
 use super::mode_inspect::inspect_repository_mode;
-use super::report::{BootstrapAction, BootstrapHealth, BootstrapReport};
+use super::report::{BootstrapAction, BootstrapHealth, BootstrapReport, DegradedCapability};
+use super::runtime_probe::probe;
+use crate::surface::readiness::ReadinessMatrix;
+use crate::surface::status_snapshot::{build_status_snapshot, StatusOptions};
 
 #[cfg(test)]
 mod tests;
@@ -163,6 +166,12 @@ pub fn bootstrap(
         tracing::warn!(error = %err, "install registry update skipped during bootstrap");
     }
 
+    // Build the capability readiness matrix once the graph has been
+    // compiled and state is consistent. The caller's success output can then
+    // label any optional feature that is off (e.g. no git history, embeddings
+    // disabled) and any core feature that needs a follow-up.
+    let degraded_capabilities = collect_degraded_capabilities(repo_root, &synrepo_dir, &config);
+
     Ok(BootstrapReport {
         health,
         mode,
@@ -172,7 +181,36 @@ pub fn bootstrap(
         substrate_status,
         graph_status,
         next_step,
+        degraded_capabilities,
     })
+}
+
+fn collect_degraded_capabilities(
+    repo_root: &Path,
+    _synrepo_dir: &Path,
+    config: &Config,
+) -> Vec<DegradedCapability> {
+    let snapshot = build_status_snapshot(
+        repo_root,
+        StatusOptions {
+            recent: false,
+            full: false,
+        },
+    );
+    if !snapshot.initialized {
+        return Vec::new();
+    }
+    let probe_report = probe(repo_root);
+    let matrix = ReadinessMatrix::build(repo_root, &probe_report, &snapshot, config);
+    matrix
+        .degraded_rows()
+        .map(|row| DegradedCapability {
+            capability: row.capability.as_str().to_string(),
+            state: row.state.as_str().to_string(),
+            detail: row.detail.clone(),
+            next_action: row.next_action.clone(),
+        })
+        .collect()
 }
 
 fn load_existing_config(config_path: &Path, synrepo_dir: &Path) -> anyhow::Result<Option<Config>> {

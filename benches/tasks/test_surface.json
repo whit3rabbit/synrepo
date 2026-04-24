@@ -1,0 +1,8 @@
+{
+  "name": "test_surface/mutation-soak",
+  "category": "test_surface",
+  "query": "mutation_soak",
+  "required_targets": [
+    { "kind": "test", "value": "tests/mutation_soak.rs" }
+  ]
+}

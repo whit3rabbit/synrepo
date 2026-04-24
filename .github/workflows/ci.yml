@@ -28,3 +28,6 @@ jobs:
 
       - name: make ci-lint
         run: make ci-lint
+
+      - name: cargo build --features metrics-http
+        run: cargo build --features metrics-http

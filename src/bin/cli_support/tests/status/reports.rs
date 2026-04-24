@@ -237,6 +237,49 @@ fn status_commentary_coverage_graph_unreadable() {
 }
 
 #[test]
+fn status_reports_capability_readiness_matrix_in_text_and_json() {
+    // Scenario 3.3: status must surface the shared readiness matrix so a
+    // degraded or optional feature is labeled consistently across surfaces.
+    let repo = tempdir().unwrap();
+    seed_graph(repo.path());
+
+    let text = status_output(repo.path(), false, false, false).unwrap();
+    assert!(
+        text.contains("capability readiness:"),
+        "text status output must include the capability readiness section, got: {text}"
+    );
+    // The seed_graph fixture does not set up embeddings; the embeddings row
+    // must be visible as disabled.
+    assert!(
+        text.contains("embeddings"),
+        "readiness section must list the embeddings capability, got: {text}"
+    );
+
+    let json: serde_json::Value = serde_json::from_str(
+        status_output(repo.path(), true, false, false)
+            .unwrap()
+            .trim(),
+    )
+    .unwrap();
+    let matrix = json
+        .get("capability_readiness")
+        .expect("json status must include capability_readiness");
+    assert!(
+        matrix.is_array(),
+        "capability_readiness must be an array, got: {matrix}"
+    );
+    let rows = matrix.as_array().unwrap();
+    assert_eq!(rows.len(), 7, "matrix must contain seven capability rows");
+    let labels: Vec<&str> = rows
+        .iter()
+        .map(|row| row["capability"].as_str().unwrap())
+        .collect();
+    assert!(labels.contains(&"parser"));
+    assert!(labels.contains(&"overlay"));
+    assert!(labels.contains(&"compatibility"));
+}
+
+#[test]
 fn status_recent_activity_json_round_trip() {
     let repo = tempdir().unwrap();
     seed_graph(repo.path());

@@ -49,10 +49,6 @@ pub(crate) enum Command {
     },
 
     /// Verify repo health, freshness, and readiness for agent use.
-    ///
-    /// Reads only; never acquires the writer lock or mutates any store.
-    /// Safe to run at any time, including while a reconcile is in progress.
-    /// Use this as the quick "is synrepo healthy?" check.
     Status {
         /// Emit JSON instead of human-readable output.
         #[arg(long)]
@@ -68,13 +64,6 @@ pub(crate) enum Command {
     },
 
     /// Generate the agent's skill or instructions file for the specified agent CLI.
-    ///
-    /// Writes a named fragment file and prints the one-line include instruction.
-    /// Never modifies existing configuration files. Use `--force` to overwrite,
-    /// or `--regen` to compare and overwrite only if the content has changed.
-    ///
-    /// For a full onboarding flow (init + skill/instructions + MCP registration),
-    /// use `synrepo setup`.
     AgentSetup {
         /// Target agent CLI. Omit when using `--only` or `--skip`.
         #[arg(conflicts_with_all = ["only", "skip"])]
@@ -96,16 +85,6 @@ pub(crate) enum Command {
     },
 
     /// Set up synrepo for this repo and wire an agent.
-    ///
-    /// This is the recommended first-run command. With a `<tool>` argument it
-    /// runs the scripted flow: `synrepo init`, writes the client-specific skill
-    /// or instructions file, and registers the synrepo MCP server in the
-    /// project's local configuration when that integration is automated.
-    /// Without a `<tool>` argument it launches the interactive TUI wizard,
-    /// which prompts for repo mode, agent target, and optional commentary
-    /// provider before applying the same steps. The `--force`, `--explain`,
-    /// and `--gitignore` flags only apply to the scripted flow; passing them
-    /// without a tool is rejected.
     Setup {
         /// Target client to set up. Omit to launch the interactive wizard,
         /// or pair with `--only`/`--skip` for multi-client setup.
@@ -135,17 +114,9 @@ pub(crate) enum Command {
     },
 
     /// Run a structural compile pass against the current repository state.
-    ///
-    /// Requires `.synrepo/` to be initialized (`synrepo init`). Re-reads all
-    /// source files, refreshes the graph store, and rebuilds the substrate
-    /// index without recreating the full runtime layout.
     Reconcile,
 
     /// Report drift across all repair surfaces. Read-only; never mutates state.
-    ///
-    /// Inspects storage compatibility, reconcile health, declared links, and
-    /// unsupported surfaces. Exits non-zero if any actionable or blocked
-    /// findings are present.
     Check {
         /// Emit JSON instead of human-readable output.
         #[arg(long)]
@@ -153,10 +124,6 @@ pub(crate) enum Command {
     },
 
     /// Repair auto-fixable drift surfaces and record the outcome.
-    ///
-    /// Runs storage maintenance and a structural reconcile for actionable
-    /// findings. Report-only and unsupported findings are surfaced but left
-    /// untouched. Appends an entry to `.synrepo/state/repair-log.jsonl`.
     Sync {
         /// Emit JSON instead of human-readable output.
         #[arg(long)]
@@ -292,10 +259,6 @@ pub(crate) enum Command {
     Notes(NotesCommand),
 
     /// Evaluate and apply storage compatibility actions for `.synrepo/`.
-    ///
-    /// Dry-run by default: prints a plan table (store, action, reason) and exits.
-    /// Pass `--apply` to execute non-blocking actions in dependency order and run
-    /// a reconcile pass if any stores were rebuilt.
     Upgrade {
         /// Execute the compatibility actions instead of printing a dry-run plan.
         #[arg(long)]
@@ -303,11 +266,6 @@ pub(crate) enum Command {
     },
 
     /// Compact overlay, state, and index stores to reclaim disk space.
-    ///
-    /// Dry-run by default: prints a plan (compactable counts by component) and exits.
-    /// Pass `--apply` to execute the compaction actions: compact stale commentary,
-    /// summarize old cross-link audit rows, rotate the repair-log, run WAL checkpoint,
-    /// and optionally rebuild the index.
     Compact {
         /// Execute the compaction actions instead of printing a dry-run plan.
         #[arg(long)]
@@ -317,10 +275,7 @@ pub(crate) enum Command {
         policy: CompactPolicyArg,
     },
 
-    /// Generate export files (markdown or JSON snapshots) in the configured export directory.
-    ///
-    /// Produces `synrepo-context/` (or the configured directory) with rendered card output.
-    /// The directory is added to `.gitignore` unless `--commit` is passed.
+    /// Generate export files in the configured export directory.
     Export {
         /// Output format.
         #[arg(long, default_value = "markdown")]
@@ -384,19 +339,16 @@ pub(crate) enum Command {
     },
 
     /// Open the guided operator dashboard.
-    ///
-    /// Explicit alias for bare `synrepo` on a ready repo. Use it to inspect
-    /// health, watch activity, commentary usage, and next actions. Exits
-    /// non-zero with a pointer to the correct subcommand when the repo is
-    /// uninitialized or partial, instead of routing to the setup or repair
-    /// wizard.
     Dashboard,
 
+    /// Start the optional HTTP metrics server.
+    Server {
+        /// Metrics bind address.
+        #[arg(long, default_value = "127.0.0.1:9090")]
+        metrics: String,
+    },
+
     /// Start the MCP server over stdio.
-    ///
-    /// Exposes 16 read-only tools for coding agents to query the repository's
-    /// structural graph, cards, search index, overlay data, and provenance.
-    /// Communicates over stdio using the MCP protocol.
     Mcp,
 
     /// Uninstall synrepo artifacts from the current repo.

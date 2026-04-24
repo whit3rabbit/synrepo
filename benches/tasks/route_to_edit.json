@@ -1,0 +1,8 @@
+{
+  "name": "route_to_edit/context-bench-entrypoint",
+  "category": "route_to_edit",
+  "query": "bench_context",
+  "required_targets": [
+    { "kind": "file", "value": "src/bin/cli_support/commands/context/bench.rs" }
+  ]
+}

@@ -31,8 +31,8 @@ fn status_reports_repair_audit_degraded_when_marker_present() {
         "baseline human output must report ok, got: {text_before}"
     );
     assert!(
-        !text_before.contains("unavailable"),
-        "baseline must not mention unavailable, got: {text_before}"
+        !text_before.contains("repair audit: unavailable"),
+        "baseline must not mention repair audit unavailable, got: {text_before}"
     );
 
     let marker_path = repair_log_degraded_marker_path(&synrepo_dir);

@@ -56,6 +56,21 @@ pub enum BootstrapAction {
     Repaired,
 }
 
+/// One degraded capability observed at the end of bootstrap. Surfaces the
+/// readiness matrix state so the success output labels optional features that
+/// are off and core features that need a follow-up.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DegradedCapability {
+    /// Stable capability identifier (e.g. `git-intelligence`, `embeddings`).
+    pub capability: String,
+    /// Stable readiness label (`degraded`, `unavailable`, `disabled`, `stale`, `blocked`).
+    pub state: String,
+    /// One-line detail suitable for display next to the capability name.
+    pub detail: String,
+    /// Recommended next action, if any.
+    pub next_action: Option<String>,
+}
+
 /// Human-readable summary of a bootstrap run.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BootstrapReport {
@@ -75,6 +90,10 @@ pub struct BootstrapReport {
     pub graph_status: String,
     /// Suggested next action for the user.
     pub next_step: String,
+    /// Capabilities that ended bootstrap in a non-healthy readiness state.
+    /// Populated from the shared capability readiness matrix so bootstrap,
+    /// status, doctor, and the dashboard all report the same degradation.
+    pub degraded_capabilities: Vec<DegradedCapability>,
 }
 
 impl BootstrapReport {
@@ -98,6 +117,19 @@ impl BootstrapReport {
             self.graph_status,
             self.next_step
         ));
+        if !self.degraded_capabilities.is_empty() {
+            rendered.push_str("Degraded capabilities:\n");
+            for cap in &self.degraded_capabilities {
+                let action = match &cap.next_action {
+                    Some(a) => format!(" — {a}"),
+                    None => String::new(),
+                };
+                rendered.push_str(&format!(
+                    "  {} [{}]: {}{}\n",
+                    cap.capability, cap.state, cap.detail, action,
+                ));
+            }
+        }
         if matches!(self.health, BootstrapHealth::Healthy) {
             rendered.push_str(&self.doctrine_pointer_line());
         }
@@ -141,6 +173,7 @@ mod tests {
             substrate_status: "built initial index".to_string(),
             graph_status: "compiled".to_string(),
             next_step: "run `synrepo search <query>`".to_string(),
+            degraded_capabilities: vec![],
         }
     }
 
@@ -182,5 +215,53 @@ mod tests {
 
         let rendered = report.render();
         assert!(!rendered.contains("Agent doctrine:"));
+    }
+
+    #[test]
+    fn render_lists_degraded_capabilities_with_next_actions() {
+        // Scenario: bootstrap completes but a core capability or optional
+        // feature ended in a non-healthy readiness state. The success output
+        // must name the capability, label the state, and carry the next action
+        // from the shared readiness matrix.
+        let repo = tempdir().unwrap();
+        let synrepo_dir = repo.path().join(".synrepo");
+        let mut report = base_report(BootstrapHealth::Healthy, synrepo_dir);
+        report.degraded_capabilities = vec![
+            DegradedCapability {
+                capability: "git-intelligence".to_string(),
+                state: "unavailable".to_string(),
+                detail: "no git repository".to_string(),
+                next_action: Some(
+                    "initialize git with `git init` to enable history-derived facts".to_string(),
+                ),
+            },
+            DegradedCapability {
+                capability: "index-freshness".to_string(),
+                state: "stale".to_string(),
+                detail: "no reconcile recorded".to_string(),
+                next_action: Some("run `synrepo reconcile`".to_string()),
+            },
+        ];
+
+        let rendered = report.render();
+        assert!(rendered.contains("Degraded capabilities:"));
+        assert!(rendered.contains("git-intelligence [unavailable]"));
+        assert!(rendered.contains("no git repository"));
+        assert!(rendered.contains("git init"));
+        assert!(rendered.contains("index-freshness [stale]"));
+        assert!(rendered.contains("synrepo reconcile"));
+    }
+
+    #[test]
+    fn render_omits_degraded_block_when_none() {
+        let repo = tempdir().unwrap();
+        let synrepo_dir = repo.path().join(".synrepo");
+        let report = base_report(BootstrapHealth::Healthy, synrepo_dir);
+
+        let rendered = report.render();
+        assert!(
+            !rendered.contains("Degraded capabilities:"),
+            "rendered output must not emit the degraded block when there are none"
+        );
     }
 }

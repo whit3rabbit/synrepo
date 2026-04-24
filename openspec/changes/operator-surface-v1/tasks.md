@@ -22,17 +22,17 @@
 
 ## 4. HTTP `/metrics` endpoint (feature-gated)
 
-- [ ] 4.1 Add cargo feature `metrics-http` (default off). Choose the HTTP dep (prefer `tiny_http`; confirm with user before adding a heavier stack).
-- [ ] 4.2 Add `src/bin/cli_support/commands/server.rs` behind `#[cfg(feature = "metrics-http")]` with `synrepo server --metrics <addr>`.
-- [ ] 4.3 Integration test that binds `127.0.0.1:0`, requests `/metrics`, and asserts Prometheus parseability.
-- [ ] 4.4 Add a CI job that builds `cargo build --features metrics-http` so the gated path does not rot.
+- [x] 4.1 Add cargo feature `metrics-http` (default off). Choose the HTTP dep (prefer `tiny_http`; confirm with user before adding a heavier stack).
+- [x] 4.2 Add `src/bin/cli_support/commands/server.rs` behind `#[cfg(feature = "metrics-http")]` with `synrepo server --metrics <addr>`.
+- [x] 4.3 Integration test that binds `127.0.0.1:0`, requests `/metrics`, and asserts Prometheus parseability.
+- [x] 4.4 Add a CI job that builds `cargo build --features metrics-http` so the gated path does not rot.
 
 ## 5. Verification
 
 - [x] 5.1 `cargo test` covering `commands::doctor`, `context_metrics::to_prometheus_text`, and the setup resolver. (Feature-gated server remains task #4.)
-- [ ] 5.2 `cargo run -- doctor` returns 0 on a healthy repo; returns non-zero on a stale repo.
+- [x] 5.2 `cargo run -- doctor` returns 0 on a healthy repo; returns non-zero on a stale repo.
 - [x] 5.3 `cargo run -- stats context --format prometheus` emits scrapeable text.
-- [ ] 5.4 `cargo run --features metrics-http -- server --metrics 127.0.0.1:9090` serves `GET /metrics`.
+- [x] 5.4 `cargo run --features metrics-http -- server --metrics 127.0.0.1:9090` serves `GET /metrics`.
 - [x] 5.5 `cargo run -- setup --only claude,cursor` wires both; `--only claude --skip claude` errors (clap-level conflict).
-- [ ] 5.6 `make check` passes.
-- [ ] 5.7 `openspec validate operator-surface-v1` and `openspec status --change operator-surface-v1 --json` shows `isComplete: true`.
+- [x] 5.6 `make check` passes.
+- [x] 5.7 `openspec validate operator-surface-v1` and `openspec status --change operator-surface-v1 --json` shows `isComplete: true`.

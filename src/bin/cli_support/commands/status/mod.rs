@@ -10,6 +10,8 @@ pub(crate) use helpers::render_watch_summary;
 
 use std::path::Path;
 
+use synrepo::bootstrap::runtime_probe::probe;
+use synrepo::surface::readiness::ReadinessMatrix;
 use synrepo::surface::status_snapshot::StatusOptions;
 
 /// Print operational health: mode, graph counts, reconcile status, and watch state.
@@ -31,11 +33,18 @@ pub(crate) fn status_output(
         repo_root,
         StatusOptions { recent, full },
     );
+    // Build the capability readiness matrix so status, doctor, and dashboard
+    // all report degradation using the same labels.
+    let matrix = snapshot.initialized.then(|| {
+        let probe_report = probe(repo_root);
+        let cfg = snapshot.config.clone().unwrap_or_default();
+        ReadinessMatrix::build(repo_root, &probe_report, &snapshot, &cfg)
+    });
     let mut out = String::new();
     if json {
-        json::write_status_json(&mut out, &snapshot)?;
+        json::write_status_json(&mut out, &snapshot, matrix.as_ref())?;
     } else {
-        text::write_status_text(&mut out, &snapshot, full);
+        text::write_status_text(&mut out, &snapshot, matrix.as_ref(), full);
     }
     Ok(out)
 }

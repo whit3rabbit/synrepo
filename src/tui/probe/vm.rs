@@ -37,8 +37,8 @@ pub struct HeaderVm {
     pub reconcile_severity: Severity,
     /// Watch summary.
     pub watch_label: String,
-    /// Watch severity (Healthy when running, Stale when inactive, Blocked on
-    /// corrupt state).
+    /// Watch severity (Healthy when running or cleanly inactive, Stale for
+    /// stale artifacts, Blocked on corrupt state).
     pub watch_severity: Severity,
     /// Writer-lock summary.
     pub lock_label: String,

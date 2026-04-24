@@ -112,7 +112,9 @@ pub(crate) fn setup_many(
     force: bool,
     gitignore: bool,
 ) -> anyhow::Result<()> {
-    run_many(tools, "setup", |tool| setup(repo_root, tool, force, gitignore))
+    run_many(tools, "setup", |tool| {
+        setup(repo_root, tool, force, gitignore)
+    })
 }
 
 /// Run `agent_setup` across a resolved list of agent targets. Shares its

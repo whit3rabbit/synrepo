@@ -10,6 +10,7 @@ use std::path::Path;
 
 use serde::Serialize;
 use synrepo::bootstrap::runtime_probe::probe;
+use synrepo::surface::readiness::{ReadinessMatrix, ReadinessRow};
 use synrepo::surface::status_snapshot::{build_status_snapshot, StatusOptions, StatusSnapshot};
 use synrepo::tui::probe::{build_header_vm, build_health_vm, display_repo_path, Severity};
 
@@ -18,6 +19,7 @@ struct DegradedRow {
     label: String,
     value: String,
     severity: &'static str,
+    next_action: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -49,8 +51,12 @@ fn run_doctor(repo_root: &Path) -> DoctorReport {
             full: false,
         },
     );
-    let integration = probe(repo_root).agent_integration;
-    let rows = collect_degraded_rows(&snapshot, &integration);
+    let probe_report = probe(repo_root);
+    let matrix = snapshot.initialized.then(|| {
+        let cfg = snapshot.config.clone().unwrap_or_default();
+        ReadinessMatrix::build(repo_root, &probe_report, &snapshot, &cfg)
+    });
+    let rows = collect_degraded_rows(&snapshot, &probe_report.agent_integration, matrix.as_ref());
     DoctorReport {
         healthy: rows.is_empty(),
         degraded: rows,
@@ -60,6 +66,7 @@ fn run_doctor(repo_root: &Path) -> DoctorReport {
 fn collect_degraded_rows(
     snapshot: &StatusSnapshot,
     integration: &synrepo::bootstrap::runtime_probe::AgentIntegration,
+    matrix: Option<&ReadinessMatrix>,
 ) -> Vec<DegradedRow> {
     let header = build_header_vm(
         display_repo_path(&snapshot.synrepo_dir),
@@ -80,22 +87,51 @@ fn collect_degraded_rows(
         ("agent integration", header.mcp_label, header.mcp_severity),
     ];
     for (label, value, severity) in header_rows {
-        push_if_degraded(&mut out, label.to_string(), value, severity);
+        push_if_degraded(&mut out, label.to_string(), value, severity, None);
     }
     for row in health.rows {
-        push_if_degraded(&mut out, row.label, row.value, row.severity);
+        push_if_degraded(&mut out, row.label, row.value, row.severity, None);
+    }
+    // Add capability readiness matrix rows that aren't already covered above.
+    // The matrix normalizes labels across the status/doctor/dashboard surfaces
+    // and carries a next-action hint that the legacy rows do not.
+    if let Some(matrix) = matrix {
+        for row in matrix.degraded_rows() {
+            push_readiness_row(&mut out, row);
+        }
     }
     out
 }
 
-fn push_if_degraded(out: &mut Vec<DegradedRow>, label: String, value: String, severity: Severity) {
+fn push_if_degraded(
+    out: &mut Vec<DegradedRow>,
+    label: String,
+    value: String,
+    severity: Severity,
+    next_action: Option<String>,
+) {
     if !matches!(severity, Severity::Healthy) {
         out.push(DegradedRow {
             label,
             value,
             severity: severity.as_str(),
+            next_action,
         });
     }
+}
+
+fn push_readiness_row(out: &mut Vec<DegradedRow>, row: &ReadinessRow) {
+    // Collapse matrix rows that duplicate header/health rows. The header row
+    // already carries reconcile/watch state from diagnostics; the matrix row
+    // for parser/index-freshness/watch would shadow it. Keep the matrix row
+    // when it adds a next action the header did not carry.
+    let label = format!("readiness:{}", row.capability.as_str());
+    out.push(DegradedRow {
+        label,
+        value: format!("{} — {}", row.state.as_str(), row.detail),
+        severity: row.state.severity().as_str(),
+        next_action: row.next_action.clone(),
+    });
 }
 
 fn render_text(report: &DoctorReport) -> String {
@@ -177,7 +213,7 @@ mod tests {
         let integration = AgentIntegration::Complete {
             target: synrepo::bootstrap::runtime_probe::AgentTargetKind::Claude,
         };
-        let rows = collect_degraded_rows(&snapshot, &integration);
+        let rows = collect_degraded_rows(&snapshot, &integration, None);
         assert!(
             rows.iter().all(|r| r.label != "tokens avoided"),
             "Healthy `tokens avoided` row must not appear in degraded list"
@@ -194,7 +230,7 @@ mod tests {
         let integration = AgentIntegration::Complete {
             target: synrepo::bootstrap::runtime_probe::AgentTargetKind::Claude,
         };
-        let rows = collect_degraded_rows(&snapshot, &integration);
+        let rows = collect_degraded_rows(&snapshot, &integration, None);
         assert!(
             rows.iter().any(|r| r.label == "stale responses"),
             "non-zero stale_responses_total must appear in doctor degraded list, got: {rows:?}"
@@ -205,7 +241,7 @@ mod tests {
     fn absent_agent_integration_surfaces_as_stale() {
         let snapshot = fixture_snapshot(0, None);
         let integration = AgentIntegration::Absent;
-        let rows = collect_degraded_rows(&snapshot, &integration);
+        let rows = collect_degraded_rows(&snapshot, &integration, None);
         let agent_row = rows
             .iter()
             .find(|r| r.label == "agent integration")

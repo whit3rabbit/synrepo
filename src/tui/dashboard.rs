@@ -15,12 +15,14 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::Terminal;
 
-use crate::bootstrap::runtime_probe::AgentIntegration;
+use crate::bootstrap::runtime_probe::{probe, AgentIntegration};
 use crate::pipeline::watch::WatchEvent;
+use crate::surface::readiness::ReadinessMatrix;
 use crate::tui::app::{poll_key, ActiveTab, AppState, DashboardExit};
 use crate::tui::explain_run::run_explain_in_dashboard;
 use crate::tui::probe::{
     build_activity_vm, build_header_vm, build_health_vm, build_next_actions, display_repo_path,
+    HealthRow, HealthVm,
 };
 use crate::tui::theme::Theme;
 use crate::tui::widgets::{
@@ -141,7 +143,8 @@ fn draw_dashboard(frame: &mut ratatui::Frame, state: &AppState) {
             frame.render_widget(live, content_area);
         }
         ActiveTab::Health => {
-            let health_vm = build_health_vm(&state.snapshot);
+            let mut health_vm = build_health_vm(&state.snapshot);
+            append_readiness_rows(&mut health_vm, &state.repo_root, &state.snapshot);
             let health = HealthWidget {
                 vm: &health_vm,
                 theme: &state.theme,
@@ -178,4 +181,28 @@ fn draw_dashboard(frame: &mut ratatui::Frame, state: &AppState) {
         watch_toggle_label: state.watch_toggle_label(),
     };
     frame.render_widget(footer, outer[3]);
+}
+
+/// Append capability-readiness rows to the Health pane so the dashboard shows
+/// the same degraded/disabled/stale/blocked states that `synrepo status` and
+/// `synrepo doctor` report. Rows are labelled with a `readiness:` prefix so
+/// they do not shadow the existing per-subsystem rows.
+fn append_readiness_rows(
+    vm: &mut HealthVm,
+    repo_root: &std::path::Path,
+    snapshot: &crate::surface::status_snapshot::StatusSnapshot,
+) {
+    if !snapshot.initialized {
+        return;
+    }
+    let probe_report = probe(repo_root);
+    let cfg = snapshot.config.clone().unwrap_or_default();
+    let matrix = ReadinessMatrix::build(repo_root, &probe_report, snapshot, &cfg);
+    for row in &matrix.rows {
+        vm.rows.push(HealthRow {
+            label: format!("readiness:{}", row.capability.as_str()),
+            value: format!("{} — {}", row.state.as_str(), row.detail),
+            severity: row.state.severity(),
+        });
+    }
 }

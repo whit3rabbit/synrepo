@@ -4,12 +4,18 @@ use std::fmt::Write;
 
 use synrepo::{
     pipeline::diagnostics::{EmbeddingHealth, ReconcileHealth, WriterStatus},
+    surface::readiness::ReadinessMatrix,
     surface::status_snapshot::StatusSnapshot,
 };
 
 use super::helpers;
 
-pub(super) fn write_status_text(out: &mut String, snapshot: &StatusSnapshot, full: bool) {
+pub(super) fn write_status_text(
+    out: &mut String,
+    snapshot: &StatusSnapshot,
+    readiness: Option<&ReadinessMatrix>,
+    full: bool,
+) {
     if !snapshot.initialized {
         writeln!(out, "synrepo status: not initialized").unwrap();
         writeln!(
@@ -213,6 +219,26 @@ pub(super) fn write_status_text(out: &mut String, snapshot: &StatusSnapshot, ful
         helpers::next_step(diag, snapshot.graph_stats.is_none())
     )
     .unwrap();
+
+    if let Some(matrix) = readiness {
+        writeln!(out).unwrap();
+        writeln!(out, "capability readiness:").unwrap();
+        for row in &matrix.rows {
+            let action = match &row.next_action {
+                Some(a) => format!(" — {a}"),
+                None => String::new(),
+            };
+            writeln!(
+                out,
+                "  {:<18} {:<12} {}{}",
+                row.label(),
+                row.state.as_str(),
+                row.detail,
+                action
+            )
+            .unwrap();
+        }
+    }
 
     if let Some(entries) = &snapshot.recent_activity {
         writeln!(out).unwrap();

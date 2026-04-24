@@ -186,3 +186,11 @@ The shared status snapshot SHALL include context metrics so `synrepo status --js
 - **WHEN** no context metrics have been recorded yet
 - **THEN** the context, tokens-avoided, and stale-responses rows are omitted rather than rendered as zero
 - **AND** the remaining Health rows render unchanged
+
+### Requirement: Render capability readiness states
+The dashboard SHALL render capability readiness rows from the shared matrix rather than running independent subsystem checks.
+
+#### Scenario: Readiness matrix contains degraded rows
+- **WHEN** the dashboard receives readiness rows for parser failures, stale index, missing git, disabled embeddings, disabled watch, or unavailable overlay
+- **THEN** it displays each row with state, severity, and next action
+- **AND** the dashboard preserves the distinction between disabled, unavailable, degraded, stale, and blocked

@@ -4,7 +4,7 @@ use std::{
     fs,
     sync::{
         atomic::{AtomicBool, Ordering},
-        mpsc, Arc,
+        mpsc, Arc, Mutex, MutexGuard,
     },
     thread,
     time::{Duration, Instant},
@@ -21,6 +21,19 @@ use crate::pipeline::watch::{
 };
 
 use super::{setup_test_repo, wait_for};
+
+#[cfg(unix)]
+static WATCH_SERVICE_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+#[cfg(unix)]
+fn watch_service_guard() -> (MutexGuard<'static, ()>, crate::test_support::GlobalTestLock) {
+    (
+        WATCH_SERVICE_TEST_LOCK
+            .lock()
+            .expect("watch service test lock poisoned"),
+        crate::test_support::global_test_lock("watch-service"),
+    )
+}
 
 #[test]
 fn filter_repo_events_ignores_synrepo_only_bursts() {
@@ -43,6 +56,7 @@ fn filter_repo_events_ignores_synrepo_only_bursts() {
 #[cfg(unix)]
 #[test]
 fn watch_service_handles_status_reconcile_and_stop() {
+    let _guard = watch_service_guard();
     let (_dir, repo, config, synrepo_dir) = setup_test_repo();
     let service_repo = repo.clone();
     let service_config = config.clone();
@@ -104,6 +118,7 @@ fn stop_bridge_acknowledges_without_waiting_for_loop_reply() {
 #[cfg(unix)]
 #[test]
 fn watch_service_records_lock_conflict_when_writer_lock_is_held() {
+    let _guard = watch_service_guard();
     let (_dir, repo, config, synrepo_dir) = setup_test_repo();
     let service_repo = repo.clone();
     let service_config = config.clone();
@@ -157,6 +172,7 @@ fn watch_service_records_lock_conflict_when_writer_lock_is_held() {
 #[cfg(unix)]
 #[test]
 fn watch_service_ignores_runtime_only_writes() {
+    let _guard = watch_service_guard();
     let (_dir, repo, config, synrepo_dir) = setup_test_repo();
     let service_repo = repo.clone();
     let service_config = config.clone();
@@ -214,6 +230,7 @@ fn watch_service_ignores_runtime_only_writes() {
 #[cfg(unix)]
 #[test]
 fn watch_service_emits_started_then_finished_events_for_startup_reconcile() {
+    let _guard = watch_service_guard();
     let (_dir, repo, config, synrepo_dir) = setup_test_repo();
     let service_repo = repo.clone();
     let service_config = config.clone();
@@ -268,6 +285,7 @@ fn watch_service_emits_started_then_finished_events_for_startup_reconcile() {
 #[cfg(unix)]
 #[test]
 fn watch_service_stop_stays_responsive_after_rapid_source_writes() {
+    let _guard = watch_service_guard();
     let (_dir, repo, config, synrepo_dir) = setup_test_repo();
     let service_repo = repo.clone();
     let service_config = config.clone();

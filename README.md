@@ -108,6 +108,20 @@ Use `synrepo agent-setup <tool>` if you only want to regenerate the instruction 
 | `synrepo bench context --tasks "benches/tasks/*.json" --json` | Reproducible context-savings benchmark |
 | `synrepo graph stats` | Inspect graph node and edge counts |
 
+## Evidence For Context-Savings Claims
+
+`synrepo bench context` produces the evidence that backs numeric context-savings statements in this README, release notes, and product docs. A numeric context-savings percentage cites a benchmark run and reports reduction ratio, target hit rate, miss rate, stale rate, and latency. Token reduction on its own is not a savings claim: a small card that misses required context is a regression, not a win.
+
+Qualitative wording (for example "bounded structural cards", "smaller than raw-file reads") does not need a benchmark run. Numeric percentages do.
+
+```bash
+synrepo bench context --tasks "benches/tasks/*.json" --json
+```
+
+The checked-in fixture set under `benches/tasks/` covers route-to-edit, symbol explanation, impact or risk, and test-surface discovery. Missing categories are reported in the benchmark summary rather than silently ignored, so release reviewers can see which workflows are not exercised.
+
+The report carries a `schema_version` field and stable field names. Patch releases keep the field shape compatible; a rename or removal bumps the schema version.
+
 ## Optional Advisory Commentary
 
 Everything above works locally without any LLM. Advisory commentary and cross-link suggestion generation are separate, opt-in features.

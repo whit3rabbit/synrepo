@@ -4,6 +4,7 @@ use std::fmt::Write;
 
 use synrepo::{
     pipeline::diagnostics::{EmbeddingHealth, ReconcileHealth, WriterStatus},
+    surface::readiness::ReadinessMatrix,
     surface::status_snapshot::{
         CommentaryCoverage, ExplainDisplay, GraphSnapshotStatus, RepairAuditState, StatusSnapshot,
     },
@@ -11,7 +12,11 @@ use synrepo::{
 
 use super::helpers;
 
-pub(super) fn write_status_json(out: &mut String, snapshot: &StatusSnapshot) -> anyhow::Result<()> {
+pub(super) fn write_status_json(
+    out: &mut String,
+    snapshot: &StatusSnapshot,
+    readiness: Option<&ReadinessMatrix>,
+) -> anyhow::Result<()> {
     if !snapshot.initialized {
         writeln!(out, "{{\"initialized\":false}}").unwrap();
         return Ok(());
@@ -131,6 +136,7 @@ pub(super) fn write_status_json(out: &mut String, snapshot: &StatusSnapshot) -> 
         "recent_activity": activity_json,
         "last_compaction_timestamp": snapshot.last_compaction.map(|ts| ts.to_string()),
         "repair_audit": repair_audit_json,
+        "capability_readiness": readiness.map(readiness_matrix_json),
     });
 
     writeln!(out, "{}", serde_json::to_string_pretty(&output)?).unwrap();
@@ -171,6 +177,23 @@ fn explain_json(display: &ExplainDisplay) -> serde_json::Value {
         "status": status_str,
         "detected_env_var": detected_env_var,
     })
+}
+
+fn readiness_matrix_json(matrix: &ReadinessMatrix) -> serde_json::Value {
+    let rows: Vec<serde_json::Value> = matrix
+        .rows
+        .iter()
+        .map(|row| {
+            serde_json::json!({
+                "capability": row.capability.as_str(),
+                "state": row.state.as_str(),
+                "severity": row.state.severity().as_str(),
+                "detail": row.detail,
+                "next_action": row.next_action,
+            })
+        })
+        .collect();
+    serde_json::Value::Array(rows)
 }
 
 fn repair_audit_json(state: &RepairAuditState) -> serde_json::Value {

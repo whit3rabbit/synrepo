@@ -51,7 +51,7 @@ pub fn build_header_vm(
             };
             let sev = match &d.watch_status {
                 WatchServiceStatus::Running(_) | WatchServiceStatus::Starting => Severity::Healthy,
-                WatchServiceStatus::Inactive => Severity::Stale,
+                WatchServiceStatus::Inactive => Severity::Healthy,
                 WatchServiceStatus::Stale(_) => Severity::Stale,
                 WatchServiceStatus::Corrupt(_) => Severity::Blocked,
             };

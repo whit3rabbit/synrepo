@@ -75,6 +75,9 @@ Rule of thumb: `tiny` to find, `normal` to understand, `deep` to write.
 - `tiny`: orientation and routing
 - `normal`: interface and neighborhood
 - `deep`: exact source and implementation work
+- Use `tiny` cards to orient and route.
+- Use `normal` cards to understand a neighborhood.
+- Use `deep` cards only before writing code, or when exact source or body details matter.
 
 Default to `tiny`.
 

@@ -1,0 +1,8 @@
+{
+  "name": "impact_or_risk/writer-flock-helper",
+  "category": "impact_or_risk",
+  "query": "hold_writer_flock_with_ownership",
+  "required_targets": [
+    { "kind": "file", "value": "src/pipeline/writer/helpers.rs" }
+  ]
+}

@@ -29,8 +29,8 @@ use cli_support::commands::{
     explain_alias, export, findings, graph_query, graph_stats, handoffs, impact_alias, init,
     links_accept, links_list, links_reject, links_review, node, notes_add, notes_audit,
     notes_forget, notes_link, notes_list, notes_supersede, notes_verify, reconcile, remove,
-    resolve_tools, risks_alias, run_mcp_server, search, setup_many, stats_context, status, sync,
-    tests_alias, upgrade, watch, watch_internal, watch_status, watch_stop, StatFormat,
+    resolve_tools, risks_alias, run_mcp_server, search, server, setup_many, stats_context, status,
+    sync, tests_alias, upgrade, watch, watch_internal, watch_status, watch_stop, StatFormat,
 };
 // Re-exported for `cli_support::tests::agent_setup` via `crate::agent_setup`.
 // cli.rs dispatches through `agent_setup_many` but the test binary compiles
@@ -348,6 +348,7 @@ fn dispatch(command: Command, repo_root: &Path, tui_opts: TuiOptions) -> anyhow:
         Command::WatchInternal => watch_internal(repo_root),
         Command::Doctor { json } => doctor(repo_root, json),
         Command::Dashboard => run_dashboard_command(repo_root, tui_opts),
+        Command::Server { metrics } => server(repo_root, &metrics),
         Command::Mcp => run_mcp_server(repo_root),
         Command::Remove {
             tool,
