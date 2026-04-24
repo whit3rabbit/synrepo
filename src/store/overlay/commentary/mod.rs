@@ -1,39 +1,21 @@
-//! Commentary CRUD and freshness derivation for `SqliteOverlayStore`.
+//! Commentary CRUD and `OverlayStore` trait implementation for `SqliteOverlayStore`.
 
 use std::collections::HashSet;
-use std::str::FromStr;
 
 use rusqlite::{params, OptionalExtension};
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
 use crate::core::ids::NodeId;
-use crate::overlay::{CommentaryEntry, CommentaryProvenance, FreshnessState, OverlayStore};
+use crate::overlay::{CommentaryEntry, CommentaryProvenance, OverlayStore};
 
 use super::SqliteOverlayStore;
 
-/// Derive the freshness state of a commentary entry relative to the current
-/// content hash of the annotated node's file.
-///
-/// Returns `Invalid` if any required provenance field is empty (defensive;
-/// `insert_commentary` rejects these on the way in). Returns `Fresh` on a hash
-/// match, `Stale` on mismatch.
-pub fn derive_freshness(entry: &CommentaryEntry, current_content_hash: &str) -> FreshnessState {
-    if !has_complete_provenance(&entry.provenance) {
-        return FreshnessState::Invalid;
-    }
-    if entry.provenance.source_content_hash == current_content_hash {
-        FreshnessState::Fresh
-    } else {
-        FreshnessState::Stale
-    }
-}
+mod entries;
+mod freshness;
 
-fn has_complete_provenance(prov: &CommentaryProvenance) -> bool {
-    !prov.source_content_hash.is_empty()
-        && !prov.pass_id.is_empty()
-        && !prov.model_identity.is_empty()
-}
+pub use freshness::derive_freshness;
+use freshness::has_complete_provenance;
 
 impl OverlayStore for SqliteOverlayStore {
     fn insert_link(&mut self, link: crate::overlay::OverlayLink) -> crate::Result<()> {
@@ -373,57 +355,5 @@ impl OverlayStore for SqliteOverlayStore {
                 row.get(0)
             })?,
         )
-    }
-}
-
-impl SqliteOverlayStore {
-    /// Return every commentary entry currently stored.
-    pub fn all_commentary_entries(&self) -> crate::Result<Vec<CommentaryEntry>> {
-        let conn = self.conn.lock();
-        let mut stmt = conn.prepare(
-            "SELECT node_id, text, source_content_hash, pass_id, model_identity, generated_at
-             FROM commentary
-             ORDER BY node_id",
-        )?;
-        let rows = stmt
-            .query_map([], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                    row.get::<_, String>(3)?,
-                    row.get::<_, String>(4)?,
-                    row.get::<_, String>(5)?,
-                ))
-            })?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-
-        rows.into_iter()
-            .map(
-                |(node_id, text, source_content_hash, pass_id, model_identity, generated_at)| {
-                    let node_id = NodeId::from_str(&node_id).map_err(|err| {
-                        crate::Error::Other(anyhow::anyhow!(
-                            "invalid stored commentary node_id `{node_id}`: {err}"
-                        ))
-                    })?;
-                    let generated_at =
-                        OffsetDateTime::parse(&generated_at, &Rfc3339).map_err(|err| {
-                            crate::Error::Other(anyhow::anyhow!(
-                                "invalid stored generated_at timestamp: {err}"
-                            ))
-                        })?;
-                    Ok(CommentaryEntry {
-                        node_id,
-                        text,
-                        provenance: CommentaryProvenance {
-                            source_content_hash,
-                            pass_id,
-                            model_identity,
-                            generated_at,
-                        },
-                    })
-                },
-            )
-            .collect()
     }
 }
