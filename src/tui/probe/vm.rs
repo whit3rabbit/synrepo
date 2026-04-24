@@ -68,6 +68,36 @@ pub struct HealthRow {
     pub severity: Severity,
 }
 
+/// Trust-focused dashboard view model.
+#[derive(Clone, Debug)]
+pub struct TrustVm {
+    /// Context-serving rows.
+    pub context_rows: Vec<TrustRow>,
+    /// Advisory overlay-note rows.
+    pub overlay_rows: Vec<TrustRow>,
+    /// Current-change impact rows.
+    pub change_rows: Vec<TrustRow>,
+    /// Degraded surfaces with remediation hints.
+    pub degraded_rows: Vec<TrustRow>,
+}
+
+/// One row in the trust pane.
+#[derive(Clone, Debug)]
+pub struct TrustRow {
+    /// Label on the left.
+    pub label: String,
+    /// Value on the right.
+    pub value: String,
+    /// Optional operator action or provenance hint.
+    pub hint: Option<String>,
+    /// Numerator for compact bar rendering.
+    pub amount: Option<u64>,
+    /// Denominator for compact bar rendering.
+    pub total: Option<u64>,
+    /// Severity driving color.
+    pub severity: Severity,
+}
+
 /// Recent-activity entry reshaped for rendering.
 #[derive(Clone, Debug)]
 pub struct ActivityVmEntry {

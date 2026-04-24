@@ -8,7 +8,7 @@ use crate::{
     core::ids::NodeId,
     pipeline::{
         compact::load_last_compaction_timestamp,
-        context_metrics::load as load_context_metrics,
+        context_metrics::load_optional as load_context_metrics,
         diagnostics::collect_diagnostics,
         explain::{accounting::load_totals, describe_active_provider},
         export::load_manifest,
@@ -252,7 +252,7 @@ pub fn build_status_snapshot(repo_root: &Path, opts: StatusOptions) -> StatusSna
         status: active.status,
     });
     let explain_totals = load_totals(&synrepo_dir).ok().flatten();
-    let context_metrics = load_context_metrics(&synrepo_dir).ok();
+    let context_metrics = load_context_metrics(&synrepo_dir).ok().flatten();
 
     let recent_activity = if opts.recent {
         let query = RecentActivityQuery {

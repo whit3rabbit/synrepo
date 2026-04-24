@@ -57,10 +57,14 @@ impl AppState {
                 return true;
             }
             KeyCode::Char('3') => {
-                self.set_tab(ActiveTab::Explain);
+                self.set_tab(ActiveTab::Trust);
                 return true;
             }
             KeyCode::Char('4') => {
+                self.set_tab(ActiveTab::Explain);
+                return true;
+            }
+            KeyCode::Char('5') => {
                 self.set_tab(ActiveTab::Actions);
                 return true;
             }

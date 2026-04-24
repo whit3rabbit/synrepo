@@ -16,6 +16,8 @@ pub enum ActiveTab {
     Live,
     /// System-health pane.
     Health,
+    /// Trust signals for context quality and advisory overlay freshness.
+    Trust,
     /// Explain status, totals, and refresh actions.
     Explain,
     /// Next-actions + quick-actions.
@@ -27,6 +29,7 @@ impl fmt::Display for ActiveTab {
         match self {
             ActiveTab::Live => write!(f, "Live"),
             ActiveTab::Health => write!(f, "Health"),
+            ActiveTab::Trust => write!(f, "Trust"),
             ActiveTab::Explain => write!(f, "Explain"),
             ActiveTab::Actions => write!(f, "Actions"),
         }
@@ -57,11 +60,12 @@ impl AppState {
         }
     }
 
-    /// Advance to the next tab in Live → Health → Explain → Actions → Live order.
+    /// Advance to the next tab in Live → Health → Trust → Explain → Actions → Live order.
     pub fn cycle_tab(&mut self) {
         let next = match self.active_tab {
             ActiveTab::Live => ActiveTab::Health,
-            ActiveTab::Health => ActiveTab::Explain,
+            ActiveTab::Health => ActiveTab::Trust,
+            ActiveTab::Trust => ActiveTab::Explain,
             ActiveTab::Explain => ActiveTab::Actions,
             ActiveTab::Actions => ActiveTab::Live,
         };

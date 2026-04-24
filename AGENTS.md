@@ -190,6 +190,6 @@ These must hold across all changes:
 
 `openspec/specs/` holds enduring domain specs (stable intended behavior). `openspec/changes/<name>/` holds active work: `proposal.md`, `design.md`, `tasks.md`, and optional delta specs.
 
-Active changes: none (all current work is archived under `openspec/changes/archive/`).
+Active changes live in `openspec/changes/<name>/`; archived work moves to `openspec/changes/archive/`. Check the directory listing for the current set rather than this file.
 
 Specs govern intent; the graph governs runtime truth.

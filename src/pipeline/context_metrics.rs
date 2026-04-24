@@ -191,6 +191,16 @@ pub fn load(synrepo_dir: &Path) -> anyhow::Result<ContextMetrics> {
     Ok(serde_json::from_slice(&bytes)?)
 }
 
+/// Load context metrics only when the metrics file exists.
+pub fn load_optional(synrepo_dir: &Path) -> anyhow::Result<Option<ContextMetrics>> {
+    let path = metrics_path(synrepo_dir);
+    if !path.exists() {
+        return Ok(None);
+    }
+    let bytes = fs::read(path)?;
+    Ok(Some(serde_json::from_slice(&bytes)?))
+}
+
 /// Save context metrics.
 pub fn save(synrepo_dir: &Path, metrics: &ContextMetrics) -> anyhow::Result<()> {
     let state_dir = synrepo_dir.join("state");

@@ -75,12 +75,7 @@ fn sync_index_incremental_inner(
                 deleted_paths: 0,
             });
         }
-        let report = super::build_index(config, repo_root)?;
-        return Ok(IndexSyncReport {
-            mode: IndexSyncMode::Rebuild,
-            changed_paths: report.indexed_files,
-            deleted_paths: 0,
-        });
+        return rebuild_index(config, repo_root);
     }
 
     let changed_paths = pending
@@ -93,25 +88,13 @@ fn sync_index_incremental_inner(
         .count();
 
     if !manifest_path(config, repo_root).exists() {
-        let report = super::build_index(config, repo_root)?;
-        return Ok(IndexSyncReport {
-            mode: IndexSyncMode::Rebuild,
-            changed_paths: report.indexed_files,
-            deleted_paths: 0,
-        });
+        return rebuild_index(config, repo_root);
     }
 
     let syntext_config = syntext_config(config, repo_root);
     let index = match Index::open(syntext_config.clone()) {
         Ok(index) => index,
-        Err(err) if should_rebuild(&err) => {
-            let report = super::build_index(config, repo_root)?;
-            return Ok(IndexSyncReport {
-                mode: IndexSyncMode::Rebuild,
-                changed_paths: report.indexed_files,
-                deleted_paths: 0,
-            });
-        }
+        Err(err) if should_rebuild(&err) => return rebuild_index(config, repo_root),
         Err(err) => return Err(map_index_error(err)),
     };
 
@@ -123,17 +106,7 @@ fn sync_index_incremental_inner(
         };
         match result {
             Ok(()) => {}
-            Err(err)
-                if should_rebuild(&err)
-                    || matches!(err, syntext::IndexError::OverlayFull { .. }) =>
-            {
-                let report = super::build_index(config, repo_root)?;
-                return Ok(IndexSyncReport {
-                    mode: IndexSyncMode::Rebuild,
-                    changed_paths: report.indexed_files,
-                    deleted_paths: 0,
-                });
-            }
+            Err(err) if is_rebuild_error(&err) => return rebuild_index(config, repo_root),
             Err(err) => return Err(map_index_error(err)),
         }
     }
@@ -149,18 +122,22 @@ fn sync_index_incremental_inner(
                 deleted_paths,
             })
         }
-        Err(err)
-            if should_rebuild(&err) || matches!(err, syntext::IndexError::OverlayFull { .. }) =>
-        {
-            let report = super::build_index(config, repo_root)?;
-            Ok(IndexSyncReport {
-                mode: IndexSyncMode::Rebuild,
-                changed_paths: report.indexed_files,
-                deleted_paths: 0,
-            })
-        }
+        Err(err) if is_rebuild_error(&err) => rebuild_index(config, repo_root),
         Err(err) => Err(map_index_error(err)),
     }
+}
+
+fn rebuild_index(config: &Config, repo_root: &Path) -> crate::Result<IndexSyncReport> {
+    let report = super::build_index(config, repo_root)?;
+    Ok(IndexSyncReport {
+        mode: IndexSyncMode::Rebuild,
+        changed_paths: report.indexed_files,
+        deleted_paths: 0,
+    })
+}
+
+fn is_rebuild_error(err: &syntext::IndexError) -> bool {
+    should_rebuild(err) || matches!(err, syntext::IndexError::OverlayFull { .. })
 }
 
 fn collect_pending_actions(

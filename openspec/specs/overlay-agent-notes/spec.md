@@ -1,8 +1,6 @@
 ## Purpose
 Define advisory agent-authored notes as overlay-only records with explicit targets, provenance, lifecycle state, drift invalidation, bounded retrieval, and source-truth isolation.
-
 ## Requirements
-
 ### Requirement: Define agent notes as overlay-only advisory content
 synrepo SHALL define agent notes as advisory overlay records attached to explicit repo targets. Agent notes SHALL NOT be stored in canonical graph tables, SHALL NOT add variants to `graph::Epistemic`, and SHALL NOT replace graph-backed source facts.
 
@@ -110,3 +108,17 @@ synrepo SHALL NOT use agent notes to compute symbol definitions, file hashes, im
 - **WHEN** note content is used to rank optional advisory results
 - **THEN** the ranking does not define canonical source truth
 - **AND** graph-backed result fields remain derived from source, git, or human-declared graph inputs
+
+### Requirement: Surface note lifecycle counts as trust signals
+Overlay agent-note lifecycle counts SHALL be available to operator trust views as advisory health signals.
+
+#### Scenario: Notes exist in multiple lifecycle states
+- **WHEN** the overlay store contains active, stale, unverified, superseded, forgotten, or invalid notes
+- **THEN** the trust view can display counts for each lifecycle state
+- **AND** those counts are labeled advisory and overlay-backed
+
+#### Scenario: Stale or invalid notes exist
+- **WHEN** stale or invalid note counts are greater than zero
+- **THEN** the trust view marks the note surface as degraded
+- **AND** the recommended next action points to the appropriate check, sync, verify, or audit surface
+

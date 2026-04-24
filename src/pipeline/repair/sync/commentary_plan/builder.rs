@@ -1,137 +1,18 @@
-//! Commentary work planning and scope helpers.
+//! Build a `CommentaryWorkPlan` by scanning the graph and overlay stores.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
+use super::scope::{in_scope, normalize_scope_prefixes, scan_emit_interval};
+use super::types::{
+    CommentaryProgressEvent, CommentaryWorkItem, CommentaryWorkPhase, CommentaryWorkPlan,
+};
 use crate::{
-    core::ids::{FileNodeId, NodeId},
+    core::ids::NodeId,
     pipeline::repair::commentary::{resolve_commentary_node, CommentaryNodeSnapshot},
     store::{overlay::SqliteOverlayStore, sqlite::SqliteGraphStore},
 };
-
-/// Fixed phases for commentary work.
-#[allow(missing_docs)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CommentaryWorkPhase {
-    Refresh,
-    Seed,
-}
-
-/// Planned commentary work item.
-#[allow(missing_docs)]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CommentaryWorkItem {
-    pub node_id: NodeId,
-    pub file_id: FileNodeId,
-    pub phase: CommentaryWorkPhase,
-    pub path: String,
-    pub qualified_name: Option<String>,
-}
-
-/// Plan for one `synrepo explain` run.
-#[allow(missing_docs)]
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct CommentaryWorkPlan {
-    pub refresh: Vec<CommentaryWorkItem>,
-    pub file_seeds: Vec<CommentaryWorkItem>,
-    pub symbol_seed_candidates: Vec<CommentaryWorkItem>,
-    pub scoped_files: usize,
-    pub scoped_symbols: usize,
-}
-
-#[allow(missing_docs)]
-impl CommentaryWorkPlan {
-    pub fn refresh_count(&self) -> usize {
-        self.refresh.len()
-    }
-
-    pub fn file_seed_count(&self) -> usize {
-        self.file_seeds.len()
-    }
-
-    pub fn symbol_seed_candidate_count(&self) -> usize {
-        self.symbol_seed_candidates.len()
-    }
-
-    pub fn max_target_count(&self) -> usize {
-        self.refresh_count() + self.file_seed_count() + self.symbol_seed_candidate_count()
-    }
-
-    pub fn scoped_file_count(&self) -> usize {
-        self.scoped_files
-    }
-
-    pub fn scoped_symbol_count(&self) -> usize {
-        self.scoped_symbols
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.max_target_count() == 0
-    }
-}
-
-/// Structured progress emitted while commentary refresh runs.
-#[allow(missing_docs)]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum CommentaryProgressEvent {
-    ScanProgress {
-        files_scanned: usize,
-        files_total: usize,
-        symbols_scanned: usize,
-        symbols_total: usize,
-    },
-    PlanReady {
-        refresh: usize,
-        file_seeds: usize,
-        symbol_seed_candidates: usize,
-        scoped_files: usize,
-        scoped_symbols: usize,
-        max_targets: usize,
-    },
-    TargetStarted {
-        item: CommentaryWorkItem,
-        current: usize,
-    },
-    TargetFinished {
-        item: CommentaryWorkItem,
-        current: usize,
-        generated: bool,
-    },
-    DocsDirCreated {
-        path: PathBuf,
-    },
-    DocWritten {
-        path: PathBuf,
-    },
-    DocDeleted {
-        path: PathBuf,
-    },
-    IndexDirCreated {
-        path: PathBuf,
-    },
-    IndexUpdated {
-        path: PathBuf,
-        touched_paths: usize,
-    },
-    IndexRebuilt {
-        path: PathBuf,
-        touched_paths: usize,
-    },
-    PhaseSummary {
-        phase: CommentaryWorkPhase,
-        attempted: usize,
-        generated: usize,
-        not_generated: usize,
-    },
-    RunSummary {
-        refreshed: usize,
-        seeded: usize,
-        not_generated: usize,
-        attempted: usize,
-        stopped: bool,
-    },
-}
 
 /// Load the current commentary work plan without mutating any stores.
 pub fn load_commentary_work_plan(
@@ -316,20 +197,6 @@ fn maybe_emit_scan_progress(
     }
 }
 
-fn scan_emit_interval(total: usize) -> usize {
-    match total {
-        0..=20 => 1,
-        _ => (total / 20).max(1),
-    }
-}
-
-fn in_scope(path: &str, prefixes: Option<&[String]>) -> bool {
-    match prefixes {
-        None => true,
-        Some(p) => path_matches_any_prefix(path, p),
-    }
-}
-
 fn work_item(
     node_id: NodeId,
     snap: &CommentaryNodeSnapshot,
@@ -341,77 +208,5 @@ fn work_item(
         phase,
         path: snap.file.path.clone(),
         qualified_name: snap.symbol.as_ref().map(|sym| sym.qualified_name.clone()),
-    }
-}
-
-/// Convert scope `PathBuf`s into `/`-normalized, trailing-slash-terminated
-/// string prefixes so a prefix-match cannot spuriously accept sibling
-/// directories (`src` matching `src-extra/...`).
-pub fn normalize_scope_prefixes(paths: &[PathBuf]) -> Vec<String> {
-    paths
-        .iter()
-        .map(|p| {
-            let mut s = p.to_string_lossy().replace('\\', "/");
-            if !s.is_empty() && !s.ends_with('/') {
-                s.push('/');
-            }
-            s
-        })
-        .collect()
-}
-
-/// True if `file_path` (stored as recorded in the graph, possibly with
-/// backslashes on Windows) starts with any of the normalized prefixes.
-pub fn path_matches_any_prefix(file_path: &str, prefixes: &[String]) -> bool {
-    let normalized = file_path.replace('\\', "/");
-    prefixes.iter().any(|p| normalized.starts_with(p.as_str()))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn prefix_is_terminated_with_slash() {
-        let prefixes = normalize_scope_prefixes(&[PathBuf::from("src")]);
-        assert_eq!(prefixes, vec!["src/".to_string()]);
-    }
-
-    #[test]
-    fn prefix_sibling_does_not_match() {
-        let prefixes = normalize_scope_prefixes(&[PathBuf::from("src")]);
-        assert!(path_matches_any_prefix("src/lib.rs", &prefixes));
-        assert!(!path_matches_any_prefix("src-extra/lib.rs", &prefixes));
-    }
-
-    #[test]
-    fn backslash_paths_match_forward_slash_prefix() {
-        let prefixes = normalize_scope_prefixes(&[PathBuf::from("src")]);
-        assert!(path_matches_any_prefix("src\\lib.rs", &prefixes));
-    }
-
-    #[test]
-    fn empty_scope_matches_nothing() {
-        let prefixes = normalize_scope_prefixes(&[]);
-        assert!(!path_matches_any_prefix("src/lib.rs", &prefixes));
-    }
-
-    #[test]
-    fn nested_prefix_match() {
-        let prefixes = normalize_scope_prefixes(&[PathBuf::from("crates/core/src")]);
-        assert!(path_matches_any_prefix("crates/core/src/lib.rs", &prefixes));
-        assert!(!path_matches_any_prefix(
-            "crates/core/tests/a.rs",
-            &prefixes
-        ));
-    }
-
-    #[test]
-    fn scan_emit_interval_scales_with_repo_size() {
-        assert_eq!(scan_emit_interval(0), 1);
-        assert_eq!(scan_emit_interval(20), 1);
-        assert_eq!(scan_emit_interval(21), 1);
-        assert_eq!(scan_emit_interval(100), 5);
-        assert_eq!(scan_emit_interval(4000), 200);
     }
 }

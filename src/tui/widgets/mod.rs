@@ -15,6 +15,7 @@ pub mod header;
 pub mod health;
 pub mod live;
 pub mod tabs;
+pub mod trust;
 
 pub use actions::ActionsTabWidget;
 pub use explain::ExplainTabWidget;
@@ -23,6 +24,7 @@ pub use header::HeaderWidget;
 pub use health::HealthWidget;
 pub use live::LiveFeedWidget;
 pub use tabs::DashboardTabsWidget;
+pub use trust::TrustWidget;
 
 /// One ring-buffer entry for the event/notification log pane. Shared between
 /// `AppState::log` and the merged-feed widget in `widgets/live.rs`.

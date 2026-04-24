@@ -21,13 +21,13 @@ use crate::surface::readiness::ReadinessMatrix;
 use crate::tui::app::{poll_key, ActiveTab, AppState, DashboardExit};
 use crate::tui::explain_run::run_explain_in_dashboard;
 use crate::tui::probe::{
-    build_activity_vm, build_header_vm, build_health_vm, build_next_actions, display_repo_path,
-    HealthRow, HealthVm,
+    build_activity_vm, build_header_vm, build_health_vm, build_next_actions, build_trust_vm,
+    display_repo_path, HealthRow, HealthVm,
 };
 use crate::tui::theme::Theme;
 use crate::tui::widgets::{
     ActionsTabWidget, DashboardTabsWidget, ExplainTabWidget, FooterWidget, HeaderWidget,
-    HealthWidget, LiveFeedWidget, LogEntry,
+    HealthWidget, LiveFeedWidget, LogEntry, TrustWidget,
 };
 
 /// Terminal alias used by the render loop.
@@ -150,6 +150,14 @@ fn draw_dashboard(frame: &mut ratatui::Frame, state: &AppState) {
                 theme: &state.theme,
             };
             frame.render_widget(health, content_area);
+        }
+        ActiveTab::Trust => {
+            let trust_vm = build_trust_vm(&state.snapshot);
+            let trust = TrustWidget {
+                vm: &trust_vm,
+                theme: &state.theme,
+            };
+            frame.render_widget(trust, content_area);
         }
         ActiveTab::Explain => {
             let explain = ExplainTabWidget {

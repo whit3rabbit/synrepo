@@ -221,17 +221,21 @@ fn handle_key_switches_tabs() {
     state.handle_key(KeyCode::Char('2'), KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Health);
     state.handle_key(KeyCode::Char('3'), KeyModifiers::NONE);
+    assert_eq!(state.active_tab, ActiveTab::Trust);
+    state.handle_key(KeyCode::Char('4'), KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Explain);
     assert!(
         state.explain_preview.is_some(),
         "entering the Explain tab should load the inline preview"
     );
-    state.handle_key(KeyCode::Char('4'), KeyModifiers::NONE);
+    state.handle_key(KeyCode::Char('5'), KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Actions);
     state.handle_key(KeyCode::Char('1'), KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Live);
     state.handle_key(KeyCode::Tab, KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Health);
+    state.handle_key(KeyCode::Tab, KeyModifiers::NONE);
+    assert_eq!(state.active_tab, ActiveTab::Trust);
     state.handle_key(KeyCode::Tab, KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Explain);
     state.handle_key(KeyCode::Tab, KeyModifiers::NONE);

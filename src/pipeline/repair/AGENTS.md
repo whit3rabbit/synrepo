@@ -9,11 +9,11 @@ Repair pipeline: drift detection, surfaces, and auto-repair actions.
 - `mod.rs` — facade, exports
 - `types.rs` — re-exports stable enums from `types/stable.rs` (`RepairSurface`, `DriftClass`, `Severity`, `RepairAction`) and payloads from `types/models.rs`
 - `sync/` — auto-repair orchestration (`mod.rs`, `explain.rs`)
-- `report/` — drift report builder; `surfaces/` has 10 `SurfaceCheck` implementations across 5 files: `mod.rs`, `commentary.rs`, `cross_links.rs`, `drift.rs`, `rationale.rs`
+- `report/` — drift report builder; `surfaces/` has 11 `SurfaceCheck` implementations across 6 files: `mod.rs`, `agent_notes.rs`, `commentary.rs`, `cross_links.rs`, `drift.rs`, `rationale.rs`
 - `log.rs` — JSONL resolution log append
 - `commentary.rs` — commentary refresh repair action
 - `cross_links.rs` — cross-link generation pass
-- `cross_link_verify.rs` — validates existing cross-link overlay rows
+- `cross_link_verify/` — validates existing cross-link overlay rows (`io.rs`, `matching.rs`, `mod.rs`)
 - `declared_links.rs` — verifies human-declared `Governs` targets
 
 ## Hard invariants

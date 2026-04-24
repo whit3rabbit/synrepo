@@ -26,6 +26,8 @@ The overview blurb in `mcp.rs` (the `synrepo_overview` description) and `skill/S
 - `search.rs` — lexical search handler
 - `findings.rs` — audit and cross-link triage tools
 - `audit.rs` — cross-link audit surface
+- `notes.rs` — agent-notes overlay surface (read/write)
+- `docs.rs` — synthesized commentary docs search handler
 - `primitives.rs` — low-level MCP primitive tool handlers
 - `helpers.rs` — shared utilities
 

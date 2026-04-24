@@ -6,7 +6,8 @@ use std::fs;
 use std::path::Path;
 use toml_edit::{DocumentMut, Item, Table, Value as TomlValue};
 
-use super::{load_json_config, write_atomic, StepOutcome};
+use super::config::{load_json_config, write_atomic};
+use super::steps::StepOutcome;
 
 /// Target entry inserted under `mcpServers.synrepo` in `.mcp.json`.
 fn claude_synrepo_entry() -> Value {

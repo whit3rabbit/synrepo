@@ -2,11 +2,15 @@
 //! `crate::surface::status_snapshot` for widget consumption. Kept narrow so
 //! widgets don't import ratatui types into the probe modules.
 
+mod trust;
 mod vm;
+pub use trust::build_trust_vm;
 pub use vm::*;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod trust_tests;
 
 use crate::bootstrap::runtime_probe::{AgentIntegration, AgentTargetKind};
 use crate::config::home_dir;
