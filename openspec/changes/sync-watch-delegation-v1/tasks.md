@@ -26,7 +26,7 @@
 
 - [x] 4.1 Added `pub auto_sync_enabled: bool` to `Config` in `src/config/mod.rs` with `#[serde(default = "default_auto_sync_enabled")]` returning `true`.
 - [x] 4.2 `run_watch_service` seeds `auto_sync_enabled: Arc<AtomicBool>` from `config.auto_sync_enabled`.
-- [ ] 4.3 Document the field in `docs/CONFIG.md`, including the non-persistent TUI toggle.
+- [x] 4.3 Document the field in `docs/CONFIG.md`, including the non-persistent TUI toggle.
 
 ## 5. CLI
 
@@ -36,11 +36,11 @@
 
 ## 6. TUI
 
-- [ ] 6.1 Add `src/tui/actions/sync.rs` with `sync_now(ctx)` mirroring `reconcile_now`: live mode delegates via `SyncNow`; poll mode spawns a detached thread calling `execute_sync` directly and pipes `WatchEvent`s into the dashboard channel.
-- [ ] 6.2 Add `src/tui/actions/auto_sync.rs` with `toggle_auto_sync(ctx)` that sends `SetAutoSync { enabled: !current }` in live mode and shows a toast in poll mode.
-- [ ] 6.3 In `src/tui/app/key_handlers.rs`, bind `R` to `reconcile_now`, `S` to `sync_now`, `A` to `toggle_auto_sync`. Leave lowercase `r` as snapshot refresh.
-- [ ] 6.4 In `src/tui/widgets/header.rs`, render the auto-sync state as `auto-sync:on|off` next to the watch indicator.
-- [ ] 6.5 Append `"(press R / S)"` hints to the stale-reconcile / stale-sync `NextAction` entries so users can discover the bindings.
+- [x] 6.1 Add `src/tui/actions/sync.rs` with `sync_now(ctx)` mirroring `reconcile_now`: live mode delegates via `SyncNow`; poll mode spawns a detached thread calling `execute_sync` directly and pipes `WatchEvent`s into the dashboard channel.
+- [x] 6.2 Add `src/tui/actions/auto_sync.rs` with `toggle_auto_sync(ctx)` that sends `SetAutoSync { enabled: !current }` in live mode and shows a toast in poll mode.
+- [x] 6.3 In `src/tui/app/key_handlers.rs`, bind `R` to `reconcile_now`, `S` to `sync_now`, `A` to `toggle_auto_sync`. Leave lowercase `r` as snapshot refresh.
+- [x] 6.4 In `src/tui/widgets/header.rs`, render the auto-sync state as `auto-sync:on|off` next to the watch indicator.
+- [x] 6.5 Append `"(press R / S)"` hints to the stale-reconcile / stale-sync `NextAction` entries so users can discover the bindings.
 
 ## 7. Tests
 

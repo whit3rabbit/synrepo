@@ -40,15 +40,18 @@ fn dashboard_options_default_has_color_on_and_no_banner() {
     assert!(!opts.welcome_banner);
 }
 
-/// In a `cargo test` harness stdout is captured, so `stdout_is_tty()`
-/// always returns `false`. That is the pipe-out path the spec refers to.
-/// The assertion here pins the short-circuit contract so a future refactor
-/// that changes the fallback signal is noticed.
+/// Pin the pipe-out path with a test-only stdout override. The Rust test
+/// harness may still attach the process stdout to a real terminal, so these
+/// tests must not depend on how the runner was launched.
 #[test]
 fn pipe_out_run_dashboard_returns_non_tty_fallback() {
     use crate::bootstrap::runtime_probe::AgentIntegration;
     let tempdir = tempfile::tempdir().unwrap();
-    assert!(!stdout_is_tty(), "cargo test harness must capture stdout");
+    let _stdout = force_stdout_is_tty_for_test(false);
+    assert!(
+        !stdout_is_tty(),
+        "test override should simulate piped stdout"
+    );
     let outcome = run_dashboard(
         tempdir.path(),
         AgentIntegration::Absent,
@@ -61,7 +64,11 @@ fn pipe_out_run_dashboard_returns_non_tty_fallback() {
 #[test]
 fn pipe_out_run_setup_wizard_returns_non_tty() {
     let tempdir = tempfile::tempdir().unwrap();
-    assert!(!stdout_is_tty());
+    let _stdout = force_stdout_is_tty_for_test(false);
+    assert!(
+        !stdout_is_tty(),
+        "test override should simulate piped stdout"
+    );
     let outcome = run_setup_wizard(tempdir.path(), TuiOptions::default())
         .expect("short-circuit is infallible");
     assert_eq!(outcome, SetupWizardOutcome::NonTty);
@@ -70,7 +77,11 @@ fn pipe_out_run_setup_wizard_returns_non_tty() {
 #[test]
 fn pipe_out_run_repair_wizard_returns_non_tty() {
     let tempdir = tempfile::tempdir().unwrap();
-    assert!(!stdout_is_tty());
+    let _stdout = force_stdout_is_tty_for_test(false);
+    assert!(
+        !stdout_is_tty(),
+        "test override should simulate piped stdout"
+    );
     let outcome = run_repair_wizard(tempdir.path(), Vec::new(), TuiOptions::default())
         .expect("short-circuit is infallible");
     assert_eq!(outcome, RepairWizardOutcome::NonTty);
@@ -80,7 +91,11 @@ fn pipe_out_run_repair_wizard_returns_non_tty() {
 fn pipe_out_run_integration_wizard_returns_non_tty() {
     use crate::bootstrap::runtime_probe::AgentIntegration;
     let tempdir = tempfile::tempdir().unwrap();
-    assert!(!stdout_is_tty());
+    let _stdout = force_stdout_is_tty_for_test(false);
+    assert!(
+        !stdout_is_tty(),
+        "test override should simulate piped stdout"
+    );
     let outcome = run_integration_wizard(
         tempdir.path(),
         AgentIntegration::Absent,

@@ -72,6 +72,7 @@ fn collect_degraded_rows(
         display_repo_path(&snapshot.synrepo_dir),
         snapshot,
         integration,
+        None,
     );
     let health = build_health_vm(snapshot);
 

@@ -48,6 +48,9 @@ pub struct HeaderVm {
     pub mcp_label: String,
     /// MCP severity.
     pub mcp_severity: Severity,
+    /// Cached auto-sync flag from the dashboard runtime. `None` for non-TUI
+    /// callers (e.g. `synrepo doctor`) that have no live atomic to read.
+    pub auto_sync: Option<bool>,
 }
 
 /// Flattened system-health view model.

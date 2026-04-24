@@ -112,7 +112,12 @@ fn draw_dashboard(frame: &mut ratatui::Frame, state: &AppState) {
 
     // Header with spinner.
     let repo_display = display_repo_path(&state.repo_root);
-    let header_vm = build_header_vm(repo_display, &state.snapshot, &state.integration);
+    let header_vm = build_header_vm(
+        repo_display,
+        &state.snapshot,
+        &state.integration,
+        Some(state.auto_sync_enabled),
+    );
     let header = HeaderWidget {
         vm: &header_vm,
         theme: &state.theme,

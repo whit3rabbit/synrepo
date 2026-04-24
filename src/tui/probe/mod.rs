@@ -21,10 +21,15 @@ use crate::surface::status_snapshot::StatusSnapshot;
 
 /// Build a header view model from a pre-built status snapshot and the probe's
 /// agent-integration signal.
+///
+/// `auto_sync` is the dashboard's cached auto-sync flag (seeded from config,
+/// flipped by `SetAutoSync` acks). Non-TUI callers pass `None` to suppress the
+/// indicator; the field flows through to the rendered header span unchanged.
 pub fn build_header_vm(
     repo_display: String,
     snapshot: &StatusSnapshot,
     integration: &AgentIntegration,
+    auto_sync: Option<bool>,
 ) -> HeaderVm {
     let mode_label = snapshot
         .config
@@ -96,6 +101,7 @@ pub fn build_header_vm(
         lock_severity,
         mcp_label,
         mcp_severity,
+        auto_sync,
     }
 }
 
@@ -300,7 +306,8 @@ pub fn build_next_actions(
         match &d.reconcile_health {
             ReconcileHealth::Stale(_) | ReconcileHealth::Unknown => {
                 out.push(NextAction {
-                    label: "Reconcile is stale — refresh with `synrepo reconcile`".to_string(),
+                    label: "Reconcile is stale — refresh with `synrepo reconcile` (press R / S)"
+                        .to_string(),
                     severity: Severity::Stale,
                 });
             }
@@ -322,7 +329,7 @@ pub fn build_next_actions(
 
     if !snapshot.export_freshness.starts_with("current") {
         out.push(NextAction {
-            label: "Export is stale — run `synrepo export`".to_string(),
+            label: "Export is stale — run `synrepo export` (press R / S)".to_string(),
             severity: Severity::Stale,
         });
     }

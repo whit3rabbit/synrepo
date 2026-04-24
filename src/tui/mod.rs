@@ -321,10 +321,45 @@ mod live {
 /// Detect whether stdout is attached to a TTY. Used by every entry point to
 /// short-circuit the alt-screen path under pipe / redirect / CI.
 pub fn stdout_is_tty() -> bool {
+    #[cfg(test)]
+    if let Some(is_tty) = test_stdout_is_tty_override() {
+        return is_tty;
+    }
+
     // We intentionally avoid the `atty` crate: the stdlib path is stable in
     // recent Rust and does not pull a transitive dependency.
     use std::io::IsTerminal;
     std::io::stdout().is_terminal()
+}
+
+#[cfg(test)]
+thread_local! {
+    static TEST_STDOUT_IS_TTY_OVERRIDE: std::cell::Cell<Option<bool>> =
+        const { std::cell::Cell::new(None) };
+}
+
+#[cfg(test)]
+fn test_stdout_is_tty_override() -> Option<bool> {
+    TEST_STDOUT_IS_TTY_OVERRIDE.with(std::cell::Cell::get)
+}
+
+#[cfg(test)]
+fn force_stdout_is_tty_for_test(is_tty: bool) -> TestStdoutIsTtyGuard {
+    let previous = test_stdout_is_tty_override();
+    TEST_STDOUT_IS_TTY_OVERRIDE.with(|override_slot| override_slot.set(Some(is_tty)));
+    TestStdoutIsTtyGuard { previous }
+}
+
+#[cfg(test)]
+struct TestStdoutIsTtyGuard {
+    previous: Option<bool>,
+}
+
+#[cfg(test)]
+impl Drop for TestStdoutIsTtyGuard {
+    fn drop(&mut self) {
+        TEST_STDOUT_IS_TTY_OVERRIDE.with(|override_slot| override_slot.set(self.previous));
+    }
 }
 
 #[cfg(test)]

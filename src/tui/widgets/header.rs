@@ -73,6 +73,17 @@ impl Widget for HeaderWidget<'_> {
             self.vm.watch_severity,
             self.theme,
         );
+        let auto_sync_span: Option<Span<'static>> = self.vm.auto_sync.map(|enabled| {
+            let label = if enabled { "on" } else { "off" };
+            // Healthy when on (the default and informative state); Stale when off
+            // so users notice they have opted out of post-reconcile cheap repairs.
+            let severity = if enabled {
+                crate::tui::probe::Severity::Healthy
+            } else {
+                crate::tui::probe::Severity::Stale
+            };
+            severity_span(&format!("auto-sync: {label}"), severity, self.theme)
+        });
         let lock_span = severity_span(
             &format!("lock: {}", self.vm.lock_label),
             self.vm.lock_severity,
@@ -84,22 +95,28 @@ impl Widget for HeaderWidget<'_> {
             self.theme,
         );
 
+        let mut second_line: Vec<Span<'static>> = vec![
+            mode_span,
+            Span::raw("  "),
+            reconcile_span,
+            Span::raw("  "),
+            watch_span,
+        ];
+        if let Some(span) = auto_sync_span {
+            second_line.push(Span::raw("  "));
+            second_line.push(span);
+        }
+        second_line.push(Span::raw("  "));
+        second_line.push(lock_span);
+        second_line.push(Span::raw("  "));
+        second_line.push(mcp_span);
+
         let lines = vec![
             Line::from(vec![
                 status_span,
                 Span::styled(self.vm.repo_display.clone(), self.theme.muted_style()),
             ]),
-            Line::from(vec![
-                mode_span,
-                Span::raw("  "),
-                reconcile_span,
-                Span::raw("  "),
-                watch_span,
-                Span::raw("  "),
-                lock_span,
-                Span::raw("  "),
-                mcp_span,
-            ]),
+            Line::from(second_line),
         ];
         Paragraph::new(lines)
             .block(block)

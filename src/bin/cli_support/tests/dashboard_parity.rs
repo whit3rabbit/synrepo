@@ -34,6 +34,7 @@ fn cli_text_and_dashboard_vm_agree_on_key_fields() {
         "test-repo".to_string(),
         &snapshot,
         &AgentIntegration::Absent,
+        None,
     );
     let health = build_health_vm(&snapshot);
 
@@ -110,6 +111,7 @@ fn uninitialized_parity_not_initialized_on_both_surfaces() {
         "test-repo".to_string(),
         &snapshot,
         &AgentIntegration::Absent,
+        None,
     );
     let health = build_health_vm(&snapshot);
 

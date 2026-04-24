@@ -110,9 +110,6 @@ These must hold across all changes:
   - `src/pipeline/structural/stages.rs` (501)
   - `src/surface/card/git.rs` (446)
 
-  **Hard** (tightly coupled, needs design thought):
-  - `src/pipeline/structural/stage4.rs` (820) — monolithic resolution algorithm with coupled scoring
-
   **Watchlist (370-399, approaching limit):** `src/pipeline/watch/service.rs` (391), `src/pipeline/explain/docs/corpus.rs` (391), `src/tui/app/explain_picker.rs` (390), `src/pipeline/writer/helpers.rs` (390), `src/substrate/incremental.rs` (400), `src/pipeline/git/mod.rs` (382), `src/tui/wizard/setup/render/explain.rs` (381), `src/bin/cli_support/commands/watch.rs` (375), `src/substrate/index.rs` (374), `src/store/overlay/commentary.rs` (429), `src/tui/watcher.rs` (377).
 
 - **`src/structure/parse/extract/` is already a sub-module directory** (`mod.rs` ~363 lines, `qualname.rs` ~88). Do not add more code to `mod.rs` without splitting further.

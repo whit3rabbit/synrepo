@@ -12,10 +12,12 @@ Runtime config lives in `.synrepo/config.toml`; the struct is `Config` in `src/c
 | `max_graph_snapshot_bytes` | `134217728` (128 MiB) | Advisory ceiling for the published in-memory graph snapshot. `0` disables publication |
 | `redact_globs` | `["**/secrets/**", "**/*.env*", "**/*-private.md"]` | Files matching these are never indexed |
 | `retain_retired_revisions` | `10` | Compile revisions to keep retired observations before compaction deletes them |
+| `auto_sync_enabled` | `true` | Run cheap repair surfaces (export regeneration, retired-observation compaction) automatically after every drift-producing reconcile while watch is active |
 
 ## Notes
 
 - Adding a fourth `concept_directories` entry (e.g. `architecture/decisions`) triggers a config-sensitive compatibility check — the compat report raises a graph advisory.
 - `max_graph_snapshot_bytes` is advisory. Oversized snapshots still publish with a warning; set to `0` to force readers onto the SQLite path.
 - `redact_globs` is hard: matched files are never indexed and never reach any parser, so they cannot leak into cards, exports, or overlay candidates.
+- `auto_sync_enabled` is read once at watch startup and seeds an in-process atomic flag. The dashboard `A` keybinding flips that atomic for the running watch service but does NOT rewrite this file. To change the default persistently, edit `config.toml` and restart watch. The runtime allow-list is hard-coded (`CHEAP_AUTO_SYNC_SURFACES` in `src/pipeline/repair/sync/mod.rs`); commentary refresh and other token-cost surfaces are never auto-run.
 - Explain config (`[explain]`) lives in the same file; see `docs/EXPLAIN.md`.
