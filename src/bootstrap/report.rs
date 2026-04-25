@@ -6,14 +6,13 @@ use std::path::{Path, PathBuf};
 /// Shim paths (relative to repo root) written by `synrepo agent-setup <tool>`.
 /// Listed in the preference order used when picking a pointer target.
 ///
-/// The five skill-bundle targets (Claude/Cursor/Codex/Windsurf/Gemini) write
-/// to the Agent Skills standard path `.<tool>/skills/synrepo/SKILL.md`. The
-/// remaining targets use per-tool config conventions that predate the
-/// standard.
+/// Skill-bundle targets write to Agent Skills standard paths. Codex uses the
+/// shared `.agents/skills` repository location; the other listed hosts use
+/// per-tool skill directories.
 const KNOWN_SHIM_PATHS: &[&str] = &[
     ".claude/skills/synrepo/SKILL.md",
     ".cursor/skills/synrepo/SKILL.md",
-    ".codex/skills/synrepo/SKILL.md",
+    ".agents/skills/synrepo/SKILL.md",
     ".windsurf/skills/synrepo/SKILL.md",
     ".gemini/skills/synrepo/SKILL.md",
     "synrepo-copilot-instructions.md",

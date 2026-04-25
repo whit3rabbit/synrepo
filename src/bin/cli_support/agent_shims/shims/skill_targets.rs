@@ -92,6 +92,20 @@ pub(crate) const CODEX_SHIM: &str = concat!(
 
 synrepo precomputes a structural graph of the codebase from tree-sitter parsing and git history.
 
+## Codex setup
+
+This skill belongs at `.agents/skills/synrepo/SKILL.md`.
+
+Register the MCP server with Codex using `codex mcp add synrepo -- synrepo mcp --repo .`.
+For an npm-distributed build, use `codex mcp add synrepo -- npx -y synrepo mcp --repo .` instead.
+You can also edit `~/.codex/config.toml` / trusted project `.codex/config.toml` directly:
+
+```toml
+[mcp_servers.synrepo]
+command = \"synrepo\"
+args = [\"mcp\", \"--repo\", \".\"]
+```
+
 ",
     crate::cli_support::agent_shims::doctrine::doctrine_block!(),
     "

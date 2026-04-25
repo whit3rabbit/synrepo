@@ -85,6 +85,8 @@ synrepo
 | Automated | `claude`, `codex`, `cursor`, `windsurf`, `open-code`, `roo` | Initializes `.synrepo/`, writes the repo-local skill or instruction file, and registers the project-scoped MCP server in the agent's local config | Start the agent in the repo |
 | Shim-only | `copilot`, `generic`, `gemini`, `goose`, `kiro`, `qwen`, `junie`, `tabnine`, `trae` | Initializes `.synrepo/` and writes the repo-local skill or instruction file | Point the agent at `synrepo mcp --repo .` in that tool's own MCP config |
 
+For Codex, `synrepo setup codex` writes the skill to `.agents/skills/synrepo/SKILL.md` and registers MCP in trusted project `.codex/config.toml` using `[mcp_servers.synrepo]`. For a global Codex registration with the installed binary, run `codex mcp add synrepo -- synrepo mcp --repo .`; for an npm-distributed build, run `codex mcp add synrepo -- npx -y synrepo mcp --repo .`. You can also add the same table to `~/.codex/config.toml`.
+
 Use `synrepo agent-setup <tool>` if you only want to regenerate the instruction file without running the full onboarding flow.
 
 ## Command Cheat Sheet

@@ -149,11 +149,17 @@ pub(crate) fn mcp_config_has_synrepo(path: &Path) -> anyhow::Result<bool> {
         let raw = fs::read_to_string(path)
             .with_context(|| format!("failed to read {}", path.display()))?;
         let doc: DocumentMut = raw.parse().unwrap_or_default();
-        return Ok(doc
+        let has_codex_mcp = doc
+            .get("mcp_servers")
+            .and_then(|i| i.as_table())
+            .map(|t| t.contains_key("synrepo"))
+            .unwrap_or(false);
+        let has_legacy_mcp = doc
             .get("mcp")
             .and_then(|i| i.as_table())
             .map(|t| t.contains_key("synrepo"))
-            .unwrap_or(false));
+            .unwrap_or(false);
+        return Ok(has_codex_mcp || has_legacy_mcp);
     }
     let value = load_json_config(path)?;
     let Some(obj) = value.as_object() else {
@@ -257,11 +263,23 @@ mod tests {
     fn mcp_config_has_synrepo_detects_codex_toml() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("config.toml");
-        fs::write(&path, "[mcp]\nsynrepo = \"synrepo mcp\"\n").unwrap();
+        fs::write(
+            &path,
+            "[mcp_servers.synrepo]\ncommand = \"synrepo\"\nargs = [\"mcp\"]\n",
+        )
+        .unwrap();
         assert!(mcp_config_has_synrepo(&path).unwrap());
 
         let path2 = dir.path().join("other.toml");
-        fs::write(&path2, "[mcp]\nelse = \"x\"\n").unwrap();
+        fs::write(&path2, "[mcp_servers.other]\ncommand = \"x\"\n").unwrap();
         assert!(!mcp_config_has_synrepo(&path2).unwrap());
+    }
+
+    #[test]
+    fn mcp_config_has_synrepo_detects_legacy_codex_toml() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        fs::write(&path, "[mcp]\nsynrepo = \"synrepo mcp\"\n").unwrap();
+        assert!(mcp_config_has_synrepo(&path).unwrap());
     }
 }

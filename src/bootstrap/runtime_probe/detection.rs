@@ -68,7 +68,7 @@ pub fn shim_output_path(repo_root: &Path, target: AgentTargetKind) -> PathBuf {
             .join("synrepo")
             .join("SKILL.md"),
         AgentTargetKind::Codex => repo_root
-            .join(".codex")
+            .join(".agents")
             .join("skills")
             .join("synrepo")
             .join("SKILL.md"),
@@ -112,7 +112,7 @@ fn codex_mcp_registered(repo_root: &Path) -> bool {
     let Ok(doc) = text.parse::<toml_edit::DocumentMut>() else {
         return false;
     };
-    doc.get("mcp")
+    doc.get("mcp_servers")
         .and_then(|i| i.as_table())
         .and_then(|t| t.get("synrepo"))
         .is_some()
@@ -135,7 +135,10 @@ fn target_hint_present(repo_root: &Path, home: Option<&Path>, target: AgentTarge
     let repo_hints: Vec<PathBuf> = match target {
         AgentTargetKind::Claude => vec![repo_root.join(".claude"), repo_root.join("CLAUDE.md")],
         AgentTargetKind::Cursor => vec![repo_root.join(".cursor")],
-        AgentTargetKind::Codex => vec![repo_root.join(".codex")],
+        AgentTargetKind::Codex => vec![
+            repo_root.join(".codex"),
+            repo_root.join(".agents").join("skills"),
+        ],
         AgentTargetKind::Copilot => vec![repo_root.join(".github").join("copilot-instructions.md")],
         AgentTargetKind::Windsurf => vec![repo_root.join(".windsurf")],
     };
@@ -148,7 +151,7 @@ fn target_hint_present(repo_root: &Path, home: Option<&Path>, target: AgentTarge
     let home_hints: Vec<PathBuf> = match target {
         AgentTargetKind::Claude => vec![home.join(".claude")],
         AgentTargetKind::Cursor => vec![home.join(".cursor")],
-        AgentTargetKind::Codex => vec![home.join(".codex")],
+        AgentTargetKind::Codex => vec![home.join(".codex"), home.join(".agents").join("skills")],
         AgentTargetKind::Copilot => vec![],
         AgentTargetKind::Windsurf => vec![home.join(".windsurf")],
     };

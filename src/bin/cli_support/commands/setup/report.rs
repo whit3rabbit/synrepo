@@ -380,7 +380,7 @@ fn codex_has_synrepo(path: &Path) -> bool {
     let Ok(doc) = text.parse::<toml_edit::DocumentMut>() else {
         return false;
     };
-    doc.get("mcp")
+    doc.get("mcp_servers")
         .and_then(|item| item.as_table())
         .and_then(|table| table.get("synrepo"))
         .is_some()

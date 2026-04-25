@@ -75,9 +75,9 @@ fn delete_shim(path: &Path) -> anyhow::Result<()> {
 
 /// Strip the `synrepo` key from either a JSON MCP config (`.mcp.json`,
 /// `.cursor/mcp.json`, etc.) or from `.codex/config.toml`. Leaves every other
-/// MCP entry untouched. If removing synrepo leaves `mcpServers` / `mcp`
-/// empty, we also drop that key, but we still write the file (possibly `{}`)
-/// so user ownership is preserved.
+/// MCP entry untouched. If removing synrepo leaves `mcpServers`,
+/// `mcp_servers`, or legacy `mcp` empty, we also drop that key, but we still
+/// write the file (possibly `{}`) so user ownership is preserved.
 fn strip_mcp_entry(path: &Path) -> anyhow::Result<()> {
     if !path.exists() {
         return Ok(());
@@ -122,10 +122,12 @@ fn strip_mcp_entry_toml(path: &Path) -> anyhow::Result<()> {
     let mut doc: DocumentMut = raw
         .parse()
         .with_context(|| format!("failed to parse {} as TOML", path.display()))?;
-    if let Some(mcp) = doc.get_mut("mcp").and_then(|i| i.as_table_mut()) {
-        mcp.remove("synrepo");
-        if mcp.is_empty() {
-            doc.as_table_mut().remove("mcp");
+    for container_key in ["mcp_servers", "mcp"] {
+        if let Some(container) = doc.get_mut(container_key).and_then(|i| i.as_table_mut()) {
+            container.remove("synrepo");
+            if container.is_empty() {
+                doc.as_table_mut().remove(container_key);
+            }
         }
     }
     synrepo::util::atomic_write(path, doc.to_string().as_bytes())

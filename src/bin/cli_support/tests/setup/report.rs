@@ -72,6 +72,33 @@ fn report_keeps_missing_mcp_registration_separate_from_current_shim() {
 }
 
 #[test]
+fn report_classifies_codex_mcp_servers_schema_only() {
+    let dir = tempdir().unwrap();
+    fs::create_dir_all(dir.path().join(".codex")).unwrap();
+    fs::write(
+        dir.path().join(".codex").join("config.toml"),
+        "[mcp_servers.synrepo]\ncommand = \"synrepo\"\nargs = [\"mcp\", \"--repo\", \".\"]\n",
+    )
+    .unwrap();
+
+    assert_eq!(
+        classify_mcp_registration(dir.path(), AgentTool::Codex),
+        McpRegistration::Registered
+    );
+
+    fs::write(
+        dir.path().join(".codex").join("config.toml"),
+        "[mcp]\nsynrepo = \"synrepo mcp --repo .\"\n",
+    )
+    .unwrap();
+    assert_eq!(
+        classify_mcp_registration(dir.path(), AgentTool::Codex),
+        McpRegistration::Missing,
+        "legacy [mcp].synrepo must not be reported as current Codex MCP"
+    );
+}
+
+#[test]
 fn report_renders_skipped_target_output() {
     let dir = tempdir().unwrap();
     let entry = ClientSetupEntry::skipped(dir.path(), AgentTool::Copilot, true);

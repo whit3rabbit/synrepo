@@ -105,9 +105,9 @@ synrepo SHALL support `cursor`, `codex`, and `windsurf` as named targets for `sy
 
 #### Scenario: Generate a codex shim
 - **WHEN** a user runs `synrepo agent-setup codex`
-- **THEN** synrepo writes a shim to `.codex/skills/synrepo/SKILL.md` describing the MCP server and tool list
+- **THEN** synrepo writes a shim to `.agents/skills/synrepo/SKILL.md` describing the MCP server and tool list
 - **AND** the shim begins with YAML frontmatter containing `name: synrepo` and a `description` so Codex CLI auto-discovers it as a skill
-- **AND** the shim notes how to configure the MCP server for codex usage
+- **AND** the shim notes that Codex MCP uses `~/.codex/config.toml` or trusted project `.codex/config.toml` with `[mcp_servers.synrepo]`
 
 #### Scenario: Multi-client setup with --only
 - **WHEN** a user runs `synrepo setup --only claude,cursor`
@@ -218,4 +218,3 @@ Setup reporting SHALL distinguish current, missing, and stale generated shims, a
 - **WHEN** a generated shim differs from the current template and the user did not request regeneration
 - **THEN** setup reports the shim as stale and names the regeneration action
 - **AND** the existing shim content is not overwritten silently
-

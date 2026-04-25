@@ -51,7 +51,7 @@ pub(crate) enum AgentTool {
     Copilot,
     /// Generic AGENTS.md — writes `synrepo-agents.md`
     Generic,
-    /// OpenAI Codex CLI — writes `.codex/skills/synrepo/SKILL.md`
+    /// OpenAI Codex CLI — writes `.agents/skills/synrepo/SKILL.md`
     Codex,
     /// Windsurf — writes `.windsurf/skills/synrepo/SKILL.md`
     Windsurf,
@@ -141,8 +141,8 @@ impl AgentTool {
     pub(crate) fn output_path(self, repo_root: &Path) -> PathBuf {
         match self {
             // Agent Skills standard: hosts auto-discover `<name>/SKILL.md` under
-            // the per-tool `skills/` directory. See Claude Code, Codex CLI,
-            // Cursor 2.4+, Windsurf (Mar 2026), Gemini CLI docs.
+            // a host-specific or shared `skills/` directory. Codex uses the
+            // shared `.agents/skills` repository location.
             AgentTool::Claude => repo_root
                 .join(".claude")
                 .join("skills")
@@ -156,7 +156,7 @@ impl AgentTool {
             AgentTool::Copilot => repo_root.join("synrepo-copilot-instructions.md"),
             AgentTool::Generic => repo_root.join("synrepo-agents.md"),
             AgentTool::Codex => repo_root
-                .join(".codex")
+                .join(".agents")
                 .join("skills")
                 .join("synrepo")
                 .join("SKILL.md"),
@@ -209,7 +209,7 @@ impl AgentTool {
                 "Paste the contents of `synrepo-agents.md` into your `AGENTS.md` file."
             }
             AgentTool::Codex => {
-                "Codex CLI auto-discovers `.codex/skills/synrepo/SKILL.md`; MCP server is registered in .codex/config.toml."
+                "Codex CLI auto-discovers `.agents/skills/synrepo/SKILL.md`; MCP server is registered in project .codex/config.toml for trusted projects."
             }
             AgentTool::Windsurf => {
                 "Windsurf auto-discovers `.windsurf/skills/synrepo/SKILL.md`; MCP server is registered in .windsurf/mcp.json."

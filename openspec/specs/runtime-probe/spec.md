@@ -74,7 +74,7 @@ synrepo's runtime probe SHALL be read-only. It MUST NOT acquire the writer lock,
 - **AND** the classification reflects the observable on-disk state
 
 ### Requirement: Observational agent-target detection
-synrepo SHALL detect likely agent targets by reading file-system hints in the repository and user home directory (for example `.claude/`, `CLAUDE.md`, `.cursor/`, `.codex/`, `.github/copilot-*`, `.windsurf/`). The detection SHALL be purely observational: it MUST NOT write to `.synrepo/`, acquire any lock, or modify the inspected files. The detection output SHALL be a deterministic ordered list of candidate targets for the setup wizard to pre-select from.
+synrepo SHALL detect likely agent targets by reading file-system hints in the repository and user home directory (for example `.claude/`, `CLAUDE.md`, `.cursor/`, `.codex/`, `.agents/skills/`, `.github/copilot-*`, `.windsurf/`). The detection SHALL be purely observational: it MUST NOT write to `.synrepo/`, acquire any lock, or modify the inspected files. The detection output SHALL be a deterministic ordered list of candidate targets for the setup wizard to pre-select from.
 
 #### Scenario: Detect a single agent target
 - **WHEN** the probe runs in a repository that contains exactly one supported agent's config hint (for example `.cursor/`)

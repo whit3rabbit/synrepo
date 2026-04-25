@@ -266,12 +266,12 @@ fn agent_integration_complete_codex_requires_toml_entry() {
     let dir = tempdir().unwrap();
     let codex = dir.path().join(".codex");
     fs::create_dir_all(&codex).unwrap();
-    let codex_skill = codex.join("skills").join("synrepo");
+    let codex_skill = dir.path().join(".agents").join("skills").join("synrepo");
     fs::create_dir_all(&codex_skill).unwrap();
     fs::write(codex_skill.join("SKILL.md"), b"shim").unwrap();
     fs::write(
         codex.join("config.toml"),
-        "[mcp]\nsynrepo = \"synrepo mcp --repo .\"\n",
+        "[mcp_servers.synrepo]\ncommand = \"synrepo\"\nargs = [\"mcp\", \"--repo\", \".\"]\n",
     )
     .unwrap();
 
@@ -287,7 +287,7 @@ fn agent_integration_complete_codex_requires_toml_entry() {
 #[test]
 fn agent_integration_codex_shim_only_is_partial() {
     let dir = tempdir().unwrap();
-    let codex_skill = dir.path().join(".codex").join("skills").join("synrepo");
+    let codex_skill = dir.path().join(".agents").join("skills").join("synrepo");
     fs::create_dir_all(&codex_skill).unwrap();
     fs::write(codex_skill.join("SKILL.md"), b"shim").unwrap();
 
@@ -298,6 +298,15 @@ fn agent_integration_codex_shim_only_is_partial() {
             target: AgentTargetKind::Codex
         }
     );
+}
+
+#[test]
+fn agent_target_detection_codex_agents_skills_hint() {
+    let dir = tempdir().unwrap();
+    fs::create_dir_all(dir.path().join(".agents").join("skills")).unwrap();
+
+    let report = probe_with_home(dir.path(), None);
+    assert_eq!(report.detected_agent_targets, vec![AgentTargetKind::Codex]);
 }
 
 #[test]

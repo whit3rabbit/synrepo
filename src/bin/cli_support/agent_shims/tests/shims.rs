@@ -111,7 +111,7 @@ fn test_output_path() {
     assert_eq!(
         AgentTool::Codex.output_path(repo_root),
         repo_root
-            .join(".codex")
+            .join(".agents")
             .join("skills")
             .join("synrepo")
             .join("SKILL.md")
@@ -193,7 +193,7 @@ fn test_include_instruction() {
         .contains("synrepo-agents.md"));
     assert!(AgentTool::Codex
         .include_instruction()
-        .contains(".codex/skills/synrepo/SKILL.md"));
+        .contains(".agents/skills/synrepo/SKILL.md"));
     assert!(AgentTool::Windsurf
         .include_instruction()
         .contains(".windsurf/skills/synrepo/SKILL.md"));

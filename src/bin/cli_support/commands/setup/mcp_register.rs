@@ -4,7 +4,7 @@ use anyhow::{anyhow, Context};
 use serde_json::{json, Value};
 use std::fs;
 use std::path::Path;
-use toml_edit::{DocumentMut, Item, Table, Value as TomlValue};
+use toml_edit::{Array, DocumentMut, Item, Table, Value as TomlValue};
 
 use super::config::{load_json_config, write_atomic};
 use super::steps::StepOutcome;
@@ -18,8 +18,9 @@ fn claude_synrepo_entry() -> Value {
     })
 }
 
-/// Target entry inserted under `mcp.synrepo` in `.codex/config.toml`.
-const CODEX_SYNREPO_VALUE: &str = "synrepo mcp --repo .";
+/// Target entry inserted under `mcp_servers.synrepo` in `.codex/config.toml`.
+const CODEX_SYNREPO_COMMAND: &str = "synrepo";
+const CODEX_SYNREPO_ARGS: &[&str] = &["mcp", "--repo", "."];
 
 /// Target entry inserted under `mcp.synrepo` in `opencode.json`.
 fn opencode_synrepo_entry() -> Value {
@@ -105,24 +106,11 @@ pub(crate) fn setup_codex_mcp(repo_root: &Path) -> anyhow::Result<StepOutcome> {
         )
     })?;
 
-    let mcp_item = doc
-        .entry("mcp")
-        .or_insert_with(|| Item::Table(Table::new()));
-    let mcp_table = mcp_item.as_table_mut().ok_or_else(|| {
-        anyhow!(
-            "refusing to overwrite {}: `mcp` exists but is not a table",
-            config_path.display()
-        )
-    })?;
-    mcp_table.set_implicit(false);
+    let legacy_removed = remove_legacy_codex_mcp(&mut doc);
+    let synrepo_table = ensure_codex_synrepo_table(&mut doc, &config_path)?;
+    let already_current = codex_synrepo_table_current(synrepo_table);
 
-    let already_current = mcp_table
-        .get("synrepo")
-        .and_then(|i| i.as_str())
-        .map(|s| s == CODEX_SYNREPO_VALUE)
-        .unwrap_or(false);
-
-    if already_current {
+    if already_current && !legacy_removed {
         println!(
             "  synrepo already registered in {} (no changes)",
             config_path.display()
@@ -130,7 +118,13 @@ pub(crate) fn setup_codex_mcp(repo_root: &Path) -> anyhow::Result<StepOutcome> {
         return Ok(StepOutcome::AlreadyCurrent);
     }
 
-    let prior = if mcp_table.get("synrepo").is_some() {
+    let prior = if already_current {
+        println!(
+            "  Removed legacy synrepo entry in {}",
+            config_path.display()
+        );
+        StepOutcome::Updated
+    } else if synrepo_table.get("command").is_some() || synrepo_table.get("args").is_some() {
         println!(
             "  Updating existing synrepo entry in {}",
             config_path.display()
@@ -140,11 +134,85 @@ pub(crate) fn setup_codex_mcp(repo_root: &Path) -> anyhow::Result<StepOutcome> {
         StepOutcome::Applied
     };
 
-    mcp_table.insert("synrepo", Item::Value(TomlValue::from(CODEX_SYNREPO_VALUE)));
+    write_codex_synrepo_table(synrepo_table);
 
     write_atomic(&config_path, doc.to_string().as_bytes())?;
     println!("  Registered MCP server in .codex/config.toml");
     Ok(prior)
+}
+
+fn ensure_codex_synrepo_table<'a>(
+    doc: &'a mut DocumentMut,
+    config_path: &Path,
+) -> anyhow::Result<&'a mut Table> {
+    if !doc.as_table().contains_key("mcp_servers") {
+        doc.as_table_mut()
+            .insert("mcp_servers", Item::Table(Table::new()));
+    }
+    let servers = doc
+        .get_mut("mcp_servers")
+        .and_then(|item| item.as_table_mut())
+        .ok_or_else(|| {
+            anyhow!(
+                "refusing to overwrite {}: `mcp_servers` exists but is not a table",
+                config_path.display()
+            )
+        })?;
+    servers.set_implicit(false);
+
+    if !servers.contains_key("synrepo") {
+        servers.insert("synrepo", Item::Table(Table::new()));
+    }
+    let synrepo = servers
+        .get_mut("synrepo")
+        .and_then(|item| item.as_table_mut())
+        .ok_or_else(|| {
+            anyhow!(
+                "refusing to overwrite {}: `mcp_servers.synrepo` exists but is not a table",
+                config_path.display()
+            )
+        })?;
+    synrepo.set_implicit(false);
+    Ok(synrepo)
+}
+
+fn remove_legacy_codex_mcp(doc: &mut DocumentMut) -> bool {
+    doc.get_mut("mcp")
+        .and_then(|item| item.as_table_mut())
+        .and_then(|table| table.remove("synrepo"))
+        .is_some()
+}
+
+fn codex_synrepo_table_current(table: &Table) -> bool {
+    let command_current = table
+        .get("command")
+        .and_then(|item| item.as_str())
+        .map(|value| value == CODEX_SYNREPO_COMMAND)
+        .unwrap_or(false);
+    let args_current = table
+        .get("args")
+        .and_then(|item| item.as_array())
+        .map(|args| {
+            args.iter()
+                .filter_map(|value| value.as_str())
+                .collect::<Vec<_>>()
+                .as_slice()
+                == CODEX_SYNREPO_ARGS
+        })
+        .unwrap_or(false);
+    command_current && args_current
+}
+
+fn write_codex_synrepo_table(table: &mut Table) {
+    let mut args = Array::default();
+    for arg in CODEX_SYNREPO_ARGS {
+        args.push(*arg);
+    }
+    table.insert(
+        "command",
+        Item::Value(TomlValue::from(CODEX_SYNREPO_COMMAND)),
+    );
+    table.insert("args", Item::Value(TomlValue::Array(args)));
 }
 
 pub(crate) fn setup_opencode_mcp(repo_root: &Path) -> anyhow::Result<StepOutcome> {

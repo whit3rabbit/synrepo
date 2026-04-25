@@ -38,7 +38,9 @@ fn codex_preserves_comments() {
     assert!(after.contains("# explains MCP"));
     assert!(after.contains("# note: existing setup"));
     assert!(after.contains("other-server = \"x\""));
-    assert!(after.contains(r#"synrepo = "synrepo mcp --repo .""#));
+    assert!(after.contains("[mcp_servers.synrepo]"));
+    assert!(after.contains(r#"command = "synrepo""#));
+    assert!(after.contains(r#"args = ["mcp", "--repo", "."]"#));
     assert!(after.contains("[other]"));
     assert!(after.contains("foo = \"bar\""));
 }
@@ -72,7 +74,7 @@ fn codex_commented_out_synrepo_adds_active_entry() {
         "commented-out line must survive: {after}"
     );
     assert!(
-        after.contains(r#"synrepo = "synrepo mcp --repo .""#),
+        after.contains("[mcp_servers.synrepo]"),
         "active synrepo entry must be added: {after}"
     );
 }
@@ -97,9 +99,21 @@ fn codex_duplicate_in_different_section_untouched() {
         "entry under the unrelated section must be untouched"
     );
     assert_eq!(
-        parsed["mcp"]["synrepo"].as_str().unwrap(),
-        "synrepo mcp --repo .",
-        "[mcp].synrepo must be registered"
+        parsed["mcp_servers"]["synrepo"]["command"]
+            .as_str()
+            .unwrap(),
+        "synrepo",
+        "[mcp_servers.synrepo].command must be registered"
+    );
+    assert_eq!(
+        parsed["mcp_servers"]["synrepo"]["args"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["mcp", "--repo", "."],
+        "[mcp_servers.synrepo].args must be registered"
     );
     assert_eq!(
         parsed["mcp"]["keep-me"].as_str().unwrap(),
@@ -113,14 +127,52 @@ fn codex_existing_different_synrepo_is_replaced() {
     let dir = tempdir().unwrap();
     fs::create_dir_all(dir.path().join(".codex")).unwrap();
     let path = dir.path().join(".codex").join("config.toml");
-    fs::write(&path, "[mcp]\nsynrepo = \"legacy-binary-path\"\n").unwrap();
+    fs::write(
+        &path,
+        "[mcp_servers.synrepo]\ncommand = \"legacy-bin\"\nargs = [\"x\"]\n",
+    )
+    .unwrap();
 
     setup_codex_mcp(dir.path()).unwrap();
 
     let parsed: toml::Value = toml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
     assert_eq!(
-        parsed["mcp"]["synrepo"].as_str().unwrap(),
-        "synrepo mcp --repo ."
+        parsed["mcp_servers"]["synrepo"]["command"]
+            .as_str()
+            .unwrap(),
+        "synrepo"
+    );
+    assert_eq!(
+        parsed["mcp_servers"]["synrepo"]["args"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["mcp", "--repo", "."]
+    );
+}
+
+#[test]
+fn codex_legacy_mcp_synrepo_is_migrated() {
+    let dir = tempdir().unwrap();
+    fs::create_dir_all(dir.path().join(".codex")).unwrap();
+    let path = dir.path().join(".codex").join("config.toml");
+    fs::write(&path, "[mcp]\nsynrepo = \"legacy-binary-path\"\n").unwrap();
+
+    setup_codex_mcp(dir.path()).unwrap();
+
+    let raw = fs::read_to_string(&path).unwrap();
+    let parsed: toml::Value = toml::from_str(&raw).unwrap();
+    assert!(
+        parsed.get("mcp").and_then(|v| v.get("synrepo")).is_none(),
+        "legacy [mcp].synrepo must be removed: {raw}"
+    );
+    assert_eq!(
+        parsed["mcp_servers"]["synrepo"]["command"]
+            .as_str()
+            .unwrap(),
+        "synrepo"
     );
 }
 
@@ -129,8 +181,8 @@ fn codex_rejects_non_table_mcp() {
     let dir = tempdir().unwrap();
     fs::create_dir_all(dir.path().join(".codex")).unwrap();
     let path = dir.path().join(".codex").join("config.toml");
-    fs::write(&path, "mcp = \"not a table\"\n").unwrap();
+    fs::write(&path, "mcp_servers = \"not a table\"\n").unwrap();
 
-    let err = setup_codex_mcp(dir.path()).expect_err("must error on non-table mcp");
+    let err = setup_codex_mcp(dir.path()).expect_err("must error on non-table mcp_servers");
     assert!(err.to_string().contains("not a table"));
 }

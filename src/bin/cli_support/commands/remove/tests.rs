@@ -97,7 +97,7 @@ fn per_agent_plan_scoped_to_that_tool_only() {
     fs::create_dir_all(fx.path().join(".codex")).unwrap();
     fs::write(
         fx.path().join(".codex").join("config.toml"),
-        "[mcp]\nsynrepo = \"synrepo mcp --repo .\"\n",
+        "[mcp_servers.synrepo]\ncommand = \"synrepo\"\nargs = [\"mcp\", \"--repo\", \".\"]\n",
     )
     .unwrap();
 
@@ -111,6 +111,34 @@ fn per_agent_plan_scoped_to_that_tool_only() {
         };
         assert_eq!(tool, "claude", "per-agent plan leaked into other agents");
     }
+}
+
+#[test]
+fn apply_strip_codex_mcp_entry_preserves_other_servers() {
+    let fx = Fixture::new();
+    fs::create_dir_all(fx.path().join(".codex")).unwrap();
+    fs::write(
+        fx.path().join(".codex").join("config.toml"),
+        "[mcp_servers.synrepo]\ncommand = \"synrepo\"\nargs = [\"mcp\", \"--repo\", \".\"]\n\n[mcp_servers.other]\ncommand = \"other\"\n",
+    )
+    .unwrap();
+
+    let plan = build_plan(fx.path(), Some(AgentTool::Codex), false).unwrap();
+    apply_plan(fx.path(), &plan).unwrap();
+
+    let raw = fs::read_to_string(fx.path().join(".codex").join("config.toml")).unwrap();
+    let v: toml::Value = toml::from_str(&raw).unwrap();
+    assert!(
+        v.get("mcp_servers")
+            .and_then(|servers| servers.get("synrepo"))
+            .is_none(),
+        "synrepo server entry must be removed"
+    );
+    assert_eq!(
+        v["mcp_servers"]["other"]["command"].as_str().unwrap(),
+        "other",
+        "other server entry must survive"
+    );
 }
 
 #[test]
