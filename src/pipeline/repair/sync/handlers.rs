@@ -106,13 +106,14 @@ pub fn handle_actionable_finding(
             report_only.push(finding.clone());
         }
         RepairAction::RevalidateLinks => {
-            // Revalidation deferred — the fuzzy-LCS verifier is not yet wired.
-            // Stale candidates remain on disk with their tier intact.
-            actions_taken.push(format!(
-                "cross-link revalidation deferred for {}: verifier not yet wired",
-                finding.surface.as_str()
-            ));
-            report_only.push(finding.clone());
+            super::revalidate_links::handle_revalidate_links(
+                finding,
+                context,
+                repaired,
+                report_only,
+                blocked,
+                actions_taken,
+            );
         }
         RepairAction::RegenerateExports => match regenerate_exports(context, actions_taken) {
             Ok(()) => repaired.push(finding.clone()),

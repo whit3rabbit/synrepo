@@ -6,7 +6,8 @@
 //! 1. Content-hash rename (exact content match at new path)
 //! 2. Symbol-set split (one file's symbols spread across multiple new files)
 //! 3. Symbol-set merge (multiple files' symbols consolidated into one new file)
-//! 4. Git rename fallback (not yet wired, future work)
+//! 4. Git rename fallback (`git log --follow` evidence; runs only when the
+//!    caller passes `Some(&git_renames)` — `None` skips this step)
 //! 5. Breakage (no match found, treat as delete + add)
 
 use std::collections::{HashMap, HashSet};

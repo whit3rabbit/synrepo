@@ -53,7 +53,7 @@ synrepo
 
 - `synrepo setup <tool>`: install synrepo into the repo and wire your agent.
 - `synrepo`: open the guided operator UI. On a ready repo, this lands in the dashboard.
-- `synrepo watch --daemon`: keep the local repo model fresh as files change.
+- `synrepo watch --daemon`: keep the local repo model fresh as files change. Cheap repair surfaces (export regeneration, retired-observation compaction) auto-run after each drift-producing reconcile when `auto_sync_enabled = true` (the default in `.synrepo/config.toml`).
 - `synrepo status`: verify health, freshness, and whether anything needs attention.
 - `synrepo mcp`: serve read-only repo intelligence to the agent over stdio.
 - The dashboard Explain tab refreshes advisory commentary when you want machine-authored summaries for missing or stale areas.
@@ -101,6 +101,8 @@ Use `synrepo agent-setup <tool>` if you only want to regenerate the instruction 
 | Dashboard Explain tab | Refresh advisory commentary for missing or stale areas |
 | `synrepo check` | Read-only drift and repair report |
 | `synrepo sync` | Apply auto-fixable repair actions |
+| `synrepo doctor` | Degraded-component-only report; non-zero exit for CI / pre-commit gates |
+| `synrepo handoffs` | Prioritized actionable items from repair log, cross-link candidates, and git hotspots |
 | `synrepo search "query"` | Lexical search through the repo index |
 | `synrepo cards --query "task" --budget 1500` | Bounded card suggestions for a task |
 | `synrepo explain <target> --budget 1000` | Bounded card for a file or symbol |

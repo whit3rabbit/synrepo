@@ -97,6 +97,31 @@ impl SqliteGraphStore {
         graph_dir.join(GRAPH_DB_FILENAME)
     }
 
+    /// Read-only validation that the on-disk graph store is actually openable.
+    ///
+    /// Used by the runtime probe to distinguish "file at the path" from "real
+    /// SQLite database" without invoking [`Self::open_existing`], which is
+    /// read-write and runs `init_schema` (a write). Catches truncated files,
+    /// zero-byte files, and non-SQLite content at the expected path.
+    ///
+    /// Read-only by construction: opens with `SQLITE_OPEN_READ_ONLY` and runs
+    /// a single schema-agnostic `PRAGMA schema_version` query. Schema version
+    /// drift across binary versions is the compat layer's concern, not this
+    /// validator's; this only answers "is the file an openable SQLite store."
+    pub fn validate_existing(graph_dir: &Path) -> crate::Result<()> {
+        let db_path = Self::db_path(graph_dir);
+        if !db_path.exists() {
+            return Err(crate::Error::Other(anyhow::anyhow!(
+                "graph store is not materialized at {}",
+                db_path.display()
+            )));
+        }
+
+        let conn = Connection::open_with_flags(&db_path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        let _: i64 = conn.query_row("PRAGMA schema_version", [], |row| row.get(0))?;
+        Ok(())
+    }
+
     /// Inherent shim for the read-only graph surface.
     pub fn get_file(&self, id: FileNodeId) -> crate::Result<Option<FileNode>> {
         GraphReader::get_file(self, id)

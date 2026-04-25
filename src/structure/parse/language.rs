@@ -267,18 +267,32 @@ const TS_CALL_MODE_MAP: &[super::CallMode] = &[super::CallMode::Free, super::Cal
 // (e.g., `std::collections::HashMap`, `crate::util::helper`), which
 // stage 4's Rust resolver needs to map onto candidate module files.
 // The bare-identifier arm still covers single-segment `use foo;`.
+//
+// Braced `use foo::{a, b};` fans out: one match per leaf, each emitting
+// `@use_path` (the scoped prefix) plus `@use_item` (the leaf). The
+// extractor joins them with `::` so the resolver sees the same shape as
+// a bare `scoped_identifier` capture.
 const RUST_IMPORT_QUERY: &str = r#"
 (use_declaration argument: (identifier) @import_ref)
 (use_declaration argument: (scoped_identifier) @import_ref)
+(use_declaration argument: (scoped_use_list path: (_) @use_path list: (use_list (identifier) @use_item)))
 "#;
 
+// Python `from foo import bar` also captures `@import_name` so the
+// extractor emits `foo.bar` alongside the bare `foo` module. The
+// resolver tolerates unresolved paths; the dotted leaf exists so that
+// a future stage-5 pass can resolve to a specific symbol.
 const PYTHON_IMPORT_QUERY: &str = r#"
 (import_statement name: (dotted_name) @import_ref)
 (import_from_statement module_name: (dotted_name) @import_ref)
+(import_from_statement module_name: (dotted_name) @import_ref name: (dotted_name) @import_name)
 "#;
 
+// `export { foo } from './bar'` is a re-export; the `source` shape is
+// identical to an `import_statement`, so the resolver needs no change.
 const TS_IMPORT_QUERY: &str = r#"
 (import_statement source: (string (string_fragment) @import_ref))
+(export_statement source: (string (string_fragment) @import_ref))
 "#;
 
 // --- Go queries ---

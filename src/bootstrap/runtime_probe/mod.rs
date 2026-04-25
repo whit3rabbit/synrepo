@@ -21,6 +21,7 @@ use std::{fs, path::Path};
 
 use crate::config::Config;
 use crate::store::compatibility;
+use crate::store::sqlite::SqliteGraphStore;
 
 /// Run the runtime probe against `repo_root`.
 ///
@@ -123,7 +124,18 @@ fn classify_partial_or_ready(synrepo_dir: &Path) -> (RuntimeClassification, Opti
 }
 
 fn graph_store_materialized(synrepo_dir: &Path) -> bool {
-    synrepo_dir.join("graph").join("nodes.db").exists()
+    let graph_dir = synrepo_dir.join("graph");
+    // Fast path: the file does not exist (the common "uninitialized" case).
+    // Avoids invoking the SQLite validator on every bare-`synrepo` startup
+    // when the repo has never been initialized.
+    if !graph_dir.join("nodes.db").exists() {
+        return false;
+    }
+    // Tighter check: file exists AND is an openable SQLite database. A junk
+    // file at the path (truncated, zero-byte, wrong content) classifies as
+    // "missing" rather than routing the user into the dashboard only to fail
+    // on the first graph read.
+    SqliteGraphStore::validate_existing(&graph_dir).is_ok()
 }
 
 #[cfg(test)]

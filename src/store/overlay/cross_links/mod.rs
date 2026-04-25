@@ -23,14 +23,14 @@ pub use types::{CrossLinkHashRow, CrossLinkStateCounts, PendingPromotionRow};
 // these helpers via `super::cross_links::<fn>`. `pub(crate)` is required
 // because `pub(super) use` on an item imported from a private submodule does
 // not propagate visibility to siblings of this module.
-pub(crate) use read::{all_candidates, candidates_for_node};
+pub(crate) use read::{all_candidates, candidate_by_endpoints, candidates_for_node};
 pub(crate) use transitions::{mark_pending, mark_promoted, mark_rejected};
-pub(crate) use write::{insert_candidate, prune_orphans};
+pub(crate) use write::{insert_candidate, prune_orphans, refresh_hashes};
 
 use rusqlite::Connection;
 
 use crate::core::ids::NodeId;
-use crate::overlay::{ConfidenceTier, OverlayEdgeKind, OverlayLink};
+use crate::overlay::{CitedSpan, ConfidenceTier, OverlayEdgeKind, OverlayLink};
 
 use super::SqliteOverlayStore;
 
@@ -64,18 +64,43 @@ impl SqliteOverlayStore {
         read::candidates_limited(&conn, tier, limit)
     }
 
-    /// Refresh stored endpoint hashes for a candidate after a successful
-    /// fuzzy-LCS revalidation.
-    pub fn refresh_candidate_hashes(
+    /// Look up a single cross-link candidate by its `(from, to, kind)` triple.
+    /// Returns `None` when no row matches.
+    pub fn candidate_by_endpoints(
+        &self,
+        from: NodeId,
+        to: NodeId,
+        kind: OverlayEdgeKind,
+    ) -> crate::Result<Option<OverlayLink>> {
+        let conn = self.conn.lock();
+        read::candidate_by_endpoints(&conn, from, to, kind)
+    }
+
+    /// Refresh stored endpoint hashes and verified spans for a candidate
+    /// after a successful fuzzy-LCS revalidation. Preserves state, tier,
+    /// reviewer, and promotion columns; appends a `revalidated` audit row.
+    #[allow(clippy::too_many_arguments)]
+    pub fn revalidate_candidate(
         &mut self,
         from: NodeId,
         to: NodeId,
         kind: OverlayEdgeKind,
         new_from_hash: &str,
         new_to_hash: &str,
+        new_source_spans: &[CitedSpan],
+        new_target_spans: &[CitedSpan],
     ) -> crate::Result<()> {
         let conn = self.conn.lock();
-        write::refresh_hashes(&conn, from, to, kind, new_from_hash, new_to_hash)
+        write::refresh_hashes(
+            &conn,
+            from,
+            to,
+            kind,
+            new_from_hash,
+            new_to_hash,
+            new_source_spans,
+            new_target_spans,
+        )
     }
 
     /// Update a candidate's confidence tier. Use after revalidation fails.

@@ -128,7 +128,7 @@ pub(crate) fn missing_label(m: &Missing) -> String {
     match m {
         Missing::ConfigFile => ".synrepo/config.toml missing".to_string(),
         Missing::ConfigUnreadable { detail } => format!("config.toml unreadable: {detail}"),
-        Missing::GraphStore => ".synrepo/graph/nodes.db missing".to_string(),
+        Missing::GraphStore => ".synrepo/graph/nodes.db missing or not openable".to_string(),
         Missing::CompatBlocked { guidance } => {
             if let Some(first) = guidance.first() {
                 format!("store compat action required: {first}")

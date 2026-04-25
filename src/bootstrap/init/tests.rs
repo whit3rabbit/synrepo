@@ -163,6 +163,41 @@ fn bootstrap_honors_explicit_auto_with_curated_recommendation() {
 }
 
 #[test]
+fn bootstrap_refuses_unopenable_graph_store_with_actionable_message() {
+    // Manual end-to-end repro for the runtime-probe ↔ graph-store openability
+    // gap: a valid bootstrap was run, then `nodes.db` was clobbered with junk
+    // (interrupted bootstrap, disk full, mistaken file write). The probe now
+    // correctly classifies this as Partial, which routes the user to
+    // `synrepo init` for repair. Before this guard, init would surface a raw
+    // `file is not a database` rusqlite error from `init_schema`; after, it
+    // returns an actionable message naming the file and the recovery step.
+    let (_home, _home_guard) = isolated_home();
+    let repo = tempdir().unwrap();
+    std::fs::write(repo.path().join("README.md"), "corrupt token\n").unwrap();
+    bootstrap(repo.path(), None, false).unwrap();
+
+    let synrepo_dir = Config::synrepo_dir(repo.path());
+    let nodes_db = synrepo_dir.join("graph").join("nodes.db");
+    std::fs::write(&nodes_db, b"not a sqlite database\n").unwrap();
+
+    let error = bootstrap(repo.path(), None, false).unwrap_err().to_string();
+
+    assert!(
+        error.contains("not an openable SQLite database"),
+        "expected actionable openability error, got: {error}"
+    );
+    assert!(
+        error.contains("Remove `.synrepo/graph/`"),
+        "expected concrete recovery step, got: {error}"
+    );
+    // Sanity: never expose the raw rusqlite error string to the user.
+    assert!(
+        !error.contains("Error code 26"),
+        "raw rusqlite error must not leak: {error}"
+    );
+}
+
+#[test]
 fn bootstrap_blocks_on_newer_graph_store_version() {
     let (_home, _home_guard) = isolated_home();
     let repo = tempdir().unwrap();

@@ -166,3 +166,37 @@ fn ts_non_exported_fn_callable_via_import() {
     // TS parser defaults to Public, so this resolves.
     assert!(!calls.is_empty(), "expected Calls edge to function");
 }
+
+/// `export { foo } from './helper'` now captures the re-export source
+/// as an `import_ref`, producing an `Imports` edge to the helper file.
+#[test]
+fn stage4_emits_imports_edge_for_typescript_reexport() {
+    let repo = tempdir().unwrap();
+    fs::create_dir_all(repo.path().join("src")).unwrap();
+
+    fs::write(
+        repo.path().join("src/helper.ts"),
+        "// helper module\nexport function helper() {}\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.path().join("src/index.ts"),
+        "// index barrel\nexport { helper } from './helper';\n",
+    )
+    .unwrap();
+
+    let config = Config::default();
+    let mut graph = open_graph(&repo);
+    run_structural_compile(repo.path(), &config, &mut graph).unwrap();
+
+    let index_file = graph.file_by_path("src/index.ts").unwrap().unwrap();
+    let helper_file = graph.file_by_path("src/helper.ts").unwrap().unwrap();
+
+    let imports = graph
+        .outbound(NodeId::File(index_file.id), Some(EdgeKind::Imports))
+        .unwrap();
+    assert!(
+        imports.iter().any(|e| e.to == NodeId::File(helper_file.id)),
+        "expected Imports edge from reexport src/index.ts to src/helper.ts; got: {imports:?}"
+    );
+}

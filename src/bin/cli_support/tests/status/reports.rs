@@ -1,5 +1,3 @@
-use std::process::Command;
-
 use synrepo::config::Config;
 use synrepo::core::ids::{NodeId, SymbolNodeId};
 use synrepo::overlay::{CommentaryEntry, CommentaryProvenance, OverlayStore};
@@ -138,23 +136,23 @@ fn status_json_reports_live_openrouter_pricing_basis_when_openrouter_cost_presen
 }
 
 #[test]
+#[cfg(unix)]
 fn status_reports_writer_lock_held_by_other() {
     let repo = tempdir().unwrap();
     seed_graph(repo.path());
 
     let synrepo_dir = Config::synrepo_dir(repo.path());
-    std::fs::create_dir_all(synrepo_dir.join("state")).unwrap();
-    let mut child = Command::new("sleep").arg("5").spawn().unwrap();
-    let pid = child.id();
-    std::fs::write(
-        writer_lock_path(&synrepo_dir),
-        serde_json::to_string(&WriterOwnership {
+    // Take the kernel flock on a separate fd and stamp ownership pointing at
+    // a live foreign PID. Stamping JSON without taking the flock would leave
+    // `compute_writer_status` reporting Free; see CLAUDE.md writer-lock gotcha.
+    let (mut child, pid) = synrepo::pipeline::writer::live_foreign_pid();
+    let _flock = synrepo::pipeline::writer::hold_writer_flock_with_ownership(
+        &writer_lock_path(&synrepo_dir),
+        &WriterOwnership {
             pid,
             acquired_at: "now".to_string(),
-        })
-        .unwrap(),
-    )
-    .unwrap();
+        },
+    );
 
     let json: serde_json::Value = serde_json::from_str(
         status_output(repo.path(), true, false, false)

@@ -86,7 +86,7 @@ fn missing_graph_store_classifies_as_partial() {
 }
 
 #[test]
-fn graph_store_materialized_requires_nodes_db() {
+fn graph_store_materialized_requires_openable_db() {
     let dir = tempdir().unwrap();
     let synrepo = Config::synrepo_dir(dir.path());
     let graph_dir = synrepo.join("graph");
@@ -98,10 +98,53 @@ fn graph_store_materialized_requires_nodes_db() {
         "stray files must not count as a materialized graph store"
     );
 
+    // A non-SQLite file at the canonical path must not count as materialized.
+    // Pre-fix this would have classified as Ready and dumped the user into
+    // the dashboard before failing on the first graph read.
     fs::write(graph_dir.join("nodes.db"), b"db").unwrap();
     assert!(
+        !graph_store_materialized(&synrepo),
+        "junk content at nodes.db must fail openability validation"
+    );
+
+    // A real SQLite-formatted file at the path must count as materialized.
+    fs::remove_file(graph_dir.join("nodes.db")).unwrap();
+    drop(SqliteGraphStore::open(&graph_dir).expect("create real graph store"));
+    assert!(
         graph_store_materialized(&synrepo),
-        "nodes.db must count as a materialized graph store"
+        "an openable nodes.db must count as a materialized graph store"
+    );
+}
+
+#[test]
+fn graph_store_with_unopenable_db_classifies_as_partial() {
+    // Regression test for the runtime-probe ↔ graph-store openability
+    // mismatch: `.synrepo/graph/nodes.db` exists but is not a valid SQLite
+    // database (e.g. interrupted bootstrap, disk full mid-write, or a junk
+    // file mistakenly named `nodes.db`). The probe must classify this as
+    // Partial with `Missing::GraphStore`, not Ready.
+    let dir = tempdir().unwrap();
+    let synrepo = Config::synrepo_dir(dir.path());
+    fs::create_dir_all(synrepo.join("graph")).unwrap();
+    fs::write(
+        synrepo.join("config.toml"),
+        toml::to_string(&Config::default()).unwrap(),
+    )
+    .unwrap();
+    fs::write(
+        synrepo.join("graph").join("nodes.db"),
+        b"not a sqlite database\n",
+    )
+    .unwrap();
+
+    let report = probe_with_home(dir.path(), None);
+    let missing = match report.classification {
+        RuntimeClassification::Partial { missing } => missing,
+        other => panic!("expected Partial, got {other:?}"),
+    };
+    assert!(
+        missing.contains(&Missing::GraphStore),
+        "unopenable nodes.db must surface Missing::GraphStore; got {missing:?}"
     );
 }
 

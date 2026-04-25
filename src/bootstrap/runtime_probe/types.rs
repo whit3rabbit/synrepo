@@ -13,7 +13,9 @@ pub enum Missing {
         /// Human-readable explanation (I/O error or TOML parse error).
         detail: String,
     },
-    /// The graph SQLite file `.synrepo/graph/nodes.db` is missing.
+    /// The graph SQLite file `.synrepo/graph/nodes.db` is missing or not
+    /// openable as a SQLite database (e.g. truncated, zero-byte, or a junk
+    /// file at that path from an interrupted bootstrap).
     GraphStore,
     /// Storage-compatibility evaluation reports a blocking action
     /// (`migrate-required` or `block` on a canonical store).

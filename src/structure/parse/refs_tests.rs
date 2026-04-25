@@ -228,65 +228,71 @@ import (
     );
 }
 
-// ── Task 5.3: intentionally unsupported import forms are absent ──────────────
+// ── Task 5.3: phase-2 import forms are captured ──────────────────────────────
+//
+// These four tests replaced the earlier phase-1 negative assertions.
+// Rust braced-use, Python from-import names, and TypeScript/TSX re-exports
+// now fan out through the extractor. See `parse/language.rs` and
+// `parse/extract/mod.rs::extract_import_refs` for the capture shapes.
 
 #[test]
-fn rust_braced_use_group_is_not_captured_phase1() {
-    // `use foo::{bar, baz};` uses a `use_list` node, which the current
-    // Rust import query intentionally does not match. Stage 4 only
-    // resolves the final identifier of scoped or bare `use` paths, so
-    // capturing braced lists here would generate noise. Revisit when
-    // stage-4 resolution improves.
+fn rust_braced_use_group_is_captured_phase2() {
+    // `use std::collections::{HashMap, HashSet};` fans out to one leaf
+    // per identifier, each joined with `::` to produce the full path
+    // `std::collections::HashMap` / `std::collections::HashSet`.
     let source = b"use std::collections::{HashMap, HashSet};\n";
     let output = parse(&"src/rust_braced.rs", source);
     let refs = import_paths(&output);
-    assert!(
-        !refs.iter().any(|r| *r == "HashMap" || *r == "HashSet"),
-        "Rust braced-use names must NOT appear in import_refs (phase-1). got: {refs:?}"
-    );
+    for wanted in ["std::collections::HashMap", "std::collections::HashSet"] {
+        assert!(
+            refs.contains(&wanted),
+            "Rust braced-use must emit `{wanted}`; got: {refs:?}"
+        );
+    }
 }
 
 #[test]
-fn python_import_from_names_are_not_captured_phase1() {
-    // `from foo import bar` captures only the module (`foo`). The imported
-    // symbol (`bar`) is intentionally not captured because stage 4 resolves
-    // imports to target files, not to specific symbols in those files.
+fn python_import_from_names_are_captured_phase2() {
+    // `from foo import bar, baz` now emits both the bare module (`foo`)
+    // from the single-capture pattern and a dotted leaf (`foo.bar`,
+    // `foo.baz`) from the fan-out pattern.
     let source = b"from typing import List, Dict\n";
     let output = parse(&"py_fromimport.py", source);
     let refs = import_paths(&output);
     assert!(
         refs.contains(&"typing"),
-        "python from-import base: {refs:?}"
+        "python bare module ref still emitted: {refs:?}"
     );
-    assert!(
-        !refs.iter().any(|r| *r == "List" || *r == "Dict"),
-        "python imported-name symbols must NOT appear as import_refs (phase-1). got: {refs:?}"
-    );
+    for wanted in ["typing.List", "typing.Dict"] {
+        assert!(
+            refs.contains(&wanted),
+            "python from-import must emit `{wanted}`; got: {refs:?}"
+        );
+    }
 }
 
 #[test]
-fn typescript_reexport_forms_are_not_captured_phase1() {
-    // `export { foo } from './bar'` is an `export_statement`, not an
-    // `import_statement`. The current TS import query matches only
-    // import_statement, so re-exports are intentionally skipped.
+fn typescript_reexport_forms_are_captured_phase2() {
+    // `export { foo } from './bar'` is an `export_statement`; the new
+    // query captures its `source` string identically to an import.
     let source = b"export { helper } from './helper';\n";
     let output = parse(&"src/reexport.ts", source);
     let refs = import_paths(&output);
     assert!(
-        !refs.contains(&"./helper"),
-        "TS re-export source must NOT appear in import_refs (phase-1); got: {refs:?}"
+        refs.contains(&"./helper"),
+        "TS re-export source must appear in import_refs; got: {refs:?}"
     );
 }
 
 #[test]
-fn tsx_reexport_forms_are_not_captured_phase1() {
+fn tsx_reexport_forms_are_captured_phase2() {
     let source = b"export { Card } from './card';\n";
     let output = parse(&"src/reexport.tsx", source);
     assert_eq!(output.language, Language::Tsx);
     let refs = import_paths(&output);
     assert!(
-        !refs.contains(&"./card"),
-        "TSX re-export source must NOT appear in import_refs (phase-1); got: {refs:?}"
+        refs.contains(&"./card"),
+        "TSX re-export source must appear in import_refs; got: {refs:?}"
     );
 }
 

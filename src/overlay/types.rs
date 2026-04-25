@@ -33,6 +33,30 @@ pub enum OverlayEdgeKind {
     Mentions,
 }
 
+impl OverlayEdgeKind {
+    /// Stable snake_case identifier. Matches the `#[serde(rename_all = "snake_case")]`
+    /// encoding and the stored SQL string used in the overlay store.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::References => "references",
+            Self::Governs => "governs",
+            Self::DerivedFrom => "derived_from",
+            Self::Mentions => "mentions",
+        }
+    }
+
+    /// Parse a snake_case label back into the variant.
+    pub fn from_str_label(label: &str) -> Option<Self> {
+        match label {
+            "references" => Some(Self::References),
+            "governs" => Some(Self::Governs),
+            "derived_from" => Some(Self::DerivedFrom),
+            "mentions" => Some(Self::Mentions),
+            _ => None,
+        }
+    }
+}
+
 /// A cited span — verbatim text the LLM extracted from a source artifact,
 /// verified by fuzzy LCS match against the actual source after normalization.
 #[derive(Clone, Debug, Serialize, Deserialize)]

@@ -26,10 +26,20 @@ struct CallQuery {
     prefix_idx: Option<u32>,
 }
 
-/// Cached single-capture query (import).
-struct SingleCaptureQuery {
+/// Cached import query with optional fan-out capture indices.
+///
+/// Most patterns expose a single `@import_ref` (module path). A few
+/// patterns fan out: Rust braced-use binds `@use_path` plus `@use_item`
+/// per leaf; Python `from foo import bar` binds `@import_ref` plus
+/// `@import_name`. The extractor joins those with the language
+/// separator so the resolver sees one flat `ExtractedImportRef` per
+/// leaf.
+struct ImportQuery {
     query: Box<tree_sitter::Query>,
-    capture_idx: u32,
+    import_ref_idx: Option<u32>,
+    use_path_idx: Option<u32>,
+    use_item_idx: Option<u32>,
+    import_name_idx: Option<u32>,
 }
 
 // Single source of truth lives on `Language::supported()`. The query cache
@@ -46,7 +56,7 @@ fn supported_languages() -> &'static [Language] {
 /// Each query is compiled once per language and reused across all file parses.
 static DEFINITION_QUERIES: OnceLock<Vec<Option<DefinitionQuery>>> = OnceLock::new();
 static CALL_QUERIES: OnceLock<Vec<Option<CallQuery>>> = OnceLock::new();
-static IMPORT_QUERIES: OnceLock<Vec<Option<SingleCaptureQuery>>> = OnceLock::new();
+static IMPORT_QUERIES: OnceLock<Vec<Option<ImportQuery>>> = OnceLock::new();
 
 /// Initialize all definition queries for all languages.
 fn init_definition_queries() -> Vec<Option<DefinitionQuery>> {
@@ -118,25 +128,32 @@ fn init_call_queries() -> Vec<Option<CallQuery>> {
 }
 
 /// Initialize all import queries for all languages.
-fn init_import_queries() -> Vec<Option<SingleCaptureQuery>> {
+fn init_import_queries() -> Vec<Option<ImportQuery>> {
     let languages = supported_languages();
-    let mut cache: Vec<Option<SingleCaptureQuery>> = (0..languages.len()).map(|_| None).collect();
+    let mut cache: Vec<Option<ImportQuery>> = (0..languages.len()).map(|_| None).collect();
     for &lang in languages {
         let ts_lang = lang.tree_sitter_language();
         let query_text = lang.import_query();
         match tree_sitter::Query::new(&ts_lang, query_text) {
             Ok(query) => {
-                let capture_names = query.capture_names();
-                let capture_idx = capture_names
-                    .iter()
-                    .position(|n| *n == "import_ref")
-                    .map(|i| i as u32);
-                if let Some(capture_idx) = capture_idx {
-                    cache[lang as usize] = Some(SingleCaptureQuery {
-                        query: Box::new(query),
-                        capture_idx,
-                    });
-                }
+                let find = |name: &str| -> Option<u32> {
+                    query
+                        .capture_names()
+                        .iter()
+                        .position(|n| *n == name)
+                        .map(|i| i as u32)
+                };
+                let import_ref_idx = find("import_ref");
+                let use_path_idx = find("use_path");
+                let use_item_idx = find("use_item");
+                let import_name_idx = find("import_name");
+                cache[lang as usize] = Some(ImportQuery {
+                    query: Box::new(query),
+                    import_ref_idx,
+                    use_path_idx,
+                    use_item_idx,
+                    import_name_idx,
+                });
             }
             Err(e) => {
                 tracing::warn!(?lang, error = %e, "failed to compile import query");
@@ -163,7 +180,7 @@ fn get_call_query(language: Language) -> Option<&'static CallQuery> {
 }
 
 /// Get the cached import query for a language.
-fn get_import_query(language: Language) -> Option<&'static SingleCaptureQuery> {
+fn get_import_query(language: Language) -> Option<&'static ImportQuery> {
     IMPORT_QUERIES
         .get_or_init(init_import_queries)
         .get(language as usize)?
@@ -328,27 +345,62 @@ fn extract_call_refs(
 }
 
 /// Extract import/use references from a parsed file for stage-4 resolution.
+///
+/// Patterns fall into two shapes:
+/// * Single-capture `@import_ref` — take the node's text verbatim.
+/// * Dual-capture fan-out — `@use_path` + `@use_item` (Rust braced-use)
+///   joined with `::`, or `@import_ref` + `@import_name` (Python
+///   from-import) joined with `.`. One leaf per match; the query
+///   engine fires one match per list entry.
 fn extract_import_refs(
     language: Language,
     tree: &tree_sitter::Tree,
     content: &[u8],
 ) -> crate::Result<Vec<ExtractedImportRef>> {
-    // Use cached import query
     let Some(import_query) = get_import_query(language) else {
         return Ok(vec![]);
     };
 
-    let ref_idx = import_query.capture_idx;
     let mut cursor = tree_sitter::QueryCursor::new();
     let mut matches = cursor.matches(&import_query.query, tree.root_node(), content);
     let mut refs = Vec::new();
 
     while let Some(m) = matches.next() {
-        for capture in m.captures.iter().filter(|c| c.index == ref_idx) {
-            let module_ref = node_text(capture.node, content);
-            if !module_ref.is_empty() {
-                refs.push(ExtractedImportRef { module_ref });
-            }
+        let find_text = |idx: Option<u32>| -> Option<String> {
+            let idx = idx?;
+            let capture = m.captures.iter().find(|c| c.index == idx)?;
+            let text = node_text(capture.node, content);
+            (!text.is_empty()).then_some(text)
+        };
+
+        // Rust braced-use fan-out: `use foo::{a};` -> "foo::a".
+        if let (Some(path), Some(item)) = (
+            find_text(import_query.use_path_idx),
+            find_text(import_query.use_item_idx),
+        ) {
+            refs.push(ExtractedImportRef {
+                module_ref: format!("{path}::{item}"),
+            });
+            continue;
+        }
+
+        // Python from-import fan-out: `from foo import bar` -> "foo.bar".
+        // Emitted alongside the bare "foo" produced by the single-capture
+        // pattern; the resolver dedupes via `HashSet<FileNodeId>`.
+        if let (Some(module), Some(name)) = (
+            find_text(import_query.import_ref_idx),
+            find_text(import_query.import_name_idx),
+        ) {
+            refs.push(ExtractedImportRef {
+                module_ref: format!("{module}.{name}"),
+            });
+            continue;
+        }
+
+        // Single-capture fallback (covers Rust bare/scoped_identifier, Python
+        // `import foo`, TS `import ... from './x'`, TS re-exports, Go).
+        if let Some(module_ref) = find_text(import_query.import_ref_idx) {
+            refs.push(ExtractedImportRef { module_ref });
         }
     }
 

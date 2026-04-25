@@ -7,7 +7,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use time::format_description::well_known::Rfc3339;
 
 use crate::core::ids::NodeId;
-use crate::overlay::{ConfidenceTier, OverlayEdgeKind, OverlayLink};
+use crate::overlay::{CitedSpan, ConfidenceTier, OverlayEdgeKind, OverlayLink};
 
 use super::super::cross_link_audit::{append_event, AuditEvent};
 use super::codec::{anyhow_err, overlay_edge_kind_as_str, overlay_epistemic_as_str, validate_link};
@@ -221,8 +221,10 @@ pub(crate) fn update_tier(
     Ok(())
 }
 
-/// Refresh a candidate's stored endpoint hashes after a successful
-/// revalidation. Appends an audit row with event kind `revalidated`.
+/// Refresh a candidate's stored endpoint hashes and verified spans after a
+/// successful fuzzy-LCS revalidation. State, tier, reviewer, and promotion
+/// columns are preserved. Appends an audit row with event kind `revalidated`.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn refresh_hashes(
     conn: &Connection,
     from: NodeId,
@@ -230,10 +232,21 @@ pub(crate) fn refresh_hashes(
     kind: OverlayEdgeKind,
     new_from_hash: &str,
     new_to_hash: &str,
+    new_source_spans: &[CitedSpan],
+    new_target_spans: &[CitedSpan],
 ) -> crate::Result<()> {
+    if new_source_spans.is_empty() || new_target_spans.is_empty() {
+        return Err(crate::Error::Other(anyhow::anyhow!(
+            "refresh_hashes: verified spans must be non-empty for both endpoints"
+        )));
+    }
+
     let from_key = from.to_string();
     let to_key = to.to_string();
     let kind_str = overlay_edge_kind_as_str(kind);
+    let source_spans_json = serde_json::to_string(new_source_spans).map_err(anyhow_err)?;
+    let target_spans_json = serde_json::to_string(new_target_spans).map_err(anyhow_err)?;
+
     let prov: Option<(String, String, String)> = conn
         .query_row(
             "SELECT pass_id, model_identity, confidence_tier FROM cross_links
@@ -256,9 +269,18 @@ pub(crate) fn refresh_hashes(
 
     conn.execute(
         "UPDATE cross_links
-         SET from_content_hash = ?1, to_content_hash = ?2
-         WHERE from_node = ?3 AND to_node = ?4 AND kind = ?5",
-        params![new_from_hash, new_to_hash, from_key, to_key, kind_str],
+         SET from_content_hash = ?1, to_content_hash = ?2,
+             source_spans_json = ?3, target_spans_json = ?4
+         WHERE from_node = ?5 AND to_node = ?6 AND kind = ?7",
+        params![
+            new_from_hash,
+            new_to_hash,
+            source_spans_json,
+            target_spans_json,
+            from_key,
+            to_key,
+            kind_str
+        ],
     )?;
 
     append_event(

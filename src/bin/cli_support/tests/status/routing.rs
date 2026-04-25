@@ -1,5 +1,3 @@
-use std::process::Command;
-
 use synrepo::bootstrap::bootstrap;
 use synrepo::config::Config;
 use synrepo::pipeline::structural::CompileSummary;
@@ -22,22 +20,23 @@ fn status_next_step_routes_to_unknown_reconcile() {
 }
 
 #[test]
+#[cfg(unix)]
 fn status_next_step_routes_to_writer_lock_when_held() {
     let repo = tempdir().unwrap();
     seed_graph(repo.path());
 
     let synrepo_dir = Config::synrepo_dir(repo.path());
-    std::fs::create_dir_all(synrepo_dir.join("state")).unwrap();
-    let mut child = Command::new("sleep").arg("5").spawn().unwrap();
-    std::fs::write(
-        writer_lock_path(&synrepo_dir),
-        serde_json::to_string(&WriterOwnership {
-            pid: child.id(),
+    // Take the kernel flock so `compute_writer_status` actually observes
+    // contention; stamping JSON alone leaves the lock free. See CLAUDE.md
+    // writer-lock gotcha.
+    let (mut child, pid) = synrepo::pipeline::writer::live_foreign_pid();
+    let _flock = synrepo::pipeline::writer::hold_writer_flock_with_ownership(
+        &writer_lock_path(&synrepo_dir),
+        &WriterOwnership {
+            pid,
             acquired_at: "now".to_string(),
-        })
-        .unwrap(),
-    )
-    .unwrap();
+        },
+    );
 
     let text = status_output(repo.path(), false, false, false).unwrap();
     assert!(

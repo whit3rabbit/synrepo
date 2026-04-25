@@ -105,35 +105,33 @@ These must hold across all changes:
 
 ### File size and module structure
 
-- **Every `.rs` file must stay under 400 lines.** Split into a sub-module directory before exceeding that limit. **Over-limit (split before adding, rated by ease of split):**
+- **Every `.rs` file must stay under 400 lines** (test files count too; a few `tests/*.rs` are also over and want a split). Split into a sub-module directory before exceeding the cap. **Currently over-limit (non-test, split before adding):**
+  - `src/pipeline/watch/service.rs` (658) — far over; split the reconcile/control/event surfaces.
+  - `src/bin/cli_support/commands/mcp.rs` (503) — tool registration and overview blurb dominate; tool definitions could split out.
+  - `src/pipeline/repair/sync/handlers.rs` (462) — already over; do not extend the dispatch match in place. Land new handlers in their own files (see `revalidate_links.rs`).
+  - `src/pipeline/explain/providers/openai_compat.rs` (424) — provider-specific request/response shaping is separable.
+  - `src/structure/parse/extract/mod.rs` (415) — already a sub-module dir, but `mod.rs` itself is now over the cap; split further (`qualname.rs` and `visibility.rs` already pulled out, `docs.rs` next candidate).
+  - `src/config/mod.rs` (407) — defaults, parsing, and validation could separate.
 
-  **Easy** (clear natural boundaries):
-  - `src/overlay/mod.rs` (315) — epistemic kinds, edge kinds, cited spans could split out
-  - `src/tui/mod.rs` (331) — components already partially modularized
-  - `src/tui/wizard/setup/state.rs` (404) — data structs mixed with wizard transition logic
+  **Approaching the cap (370-399, watchlist, non-test):** `src/pipeline/explain/providers/local.rs` (397), `src/pipeline/explain/providers/gemini.rs` (396), `src/store/overlay/agent_notes.rs` (394), `src/pipeline/repair/sync/commentary.rs` (393), `src/store/overlay/commentary/mod.rs` (392), `src/pipeline/explain/docs/corpus.rs` (391), `src/tui/app/explain_picker.rs` (390), `src/pipeline/writer/helpers.rs` (390), `src/bin/cli_support/commands/setup/report.rs` (387), `src/pipeline/git/mod.rs` (382), `src/tui/wizard/setup/render/explain.rs` (381), `src/tui/widgets/explain.rs` (380), `src/bin/cli.rs` (379), `src/surface/mcp/cards.rs` (378), `src/bin/cli_support/commands/watch.rs` (378), `src/bin/cli_support/cli_args/mod.rs` (378), `src/tui/watcher.rs` (377), `src/substrate/incremental.rs` (377), `src/substrate/index.rs` (374), `src/bin/cli_support/commands/context/bench.rs` (373).
 
-  **Medium** (separable but interdependent):
-  - `src/substrate/embedding/index.rs` (535)
-  - `src/structure/identity.rs` (517)
-  - `src/pipeline/structural/stages.rs` (501)
-  - `src/surface/card/git.rs` (446)
+  **Easy splits below the cap (think first before adding):** `src/tui/mod.rs` (366), `src/overlay/mod.rs` (339).
 
-  **Watchlist (370-399, approaching limit):** `src/pipeline/watch/service.rs` (391), `src/pipeline/explain/docs/corpus.rs` (391), `src/tui/app/explain_picker.rs` (390), `src/pipeline/writer/helpers.rs` (390), `src/substrate/incremental.rs` (400), `src/pipeline/git/mod.rs` (382), `src/tui/wizard/setup/render/explain.rs` (381), `src/bin/cli_support/commands/watch.rs` (375), `src/substrate/index.rs` (374), `src/store/overlay/commentary.rs` (429), `src/tui/watcher.rs` (377).
-
-- **`src/structure/parse/extract/` is already a sub-module directory** (`mod.rs` ~363 lines, `qualname.rs` ~88). Do not add more code to `mod.rs` without splitting further.
+- **`src/structure/parse/extract/` is already a sub-module directory** but `mod.rs` is over the 400-line cap (415 lines). Do not add more code to `mod.rs`; split into another sibling file (`qualname.rs` and `visibility.rs` already pulled out).
 - **`src/tui/app/` sub-modules can own `impl AppState` blocks** for feature-specific state and handlers (see `explain_picker.rs` for the folder-picker modal). Keep `AppState` fields on the struct in `mod.rs`; put feature methods, helpers, and tests in the submodule.
 
 ### Agent shims and MCP
 
-- **Agent-doctrine text lives in `src/bin/cli_support/agent_shims/doctrine.rs`** as a `doctrine_block!()` macro. Every shim in `shims.rs` embeds it via `concat!`. Edits touching escalation rules, do-not rules, or the product-boundary paragraph MUST go through `doctrine_block!`; the byte-identical test in `tests.rs` (`every_shim_embeds_doctrine_block`) enforces this. The escalation-line source-scan test reads `src/bin/cli_support/commands/mcp.rs` — do not move the MCP tool registration out of that file without updating the test path. Edit target-specific sections (tool list framing, CLI fallback examples, file paths) directly in `shims.rs`.
+- **Agent-doctrine text lives in `src/bin/cli_support/agent_shims/doctrine.rs`** as a `doctrine_block!()` macro. Every shim under `agent_shims/shims/` (sub-module directory: `basic_targets.rs`, `markdown_targets.rs`, `skill_targets.rs`, `shared.rs`) embeds it via `concat!`. Edits touching escalation rules, do-not rules, or the product-boundary paragraph MUST go through `doctrine_block!`; the byte-identical test (`every_shim_embeds_doctrine_block` in `agent_shims/tests/doctrine.rs`) enforces this. The escalation-line source-scan test reads `src/bin/cli_support/commands/mcp.rs` — do not move the MCP tool registration out of that file without updating the test path. Edit target-specific sections (tool list framing, CLI fallback examples, file paths) directly in the relevant `shims/*.rs` file.
 - **Shim output paths have three sync sites.** `AgentTool::output_path()` in `src/bin/cli_support/agent_shims/mod.rs` is canonical, but `shim_output_path()` in `src/bootstrap/runtime_probe.rs` duplicates the match (library can't import bin-private modules), and `KNOWN_SHIM_PATHS` in `src/bootstrap/report.rs` drives the doctrine-pointer lookup. Changing a shim path requires all three.
 
 ### Links, repair, explain
 
 - **`src/bin/cli_support/commands/links/accept.rs` owns the curated `links accept` 3-phase commit path** and the debug-only crash failpoints used by the soak suite. Keep `SYNREPO_TEST_CRASH_AT=links_accept:after_pending` and `links_accept:after_graph_insert` test-only, and prefer extending the submodule instead of growing `commands/links.rs` again.
 - **`repair/types/` has dual string mappings**: `RepairSurface`, `DriftClass`, `Severity`, and `RepairAction` each have `#[serde(rename_all = "snake_case")]` AND a manual `as_str()` in `src/pipeline/repair/types/stable.rs`. Adding a new variant requires updating both. `RepairSurface::ProposedLinksOverlay`, `RepairSurface::ExportSurface`, `RepairAction::RevalidateLinks`, and `RepairAction::RegenerateExports` follow the same rule. The stable-identifier tests in `src/pipeline/repair/types/tests.rs` catch `as_str()` divergence from literals but do not cross-check serde output.
-- **Commentary freshness is computed in two places**: `src/bin/cli_support/commands/status.rs::commentary_coverage_full` (status `--full`) and `src/pipeline/repair/report/surfaces/commentary.rs::scan_commentary_staleness` (repair surface). Both walk `commentary_hashes()` against `resolve_commentary_node`. The repair version is `pub(super) struct CommentaryScan { total, stale }`; unifying requires promoting it to `pub` in the repair module.
+- **Commentary freshness is computed in two places**: the status command surfaces it from `src/bin/cli_support/commands/status/text.rs` and `status/json.rs` (the `status` command is a sub-module directory, not a single file), and the repair surface computes it in `src/pipeline/repair/report/surfaces/commentary.rs::scan_commentary_staleness`. Both walk `commentary_hashes()` against `resolve_commentary_node`. The repair version is `pub(super) struct CommentaryScan { total, stale }`; unifying requires promoting it to `pub` in the repair module.
 - **Explain docs are advisory overlay output only.** Materialized commentary docs live under `.synrepo/explain-docs/` with a dedicated syntext index at `.synrepo/explain-index/`. They are searchable through `synrepo_docs_search`, but they are never canonical graph facts and never used as explain input.
+- **`RepairAction::RevalidateLinks` runs the fuzzy-LCS verifier (`cross_link_verify::verify_candidate_payload`) and, on success, updates the candidate's stored hashes and spans in place via `OverlayStore::revalidate_link`.** Mismatches stay in `report_only` — never auto-rejected; rejection is a human call. Handler implementation lives in `src/pipeline/repair/sync/revalidate_links.rs`. `sync/handlers.rs` is already over the 400-line cap (462 lines); land any new repair-action handler in its own sibling file, do not grow the dispatch match in place.
 
 ### Graph semantics
 

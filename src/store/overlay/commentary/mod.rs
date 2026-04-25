@@ -237,6 +237,39 @@ impl OverlayStore for SqliteOverlayStore {
         super::cross_links::all_candidates(&conn, tier)
     }
 
+    fn candidate_by_endpoints(
+        &self,
+        from: NodeId,
+        to: NodeId,
+        kind: crate::overlay::OverlayEdgeKind,
+    ) -> crate::Result<Option<crate::overlay::OverlayLink>> {
+        let conn = self.conn.lock();
+        super::cross_links::candidate_by_endpoints(&conn, from, to, kind)
+    }
+
+    fn revalidate_link(
+        &mut self,
+        from: NodeId,
+        to: NodeId,
+        kind: crate::overlay::OverlayEdgeKind,
+        new_from_hash: &str,
+        new_to_hash: &str,
+        new_source_spans: &[crate::overlay::CitedSpan],
+        new_target_spans: &[crate::overlay::CitedSpan],
+    ) -> crate::Result<()> {
+        let conn = self.conn.lock();
+        super::cross_links::refresh_hashes(
+            &conn,
+            from,
+            to,
+            kind,
+            new_from_hash,
+            new_to_hash,
+            new_source_spans,
+            new_target_spans,
+        )
+    }
+
     fn mark_candidate_rejected(
         &mut self,
         from: NodeId,

@@ -5,6 +5,7 @@
 mod commentary;
 mod commentary_plan;
 pub mod handlers;
+mod revalidate_links;
 
 pub use commentary::refresh_commentary;
 pub use commentary_plan::{

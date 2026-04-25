@@ -105,6 +105,22 @@ pub fn bootstrap(
     let build_report = crate::substrate::build_index(&config, repo_root)?;
 
     let graph_dir = synrepo_dir.join("graph");
+    // If a `nodes.db` already exists at the canonical path, refuse to open it
+    // for write until we know it is a real SQLite database. The probe rejects
+    // an unopenable file as `Missing::GraphStore`, so the user reaches this
+    // path via the "run `synrepo init`" repair guidance — but `open()` would
+    // otherwise surface a raw rusqlite "file is not a database" error from
+    // `init_schema`'s first PRAGMA, with no actionable next step.
+    let db_path = SqliteGraphStore::db_path(&graph_dir);
+    if db_path.exists() {
+        if let Err(err) = SqliteGraphStore::validate_existing(&graph_dir) {
+            return Err(anyhow::anyhow!(
+                "Existing graph store at {} is not an openable SQLite database ({err}). \
+                 Remove `.synrepo/graph/` (or the whole `.synrepo/`) and rerun `synrepo init` to start fresh.",
+                db_path.display()
+            ));
+        }
+    }
     let mut graph = SqliteGraphStore::open(&graph_dir)?;
     let compile = run_structural_compile(repo_root, &config, &mut graph)?;
 

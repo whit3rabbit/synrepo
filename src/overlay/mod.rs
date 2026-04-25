@@ -93,6 +93,30 @@ pub trait OverlayStore: Send + Sync {
     /// Retrieve all active candidates, optionally filtered by tier.
     fn all_candidates(&self, tier: Option<&str>) -> crate::Result<Vec<OverlayLink>>;
 
+    /// Look up a single cross-link candidate by its `(from, to, kind)` triple.
+    /// Used by the revalidation handler before calling the fuzzy-LCS verifier.
+    fn candidate_by_endpoints(
+        &self,
+        from: NodeId,
+        to: NodeId,
+        kind: OverlayEdgeKind,
+    ) -> crate::Result<Option<OverlayLink>>;
+
+    /// Replace a candidate's stored endpoint hashes and verified spans after
+    /// the fuzzy-LCS verifier re-locates the cited text against current source.
+    /// Preserves state, tier, reviewer, and promotion columns.
+    #[allow(clippy::too_many_arguments)]
+    fn revalidate_link(
+        &mut self,
+        from: NodeId,
+        to: NodeId,
+        kind: OverlayEdgeKind,
+        new_from_hash: &str,
+        new_to_hash: &str,
+        new_source_spans: &[CitedSpan],
+        new_target_spans: &[CitedSpan],
+    ) -> crate::Result<()>;
+
     /// Mark a candidate as rejected by a human reviewer.
     fn mark_candidate_rejected(
         &mut self,
