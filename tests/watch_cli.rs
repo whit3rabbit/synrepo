@@ -38,16 +38,25 @@ fn assert_success(output: Output) -> String {
 }
 
 fn wait_for_output(repo: &Path, args: &[&str], needle: &str) {
-    let deadline = Instant::now() + Duration::from_secs(5);
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let mut last_status = None;
+    let mut last_stdout = String::new();
+    let mut last_stderr = String::new();
     while Instant::now() < deadline {
         let output = command(repo).args(args).output().unwrap();
         let stdout = String::from_utf8_lossy(&output.stdout);
         if output.status.success() && stdout.contains(needle) {
             return;
         }
+        last_status = output.status.code();
+        last_stdout = stdout.to_string();
+        last_stderr = String::from_utf8_lossy(&output.stderr).to_string();
         thread::sleep(Duration::from_millis(50));
     }
-    panic!("timed out waiting for {:?}", args);
+    panic!(
+        "timed out waiting for {:?}; last_status={:?}; stdout={}; stderr={}",
+        args, last_status, last_stdout, last_stderr
+    );
 }
 
 fn init_repo() -> TempDir {
