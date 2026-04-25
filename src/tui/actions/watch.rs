@@ -10,7 +10,7 @@ use crate::pipeline::watch::{
 use super::helpers::{detach_daemon_process, load_repo_config, resolve_synrepo_executable};
 use super::{ActionContext, ActionOutcome};
 
-const WATCH_START_TIMEOUT: Duration = Duration::from_secs(2);
+const WATCH_START_TIMEOUT: Duration = Duration::from_secs(5);
 const WATCH_STOP_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Stop the active watch service for this repo. Returns
