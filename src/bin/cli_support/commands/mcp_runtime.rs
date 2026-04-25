@@ -39,6 +39,7 @@ pub(crate) fn prepare_state(repo_root: &Path) -> anyhow::Result<SynrepoState> {
 async fn serve(repo_root: &Path) -> anyhow::Result<()> {
     let state = prepare_state(repo_root)?;
     let server = SynrepoServer::new(state);
-    server.serve(stdio()).await?;
+    let service = server.serve(stdio()).await?;
+    service.waiting().await?;
     Ok(())
 }

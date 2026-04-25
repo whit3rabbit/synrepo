@@ -2,8 +2,10 @@
 //! `crate::surface::status_snapshot` for widget consumption. Kept narrow so
 //! widgets don't import ratatui types into the probe modules.
 
+mod activity;
 mod trust;
 mod vm;
+pub use activity::build_activity_vm;
 pub use trust::build_trust_vm;
 pub use vm::*;
 
@@ -260,24 +262,6 @@ pub fn build_health_vm(snapshot: &StatusSnapshot) -> HealthVm {
     }
 
     HealthVm { rows }
-}
-
-/// Build a recent-activity view model. Uses snapshot entries when the caller
-/// already opted into `recent`; otherwise returns empty.
-pub fn build_activity_vm(snapshot: &StatusSnapshot) -> ActivityVm {
-    let Some(entries) = &snapshot.recent_activity else {
-        return ActivityVm::default();
-    };
-    ActivityVm {
-        entries: entries
-            .iter()
-            .map(|e| ActivityVmEntry {
-                timestamp: e.timestamp.clone(),
-                kind: e.kind.clone(),
-                payload: e.payload.to_string(),
-            })
-            .collect(),
-    }
 }
 
 /// Derive next-actions from a snapshot + integration signal.
