@@ -28,7 +28,7 @@ pub(crate) fn filter_repo_events(
         .into_iter()
         .filter(|event| {
             !event.paths.iter().all(|path| {
-                let path = repo_normalized_path(path, repo_root);
+                let path = repo_normalized_path(path, repo_root, synrepo_dir);
                 path_matches_runtime(&path, synrepo_dir, canonical_synrepo_dir.as_deref())
                     || path_matches_ignored_dir(&path, ignored_dirs, &canonical_ignored_dirs)
             })
@@ -46,7 +46,7 @@ pub(crate) fn collect_repo_paths(
     let mut paths = std::collections::BTreeSet::new();
     for event in events {
         for path in &event.paths {
-            let path = repo_normalized_path(path, repo_root);
+            let path = repo_normalized_path(path, repo_root, synrepo_dir);
             if !path.starts_with(repo_root) {
                 continue;
             }
@@ -65,11 +65,17 @@ pub(crate) fn collect_repo_paths(
     paths.into_iter().collect()
 }
 
-fn repo_normalized_path(path: &Path, repo_root: &Path) -> PathBuf {
+fn repo_normalized_path(path: &Path, repo_root: &Path, synrepo_dir: &Path) -> PathBuf {
     if path.is_absolute() {
         path.to_path_buf()
     } else {
-        repo_root.join(path)
+        let repo_path = repo_root.join(path);
+        let runtime_path = synrepo_dir.join(path);
+        if !repo_path.exists() && runtime_path.exists() {
+            runtime_path
+        } else {
+            repo_path
+        }
     }
 }
 

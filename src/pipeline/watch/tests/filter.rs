@@ -2,7 +2,7 @@ use notify_debouncer_full::{
     notify::{event::ModifyKind, Event, EventKind},
     DebouncedEvent,
 };
-use std::time::Instant;
+use std::{fs, path::PathBuf, time::Instant};
 
 use super::setup_test_repo;
 
@@ -54,13 +54,14 @@ fn filter_repo_events_ignores_generated_export_bursts() {
 #[test]
 fn filter_repo_events_ignores_repo_relative_runtime_paths() {
     let (_dir, repo, _config, synrepo_dir) = setup_test_repo();
+    fs::write(synrepo_dir.join("state/noise.txt"), "noise").unwrap();
     let runtime_event = debounced_event(
         Event::new(EventKind::Modify(ModifyKind::Any))
-            .add_path(std::path::PathBuf::from(".synrepo/state/noise.txt")),
+            .add_path(PathBuf::from(".synrepo/state/noise.txt"))
+            .add_path(PathBuf::from("state/noise.txt")),
     );
     let source_event = debounced_event(
-        Event::new(EventKind::Modify(ModifyKind::Any))
-            .add_path(std::path::PathBuf::from("src/lib.rs")),
+        Event::new(EventKind::Modify(ModifyKind::Any)).add_path(PathBuf::from("src/lib.rs")),
     );
 
     let filtered = super::super::filter::filter_repo_events(
@@ -70,7 +71,7 @@ fn filter_repo_events_ignores_repo_relative_runtime_paths() {
         &[],
     );
     assert_eq!(filtered.len(), 1);
-    assert_eq!(filtered[0].paths[0], std::path::PathBuf::from("src/lib.rs"));
+    assert_eq!(filtered[0].paths[0], PathBuf::from("src/lib.rs"));
 }
 
 fn debounced_event(event: Event) -> DebouncedEvent {
