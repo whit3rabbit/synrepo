@@ -18,7 +18,7 @@ jobs:
           - target: aarch64-unknown-linux-gnu
             deb_arch: arm64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -52,7 +52,7 @@ jobs:
               --output "dist/synrepo_${VER}_${DEB_ARCH}.deb"
           fi
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: linux-${{ matrix.deb_arch }}
           path: dist/
@@ -71,7 +71,7 @@ jobs:
             runner: macos-15-intel
             suffix: macos-x86_64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -97,7 +97,7 @@ jobs:
           cp "target/${TARGET}/release/synrepo" dist/synrepo
           cd dist && zip "synrepo-${VER}-${SUFFIX}.zip" synrepo && rm synrepo
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.suffix }}
           path: dist/
@@ -106,7 +106,7 @@ jobs:
     name: Windows amd64
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -128,7 +128,7 @@ jobs:
           mkdir -p dist
           cp "target/x86_64-pc-windows-msvc/release/synrepo.exe" "dist/synrepo-${VER}-windows-amd64.exe"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows-amd64
           path: dist/
@@ -140,7 +140,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts/
           merge-multiple: true
@@ -148,10 +148,10 @@ jobs:
       - name: Generate SHA256 checksums
         run: |
           cd artifacts
-          sha256sum * > SHA256SUMS
+          sha256sum -- * > SHA256SUMS
           cat SHA256SUMS
 
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           files: artifacts/*
           generate_release_notes: true
@@ -161,7 +161,7 @@ jobs:
     needs: [build-linux, build-macos]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -186,7 +186,7 @@ jobs:
     needs: [release]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Detect tap token
         id: tap
@@ -216,7 +216,7 @@ jobs:
           echo "arm=${ARM_SHA}" >> "$GITHUB_OUTPUT"
           echo "x86=${X86_SHA}" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         if: steps.tap.outputs.available == 'true'
         with:
           repository: whit3rabbit/homebrew-tap
