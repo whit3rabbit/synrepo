@@ -6,9 +6,7 @@ mod tests {
     use walkdir::WalkDir;
 
     fn cargo_toml() -> Value {
-        include_str!("../Cargo.toml")
-            .parse()
-            .expect("Cargo.toml must parse as TOML")
+        toml::from_str(include_str!("../Cargo.toml")).expect("Cargo.toml must parse as TOML")
     }
 
     #[test]

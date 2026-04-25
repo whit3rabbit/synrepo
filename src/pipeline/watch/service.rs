@@ -16,10 +16,7 @@ use std::{
 };
 
 use interprocess::local_socket::{traits::Listener as _, ListenerNonblockingMode, ListenerOptions};
-use notify_debouncer_full::{
-    new_debouncer,
-    notify::{RecursiveMode, Watcher},
-};
+use notify_debouncer_full::{new_debouncer, notify::RecursiveMode};
 
 use crate::{
     config::Config,
@@ -238,7 +235,6 @@ pub fn run_watch_service(
         })?;
 
     debouncer
-        .watcher()
         .watch(repo_root, RecursiveMode::Recursive)
         .map_err(|error| {
             crate::Error::Other(anyhow::anyhow!(

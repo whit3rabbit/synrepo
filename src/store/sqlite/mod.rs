@@ -4,6 +4,7 @@ mod codec;
 mod lifecycle;
 mod ops;
 mod schema;
+mod values;
 
 #[cfg(test)]
 mod tests;
@@ -18,6 +19,7 @@ use std::{
 };
 
 use schema::{count_rows, init_schema};
+use values::row_usize;
 
 use crate::core::ids::{ConceptNodeId, FileNodeId, NodeId, SymbolNodeId};
 use crate::structure::graph::{ConceptNode, Edge, EdgeKind, FileNode, GraphReader, SymbolNode};
@@ -206,9 +208,7 @@ impl SqliteGraphStore {
         let mut stmt =
             conn.prepare("SELECT kind, COUNT(*) FROM edges GROUP BY kind ORDER BY kind")?;
         let counts = stmt
-            .query_map([], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, usize>(1)?))
-            })?
+            .query_map([], |row| Ok((row.get::<_, String>(0)?, row_usize(row, 1)?)))?
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(PersistedGraphStats {

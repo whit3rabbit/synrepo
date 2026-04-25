@@ -9,6 +9,7 @@ use crate::overlay::{
     AgentNote, AgentNoteConfidence, AgentNoteStatus, AgentNoteTarget, AgentNoteTargetKind,
     AgentNoteTransition, AGENT_NOTE_SOURCE_STORE,
 };
+use crate::store::overlay::sqlite_values::{optional_u64_to_i64, row_optional_u64};
 
 pub(super) fn format_time(ts: OffsetDateTime) -> crate::Result<String> {
     ts.format(&Rfc3339)
@@ -56,7 +57,7 @@ pub(super) fn note_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<AgentNo
     let confidence: String = row.get(8)?;
     let status: String = row.get(9)?;
     let source_hashes_json: String = row.get(10)?;
-    let graph_revision: Option<u64> = row.get(11)?;
+    let graph_revision = row_optional_u64(row, 11)?;
     let expires_on_drift: i64 = row.get(12)?;
     let supersedes_json: String = row.get(13)?;
     let superseded_by: Option<String> = row.get(14)?;
@@ -117,6 +118,7 @@ pub(super) fn insert_transition(conn: &Connection, tx: &AgentNoteTransition) -> 
 }
 
 pub(super) fn upsert_note(conn: &Connection, note: &AgentNote) -> crate::Result<()> {
+    let graph_revision = optional_u64_to_i64(note.graph_revision, "graph_revision")?;
     conn.execute(
         "INSERT INTO agent_notes
             (note_id, target_kind, target_id, claim, evidence_json, created_by, created_at,
@@ -154,7 +156,7 @@ pub(super) fn upsert_note(conn: &Connection, note: &AgentNote) -> crate::Result<
             note.confidence.as_str(),
             note.status.as_str(),
             encode_json(&note.source_hashes)?,
-            note.graph_revision,
+            graph_revision,
             i64::from(note.expires_on_drift),
             encode_json(&note.supersedes)?,
             note.superseded_by,

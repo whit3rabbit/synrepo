@@ -118,7 +118,7 @@ fn step_apply_explain_cloud_with_new_key_saves_global_key_only() {
     assert!(!local.contains("openai_api_key"));
 
     let global_path = home.path().join(".synrepo/config.toml");
-    let global: Value = fs::read_to_string(&global_path).unwrap().parse().unwrap();
+    let global: Value = toml::from_str(&fs::read_to_string(&global_path).unwrap()).unwrap();
     let explain = global
         .get("explain")
         .and_then(Value::as_table)

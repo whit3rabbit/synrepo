@@ -11,6 +11,7 @@ mod cross_link_audit;
 mod cross_links;
 mod findings;
 mod schema;
+mod sqlite_values;
 
 #[cfg(test)]
 mod findings_tests;
@@ -38,6 +39,7 @@ use std::{
 };
 
 use schema::init_schema;
+use sqlite_values::row_usize;
 
 const OVERLAY_DB_FILENAME: &str = "overlay.db";
 
@@ -108,7 +110,7 @@ impl SqliteOverlayStore {
         Ok(conn.query_row(
             "SELECT COUNT(*) FROM cross_link_audit WHERE event_kind = 'generated'",
             [],
-            |row| row.get::<_, usize>(0),
+            |row| row_usize(row, 0),
         )?)
     }
 
@@ -117,7 +119,7 @@ impl SqliteOverlayStore {
         let conn = self.conn.lock();
         Ok(
             conn.query_row("SELECT COUNT(*) FROM commentary", [], |row| {
-                row.get::<_, usize>(0)
+                row_usize(row, 0)
             })?,
         )
     }

@@ -13,7 +13,7 @@ use crate::overlay::{
 };
 use crate::structure::graph::GraphReader;
 
-use super::SqliteOverlayStore;
+use super::{sqlite_values::row_usize, SqliteOverlayStore};
 
 impl SqliteOverlayStore {
     /// Insert an advisory agent note and append its creation transition.
@@ -265,9 +265,7 @@ impl SqliteOverlayStore {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare("SELECT status, COUNT(*) FROM agent_notes GROUP BY status")?;
         let rows = stmt
-            .query_map([], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, usize>(1)?))
-            })?
+            .query_map([], |row| Ok((row.get::<_, String>(0)?, row_usize(row, 1)?)))?
             .collect::<std::result::Result<Vec<_>, _>>()?;
         let mut counts = AgentNoteCounts::default();
         for (status, count) in rows {

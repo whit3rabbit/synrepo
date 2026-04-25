@@ -9,7 +9,7 @@ use time::OffsetDateTime;
 use crate::core::ids::NodeId;
 use crate::overlay::{CommentaryEntry, CommentaryProvenance, OverlayStore};
 
-use super::SqliteOverlayStore;
+use super::{sqlite_values::row_usize, SqliteOverlayStore};
 
 mod entries;
 mod freshness;
@@ -315,7 +315,7 @@ impl OverlayStore for SqliteOverlayStore {
         let count: usize = conn.query_row(
             "SELECT COUNT(*) FROM commentary WHERE generated_at < ?1",
             params![cutoff_str],
-            |row| row.get(0),
+            |row| row_usize(row, 0),
         )?;
 
         Ok(crate::pipeline::maintenance::CompactStats {
@@ -353,7 +353,7 @@ impl OverlayStore for SqliteOverlayStore {
         let count: usize = conn.query_row(
             "SELECT COUNT(*) FROM cross_link_audit WHERE state IN ('promoted', 'rejected') AND event_at < ?1",
             params![cutoff_str],
-            |row| row.get(0),
+            |row| row_usize(row, 0),
         )?;
 
         Ok(crate::pipeline::maintenance::CompactStats {
@@ -385,7 +385,7 @@ impl OverlayStore for SqliteOverlayStore {
         let conn = self.conn.lock();
         Ok(
             conn.query_row("SELECT COUNT(*) FROM cross_link_audit", [], |row| {
-                row.get(0)
+                row_usize(row, 0)
             })?,
         )
     }

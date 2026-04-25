@@ -9,7 +9,7 @@ use rusqlite::{params, Connection};
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
 
-use super::SqliteOverlayStore;
+use super::{sqlite_values::row_usize, SqliteOverlayStore};
 
 /// Event recorded in the `cross_link_audit` table.
 ///
@@ -138,7 +138,7 @@ impl SqliteOverlayStore {
         let conn = self.conn.lock();
         Ok(
             conn.query_row("SELECT COUNT(*) FROM cross_link_audit", [], |row| {
-                row.get::<_, usize>(0)
+                row_usize(row, 0)
             })?,
         )
     }

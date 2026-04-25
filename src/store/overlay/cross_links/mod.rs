@@ -32,7 +32,7 @@ use rusqlite::Connection;
 use crate::core::ids::NodeId;
 use crate::overlay::{CitedSpan, ConfidenceTier, OverlayEdgeKind, OverlayLink};
 
-use super::SqliteOverlayStore;
+use super::{sqlite_values::row_usize, SqliteOverlayStore};
 
 impl SqliteOverlayStore {
     /// Return the number of cross-link rows currently stored.
@@ -183,7 +183,7 @@ fn state_counts(conn: &Connection) -> crate::Result<CrossLinkStateCounts> {
     let mut counts = CrossLinkStateCounts::default();
     for row in stmt.query_map([], |row| {
         let state: String = row.get(0)?;
-        let count: usize = row.get(1)?;
+        let count = row_usize(row, 1)?;
         Ok((state, count))
     })? {
         let (state, count) = row?;

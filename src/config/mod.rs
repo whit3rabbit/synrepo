@@ -312,7 +312,7 @@ impl Config {
 }
 
 fn reject_legacy_explain_block(text: &str, path: &Path) -> crate::Result<()> {
-    let Ok(value) = text.parse::<toml::Value>() else {
+    let Ok(value) = toml::from_str::<toml::Value>(text) else {
         return Ok(());
     };
     if value.get("synthesis").is_some() {

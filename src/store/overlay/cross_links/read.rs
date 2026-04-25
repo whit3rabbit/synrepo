@@ -5,6 +5,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use crate::core::ids::NodeId;
 use crate::overlay::{OverlayEdgeKind, OverlayLink};
 
+use super::super::sqlite_values::{row_usize, usize_to_i64};
 use super::codec::{overlay_edge_kind_as_str, row_to_overlay_link};
 use super::types::{CrossLinkHashRow, PendingPromotionRow};
 
@@ -70,6 +71,7 @@ pub(crate) fn candidates_limited(
          LIMIT ?2"
     );
     let mut stmt = conn.prepare(&sql)?;
+    let limit = usize_to_i64(limit, "candidate limit")?;
 
     let mapped = stmt
         .query_map(params![tier, limit], row_to_overlay_link)?
@@ -108,7 +110,7 @@ pub(crate) fn candidate_by_endpoints(
 pub(crate) fn count(conn: &Connection) -> crate::Result<usize> {
     Ok(
         conn.query_row("SELECT COUNT(*) FROM cross_links", [], |row| {
-            row.get::<_, usize>(0)
+            row_usize(row, 0)
         })?,
     )
 }

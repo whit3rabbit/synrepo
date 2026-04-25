@@ -1,5 +1,7 @@
 use rusqlite::Connection;
 
+use super::values::row_usize;
+
 pub(super) fn init_schema(conn: &Connection) -> crate::Result<()> {
     conn.execute_batch(
         "
@@ -150,5 +152,5 @@ pub(super) fn init_schema(conn: &Connection) -> crate::Result<()> {
 
 pub(super) fn count_rows(conn: &Connection, table: &str) -> crate::Result<usize> {
     let sql = format!("SELECT COUNT(*) FROM {table}");
-    Ok(conn.query_row(&sql, [], |row| row.get::<_, usize>(0))?)
+    Ok(conn.query_row(&sql, [], |row| row_usize(row, 0))?)
 }
