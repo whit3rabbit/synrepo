@@ -1,4 +1,3 @@
-use std::fs;
 use std::path::Path;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -8,7 +7,7 @@ use crate::pipeline::watch::{
     watch_service_status, WatchControlRequest, WatchControlResponse, WatchServiceStatus,
 };
 
-use super::helpers::{detach_daemon_process, load_repo_config, resolve_synrepo_executable};
+use super::helpers::load_repo_config;
 use super::{ActionContext, ActionOutcome};
 
 const WATCH_START_TIMEOUT: Duration = Duration::from_secs(5);
@@ -65,11 +64,10 @@ pub fn stop_watch(ctx: &ActionContext) -> ActionOutcome {
 /// the hidden `watch-internal` entrypoint. Running the service in-process from
 /// the dashboard would deadlock the alt-screen.
 pub fn start_watch_daemon(ctx: &ActionContext) -> ActionOutcome {
-    use std::process::{Command, Stdio};
-
-    if let Err(outcome) = load_repo_config(ctx, "watch") {
-        return outcome;
-    }
+    let _config = match load_repo_config(ctx, "watch") {
+        Ok(config) => config,
+        Err(outcome) => return outcome,
+    };
 
     match watch_service_status(&ctx.synrepo_dir) {
         WatchServiceStatus::Starting => {
@@ -101,6 +99,26 @@ pub fn start_watch_daemon(ctx: &ActionContext) -> ActionOutcome {
         }
         WatchServiceStatus::Inactive => {}
     }
+
+    #[cfg(all(test, windows))]
+    {
+        start_watch_daemon_in_process_for_windows_tests(ctx, _config)
+    }
+
+    #[cfg(not(all(test, windows)))]
+    {
+        start_watch_daemon_process(ctx)
+    }
+}
+
+#[cfg(not(all(test, windows)))]
+fn start_watch_daemon_process(ctx: &ActionContext) -> ActionOutcome {
+    use std::{
+        fs,
+        process::{Command, Stdio},
+    };
+
+    use super::helpers::{detach_daemon_process, resolve_synrepo_executable};
 
     let exe = match resolve_synrepo_executable() {
         Ok(path) => path,
@@ -143,6 +161,42 @@ pub fn start_watch_daemon(ctx: &ActionContext) -> ActionOutcome {
         Ok(child) => match wait_for_watch_running(&ctx.synrepo_dir) {
             Ok(()) => ActionOutcome::Ack {
                 message: format!("spawned watch daemon (pid {})", child.id()),
+            },
+            Err(err) => ActionOutcome::Error { message: err },
+        },
+        Err(err) => ActionOutcome::Error {
+            message: format!("failed to spawn watch daemon: {err}"),
+        },
+    }
+}
+
+#[cfg(all(test, windows))]
+fn start_watch_daemon_in_process_for_windows_tests(
+    ctx: &ActionContext,
+    config: crate::config::Config,
+) -> ActionOutcome {
+    use crate::pipeline::watch::{run_watch_service, WatchConfig, WatchServiceMode};
+
+    let repo_root = ctx.repo_root.clone();
+    let synrepo_dir = ctx.synrepo_dir.clone();
+    match thread::Builder::new()
+        .name("synrepo-test-watch-daemon".to_string())
+        .spawn({
+            let synrepo_dir = synrepo_dir.clone();
+            move || {
+                let _ = run_watch_service(
+                    &repo_root,
+                    &config,
+                    &WatchConfig::default(),
+                    &synrepo_dir,
+                    WatchServiceMode::Daemon,
+                    None,
+                );
+            }
+        }) {
+        Ok(_handle) => match wait_for_watch_running(&ctx.synrepo_dir) {
+            Ok(()) => ActionOutcome::Ack {
+                message: format!("spawned watch daemon (pid {})", std::process::id()),
             },
             Err(err) => ActionOutcome::Error { message: err },
         },

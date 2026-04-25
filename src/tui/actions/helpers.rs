@@ -21,6 +21,7 @@ pub(super) fn load_repo_config(ctx: &ActionContext, action: &str) -> Result<Conf
     })
 }
 
+#[cfg_attr(all(test, windows), allow(dead_code))]
 pub(super) fn resolve_synrepo_executable() -> Result<PathBuf, String> {
     let current = std::env::current_exe()
         .map_err(|err| format!("could not resolve current executable: {err}"))?;
@@ -38,6 +39,7 @@ pub(super) fn resolve_synrepo_executable() -> Result<PathBuf, String> {
     Ok(current)
 }
 
+#[cfg_attr(all(test, windows), allow(dead_code))]
 pub(super) fn detach_daemon_process(command: &mut std::process::Command) {
     #[cfg(unix)]
     {

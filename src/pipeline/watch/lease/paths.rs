@@ -9,6 +9,7 @@ use interprocess::local_socket::{GenericFilePath, ToFsName};
 #[cfg(windows)]
 use interprocess::local_socket::{GenericNamespaced, ToNsName};
 
+#[cfg(unix)]
 use super::types::WatchDaemonError;
 
 const WATCH_DAEMON_FILENAME: &str = "watch-daemon.json";
