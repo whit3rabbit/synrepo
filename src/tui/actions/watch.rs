@@ -1,3 +1,4 @@
+use std::fs;
 use std::path::Path;
 use std::thread;
 use std::time::{Duration, Instant};
@@ -60,10 +61,9 @@ pub fn stop_watch(ctx: &ActionContext) -> ActionOutcome {
     }
 }
 
-/// Start the watch service in daemon mode by re-exec'ing this binary with
-/// `watch --daemon`. Running the service in-process from the dashboard would
-/// deadlock the alt-screen; spawning a detached child is the safe analogue of
-/// the CLI `synrepo watch --daemon` path the dashboard is replacing.
+/// Start the watch service in daemon mode by re-exec'ing this binary through
+/// the hidden `watch-internal` entrypoint. Running the service in-process from
+/// the dashboard would deadlock the alt-screen.
 pub fn start_watch_daemon(ctx: &ActionContext) -> ActionOutcome {
     use std::process::{Command, Stdio};
 
@@ -109,14 +109,33 @@ pub fn start_watch_daemon(ctx: &ActionContext) -> ActionOutcome {
         }
     };
 
+    let state_dir = ctx.synrepo_dir.join("state");
+    if let Err(err) = fs::create_dir_all(&state_dir) {
+        return ActionOutcome::Error {
+            message: format!(
+                "failed to prepare watch daemon state dir {}: {err}",
+                state_dir.display()
+            ),
+        };
+    }
+    let log_path = state_dir.join("watch-daemon.log");
+    let stderr_file = match fs::File::create(&log_path) {
+        Ok(file) => file,
+        Err(err) => {
+            return ActionOutcome::Error {
+                message: format!(
+                    "failed to open watch daemon log {}: {err}",
+                    log_path.display()
+                ),
+            };
+        }
+    };
+
     let mut cmd = Command::new(&exe);
-    cmd.arg("--repo")
-        .arg(&ctx.repo_root)
-        .arg("watch")
-        .arg("--daemon");
+    cmd.arg("--repo").arg(&ctx.repo_root).arg("watch-internal");
     cmd.stdin(Stdio::null());
     cmd.stdout(Stdio::null());
-    cmd.stderr(Stdio::null());
+    cmd.stderr(Stdio::from(stderr_file));
     cmd.current_dir(&ctx.repo_root);
     detach_daemon_process(&mut cmd);
 
