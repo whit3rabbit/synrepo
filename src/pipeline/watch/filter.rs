@@ -15,6 +15,7 @@ pub(crate) fn ignored_generated_dirs(repo_root: &Path, config: &Config) -> Vec<P
 
 pub(crate) fn filter_repo_events(
     events: Vec<DebouncedEvent>,
+    repo_root: &Path,
     synrepo_dir: &Path,
     ignored_dirs: &[PathBuf],
 ) -> Vec<DebouncedEvent> {
@@ -27,8 +28,9 @@ pub(crate) fn filter_repo_events(
         .into_iter()
         .filter(|event| {
             !event.paths.iter().all(|path| {
-                path_matches_runtime(path, synrepo_dir, canonical_synrepo_dir.as_deref())
-                    || path_matches_ignored_dir(path, ignored_dirs, &canonical_ignored_dirs)
+                let path = repo_normalized_path(path, repo_root);
+                path_matches_runtime(&path, synrepo_dir, canonical_synrepo_dir.as_deref())
+                    || path_matches_ignored_dir(&path, ignored_dirs, &canonical_ignored_dirs)
             })
         })
         .collect()
@@ -44,6 +46,7 @@ pub(crate) fn collect_repo_paths(
     let mut paths = std::collections::BTreeSet::new();
     for event in events {
         for path in &event.paths {
+            let path = repo_normalized_path(path, repo_root);
             if !path.starts_with(repo_root) {
                 continue;
             }
@@ -53,13 +56,21 @@ pub(crate) fn collect_repo_paths(
             if ignored_dirs.iter().any(|dir| path.starts_with(dir)) {
                 continue;
             }
-            if matches!(fs::metadata(path), Ok(md) if md.is_dir()) {
+            if matches!(fs::metadata(&path), Ok(md) if md.is_dir()) {
                 continue;
             }
-            paths.insert(path.clone());
+            paths.insert(path);
         }
     }
     paths.into_iter().collect()
+}
+
+fn repo_normalized_path(path: &Path, repo_root: &Path) -> PathBuf {
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        repo_root.join(path)
+    }
 }
 
 fn path_matches_ignored_dir(

@@ -202,6 +202,7 @@ pub fn run_watch_service(
                 Ok(watcher_events) => {
                     let filtered = filter_repo_events(
                         watcher_events,
+                        &callback_repo_root,
                         &callback_synrepo_dir,
                         &callback_ignored_dirs,
                     );
