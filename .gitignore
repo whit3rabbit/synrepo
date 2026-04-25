@@ -17,6 +17,9 @@ __MACOSX
 !.gitignore
 !.agent/
 !.agents/
+!.codex/
+.codex/*
+!.codex/config.toml
 !.github/
 
 # syntext

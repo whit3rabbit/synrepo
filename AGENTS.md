@@ -16,6 +16,14 @@ This file provides guidance to Claude Code (claude.ai/code) and other coding age
 
 Gotchas and hard invariants stay in this file — read them first.
 
+## Codebase context
+
+When `.synrepo/` exists and synrepo MCP tools are available, use them before reading source files cold:
+- Start with repository orientation, then search or find candidate files and symbols.
+- Use bounded cards or minimum context to choose files before opening full source.
+- Check impact or risks before non-trivial edits, and changed/test guidance before claiming done.
+- If MCP tools are unavailable, use the `synrepo` CLI fallback (`synrepo status`, `synrepo search`, `synrepo node`, `synrepo graph query`) instead of blocking.
+
 ## CI / Release
 
 Workflows live in `.github/workflows/`: `ci.yml` (push/PR) and `release.yml` (tag trigger).
