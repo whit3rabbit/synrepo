@@ -3,7 +3,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use notify_debouncer_full::DebouncedEvent;
+use notify_debouncer_full::{
+    notify::event::{EventKind, ModifyKind, RenameMode},
+    DebouncedEvent,
+};
 
 use crate::{config::Config, core::path_safety::safe_join_in_repo};
 
@@ -27,10 +30,17 @@ pub(crate) fn filter_repo_events(
     events
         .into_iter()
         .filter(|event| {
-            !event.paths.iter().all(|path| {
+            if event.paths.iter().all(|path| {
                 let path = repo_normalized_path(path, repo_root, synrepo_dir);
                 path_matches_runtime(&path, synrepo_dir, canonical_synrepo_dir.as_deref())
                     || path_matches_ignored_dir(&path, ignored_dirs, &canonical_ignored_dirs)
+            }) {
+                return false;
+            }
+
+            event.paths.iter().any(|path| {
+                let path = repo_normalized_path(path, repo_root, synrepo_dir);
+                is_collectable_repo_path(&path, repo_root, synrepo_dir, ignored_dirs, &event.kind)
             })
         })
         .collect()
@@ -56,13 +66,52 @@ pub(crate) fn collect_repo_paths(
             if ignored_dirs.iter().any(|dir| path.starts_with(dir)) {
                 continue;
             }
-            if matches!(fs::metadata(&path), Ok(md) if md.is_dir()) {
+            if !is_collectable_existing_or_missing_path(&path, &event.kind) {
                 continue;
             }
             paths.insert(path);
         }
     }
     paths.into_iter().collect()
+}
+
+fn is_collectable_repo_path(
+    path: &Path,
+    repo_root: &Path,
+    synrepo_dir: &Path,
+    ignored_dirs: &[PathBuf],
+    kind: &EventKind,
+) -> bool {
+    let git_dir = repo_root.join(".git");
+    if !path.starts_with(repo_root) {
+        return false;
+    }
+    if path.starts_with(synrepo_dir) || path.starts_with(&git_dir) {
+        return false;
+    }
+    if ignored_dirs.iter().any(|dir| path.starts_with(dir)) {
+        return false;
+    }
+    is_collectable_existing_or_missing_path(path, kind)
+}
+
+fn is_collectable_existing_or_missing_path(path: &Path, kind: &EventKind) -> bool {
+    match fs::metadata(path) {
+        Ok(md) => !md.is_dir(),
+        Err(_) => event_can_reference_missing_path(kind),
+    }
+}
+
+fn event_can_reference_missing_path(kind: &EventKind) -> bool {
+    matches!(
+        kind,
+        EventKind::Remove(_)
+            | EventKind::Modify(ModifyKind::Name(
+                RenameMode::Any | RenameMode::From | RenameMode::Both | RenameMode::Other
+            ))
+            | EventKind::Any
+            | EventKind::Other
+    )
 }
 
 fn repo_normalized_path(path: &Path, repo_root: &Path, synrepo_dir: &Path) -> PathBuf {

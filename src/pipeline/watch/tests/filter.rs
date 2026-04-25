@@ -1,5 +1,8 @@
 use notify_debouncer_full::{
-    notify::{event::ModifyKind, Event, EventKind},
+    notify::{
+        event::{ModifyKind, RemoveKind},
+        Event, EventKind,
+    },
     DebouncedEvent,
 };
 use std::{fs, path::PathBuf, time::Instant};
@@ -72,6 +75,36 @@ fn filter_repo_events_ignores_repo_relative_runtime_paths() {
     );
     assert_eq!(filtered.len(), 1);
     assert_eq!(filtered[0].paths[0], PathBuf::from("src/lib.rs"));
+}
+
+#[test]
+fn collect_repo_paths_skips_missing_non_removal_paths() {
+    let (_dir, repo, _config, synrepo_dir) = setup_test_repo();
+    let ambiguous_runtime_event = debounced_event(
+        Event::new(EventKind::Modify(ModifyKind::Any)).add_path(PathBuf::from("noise.txt")),
+    );
+
+    let paths = super::super::filter::collect_repo_paths(
+        &[ambiguous_runtime_event],
+        &repo,
+        &synrepo_dir,
+        &[],
+    );
+
+    assert!(paths.is_empty());
+}
+
+#[test]
+fn collect_repo_paths_keeps_missing_removal_paths() {
+    let (_dir, repo, _config, synrepo_dir) = setup_test_repo();
+    let source_remove_event = debounced_event(
+        Event::new(EventKind::Remove(RemoveKind::File)).add_path(PathBuf::from("src/old.rs")),
+    );
+
+    let paths =
+        super::super::filter::collect_repo_paths(&[source_remove_event], &repo, &synrepo_dir, &[]);
+
+    assert_eq!(paths, vec![repo.join("src/old.rs")]);
 }
 
 fn debounced_event(event: Event) -> DebouncedEvent {
