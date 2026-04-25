@@ -23,7 +23,7 @@ path = "src/lib.rs"
 # syntext is the deterministic lexical retrieval layer. Verify publication
 # status on crates.io; if not published, switch to a git dependency pinned to
 # a specific commit hash (never a branch).
-syntext = "1.0.4"
+syntext = "1.1.0"
 
 # --- Tree-sitter via Rust crates (phase 1) ---
 # Per-language crates each ship a pre-generated C grammar and expose
@@ -39,18 +39,18 @@ tree-sitter-typescript = "0.23.2"
 # sqlite is the single source of truth for the graph and overlay stores.
 # No in-memory graph mirror in v1; add petgraph only if measured latency
 # on a specific query class demands it.
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.39", features = ["bundled"] }
 
 # --- Filesystem and walking ---
 walkdir = "2"
 ignore = "0.4"              # respects .gitignore / .git/info/exclude
-notify = "6"                # cross-platform file watcher for phase 2+
-notify-debouncer-full = "0.3"
+notify = "8"                # cross-platform file watcher for phase 2+
+notify-debouncer-full = "0.7"
 fs2 = "0.4"                 # cross-platform advisory file locking (flock / LockFileEx) for the writer lock
 interprocess = "2"          # local_socket: Unix socket on Unix, named pipe on Windows. Blocking API only.
 
 # --- Git integration ---
-gix = { version = "0.81", default-features = false, features = ["sha1", "max-performance-safe", "revision", "blob-diff"] }
+gix = { version = "0.82", default-features = false, features = ["sha1", "max-performance-safe", "revision", "blob-diff"] }
 
 # --- Hashing and encoding ---
 blake3 = "1"                # fast content hashing for file/symbol identity
@@ -59,14 +59,14 @@ hex = "0.4"
 # --- Serialization ---
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-toml = "0.8"
-toml_edit = "0.22" # structural TOML editing that preserves comments/formatting (used by `synrepo setup` for .codex/config.toml)
+toml = "1.1"
+toml_edit = "0.25" # structural TOML editing that preserves comments/formatting (used by `synrepo setup` for .codex/config.toml)
 globset = "0.4"
 schemars = "1"              # JSON Schema derives for MCP tool param structs
 
 # --- Error handling and logging ---
 anyhow = "1"
-thiserror = "1"
+thiserror = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
@@ -77,8 +77,8 @@ clap = { version = "4", features = ["derive"] }
 # Pure-Rust terminal UI stack used by the interactive dashboard and setup/repair wizards.
 # Crossterm provides cross-platform terminal control (raw mode, alt screen, events);
 # ratatui is the widget/layout library built on top of it.
-ratatui = "0.29"
-crossterm = "0.28"
+ratatui = "0.30"
+crossterm = "0.29"
 
 # --- MCP server (used by `synrepo mcp` subcommand) ---
 rmcp = { version = "1.4.0", features = ["transport-io"] }
@@ -127,7 +127,7 @@ semantic-triage = ["dep:ort", "dep:tokenizers", "dep:ndarray"]
 tempfile = "3"
 proptest = "1"              # for the token-aligned coverage invariant tests
 insta = "1"                 # snapshot testing for card output
-criterion = "0.5"           # benchmarks
+criterion = "0.8"           # benchmarks
 
 [profile.release]
 lto = "thin"
