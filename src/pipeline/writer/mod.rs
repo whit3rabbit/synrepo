@@ -307,7 +307,15 @@ pub fn live_owner_pid(synrepo_dir: &Path) -> Option<u32> {
     if owner.pid == std::process::id() {
         return None;
     }
-    is_process_alive(owner.pid).then_some(owner.pid)
+    if !is_process_alive(owner.pid) {
+        return None;
+    }
+
+    match open_and_try_lock(&writer_lock_path(synrepo_dir)) {
+        Ok(Some(_file)) => None,
+        Ok(None) => Some(owner.pid),
+        Err(_) => Some(owner.pid),
+    }
 }
 
 /// Canonical path of the writer lock file within `.synrepo/state/`.

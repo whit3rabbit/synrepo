@@ -35,9 +35,8 @@ pub enum WriterStatus {
     HeldBySelf,
     /// The lock file records a different process ID.
     ///
-    /// Note: the recorded PID may be stale (the process may have died). The
-    /// diagnostics surface reports what the lock file says; liveness checking
-    /// happens only during `acquire_writer_lock`.
+    /// Diagnostics reports this only when the kernel advisory lock is also
+    /// held; stale metadata without a flock is treated as free.
     HeldByOther {
         /// PID recorded in the lock file.
         pid: u32,

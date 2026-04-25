@@ -37,7 +37,7 @@ use super::{
     control::{
         read_control_request, write_control_response, WatchControlRequest, WatchControlResponse,
     },
-    filter::collect_repo_paths,
+    filter::{collect_repo_paths, ignored_generated_dirs},
     lease::{
         acquire_watch_daemon_lease, watch_control_endpoint, watch_control_socket_name,
         WatchServiceMode, WatchStateHandle,
@@ -192,6 +192,7 @@ pub fn run_watch_service(
     let pending_watch = Arc::new(Mutex::new(PendingWatchChanges::default()));
     let callback_repo_root = repo_root.to_path_buf();
     let callback_synrepo_dir = synrepo_dir.to_path_buf();
+    let callback_ignored_dirs = ignored_generated_dirs(repo_root, config);
     let callback_state_handle = state_handle.clone();
     let callback_events = events.clone();
     let pending_watch_for_callback = pending_watch.clone();
@@ -202,12 +203,20 @@ pub fn run_watch_service(
             None,
             move |result| match result {
                 Ok(watcher_events) => {
-                    let filtered = filter_repo_events(watcher_events, &callback_synrepo_dir);
+                    let filtered = filter_repo_events(
+                        watcher_events,
+                        &callback_synrepo_dir,
+                        &callback_ignored_dirs,
+                    );
                     if filtered.is_empty() {
                         return;
                     }
-                    let touched_paths =
-                        collect_repo_paths(&filtered, &callback_repo_root, &callback_synrepo_dir);
+                    let touched_paths = collect_repo_paths(
+                        &filtered,
+                        &callback_repo_root,
+                        &callback_synrepo_dir,
+                        &callback_ignored_dirs,
+                    );
                     callback_state_handle.note_event();
                     if let Ok(mut pending) = pending_watch_for_callback.lock() {
                         pending.record(filtered.len(), touched_paths, max_events_per_cycle);

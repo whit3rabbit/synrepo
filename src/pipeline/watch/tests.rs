@@ -12,6 +12,7 @@ pub(super) use crate::pipeline::writer::{live_foreign_pid, spawn_and_reap_pid as
 use crate::{config::Config, store::compatibility::write_runtime_snapshot};
 
 mod daemon;
+mod filter;
 mod lease;
 mod reconcile;
 mod service;

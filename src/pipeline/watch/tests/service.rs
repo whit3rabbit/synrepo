@@ -10,11 +10,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-use notify_debouncer_full::{
-    notify::{event::ModifyKind, Event, EventKind},
-    DebouncedEvent,
-};
-
 use crate::pipeline::watch::{
     load_reconcile_state, request_watch_control, run_watch_service, ReconcileOutcome, WatchConfig,
     WatchControlRequest, WatchControlResponse, WatchEvent, WatchServiceMode, WatchServiceStatus,
@@ -33,24 +28,6 @@ fn watch_service_guard() -> (MutexGuard<'static, ()>, crate::test_support::Globa
             .expect("watch service test lock poisoned"),
         crate::test_support::global_test_lock("watch-service"),
     )
-}
-
-#[test]
-fn filter_repo_events_ignores_synrepo_only_bursts() {
-    let (_dir, repo, _config, synrepo_dir) = setup_test_repo();
-    let runtime_event = DebouncedEvent::from(
-        Event::new(EventKind::Modify(ModifyKind::Any))
-            .add_path(synrepo_dir.join("state/watch-daemon.json"))
-            .add_path(repo.clone()),
-    );
-    let source_event = DebouncedEvent::from(
-        Event::new(EventKind::Modify(ModifyKind::Any)).add_path(repo.join("src/lib.rs")),
-    );
-
-    let filtered =
-        super::super::service::filter_repo_events(vec![runtime_event, source_event], &synrepo_dir);
-    assert_eq!(filtered.len(), 1);
-    assert_eq!(filtered[0].paths[0], repo.join("src/lib.rs"));
 }
 
 #[cfg(unix)]

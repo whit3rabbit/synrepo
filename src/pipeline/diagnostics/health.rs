@@ -13,7 +13,9 @@ use time::OffsetDateTime;
 use super::types::{EmbeddingHealth, ReconcileHealth, ReconcileStaleness, WriterStatus};
 use crate::config::Config;
 use crate::pipeline::watch::{ReconcileState, ReconcileStateError};
-use crate::pipeline::writer::{current_ownership, WriterOwnership, WriterOwnershipError};
+use crate::pipeline::writer::{
+    current_ownership, open_and_try_lock, writer_lock_path, WriterOwnership, WriterOwnershipError,
+};
 
 /// Maximum time since the last reconcile (in seconds) before it is considered stale.
 const RECONCILE_STALENESS_THRESHOLD_SECONDS: i64 = 3600;
@@ -47,8 +49,14 @@ pub(super) fn compute_writer_status(synrepo_dir: &Path) -> WriterStatus {
     match current_ownership(synrepo_dir) {
         Err(WriterOwnershipError::NotFound) => WriterStatus::Free,
         Err(WriterOwnershipError::Malformed(e)) => WriterStatus::Corrupt(e),
-        Ok(WriterOwnership { pid, .. }) if pid == std::process::id() => WriterStatus::HeldBySelf,
-        Ok(WriterOwnership { pid, .. }) => WriterStatus::HeldByOther { pid },
+        Ok(WriterOwnership { pid, .. }) => {
+            match open_and_try_lock(&writer_lock_path(synrepo_dir)) {
+                Ok(Some(_file)) => WriterStatus::Free,
+                Ok(None) if pid == std::process::id() => WriterStatus::HeldBySelf,
+                Ok(None) => WriterStatus::HeldByOther { pid },
+                Err(err) => WriterStatus::Corrupt(err.to_string()),
+            }
+        }
     }
 }
 

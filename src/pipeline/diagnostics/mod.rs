@@ -53,6 +53,8 @@ mod tests {
     use crate::pipeline::structural::CompileSummary;
     use crate::pipeline::watch::{persist_reconcile_state, ReconcileOutcome};
     use crate::pipeline::writer::{acquire_writer_lock, writer_lock_path, WriterOwnership};
+    #[cfg(unix)]
+    use crate::pipeline::writer::{hold_writer_flock_with_ownership, live_foreign_pid};
     use tempfile::tempdir;
 
     #[test]
@@ -142,12 +144,11 @@ mod tests {
     }
 
     #[test]
-    fn diagnostics_shows_held_by_other_when_foreign_pid_in_lock_file() {
+    fn diagnostics_ignores_stale_writer_metadata_when_flock_is_free() {
         let dir = tempdir().unwrap();
         let synrepo_dir = dir.path().join(".synrepo");
         std::fs::create_dir_all(synrepo_dir.join("state")).unwrap();
 
-        // Write a lock file with a foreign PID (42 is unlikely to be ours).
         let ownership = WriterOwnership {
             pid: 42,
             acquired_at: "2024-01-01T00:00:00Z".to_string(),
@@ -159,13 +160,29 @@ mod tests {
         .unwrap();
 
         let diag = collect_diagnostics(&synrepo_dir, &Config::default());
-        // Diagnostics reports what the lock file says without checking liveness.
-        assert!(
-            matches!(diag.writer_status, WriterStatus::HeldByOther { pid: 42 })
-                || matches!(diag.writer_status, WriterStatus::Free),
-            "expected HeldByOther(42) or Free (if PID 42 is ours), got {:?}",
-            diag.writer_status,
+        assert_eq!(diag.writer_status, WriterStatus::Free);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn diagnostics_shows_held_by_other_when_foreign_flock_is_held() {
+        let dir = tempdir().unwrap();
+        let synrepo_dir = dir.path().join(".synrepo");
+
+        let (mut child, pid) = live_foreign_pid();
+        let _flock = hold_writer_flock_with_ownership(
+            &writer_lock_path(&synrepo_dir),
+            &WriterOwnership {
+                pid,
+                acquired_at: "2024-01-01T00:00:00Z".to_string(),
+            },
         );
+
+        let diag = collect_diagnostics(&synrepo_dir, &Config::default());
+        assert_eq!(diag.writer_status, WriterStatus::HeldByOther { pid });
+
+        let _ = child.kill();
+        let _ = child.wait();
     }
 
     #[test]

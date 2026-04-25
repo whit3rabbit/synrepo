@@ -1,6 +1,8 @@
 use super::super::commands::{search, search_output};
 use synrepo::bootstrap::bootstrap;
 use synrepo::config::Config;
+#[cfg(unix)]
+use synrepo::pipeline::writer::{hold_writer_flock_with_ownership, live_foreign_pid};
 use synrepo::pipeline::writer::{writer_lock_path, WriterOwnership};
 use syntext::SearchOptions;
 use tempfile::tempdir;
@@ -48,7 +50,35 @@ fn search_requires_rebuild_when_index_sensitive_config_changes() {
 }
 
 #[test]
+#[cfg(unix)]
 fn search_refuses_to_race_the_writer_lock() {
+    let repo = tempdir().unwrap();
+    std::fs::write(repo.path().join("README.md"), "search token\n").unwrap();
+    bootstrap(repo.path(), None, false).unwrap();
+
+    let synrepo_dir = Config::synrepo_dir(repo.path());
+    let (mut child, pid) = live_foreign_pid();
+    let _flock = hold_writer_flock_with_ownership(
+        &writer_lock_path(&synrepo_dir),
+        &WriterOwnership {
+            pid,
+            acquired_at: "now".to_string(),
+        },
+    );
+
+    let error = search(repo.path(), "search token", SearchOptions::default())
+        .unwrap_err()
+        .to_string();
+
+    assert!(error.contains("writer lock"));
+    assert!(error.contains("retry"));
+
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+#[test]
+fn search_ignores_stale_live_pid_metadata_when_flock_is_free() {
     let repo = tempdir().unwrap();
     std::fs::write(repo.path().join("README.md"), "search token\n").unwrap();
     bootstrap(repo.path(), None, false).unwrap();
@@ -69,12 +99,10 @@ fn search_refuses_to_race_the_writer_lock() {
     )
     .unwrap();
 
-    let error = search(repo.path(), "search token", SearchOptions::default())
-        .unwrap_err()
-        .to_string();
+    let output = search_output(repo.path(), "search token", SearchOptions::default()).unwrap();
 
-    assert!(error.contains("writer lock"));
-    assert!(error.contains("retry"));
+    assert!(output.contains("README.md"));
+    assert!(output.contains("Found 1 matches."));
 
     let _ = child.kill();
     let _ = child.wait();
