@@ -16,6 +16,8 @@ pub enum Visibility {
     Public,
     /// Visible to the same compilation unit (e.g. `pub(crate)` in Rust).
     Crate,
+    /// Accessible within the declaring class and its subclasses (TypeScript `protected`).
+    Protected,
     /// File or module-scoped.
     Private,
     /// Extraction could not determine.
@@ -29,6 +31,7 @@ impl Visibility {
         match self {
             Visibility::Public => "public",
             Visibility::Crate => "crate",
+            Visibility::Protected => "protected",
             Visibility::Private => "private",
             Visibility::Unknown => "unknown",
         }
@@ -39,6 +42,7 @@ impl Visibility {
         match label {
             "public" => Some(Visibility::Public),
             "crate" => Some(Visibility::Crate),
+            "protected" => Some(Visibility::Protected),
             "private" => Some(Visibility::Private),
             "unknown" => Some(Visibility::Unknown),
             _ => None,

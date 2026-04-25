@@ -157,6 +157,7 @@ fn score_candidate(
     match candidate.visibility {
         Visibility::Public => score += PUBLIC_BONUS,
         Visibility::Crate => score += CRATE_BONUS,
+        Visibility::Protected => {}
         Visibility::Private if !same_file => score += PRIVATE_CROSS_FILE_PENALTY,
         Visibility::Private | Visibility::Unknown => {}
     }

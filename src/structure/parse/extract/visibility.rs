@@ -21,7 +21,7 @@ pub(super) fn extract_visibility(
     match language {
         Language::Rust => extract_rust_visibility(item_node, source),
         Language::Python => extract_python_visibility(display_name),
-        Language::TypeScript | Language::Tsx => extract_typescript_visibility(item_node),
+        Language::TypeScript | Language::Tsx => extract_typescript_visibility(item_node, source),
         Language::Go => extract_go_visibility(display_name),
     }
 }
@@ -61,17 +61,47 @@ fn extract_python_visibility(display_name: &str) -> Visibility {
     }
 }
 
-/// TypeScript/TSX: check if parent is an export_statement.
-fn extract_typescript_visibility(item_node: Node) -> Visibility {
-    // Walk up to the immediate parent to check for export_statement.
+/// TypeScript/TSX: class members read `accessibility_modifier`; everything
+/// else falls back to the export-statement parent check.
+///
+/// `protected` maps to a dedicated `Visibility::Protected` variant: it is
+/// accessible across files (in subclasses) but is not public API.
+fn extract_typescript_visibility(item_node: Node, source: &[u8]) -> Visibility {
+    // Class members: `method_definition` and `public_field_definition` carry
+    // an optional `accessibility_modifier` child. `abstract_method_signature`
+    // can carry one too inside an abstract class. Defensive on all three.
+    if matches!(
+        item_node.kind(),
+        "method_definition" | "public_field_definition" | "abstract_method_signature"
+    ) {
+        if let Some(modifier) = class_member_accessibility(item_node, source) {
+            return modifier;
+        }
+        // No modifier on a class member → TS default is public.
+        return Visibility::Public;
+    }
+
+    // Free declarations: parent is `export_statement` → Public; otherwise Private.
     if let Some(parent) = item_node.parent() {
         if parent.kind() == "export_statement" {
             return Visibility::Public;
         }
     }
-    // Default to Public for class members (class-member accessibility_modifier is
-    // out of scope for v1).
     Visibility::Public
+}
+
+fn class_member_accessibility(item_node: Node, source: &[u8]) -> Option<Visibility> {
+    let mut cursor = item_node.walk();
+    for child in item_node.children(&mut cursor) {
+        if child.kind() == "accessibility_modifier" {
+            return Some(match child.utf8_text(source).unwrap_or("") {
+                "private" => Visibility::Private,
+                "protected" => Visibility::Protected,
+                _ => Visibility::Public,
+            });
+        }
+    }
+    None
 }
 
 /// Go: uppercase first character means exported.
