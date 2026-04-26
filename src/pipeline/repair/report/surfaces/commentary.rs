@@ -20,31 +20,26 @@ pub struct CommentaryScan {
 /// return a fresh-vs-stale count. Used by both the repair surface check and
 /// the TUI Explain tab.
 pub fn scan_commentary_staleness(synrepo_dir: &std::path::Path) -> crate::Result<CommentaryScan> {
-    use crate::core::ids::NodeId;
     use crate::pipeline::repair::commentary::resolve_commentary_node;
-    use crate::store::overlay::SqliteOverlayStore;
+    use crate::store::overlay::{derive_freshness, SqliteOverlayStore};
     use crate::store::sqlite::SqliteGraphStore;
-    use std::str::FromStr;
 
     let overlay_dir = synrepo_dir.join("overlay");
     if !SqliteOverlayStore::db_path(&overlay_dir).exists() {
         return Ok(CommentaryScan { total: 0, stale: 0 });
     }
     let overlay = SqliteOverlayStore::open_existing(&overlay_dir)?;
-    let rows = overlay.commentary_hashes()?;
+    let entries = overlay.all_commentary_entries()?;
 
     let graph = SqliteGraphStore::open_existing(&synrepo_dir.join("graph"))?;
 
     let mut total = 0usize;
     let mut stale = 0usize;
-    for (node_id_str, stored_hash) in rows {
+    for entry in entries {
         total += 1;
-        let Ok(node_id) = NodeId::from_str(&node_id_str) else {
-            stale += 1;
-            continue;
-        };
-        let fresh = resolve_commentary_node(&graph, node_id)?
-            .is_some_and(|snap| snap.content_hash == stored_hash);
+        let fresh = resolve_commentary_node(&graph, entry.node_id)?.is_some_and(|snap| {
+            derive_freshness(&entry, &snap.content_hash) == crate::overlay::FreshnessState::Fresh
+        });
         if !fresh {
             stale += 1;
         }

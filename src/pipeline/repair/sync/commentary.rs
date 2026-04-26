@@ -47,7 +47,7 @@ pub fn refresh_commentary(
     let graph = SqliteGraphStore::open_existing(&context.synrepo_dir.join("graph"))?;
     let generator: Box<dyn CommentaryGenerator> =
         build_commentary_generator(context.config, context.config.commentary_cost_limit);
-    let rows = overlay.commentary_hashes()?;
+    let rows = commentary_rows_for_refresh(&overlay)?;
     let plan = match progress.as_mut() {
         Some(progress) => {
             build_commentary_work_plan_with_progress(&graph, &rows, scope, Some(&mut **progress))?
@@ -66,6 +66,25 @@ pub fn refresh_commentary(
         progress,
         should_stop,
     )
+}
+
+fn commentary_rows_for_refresh(
+    overlay: &SqliteOverlayStore,
+) -> crate::Result<Vec<(String, String)>> {
+    overlay
+        .all_commentary_entries()?
+        .into_iter()
+        .map(|entry| {
+            let hash = if entry.provenance.pass_id.starts_with("commentary-v1")
+                || entry.provenance.pass_id.starts_with("commentary-v2")
+            {
+                String::new()
+            } else {
+                entry.provenance.source_content_hash
+            };
+            Ok((entry.node_id.to_string(), hash))
+        })
+        .collect()
 }
 
 #[allow(clippy::too_many_arguments)]

@@ -1,11 +1,9 @@
 //! Helper functions for building status snapshots.
 
 use std::path::Path;
-use std::str::FromStr;
 
 use crate::{
     config::Config,
-    core::ids::NodeId,
     pipeline::{
         compact::load_last_compaction_timestamp,
         context_metrics::load_optional as load_context_metrics,
@@ -136,14 +134,14 @@ fn commentary_coverage_full(
     synrepo_dir: &Path,
     overlay: &SqliteOverlayStore,
 ) -> CommentaryCoverage {
-    let rows = match overlay.commentary_hashes() {
+    let entries = match overlay.all_commentary_entries() {
         Ok(rows) => rows,
         Err(error) => return CommentaryCoverage::unavailable(error.to_string()),
     };
-    if rows.is_empty() {
+    if entries.is_empty() {
         return CommentaryCoverage::full(0, 0);
     }
-    let total = rows.len();
+    let total = entries.len();
 
     let graph = match SqliteGraphStore::open_existing(&synrepo_dir.join("graph")) {
         Ok(graph) => graph,
@@ -152,14 +150,14 @@ fn commentary_coverage_full(
 
     let fresh = with_graph_read_snapshot(&graph, |graph| {
         let mut fresh = 0usize;
-        for (node_id_str, stored_hash) in &rows {
-            let Ok(node_id) = NodeId::from_str(node_id_str) else {
-                continue;
-            };
-            if resolve_commentary_node(graph, node_id)
+        for entry in &entries {
+            if resolve_commentary_node(graph, entry.node_id)
                 .ok()
                 .flatten()
-                .is_some_and(|snap| &snap.content_hash == stored_hash)
+                .is_some_and(|snap| {
+                    crate::store::overlay::derive_freshness(entry, &snap.content_hash)
+                        == crate::overlay::FreshnessState::Fresh
+                })
             {
                 fresh += 1;
             }

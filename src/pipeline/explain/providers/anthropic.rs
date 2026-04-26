@@ -26,7 +26,7 @@ pub const DEFAULT_MODEL: &str = "claude-sonnet-4-6";
 const API_URL: &str = "https://api.anthropic.com/v1/messages";
 const COUNT_TOKENS_URL: &str = "https://api.anthropic.com/v1/messages/count_tokens";
 const API_VERSION: &str = "2023-06-01";
-const PASS_ID: &str = "commentary-v2";
+const PASS_ID: &str = "commentary-v3";
 const CROSS_LINK_PASS_ID: &str = "cross-link-v1";
 
 /// Anthropic-backed commentary generator.

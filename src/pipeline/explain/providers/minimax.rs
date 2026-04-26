@@ -20,7 +20,7 @@ pub const DEFAULT_MODEL: &str = "MiniMax-M2";
 const CONFIG: OpenAiCompatConfig = OpenAiCompatConfig {
     provider: "minimax",
     api_url: "https://api.minimax.io/v1/chat/completions",
-    pass_id: "commentary-v2-minimax",
+    pass_id: "commentary-v3-minimax",
     cross_link_pass_id: "cross-link-v1-minimax",
     default_model: DEFAULT_MODEL,
     extra_headers: &[],

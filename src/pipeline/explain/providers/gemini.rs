@@ -23,7 +23,7 @@ const PROVIDER: &str = "gemini";
 pub const DEFAULT_MODEL: &str = "gemini-1.5-flash";
 
 const API_URL_BASE: &str = "https://generativelanguage.googleapis.com/v1beta/models";
-const PASS_ID: &str = "commentary-v2-gemini";
+const PASS_ID: &str = "commentary-v3-gemini";
 const CROSS_LINK_PASS_ID: &str = "cross-link-v1-gemini";
 
 /// Build the full API URL for a given model.
