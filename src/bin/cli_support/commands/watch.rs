@@ -282,7 +282,23 @@ fn wait_for_watch_startup_settle(synrepo_dir: &Path) -> anyhow::Result<()> {
     anyhow::bail!("watch service did not finish starting in time")
 }
 
-fn spawn_watch_daemon(repo_root: &Path) -> anyhow::Result<u32> {
+pub(crate) fn maybe_spawn_watch_daemon(repo_root: &Path) -> anyhow::Result<Option<u32>> {
+    let synrepo_dir = Config::synrepo_dir(repo_root);
+    match watch_service_status(&synrepo_dir) {
+        WatchServiceStatus::Inactive => {
+            let pid = spawn_watch_daemon(repo_root)?;
+            Ok(Some(pid))
+        }
+        WatchServiceStatus::Stale(_) | WatchServiceStatus::Corrupt(_) => {
+            cleanup_stale_watch_artifacts(&synrepo_dir)?;
+            let pid = spawn_watch_daemon(repo_root)?;
+            Ok(Some(pid))
+        }
+        WatchServiceStatus::Starting | WatchServiceStatus::Running(_) => Ok(None),
+    }
+}
+
+pub(crate) fn spawn_watch_daemon(repo_root: &Path) -> anyhow::Result<u32> {
     let exe = std::env::current_exe()
         .map_err(|error| anyhow::anyhow!("could not resolve current executable: {error}"))?;
 

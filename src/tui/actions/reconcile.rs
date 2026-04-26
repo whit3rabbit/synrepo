@@ -18,7 +18,7 @@ pub fn reconcile_now(ctx: &ActionContext) -> ActionOutcome {
         WatchServiceStatus::Running(state) => {
             match crate::pipeline::watch::request_watch_control(
                 &ctx.synrepo_dir,
-                WatchControlRequest::ReconcileNow,
+                WatchControlRequest::ReconcileNow { fast: false },
             ) {
                 Ok(WatchControlResponse::Reconcile { outcome, .. }) => {
                     reconcile_outcome_to_action(&outcome)
@@ -65,7 +65,7 @@ pub(super) fn run_local_reconcile(ctx: &ActionContext) -> ActionOutcome {
 
     match acquire_write_admission(&ctx.synrepo_dir, "reconcile") {
         Ok(_lock) => {
-            let outcome = run_reconcile_pass(&ctx.repo_root, &config, &ctx.synrepo_dir);
+            let outcome = run_reconcile_pass(&ctx.repo_root, &config, &ctx.synrepo_dir, false);
             reconcile_outcome_to_action(&outcome)
         }
         Err(err) => lock_error_to_action(&ctx.synrepo_dir, err),

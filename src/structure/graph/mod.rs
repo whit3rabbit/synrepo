@@ -5,6 +5,7 @@
 mod edge;
 mod epistemic;
 mod in_memory;
+mod mem_store;
 mod node;
 /// Process-global in-memory graph snapshot accessors.
 pub mod snapshot;
@@ -16,6 +17,7 @@ mod tests;
 pub use edge::{derive_edge_id, Edge, EdgeKind};
 pub use epistemic::Epistemic;
 pub use in_memory::Graph;
+pub use mem_store::MemGraphStore;
 pub use node::{
     concept_source_path_allowed, ConceptNode, FileNode, SymbolKind, SymbolNode, Visibility,
 };

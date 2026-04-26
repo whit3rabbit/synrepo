@@ -151,3 +151,60 @@ pub(crate) fn agent_setup(
 
     Ok(())
 }
+
+/// Install Git hooks (post-commit, post-merge, post-checkout) to trigger reconcile --fast.
+pub(crate) fn install_hooks(repo_root: &Path) -> anyhow::Result<()> {
+    let repo = synrepo::pipeline::git::open_repo(repo_root)
+        .map_err(|e| anyhow::anyhow!("install-hooks: not a git repository: {e}"))?;
+
+    let git_dir = repo.git_dir();
+    let hooks_dir = git_dir.join("hooks");
+
+    if !hooks_dir.exists() {
+        std::fs::create_dir_all(&hooks_dir)
+            .map_err(|e| anyhow::anyhow!("could not create hooks directory: {e}"))?;
+    }
+
+    let hook_script = r#"#!/bin/bash
+# synrepo hook: keep the graph aligned with the working tree.
+# Run reconcile in the background so it doesn't block the git command.
+(synrepo reconcile --fast > /dev/null 2>&1 &)
+"#;
+
+    let hooks = ["post-commit", "post-merge", "post-checkout"];
+
+    for hook_name in &hooks {
+        let hook_path = hooks_dir.join(hook_name);
+        let mut write_hook = true;
+
+        if hook_path.exists() {
+            let existing = std::fs::read_to_string(&hook_path)?;
+            if existing.contains("synrepo reconcile") {
+                println!("  hook already installed: {hook_name}");
+                write_hook = false;
+            } else {
+                // Append if it's not already there
+                let mut f = std::fs::OpenOptions::new().append(true).open(&hook_path)?;
+                use std::io::Write;
+                writeln!(f, "\n# synrepo hook\n(synrepo reconcile --fast > /dev/null 2>&1 &)")?;
+                println!("  appended to existing hook: {hook_name}");
+                write_hook = false;
+            }
+        }
+
+        if write_hook {
+            std::fs::write(&hook_path, hook_script)?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let mut perms = std::fs::metadata(&hook_path)?.permissions();
+                perms.set_mode(0o755);
+                std::fs::set_permissions(&hook_path, perms)?;
+            }
+            println!("  installed new hook: {hook_name}");
+        }
+    }
+
+    println!("Git hooks installed successfully in {}.", hooks_dir.display());
+    Ok(())
+}

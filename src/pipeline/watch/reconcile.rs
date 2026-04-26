@@ -78,8 +78,9 @@ pub fn run_reconcile_pass(
     repo_root: &Path,
     config: &Config,
     synrepo_dir: &Path,
+    fast: bool,
 ) -> ReconcileOutcome {
-    run_reconcile_pass_with_touched_paths(repo_root, config, synrepo_dir, None)
+    run_reconcile_pass_with_touched_paths(repo_root, config, synrepo_dir, None, fast)
 }
 
 pub(crate) fn run_reconcile_pass_with_touched_paths(
@@ -87,6 +88,7 @@ pub(crate) fn run_reconcile_pass_with_touched_paths(
     config: &Config,
     synrepo_dir: &Path,
     touched_paths: Option<&[PathBuf]>,
+    fast: bool,
 ) -> ReconcileOutcome {
     let _lock = match acquire_writer_lock(synrepo_dir) {
         Ok(lock) => lock,
@@ -104,11 +106,13 @@ pub(crate) fn run_reconcile_pass_with_touched_paths(
 
     match run_structural_compile(repo_root, config, &mut graph) {
         Ok(summary) => {
-            if let Err(err) = emit_cochange_edges_pass(repo_root, config, &mut graph) {
-                tracing::warn!(error = %err, "co-change edge emission failed; continuing");
-            }
-            if let Err(err) = emit_symbol_revisions_pass(repo_root, config, &mut graph) {
-                tracing::warn!(error = %err, "symbol revision derivation failed; continuing");
+            if !fast {
+                if let Err(err) = emit_cochange_edges_pass(repo_root, config, &mut graph) {
+                    tracing::warn!(error = %err, "co-change edge emission failed; continuing");
+                }
+                if let Err(err) = emit_symbol_revisions_pass(repo_root, config, &mut graph) {
+                    tracing::warn!(error = %err, "symbol revision derivation failed; continuing");
+                }
             }
             let repo_index_strategy = match touched_paths.filter(|paths| !paths.is_empty()) {
                 Some(paths) => RepoIndexStrategy::Incremental(paths),

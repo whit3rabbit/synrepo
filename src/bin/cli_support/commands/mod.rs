@@ -5,6 +5,7 @@ use synrepo::{config::Config, store::compatibility::StoreId};
 use super::graph::{check_store_ready, graph_query_output, graph_stats_output, node_output};
 
 mod basic;
+mod ci_run;
 mod compact;
 mod context;
 mod doctor;
@@ -26,7 +27,10 @@ mod watch;
 
 #[cfg(test)]
 pub(crate) use basic::change_risk_output;
-pub(crate) use basic::{agent_setup, change_risk, init};
+pub(crate) use basic::{agent_setup, change_risk, init, install_hooks};
+pub(crate) use ci_run::ci_run;
+#[cfg(test)]
+pub(crate) use ci_run::{ci_run_output, CiRunOptions};
 pub(crate) use compact::compact;
 pub(crate) use context::{
     bench_context, cards_alias, explain_alias, impact_alias, risks_alias, stats_context,

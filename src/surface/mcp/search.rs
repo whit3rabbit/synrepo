@@ -18,7 +18,8 @@ use super::SynrepoState;
 /// Parameters for the `synrepo_search` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SearchParams {
-    /// Lexical query string.
+        pub repo_root: Option<std::path::PathBuf>,
+/// Lexical query string.
     pub query: String,
     /// Maximum number of results to return. Defaults to 20.
     #[serde(default = "default_limit")]
@@ -32,7 +33,8 @@ pub fn default_limit() -> u32 {
 /// Parameters for the `synrepo_where_to_edit` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct WhereToEditParams {
-    /// Plain-language description of the task (e.g. "add retry logic to HTTP client").
+        pub repo_root: Option<std::path::PathBuf>,
+/// Plain-language description of the task (e.g. "add retry logic to HTTP client").
     pub task: String,
     /// Maximum number of file suggestions to return. Defaults to 5.
     #[serde(default = "default_edit_limit")]
@@ -49,7 +51,8 @@ pub fn default_edit_limit() -> u32 {
 /// Parameters for the `synrepo_change_impact` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ChangeImpactParams {
-    /// Target file path or symbol name to assess change impact for.
+        pub repo_root: Option<std::path::PathBuf>,
+/// Target file path or symbol name to assess change impact for.
     pub target: String,
 }
 

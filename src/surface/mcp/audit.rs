@@ -17,7 +17,8 @@ const MAX_FINDINGS_LIMIT: u32 = 500;
 /// Parameters for the `synrepo_findings` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct FindingsParams {
-    /// Optional node ID in display form.
+        pub repo_root: Option<std::path::PathBuf>,
+/// Optional node ID in display form.
     pub node_id: Option<String>,
     /// Optional kind to filter by (e.g. "references", "governs").
     pub kind: Option<String>,
@@ -35,7 +36,8 @@ fn default_limit() -> u32 {
 /// Parameters for the `synrepo_recent_activity` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct RecentActivityParams {
-    /// Activity kinds to include: "reconcile", "repair", "cross_link",
+        pub repo_root: Option<std::path::PathBuf>,
+/// Activity kinds to include: "reconcile", "repair", "cross_link",
     /// "overlay_refresh", "hotspot". Defaults to all kinds.
     pub kinds: Option<Vec<String>>,
     /// Maximum entries to return (default 20, max 200).
@@ -52,7 +54,8 @@ fn default_activity_limit() -> usize {
 /// Parameters for the `synrepo_next_actions` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct NextActionsParams {
-    /// Maximum number of items to return. Defaults to 20.
+        pub repo_root: Option<std::path::PathBuf>,
+/// Maximum number of items to return. Defaults to 20.
     #[serde(default)]
     pub limit: Option<usize>,
     /// Only include items from the last N days. Defaults to 30.

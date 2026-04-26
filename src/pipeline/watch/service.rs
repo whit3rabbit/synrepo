@@ -137,6 +137,7 @@ pub(super) enum LoopMessage {
     Stop,
     ReconcileNow {
         respond_to: mpsc::Sender<WatchControlResponse>,
+        fast: bool,
     },
     SyncNow {
         respond_to: mpsc::Sender<WatchControlResponse>,
@@ -176,7 +177,7 @@ pub fn run_watch_service(
         at: now,
         triggering_events: 0,
     });
-    let startup = run_reconcile_pass(repo_root, config, synrepo_dir);
+    let startup = run_reconcile_pass(repo_root, config, synrepo_dir, false);
     persist_reconcile_state(synrepo_dir, &startup, 0);
     state_handle.note_reconcile(&startup, 0);
     tracing::info!(outcome = %startup.as_str(), "startup reconcile complete");
@@ -276,6 +277,7 @@ pub fn run_watch_service(
                     config,
                     synrepo_dir,
                     (!batch.touched_paths.is_empty()).then_some(batch.touched_paths.as_slice()),
+                    false,
                 );
                 persist_reconcile_state(synrepo_dir, &outcome, event_count);
                 state_handle.note_reconcile(&outcome, event_count);
@@ -302,12 +304,12 @@ pub fn run_watch_service(
             Ok(LoopMessage::Stop) => {
                 break;
             }
-            Ok(LoopMessage::ReconcileNow { respond_to }) => {
+            Ok(LoopMessage::ReconcileNow { respond_to, fast }) => {
                 emit_event(&events, |now| WatchEvent::ReconcileStarted {
                     at: now,
                     triggering_events: 0,
                 });
-                let outcome = run_reconcile_pass(repo_root, config, synrepo_dir);
+                let outcome = run_reconcile_pass(repo_root, config, synrepo_dir, fast);
                 persist_reconcile_state(synrepo_dir, &outcome, 0);
                 state_handle.note_reconcile(&outcome, 0);
                 emit_event(&events, |now| WatchEvent::ReconcileFinished {
@@ -427,7 +429,9 @@ fn spawn_control_listener(
                             snapshot: state_handle.snapshot(),
                         },
                         Ok(WatchControlRequest::Stop) => bridge_stop_request(&tx, &stop_flag),
-                        Ok(WatchControlRequest::ReconcileNow) => bridge_reconcile_request(&tx),
+                        Ok(WatchControlRequest::ReconcileNow { fast }) => {
+                            bridge_reconcile_request(&tx, fast)
+                        }
                         Ok(WatchControlRequest::SyncNow { options }) => {
                             bridge_sync_request(&tx, options)
                         }
@@ -477,9 +481,12 @@ pub(super) fn bridge_stop_request(
     }
 }
 
-fn bridge_reconcile_request(tx: &mpsc::Sender<LoopMessage>) -> WatchControlResponse {
+fn bridge_reconcile_request(
+    tx: &mpsc::Sender<LoopMessage>,
+    fast: bool,
+) -> WatchControlResponse {
     let (respond_to, recv_from_loop) = mpsc::channel();
-    if tx.send(LoopMessage::ReconcileNow { respond_to }).is_err() {
+    if tx.send(LoopMessage::ReconcileNow { respond_to, fast }).is_err() {
         return WatchControlResponse::Error {
             message: "watch loop is no longer accepting control messages".to_string(),
         };

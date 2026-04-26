@@ -111,10 +111,20 @@ pub(crate) enum Command {
         /// Add .synrepo/ to the root .gitignore file.
         #[arg(long)]
         gitignore: bool,
+        /// Configure the MCP server globally instead of per-project.
+        #[arg(long)]
+        global: bool,
     },
 
     /// Run a structural compile pass against the current repository state.
-    Reconcile,
+    Reconcile {
+        /// Skip git-intensive stages (co-change and symbol revision derivation).
+        #[arg(long)]
+        fast: bool,
+    },
+
+    /// Install Git hooks (post-commit, post-merge, post-checkout) to trigger reconcile --fast.
+    InstallHooks,
 
     /// Report drift across all repair surfaces. Read-only; never mutates state.
     Check {
@@ -172,6 +182,9 @@ pub(crate) enum Command {
         #[arg(long)]
         json: bool,
     },
+
+    /// Run an ephemeral in-memory compile for CI/PR comments.
+    CiRun(CiRunArgs),
 
     /// Return bounded card suggestions for a task query.
     Cards {
@@ -231,9 +244,10 @@ pub(crate) enum Command {
     #[command(subcommand)]
     Graph(GraphCommand),
 
-    /// Dump a node's metadata by ID.
+    /// Dump a node's metadata by ID, file path, or symbol name.
     Node {
-        /// The node ID in display format (for example `file_0000000000000042`).
+        /// A file path (e.g. `src/lib.rs`), qualified symbol name (e.g.
+        /// `my_mod::MyStruct`), or node ID (e.g. `file_0000000000000042`).
         id: String,
     },
     /// Watch the current repository and keep `.synrepo/` fresh.

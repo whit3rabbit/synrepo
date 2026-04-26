@@ -18,12 +18,7 @@ pub(crate) fn run_mcp_server(repo_root: &Path) -> anyhow::Result<()> {
 
 /// Load config and gate on storage compatibility.
 pub(crate) fn prepare_state(repo_root: &Path) -> anyhow::Result<SynrepoState> {
-    let config = Config::load(repo_root).with_context(|| {
-        format!(
-            "Could not load config from {}/.synrepo/config.toml — run `synrepo init` first",
-            repo_root.display()
-        )
-    })?;
+    let config = Config::load(repo_root).context("run `synrepo init` to initialize")?;
 
     let synrepo_dir = Config::synrepo_dir(repo_root);
     check_store_ready(&synrepo_dir, &config, StoreId::Graph)?;
@@ -36,9 +31,18 @@ pub(crate) fn prepare_state(repo_root: &Path) -> anyhow::Result<SynrepoState> {
     })
 }
 
+struct CleanupGuard(SynrepoServer);
+
+impl Drop for CleanupGuard {
+    fn drop(&mut self) {
+        self.0.stop_auto_started_watchers();
+    }
+}
+
 async fn serve(repo_root: &Path) -> anyhow::Result<()> {
     let state = prepare_state(repo_root)?;
     let server = SynrepoServer::new(state);
+    let _guard = CleanupGuard(server.clone());
     let service = server.serve(stdio()).await?;
     service.waiting().await?;
     Ok(())

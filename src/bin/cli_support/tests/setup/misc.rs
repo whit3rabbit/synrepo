@@ -19,7 +19,7 @@ fn opencode_preserves_unknown_keys() {
     )
     .unwrap();
 
-    setup_opencode_mcp(dir.path()).unwrap();
+    setup_opencode_mcp(dir.path(), false).unwrap();
 
     let parsed: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
@@ -31,9 +31,9 @@ fn opencode_preserves_unknown_keys() {
 #[test]
 fn opencode_idempotent_on_rerun() {
     let dir = tempdir().unwrap();
-    setup_opencode_mcp(dir.path()).unwrap();
+    setup_opencode_mcp(dir.path(), false).unwrap();
     let first = fs::read(dir.path().join("opencode.json")).unwrap();
-    setup_opencode_mcp(dir.path()).unwrap();
+    setup_opencode_mcp(dir.path(), false).unwrap();
     let second = fs::read(dir.path().join("opencode.json")).unwrap();
     assert_eq!(first, second);
 }
@@ -43,7 +43,7 @@ fn opencode_idempotent_on_rerun() {
 #[test]
 fn claude_setup_leaves_no_leftover_temp_files() {
     let dir = tempdir().unwrap();
-    setup_claude_mcp(dir.path()).unwrap();
+    setup_claude_mcp(dir.path(), false).unwrap();
 
     for entry in fs::read_dir(dir.path()).unwrap() {
         let entry = entry.unwrap();
@@ -61,7 +61,7 @@ fn claude_setup_leaves_no_leftover_temp_files() {
 #[test]
 fn codex_setup_leaves_no_leftover_temp_files() {
     let dir = tempdir().unwrap();
-    setup_codex_mcp(dir.path()).unwrap();
+    setup_codex_mcp(dir.path(), false).unwrap();
 
     let codex_dir = dir.path().join(".codex");
     for entry in fs::read_dir(&codex_dir).unwrap() {

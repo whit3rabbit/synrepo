@@ -2,7 +2,12 @@ use std::str::FromStr;
 
 use crate::{core::ids::NodeId, structure::graph::GraphReader};
 
-pub(super) fn resolve_target(
+/// Resolve a human-readable target string to a [`NodeId`].
+///
+/// Attempts, in order: (1) formal node ID parse, (2) exact file path lookup,
+/// (3) exact symbol name match (qualified or short), (4) substring match on
+/// qualified name. Returns `Ok(None)` when no candidate matches.
+pub fn resolve_target(
     graph: &dyn GraphReader,
     target: &str,
 ) -> crate::Result<Option<NodeId>> {

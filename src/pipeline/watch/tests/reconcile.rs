@@ -21,7 +21,7 @@ use super::setup_test_repo;
 fn reconcile_pass_completes_on_valid_repo() {
     let (_dir, repo, config, synrepo_dir) = setup_test_repo();
 
-    let outcome = run_reconcile_pass(&repo, &config, &synrepo_dir);
+    let outcome = run_reconcile_pass(&repo, &config, &synrepo_dir, false);
     match outcome {
         ReconcileOutcome::Completed(summary) => {
             assert!(summary.files_discovered >= 1);
@@ -48,7 +48,7 @@ fn reconcile_pass_returns_lock_conflict_when_lock_is_held() {
     };
     let _flock = crate::pipeline::writer::hold_writer_flock_with_ownership(&lock_path, &owner);
 
-    let outcome = run_reconcile_pass(&repo, &config, &synrepo_dir);
+    let outcome = run_reconcile_pass(&repo, &config, &synrepo_dir, false);
     assert!(matches!(
         outcome,
         ReconcileOutcome::LockConflict { holder_pid } if holder_pid == foreign_pid
@@ -61,13 +61,13 @@ fn reconcile_pass_returns_lock_conflict_when_lock_is_held() {
 fn reconcile_pass_corrects_stale_graph_state() {
     let _guard = crate::test_support::global_test_lock("watch-reconcile-refresh");
     let (_dir, repo, config, synrepo_dir) = setup_test_repo();
-    let first = run_reconcile_pass(&repo, &config, &synrepo_dir);
+    let first = run_reconcile_pass(&repo, &config, &synrepo_dir, false);
     if !matches!(first, ReconcileOutcome::Completed(_)) {
         panic!("expected first pass Completed, got {first:?}");
     }
 
     fs::write(repo.join("src/new.rs"), "pub fn new_fn() {}\n").unwrap();
-    let second = run_reconcile_pass(&repo, &config, &synrepo_dir);
+    let second = run_reconcile_pass(&repo, &config, &synrepo_dir, false);
     if let ReconcileOutcome::Completed(summary) = second {
         assert!(summary.files_discovered >= 2);
     } else {
@@ -111,7 +111,7 @@ fn reconcile_prunes_cross_link_orphans() {
     use crate::core::ids::{ConceptNodeId, NodeId, SymbolNodeId};
 
     let (_dir, repo, config, synrepo_dir) = setup_test_repo();
-    let first = run_reconcile_pass(&repo, &config, &synrepo_dir);
+    let first = run_reconcile_pass(&repo, &config, &synrepo_dir, false);
     if !matches!(first, ReconcileOutcome::Completed(_)) {
         panic!("expected first pass Completed, got {first:?}");
     }
@@ -151,7 +151,7 @@ fn reconcile_prunes_cross_link_orphans() {
         .unwrap();
     drop(overlay);
 
-    let second = run_reconcile_pass(&repo, &config, &synrepo_dir);
+    let second = run_reconcile_pass(&repo, &config, &synrepo_dir, false);
     if !matches!(second, ReconcileOutcome::Completed(_)) {
         panic!("expected second pass Completed after cross-link insert, got {second:?}");
     }
@@ -225,7 +225,7 @@ fn reconcile_emits_cochange_edges_on_repo_with_multi_file_commits() {
     .unwrap();
 
     let config = crate::config::Config::default();
-    let outcome = run_reconcile_pass(&repo, &config, &synrepo_dir);
+    let outcome = run_reconcile_pass(&repo, &config, &synrepo_dir, false);
     if !matches!(outcome, ReconcileOutcome::Completed(_)) {
         panic!("expected Completed on multi-file-commit repo, got {outcome:?}");
     }

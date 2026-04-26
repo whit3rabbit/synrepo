@@ -11,24 +11,32 @@ use synrepo::{
         sqlite::SqliteGraphStore,
     },
     structure::graph::{with_graph_read_snapshot, EdgeKind, Epistemic},
-    surface::card::FileGitIntelligence,
+    surface::card::{resolve_target, FileGitIntelligence},
     NodeId,
 };
 
 const FILE_NODE_GIT_INSIGHT_LIMIT: usize = 5;
 
-/// Query the graph by direction, node ID, and optional edge kind.
+/// Query the graph by direction, target, and optional edge kind.
 pub(crate) fn graph_query_output(repo_root: &Path, query: &str) -> anyhow::Result<String> {
     let store = open_graph_store_for_read(repo_root)?;
     let parsed = parse_graph_query(query)?;
+
+    let node_id = if let Ok(nid) = parsed.target.parse::<NodeId>() {
+        nid
+    } else {
+        with_graph_read_snapshot(&store, |graph| resolve_target(graph, &parsed.target))?
+            .ok_or_else(|| anyhow::anyhow!("target not found: {}", parsed.target))?
+    };
+
     let edges = with_graph_read_snapshot(&store, |graph| match parsed.direction {
-        QueryDirection::Outbound => graph.outbound(parsed.node_id, parsed.edge_kind),
-        QueryDirection::Inbound => graph.inbound(parsed.node_id, parsed.edge_kind),
+        QueryDirection::Outbound => graph.outbound(node_id, parsed.edge_kind),
+        QueryDirection::Inbound => graph.inbound(node_id, parsed.edge_kind),
     })?;
 
     render_json(&GraphQueryOutput {
         direction: parsed.direction.as_str(),
-        node_id: parsed.node_id.to_string(),
+        node_id: node_id.to_string(),
         edge_kind: parsed.edge_kind.map(|kind| kind.as_str().to_string()),
         edges: edges.into_iter().map(RenderedEdge::from).collect(),
     })
@@ -45,11 +53,17 @@ pub(crate) fn graph_stats_output(repo_root: &Path) -> anyhow::Result<String> {
     render_json(&stats)
 }
 
-/// Retrieve the full JSON output of a specific node by ID.
+/// Retrieve the full JSON output of a specific node by ID or path.
 pub(crate) fn node_output(repo_root: &Path, id: &str) -> anyhow::Result<String> {
     let config = Config::load(repo_root)?;
     let store = open_graph_store_for_read(repo_root)?;
-    let node_id = id.parse::<NodeId>()?;
+
+    let node_id = if let Ok(nid) = id.parse::<NodeId>() {
+        nid
+    } else {
+        with_graph_read_snapshot(&store, |graph| resolve_target(graph, id))?
+            .ok_or_else(|| anyhow::anyhow!("target not found: {id}"))?
+    };
 
     // Read the graph node inside a single snapshot. Git intelligence reads
     // the on-disk repo rather than the graph, so it can run after the
@@ -65,6 +79,7 @@ pub(crate) fn node_output(repo_root: &Path, id: &str) -> anyhow::Result<String> 
         })
     })?;
 
+    let canonical_id = node_id.to_string();
     let payload = match node_fetch {
         Some(NodePayload::File { path, node }) => {
             let git_context = GitIntelligenceContext::inspect(repo_root, &config);
@@ -74,13 +89,13 @@ pub(crate) fn node_output(repo_root: &Path, id: &str) -> anyhow::Result<String> 
                 config.git_commit_depth as usize,
                 FILE_NODE_GIT_INSIGHT_LIMIT,
             )?);
-            json!({ "node_id": id, "node_type": "file", "node": node, "git_intelligence": git_intelligence })
+            json!({ "node_id": canonical_id, "node_type": "file", "node": node, "git_intelligence": git_intelligence })
         }
         Some(NodePayload::Symbol(node)) => {
-            json!({ "node_id": id, "node_type": "symbol", "node": node })
+            json!({ "node_id": canonical_id, "node_type": "symbol", "node": node })
         }
         Some(NodePayload::Concept(node)) => {
-            json!({ "node_id": id, "node_type": "concept", "node": node })
+            json!({ "node_id": canonical_id, "node_type": "concept", "node": node })
         }
         None => return Err(anyhow::anyhow!("node not found: {id}")),
     };
@@ -159,10 +174,10 @@ impl QueryDirection {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 struct GraphQuery {
     direction: QueryDirection,
-    node_id: NodeId,
+    target: String,
     edge_kind: Option<EdgeKind>,
 }
 
@@ -203,7 +218,7 @@ fn parse_graph_query(query: &str) -> anyhow::Result<GraphQuery> {
     let parts = query.split_whitespace().collect::<Vec<_>>();
     if parts.len() < 2 || parts.len() > 3 {
         anyhow::bail!(
-            "invalid graph query: expected `<direction> <node_id> [edge_kind]`, got `{query}`"
+            "invalid graph query: expected `<direction> <target> [edge_kind]`, got `{query}`"
         );
     }
 
@@ -215,7 +230,7 @@ fn parse_graph_query(query: &str) -> anyhow::Result<GraphQuery> {
 
     Ok(GraphQuery {
         direction,
-        node_id: parts[1].parse::<NodeId>()?,
+        target: parts[1].to_string(),
         edge_kind: parts
             .get(2)
             .map(|kind| kind.parse::<EdgeKind>())

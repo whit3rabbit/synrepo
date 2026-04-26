@@ -192,12 +192,12 @@ fn print_progress_to_stderr(progress: &SyncProgress) {
 }
 
 /// Reconcile the structural graph and update the index.
-pub(crate) fn reconcile(repo_root: &Path) -> anyhow::Result<()> {
+pub(crate) fn reconcile(repo_root: &Path, fast: bool) -> anyhow::Result<()> {
     let config = Config::load(repo_root)?;
     let synrepo_dir = Config::synrepo_dir(repo_root);
 
     if let Some(pid) = super::watch::active_watch_pid(&synrepo_dir)? {
-        match request_watch_control(&synrepo_dir, WatchControlRequest::ReconcileNow)? {
+        match request_watch_control(&synrepo_dir, WatchControlRequest::ReconcileNow { fast })? {
             WatchControlResponse::Reconcile {
                 outcome,
                 triggering_events,
@@ -215,7 +215,7 @@ pub(crate) fn reconcile(repo_root: &Path) -> anyhow::Result<()> {
         }
     } else {
         let outcome =
-            synrepo::pipeline::watch::run_reconcile_pass(repo_root, &config, &synrepo_dir);
+            synrepo::pipeline::watch::run_reconcile_pass(repo_root, &config, &synrepo_dir, fast);
         synrepo::pipeline::watch::persist_reconcile_state(&synrepo_dir, &outcome, 0);
         report_reconcile_outcome(&outcome, 0)
     }

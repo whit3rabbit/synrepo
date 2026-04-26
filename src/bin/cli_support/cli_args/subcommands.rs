@@ -1,6 +1,22 @@
 //! Secondary subcommand enums used by `Command`.
 
-use clap::Subcommand;
+use clap::{Args, Subcommand};
+
+#[derive(Args)]
+pub(crate) struct CiRunArgs {
+    /// Target file path, node ID, or symbol name. Repeat to include several cards.
+    #[arg(long = "target")]
+    pub(crate) targets: Vec<String>,
+    /// Add changed files from `git diff --name-only <ref>...HEAD`.
+    #[arg(long)]
+    pub(crate) changed_from: Option<String>,
+    /// Budget tier: tiny, normal, or deep. Defaults to tiny.
+    #[arg(long, short)]
+    pub(crate) budget: Option<String>,
+    /// Emit JSON instead of markdown text.
+    #[arg(long)]
+    pub(crate) json: bool,
+}
 
 #[derive(Subcommand)]
 pub(crate) enum WatchCommand {
@@ -195,7 +211,8 @@ pub(crate) enum NotesCommand {
 pub(crate) enum GraphCommand {
     /// Run a narrow traversal query against the graph store.
     Query {
-        /// Query syntax: `<direction> <node_id> [edge_kind]`.
+        /// Query syntax: `<direction> <target> [edge_kind]`.
+        /// `<target>` accepts a file path, qualified symbol name, or node ID.
         q: String,
     },
 

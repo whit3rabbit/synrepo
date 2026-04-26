@@ -1,6 +1,8 @@
 //! `synrepo mcp` subcommand — starts the MCP server over stdio.
 
 use std::sync::Arc;
+use std::collections::{HashMap, HashSet};
+use parking_lot::RwLock;
 
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
@@ -11,17 +13,85 @@ use synrepo::surface::handoffs::HandoffsRequest;
 use synrepo::surface::handoffs::{collect_handoffs, to_json as handoffs_to_json};
 use synrepo::surface::mcp::{audit, cards, docs, notes, primitives, search, SynrepoState};
 
-#[derive(Clone)]
 pub(crate) struct SynrepoServer {
-    state: Arc<SynrepoState>,
+    states: Arc<RwLock<HashMap<std::path::PathBuf, Arc<SynrepoState>>>>,
+    auto_started_roots: Arc<RwLock<HashSet<std::path::PathBuf>>>,
+    default_repo_root: std::path::PathBuf,
     tool_router: ToolRouter<Self>,
+}
+
+impl Clone for SynrepoServer {
+    fn clone(&self) -> Self {
+        Self {
+            states: Arc::clone(&self.states),
+            auto_started_roots: Arc::clone(&self.auto_started_roots),
+            default_repo_root: self.default_repo_root.clone(),
+            tool_router: self.tool_router.clone(),
+        }
+    }
 }
 
 impl SynrepoServer {
     pub(crate) fn new(state: SynrepoState) -> Self {
-        Self {
-            state: Arc::new(state),
+        let repo_root = state.repo_root.clone();
+        let mut states = HashMap::new();
+        states.insert(repo_root.clone(), Arc::new(state));
+        let auto_started_roots = HashSet::new();
+        let server = Self {
+            states: Arc::new(RwLock::new(states)),
+            auto_started_roots: Arc::new(RwLock::new(auto_started_roots)),
+            default_repo_root: repo_root.clone(),
             tool_router: Self::tool_router(),
+        };
+
+        // Auto-trigger watch daemon for the default root.
+        if let Ok(Some(_)) = super::watch::maybe_spawn_watch_daemon(&repo_root) {
+            server.auto_started_roots.write().insert(repo_root);
+        }
+
+        server
+    }
+
+    fn resolve_state(&self, param_root: Option<std::path::PathBuf>) -> Arc<SynrepoState> {
+        let root = param_root.unwrap_or_else(|| self.default_repo_root.clone());
+        {
+            let read = self.states.read();
+            if let Some(state) = read.get(&root) {
+                return Arc::clone(state);
+            }
+        }
+
+        let mut write = self.states.write();
+        if let Some(state) = write.get(&root) {
+            return Arc::clone(state);
+        }
+
+        match super::mcp_runtime::prepare_state(&root) {
+            Ok(state) => {
+                let state = Arc::new(state);
+                write.insert(root.clone(), Arc::clone(&state));
+
+                // Auto-trigger watch daemon for the newly resolved root.
+                if let Ok(Some(_)) = super::watch::maybe_spawn_watch_daemon(&root) {
+                    self.auto_started_roots.write().insert(root);
+                }
+
+                state
+            }
+            Err(_) => {
+                let default_root = self.default_repo_root.clone();
+                write.get(&default_root)
+                    .cloned()
+                    .expect("default state must exist")
+            }
+        }
+    }
+
+    /// Stop all watch daemons that were auto-started by this server instance.
+    pub(crate) fn stop_auto_started_watchers(&self) {
+        let mut roots = self.auto_started_roots.write();
+        for root in roots.drain() {
+            let _ = super::watch::watch_stop(&root);
         }
     }
 
@@ -30,7 +100,8 @@ impl SynrepoServer {
     /// card-level counters so the two categories never collapse into a
     /// single aggregate.
     fn record_workflow(&self, tool: &str) {
-        let synrepo_dir = synrepo::config::Config::synrepo_dir(&self.state.repo_root);
+        let state = self.resolve_state(None);
+        let synrepo_dir = synrepo::config::Config::synrepo_dir(&state.repo_root);
         synrepo::pipeline::context_metrics::record_workflow_call_best_effort(&synrepo_dir, tool);
     }
 }
@@ -60,7 +131,7 @@ impl SynrepoServer {
     )]
     async fn synrepo_card(&self, Parameters(params): Parameters<cards::CardParams>) -> String {
         cards::handle_card(
-            &self.state,
+            &self.resolve_state(params.repo_root.clone()),
             params.target,
             params.budget,
             params.budget_tokens,
@@ -73,7 +144,7 @@ impl SynrepoServer {
         description = "Search the repository using lexical queries."
     )]
     async fn synrepo_search(&self, Parameters(params): Parameters<search::SearchParams>) -> String {
-        search::handle_search(&self.state, params.query, params.limit)
+        search::handle_search(&self.resolve_state(params.repo_root.clone()), params.query, params.limit)
     }
 
     #[tool(
@@ -84,7 +155,7 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<docs::DocsSearchParams>,
     ) -> String {
-        docs::handle_docs_search(&self.state, params.query, params.limit)
+        docs::handle_docs_search(&self.resolve_state(params.repo_root.clone()), params.query, params.limit)
     }
 
     #[tool(
@@ -92,7 +163,7 @@ impl SynrepoServer {
         description = "Return a high-level overview of the repository graph state."
     )]
     async fn synrepo_overview(&self) -> String {
-        search::handle_overview(&self.state)
+        search::handle_overview(&self.resolve_state(None))
     }
 
     #[tool(
@@ -100,7 +171,7 @@ impl SynrepoServer {
         description = "Look up a graph node by display ID. Returns full stored metadata as JSON."
     )]
     async fn synrepo_node(&self, Parameters(params): Parameters<primitives::NodeParams>) -> String {
-        primitives::handle_node(&self.state, params.id)
+        primitives::handle_node(&self.resolve_state(params.repo_root.clone()), params.id)
     }
 
     #[tool(
@@ -111,7 +182,7 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<primitives::EdgesParams>,
     ) -> String {
-        primitives::handle_edges(&self.state, params.id, params.direction, params.edge_types)
+        primitives::handle_edges(&self.resolve_state(None), params.id, params.direction, params.edge_types)
     }
 
     #[tool(
@@ -122,7 +193,7 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<primitives::QueryParams>,
     ) -> String {
-        primitives::handle_query(&self.state, params.query)
+        primitives::handle_query(&self.resolve_state(None), params.query)
     }
 
     #[tool(
@@ -133,7 +204,7 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<primitives::OverlayParams>,
     ) -> String {
-        primitives::handle_overlay(&self.state, params.id)
+        primitives::handle_overlay(&self.resolve_state(None), params.id)
     }
 
     #[tool(
@@ -144,7 +215,7 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<primitives::ProvenanceParams>,
     ) -> String {
-        primitives::handle_provenance(&self.state, params.id)
+        primitives::handle_provenance(&self.resolve_state(None), params.id)
     }
 
     #[tool(
@@ -155,7 +226,7 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<search::WhereToEditParams>,
     ) -> String {
-        search::handle_where_to_edit(&self.state, params.task, params.limit, params.budget_tokens)
+        search::handle_where_to_edit(&self.resolve_state(None), params.task, params.limit, params.budget_tokens)
     }
 
     #[tool(
@@ -166,7 +237,7 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<search::ChangeImpactParams>,
     ) -> String {
-        search::handle_change_impact(&self.state, params.target)
+        search::handle_change_impact(&self.resolve_state(None), params.target)
     }
 
     #[tool(
@@ -178,7 +249,7 @@ impl SynrepoServer {
         Parameters(params): Parameters<cards::EntrypointsParams>,
     ) -> String {
         cards::handle_entrypoints(
-            &self.state,
+            &self.resolve_state(None),
             params.scope,
             params.budget,
             params.budget_tokens,
@@ -193,7 +264,7 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<notes::NoteAddParams>,
     ) -> String {
-        notes::handle_note_add(&self.state, params)
+        notes::handle_note_add(&self.resolve_state(None), params)
     }
 
     #[tool(
@@ -204,7 +275,7 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<notes::NoteLinkParams>,
     ) -> String {
-        notes::handle_note_link(&self.state, params)
+        notes::handle_note_link(&self.resolve_state(None), params)
     }
 
     #[tool(
@@ -215,7 +286,7 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<notes::NoteSupersedeParams>,
     ) -> String {
-        notes::handle_note_supersede(&self.state, params)
+        notes::handle_note_supersede(&self.resolve_state(None), params)
     }
 
     #[tool(
@@ -226,7 +297,7 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<notes::NoteForgetParams>,
     ) -> String {
-        notes::handle_note_forget(&self.state, params)
+        notes::handle_note_forget(&self.resolve_state(None), params)
     }
 
     #[tool(
@@ -237,7 +308,7 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<notes::NoteVerifyParams>,
     ) -> String {
-        notes::handle_note_verify(&self.state, params)
+        notes::handle_note_verify(&self.resolve_state(None), params)
     }
 
     #[tool(
@@ -245,7 +316,7 @@ impl SynrepoServer {
         description = "List bounded advisory overlay notes. Hidden lifecycle states require include_hidden=true."
     )]
     async fn synrepo_notes(&self, Parameters(params): Parameters<notes::NotesParams>) -> String {
-        notes::handle_notes(&self.state, params)
+        notes::handle_notes(&self.resolve_state(params.repo_root.clone()), params)
     }
 
     #[tool(
@@ -257,7 +328,7 @@ impl SynrepoServer {
         Parameters(params): Parameters<cards::ModuleCardParams>,
     ) -> String {
         cards::handle_module_card(
-            &self.state,
+            &self.resolve_state(None),
             params.path,
             params.budget,
             params.budget_tokens,
@@ -273,7 +344,7 @@ impl SynrepoServer {
         Parameters(params): Parameters<cards::PublicAPICardParams>,
     ) -> String {
         cards::handle_public_api(
-            &self.state,
+            &self.resolve_state(None),
             params.path,
             params.budget,
             params.budget_tokens,
@@ -290,7 +361,7 @@ impl SynrepoServer {
     ) -> String {
         self.record_workflow("minimum_context");
         cards::handle_minimum_context(
-            &self.state,
+            &self.resolve_state(None),
             params.target,
             params.budget,
             params.budget_tokens,
@@ -306,7 +377,7 @@ impl SynrepoServer {
         Parameters(params): Parameters<cards::CallPathParams>,
     ) -> String {
         cards::handle_call_path(
-            &self.state,
+            &self.resolve_state(None),
             params.target,
             params.budget,
             params.budget_tokens,
@@ -322,7 +393,7 @@ impl SynrepoServer {
         Parameters(params): Parameters<cards::TestSurfaceParams>,
     ) -> String {
         cards::handle_test_surface(
-            &self.state,
+            &self.resolve_state(None),
             params.scope,
             params.budget,
             params.budget_tokens,
@@ -338,7 +409,7 @@ impl SynrepoServer {
         Parameters(params): Parameters<cards::ChangeRiskParams>,
     ) -> String {
         cards::handle_change_risk(
-            &self.state,
+            &self.resolve_state(None),
             params.target,
             params.budget,
             params.budget_tokens,
@@ -351,7 +422,7 @@ impl SynrepoServer {
     )]
     async fn synrepo_orient(&self) -> String {
         self.record_workflow("orient");
-        search::handle_overview(&self.state)
+        search::handle_overview(&self.resolve_state(None))
     }
 
     #[tool(
@@ -363,7 +434,7 @@ impl SynrepoServer {
         Parameters(params): Parameters<search::WhereToEditParams>,
     ) -> String {
         self.record_workflow("find");
-        search::handle_where_to_edit(&self.state, params.task, params.limit, params.budget_tokens)
+        search::handle_where_to_edit(&self.resolve_state(None), params.task, params.limit, params.budget_tokens)
     }
 
     #[tool(
@@ -373,7 +444,7 @@ impl SynrepoServer {
     async fn synrepo_explain(&self, Parameters(params): Parameters<cards::CardParams>) -> String {
         self.record_workflow("explain");
         cards::handle_card(
-            &self.state,
+            &self.resolve_state(params.repo_root.clone()),
             params.target,
             params.budget,
             params.budget_tokens,
@@ -391,7 +462,7 @@ impl SynrepoServer {
     ) -> String {
         self.record_workflow("impact");
         cards::handle_change_risk(
-            &self.state,
+            &self.resolve_state(None),
             params.target,
             params.budget,
             params.budget_tokens,
@@ -408,7 +479,7 @@ impl SynrepoServer {
     ) -> String {
         self.record_workflow("risks");
         cards::handle_change_risk(
-            &self.state,
+            &self.resolve_state(None),
             params.target,
             params.budget,
             params.budget_tokens,
@@ -425,7 +496,7 @@ impl SynrepoServer {
     ) -> String {
         self.record_workflow("tests");
         cards::handle_test_surface(
-            &self.state,
+            &self.resolve_state(None),
             params.scope,
             params.budget,
             params.budget_tokens,
@@ -438,7 +509,7 @@ impl SynrepoServer {
     )]
     async fn synrepo_changed(&self) -> String {
         self.record_workflow("changed");
-        search::handle_changed(&self.state)
+        search::handle_changed(&self.resolve_state(None))
     }
 
     #[tool(
@@ -449,7 +520,7 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<cards::RefreshCommentaryParams>,
     ) -> String {
-        cards::handle_refresh_commentary(&self.state, params.target)
+        cards::handle_refresh_commentary(&self.resolve_state(None), params.target)
     }
 
     #[tool(
@@ -461,7 +532,7 @@ impl SynrepoServer {
         Parameters(params): Parameters<audit::FindingsParams>,
     ) -> String {
         audit::handle_findings(
-            &self.state.repo_root,
+            &self.resolve_state(None).repo_root,
             params.node_id,
             params.kind,
             params.freshness,
@@ -477,7 +548,7 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<audit::RecentActivityParams>,
     ) -> String {
-        audit::handle_recent_activity(&self.state, params.kinds, params.limit, params.since)
+        audit::handle_recent_activity(&self.resolve_state(None), params.kinds, params.limit, params.since)
     }
 
     #[tool(
@@ -492,7 +563,7 @@ impl SynrepoServer {
             limit: params.limit.unwrap_or(20),
             since_days: params.since_days.unwrap_or(30),
         };
-        match collect_handoffs(&self.state.repo_root, &self.state.config, &request) {
+        match collect_handoffs(&self.resolve_state(None).repo_root, &self.resolve_state(None).config, &request) {
             Ok(items) => handoffs_to_json(&items),
             Err(e) => serde_json::json!({
                 "error": e.to_string()

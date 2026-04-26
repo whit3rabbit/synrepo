@@ -81,7 +81,7 @@ fn reconcile_rebuilds_vectors_index_after_deletion() {
     assert!(!vectors_dir.exists(), "vectors directory must be deleted");
 
     // Run reconcile
-    super::super::commands::reconcile(repo.path()).unwrap();
+    super::super::commands::reconcile(repo.path(), false).unwrap();
 
     // Verify index is rebuilt
     assert!(
@@ -101,7 +101,7 @@ fn reconcile_completes_on_initialized_repo() {
     std::fs::write(repo.path().join("src/lib.rs"), "pub fn greet() {}\n").unwrap();
     bootstrap(repo.path(), None, false).unwrap();
 
-    super::super::commands::reconcile(repo.path()).unwrap();
+    super::super::commands::reconcile(repo.path(), false).unwrap();
 
     let synrepo_dir = synrepo::config::Config::synrepo_dir(repo.path());
     let state = synrepo::pipeline::watch::load_reconcile_state(&synrepo_dir)
@@ -130,7 +130,7 @@ fn reconcile_refreshes_the_search_index() {
     )
     .unwrap();
 
-    super::super::commands::reconcile(repo.path()).unwrap();
+    super::super::commands::reconcile(repo.path(), false).unwrap();
 
     let config = Config::load(repo.path()).unwrap();
     let old_matches = synrepo::substrate::search(&config, repo.path(), "old token").unwrap();
@@ -162,7 +162,7 @@ fn reconcile_returns_lock_conflict_error_when_writer_busy() {
     // a real conflict; the JSON is there only for display.
     let _flock = hold_writer_flock_with_ownership(&writer_lock_path(&synrepo_dir), &ownership);
 
-    let err = super::super::commands::reconcile(repo.path()).unwrap_err();
+    let err = super::super::commands::reconcile(repo.path(), false).unwrap_err();
     let msg = err.to_string();
     assert!(
         msg.contains("writer lock") && msg.contains(&pid.to_string()),

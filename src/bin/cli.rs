@@ -88,11 +88,12 @@ fn dispatch(command: Command, repo_root: &Path, tui_opts: TuiOptions) -> anyhow:
             force,
             explain,
             gitignore,
+            global,
         } => {
             let any_target = tool.is_some() || !only.is_empty() || !skip.is_empty();
             if any_target {
                 let resolution = resolve_tool_resolution(tool, &only, &skip)?;
-                setup_many_resolved(repo_root, &resolution, force, gitignore)?;
+                setup_many_resolved(repo_root, &resolution, force, gitignore, global)?;
                 if explain {
                     cli_support::setup_cmd::run_explain_step(repo_root, tui_opts)?;
                 }
@@ -111,6 +112,9 @@ fn dispatch(command: Command, repo_root: &Path, tui_opts: TuiOptions) -> anyhow:
             if gitignore {
                 bad_flags.push("--gitignore");
             }
+            if global {
+                bad_flags.push("--global");
+            }
             if !bad_flags.is_empty() {
                 anyhow::bail!(
                     "`synrepo setup` without a tool launches the interactive wizard; \
@@ -128,7 +132,8 @@ fn dispatch(command: Command, repo_root: &Path, tui_opts: TuiOptions) -> anyhow:
             }
             cli_support::setup_cmd::run_wizard_and_apply(repo_root, tui_opts)
         }
-        Command::Reconcile => reconcile(repo_root),
+        Command::Reconcile { fast } => reconcile(repo_root, fast),
+        Command::InstallHooks => cli_support::commands::install_hooks(repo_root),
         Command::Check { json } => check(repo_root, json),
         Command::Sync {
             json,
@@ -345,6 +350,7 @@ fn dispatch(command: Command, repo_root: &Path, tui_opts: TuiOptions) -> anyhow:
             budget,
             json,
         } => change_risk(repo_root, &target, budget.as_deref(), json),
+        Command::CiRun(args) => cli_support::commands::ci_run(repo_root, args),
         Command::Handoffs { limit, since, json } => handoffs(repo_root, limit, since, json),
         Command::WatchInternal => watch_internal(repo_root),
         Command::Doctor { json } => doctor(repo_root, json),

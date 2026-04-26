@@ -28,6 +28,7 @@ pub(crate) fn setup(
     tool: AgentTool,
     force: bool,
     gitignore: bool,
+    global: bool,
 ) -> anyhow::Result<()> {
     println!("Setting up synrepo for {}...", tool.display_name());
 
@@ -35,7 +36,7 @@ pub(crate) fn setup(
     // Back up the tool's MCP config before any mutation so `synrepo remove`
     // can preserve the stored path as a `.bak` sidecar.
     let backup = step_backup_mcp_config(repo_root, tool)?;
-    step_apply_integration(repo_root, tool, force)?;
+    step_apply_integration(repo_root, tool, force, global)?;
     step_ensure_ready(repo_root)?;
 
     let wrote_mcp = matches!(tool.automation_tier(), AutomationTier::Automated);
@@ -147,14 +148,15 @@ pub(crate) fn step_write_shim(
 pub(crate) fn step_register_mcp(
     repo_root: &Path,
     target: AgentTool,
+    global: bool,
 ) -> anyhow::Result<StepOutcome> {
     match target {
-        AgentTool::Claude => mcp_register::setup_claude_mcp(repo_root),
-        AgentTool::Codex => mcp_register::setup_codex_mcp(repo_root),
-        AgentTool::OpenCode => mcp_register::setup_opencode_mcp(repo_root),
-        AgentTool::Cursor => mcp_register::setup_cursor_mcp(repo_root),
-        AgentTool::Windsurf => mcp_register::setup_windsurf_mcp(repo_root),
-        AgentTool::Roo => mcp_register::setup_roo_mcp(repo_root),
+        AgentTool::Claude => mcp_register::setup_claude_mcp(repo_root, global),
+        AgentTool::Codex => mcp_register::setup_codex_mcp(repo_root, global),
+        AgentTool::OpenCode => mcp_register::setup_opencode_mcp(repo_root, global),
+        AgentTool::Cursor => mcp_register::setup_cursor_mcp(repo_root, global),
+        AgentTool::Windsurf => mcp_register::setup_windsurf_mcp(repo_root, global),
+        AgentTool::Roo => mcp_register::setup_roo_mcp(repo_root, global),
         other => {
             debug_assert_eq!(other.automation_tier(), AutomationTier::ShimOnly);
             println!(
@@ -172,9 +174,10 @@ pub(crate) fn step_apply_integration(
     repo_root: &Path,
     target: AgentTool,
     force: bool,
+    global: bool,
 ) -> anyhow::Result<StepOutcome> {
     let shim = step_write_shim(repo_root, target, force)?;
-    let mcp = step_register_mcp(repo_root, target)?;
+    let mcp = step_register_mcp(repo_root, target, global)?;
     Ok(match (shim, mcp) {
         (StepOutcome::Applied | StepOutcome::Updated, _) => StepOutcome::Applied,
         (_, StepOutcome::Applied) | (_, StepOutcome::Updated) => StepOutcome::Applied,
@@ -196,6 +199,6 @@ pub(crate) fn step_ensure_ready(repo_root: &Path) -> anyhow::Result<StepOutcome>
     }
 
     println!("  Running first reconcile pass...");
-    crate::cli_support::commands::repair::reconcile(repo_root)?;
+    crate::cli_support::commands::repair::reconcile(repo_root, false)?;
     Ok(StepOutcome::Applied)
 }

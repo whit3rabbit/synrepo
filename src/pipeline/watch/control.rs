@@ -22,7 +22,10 @@ pub enum WatchControlRequest {
     /// Stop the service and release the lease.
     Stop,
     /// Run one reconcile pass immediately.
-    ReconcileNow,
+    ReconcileNow {
+        /// Skip git-intensive stages.
+        fast: bool,
+    },
     /// Run one repair sync pass immediately, under the watch's writer lock.
     SyncNow {
         /// Sync-level options (cross-link generation toggles). Surface-level

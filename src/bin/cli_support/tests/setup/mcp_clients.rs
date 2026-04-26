@@ -14,7 +14,7 @@ fn claude_malformed_json_errors() {
     let original = "{ \"mcpServers\": invalid }";
     fs::write(&path, original).unwrap();
 
-    let err = setup_claude_mcp(dir.path()).expect_err("must error on malformed JSON");
+    let err = setup_claude_mcp(dir.path(), false).expect_err("must error on malformed JSON");
     assert!(
         err.to_string().contains("not valid JSON"),
         "error must name parse failure: {err}"
@@ -37,7 +37,7 @@ fn claude_preserves_unknown_keys() {
     )
     .unwrap();
 
-    setup_claude_mcp(dir.path()).unwrap();
+    setup_claude_mcp(dir.path(), false).unwrap();
 
     let parsed: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
@@ -55,9 +55,9 @@ fn claude_preserves_unknown_keys() {
 #[test]
 fn claude_duplicate_registration_idempotent() {
     let dir = tempdir().unwrap();
-    setup_claude_mcp(dir.path()).unwrap();
+    setup_claude_mcp(dir.path(), false).unwrap();
     let first = fs::read(dir.path().join(".mcp.json")).unwrap();
-    setup_claude_mcp(dir.path()).unwrap();
+    setup_claude_mcp(dir.path(), false).unwrap();
     let second = fs::read(dir.path().join(".mcp.json")).unwrap();
     assert_eq!(first, second, "rerun on identical content must be a no-op");
 }
@@ -77,7 +77,7 @@ fn claude_existing_different_synrepo_is_replaced() {
     )
     .unwrap();
 
-    setup_claude_mcp(dir.path()).unwrap();
+    setup_claude_mcp(dir.path(), false).unwrap();
 
     let parsed: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
@@ -92,7 +92,7 @@ fn claude_rejects_non_object_root() {
     let path = dir.path().join(".mcp.json");
     fs::write(&path, "[\"not\", \"an\", \"object\"]").unwrap();
 
-    let err = setup_claude_mcp(dir.path()).expect_err("must error on non-object root");
+    let err = setup_claude_mcp(dir.path(), false).expect_err("must error on non-object root");
     assert!(err.to_string().contains("not a JSON object"));
 }
 
@@ -105,7 +105,7 @@ fn cursor_malformed_json_errors() {
     fs::create_dir_all(dir.path().join(".cursor")).unwrap();
     fs::write(&path, "{ invalid }").unwrap();
 
-    let err = setup_cursor_mcp(dir.path()).expect_err("must error on malformed JSON");
+    let err = setup_cursor_mcp(dir.path(), false).expect_err("must error on malformed JSON");
     assert!(err.to_string().contains("not valid JSON"));
     let after = fs::read_to_string(&path).unwrap();
     assert_eq!(
@@ -129,7 +129,7 @@ fn cursor_preserves_unknown_keys() {
     )
     .unwrap();
 
-    setup_cursor_mcp(dir.path()).unwrap();
+    setup_cursor_mcp(dir.path(), false).unwrap();
 
     let parsed: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
@@ -147,9 +147,9 @@ fn cursor_preserves_unknown_keys() {
 #[test]
 fn cursor_duplicate_registration_idempotent() {
     let dir = tempdir().unwrap();
-    setup_cursor_mcp(dir.path()).unwrap();
+    setup_cursor_mcp(dir.path(), false).unwrap();
     let first = fs::read(dir.path().join(".cursor").join("mcp.json")).unwrap();
-    setup_cursor_mcp(dir.path()).unwrap();
+    setup_cursor_mcp(dir.path(), false).unwrap();
     let second = fs::read(dir.path().join(".cursor").join("mcp.json")).unwrap();
     assert_eq!(first, second, "rerun on identical content must be a no-op");
 }
@@ -170,7 +170,7 @@ fn cursor_existing_different_synrepo_is_replaced() {
     )
     .unwrap();
 
-    setup_cursor_mcp(dir.path()).unwrap();
+    setup_cursor_mcp(dir.path(), false).unwrap();
 
     let parsed: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
@@ -186,7 +186,7 @@ fn cursor_rejects_non_object_root() {
     let path = dir.path().join(".cursor").join("mcp.json");
     fs::write(&path, "[\"not\", \"an\", \"object\"]").unwrap();
 
-    let err = setup_cursor_mcp(dir.path()).expect_err("must error on non-object root");
+    let err = setup_cursor_mcp(dir.path(), false).expect_err("must error on non-object root");
     assert!(err.to_string().contains("not a JSON object"));
 }
 
@@ -199,7 +199,7 @@ fn windsurf_malformed_json_errors() {
     fs::create_dir_all(dir.path().join(".windsurf")).unwrap();
     fs::write(&path, "{ invalid }").unwrap();
 
-    let err = setup_windsurf_mcp(dir.path()).expect_err("must error on malformed JSON");
+    let err = setup_windsurf_mcp(dir.path(), false).expect_err("must error on malformed JSON");
     assert!(err.to_string().contains("not valid JSON"));
     let after = fs::read_to_string(&path).unwrap();
     assert_eq!(
@@ -223,7 +223,7 @@ fn windsurf_preserves_unknown_keys() {
     )
     .unwrap();
 
-    setup_windsurf_mcp(dir.path()).unwrap();
+    setup_windsurf_mcp(dir.path(), false).unwrap();
 
     let parsed: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
@@ -241,9 +241,9 @@ fn windsurf_preserves_unknown_keys() {
 #[test]
 fn windsurf_duplicate_registration_idempotent() {
     let dir = tempdir().unwrap();
-    setup_windsurf_mcp(dir.path()).unwrap();
+    setup_windsurf_mcp(dir.path(), false).unwrap();
     let first = fs::read(dir.path().join(".windsurf").join("mcp.json")).unwrap();
-    setup_windsurf_mcp(dir.path()).unwrap();
+    setup_windsurf_mcp(dir.path(), false).unwrap();
     let second = fs::read(dir.path().join(".windsurf").join("mcp.json")).unwrap();
     assert_eq!(first, second, "rerun on identical content must be a no-op");
 }
@@ -264,7 +264,7 @@ fn windsurf_existing_different_synrepo_is_replaced() {
     )
     .unwrap();
 
-    setup_windsurf_mcp(dir.path()).unwrap();
+    setup_windsurf_mcp(dir.path(), false).unwrap();
 
     let parsed: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
@@ -280,7 +280,7 @@ fn windsurf_rejects_non_object_root() {
     let path = dir.path().join(".windsurf").join("mcp.json");
     fs::write(&path, "[\"not\", \"an\", \"object\"]").unwrap();
 
-    let err = setup_windsurf_mcp(dir.path()).expect_err("must error on non-object root");
+    let err = setup_windsurf_mcp(dir.path(), false).expect_err("must error on non-object root");
     assert!(err.to_string().contains("not a JSON object"));
 }
 
@@ -293,7 +293,7 @@ fn roo_malformed_json_errors() {
     fs::create_dir_all(dir.path().join(".roo")).unwrap();
     fs::write(&path, "{ invalid }").unwrap();
 
-    let err = setup_roo_mcp(dir.path()).expect_err("must error on malformed JSON");
+    let err = setup_roo_mcp(dir.path(), false).expect_err("must error on malformed JSON");
     assert!(err.to_string().contains("not valid JSON"));
     let after = fs::read_to_string(&path).unwrap();
     assert_eq!(
@@ -317,7 +317,7 @@ fn roo_preserves_unknown_keys() {
     )
     .unwrap();
 
-    setup_roo_mcp(dir.path()).unwrap();
+    setup_roo_mcp(dir.path(), false).unwrap();
 
     let parsed: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
@@ -335,9 +335,9 @@ fn roo_preserves_unknown_keys() {
 #[test]
 fn roo_duplicate_registration_idempotent() {
     let dir = tempdir().unwrap();
-    setup_roo_mcp(dir.path()).unwrap();
+    setup_roo_mcp(dir.path(), false).unwrap();
     let first = fs::read(dir.path().join(".roo").join("mcp.json")).unwrap();
-    setup_roo_mcp(dir.path()).unwrap();
+    setup_roo_mcp(dir.path(), false).unwrap();
     let second = fs::read(dir.path().join(".roo").join("mcp.json")).unwrap();
     assert_eq!(first, second, "rerun on identical content must be a no-op");
 }
@@ -358,7 +358,7 @@ fn roo_existing_different_synrepo_is_replaced() {
     )
     .unwrap();
 
-    setup_roo_mcp(dir.path()).unwrap();
+    setup_roo_mcp(dir.path(), false).unwrap();
 
     let parsed: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
@@ -374,7 +374,7 @@ fn roo_rejects_non_object_root() {
     let path = dir.path().join(".roo").join("mcp.json");
     fs::write(&path, "[\"not\", \"an\", \"object\"]").unwrap();
 
-    let err = setup_roo_mcp(dir.path()).expect_err("must error on non-object root");
+    let err = setup_roo_mcp(dir.path(), false).expect_err("must error on non-object root");
     assert!(err.to_string().contains("not a JSON object"));
 }
 

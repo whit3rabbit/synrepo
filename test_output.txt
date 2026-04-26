@@ -1,0 +1,632 @@
+   Compiling synrepo v0.0.1 (/Users/whit3rabbit/Documents/GitHub/synrepo)
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+   --> src/bin/cli_support/tests/setup/codex.rs:14:15
+    |
+ 14 |     let err = setup_codex_mcp(dir.path()).expect_err("must error on malformed TOML");
+    |               ^^^^^^^^^^^^^^^------------ argument #2 of type `bool` is missing
+    |
+note: function defined here
+   --> src/bin/cli_support/commands/setup/mcp_register.rs:129:15
+    |
+129 | pub(crate) fn setup_codex_mcp(repo_root: &Path, _global: bool) -> anyhow::Result<StepOutcome> {
+    |               ^^^^^^^^^^^^^^^                   -------------
+help: provide the argument
+    |
+ 14 |     let err = setup_codex_mcp(dir.path(), /* bool */).expect_err("must error on malformed TOML");
+    |                                         ++++++++++++
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+   --> src/bin/cli_support/tests/setup/codex.rs:34:5
+    |
+ 34 |     setup_codex_mcp(dir.path()).unwrap();
+    |     ^^^^^^^^^^^^^^^------------ argument #2 of type `bool` is missing
+    |
+note: function defined here
+   --> src/bin/cli_support/commands/setup/mcp_register.rs:129:15
+    |
+129 | pub(crate) fn setup_codex_mcp(repo_root: &Path, _global: bool) -> anyhow::Result<StepOutcome> {
+    |               ^^^^^^^^^^^^^^^                   -------------
+help: provide the argument
+    |
+ 34 |     setup_codex_mcp(dir.path(), /* bool */).unwrap();
+    |                               ++++++++++++
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+   --> src/bin/cli_support/tests/setup/codex.rs:51:5
+    |
+ 51 |     setup_codex_mcp(dir.path()).unwrap();
+    |     ^^^^^^^^^^^^^^^------------ argument #2 of type `bool` is missing
+    |
+note: function defined here
+   --> src/bin/cli_support/commands/setup/mcp_register.rs:129:15
+    |
+129 | pub(crate) fn setup_codex_mcp(repo_root: &Path, _global: bool) -> anyhow::Result<StepOutcome> {
+    |               ^^^^^^^^^^^^^^^                   -------------
+help: provide the argument
+    |
+ 51 |     setup_codex_mcp(dir.path(), /* bool */).unwrap();
+    |                               ++++++++++++
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+   --> src/bin/cli_support/tests/setup/codex.rs:54:5
+    |
+ 54 |     setup_codex_mcp(dir.path()).unwrap();
+    |     ^^^^^^^^^^^^^^^------------ argument #2 of type `bool` is missing
+    |
+note: function defined here
+   --> src/bin/cli_support/commands/setup/mcp_register.rs:129:15
+    |
+129 | pub(crate) fn setup_codex_mcp(repo_root: &Path, _global: bool) -> anyhow::Result<StepOutcome> {
+    |               ^^^^^^^^^^^^^^^                   -------------
+help: provide the argument
+    |
+ 54 |     setup_codex_mcp(dir.path(), /* bool */).unwrap();
+    |                               ++++++++++++
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+   --> src/bin/cli_support/tests/setup/codex.rs:69:5
+    |
+ 69 |     setup_codex_mcp(dir.path()).unwrap();
+    |     ^^^^^^^^^^^^^^^------------ argument #2 of type `bool` is missing
+    |
+note: function defined here
+   --> src/bin/cli_support/commands/setup/mcp_register.rs:129:15
+    |
+129 | pub(crate) fn setup_codex_mcp(repo_root: &Path, _global: bool) -> anyhow::Result<StepOutcome> {
+    |               ^^^^^^^^^^^^^^^                   -------------
+help: provide the argument
+    |
+ 69 |     setup_codex_mcp(dir.path(), /* bool */).unwrap();
+    |                               ++++++++++++
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+   --> src/bin/cli_support/tests/setup/codex.rs:93:5
+    |
+ 93 |     setup_codex_mcp(dir.path()).unwrap();
+    |     ^^^^^^^^^^^^^^^------------ argument #2 of type `bool` is missing
+    |
+note: function defined here
+   --> src/bin/cli_support/commands/setup/mcp_register.rs:129:15
+    |
+129 | pub(crate) fn setup_codex_mcp(repo_root: &Path, _global: bool) -> anyhow::Result<StepOutcome> {
+    |               ^^^^^^^^^^^^^^^                   -------------
+help: provide the argument
+    |
+ 93 |     setup_codex_mcp(dir.path(), /* bool */).unwrap();
+    |                               ++++++++++++
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+   --> src/bin/cli_support/tests/setup/codex.rs:136:5
+    |
+136 |     setup_codex_mcp(dir.path()).unwrap();
+    |     ^^^^^^^^^^^^^^^------------ argument #2 of type `bool` is missing
+    |
+note: function defined here
+   --> src/bin/cli_support/commands/setup/mcp_register.rs:129:15
+    |
+129 | pub(crate) fn setup_codex_mcp(repo_root: &Path, _global: bool) -> anyhow::Result<StepOutcome> {
+    |               ^^^^^^^^^^^^^^^                   -------------
+help: provide the argument
+    |
+136 |     setup_codex_mcp(dir.path(), /* bool */).unwrap();
+    |                               ++++++++++++
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+   --> src/bin/cli_support/tests/setup/codex.rs:163:5
+    |
+163 |     setup_codex_mcp(dir.path()).unwrap();
+    |     ^^^^^^^^^^^^^^^------------ argument #2 of type `bool` is missing
+    |
+note: function defined here
+   --> src/bin/cli_support/commands/setup/mcp_register.rs:129:15
+    |
+129 | pub(crate) fn setup_codex_mcp(repo_root: &Path, _global: bool) -> anyhow::Result<StepOutcome> {
+    |               ^^^^^^^^^^^^^^^                   -------------
+help: provide the argument
+    |
+163 |     setup_codex_mcp(dir.path(), /* bool */).unwrap();
+    |                               ++++++++++++
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+   --> src/bin/cli_support/tests/setup/codex.rs:186:15
+    |
+186 |     let err = setup_codex_mcp(dir.path()).expect_err("must error on non-table mcp_servers");
+    |               ^^^^^^^^^^^^^^^------------ argument #2 of type `bool` is missing
+    |
+note: function defined here
+   --> src/bin/cli_support/commands/setup/mcp_register.rs:129:15
+    |
+129 | pub(crate) fn setup_codex_mcp(repo_root: &Path, _global: bool) -> anyhow::Result<StepOutcome> {
+    |               ^^^^^^^^^^^^^^^                   -------------
+help: provide the argument
+    |
+186 |     let err = setup_codex_mcp(dir.path(), /* bool */).expect_err("must error on non-table mcp_servers");
+    |                                         ++++++++++++
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+  --> src/bin/cli_support/tests/setup/mcp_clients.rs:17:15
+   |
+17 |     let err = setup_claude_mcp(dir.path()).expect_err("must error on malformed JSON");
+   |               ^^^^^^^^^^^^^^^^------------ argument #2 of type `bool` is missing
+   |
+note: function defined here
+  --> src/bin/cli_support/commands/setup/mcp_register.rs:54:15
+   |
+54 | pub(crate) fn setup_claude_mcp(repo_root: &Path, global: bool) -> anyhow::Result<StepOutcome> {
+   |               ^^^^^^^^^^^^^^^^                   ------------
+help: provide the argument
+   |
+17 |     let err = setup_claude_mcp(dir.path(), /* bool */).expect_err("must error on malformed JSON");
+   |                                          ++++++++++++
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+  --> src/bin/cli_support/tests/setup/mcp_clients.rs:40:5
+   |
+40 |     setup_claude_mcp(dir.path()).unwrap();
+   |     ^^^^^^^^^^^^^^^^------------ argument #2 of type `bool` is missing
+   |
+note: function defined here
+  --> src/bin/cli_support/commands/setup/mcp_register.rs:54:15
+   |
+54 | pub(crate) fn setup_claude_mcp(repo_root: &Path, global: bool) -> anyhow::Result<StepOutcome> {
+   |               ^^^^^^^^^^^^^^^^                   ------------
+help: provide the argument
+   |
+40 |     setup_claude_mcp(dir.path(), /* bool */).unwrap();
+   |                                ++++++++++++
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+  --> src/bin/cli_support/tests/setup/mcp_clients.rs:58:5
+   |
+58 |     setup_claude_mcp(dir.path()).unwrap();
+   |     ^^^^^^^^^^^^^^^^------------ argument #2 of type `bool` is missing
+   |
+note: function defined here
+  --> src/bin/cli_support/commands/setup/mcp_register.rs:54:15
+   |
+54 | pub(crate) fn setup_claude_mcp(repo_root: &Path, global: bool) -> anyhow::Result<StepOutcome> {
+   |               ^^^^^^^^^^^^^^^^                   ------------
+help: provide the argument
+   |
+58 |     setup_claude_mcp(dir.path(), /* bool */).unwrap();
+   |                                ++++++++++++
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+  --> src/bin/cli_support/tests/setup/mcp_clients.rs:60:5
+   |
+60 |     setup_claude_mcp(dir.path()).unwrap();
+   |     ^^^^^^^^^^^^^^^^------------ argument #2 of type `bool` is missing
+   |
+note: function defined here
+  --> src/bin/cli_support/commands/setup/mcp_register.rs:54:15
+   |
+54 | pub(crate) fn setup_claude_mcp(repo_root: &Path, global: bool) -> anyhow::Result<StepOutcome> {
+   |               ^^^^^^^^^^^^^^^^                   ------------
+help: provide the argument
+   |
+60 |     setup_claude_mcp(dir.path(), /* bool */).unwrap();
+   |                                ++++++++++++
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+  --> src/bin/cli_support/tests/setup/mcp_clients.rs:80:5
+   |
+80 |     setup_claude_mcp(dir.path()).unwrap();
+   |     ^^^^^^^^^^^^^^^^------------ argument #2 of type `bool` is missing
+   |
+note: function defined here
+  --> src/bin/cli_support/commands/setup/mcp_register.rs:54:15
+   |
+54 | pub(crate) fn setup_claude_mcp(repo_root: &Path, global: bool) -> anyhow::Result<StepOutcome> {
+   |               ^^^^^^^^^^^^^^^^                   ------------
+help: provide the argument
+   |
+80 |     setup_claude_mcp(dir.path(), /* bool */).unwrap();
+   |                                ++++++++++++
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+  --> src/bin/cli_support/tests/setup/mcp_clients.rs:95:15
+   |
+95 |     let err = setup_claude_mcp(dir.path()).expect_err("must error on non-object root");
+   |               ^^^^^^^^^^^^^^^^------------ argument #2 of type `bool` is missing
+   |
+note: function defined here
+  --> src/bin/cli_support/commands/setup/mcp_register.rs:54:15
+   |
+54 | pub(crate) fn setup_claude_mcp(repo_root: &Path, global: bool) -> anyhow::Result<StepOutcome> {
+   |               ^^^^^^^^^^^^^^^^                   ------------
+help: provide the argument
+   |
+95 |     let err = setup_claude_mcp(dir.path(), /* bool */).expect_err("must error on non-object root");
+   |                                          ++++++++++++
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+   --> src/bin/cli_support/tests/setup/mcp_clients.rs:108:15
+    |
+108 |     let err = setup_cursor_mcp(dir.path()).expect_err("must error on malformed JSON");
+    |               ^^^^^^^^^^^^^^^^------------ argument #2 of type `bool` is missing
+    |
+note: function defined here
+   --> src/bin/cli_support/commands/setup/mcp_register.rs:376:15
+    |
+376 | pub(crate) fn setup_cursor_mcp(repo_root: &Path, global: bool) -> anyhow::Result<StepOutcome> {
+    |               ^^^^^^^^^^^^^^^^                   ------------
+help: provide the argument
+    |
+108 |     let err = setup_cursor_mcp(dir.path(), /* bool */).expect_err("must error on malformed JSON");
+    |                                          ++++++++++++
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+   --> src/bin/cli_support/tests/setup/mcp_clients.rs:132:5
+    |
+132 |     setup_cursor_mcp(dir.path()).unwrap();
+    |     ^^^^^^^^^^^^^^^^------------ argument #2 of type `bool` is missing
+    |
+note: function defined here
+   --> src/bin/cli_support/commands/setup/mcp_register.rs:376:15
+    |
+376 | pub(crate) fn setup_cursor_mcp(repo_root: &Path, global: bool) -> anyhow::Result<StepOutcome> {
+    |               ^^^^^^^^^^^^^^^^                   ------------
+help: provide the argument
+    |
+132 |     setup_cursor_mcp(dir.path(), /* bool */).unwrap();
+    |                                ++++++++++++
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+   --> src/bin/cli_support/tests/setup/mcp_clients.rs:150:5
+    |
+150 |     setup_cursor_mcp(dir.path()).unwrap();
+    |     ^^^^^^^^^^^^^^^^------------ argument #2 of type `bool` is missing
+    |
+note: function defined here
+   --> src/bin/cli_support/commands/setup/mcp_register.rs:376:15
+    |
+376 | pub(crate) fn setup_cursor_mcp(repo_root: &Path, global: bool) -> anyhow::Result<StepOutcome> {
+    |               ^^^^^^^^^^^^^^^^                   ------------
+help: provide the argument
+    |
+150 |     setup_cursor_mcp(dir.path(), /* bool */).unwrap();
+    |                                ++++++++++++
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+   --> src/bin/cli_support/tests/setup/mcp_clients.rs:152:5
+    |
+152 |     setup_cursor_mcp(dir.path()).unwrap();
+    |     ^^^^^^^^^^^^^^^^------------ argument #2 of type `bool` is missing
+    |
+note: function defined here
+   --> src/bin/cli_support/commands/setup/mcp_register.rs:376:15
+    |
+376 | pub(crate) fn setup_cursor_mcp(repo_root: &Path, global: bool) -> anyhow::Result<StepOutcome> {
+    |               ^^^^^^^^^^^^^^^^                   ------------
+help: provide the argument
+    |
+152 |     setup_cursor_mcp(dir.path(), /* bool */).unwrap();
+    |                                ++++++++++++
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+   --> src/bin/cli_support/tests/setup/mcp_clients.rs:173:5
+    |
+173 |     setup_cursor_mcp(dir.path()).unwrap();
+    |     ^^^^^^^^^^^^^^^^------------ argument #2 of type `bool` is missing
+    |
+note: function defined here
+   --> src/bin/cli_support/commands/setup/mcp_register.rs:376:15
+    |
+376 | pub(crate) fn setup_cursor_mcp(repo_root: &Path, global: bool) -> anyhow::Result<StepOutcome> {
+    |               ^^^^^^^^^^^^^^^^                   ------------
+help: provide the argument
+    |
+173 |     setup_cursor_mcp(dir.path(), /* bool */).unwrap();
+    |                                ++++++++++++
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+   --> src/bin/cli_support/tests/setup/mcp_clients.rs:189:15
+    |
+189 |     let err = setup_cursor_mcp(dir.path()).expect_err("must error on non-object root");
+    |               ^^^^^^^^^^^^^^^^------------ argument #2 of type `bool` is missing
+    |
+note: function defined here
+   --> src/bin/cli_support/commands/setup/mcp_register.rs:376:15
+    |
+376 | pub(crate) fn setup_cursor_mcp(repo_root: &Path, global: bool) -> anyhow::Result<StepOutcome> {
+    |               ^^^^^^^^^^^^^^^^                   ------------
+help: provide the argument
+    |
+189 |     let err = setup_cursor_mcp(dir.path(), /* bool */).expect_err("must error on non-object root");
+    |                                          ++++++++++++
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+   --> src/bin/cli_support/tests/setup/mcp_clients.rs:202:15
+    |
+202 |     let err = setup_windsurf_mcp(dir.path()).expect_err("must error on malformed JSON");
+    |               ^^^^^^^^^^^^^^^^^^------------ argument #2 of type `bool` is missing
+    |
+note: function defined here
+   --> src/bin/cli_support/commands/setup/mcp_register.rs:380:15
+    |
+380 | pub(crate) fn setup_windsurf_mcp(repo_root: &Path, global: bool) -> anyhow::Result<StepOutcome> {
+    |               ^^^^^^^^^^^^^^^^^^                   ------------
+help: provide the argument
+    |
+202 |     let err = setup_windsurf_mcp(dir.path(), /* bool */).expect_err("must error on malformed JSON");
+    |                                            ++++++++++++
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+   --> src/bin/cli_support/tests/setup/mcp_clients.rs:226:5
+    |
+226 |     setup_windsurf_mcp(dir.path()).unwrap();
+    |     ^^^^^^^^^^^^^^^^^^------------ argument #2 of type `bool` is missing
+    |
+note: function defined here
+   --> src/bin/cli_support/commands/setup/mcp_register.rs:380:15
+    |
+380 | pub(crate) fn setup_windsurf_mcp(repo_root: &Path, global: bool) -> anyhow::Result<StepOutcome> {
+    |               ^^^^^^^^^^^^^^^^^^                   ------------
+help: provide the argument
+    |
+226 |     setup_windsurf_mcp(dir.path(), /* bool */).unwrap();
+    |                                  ++++++++++++
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+   --> src/bin/cli_support/tests/setup/mcp_clients.rs:244:5
+    |
+244 |     setup_windsurf_mcp(dir.path()).unwrap();
+    |     ^^^^^^^^^^^^^^^^^^------------ argument #2 of type `bool` is missing
+    |
+note: function defined here
+   --> src/bin/cli_support/commands/setup/mcp_register.rs:380:15
+    |
+380 | pub(crate) fn setup_windsurf_mcp(repo_root: &Path, global: bool) -> anyhow::Result<StepOutcome> {
+    |               ^^^^^^^^^^^^^^^^^^                   ------------
+help: provide the argument
+    |
+244 |     setup_windsurf_mcp(dir.path(), /* bool */).unwrap();
+    |                                  ++++++++++++
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+   --> src/bin/cli_support/tests/setup/mcp_clients.rs:246:5
+    |
+246 |     setup_windsurf_mcp(dir.path()).unwrap();
+    |     ^^^^^^^^^^^^^^^^^^------------ argument #2 of type `bool` is missing
+    |
+note: function defined here
+   --> src/bin/cli_support/commands/setup/mcp_register.rs:380:15
+    |
+380 | pub(crate) fn setup_windsurf_mcp(repo_root: &Path, global: bool) -> anyhow::Result<StepOutcome> {
+    |               ^^^^^^^^^^^^^^^^^^                   ------------
+help: provide the argument
+    |
+246 |     setup_windsurf_mcp(dir.path(), /* bool */).unwrap();
+    |                                  ++++++++++++
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+   --> src/bin/cli_support/tests/setup/mcp_clients.rs:267:5
+    |
+267 |     setup_windsurf_mcp(dir.path()).unwrap();
+    |     ^^^^^^^^^^^^^^^^^^------------ argument #2 of type `bool` is missing
+    |
+note: function defined here
+   --> src/bin/cli_support/commands/setup/mcp_register.rs:380:15
+    |
+380 | pub(crate) fn setup_windsurf_mcp(repo_root: &Path, global: bool) -> anyhow::Result<StepOutcome> {
+    |               ^^^^^^^^^^^^^^^^^^                   ------------
+help: provide the argument
+    |
+267 |     setup_windsurf_mcp(dir.path(), /* bool */).unwrap();
+    |                                  ++++++++++++
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+   --> src/bin/cli_support/tests/setup/mcp_clients.rs:283:15
+    |
+283 |     let err = setup_windsurf_mcp(dir.path()).expect_err("must error on non-object root");
+    |               ^^^^^^^^^^^^^^^^^^------------ argument #2 of type `bool` is missing
+    |
+note: function defined here
+   --> src/bin/cli_support/commands/setup/mcp_register.rs:380:15
+    |
+380 | pub(crate) fn setup_windsurf_mcp(repo_root: &Path, global: bool) -> anyhow::Result<StepOutcome> {
+    |               ^^^^^^^^^^^^^^^^^^                   ------------
+help: provide the argument
+    |
+283 |     let err = setup_windsurf_mcp(dir.path(), /* bool */).expect_err("must error on non-object root");
+    |                                            ++++++++++++
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+   --> src/bin/cli_support/tests/setup/mcp_clients.rs:296:15
+    |
+296 |     let err = setup_roo_mcp(dir.path()).expect_err("must error on malformed JSON");
+    |               ^^^^^^^^^^^^^------------ argument #2 of type `bool` is missing
+    |
+note: function defined here
+   --> src/bin/cli_support/commands/setup/mcp_register.rs:384:15
+    |
+384 | pub(crate) fn setup_roo_mcp(repo_root: &Path, global: bool) -> anyhow::Result<StepOutcome> {
+    |               ^^^^^^^^^^^^^                   ------------
+help: provide the argument
+    |
+296 |     let err = setup_roo_mcp(dir.path(), /* bool */).expect_err("must error on malformed JSON");
+    |                                       ++++++++++++
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+   --> src/bin/cli_support/tests/setup/mcp_clients.rs:320:5
+    |
+320 |     setup_roo_mcp(dir.path()).unwrap();
+    |     ^^^^^^^^^^^^^------------ argument #2 of type `bool` is missing
+    |
+note: function defined here
+   --> src/bin/cli_support/commands/setup/mcp_register.rs:384:15
+    |
+384 | pub(crate) fn setup_roo_mcp(repo_root: &Path, global: bool) -> anyhow::Result<StepOutcome> {
+    |               ^^^^^^^^^^^^^                   ------------
+help: provide the argument
+    |
+320 |     setup_roo_mcp(dir.path(), /* bool */).unwrap();
+    |                             ++++++++++++
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+   --> src/bin/cli_support/tests/setup/mcp_clients.rs:338:5
+    |
+338 |     setup_roo_mcp(dir.path()).unwrap();
+    |     ^^^^^^^^^^^^^------------ argument #2 of type `bool` is missing
+    |
+note: function defined here
+   --> src/bin/cli_support/commands/setup/mcp_register.rs:384:15
+    |
+384 | pub(crate) fn setup_roo_mcp(repo_root: &Path, global: bool) -> anyhow::Result<StepOutcome> {
+    |               ^^^^^^^^^^^^^                   ------------
+help: provide the argument
+    |
+338 |     setup_roo_mcp(dir.path(), /* bool */).unwrap();
+    |                             ++++++++++++
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+   --> src/bin/cli_support/tests/setup/mcp_clients.rs:340:5
+    |
+340 |     setup_roo_mcp(dir.path()).unwrap();
+    |     ^^^^^^^^^^^^^------------ argument #2 of type `bool` is missing
+    |
+note: function defined here
+   --> src/bin/cli_support/commands/setup/mcp_register.rs:384:15
+    |
+384 | pub(crate) fn setup_roo_mcp(repo_root: &Path, global: bool) -> anyhow::Result<StepOutcome> {
+    |               ^^^^^^^^^^^^^                   ------------
+help: provide the argument
+    |
+340 |     setup_roo_mcp(dir.path(), /* bool */).unwrap();
+    |                             ++++++++++++
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+   --> src/bin/cli_support/tests/setup/mcp_clients.rs:361:5
+    |
+361 |     setup_roo_mcp(dir.path()).unwrap();
+    |     ^^^^^^^^^^^^^------------ argument #2 of type `bool` is missing
+    |
+note: function defined here
+   --> src/bin/cli_support/commands/setup/mcp_register.rs:384:15
+    |
+384 | pub(crate) fn setup_roo_mcp(repo_root: &Path, global: bool) -> anyhow::Result<StepOutcome> {
+    |               ^^^^^^^^^^^^^                   ------------
+help: provide the argument
+    |
+361 |     setup_roo_mcp(dir.path(), /* bool */).unwrap();
+    |                             ++++++++++++
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+   --> src/bin/cli_support/tests/setup/mcp_clients.rs:377:15
+    |
+377 |     let err = setup_roo_mcp(dir.path()).expect_err("must error on non-object root");
+    |               ^^^^^^^^^^^^^------------ argument #2 of type `bool` is missing
+    |
+note: function defined here
+   --> src/bin/cli_support/commands/setup/mcp_register.rs:384:15
+    |
+384 | pub(crate) fn setup_roo_mcp(repo_root: &Path, global: bool) -> anyhow::Result<StepOutcome> {
+    |               ^^^^^^^^^^^^^                   ------------
+help: provide the argument
+    |
+377 |     let err = setup_roo_mcp(dir.path(), /* bool */).expect_err("must error on non-object root");
+    |                                       ++++++++++++
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+   --> src/bin/cli_support/tests/setup/misc.rs:22:5
+    |
+ 22 |     setup_opencode_mcp(dir.path()).unwrap();
+    |     ^^^^^^^^^^^^^^^^^^------------ argument #2 of type `bool` is missing
+    |
+note: function defined here
+   --> src/bin/cli_support/commands/setup/mcp_register.rs:259:15
+    |
+259 | pub(crate) fn setup_opencode_mcp(repo_root: &Path, _global: bool) -> anyhow::Result<StepOutcome> {
+    |               ^^^^^^^^^^^^^^^^^^                   -------------
+help: provide the argument
+    |
+ 22 |     setup_opencode_mcp(dir.path(), /* bool */).unwrap();
+    |                                  ++++++++++++
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+   --> src/bin/cli_support/tests/setup/misc.rs:34:5
+    |
+ 34 |     setup_opencode_mcp(dir.path()).unwrap();
+    |     ^^^^^^^^^^^^^^^^^^------------ argument #2 of type `bool` is missing
+    |
+note: function defined here
+   --> src/bin/cli_support/commands/setup/mcp_register.rs:259:15
+    |
+259 | pub(crate) fn setup_opencode_mcp(repo_root: &Path, _global: bool) -> anyhow::Result<StepOutcome> {
+    |               ^^^^^^^^^^^^^^^^^^                   -------------
+help: provide the argument
+    |
+ 34 |     setup_opencode_mcp(dir.path(), /* bool */).unwrap();
+    |                                  ++++++++++++
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+   --> src/bin/cli_support/tests/setup/misc.rs:36:5
+    |
+ 36 |     setup_opencode_mcp(dir.path()).unwrap();
+    |     ^^^^^^^^^^^^^^^^^^------------ argument #2 of type `bool` is missing
+    |
+note: function defined here
+   --> src/bin/cli_support/commands/setup/mcp_register.rs:259:15
+    |
+259 | pub(crate) fn setup_opencode_mcp(repo_root: &Path, _global: bool) -> anyhow::Result<StepOutcome> {
+    |               ^^^^^^^^^^^^^^^^^^                   -------------
+help: provide the argument
+    |
+ 36 |     setup_opencode_mcp(dir.path(), /* bool */).unwrap();
+    |                                  ++++++++++++
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+  --> src/bin/cli_support/tests/setup/misc.rs:46:5
+   |
+46 |     setup_claude_mcp(dir.path()).unwrap();
+   |     ^^^^^^^^^^^^^^^^------------ argument #2 of type `bool` is missing
+   |
+note: function defined here
+  --> src/bin/cli_support/commands/setup/mcp_register.rs:54:15
+   |
+54 | pub(crate) fn setup_claude_mcp(repo_root: &Path, global: bool) -> anyhow::Result<StepOutcome> {
+   |               ^^^^^^^^^^^^^^^^                   ------------
+help: provide the argument
+   |
+46 |     setup_claude_mcp(dir.path(), /* bool */).unwrap();
+   |                                ++++++++++++
+
+error[E0061]: this function takes 2 arguments but 1 argument was supplied
+   --> src/bin/cli_support/tests/setup/misc.rs:64:5
+    |
+ 64 |     setup_codex_mcp(dir.path()).unwrap();
+    |     ^^^^^^^^^^^^^^^------------ argument #2 of type `bool` is missing
+    |
+note: function defined here
+   --> src/bin/cli_support/commands/setup/mcp_register.rs:129:15
+    |
+129 | pub(crate) fn setup_codex_mcp(repo_root: &Path, _global: bool) -> anyhow::Result<StepOutcome> {
+    |               ^^^^^^^^^^^^^^^                   -------------
+help: provide the argument
+    |
+ 64 |     setup_codex_mcp(dir.path(), /* bool */).unwrap();
+    |                               ++++++++++++
+
+For more information about this error, try `rustc --explain E0061`.
+error: could not compile `synrepo` (bin "synrepo" test) due to 38 previous errors
+warning: build failed, waiting for other jobs to finish...
+error[E0061]: this function takes 4 arguments but 3 arguments were supplied
+   --> src/pipeline/watch/tests/daemon.rs:170:19
+    |
+170 |     let outcome = run_reconcile_pass(&repo, &config, &synrepo_dir);
+    |                   ^^^^^^^^^^^^^^^^^^------------------------------ argument #4 of type `bool` is missing
+    |
+note: function defined here
+   --> src/pipeline/watch/reconcile.rs:77:8
+    |
+ 77 | pub fn run_reconcile_pass(
+    |        ^^^^^^^^^^^^^^^^^^
+...
+ 81 |     fast: bool,
+    |     ----------
+help: provide the argument
+    |
+170 |     let outcome = run_reconcile_pass(&repo, &config, &synrepo_dir, /* bool */);
+    |                                                                  ++++++++++++
+
+error: could not compile `synrepo` (lib test) due to 1 previous error

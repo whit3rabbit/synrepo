@@ -191,11 +191,11 @@ fn step_ensure_ready_skips_when_reconcile_state_exists() {
 #[test]
 fn step_register_mcp_claude_registers_then_idempotent() {
     let dir = tempdir().unwrap();
-    let first = step_register_mcp(dir.path(), AgentTool::Claude).unwrap();
+    let first = step_register_mcp(dir.path(), AgentTool::Claude, false).unwrap();
     assert_eq!(first, StepOutcome::Applied);
     assert!(dir.path().join(".mcp.json").exists());
 
-    let second = step_register_mcp(dir.path(), AgentTool::Claude).unwrap();
+    let second = step_register_mcp(dir.path(), AgentTool::Claude, false).unwrap();
     assert_eq!(second, StepOutcome::AlreadyCurrent);
 }
 
@@ -204,7 +204,7 @@ fn step_register_mcp_returns_not_automated_for_shim_only_targets() {
     let targets = [AgentTool::Copilot, AgentTool::Generic, AgentTool::Gemini];
     for target in targets {
         let dir = tempdir().unwrap();
-        let outcome = step_register_mcp(dir.path(), target).unwrap();
+        let outcome = step_register_mcp(dir.path(), target, false).unwrap();
         assert_eq!(
             outcome,
             StepOutcome::NotAutomated,
@@ -260,7 +260,7 @@ fn step_write_shim_updates_stale_shim_when_overwrite_true() {
 #[test]
 fn step_apply_integration_writes_shim_and_registers_mcp() {
     let dir = tempdir().unwrap();
-    let outcome = step_apply_integration(dir.path(), AgentTool::Claude, false).unwrap();
+    let outcome = step_apply_integration(dir.path(), AgentTool::Claude, false, false).unwrap();
     assert_eq!(outcome, StepOutcome::Applied);
     assert!(AgentTool::Claude.output_path(dir.path()).exists());
     assert!(dir.path().join(".mcp.json").exists());
@@ -269,11 +269,11 @@ fn step_apply_integration_writes_shim_and_registers_mcp() {
 #[test]
 fn step_apply_integration_rerun_is_idempotent() {
     let dir = tempdir().unwrap();
-    step_apply_integration(dir.path(), AgentTool::Claude, false).unwrap();
+    step_apply_integration(dir.path(), AgentTool::Claude, false, false).unwrap();
     let mcp_first = fs::read(dir.path().join(".mcp.json")).unwrap();
     let shim_first = fs::read(AgentTool::Claude.output_path(dir.path())).unwrap();
 
-    step_apply_integration(dir.path(), AgentTool::Claude, false).unwrap();
+    step_apply_integration(dir.path(), AgentTool::Claude, false, false).unwrap();
 
     let mcp_second = fs::read(dir.path().join(".mcp.json")).unwrap();
     let shim_second = fs::read(AgentTool::Claude.output_path(dir.path())).unwrap();
@@ -292,7 +292,7 @@ fn step_apply_integration_for_shim_only_targets_still_writes_shim() {
     ];
     for target in targets {
         let dir = tempdir().unwrap();
-        let outcome = step_apply_integration(dir.path(), target, false).unwrap();
+        let outcome = step_apply_integration(dir.path(), target, false, false).unwrap();
         assert_eq!(
             outcome,
             StepOutcome::Applied,
@@ -315,7 +315,7 @@ fn automation_tier_matches_step_register_mcp_dispatch() {
 
     for target in <AgentTool as ValueEnum>::value_variants() {
         let dir = tempdir().unwrap();
-        let outcome = step_register_mcp(dir.path(), *target).unwrap();
+        let outcome = step_register_mcp(dir.path(), *target, false).unwrap();
         match target.automation_tier() {
             AutomationTier::Automated => assert!(
                 matches!(

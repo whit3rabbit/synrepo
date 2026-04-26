@@ -45,7 +45,7 @@ pub(crate) fn execute_setup_plan(repo_root: &Path, plan: SetupPlan) -> anyhow::R
     if let Some(target) = plan.target {
         let tool = AgentTool::from_target_kind(target);
         let backup = step_backup_mcp_config(repo_root, tool)?;
-        step_apply_integration(repo_root, tool, false)?;
+        step_apply_integration(repo_root, tool, false, false)?;
         let wrote_mcp = matches!(tool.automation_tier(), AutomationTier::Automated);
         shim_registry::record_install_best_effort(repo_root, tool, wrote_mcp, backup);
     }

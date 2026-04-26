@@ -11,7 +11,7 @@ fn codex_malformed_toml_errors() {
     let original = "[mcp\nbroken = ";
     fs::write(&path, original).unwrap();
 
-    let err = setup_codex_mcp(dir.path()).expect_err("must error on malformed TOML");
+    let err = setup_codex_mcp(dir.path(), false).expect_err("must error on malformed TOML");
     assert!(
         err.to_string().contains("not valid TOML"),
         "error must name parse failure: {err}"
@@ -31,7 +31,7 @@ fn codex_preserves_comments() {
     )
     .unwrap();
 
-    setup_codex_mcp(dir.path()).unwrap();
+    setup_codex_mcp(dir.path(), false).unwrap();
 
     let after = fs::read_to_string(&path).unwrap();
     assert!(after.contains("# top-level comment"));
@@ -48,10 +48,10 @@ fn codex_preserves_comments() {
 #[test]
 fn codex_idempotent_on_rerun() {
     let dir = tempdir().unwrap();
-    setup_codex_mcp(dir.path()).unwrap();
+    setup_codex_mcp(dir.path(), false).unwrap();
     let path = dir.path().join(".codex").join("config.toml");
     let first = fs::read(&path).unwrap();
-    setup_codex_mcp(dir.path()).unwrap();
+    setup_codex_mcp(dir.path(), false).unwrap();
     let second = fs::read(&path).unwrap();
     assert_eq!(
         first, second,
@@ -66,7 +66,7 @@ fn codex_commented_out_synrepo_adds_active_entry() {
     let path = dir.path().join(".codex").join("config.toml");
     fs::write(&path, "[mcp]\n# synrepo = \"old-command\"\n").unwrap();
 
-    setup_codex_mcp(dir.path()).unwrap();
+    setup_codex_mcp(dir.path(), false).unwrap();
 
     let after = fs::read_to_string(&path).unwrap();
     assert!(
@@ -90,7 +90,7 @@ fn codex_duplicate_in_different_section_untouched() {
     )
     .unwrap();
 
-    setup_codex_mcp(dir.path()).unwrap();
+    setup_codex_mcp(dir.path(), false).unwrap();
 
     let parsed: toml::Value = toml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
     assert_eq!(
@@ -133,7 +133,7 @@ fn codex_existing_different_synrepo_is_replaced() {
     )
     .unwrap();
 
-    setup_codex_mcp(dir.path()).unwrap();
+    setup_codex_mcp(dir.path(), false).unwrap();
 
     let parsed: toml::Value = toml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
     assert_eq!(
@@ -160,7 +160,7 @@ fn codex_legacy_mcp_synrepo_is_migrated() {
     let path = dir.path().join(".codex").join("config.toml");
     fs::write(&path, "[mcp]\nsynrepo = \"legacy-binary-path\"\n").unwrap();
 
-    setup_codex_mcp(dir.path()).unwrap();
+    setup_codex_mcp(dir.path(), false).unwrap();
 
     let raw = fs::read_to_string(&path).unwrap();
     let parsed: toml::Value = toml::from_str(&raw).unwrap();
@@ -183,6 +183,6 @@ fn codex_rejects_non_table_mcp() {
     let path = dir.path().join(".codex").join("config.toml");
     fs::write(&path, "mcp_servers = \"not a table\"\n").unwrap();
 
-    let err = setup_codex_mcp(dir.path()).expect_err("must error on non-table mcp_servers");
+    let err = setup_codex_mcp(dir.path(), false).expect_err("must error on non-table mcp_servers");
     assert!(err.to_string().contains("not a table"));
 }

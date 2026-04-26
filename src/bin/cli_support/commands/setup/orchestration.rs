@@ -182,13 +182,14 @@ pub(crate) fn setup_many_resolved(
     resolution: &ToolResolution,
     force: bool,
     gitignore: bool,
+    global: bool,
 ) -> anyhow::Result<()> {
     run_many_with_skipped(
         repo_root,
         &resolution.selected,
         &resolution.skipped,
         "setup",
-        |tool| setup(repo_root, tool, force, gitignore),
+        |tool| setup(repo_root, tool, force, gitignore, global),
     )
 }
 

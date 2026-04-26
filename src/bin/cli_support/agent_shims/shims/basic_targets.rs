@@ -15,9 +15,9 @@ synrepo precomputes a structural graph of this codebase from tree-sitter parsing
 - Run `synrepo init` to initialize the graph.
 - Use `synrepo status` to check operational health.
 - Use `synrepo search <query>` to find symbols and files.
-- Use `synrepo node <id>` to inspect node metadata.
-- Use `synrepo graph query \"outbound <node_id>\"` to see dependencies.
-- Use `synrepo graph query \"inbound <node_id>\"` to see dependents.
+- Use `synrepo node <target>` to inspect node metadata (`<target>` accepts file paths, qualified symbol names, or node IDs).
+- Use `synrepo graph query \"outbound <target>\"` to see dependencies.
+- Use `synrepo graph query \"inbound <target>\"` to see dependents.
 
 For full MCP tool support, register the synrepo MCP server in your client configuration.
 "

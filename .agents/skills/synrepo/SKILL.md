@@ -73,9 +73,9 @@ Node IDs: `file_0000000000000042`, `symbol_0000000000000024`. Use `synrepo_searc
 synrepo status                                   # health check
 synrepo status --recent                          # bounded operational history
 synrepo search <query>                           # lexical search
-synrepo node <id>                                # node metadata as JSON
-synrepo graph query "inbound <node_id>"          # reverse dependencies
-synrepo graph query "outbound <node_id>"         # forward dependencies
+synrepo node <target>                            # node metadata as JSON (accepts paths, symbol names, or node IDs)
+synrepo graph query "inbound <target>"            # reverse dependencies
+synrepo graph query "outbound <target>"           # forward dependencies
 synrepo graph stats                              # counts by type
 synrepo reconcile                                # refresh graph
 synrepo links list                               # cross-link candidates

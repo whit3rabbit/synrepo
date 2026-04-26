@@ -64,7 +64,7 @@ fn watch_service_handles_status_reconcile_and_stop() {
     let status = request_watch_control(&synrepo_dir, WatchControlRequest::Status).unwrap();
     assert!(matches!(status, WatchControlResponse::Status { .. }));
 
-    let reconcile = request_watch_control(&synrepo_dir, WatchControlRequest::ReconcileNow).unwrap();
+    let reconcile = request_watch_control(&synrepo_dir, WatchControlRequest::ReconcileNow { fast: false }).unwrap();
     assert!(matches!(reconcile, WatchControlResponse::Reconcile { .. }));
 
     let stop = request_watch_control(&synrepo_dir, WatchControlRequest::Stop).unwrap();
@@ -129,7 +129,7 @@ fn watch_service_records_lock_conflict_when_writer_lock_is_held() {
     };
     let _flock = crate::pipeline::writer::hold_writer_flock_with_ownership(&lock_path, &owner);
 
-    let response = request_watch_control(&synrepo_dir, WatchControlRequest::ReconcileNow).unwrap();
+    let response = request_watch_control(&synrepo_dir, WatchControlRequest::ReconcileNow { fast: false }).unwrap();
     match response {
         WatchControlResponse::Reconcile { outcome, .. } => {
             assert_eq!(outcome.as_str(), "lock-conflict");

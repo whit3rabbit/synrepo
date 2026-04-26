@@ -245,6 +245,7 @@ impl GraphReader for Graph {
         let mut out: Vec<_> = self
             .symbols
             .values()
+            .filter(|symbol| symbol.retired_at_rev.is_none())
             .map(|symbol| (symbol.id, symbol.file_id, symbol.qualified_name.clone()))
             .collect();
         out.sort_by_key(|(id, _, _)| *id);

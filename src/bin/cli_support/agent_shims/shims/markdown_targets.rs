@@ -28,9 +28,9 @@ Treat impact output as approximate routing help, not exact blast-radius proof.
 - `synrepo status` — health: mode, graph counts, last reconcile
 - `synrepo status --recent` — bounded operational history
 - `synrepo search <query>` — lexical search
-- `synrepo node <id>` — node metadata as JSON
-- `synrepo graph query \"inbound <id>\"` — reverse dependencies
-- `synrepo graph query \"outbound <id>\"` — forward dependencies
+- `synrepo node <target>` — node metadata as JSON (accepts paths, symbol names, or node IDs)
+- `synrepo graph query \"inbound <target>\"` — reverse dependencies
+- `synrepo graph query \"outbound <target>\"` — forward dependencies
 - `synrepo graph stats` — node and edge counts
 - `synrepo reconcile` — refresh the graph
 - `synrepo links list` — active cross-link candidates
@@ -69,10 +69,10 @@ Treat impact output as approximate routing help, not exact blast-radius proof.
 synrepo status                                    # health check
 synrepo status --recent                           # bounded operational history
 synrepo search <query>                            # find symbols/files by name
-synrepo node <id>                                 # node metadata as JSON
-synrepo graph query \"inbound <node_id>\"           # reverse dependencies
-synrepo graph query \"outbound <node_id>\"          # forward dependencies
-synrepo graph query \"outbound <node_id> defines\"  # filtered by edge kind
+synrepo node <target>                             # node metadata as JSON (accepts paths, symbol names, or node IDs)
+synrepo graph query \"inbound <target>\"            # reverse dependencies
+synrepo graph query \"outbound <target>\"           # forward dependencies
+synrepo graph query \"outbound <target> defines\"   # filtered by edge kind
 synrepo graph stats                               # counts by type
 synrepo reconcile                                 # refresh graph against current files
 synrepo links list                                # active cross-link candidates
@@ -112,9 +112,9 @@ Use `synrepo_search` to find node IDs (format: `file_0000000000000042`, `symbol_
 synrepo status                                   # health check
 synrepo status --recent                          # bounded operational history
 synrepo search <query>                           # lexical search
-synrepo node <id>                                # node metadata as JSON
-synrepo graph query \"inbound <node_id>\"          # reverse dependencies
-synrepo graph query \"outbound <node_id>\"         # forward dependencies
+synrepo node <target>                             # node metadata as JSON (accepts paths, symbol names, or node IDs)
+synrepo graph query \"inbound <target>\"            # reverse dependencies
+synrepo graph query \"outbound <target>\"           # forward dependencies
 synrepo graph stats                              # node and edge counts
 synrepo reconcile                                # refresh graph
 synrepo links list                               # cross-link candidates
@@ -152,9 +152,9 @@ Node IDs: `file_0000000000000042`, `symbol_0000000000000024`. Use `synrepo_searc
 synrepo status                         # health check
 synrepo status --recent                # bounded operational history
 synrepo search <query>                 # lexical search
-synrepo node <id>                      # node metadata as JSON
-synrepo graph query \"inbound <id>\"    # reverse dependencies
-synrepo graph query \"outbound <id>\"   # forward dependencies
+synrepo node <target>                  # node metadata as JSON (accepts paths, symbol names, or node IDs)
+synrepo graph query \"inbound <target>\"    # reverse dependencies
+synrepo graph query \"outbound <target>\"   # forward dependencies
 synrepo graph stats                    # node and edge counts
 synrepo reconcile                      # refresh graph
 synrepo links list                     # cross-link candidates

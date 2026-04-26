@@ -92,7 +92,7 @@ pub(crate) fn execute_repair_plan(repo_root: &Path, plan: RepairPlan) -> anyhow:
     }
     if plan.run_reconcile {
         println!("  Running reconcile pass...");
-        reconcile(repo_root)?;
+        reconcile(repo_root, false)?;
         let _ = probe(repo_root);
     }
     if let Some(target) = plan.write_shim_for {
@@ -103,7 +103,7 @@ pub(crate) fn execute_repair_plan(repo_root: &Path, plan: RepairPlan) -> anyhow:
             tool.artifact_label()
         );
         let backup = step_backup_mcp_config(repo_root, tool)?;
-        step_apply_integration(repo_root, tool, false)?;
+        step_apply_integration(repo_root, tool, false, false)?;
         let wrote_mcp = matches!(tool.automation_tier(), AutomationTier::Automated);
         shim_registry::record_install_best_effort(repo_root, tool, wrote_mcp, backup);
     }
@@ -125,7 +125,7 @@ pub(crate) fn execute_integration_plan(
     let mut backup: Option<String> = None;
     if plan.register_mcp {
         backup = step_backup_mcp_config(repo_root, tool)?;
-        step_register_mcp(repo_root, tool)?;
+        step_register_mcp(repo_root, tool, false)?;
     }
     let wrote_mcp =
         plan.register_mcp && matches!(tool.automation_tier(), AutomationTier::Automated);

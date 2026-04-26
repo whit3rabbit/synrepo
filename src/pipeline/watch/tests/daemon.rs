@@ -167,7 +167,7 @@ fn status_and_reconcile_unaffected_when_daemon_never_registered() {
         watch_service_status(&synrepo_dir),
         WatchServiceStatus::Inactive
     ));
-    let outcome = run_reconcile_pass(&repo, &config, &synrepo_dir);
+    let outcome = run_reconcile_pass(&repo, &config, &synrepo_dir, false);
     if !matches!(outcome, ReconcileOutcome::Completed(_)) {
         panic!("expected Completed when no daemon was ever registered, got {outcome:?}");
     }

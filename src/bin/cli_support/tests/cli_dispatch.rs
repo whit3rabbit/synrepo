@@ -130,6 +130,16 @@ fn export_dispatches_to_export_variant() {
 }
 
 #[test]
+fn ci_run_dispatches_to_ci_run_variant() {
+    let cli = parse(&["ci-run", "--target", "src/lib.rs", "--json"]);
+    let Some(Command::CiRun(args)) = cli.command else {
+        panic!("ci-run should parse to Command::CiRun");
+    };
+    assert_eq!(args.targets, vec!["src/lib.rs"]);
+    assert!(args.json);
+}
+
+#[test]
 fn upgrade_dispatches_to_upgrade_variant() {
     let cli = parse(&["upgrade"]);
     matches!(cli.command, Some(Command::Upgrade { .. }))

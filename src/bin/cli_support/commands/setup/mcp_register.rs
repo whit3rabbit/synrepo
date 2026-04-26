@@ -10,12 +10,19 @@ use super::config::{load_json_config, write_atomic};
 use super::steps::StepOutcome;
 
 /// Target entry inserted under `mcpServers.synrepo` in `.mcp.json`.
-fn claude_synrepo_entry() -> Value {
-    json!({
-        "command": "synrepo",
-        "args": ["mcp", "--repo", "."],
-        "scope": "project",
-    })
+fn claude_synrepo_entry(global: bool) -> Value {
+    if global {
+        json!({
+            "command": "synrepo",
+            "args": ["mcp"],
+        })
+    } else {
+        json!({
+            "command": "synrepo",
+            "args": ["mcp", "--repo", "."],
+            "scope": "project",
+        })
+    }
 }
 
 /// Target entry inserted under `mcp_servers.synrepo` in `.codex/config.toml`.
@@ -30,15 +37,40 @@ fn opencode_synrepo_entry() -> Value {
 /// Standard `mcpServers.synrepo` entry shared by the Cursor/Windsurf/Roo
 /// `.<tool>/mcp.json` editors. Claude Code's `.mcp.json` entry adds a `scope`
 /// field, so it doesn't share this factory.
-fn shim_tool_synrepo_entry() -> Value {
-    json!({
-        "command": "synrepo",
-        "args": ["mcp", "--repo", "."],
-    })
+fn shim_tool_synrepo_entry(global: bool) -> Value {
+    if global {
+        json!({
+            "command": "synrepo",
+            "args": ["mcp"],
+        })
+    } else {
+        json!({
+            "command": "synrepo",
+            "args": ["mcp", "--repo", "."],
+        })
+    }
 }
 
-pub(crate) fn setup_claude_mcp(repo_root: &Path) -> anyhow::Result<StepOutcome> {
-    let mcp_json_path = repo_root.join(".mcp.json");
+pub(crate) fn setup_claude_mcp(repo_root: &Path, global: bool) -> anyhow::Result<StepOutcome> {
+    let mcp_json_path = if global {
+        let home = synrepo::config::home_dir().ok_or_else(|| anyhow!("Failed to find home directory"))?;
+        let path = if cfg!(target_os = "macos") {
+            home.join("Library/Application Support/Claude/claude_desktop_config.json")
+        } else if cfg!(target_os = "windows") {
+            std::env::var("APPDATA")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|_| home.join("AppData").join("Roaming"))
+                .join("Claude/claude_desktop_config.json")
+        } else {
+            home.join(".config/Claude/claude_desktop_config.json")
+        };
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        path
+    } else {
+        repo_root.join(".mcp.json")
+    };
     let mut config = load_json_config(&mcp_json_path)?;
 
     if !config.is_object() {
@@ -48,7 +80,7 @@ pub(crate) fn setup_claude_mcp(repo_root: &Path) -> anyhow::Result<StepOutcome> 
         ));
     }
 
-    let target = claude_synrepo_entry();
+    let target = claude_synrepo_entry(global);
 
     let root = config.as_object_mut().expect("object checked above");
     let servers_entry = root
@@ -81,11 +113,15 @@ pub(crate) fn setup_claude_mcp(repo_root: &Path) -> anyhow::Result<StepOutcome> 
 
     servers.insert("synrepo".to_string(), target);
     super::write_json_config(&mcp_json_path, &config)?;
-    println!("  Registered project-scoped MCP server in .mcp.json");
+    println!(
+        "  Registered {} MCP server in {}",
+        if global { "global" } else { "project-scoped" },
+        mcp_json_path.display()
+    );
     Ok(prior)
 }
 
-pub(crate) fn setup_codex_mcp(repo_root: &Path) -> anyhow::Result<StepOutcome> {
+pub(crate) fn setup_codex_mcp(repo_root: &Path, _global: bool) -> anyhow::Result<StepOutcome> {
     let codex_dir = repo_root.join(".codex");
     fs::create_dir_all(&codex_dir)
         .with_context(|| format!("failed to create config directory {}", codex_dir.display()))?;
@@ -215,7 +251,7 @@ fn write_codex_synrepo_table(table: &mut Table) {
     table.insert("args", Item::Value(TomlValue::Array(args)));
 }
 
-pub(crate) fn setup_opencode_mcp(repo_root: &Path) -> anyhow::Result<StepOutcome> {
+pub(crate) fn setup_opencode_mcp(repo_root: &Path, _global: bool) -> anyhow::Result<StepOutcome> {
     let opencode_json_path = repo_root.join("opencode.json");
     let mut config = load_json_config(&opencode_json_path)?;
 
@@ -267,8 +303,13 @@ pub(crate) fn setup_opencode_mcp(repo_root: &Path) -> anyhow::Result<StepOutcome
 fn register_mcp_servers_json(
     repo_root: &Path,
     config_dir_name: &str,
+    global: bool,
 ) -> anyhow::Result<StepOutcome> {
-    let config_dir = repo_root.join(config_dir_name);
+    let config_dir = if global {
+        synrepo::config::home_dir().ok_or_else(|| anyhow!("Failed to find home directory"))?.join(config_dir_name)
+    } else {
+        repo_root.join(config_dir_name)
+    };
     fs::create_dir_all(&config_dir)
         .with_context(|| format!("failed to create config directory {}", config_dir.display()))?;
     let mcp_json_path = config_dir.join("mcp.json");
@@ -281,7 +322,7 @@ fn register_mcp_servers_json(
         ));
     }
 
-    let target = shim_tool_synrepo_entry();
+    let target = shim_tool_synrepo_entry(global);
 
     let root = config.as_object_mut().expect("object checked above");
     let servers_entry = root
@@ -315,20 +356,21 @@ fn register_mcp_servers_json(
     servers.insert("synrepo".to_string(), target);
     super::write_json_config(&mcp_json_path, &config)?;
     println!(
-        "  Registered project-scoped MCP server in {}/mcp.json",
-        config_dir_name
+        "  Registered {} MCP server in {}",
+        if global { "global" } else { "project-scoped" },
+        mcp_json_path.display()
     );
     Ok(prior)
 }
 
-pub(crate) fn setup_cursor_mcp(repo_root: &Path) -> anyhow::Result<StepOutcome> {
-    register_mcp_servers_json(repo_root, ".cursor")
+pub(crate) fn setup_cursor_mcp(repo_root: &Path, global: bool) -> anyhow::Result<StepOutcome> {
+    register_mcp_servers_json(repo_root, ".cursor", global)
 }
 
-pub(crate) fn setup_windsurf_mcp(repo_root: &Path) -> anyhow::Result<StepOutcome> {
-    register_mcp_servers_json(repo_root, ".windsurf")
+pub(crate) fn setup_windsurf_mcp(repo_root: &Path, global: bool) -> anyhow::Result<StepOutcome> {
+    register_mcp_servers_json(repo_root, ".windsurf", global)
 }
 
-pub(crate) fn setup_roo_mcp(repo_root: &Path) -> anyhow::Result<StepOutcome> {
-    register_mcp_servers_json(repo_root, ".roo")
+pub(crate) fn setup_roo_mcp(repo_root: &Path, global: bool) -> anyhow::Result<StepOutcome> {
+    register_mcp_servers_json(repo_root, ".roo", global)
 }

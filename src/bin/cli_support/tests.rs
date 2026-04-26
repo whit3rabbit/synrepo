@@ -1,5 +1,6 @@
 mod agent_setup;
 mod change_risk;
+mod ci_run;
 mod cli_dispatch;
 mod compact;
 mod dashboard_parity;

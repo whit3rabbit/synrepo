@@ -53,6 +53,7 @@ mod module;
 pub mod neighborhood;
 mod public_api;
 mod resolve;
+pub use resolve::resolve_target;
 mod symbol;
 mod test_surface;
 

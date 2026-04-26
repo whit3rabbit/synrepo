@@ -28,7 +28,8 @@ fn default_limit() -> usize {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct NoteAddParams {
-    pub target_kind: AgentNoteTargetKind,
+        pub repo_root: Option<std::path::PathBuf>,
+pub target_kind: AgentNoteTargetKind,
     pub target: String,
     pub claim: String,
     #[serde(default = "default_actor")]
@@ -45,7 +46,8 @@ pub struct NoteAddParams {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct NoteLinkParams {
-    pub from_note: String,
+        pub repo_root: Option<std::path::PathBuf>,
+pub from_note: String,
     pub to_note: String,
     #[serde(default = "default_actor")]
     pub actor: String,
@@ -53,7 +55,8 @@ pub struct NoteLinkParams {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct NoteSupersedeParams {
-    pub old_note: String,
+        pub repo_root: Option<std::path::PathBuf>,
+pub old_note: String,
     pub target_kind: AgentNoteTargetKind,
     pub target: String,
     pub claim: String,
@@ -71,7 +74,8 @@ pub struct NoteSupersedeParams {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct NoteForgetParams {
-    pub note_id: String,
+        pub repo_root: Option<std::path::PathBuf>,
+pub note_id: String,
     #[serde(default = "default_actor")]
     pub actor: String,
     #[serde(default)]
@@ -80,7 +84,8 @@ pub struct NoteForgetParams {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct NoteVerifyParams {
-    pub note_id: String,
+        pub repo_root: Option<std::path::PathBuf>,
+pub note_id: String,
     #[serde(default = "default_actor")]
     pub actor: String,
     #[serde(default)]
@@ -89,7 +94,8 @@ pub struct NoteVerifyParams {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct NotesParams {
-    #[serde(default)]
+        pub repo_root: Option<std::path::PathBuf>,
+#[serde(default)]
     pub target_kind: Option<AgentNoteTargetKind>,
     #[serde(default)]
     pub target: Option<String>,
@@ -290,6 +296,7 @@ mod tests {
         let add = handle_note_add(
             &state,
             NoteAddParams {
+                repo_root: None,
                 target_kind: AgentNoteTargetKind::Path,
                 target: "src/lib.rs".to_string(),
                 claim: "Advisory only.".to_string(),
@@ -307,6 +314,7 @@ mod tests {
         let listed = handle_notes(
             &state,
             NotesParams {
+                repo_root: None,
                 target_kind: Some(AgentNoteTargetKind::Path),
                 target: Some("src/lib.rs".to_string()),
                 include_hidden: false,
