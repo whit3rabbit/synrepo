@@ -159,10 +159,11 @@ fn resolve_commentary(
 /// Build the context string passed to the generator. Keeps the payload
 /// small: symbol identity, signature, and doc comment.
 pub(crate) fn build_generation_context(card: &SymbolCard) -> String {
-    let mut s = format!(
-        "Symbol: {}\nQualified name: {}\nDefined at: {}\n",
-        card.name, card.qualified_name, card.defined_at
+    let target = format!(
+        "Target node: {}\nTarget kind: symbol\nSymbol: {}\nQualified name: {}\nDefined at: {}\n",
+        card.symbol, card.name, card.qualified_name, card.defined_at
     );
+    let mut s = String::new();
     if let Some(sig) = &card.signature {
         s.push_str(&format!("Signature: {sig}\n"));
     }
@@ -172,7 +173,16 @@ pub(crate) fn build_generation_context(card: &SymbolCard) -> String {
     if let Some(body) = &card.source_body {
         s.push_str(&format!("<source_code>\n{body}\n</source_code>\n"));
     }
-    s
+    if card.tests_touching.is_empty() {
+        s.push_str("<associated_tests>\nnone found in graph card\n</associated_tests>\n");
+    } else {
+        s.push_str("<associated_tests>\n");
+        for test in &card.tests_touching {
+            s.push_str(&format!("{} at {}\n", test.qualified_name, test.location));
+        }
+        s.push_str("</associated_tests>\n");
+    }
+    crate::pipeline::explain::commentary_template::build_commentary_context(&target, &s)
 }
 
 pub(super) fn estimate_tokens_symbol(card: &SymbolCard) -> usize {

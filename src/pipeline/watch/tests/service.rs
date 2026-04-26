@@ -15,7 +15,9 @@ use crate::pipeline::watch::{
     WatchControlRequest, WatchControlResponse, WatchEvent, WatchServiceMode, WatchServiceStatus,
 };
 
-use super::{setup_test_repo, wait_for, watch_service_guard};
+#[cfg(unix)]
+use super::watch_service_guard;
+use super::{setup_test_repo, wait_for};
 
 #[cfg(unix)]
 #[test]

@@ -98,7 +98,7 @@ impl CommentaryGenerator for GeminiCommentaryGenerator {
                 }],
             }),
             generation_config: GenerationConfig {
-                max_output_tokens: 512,
+                max_output_tokens: COMMENTARY_MAX_OUTPUT_TOKENS,
                 temperature: Some(0.7),
             },
         };

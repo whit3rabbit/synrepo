@@ -77,7 +77,7 @@ impl CommentaryGenerator for AnthropicCommentaryGenerator {
 
         let body = MessagesRequest {
             model: &self.model,
-            max_tokens: 512,
+            max_tokens: COMMENTARY_MAX_OUTPUT_TOKENS,
             system: COMMENTARY_SYSTEM_PROMPT,
             messages: vec![Message {
                 role: "user",

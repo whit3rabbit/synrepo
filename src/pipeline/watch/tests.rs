@@ -1,10 +1,12 @@
 use std::{
     fs,
     path::PathBuf,
-    sync::{Mutex, MutexGuard},
     thread,
     time::{Duration, Instant},
 };
+
+#[cfg(unix)]
+use std::sync::{Mutex, MutexGuard};
 
 use tempfile::{tempdir, TempDir};
 

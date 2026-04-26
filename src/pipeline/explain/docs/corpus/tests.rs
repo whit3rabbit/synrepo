@@ -2,8 +2,17 @@ use super::*;
 use std::str::FromStr;
 
 use crate::overlay::CommentaryProvenance;
+use crate::pipeline::explain::commentary_template::REQUIRED_SECTIONS;
 use crate::surface::card::compiler::tests::fixtures::{fresh_symbol_fixture, make_overlay_store};
 use time::OffsetDateTime;
+
+fn structured_body() -> String {
+    REQUIRED_SECTIONS
+        .iter()
+        .map(|section| format!("## {section}\nFixture note."))
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
 
 #[test]
 fn upsert_and_parse_commentary_doc_round_trip() {
@@ -11,7 +20,7 @@ fn upsert_and_parse_commentary_doc_round_trip() {
     let synrepo_dir = repo.path().join(".synrepo");
     let entry = CommentaryEntry {
         node_id: NodeId::from_str("sym_00000000000000000000000000000001").unwrap(),
-        text: "Fresh prose.".to_string(),
+        text: structured_body(),
         provenance: CommentaryProvenance {
             source_content_hash: "h1".to_string(),
             pass_id: "test".to_string(),
@@ -52,7 +61,7 @@ fn reconcile_materializes_file_commentary_docs() {
         .lock()
         .insert_commentary(CommentaryEntry {
             node_id: NodeId::File(file.id),
-            text: "<think>hidden reasoning</think>\nFile-level prose.".to_string(),
+            text: format!("<think>hidden reasoning</think>\n{}", structured_body()),
             provenance: CommentaryProvenance {
                 source_content_hash: file.content_hash.clone(),
                 pass_id: "test".to_string(),
@@ -75,7 +84,9 @@ fn reconcile_materializes_file_commentary_docs() {
     assert_eq!(header.source_path, "src/lib.rs");
     let rendered = std::fs::read_to_string(doc_path).unwrap();
     assert!(!rendered.contains("<think>"));
-    assert!(rendered.contains("File-level prose."));
+    for section in REQUIRED_SECTIONS {
+        assert!(rendered.contains(&format!("## {section}")));
+    }
 }
 
 #[test]
@@ -84,7 +95,7 @@ fn reconcile_removes_orphaned_commentary_docs() {
     let overlay = make_overlay_store(&repo);
     let entry = CommentaryEntry {
         node_id: NodeId::Symbol(sym_id),
-        text: "Fresh prose.".to_string(),
+        text: structured_body(),
         provenance: CommentaryProvenance {
             source_content_hash: graph
                 .file_by_path("src/lib.rs")

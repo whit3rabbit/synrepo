@@ -168,7 +168,7 @@ impl OpenAiCompatProvider {
 
         let body = ChatRequest {
             model: &self.model,
-            max_tokens: 512,
+            max_tokens: COMMENTARY_MAX_OUTPUT_TOKENS,
             messages: vec![
                 ChatMessage {
                     role: "system",

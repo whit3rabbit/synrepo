@@ -15,6 +15,7 @@
 //!   the appropriate API key is set via environment variables.
 
 pub mod accounting;
+pub mod commentary_template;
 pub mod cross_link;
 pub mod docs;
 pub mod pricing;

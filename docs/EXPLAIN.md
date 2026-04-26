@@ -25,7 +25,14 @@ provider = "anthropic"    # "anthropic" | "openai" | "gemini" | "openrouter" | "
 model = "claude-sonnet-4-6"
 local_endpoint = "http://localhost:11434/api/chat"
 local_preset = "ollama"   # informational only; local_endpoint is authoritative
+commentary_cost_limit = 5000
 ```
+
+`commentary_cost_limit` is the approximate per-call input-token ceiling for
+commentary generation. The default stays conservative to avoid surprise cost
+or provider failures. For long-context providers, you can raise it toward
+`150000` so explain can include more source, dependency, module, and test
+context in one structured commentary document.
 
 ## Precedence (env wins)
 
@@ -63,6 +70,11 @@ synrepo docs import --all    # import all edited Markdown bodies
 Only the body after the `---` separator is treated as editable content. Import skips a doc when its `source_content_hash` header no longer matches the current graph, so a stale edit cannot silently become fresh commentary for changed source.
 
 Export always materializes from overlay commentary. That means local Markdown edits should be imported before running `docs export`, `docs export --force`, or an Explain refresh if the edits should be preserved. `docs clean --apply` deletes only `.synrepo/explain-docs/` and `.synrepo/explain-index/`; it does not remove overlay commentary.
+
+Newly generated commentary bodies use a fixed Markdown template: Purpose, How
+It Fits, Associated Nodes, Important Gotchas, Associated Tests, TODOs / Dead
+Code / Unfinished Work, Security Notes, and Context Confidence. Older free-form
+overlay commentary remains valid until refreshed.
 
 The dashboard Explain tab exposes the same maintenance actions: `d` exports docs without model calls, `D` force-rebuilds docs and the docs index, `x` previews a clean, and `X` removes the exported docs/index while leaving overlay commentary intact.
 

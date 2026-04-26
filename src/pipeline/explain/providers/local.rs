@@ -78,7 +78,7 @@ impl CommentaryGenerator for LocalCommentaryGenerator {
         let body = if self.is_openai_compatible {
             serde_json::json!({
                 "model": self.model,
-                "max_tokens": 512,
+                "max_tokens": COMMENTARY_MAX_OUTPUT_TOKENS,
                 "messages": [
                     { "role": "system", "content": COMMENTARY_SYSTEM_PROMPT },
                     { "role": "user", "content": context }
@@ -88,7 +88,7 @@ impl CommentaryGenerator for LocalCommentaryGenerator {
             serde_json::json!({
                 "model": self.model,
                 "stream": false,
-                "options": { "num_predict": 512 },
+                "options": { "num_predict": COMMENTARY_MAX_OUTPUT_TOKENS },
                 "prompt": format!("System: {COMMENTARY_SYSTEM_PROMPT}\n\nUser: {context}")
             })
         };
