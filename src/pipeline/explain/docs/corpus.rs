@@ -9,6 +9,7 @@ use time::format_description::well_known::Rfc3339;
 
 use crate::core::ids::{FileNodeId, NodeId};
 use crate::overlay::{CommentaryEntry, FreshnessState};
+use crate::pipeline::explain::providers::shared::sanitize_commentary_text;
 use crate::store::overlay::{derive_freshness, SqliteOverlayStore};
 use crate::structure::graph::{FileNode, GraphReader};
 use crate::util::atomic_write;
@@ -316,7 +317,7 @@ fn render_commentary_doc(
         source_content_hash = entry.provenance.source_content_hash,
         commentary_state = freshness.as_str(),
         model_identity = entry.provenance.model_identity,
-        body = entry.text.trim_end(),
+        body = sanitize_commentary_text(&entry.text),
     ))
 }
 

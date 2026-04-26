@@ -30,7 +30,19 @@ pub(crate) enum WatchCommand {
 #[derive(Subcommand)]
 pub(crate) enum DocsCommand {
     /// Materialize editable explain docs from overlay commentary.
-    Export,
+    Export {
+        /// Rebuild explain-docs and explain-index before exporting. This
+        /// discards unimported Markdown edits but leaves overlay commentary
+        /// untouched.
+        #[arg(long)]
+        force: bool,
+    },
+    /// Remove materialized explain docs and their search index.
+    Clean {
+        /// Apply the deletion. Without this flag the command is a dry run.
+        #[arg(long)]
+        apply: bool,
+    },
     /// List materialized explain docs.
     List,
     /// Search materialized explain docs.

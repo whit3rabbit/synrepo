@@ -40,7 +40,7 @@ pub(crate) use context::{
 pub(crate) use docs::docs;
 #[cfg(test)]
 pub(crate) use docs::{
-    docs_export_output, docs_import_output, docs_list_output, docs_search_output,
+    docs_clean_output, docs_export_output, docs_import_output, docs_list_output, docs_search_output,
 };
 pub(crate) use doctor::doctor;
 pub(crate) use export::export;

@@ -260,13 +260,14 @@ impl CommentaryGenerator for OpenAiCompatProvider {
             .as_ref()
             .map(|u| (u.prompt_tokens, u.completion_tokens));
 
-        let text = parsed
-            .choices
-            .into_iter()
-            .next()
-            .and_then(|c| c.message.content)
-            .map(|s| s.trim().to_string())
-            .unwrap_or_default();
+        let text = sanitize_commentary_text(
+            &parsed
+                .choices
+                .into_iter()
+                .next()
+                .and_then(|c| c.message.content)
+                .unwrap_or_default(),
+        );
 
         let reported = extras.usage_override.or(reported_raw);
         let usage = resolve_usage(UsageResolution::from_output_text(
@@ -378,7 +379,7 @@ mod tests {
     const TEST_CONFIG: OpenAiCompatConfig = OpenAiCompatConfig {
         provider: "test",
         api_url: "https://example.com/v1/chat/completions",
-        pass_id: "commentary-v1-test",
+        pass_id: "commentary-v2-test",
         cross_link_pass_id: "cross-link-v1-test",
         default_model: "test-model",
         extra_headers: &[],

@@ -3,6 +3,7 @@
 mod corpus;
 mod edit;
 mod index;
+mod maintenance;
 mod search;
 
 pub use corpus::{
@@ -18,5 +19,9 @@ pub use edit::{
 pub use index::{
     search_commentary_index, sync_commentary_index, CommentaryIndexSyncMode,
     CommentaryIndexSyncSummary,
+};
+pub use maintenance::{
+    clean_commentary_docs, export_commentary_docs, CommentaryDocsCleanSummary,
+    CommentaryDocsExportOptions, CommentaryDocsExportSummary,
 };
 pub use search::{search_commentary_docs, CommentaryDocHit};

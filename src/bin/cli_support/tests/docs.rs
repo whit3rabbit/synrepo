@@ -8,7 +8,7 @@ use tempfile::tempdir;
 use time::OffsetDateTime;
 
 use super::super::commands::{
-    docs_export_output, docs_import_output, docs_list_output, docs_search_output,
+    docs_clean_output, docs_export_output, docs_import_output, docs_list_output, docs_search_output,
 };
 use super::support::seed_graph;
 
@@ -18,7 +18,7 @@ fn docs_export_materializes_file_commentary() {
     let ids = seed_graph(repo.path());
     seed_file_commentary(repo.path(), NodeId::File(ids.file_id), "File prose.");
 
-    let output = docs_export_output(repo.path()).unwrap();
+    let output = docs_export_output(repo.path(), false).unwrap();
 
     assert!(output.contains("1 docs"), "unexpected output: {output}");
     assert!(doc_path(repo.path(), NodeId::File(ids.file_id)).exists());
@@ -29,7 +29,7 @@ fn docs_list_and_search_read_materialized_docs() {
     let repo = tempdir().unwrap();
     let ids = seed_graph(repo.path());
     seed_file_commentary(repo.path(), NodeId::File(ids.file_id), "Needle prose.");
-    docs_export_output(repo.path()).unwrap();
+    docs_export_output(repo.path(), false).unwrap();
 
     let list = docs_list_output(repo.path()).unwrap();
     let search = docs_search_output(repo.path(), "Needle", 10).unwrap();
@@ -51,7 +51,7 @@ fn docs_import_persists_edited_body() {
     let ids = seed_graph(repo.path());
     let node_id = NodeId::File(ids.file_id);
     seed_file_commentary(repo.path(), node_id, "File prose.");
-    docs_export_output(repo.path()).unwrap();
+    docs_export_output(repo.path(), false).unwrap();
     let path = doc_path(repo.path(), node_id);
     let text = fs::read_to_string(&path).unwrap();
     fs::write(&path, text.replace("File prose.", "Reviewed prose.")).unwrap();
@@ -73,7 +73,7 @@ fn docs_import_skips_stale_source_hash() {
     let ids = seed_graph(repo.path());
     let node_id = NodeId::File(ids.file_id);
     seed_file_commentary(repo.path(), node_id, "File prose.");
-    docs_export_output(repo.path()).unwrap();
+    docs_export_output(repo.path(), false).unwrap();
     let path = doc_path(repo.path(), node_id);
     let text = fs::read_to_string(&path).unwrap();
     fs::write(
@@ -86,6 +86,46 @@ fn docs_import_skips_stale_source_hash() {
 
     assert!(output.contains("0 imported"), "unexpected output: {output}");
     assert!(output.contains("1 skipped"), "unexpected output: {output}");
+}
+
+#[test]
+fn docs_export_force_rewrites_local_markdown_from_overlay() {
+    let repo = tempdir().unwrap();
+    let ids = seed_graph(repo.path());
+    let node_id = NodeId::File(ids.file_id);
+    seed_file_commentary(repo.path(), node_id, "Overlay prose.");
+    docs_export_output(repo.path(), false).unwrap();
+    let path = doc_path(repo.path(), node_id);
+    let text = fs::read_to_string(&path).unwrap();
+    fs::write(&path, text.replace("Overlay prose.", "Unimported edit.")).unwrap();
+
+    let output = docs_export_output(repo.path(), true).unwrap();
+    let rewritten = fs::read_to_string(&path).unwrap();
+
+    assert!(
+        output.contains("forced rebuild"),
+        "unexpected output: {output}"
+    );
+    assert!(rewritten.contains("Overlay prose."));
+    assert!(!rewritten.contains("Unimported edit."));
+}
+
+#[test]
+fn docs_clean_is_dry_run_until_apply() {
+    let repo = tempdir().unwrap();
+    let ids = seed_graph(repo.path());
+    let node_id = NodeId::File(ids.file_id);
+    seed_file_commentary(repo.path(), node_id, "File prose.");
+    docs_export_output(repo.path(), false).unwrap();
+    let path = doc_path(repo.path(), node_id);
+
+    let dry_run = docs_clean_output(repo.path(), false).unwrap();
+    assert!(path.exists(), "dry run must preserve docs");
+    assert!(dry_run.contains("Dry run"), "unexpected output: {dry_run}");
+
+    let applied = docs_clean_output(repo.path(), true).unwrap();
+    assert!(!path.exists(), "apply must remove materialized docs");
+    assert!(applied.contains("removed"), "unexpected output: {applied}");
 }
 
 fn seed_file_commentary(repo: &std::path::Path, node_id: NodeId, text: &str) {

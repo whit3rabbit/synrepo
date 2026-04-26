@@ -52,7 +52,7 @@ fn reconcile_materializes_file_commentary_docs() {
         .lock()
         .insert_commentary(CommentaryEntry {
             node_id: NodeId::File(file.id),
-            text: "File-level prose.".to_string(),
+            text: "<think>hidden reasoning</think>\nFile-level prose.".to_string(),
             provenance: CommentaryProvenance {
                 source_content_hash: file.content_hash.clone(),
                 pass_id: "test".to_string(),
@@ -73,6 +73,9 @@ fn reconcile_materializes_file_commentary_docs() {
     let header = parse_commentary_doc_header(&doc_path).unwrap().unwrap();
     assert_eq!(header.node_kind, "file");
     assert_eq!(header.source_path, "src/lib.rs");
+    let rendered = std::fs::read_to_string(doc_path).unwrap();
+    assert!(!rendered.contains("<think>"));
+    assert!(rendered.contains("File-level prose."));
 }
 
 #[test]

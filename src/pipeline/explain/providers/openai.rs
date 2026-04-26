@@ -14,7 +14,7 @@ pub const DEFAULT_MODEL: &str = "gpt-4o-mini";
 const CONFIG: OpenAiCompatConfig = OpenAiCompatConfig {
     provider: "openai",
     api_url: "https://api.openai.com/v1/chat/completions",
-    pass_id: "commentary-v1-openai",
+    pass_id: "commentary-v2-openai",
     cross_link_pass_id: "cross-link-v1-openai",
     default_model: DEFAULT_MODEL,
     extra_headers: &[],

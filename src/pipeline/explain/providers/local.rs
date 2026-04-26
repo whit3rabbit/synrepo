@@ -27,7 +27,7 @@ pub const DEFAULT_MODEL: &str = "llama3";
 const DEFAULT_ENDPOINT: &str = "http://localhost:11434/api/chat";
 
 /// Pass IDs for local provider.
-const PASS_ID: &str = "commentary-v1-local";
+const PASS_ID: &str = "commentary-v2-local";
 const CROSS_LINK_PASS_ID: &str = "cross-link-v1-local";
 
 /// Local-backed commentary generator.
@@ -150,7 +150,7 @@ impl CommentaryGenerator for LocalCommentaryGenerator {
             }
         };
 
-        let text = text.trim().to_string();
+        let text = sanitize_commentary_text(&text);
         ctx.complete(usage, cap_output_bytes(&text));
 
         if text.is_empty() {

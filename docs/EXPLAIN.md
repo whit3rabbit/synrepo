@@ -51,6 +51,9 @@ Explain commentary is stored in the overlay database and can be materialized int
 
 ```bash
 synrepo docs export          # write .synrepo/explain-docs/ and update the explain-doc index
+synrepo docs export --force  # rebuild explain-docs and explain-index from overlay
+synrepo docs clean           # dry-run removal of materialized docs and index
+synrepo docs clean --apply   # remove materialized docs and index; overlay is untouched
 synrepo docs list            # list materialized docs and freshness
 synrepo docs search <query>  # search materialized commentary docs
 synrepo docs import <path>   # import one edited Markdown body back into the overlay
@@ -58,6 +61,10 @@ synrepo docs import --all    # import all edited Markdown bodies
 ```
 
 Only the body after the `---` separator is treated as editable content. Import skips a doc when its `source_content_hash` header no longer matches the current graph, so a stale edit cannot silently become fresh commentary for changed source.
+
+Export always materializes from overlay commentary. That means local Markdown edits should be imported before running `docs export`, `docs export --force`, or an Explain refresh if the edits should be preserved. `docs clean --apply` deletes only `.synrepo/explain-docs/` and `.synrepo/explain-index/`; it does not remove overlay commentary.
+
+The dashboard Explain tab exposes the same maintenance actions: `d` exports docs without model calls, `D` force-rebuilds docs and the docs index, `x` previews a clean, and `X` removes the exported docs/index while leaving overlay commentary intact.
 
 ## Telemetry
 

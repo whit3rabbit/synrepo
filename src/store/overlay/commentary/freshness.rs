@@ -12,6 +12,9 @@ pub fn derive_freshness(entry: &CommentaryEntry, current_content_hash: &str) -> 
     if !has_complete_provenance(&entry.provenance) {
         return FreshnessState::Invalid;
     }
+    if entry.provenance.pass_id.starts_with("commentary-v1") {
+        return FreshnessState::Stale;
+    }
     if entry.provenance.source_content_hash == current_content_hash {
         FreshnessState::Fresh
     } else {

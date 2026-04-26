@@ -6,7 +6,13 @@ use std::time::Duration;
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 
 use super::{ActiveTab, AppMode, AppState, ExplainMode};
+use crate::config::Config;
+use crate::pipeline::explain::docs::{
+    clean_commentary_docs, export_commentary_docs, CommentaryDocsExportOptions,
+};
 use crate::pipeline::watch::WatchServiceStatus;
+use crate::store::{overlay::SqliteOverlayStore, sqlite::SqliteGraphStore};
+use crate::structure::graph::with_graph_read_snapshot;
 use crate::surface::status_snapshot::StatusSnapshot;
 use crate::tui::actions::{
     outcome_to_log, reconcile_now, set_auto_sync, start_watch_daemon, stop_watch, sync_now,
@@ -76,6 +82,10 @@ impl AppState {
         //   r — run `synrepo explain` against all stale entries
         //   c — run with `--changed` (recent hotspots)
         //   f — open folder picker sub-view (in-tab, no dashboard exit)
+        //   d — export docs from overlay without model calls
+        //   D — force rebuild docs/index from overlay
+        //   x — preview clean of materialized docs/index
+        //   X — clean materialized docs/index, overlay untouched
         if matches!(self.active_tab, ActiveTab::Explain) {
             match code {
                 KeyCode::Char('s') => {
@@ -94,6 +104,18 @@ impl AppState {
                 KeyCode::Char('f') => {
                     self.open_folder_picker();
                     return true;
+                }
+                KeyCode::Char('d') => {
+                    return self.handle_docs_export(false);
+                }
+                KeyCode::Char('D') => {
+                    return self.handle_docs_export(true);
+                }
+                KeyCode::Char('x') => {
+                    return self.handle_docs_clean(false);
+                }
+                KeyCode::Char('X') => {
+                    return self.handle_docs_clean(true);
                 }
                 _ => {}
             }
@@ -153,6 +175,69 @@ impl AppState {
                 true
             }
             _ => false,
+        }
+    }
+
+    fn handle_docs_export(&mut self, force: bool) -> bool {
+        let synrepo_dir = Config::synrepo_dir(&self.repo_root);
+        let result = (|| -> anyhow::Result<String> {
+            let graph = SqliteGraphStore::open_existing(&synrepo_dir.join("graph"))?;
+            let overlay = SqliteOverlayStore::open_existing(&synrepo_dir.join("overlay")).ok();
+            let summary = with_graph_read_snapshot(&graph, |graph| {
+                export_commentary_docs(
+                    &synrepo_dir,
+                    graph,
+                    overlay.as_ref(),
+                    CommentaryDocsExportOptions { force },
+                )
+            })?;
+            Ok(format!(
+                "{} docs exported, {} changed{}",
+                summary.total_docs,
+                summary.changed_paths,
+                if force { " (forced rebuild)" } else { "" }
+            ))
+        })();
+        self.record_docs_action("docs", result);
+        true
+    }
+
+    fn handle_docs_clean(&mut self, apply: bool) -> bool {
+        let synrepo_dir = Config::synrepo_dir(&self.repo_root);
+        let result = clean_commentary_docs(&synrepo_dir, apply).map(|summary| {
+            let verb = if apply { "removed" } else { "would remove" };
+            let suffix = if apply { "" } else { " (preview only)" };
+            format!(
+                "{verb} {} doc file(s) and {} index file(s){suffix}",
+                summary.doc_files, summary.index_files
+            )
+        });
+        self.record_docs_action("docs", result.map_err(anyhow::Error::from));
+        true
+    }
+
+    fn record_docs_action(&mut self, tag: &str, result: anyhow::Result<String>) {
+        match result {
+            Ok(message) => {
+                self.set_toast(message.clone());
+                self.log.push(crate::tui::widgets::LogEntry {
+                    timestamp: crate::tui::actions::now_rfc3339(),
+                    tag: tag.to_string(),
+                    message,
+                    severity: crate::tui::probe::Severity::Healthy,
+                });
+                self.refresh_now();
+            }
+            Err(error) => {
+                let message = format!("{error:#}");
+                self.set_toast(format!("docs action failed: {message}"));
+                self.log.push(crate::tui::widgets::LogEntry {
+                    timestamp: crate::tui::actions::now_rfc3339(),
+                    tag: tag.to_string(),
+                    message,
+                    severity: crate::tui::probe::Severity::Stale,
+                });
+            }
         }
     }
 

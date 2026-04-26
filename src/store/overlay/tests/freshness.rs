@@ -10,7 +10,7 @@ fn sample_entry(node_id: NodeId, hash: &str) -> CommentaryEntry {
         text: "Sample commentary.".to_string(),
         provenance: CommentaryProvenance {
             source_content_hash: hash.to_string(),
-            pass_id: "commentary-v1".to_string(),
+            pass_id: "commentary-v2".to_string(),
             model_identity: "claude-sonnet-4-6".to_string(),
             generated_at: time::OffsetDateTime::from_unix_timestamp(1_712_000_000).unwrap(),
         },
@@ -32,6 +32,17 @@ fn derive_freshness_stale_on_hash_mismatch() {
     let node = NodeId::Symbol(SymbolNodeId(1));
     let entry = sample_entry(node, "hash-old");
     assert_eq!(derive_freshness(&entry, "hash-new"), FreshnessState::Stale);
+}
+
+#[test]
+fn derive_freshness_stale_on_obsolete_commentary_pass() {
+    let node = NodeId::Symbol(SymbolNodeId(1));
+    let mut entry = sample_entry(node, "hash-fresh");
+    entry.provenance.pass_id = "commentary-v1-minimax".to_string();
+    assert_eq!(
+        derive_freshness(&entry, "hash-fresh"),
+        FreshnessState::Stale
+    );
 }
 
 #[test]

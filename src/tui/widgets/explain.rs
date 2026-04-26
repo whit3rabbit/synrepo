@@ -132,6 +132,22 @@ fn render_configured(
         "Refresh changed files only (last 50 commits)",
         theme,
     ));
+    lines.push(action_line(
+        "d",
+        "Export docs from overlay, no model calls",
+        theme,
+    ));
+    lines.push(action_line("D", "Force rebuild docs and docs index", theme));
+    lines.push(action_line(
+        "x",
+        "Preview clean of exported docs/index",
+        theme,
+    ));
+    lines.push(action_line(
+        "X",
+        "Clean exported docs/index, overlay untouched",
+        theme,
+    ));
     lines.push(action_line("s", "Re-run explain setup", theme));
     lines
 }

@@ -150,7 +150,8 @@ impl ExplainRunUi {
                 self.current = if stopped {
                     "Stop requested. Wrote completed commentary before returning.".to_string()
                 } else {
-                    "Explain complete. Commentary is available in the overlay.".to_string()
+                    "Explain complete. Commentary docs were exported to .synrepo/explain-docs."
+                        .to_string()
                 };
                 self.push_recent(format!(
                     "Finished: refreshed {refreshed}, generated {seeded}, not generated {not_generated}."

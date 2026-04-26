@@ -3,9 +3,9 @@ use std::path::{Path, PathBuf};
 use synrepo::{
     config::Config,
     pipeline::explain::docs::{
-        commentary_doc_paths, import_commentary_doc, list_commentary_docs,
-        reconcile_commentary_docs, search_commentary_docs, sync_commentary_index,
-        CommentaryDocImportStatus,
+        clean_commentary_docs, commentary_doc_paths, export_commentary_docs, import_commentary_doc,
+        list_commentary_docs, search_commentary_docs, CommentaryDocImportStatus,
+        CommentaryDocsExportOptions,
     },
     store::{overlay::SqliteOverlayStore, sqlite::SqliteGraphStore},
     structure::graph::with_graph_read_snapshot,
@@ -16,7 +16,8 @@ use crate::cli_support::cli_args::DocsCommand;
 /// Run the `synrepo docs` command group.
 pub(crate) fn docs(repo_root: &Path, command: DocsCommand) -> anyhow::Result<()> {
     match command {
-        DocsCommand::Export => print!("{}", docs_export_output(repo_root)?),
+        DocsCommand::Export { force } => print!("{}", docs_export_output(repo_root, force)?),
+        DocsCommand::Clean { apply } => print!("{}", docs_clean_output(repo_root, apply)?),
         DocsCommand::List => print!("{}", docs_list_output(repo_root)?),
         DocsCommand::Search { query, limit } => {
             print!("{}", docs_search_output(repo_root, &query, limit)?)
@@ -28,22 +29,46 @@ pub(crate) fn docs(repo_root: &Path, command: DocsCommand) -> anyhow::Result<()>
     Ok(())
 }
 
-pub(crate) fn docs_export_output(repo_root: &Path) -> anyhow::Result<String> {
+pub(crate) fn docs_export_output(repo_root: &Path, force: bool) -> anyhow::Result<String> {
     let synrepo_dir = ensure_initialized(repo_root)?;
     let graph = open_graph(&synrepo_dir)?;
     let overlay = SqliteOverlayStore::open_existing(&synrepo_dir.join("overlay")).ok();
-    let touched = with_graph_read_snapshot(&graph, |graph| {
-        reconcile_commentary_docs(&synrepo_dir, graph, overlay.as_ref())
+    let summary = with_graph_read_snapshot(&graph, |graph| {
+        export_commentary_docs(
+            &synrepo_dir,
+            graph,
+            overlay.as_ref(),
+            CommentaryDocsExportOptions { force },
+        )
     })?;
-    let index = sync_commentary_index(&synrepo_dir, &touched)?;
-    let total = list_commentary_docs(&synrepo_dir)?.len();
 
     Ok(format!(
-        "Explain docs exported: {total} docs, {} changed\n  Directory: {}\n  Index: {:?} ({} touched)\n",
-        touched.len(),
-        synrepo_dir.join("explain-docs").display(),
-        index.mode,
-        index.touched_paths,
+        "Explain docs exported: {} docs, {} changed{}\n  Directory: {}\n  Index: {:?} ({} touched)\n",
+        summary.total_docs,
+        summary.changed_paths,
+        if force { " (forced rebuild)" } else { "" },
+        summary.docs_dir.display(),
+        summary.index_mode,
+        summary.index_touched_paths,
+    ))
+}
+
+pub(crate) fn docs_clean_output(repo_root: &Path, apply: bool) -> anyhow::Result<String> {
+    let synrepo_dir = ensure_initialized(repo_root)?;
+    let summary = clean_commentary_docs(&synrepo_dir, apply)?;
+    let verb = if apply { "removed" } else { "would remove" };
+    let suffix = if apply {
+        String::new()
+    } else {
+        "\n  Dry run. Re-run with `synrepo docs clean --apply` to delete these files.".to_string()
+    };
+    Ok(format!(
+        "Explain docs clean: {verb} {} doc file(s) and {} index file(s)\n  Docs: {}\n  Index: {}{}\n",
+        summary.doc_files,
+        summary.index_files,
+        summary.docs_dir.display(),
+        summary.index_dir.display(),
+        suffix,
     ))
 }
 

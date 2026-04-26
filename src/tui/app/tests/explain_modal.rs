@@ -4,6 +4,7 @@ use crate::bootstrap::runtime_probe::AgentIntegration;
 use crate::tui::actions::{stop_watch, ActionContext, ActionOutcome};
 use crate::tui::theme::Theme;
 use crossterm::event::{KeyCode, KeyModifiers};
+use std::fs;
 
 #[test]
 fn queue_explain_without_watch_sets_pending_run() {
@@ -128,4 +129,50 @@ fn confirm_modal_n_cancels_without_stopping_watch() {
         ),
         "cleanup stop must succeed, got {stop:?}"
     );
+}
+
+#[test]
+fn explain_tab_docs_export_does_not_queue_model_run() {
+    let (_repo, mut state) = make_ready_poll_state();
+    state.set_tab(ActiveTab::Explain);
+
+    let consumed = state.handle_key(KeyCode::Char('d'), KeyModifiers::NONE);
+
+    assert!(consumed);
+    assert!(state.pending_explain.is_none());
+    assert!(state.confirm_stop_watch.is_none());
+    assert!(
+        state
+            .log
+            .as_slice()
+            .iter()
+            .any(|entry| entry.message.contains("docs exported")),
+        "docs export should be logged"
+    );
+}
+
+#[test]
+fn explain_tab_docs_clean_previews_before_apply() {
+    let (repo, mut state) = make_ready_poll_state();
+    state.set_tab(ActiveTab::Explain);
+    let docs_dir = repo
+        .path()
+        .join(".synrepo")
+        .join("explain-docs")
+        .join("files");
+    let index_dir = repo.path().join(".synrepo").join("explain-index");
+    fs::create_dir_all(&docs_dir).unwrap();
+    fs::create_dir_all(&index_dir).unwrap();
+    let doc_path = docs_dir.join("file_demo.md");
+    let index_path = index_dir.join("index.dat");
+    fs::write(&doc_path, "demo").unwrap();
+    fs::write(&index_path, "demo").unwrap();
+
+    assert!(state.handle_key(KeyCode::Char('x'), KeyModifiers::NONE));
+    assert!(doc_path.exists(), "clean preview must preserve docs");
+    assert!(index_path.exists(), "clean preview must preserve index");
+
+    assert!(state.handle_key(KeyCode::Char('X'), KeyModifiers::NONE));
+    assert!(!doc_path.exists(), "clean apply must remove docs");
+    assert!(!index_path.exists(), "clean apply must remove index");
 }

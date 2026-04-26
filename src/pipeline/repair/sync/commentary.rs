@@ -21,6 +21,7 @@ use crate::{
     store::{overlay::SqliteOverlayStore, sqlite::SqliteGraphStore},
 };
 
+use super::commentary_context::build_context_text;
 use super::commentary_plan::{
     build_commentary_work_plan_with_progress, CommentaryProgressEvent, CommentaryWorkItem,
     CommentaryWorkPhase, CommentaryWorkPlan,
@@ -56,6 +57,7 @@ pub fn refresh_commentary(
     refresh_commentary_with_generator(
         context,
         actions_taken,
+        context.repo_root,
         &graph,
         &mut overlay,
         &*generator,
@@ -70,6 +72,7 @@ pub fn refresh_commentary(
 fn refresh_commentary_with_generator(
     context: &ActionContext<'_>,
     actions_taken: &mut Vec<String>,
+    repo_root: &Path,
     graph: &SqliteGraphStore,
     overlay: &mut SqliteOverlayStore,
     generator: &dyn CommentaryGenerator,
@@ -91,10 +94,8 @@ fn refresh_commentary_with_generator(
     );
 
     let docs_root_path = docs_root(context.synrepo_dir);
-    let docs_symbols_dir = docs_root_path.join("symbols");
     let index_dir_path = index_dir(context.synrepo_dir);
     let docs_root_existed = docs_root_path.exists();
-    let docs_symbols_existed = docs_symbols_dir.exists();
     let index_dir_existed = index_dir_path.exists();
 
     let mut commented: HashSet<NodeId> = rows
@@ -119,7 +120,7 @@ fn refresh_commentary_with_generator(
         attempted += 1;
         refresh_attempted += 1;
         emit_target_started(&mut progress, item, attempted);
-        let generated = execute_item(graph, overlay, generator, item)?;
+        let generated = execute_item(repo_root, graph, overlay, generator, item)?;
         if generated {
             refreshed += 1;
             refresh_generated += 1;
@@ -150,7 +151,7 @@ fn refresh_commentary_with_generator(
         attempted += 1;
         seed_attempted += 1;
         emit_target_started(&mut progress, item, attempted);
-        let generated = execute_item(graph, overlay, generator, item)?;
+        let generated = execute_item(repo_root, graph, overlay, generator, item)?;
         if generated {
             commented.insert(item.node_id);
             seeded += 1;
@@ -172,7 +173,7 @@ fn refresh_commentary_with_generator(
         attempted += 1;
         seed_attempted += 1;
         emit_target_started(&mut progress, item, attempted);
-        let generated = execute_item(graph, overlay, generator, item)?;
+        let generated = execute_item(repo_root, graph, overlay, generator, item)?;
         if generated {
             commented.insert(item.node_id);
             seeded += 1;
@@ -195,14 +196,9 @@ fn refresh_commentary_with_generator(
 
     let touched = reconcile_commentary_docs(context.synrepo_dir, graph, Some(overlay))?;
     let index_summary = sync_commentary_index(context.synrepo_dir, &touched)?;
-    emit_docs_events(
-        &mut progress,
-        &docs_root_path,
-        &docs_symbols_dir,
-        docs_root_existed,
-        docs_symbols_existed,
-        &touched,
-    );
+    let docs_written = touched.iter().filter(|path| path.exists()).count();
+    let docs_removed = touched.len().saturating_sub(docs_written);
+    emit_docs_events(&mut progress, &docs_root_path, docs_root_existed, &touched);
     emit_index_events(
         &mut progress,
         &index_dir_path,
@@ -229,6 +225,10 @@ fn refresh_commentary_with_generator(
     actions_taken.push(format!(
         "commentary: {seeded} seeded, {refreshed} refreshed, {not_generated} not generated{stop_suffix}"
     ));
+    actions_taken.push(format!(
+        "commentary docs: {docs_written} written, {docs_removed} removed, {} indexed",
+        index_summary.touched_paths
+    ));
     Ok(())
 }
 
@@ -240,6 +240,7 @@ fn stop_requested(should_stop: &mut Option<&mut dyn FnMut() -> bool>) -> bool {
 }
 
 fn execute_item(
+    repo_root: &Path,
     graph: &SqliteGraphStore,
     overlay: &mut SqliteOverlayStore,
     generator: &dyn CommentaryGenerator,
@@ -248,7 +249,7 @@ fn execute_item(
     let Some(snap) = resolve_commentary_node(graph, item.node_id)? else {
         return Ok(false);
     };
-    generate_and_insert(generator, overlay, item.node_id, &snap)
+    generate_and_insert(repo_root, graph, generator, overlay, item.node_id, &snap)
 }
 
 fn emit(
@@ -293,9 +294,7 @@ fn emit_target_finished(
 fn emit_docs_events(
     progress: &mut Option<&mut dyn FnMut(CommentaryProgressEvent)>,
     docs_root_path: &Path,
-    docs_symbols_dir: &Path,
     docs_root_existed: bool,
-    docs_symbols_existed: bool,
     touched: &[PathBuf],
 ) {
     if !docs_root_existed && docs_root_path.exists() {
@@ -306,15 +305,6 @@ fn emit_docs_events(
             },
         );
     }
-    if !docs_symbols_existed && docs_symbols_dir.exists() {
-        emit(
-            progress,
-            CommentaryProgressEvent::DocsDirCreated {
-                path: docs_symbols_dir.to_path_buf(),
-            },
-        );
-    }
-
     let mut touched_sorted = touched.to_vec();
     touched_sorted.sort();
     for path in touched_sorted {
@@ -362,12 +352,14 @@ fn emit_index_events(
 }
 
 fn generate_and_insert(
+    repo_root: &Path,
+    graph: &SqliteGraphStore,
     generator: &dyn CommentaryGenerator,
     overlay: &mut SqliteOverlayStore,
     node_id: NodeId,
     snap: &CommentaryNodeSnapshot,
 ) -> crate::Result<bool> {
-    let ctx_text = build_context_text(snap);
+    let ctx_text = build_context_text(repo_root, graph, snap);
     let Some(mut entry) = generator.generate(node_id, &ctx_text)? else {
         return Ok(false);
     };
@@ -377,17 +369,4 @@ fn generate_and_insert(
     };
     overlay.insert_commentary(entry)?;
     Ok(true)
-}
-
-fn build_context_text(snap: &CommentaryNodeSnapshot) -> String {
-    match &snap.symbol {
-        Some(sym) => format!(
-            "Symbol {} in {}\nSignature: {}\nDoc: {}",
-            sym.qualified_name,
-            snap.file.path,
-            sym.signature.clone().unwrap_or_default(),
-            sym.doc_comment.clone().unwrap_or_default(),
-        ),
-        None => format!("File: {}", snap.file.path),
-    }
 }

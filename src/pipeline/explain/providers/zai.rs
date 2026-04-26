@@ -18,7 +18,7 @@ pub const DEFAULT_MODEL: &str = "glm-4.6";
 const CONFIG: OpenAiCompatConfig = OpenAiCompatConfig {
     provider: "zai",
     api_url: "https://api.z.ai/api/paas/v4/chat/completions",
-    pass_id: "commentary-v1-zai",
+    pass_id: "commentary-v2-zai",
     cross_link_pass_id: "cross-link-v1-zai",
     default_model: DEFAULT_MODEL,
     extra_headers: &[],
