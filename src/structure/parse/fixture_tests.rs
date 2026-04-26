@@ -192,6 +192,74 @@ func main() {
 }
 "#;
 
+const JS_SOURCE: &[u8] = br#"
+import * as fs from 'fs';
+export function greet() {}
+class Greeter {}
+"#;
+
+const JAVA_SOURCE: &[u8] = br#"
+import java.util.List;
+class Greeter {
+    void greet() {}
+}
+"#;
+
+const KOTLIN_SOURCE: &[u8] = br#"
+import java.util.List
+class Greeter {
+    fun greet() {}
+}
+"#;
+
+const CSHARP_SOURCE: &[u8] = br#"
+using System;
+class Greeter {
+    void Greet() {}
+}
+"#;
+
+const PHP_SOURCE: &[u8] = br#"<?php
+use Exception;
+class Greeter {
+    function greet() {}
+}
+"#;
+
+const RUBY_SOURCE: &[u8] = br#"
+require 'json'
+class Greeter
+  def greet
+  end
+end
+"#;
+
+const SWIFT_SOURCE: &[u8] = br#"
+import Foundation
+class Greeter {
+    func greet() {}
+}
+"#;
+
+const C_SOURCE: &[u8] = br#"
+#include <stdio.h>
+void greet() {}
+"#;
+
+const CPP_SOURCE: &[u8] = br#"
+#include <iostream>
+class Greeter {
+    void greet() {}
+};
+"#;
+
+const DART_SOURCE: &[u8] = br#"
+import 'dart:core';
+class Greeter {
+    void greet() {}
+}
+"#;
+
 const FIXTURES: &[Fixture] = &[
     Fixture {
         language: Language::Rust,
@@ -267,6 +335,86 @@ const FIXTURES: &[Fixture] = &[
             ("main", SymbolKind::Function),
         ],
         expected_imports: &["fmt", "os"],
+    },
+    Fixture {
+        language: Language::JavaScript,
+        name: "javascript_definitions",
+        path: "src/fixture.js",
+        source: JS_SOURCE,
+        expected_symbols: &[("greet", SymbolKind::Function), ("Greeter", SymbolKind::Class)],
+        expected_imports: &["fs"],
+    },
+    Fixture {
+        language: Language::Java,
+        name: "java_definitions",
+        path: "src/fixture.java",
+        source: JAVA_SOURCE,
+        expected_symbols: &[("Greeter", SymbolKind::Class)],
+        expected_imports: &["java.util.List"],
+    },
+    Fixture {
+        language: Language::Kotlin,
+        name: "kotlin_definitions",
+        path: "src/fixture.kt",
+        source: KOTLIN_SOURCE,
+        expected_symbols: &[("Greeter", SymbolKind::Class)],
+        expected_imports: &["java.util.List"],
+    },
+    Fixture {
+        language: Language::CSharp,
+        name: "csharp_definitions",
+        path: "src/fixture.cs",
+        source: CSHARP_SOURCE,
+        expected_symbols: &[("Greeter", SymbolKind::Class)],
+        expected_imports: &["System"],
+    },
+    Fixture {
+        language: Language::Php,
+        name: "php_definitions",
+        path: "src/fixture.php",
+        source: PHP_SOURCE,
+        expected_symbols: &[("Greeter", SymbolKind::Class)],
+        expected_imports: &["Exception"],
+    },
+    Fixture {
+        language: Language::Ruby,
+        name: "ruby_definitions",
+        path: "src/fixture.rb",
+        source: RUBY_SOURCE,
+        expected_symbols: &[("Greeter", SymbolKind::Class)],
+        expected_imports: &["json"],
+    },
+    Fixture {
+        language: Language::Swift,
+        name: "swift_definitions",
+        path: "src/fixture.swift",
+        source: SWIFT_SOURCE,
+        expected_symbols: &[("Greeter", SymbolKind::Class)],
+        expected_imports: &["Foundation"],
+    },
+    Fixture {
+        language: Language::C,
+        name: "c_definitions",
+        path: "src/fixture.c",
+        source: C_SOURCE,
+        expected_symbols: &[("greet", SymbolKind::Function)],
+        expected_imports: &["stdio.h"],
+    },
+    Fixture {
+        language: Language::Cpp,
+        name: "cpp_definitions",
+        path: "src/fixture.cpp",
+        source: CPP_SOURCE,
+        expected_symbols: &[("Greeter", SymbolKind::Class)],
+        expected_imports: &["iostream"],
+    },
+    Fixture {
+        language: Language::Dart,
+        name: "dart_definitions",
+        path: "src/fixture.dart",
+        source: DART_SOURCE,
+        expected_symbols: &[("Greeter", SymbolKind::Class)],
+        expected_imports: &["dart:core"],
     },
 ];
 

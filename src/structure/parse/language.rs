@@ -13,6 +13,26 @@ pub enum Language {
     Tsx,
     /// Go (`tree-sitter-go` crate).
     Go,
+    /// JavaScript
+    JavaScript,
+    /// Java
+    Java,
+    /// Kotlin
+    Kotlin,
+    /// C#
+    CSharp,
+    /// PHP
+    Php,
+    /// Ruby
+    Ruby,
+    /// Swift
+    Swift,
+    /// C
+    C,
+    /// C++
+    Cpp,
+    /// Dart
+    Dart,
 }
 
 impl Language {
@@ -29,6 +49,16 @@ impl Language {
             Language::TypeScript,
             Language::Tsx,
             Language::Go,
+            Language::JavaScript,
+            Language::Java,
+            Language::Kotlin,
+            Language::CSharp,
+            Language::Php,
+            Language::Ruby,
+            Language::Swift,
+            Language::C,
+            Language::Cpp,
+            Language::Dart,
         ]
     }
 
@@ -40,6 +70,16 @@ impl Language {
             Language::TypeScript => "typescript",
             Language::Tsx => "tsx",
             Language::Go => "go",
+            Language::JavaScript => "javascript",
+            Language::Java => "java",
+            Language::Kotlin => "kotlin",
+            Language::CSharp => "csharp",
+            Language::Php => "php",
+            Language::Ruby => "ruby",
+            Language::Swift => "swift",
+            Language::C => "c",
+            Language::Cpp => "cpp",
+            Language::Dart => "dart",
         }
     }
 
@@ -51,6 +91,16 @@ impl Language {
             "ts" => Some(Language::TypeScript),
             "tsx" => Some(Language::Tsx),
             "go" => Some(Language::Go),
+            "js" | "jsx" | "mjs" | "cjs" => Some(Language::JavaScript),
+            "java" => Some(Language::Java),
+            "kt" | "kts" => Some(Language::Kotlin),
+            "cs" => Some(Language::CSharp),
+            "php" => Some(Language::Php),
+            "rb" => Some(Language::Ruby),
+            "swift" => Some(Language::Swift),
+            "c" | "h" => Some(Language::C),
+            "cpp" | "hpp" | "cc" | "cxx" => Some(Language::Cpp),
+            "dart" => Some(Language::Dart),
             _ => None,
         }
     }
@@ -63,6 +113,16 @@ impl Language {
             Language::TypeScript => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
             Language::Tsx => tree_sitter_typescript::LANGUAGE_TSX.into(),
             Language::Go => tree_sitter_go::LANGUAGE.into(),
+            Language::JavaScript => tree_sitter_javascript::LANGUAGE.into(),
+            Language::Java => tree_sitter_java::LANGUAGE.into(),
+            Language::Kotlin => tree_sitter_kotlin_ng::LANGUAGE.into(),
+            Language::CSharp => tree_sitter_c_sharp::LANGUAGE.into(),
+            Language::Php => tree_sitter_php::LANGUAGE_PHP.into(),
+            Language::Ruby => tree_sitter_ruby::LANGUAGE.into(),
+            Language::Swift => tree_sitter_swift::LANGUAGE.into(),
+            Language::C => tree_sitter_c::LANGUAGE.into(),
+            Language::Cpp => tree_sitter_cpp::LANGUAGE.into(),
+            Language::Dart => tree_sitter_dart::LANGUAGE.into(),
         }
     }
 
@@ -72,6 +132,16 @@ impl Language {
             Language::Python => PYTHON_DEFINITION_QUERY,
             Language::TypeScript | Language::Tsx => TS_DEFINITION_QUERY,
             Language::Go => GO_DEFINITION_QUERY,
+            Language::JavaScript => JS_DEFINITION_QUERY,
+            Language::Java => JAVA_DEFINITION_QUERY,
+            Language::Kotlin => KOTLIN_DEFINITION_QUERY,
+            Language::CSharp => CSHARP_DEFINITION_QUERY,
+            Language::Php => PHP_DEFINITION_QUERY,
+            Language::Ruby => RUBY_DEFINITION_QUERY,
+            Language::Swift => SWIFT_DEFINITION_QUERY,
+            Language::C => C_DEFINITION_QUERY,
+            Language::Cpp => CPP_DEFINITION_QUERY,
+            Language::Dart => DART_DEFINITION_QUERY,
         }
     }
 
@@ -88,6 +158,16 @@ impl Language {
             Language::Python => PYTHON_KIND_MAP,
             Language::TypeScript | Language::Tsx => TS_KIND_MAP,
             Language::Go => GO_KIND_MAP,
+            Language::JavaScript => JS_KIND_MAP,
+            Language::Java => JAVA_KIND_MAP,
+            Language::Kotlin => KOTLIN_KIND_MAP,
+            Language::CSharp => CSHARP_KIND_MAP,
+            Language::Php => PHP_KIND_MAP,
+            Language::Ruby => RUBY_KIND_MAP,
+            Language::Swift => SWIFT_KIND_MAP,
+            Language::C => C_KIND_MAP,
+            Language::Cpp => CPP_KIND_MAP,
+            Language::Dart => DART_KIND_MAP,
         }
     }
 
@@ -112,6 +192,16 @@ impl Language {
             Language::Python => PYTHON_CALL_QUERY,
             Language::TypeScript | Language::Tsx => TS_CALL_QUERY,
             Language::Go => GO_CALL_QUERY,
+            Language::JavaScript => JS_CALL_QUERY,
+            Language::Java => JAVA_CALL_QUERY,
+            Language::Kotlin => KOTLIN_CALL_QUERY,
+            Language::CSharp => CSHARP_CALL_QUERY,
+            Language::Php => PHP_CALL_QUERY,
+            Language::Ruby => RUBY_CALL_QUERY,
+            Language::Swift => SWIFT_CALL_QUERY,
+            Language::C => C_CALL_QUERY,
+            Language::Cpp => CPP_CALL_QUERY,
+            Language::Dart => DART_CALL_QUERY,
         }
     }
 
@@ -126,6 +216,16 @@ impl Language {
             Language::Python => PYTHON_IMPORT_QUERY,
             Language::TypeScript | Language::Tsx => TS_IMPORT_QUERY,
             Language::Go => GO_IMPORT_QUERY,
+            Language::JavaScript => JS_IMPORT_QUERY,
+            Language::Java => JAVA_IMPORT_QUERY,
+            Language::Kotlin => KOTLIN_IMPORT_QUERY,
+            Language::CSharp => CSHARP_IMPORT_QUERY,
+            Language::Php => PHP_IMPORT_QUERY,
+            Language::Ruby => RUBY_IMPORT_QUERY,
+            Language::Swift => SWIFT_IMPORT_QUERY,
+            Language::C => C_IMPORT_QUERY,
+            Language::Cpp => CPP_IMPORT_QUERY,
+            Language::Dart => DART_IMPORT_QUERY,
         }
     }
 
@@ -139,6 +239,16 @@ impl Language {
             Language::Python => PYTHON_CALL_MODE_MAP,
             Language::TypeScript | Language::Tsx => TS_CALL_MODE_MAP,
             Language::Go => GO_CALL_MODE_MAP,
+            Language::JavaScript => JS_CALL_MODE_MAP,
+            Language::Java => JAVA_CALL_MODE_MAP,
+            Language::Kotlin => KOTLIN_CALL_MODE_MAP,
+            Language::CSharp => CSHARP_CALL_MODE_MAP,
+            Language::Php => PHP_CALL_MODE_MAP,
+            Language::Ruby => RUBY_CALL_MODE_MAP,
+            Language::Swift => SWIFT_CALL_MODE_MAP,
+            Language::C => C_CALL_MODE_MAP,
+            Language::Cpp => CPP_CALL_MODE_MAP,
+            Language::Dart => DART_CALL_MODE_MAP,
         }
     }
 }
@@ -338,3 +448,230 @@ const GO_CALL_MODE_MAP: &[super::CallMode] = &[super::CallMode::Free, super::Cal
 const GO_IMPORT_QUERY: &str = r#"
 (import_spec path: (interpreted_string_literal) @import_ref)
 "#;
+
+
+// --- JavaScript queries ---
+const JS_DEFINITION_QUERY: &str = r#"
+(function_declaration name: (identifier) @name) @item
+(class_declaration name: (identifier) @name) @item
+(method_definition name: (property_identifier) @name) @item
+(variable_declarator name: (identifier) @name value: (arrow_function)) @item
+"#;
+const JS_KIND_MAP: &[SymbolKind] = &[
+    SymbolKind::Function,
+    SymbolKind::Class,
+    SymbolKind::Method,
+    SymbolKind::Function,
+];
+const JS_CALL_QUERY: &str = r#"
+(call_expression function: (identifier) @callee)
+(call_expression function: (member_expression object: (_) @callee_prefix property: (property_identifier) @callee))
+"#;
+const JS_CALL_MODE_MAP: &[super::CallMode] = &[super::CallMode::Free, super::CallMode::Method];
+const JS_IMPORT_QUERY: &str = r#"
+(import_statement source: (string (string_fragment) @import_ref))
+(export_statement source: (string (string_fragment) @import_ref))
+"#;
+
+// --- Java queries ---
+const JAVA_DEFINITION_QUERY: &str = r#"
+(method_declaration name: (identifier) @name) @item
+(class_declaration name: (identifier) @name) @item
+(interface_declaration name: (identifier) @name) @item
+(enum_declaration name: (identifier) @name) @item
+(annotation_type_declaration name: (identifier) @name) @item
+"#;
+const JAVA_KIND_MAP: &[SymbolKind] = &[
+    SymbolKind::Method,
+    SymbolKind::Class,
+    SymbolKind::Interface,
+    SymbolKind::Class,
+    SymbolKind::Type,
+];
+const JAVA_CALL_QUERY: &str = r#"
+(method_invocation name: (identifier) @callee)
+(method_invocation object: (_) @callee_prefix name: (identifier) @callee)
+"#;
+const JAVA_CALL_MODE_MAP: &[super::CallMode] = &[super::CallMode::Free, super::CallMode::Method];
+const JAVA_IMPORT_QUERY: &str = r#"
+(import_declaration (scoped_identifier) @import_ref)
+"#;
+
+// --- Kotlin queries ---
+const KOTLIN_DEFINITION_QUERY: &str = r#"
+(class_declaration name: (identifier) @name) @item
+(function_declaration name: (identifier) @name) @item
+(object_declaration name: (identifier) @name) @item
+"#;
+const KOTLIN_KIND_MAP: &[SymbolKind] = &[
+    SymbolKind::Class,
+    SymbolKind::Function,
+    SymbolKind::Class,
+];
+const KOTLIN_CALL_QUERY: &str = r#"
+(call_expression (identifier) @callee)
+"#;
+const KOTLIN_CALL_MODE_MAP: &[super::CallMode] = &[super::CallMode::Free, super::CallMode::Method];
+const KOTLIN_IMPORT_QUERY: &str = r#"
+(import (identifier) @import_ref)
+"#;
+
+// --- C# queries ---
+const CSHARP_DEFINITION_QUERY: &str = r#"
+(method_declaration name: (identifier) @name) @item
+(class_declaration name: (identifier) @name) @item
+(interface_declaration name: (identifier) @name) @item
+(struct_declaration name: (identifier) @name) @item
+(enum_declaration name: (identifier) @name) @item
+(delegate_declaration name: (identifier) @name) @item
+"#;
+const CSHARP_KIND_MAP: &[SymbolKind] = &[
+    SymbolKind::Method,
+    SymbolKind::Class,
+    SymbolKind::Interface,
+    SymbolKind::Class,
+    SymbolKind::Class,
+    SymbolKind::Type,
+];
+const CSHARP_CALL_QUERY: &str = r#"
+(invocation_expression function: (identifier) @callee)
+(invocation_expression function: (member_access_expression name: (identifier) @callee))
+"#;
+const CSHARP_CALL_MODE_MAP: &[super::CallMode] = &[super::CallMode::Free, super::CallMode::Method];
+const CSHARP_IMPORT_QUERY: &str = r#"
+(using_directive (identifier) @import_ref)
+"#;
+
+// --- PHP queries ---
+const PHP_DEFINITION_QUERY: &str = r#"
+(function_definition name: (name) @name) @item
+(class_declaration name: (name) @name) @item
+(interface_declaration name: (name) @name) @item
+(trait_declaration name: (name) @name) @item
+(method_declaration name: (name) @name) @item
+"#;
+const PHP_KIND_MAP: &[SymbolKind] = &[
+    SymbolKind::Function,
+    SymbolKind::Class,
+    SymbolKind::Interface,
+    SymbolKind::Trait,
+    SymbolKind::Method,
+];
+const PHP_CALL_QUERY: &str = r#"
+(function_call_expression function: (name) @callee)
+(member_call_expression name: (name) @callee)
+"#;
+const PHP_CALL_MODE_MAP: &[super::CallMode] = &[super::CallMode::Free, super::CallMode::Method];
+const PHP_IMPORT_QUERY: &str = r#"
+(namespace_use_clause (name) @import_ref)
+"#;
+
+// --- Ruby queries ---
+const RUBY_DEFINITION_QUERY: &str = r#"
+(method name: (identifier) @name) @item
+(singleton_method name: (identifier) @name) @item
+(class name: (constant) @name) @item
+(module name: (constant) @name) @item
+"#;
+const RUBY_KIND_MAP: &[SymbolKind] = &[
+    SymbolKind::Method,
+    SymbolKind::Method,
+    SymbolKind::Class,
+    SymbolKind::Module,
+];
+const RUBY_CALL_QUERY: &str = r#"
+(call method: (identifier) @callee)
+"#;
+const RUBY_CALL_MODE_MAP: &[super::CallMode] = &[super::CallMode::Free];
+const RUBY_IMPORT_QUERY: &str = r#"
+(call method: (identifier) @method_name (#eq? @method_name "require") arguments: (argument_list (string (string_content) @import_ref)))
+"#;
+
+// --- Swift queries ---
+const SWIFT_DEFINITION_QUERY: &str = r#"
+(function_declaration name: (simple_identifier) @name) @item
+(class_declaration name: (type_identifier) @name) @item
+(protocol_declaration name: (type_identifier) @name) @item
+"#;
+const SWIFT_KIND_MAP: &[SymbolKind] = &[
+    SymbolKind::Function,
+    SymbolKind::Class,
+    SymbolKind::Interface,
+];
+const SWIFT_CALL_QUERY: &str = r#"
+(call_expression (identifier) @callee)
+(call_expression (navigation_expression suffix: (simple_identifier) @callee))
+"#;
+const SWIFT_CALL_MODE_MAP: &[super::CallMode] = &[super::CallMode::Free, super::CallMode::Method];
+const SWIFT_IMPORT_QUERY: &str = r#"
+(import_declaration (identifier) @import_ref)
+"#;
+
+// --- C queries ---
+const C_DEFINITION_QUERY: &str = r#"
+(function_definition declarator: (function_declarator declarator: (identifier) @name)) @item
+(struct_specifier name: (type_identifier) @name) @item
+(enum_specifier name: (type_identifier) @name) @item
+"#;
+const C_KIND_MAP: &[SymbolKind] = &[
+    SymbolKind::Function,
+    SymbolKind::Class,
+    SymbolKind::Class,
+];
+const C_CALL_QUERY: &str = r#"
+(call_expression function: (identifier) @callee)
+"#;
+const C_CALL_MODE_MAP: &[super::CallMode] = &[super::CallMode::Free];
+const C_IMPORT_QUERY: &str = r#"
+(preproc_include path: (system_lib_string) @import_ref)
+(preproc_include path: (string_literal) @import_ref)
+"#;
+
+// --- C++ queries ---
+const CPP_DEFINITION_QUERY: &str = r#"
+(function_definition declarator: (function_declarator declarator: (identifier) @name)) @item
+(function_definition declarator: (function_declarator declarator: (field_identifier) @name)) @item
+(class_specifier name: (type_identifier) @name) @item
+(struct_specifier name: (type_identifier) @name) @item
+(enum_specifier name: (type_identifier) @name) @item
+"#;
+const CPP_KIND_MAP: &[SymbolKind] = &[
+    SymbolKind::Function,
+    SymbolKind::Method,
+    SymbolKind::Class,
+    SymbolKind::Class,
+    SymbolKind::Class,
+];
+const CPP_CALL_QUERY: &str = r#"
+(call_expression function: (identifier) @callee)
+(call_expression function: (field_expression field: (field_identifier) @callee))
+"#;
+const CPP_CALL_MODE_MAP: &[super::CallMode] = &[super::CallMode::Free, super::CallMode::Method];
+const CPP_IMPORT_QUERY: &str = r#"
+(preproc_include path: (system_lib_string) @import_ref)
+(preproc_include path: (string_literal) @import_ref)
+"#;
+
+// --- Dart queries ---
+const DART_DEFINITION_QUERY: &str = r#"
+(function_signature name: (identifier) @name) @item
+(class_declaration name: (identifier) @name) @item
+(enum_declaration name: (identifier) @name) @item
+(mixin_declaration name: (identifier) @name) @item
+(extension_declaration name: (identifier) @name) @item
+"#;
+const DART_KIND_MAP: &[SymbolKind] = &[
+    SymbolKind::Function,
+    SymbolKind::Class,
+    SymbolKind::Class,
+    SymbolKind::Trait,
+    SymbolKind::Class,
+];
+const DART_CALL_QUERY: &str = r#"
+(identifier) @callee
+"#;
+const DART_CALL_MODE_MAP: &[super::CallMode] = &[super::CallMode::Free];
+const DART_IMPORT_QUERY: &str = r#"
+(uri) @import_ref
+"#;
+

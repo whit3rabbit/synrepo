@@ -98,6 +98,16 @@ pub(super) fn extract_doc_comment(
                 Some(joined)
             }
         }
+        Language::JavaScript
+        | Language::Java
+        | Language::Kotlin
+        | Language::CSharp
+        | Language::Php
+        | Language::Ruby
+        | Language::Swift
+        | Language::C
+        | Language::Cpp
+        | Language::Dart => None,
     }
 }
 
@@ -161,6 +171,16 @@ pub(super) fn extract_signature(
             let end = end_byte.saturating_sub(offset).min(text.len());
             collapse_ws(&text[..end])
         }
+        Language::JavaScript
+        | Language::Java
+        | Language::Kotlin
+        | Language::CSharp
+        | Language::Php
+        | Language::Ruby
+        | Language::Swift
+        | Language::C
+        | Language::Cpp
+        | Language::Dart => collapse_ws(&text[..text.find('{').unwrap_or(text.len())]),
     };
     if sig.is_empty() {
         None

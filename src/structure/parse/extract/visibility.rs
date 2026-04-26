@@ -21,8 +21,19 @@ pub(super) fn extract_visibility(
     match language {
         Language::Rust => extract_rust_visibility(item_node, source),
         Language::Python => extract_python_visibility(display_name),
-        Language::TypeScript | Language::Tsx => extract_typescript_visibility(item_node, source),
+        Language::TypeScript | Language::Tsx | Language::JavaScript => {
+            extract_typescript_visibility(item_node, source)
+        }
         Language::Go => extract_go_visibility(display_name),
+        Language::Java
+        | Language::Kotlin
+        | Language::CSharp
+        | Language::Php
+        | Language::Ruby
+        | Language::Swift
+        | Language::C
+        | Language::Cpp
+        | Language::Dart => Visibility::Public,
     }
 }
 
