@@ -25,9 +25,9 @@ use cli_support::commands::prepare_mcp_state;
 #[cfg(test)]
 use cli_support::commands::report_reconcile_outcome;
 use cli_support::commands::{
-    agent_setup_many_resolved, bench_context, cards_alias, change_risk, check, compact, doctor,
-    explain_alias, export, findings, graph_query, graph_stats, handoffs, impact_alias, init,
-    links_accept, links_list, links_reject, links_review, node, notes_add, notes_audit,
+    agent_setup_many_resolved, bench_context, cards_alias, change_risk, check, compact, docs,
+    doctor, explain_alias, export, findings, graph_query, graph_stats, handoffs, impact_alias,
+    init, links_accept, links_list, links_reject, links_review, node, notes_add, notes_audit,
     notes_forget, notes_link, notes_list, notes_supersede, notes_verify, reconcile, remove,
     resolve_tool_resolution, risks_alias, run_mcp_server, search, server, setup_many_resolved,
     stats_context, status, sync, tests_alias, upgrade, watch, watch_internal, watch_status,
@@ -166,6 +166,7 @@ fn dispatch(command: Command, repo_root: &Path, tui_opts: TuiOptions) -> anyhow:
             },
         ),
         Command::Cards { query, budget } => cards_alias(repo_root, &query, budget),
+        Command::Docs(command) => docs(repo_root, command),
         Command::Explain { target, budget } => explain_alias(repo_root, &target, budget),
         Command::Impact { target, budget } => impact_alias(repo_root, &target, budget),
         Command::Tests { target, budget } => tests_alias(repo_root, &target, budget),

@@ -13,11 +13,16 @@ use tempfile::tempdir;
 
 use synrepo::bootstrap::bootstrap;
 use synrepo::config::Config;
+use synrepo::overlay::{CommentaryEntry, CommentaryProvenance, OverlayStore};
+use synrepo::pipeline::explain::docs::{reconcile_commentary_docs, sync_commentary_index};
 use synrepo::pipeline::explain::{accounting, telemetry};
 use synrepo::store::compatibility::snapshot_path;
 use synrepo::store::overlay::SqliteOverlayStore;
+use synrepo::store::sqlite::SqliteGraphStore;
+use synrepo::NodeId;
+use time::OffsetDateTime;
 
-use super::support::git;
+use super::support::{git, seed_graph};
 use crate::prepare_mcp_state;
 
 const EXPLAIN_ENV: &[&str] = &[
@@ -271,6 +276,40 @@ fn refresh_commentary_via_mcp_records_explain_accounting() {
     assert!(!totals.any_unpriced);
 
     drop(dir);
+}
+
+#[test]
+fn docs_search_via_mcp_returns_file_commentary_docs() {
+    let repo = tempdir().unwrap();
+    let ids = seed_graph(repo.path());
+    let synrepo_dir = Config::synrepo_dir(repo.path());
+    let mut overlay = SqliteOverlayStore::open(&synrepo_dir.join("overlay")).unwrap();
+    overlay
+        .insert_commentary(CommentaryEntry {
+            node_id: NodeId::File(ids.file_id),
+            text: "File-level needle.".to_string(),
+            provenance: CommentaryProvenance {
+                source_content_hash: "abc123".to_string(),
+                pass_id: "test".to_string(),
+                model_identity: "fixture".to_string(),
+                generated_at: OffsetDateTime::UNIX_EPOCH,
+            },
+        })
+        .unwrap();
+    let graph = SqliteGraphStore::open_existing(&synrepo_dir.join("graph")).unwrap();
+    let touched = reconcile_commentary_docs(&synrepo_dir, &graph, Some(&overlay)).unwrap();
+    sync_commentary_index(&synrepo_dir, &touched).unwrap();
+
+    let state = prepare_mcp_state(repo.path()).expect("MCP state should load");
+    let output = synrepo::surface::mcp::docs::handle_docs_search(&state, "needle".to_string(), 10);
+    let json: serde_json::Value =
+        serde_json::from_str(&output).expect("docs_search should return JSON");
+    let results = json["results"].as_array().unwrap();
+
+    assert_eq!(results.len(), 1, "unexpected docs search output: {output}");
+    assert_eq!(results[0]["node_id"], NodeId::File(ids.file_id).to_string());
+    assert_eq!(results[0]["source_store"], "overlay");
+    assert_eq!(results[0]["content"], "File-level needle.");
 }
 
 #[test]

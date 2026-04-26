@@ -3,6 +3,7 @@
 use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::str::FromStr;
 
 use time::format_description::well_known::Rfc3339;
 
@@ -21,13 +22,24 @@ pub struct CommentaryDocSymbolMetadata {
     pub source_path: String,
 }
 
+/// Parsed metadata header from a materialized commentary doc.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CommentaryDocHeader {
+pub struct CommentaryDocHeader {
+    /// Commentary target node ID.
     pub node_id: String,
+    /// Target kind label: `file`, `symbol`, or `concept`.
+    pub node_kind: String,
+    /// Qualified symbol name, empty for file commentary.
     pub qualified_name: String,
+    /// Repo-relative source path the commentary describes.
     pub source_path: String,
+    /// Source content hash recorded when the doc was generated or imported.
+    pub source_content_hash: String,
+    /// Freshness label relative to current graph content when materialized.
     pub commentary_state: String,
+    /// RFC3339 timestamp from the overlay provenance.
     pub generated_at: String,
+    /// Model or actor identity from the overlay provenance.
     pub model_identity: String,
 }
 
@@ -44,6 +56,7 @@ pub fn index_dir(synrepo_dir: &Path) -> PathBuf {
 /// Relative path under [`docs_root`] for a symbol commentary doc.
 pub fn commentary_doc_relative_path(node_id: NodeId) -> Option<PathBuf> {
     match node_id {
+        NodeId::File(_) => Some(PathBuf::from("files").join(format!("{node_id}.md"))),
         NodeId::Symbol(_) => Some(PathBuf::from("symbols").join(format!("{node_id}.md"))),
         _ => None,
     }
@@ -140,19 +153,31 @@ pub fn reconcile_commentary_docs(
     let mut file_cache: HashMap<FileNodeId, Option<FileNode>> = HashMap::new();
 
     for entry in entries {
-        let Some((file_id, qualified_name)) = symbol_lookup.get(&entry.node_id).cloned() else {
-            if let Some(path) = delete_commentary_doc(synrepo_dir, entry.node_id)? {
-                touched.push(path);
+        let resolved = match entry.node_id {
+            NodeId::File(file_id) => {
+                let file = match file_cache.entry(file_id) {
+                    std::collections::hash_map::Entry::Occupied(slot) => slot.get().clone(),
+                    std::collections::hash_map::Entry::Vacant(slot) => {
+                        slot.insert(graph.get_file(file_id)?).clone()
+                    }
+                };
+                file.map(|file| (file, String::new()))
             }
-            continue;
+            NodeId::Symbol(_) => match symbol_lookup.get(&entry.node_id).cloned() {
+                Some((file_id, qualified_name)) => {
+                    let file = match file_cache.entry(file_id) {
+                        std::collections::hash_map::Entry::Occupied(slot) => slot.get().clone(),
+                        std::collections::hash_map::Entry::Vacant(slot) => {
+                            slot.insert(graph.get_file(file_id)?).clone()
+                        }
+                    };
+                    file.map(|file| (file, qualified_name))
+                }
+                None => None,
+            },
+            NodeId::Concept(_) => None,
         };
-        let file = match file_cache.entry(file_id) {
-            std::collections::hash_map::Entry::Occupied(slot) => slot.get().clone(),
-            std::collections::hash_map::Entry::Vacant(slot) => {
-                slot.insert(graph.get_file(file_id)?).clone()
-            }
-        };
-        let Some(file) = file else {
+        let Some((file, qualified_name)) = resolved else {
             if let Some(path) = delete_commentary_doc(synrepo_dir, entry.node_id)? {
                 touched.push(path);
             }
@@ -176,28 +201,22 @@ pub fn reconcile_commentary_docs(
         }
     }
 
-    let symbols_dir = docs_root(synrepo_dir).join("symbols");
-    if symbols_dir.exists() {
-        for entry in fs::read_dir(&symbols_dir)? {
-            let entry = entry?;
-            let path = entry.path();
-            if path.extension().and_then(|ext| ext.to_str()) != Some("md") {
-                continue;
-            }
-            if expected.contains(&path) {
-                continue;
-            }
-            fs::remove_file(&path)?;
-            touched.push(path);
-        }
-    }
+    remove_orphaned_docs(synrepo_dir, &expected, &mut touched)?;
 
     Ok(touched)
 }
 
-pub(crate) fn parse_commentary_doc_header(
+/// Parse only the metadata header of a materialized commentary doc.
+pub fn parse_commentary_doc_header(
     absolute_path: &Path,
 ) -> crate::Result<Option<CommentaryDocHeader>> {
+    parse_commentary_doc(absolute_path).map(|doc| doc.map(|(header, _)| header))
+}
+
+/// Parse a materialized commentary doc into its header and editable body.
+pub fn parse_commentary_doc(
+    absolute_path: &Path,
+) -> crate::Result<Option<(CommentaryDocHeader, String)>> {
     let text = match fs::read_to_string(absolute_path) {
         Ok(text) => text,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -205,44 +224,66 @@ pub(crate) fn parse_commentary_doc_header(
     };
 
     let mut node_id = None;
+    let mut node_kind = None;
     let mut qualified_name = None;
     let mut source_path = None;
+    let mut source_content_hash = None;
     let mut commentary_state = None;
     let mut generated_at = None;
     let mut model_identity = None;
+    let mut body_start = None;
 
-    for line in text.lines() {
+    let mut offset = 0usize;
+    for line in text.split_inclusive('\n') {
         let trimmed = line.trim();
         if trimmed == "---" {
+            body_start = Some(offset + line.len());
             break;
         }
         let Some((key, value)) = trimmed.split_once(':') else {
+            offset += line.len();
             continue;
         };
         let value = value.trim().to_string();
         match key.trim() {
             "node_id" => node_id = Some(value),
+            "node_kind" => node_kind = Some(value),
             "qualified_name" => qualified_name = Some(value),
             "source_path" => source_path = Some(value),
+            "source_content_hash" => source_content_hash = Some(value),
             "commentary_state" => commentary_state = Some(value),
             "generated_at" => generated_at = Some(value),
             "model_identity" => model_identity = Some(value),
             _ => {}
         }
+        offset += line.len();
     }
 
     let Some(node_id) = node_id else {
         return Ok(None);
     };
-    Ok(Some(CommentaryDocHeader {
-        node_id,
-        qualified_name: qualified_name.unwrap_or_default(),
-        source_path: source_path.unwrap_or_default(),
-        commentary_state: commentary_state
-            .unwrap_or_else(|| FreshnessState::Missing.as_str().to_string()),
-        generated_at: generated_at.unwrap_or_default(),
-        model_identity: model_identity.unwrap_or_default(),
-    }))
+    let node_kind = node_kind.unwrap_or_else(|| {
+        NodeId::from_str(&node_id)
+            .map(|id| node_kind_label(id).to_string())
+            .unwrap_or_default()
+    });
+    let body = body_start
+        .map(|start| text[start..].trim_start_matches('\n').to_string())
+        .unwrap_or_default();
+    Ok(Some((
+        CommentaryDocHeader {
+            node_id,
+            node_kind,
+            qualified_name: qualified_name.unwrap_or_default(),
+            source_path: source_path.unwrap_or_default(),
+            source_content_hash: source_content_hash.unwrap_or_default(),
+            commentary_state: commentary_state
+                .unwrap_or_else(|| FreshnessState::Missing.as_str().to_string()),
+            generated_at: generated_at.unwrap_or_default(),
+            model_identity: model_identity.unwrap_or_default(),
+        },
+        body,
+    )))
 }
 
 fn render_commentary_doc(
@@ -259,133 +300,59 @@ fn render_commentary_doc(
     Ok(format!(
         "# Advisory Commentary\n\n\
          node_id: {node_id}\n\
+         node_kind: {node_kind}\n\
          qualified_name: {qualified_name}\n\
          source_path: {source_path}\n\
+         source_content_hash: {source_content_hash}\n\
          commentary_state: {commentary_state}\n\
          generated_at: {generated_at}\n\
          model_identity: {model_identity}\n\
          source_store: overlay\n\n\
          ---\n\n\
          {body}\n",
+        node_kind = node_kind_label(node_id),
         qualified_name = metadata.qualified_name,
         source_path = metadata.source_path,
+        source_content_hash = entry.provenance.source_content_hash,
         commentary_state = freshness.as_str(),
         model_identity = entry.provenance.model_identity,
         body = entry.text.trim_end(),
     ))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::str::FromStr;
-
-    use crate::overlay::CommentaryProvenance;
-    use crate::surface::card::compiler::tests::fixtures::{
-        fresh_symbol_fixture, make_overlay_store,
-    };
-    use time::OffsetDateTime;
-
-    #[test]
-    fn upsert_and_parse_commentary_doc_round_trip() {
-        let repo = tempfile::tempdir().unwrap();
-        let synrepo_dir = repo.path().join(".synrepo");
-        let entry = CommentaryEntry {
-            node_id: NodeId::from_str("sym_00000000000000000000000000000001").unwrap(),
-            text: "Fresh prose.".to_string(),
-            provenance: CommentaryProvenance {
-                source_content_hash: "h1".to_string(),
-                pass_id: "test".to_string(),
-                model_identity: "fixture".to_string(),
-                generated_at: OffsetDateTime::UNIX_EPOCH,
-            },
-        };
-        let metadata = CommentaryDocSymbolMetadata {
-            qualified_name: "crate::demo::run".to_string(),
-            source_path: "src/lib.rs".to_string(),
-        };
-
-        let path = upsert_commentary_doc(
-            &synrepo_dir,
-            entry.node_id,
-            &entry,
-            FreshnessState::Fresh,
-            &metadata,
-        )
-        .unwrap()
-        .unwrap();
-        let header = parse_commentary_doc_header(&path).unwrap().unwrap();
-        assert_eq!(header.node_id, entry.node_id.to_string());
-        assert_eq!(header.qualified_name, "crate::demo::run");
-        assert_eq!(header.source_path, "src/lib.rs");
-        assert_eq!(header.commentary_state, "fresh");
-        assert_eq!(header.model_identity, "fixture");
-    }
-
-    #[test]
-    fn reconcile_removes_orphaned_commentary_docs() {
-        let (repo, graph, sym_id) = fresh_symbol_fixture();
-        let overlay = make_overlay_store(&repo);
-        let entry = CommentaryEntry {
-            node_id: NodeId::Symbol(sym_id),
-            text: "Fresh prose.".to_string(),
-            provenance: CommentaryProvenance {
-                source_content_hash: graph
-                    .file_by_path("src/lib.rs")
-                    .unwrap()
-                    .unwrap()
-                    .content_hash,
-                pass_id: "test".to_string(),
-                model_identity: "fixture".to_string(),
-                generated_at: OffsetDateTime::UNIX_EPOCH,
-            },
-        };
-        overlay.lock().insert_commentary(entry.clone()).unwrap();
-
-        let synrepo_dir = repo.path().join(".synrepo");
-        let overlay_store =
-            SqliteOverlayStore::open_existing(&synrepo_dir.join("overlay")).unwrap();
-        let first = reconcile_commentary_docs(&synrepo_dir, &graph, Some(&overlay_store)).unwrap();
-        assert_eq!(first.len(), 1);
-
-        overlay.lock().prune_orphans(&[]).unwrap();
-        let overlay_store =
-            SqliteOverlayStore::open_existing(&synrepo_dir.join("overlay")).unwrap();
-        let second = reconcile_commentary_docs(&synrepo_dir, &graph, Some(&overlay_store)).unwrap();
-        assert_eq!(second.len(), 1);
-        assert!(!docs_root(&synrepo_dir)
-            .join("symbols")
-            .join(format!("{}.md", NodeId::Symbol(sym_id)))
-            .exists());
-    }
-
-    #[test]
-    fn reconcile_rewrites_commentary_state_when_overlay_entry_is_stale() {
-        let (repo, graph, sym_id) = fresh_symbol_fixture();
-        let overlay = make_overlay_store(&repo);
-        overlay
-            .lock()
-            .insert_commentary(CommentaryEntry {
-                node_id: NodeId::Symbol(sym_id),
-                text: "Stale prose.".to_string(),
-                provenance: CommentaryProvenance {
-                    source_content_hash: "outdated-hash".to_string(),
-                    pass_id: "test".to_string(),
-                    model_identity: "fixture".to_string(),
-                    generated_at: OffsetDateTime::UNIX_EPOCH,
-                },
-            })
-            .unwrap();
-
-        let synrepo_dir = repo.path().join(".synrepo");
-        let overlay_store =
-            SqliteOverlayStore::open_existing(&synrepo_dir.join("overlay")).unwrap();
-        reconcile_commentary_docs(&synrepo_dir, &graph, Some(&overlay_store)).unwrap();
-
-        let doc_path = docs_root(&synrepo_dir)
-            .join("symbols")
-            .join(format!("{}.md", NodeId::Symbol(sym_id)));
-        let header = parse_commentary_doc_header(&doc_path).unwrap().unwrap();
-        assert_eq!(header.commentary_state, "stale");
+fn node_kind_label(node_id: NodeId) -> &'static str {
+    match node_id {
+        NodeId::File(_) => "file",
+        NodeId::Symbol(_) => "symbol",
+        NodeId::Concept(_) => "concept",
     }
 }
+
+fn remove_orphaned_docs(
+    synrepo_dir: &Path,
+    expected: &BTreeSet<PathBuf>,
+    touched: &mut Vec<PathBuf>,
+) -> crate::Result<()> {
+    for dirname in ["files", "symbols"] {
+        let dir = docs_root(synrepo_dir).join(dirname);
+        if !dir.exists() {
+            continue;
+        }
+        for entry in fs::read_dir(&dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.extension().and_then(|ext| ext.to_str()) != Some("md") {
+                continue;
+            }
+            if expected.contains(&path) {
+                continue;
+            }
+            fs::remove_file(&path)?;
+            touched.push(path);
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests;

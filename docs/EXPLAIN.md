@@ -45,6 +45,20 @@ The legacy `SYNREPO_ANTHROPIC_API_KEY` is also accepted as a fallback to `ANTHRO
 
 User-facing rationale (what explain produces, when to enable, rough cost) lives in `README.md` under "Optional LLM explain" — keep operator-only details here and narrative there.
 
+## Reviewing and editing commentary docs
+
+Explain commentary is stored in the overlay database and can be materialized into editable Markdown:
+
+```bash
+synrepo docs export          # write .synrepo/explain-docs/ and update the explain-doc index
+synrepo docs list            # list materialized docs and freshness
+synrepo docs search <query>  # search materialized commentary docs
+synrepo docs import <path>   # import one edited Markdown body back into the overlay
+synrepo docs import --all    # import all edited Markdown bodies
+```
+
+Only the body after the `---` separator is treated as editable content. Import skips a doc when its `source_content_hash` header no longer matches the current graph, so a stale edit cannot silently become fresh commentary for changed source.
+
 ## Telemetry
 
 Per-call telemetry lands in `.synrepo/state/explain-log.jsonl` and aggregates in `.synrepo/state/explain-totals.json`. Each log record carries timestamp, provider, model, duration, input/output tokens, `usage_source`, `usd_cost`, and outcome. The log rotates on `synrepo sync --reset-explain-totals`.

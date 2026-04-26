@@ -4,6 +4,7 @@ mod ci_run;
 mod cli_dispatch;
 mod compact;
 mod dashboard_parity;
+mod docs;
 mod export;
 mod graph;
 mod links;

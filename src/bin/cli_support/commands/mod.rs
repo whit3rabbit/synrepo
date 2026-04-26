@@ -8,6 +8,7 @@ mod basic;
 mod ci_run;
 mod compact;
 mod context;
+mod docs;
 mod doctor;
 mod export;
 mod handoffs;
@@ -35,6 +36,11 @@ pub(crate) use compact::compact;
 pub(crate) use context::{
     bench_context, cards_alias, explain_alias, impact_alias, risks_alias, stats_context,
     tests_alias, StatFormat,
+};
+pub(crate) use docs::docs;
+#[cfg(test)]
+pub(crate) use docs::{
+    docs_export_output, docs_import_output, docs_list_output, docs_search_output,
 };
 pub(crate) use doctor::doctor;
 pub(crate) use export::export;

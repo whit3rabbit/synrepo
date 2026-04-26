@@ -171,6 +171,10 @@ pub(crate) enum Command {
         max_results: Option<usize>,
     },
 
+    /// Review, search, and import editable explain docs.
+    #[command(subcommand)]
+    Docs(DocsCommand),
+
     /// Change risk assessment for a symbol or file.
     ChangeRisk {
         /// Target: file path or qualified symbol name.

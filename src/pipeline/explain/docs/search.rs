@@ -84,30 +84,28 @@ fn enrich_hits(
             continue;
         };
 
-        if let NodeId::Symbol(symbol_id) = node_id {
-            if let Some(symbol) = graph.get_symbol(symbol_id)? {
-                header.qualified_name = symbol.qualified_name;
-                if let Some(file) = graph.get_file(symbol.file_id)? {
+        match node_id {
+            NodeId::File(file_id) => {
+                if let Some(file) = graph.get_file(file_id)? {
                     header.source_path = file.path.clone();
-                    if let Some(overlay) = overlay {
-                        if let Some(entry) = overlay.commentary_for(node_id)? {
-                            header.commentary_state = derive_freshness(&entry, &file.content_hash)
-                                .as_str()
-                                .to_string();
-                            header.model_identity = entry.provenance.model_identity;
-                            header.generated_at = entry
-                                .provenance
-                                .generated_at
-                                .format(&Rfc3339)
-                                .map_err(|err| {
-                                    crate::Error::Other(anyhow::anyhow!(
-                                        "invalid commentary timestamp: {err}"
-                                    ))
-                                })?;
-                        }
+                    refresh_header_from_overlay(&mut header, node_id, &file.content_hash, overlay)?;
+                }
+            }
+            NodeId::Symbol(symbol_id) => {
+                if let Some(symbol) = graph.get_symbol(symbol_id)? {
+                    header.qualified_name = symbol.qualified_name;
+                    if let Some(file) = graph.get_file(symbol.file_id)? {
+                        header.source_path = file.path.clone();
+                        refresh_header_from_overlay(
+                            &mut header,
+                            node_id,
+                            &file.content_hash,
+                            overlay,
+                        )?;
                     }
                 }
             }
+            NodeId::Concept(_) => {}
         }
 
         let path = repo_relative_doc_path(node_id)
@@ -135,6 +133,30 @@ fn enrich_hits(
     }
 
     Ok(hits)
+}
+
+fn refresh_header_from_overlay(
+    header: &mut super::corpus::CommentaryDocHeader,
+    node_id: NodeId,
+    content_hash: &str,
+    overlay: Option<&dyn OverlayStore>,
+) -> crate::Result<()> {
+    let Some(overlay) = overlay else {
+        return Ok(());
+    };
+    let Some(entry) = overlay.commentary_for(node_id)? else {
+        return Ok(());
+    };
+    header.commentary_state = derive_freshness(&entry, content_hash).as_str().to_string();
+    header.model_identity = entry.provenance.model_identity;
+    header.generated_at = entry
+        .provenance
+        .generated_at
+        .format(&Rfc3339)
+        .map_err(|err| {
+            crate::Error::Other(anyhow::anyhow!("invalid commentary timestamp: {err}"))
+        })?;
+    Ok(())
 }
 
 #[cfg(test)]

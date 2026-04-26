@@ -1,6 +1,7 @@
 //! Secondary subcommand enums used by `Command`.
 
 use clap::{Args, Subcommand};
+use std::path::PathBuf;
 
 #[derive(Args)]
 pub(crate) struct CiRunArgs {
@@ -24,6 +25,30 @@ pub(crate) enum WatchCommand {
     Status,
     /// Stop the active watch service for the current repo.
     Stop,
+}
+
+#[derive(Subcommand)]
+pub(crate) enum DocsCommand {
+    /// Materialize editable explain docs from overlay commentary.
+    Export,
+    /// List materialized explain docs.
+    List,
+    /// Search materialized explain docs.
+    Search {
+        /// Lexical query string.
+        query: String,
+        /// Maximum results to return.
+        #[arg(long, default_value_t = 20)]
+        limit: u32,
+    },
+    /// Import edited explain-doc bodies back into the overlay.
+    Import {
+        /// Import every materialized commentary doc.
+        #[arg(long, conflicts_with = "path")]
+        all: bool,
+        /// Path to one materialized commentary doc.
+        path: Option<PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]
