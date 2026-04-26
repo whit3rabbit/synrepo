@@ -13,8 +13,8 @@ use super::SynrepoState;
 /// Parameters for the `synrepo_card` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct CardParams {
-        pub repo_root: Option<std::path::PathBuf>,
-/// Target to look up. Accepts a file path, a qualified symbol name, or a
+    pub repo_root: Option<std::path::PathBuf>,
+    /// Target to look up. Accepts a file path, a qualified symbol name, or a
     /// short symbol name (display name). First match wins.
     pub target: String,
     /// Budget tier: "tiny" (default), "normal", or "deep".
@@ -37,8 +37,8 @@ pub fn default_budget() -> String {
 /// Parameters for the `synrepo_entrypoints` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct EntrypointsParams {
-        pub repo_root: Option<std::path::PathBuf>,
-/// Optional path prefix to scope the search (e.g. `"src/bin/"`, `"src/surface/"`).
+    pub repo_root: Option<std::path::PathBuf>,
+    /// Optional path prefix to scope the search (e.g. `"src/bin/"`, `"src/surface/"`).
     pub scope: Option<String>,
     /// Budget tier: "tiny" (default), "normal", or "deep".
     #[serde(default = "default_budget")]
@@ -50,8 +50,8 @@ pub struct EntrypointsParams {
 /// Parameters for the `synrepo_module_card` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ModuleCardParams {
-        pub repo_root: Option<std::path::PathBuf>,
-/// Directory path of the module to summarize (e.g. `"src/auth"`).
+    pub repo_root: Option<std::path::PathBuf>,
+    /// Directory path of the module to summarize (e.g. `"src/auth"`).
     pub path: String,
     /// Budget tier: "tiny" (default), "normal", or "deep".
     #[serde(default = "default_budget")]
@@ -63,8 +63,8 @@ pub struct ModuleCardParams {
 /// Parameters for the `synrepo_public_api` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct PublicAPICardParams {
-        pub repo_root: Option<std::path::PathBuf>,
-/// Directory path to inspect (e.g. `"src/auth"` or `"src/surface/card"`).
+    pub repo_root: Option<std::path::PathBuf>,
+    /// Directory path to inspect (e.g. `"src/auth"` or `"src/surface/card"`).
     pub path: String,
     /// Budget tier: "tiny" (default), "normal", or "deep".
     #[serde(default = "default_budget")]
@@ -76,8 +76,8 @@ pub struct PublicAPICardParams {
 /// Parameters for the `synrepo_minimum_context` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct MinimumContextParams {
-        pub repo_root: Option<std::path::PathBuf>,
-/// Target: node ID (e.g. "symbol_0000000000000024") or qualified path.
+    pub repo_root: Option<std::path::PathBuf>,
+    /// Target: node ID (e.g. "symbol_0000000000000024") or qualified path.
     pub target: String,
     /// Budget tier: "tiny", "normal", or "deep". Defaults to "normal".
     #[serde(default = "default_budget")]
@@ -89,8 +89,8 @@ pub struct MinimumContextParams {
 /// Parameters for the `synrepo_call_path` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct CallPathParams {
-        pub repo_root: Option<std::path::PathBuf>,
-/// Target symbol: node ID (e.g. "symbol_0000000000000024") or qualified name.
+    pub repo_root: Option<std::path::PathBuf>,
+    /// Target symbol: node ID (e.g. "symbol_0000000000000024") or qualified name.
     pub target: String,
     /// Budget tier: "tiny" (default), "normal", or "deep".
     #[serde(default = "default_budget")]
@@ -102,8 +102,8 @@ pub struct CallPathParams {
 /// Parameters for the `synrepo_test_surface` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct TestSurfaceParams {
-        pub repo_root: Option<std::path::PathBuf>,
-/// Scope: file path or directory to find tests for.
+    pub repo_root: Option<std::path::PathBuf>,
+    /// Scope: file path or directory to find tests for.
     pub scope: String,
     /// Budget tier: "tiny" (default), "normal", or "deep".
     #[serde(default = "default_budget")]
@@ -115,8 +115,8 @@ pub struct TestSurfaceParams {
 /// Parameters for the `synrepo_change_risk` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ChangeRiskParams {
-        pub repo_root: Option<std::path::PathBuf>,
-/// Target: file path or qualified symbol name.
+    pub repo_root: Option<std::path::PathBuf>,
+    /// Target: file path or qualified symbol name.
     pub target: String,
     /// Budget tier: "tiny" (default), "normal", or "deep".
     #[serde(default = "default_budget")]
@@ -128,8 +128,8 @@ pub struct ChangeRiskParams {
 /// Parameters for the `synrepo_refresh_commentary` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct RefreshCommentaryParams {
-        pub repo_root: Option<std::path::PathBuf>,
-/// Target: qualified symbol name or node ID.
+    pub repo_root: Option<std::path::PathBuf>,
+    /// Target: qualified symbol name or node ID.
     pub target: String,
 }
 

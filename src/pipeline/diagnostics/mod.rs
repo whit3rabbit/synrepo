@@ -31,8 +31,14 @@ pub use types::{
 /// is reported as `Unknown` or `Free` rather than returning an error.
 pub fn collect_diagnostics(synrepo_dir: &Path, config: &Config) -> RuntimeDiagnostics {
     let last_reconcile = load_reconcile_state(synrepo_dir);
-    let reconcile_health = compute_reconcile_health(&last_reconcile, OffsetDateTime::now_utc());
     let watch_status = watch_service_status(synrepo_dir);
+    let watch_running = matches!(
+        watch_status,
+        crate::pipeline::watch::WatchServiceStatus::Running(_)
+            | crate::pipeline::watch::WatchServiceStatus::Starting
+    );
+    let reconcile_health =
+        compute_reconcile_health(&last_reconcile, OffsetDateTime::now_utc(), watch_running);
     let writer_status = compute_writer_status(synrepo_dir);
     let store_guidance = compute_store_guidance(synrepo_dir, config);
     let embedding_health = compute_embedding_health(synrepo_dir, config);

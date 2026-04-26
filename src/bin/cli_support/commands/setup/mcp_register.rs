@@ -53,7 +53,8 @@ fn shim_tool_synrepo_entry(global: bool) -> Value {
 
 pub(crate) fn setup_claude_mcp(repo_root: &Path, global: bool) -> anyhow::Result<StepOutcome> {
     let mcp_json_path = if global {
-        let home = synrepo::config::home_dir().ok_or_else(|| anyhow!("Failed to find home directory"))?;
+        let home =
+            synrepo::config::home_dir().ok_or_else(|| anyhow!("Failed to find home directory"))?;
         let path = if cfg!(target_os = "macos") {
             home.join("Library/Application Support/Claude/claude_desktop_config.json")
         } else if cfg!(target_os = "windows") {
@@ -306,7 +307,9 @@ fn register_mcp_servers_json(
     global: bool,
 ) -> anyhow::Result<StepOutcome> {
     let config_dir = if global {
-        synrepo::config::home_dir().ok_or_else(|| anyhow!("Failed to find home directory"))?.join(config_dir_name)
+        synrepo::config::home_dir()
+            .ok_or_else(|| anyhow!("Failed to find home directory"))?
+            .join(config_dir_name)
     } else {
         repo_root.join(config_dir_name)
     };

@@ -449,7 +449,6 @@ const GO_IMPORT_QUERY: &str = r#"
 (import_spec path: (interpreted_string_literal) @import_ref)
 "#;
 
-
 // --- JavaScript queries ---
 const JS_DEFINITION_QUERY: &str = r#"
 (function_declaration name: (identifier) @name) @item
@@ -503,11 +502,8 @@ const KOTLIN_DEFINITION_QUERY: &str = r#"
 (function_declaration name: (identifier) @name) @item
 (object_declaration name: (identifier) @name) @item
 "#;
-const KOTLIN_KIND_MAP: &[SymbolKind] = &[
-    SymbolKind::Class,
-    SymbolKind::Function,
-    SymbolKind::Class,
-];
+const KOTLIN_KIND_MAP: &[SymbolKind] =
+    &[SymbolKind::Class, SymbolKind::Function, SymbolKind::Class];
 const KOTLIN_CALL_QUERY: &str = r#"
 (call_expression (identifier) @callee)
 "#;
@@ -613,11 +609,7 @@ const C_DEFINITION_QUERY: &str = r#"
 (struct_specifier name: (type_identifier) @name) @item
 (enum_specifier name: (type_identifier) @name) @item
 "#;
-const C_KIND_MAP: &[SymbolKind] = &[
-    SymbolKind::Function,
-    SymbolKind::Class,
-    SymbolKind::Class,
-];
+const C_KIND_MAP: &[SymbolKind] = &[SymbolKind::Function, SymbolKind::Class, SymbolKind::Class];
 const C_CALL_QUERY: &str = r#"
 (call_expression function: (identifier) @callee)
 "#;
@@ -674,4 +666,3 @@ const DART_CALL_MODE_MAP: &[super::CallMode] = &[super::CallMode::Free];
 const DART_IMPORT_QUERY: &str = r#"
 (uri) @import_ref
 "#;
-

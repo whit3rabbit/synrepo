@@ -186,7 +186,10 @@ pub(crate) fn install_hooks(repo_root: &Path) -> anyhow::Result<()> {
                 // Append if it's not already there
                 let mut f = std::fs::OpenOptions::new().append(true).open(&hook_path)?;
                 use std::io::Write;
-                writeln!(f, "\n# synrepo hook\n(synrepo reconcile --fast > /dev/null 2>&1 &)")?;
+                writeln!(
+                    f,
+                    "\n# synrepo hook\n(synrepo reconcile --fast > /dev/null 2>&1 &)"
+                )?;
                 println!("  appended to existing hook: {hook_name}");
                 write_hook = false;
             }
@@ -205,6 +208,9 @@ pub(crate) fn install_hooks(repo_root: &Path) -> anyhow::Result<()> {
         }
     }
 
-    println!("Git hooks installed successfully in {}.", hooks_dir.display());
+    println!(
+        "Git hooks installed successfully in {}.",
+        hooks_dir.display()
+    );
     Ok(())
 }

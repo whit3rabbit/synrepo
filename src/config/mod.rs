@@ -124,6 +124,15 @@ pub struct Config {
     /// to change the persistent default, edit this field and restart watch.
     #[serde(default = "default_auto_sync_enabled")]
     pub auto_sync_enabled: bool,
+
+    /// Interval in seconds for the `watch` service to perform a periodic
+    /// background reconcile when no filesystem events have been observed.
+    /// Default is `1800` (30 minutes); set to `0` to disable. The keepalive
+    /// runs in fast mode (skips git-history passes) so its main effect is
+    /// refreshing the reconcile timestamp; if `auto_sync_enabled` is also
+    /// set, the post-reconcile hook then runs the cheap auto-sync surfaces.
+    #[serde(default = "default_reconcile_keepalive_seconds")]
+    pub reconcile_keepalive_seconds: u32,
 }
 
 fn default_roots() -> Vec<String> {
@@ -190,6 +199,10 @@ fn default_auto_sync_enabled() -> bool {
     true
 }
 
+fn default_reconcile_keepalive_seconds() -> u32 {
+    1800
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -211,6 +224,7 @@ impl Default for Config {
             semantic_similarity_threshold: default_semantic_similarity_threshold(),
             explain: ExplainConfig::default(),
             auto_sync_enabled: default_auto_sync_enabled(),
+            reconcile_keepalive_seconds: default_reconcile_keepalive_seconds(),
         }
     }
 }
@@ -308,6 +322,10 @@ impl Config {
 
         // Explain merge is more complex (nested)
         self.explain.merge(other.explain);
+
+        if other.reconcile_keepalive_seconds != default_reconcile_keepalive_seconds() {
+            self.reconcile_keepalive_seconds = other.reconcile_keepalive_seconds;
+        }
     }
 }
 
@@ -343,65 +361,7 @@ pub fn home_dir() -> Option<PathBuf> {
 }
 
 #[doc(hidden)]
-pub mod test_home {
-    //! RAII guard that redirects the user's home directory (as read by
-    //! [`super::home_dir`]) to a caller-chosen path for the lifetime of the
-    //! guard, restoring the prior value on drop.
-    //!
-    //! Tests that exercise `Config::load` (which merges
-    //! `~/.synrepo/config.toml` into the repo-local config) MUST take both
-    //! this guard and the shared cross-process test lock
-    //! [`HOME_ENV_TEST_LOCK`] so they don't leak the developer's real
-    //! persisted credentials into assertions.
-    //!
-    //! Exposed as `pub #[doc(hidden)]` (not `pub(crate)` or `#[cfg(test)]`)
-    //! so bin-crate tests — which compile the library without `cfg(test)` —
-    //! can also take the guard. Same pattern as
-    //! `pipeline::writer::hold_writer_flock_with_ownership`.
-
-    use std::ffi::OsString;
-    use std::path::Path;
-    use std::sync::Mutex;
-
-    /// Shared label for `crate::test_support::global_test_lock` — all tests
-    /// that mutate the home-directory env var must serialize on this label.
-    pub const HOME_ENV_TEST_LOCK: &str = "config-home-env";
-
-    #[cfg(unix)]
-    const HOME_VAR: &str = "HOME";
-    #[cfg(windows)]
-    const HOME_VAR: &str = "USERPROFILE";
-
-    static HOME_ENV_MUTEX: Mutex<()> = Mutex::new(());
-
-    pub struct HomeEnvGuard {
-        original: Option<OsString>,
-        _thread_guard: std::sync::MutexGuard<'static, ()>,
-    }
-
-    impl HomeEnvGuard {
-        pub fn redirect_to(path: &Path) -> Self {
-            let thread_guard = HOME_ENV_MUTEX
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
-            let original = std::env::var_os(HOME_VAR);
-            std::env::set_var(HOME_VAR, path);
-            Self {
-                original,
-                _thread_guard: thread_guard,
-            }
-        }
-    }
-
-    impl Drop for HomeEnvGuard {
-        fn drop(&mut self) {
-            match &self.original {
-                Some(value) => std::env::set_var(HOME_VAR, value),
-                None => std::env::remove_var(HOME_VAR),
-            }
-        }
-    }
-}
+pub mod test_home;
 
 #[cfg(test)]
 mod tests;

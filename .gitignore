@@ -27,6 +27,11 @@ __MACOSX
 
 # Repomix
 repomix-output.xml
+
+# Local command output
+/mcp_stderr.log
+/test_output.txt
+
 /tmp/synrepo-context/
 /tmp/synrepo-context-json/
 synrepo-context/

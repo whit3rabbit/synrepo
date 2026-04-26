@@ -1,8 +1,8 @@
 //! `synrepo mcp` subcommand — starts the MCP server over stdio.
 
-use std::sync::Arc;
-use std::collections::{HashMap, HashSet};
 use parking_lot::RwLock;
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
@@ -80,7 +80,8 @@ impl SynrepoServer {
             }
             Err(_) => {
                 let default_root = self.default_repo_root.clone();
-                write.get(&default_root)
+                write
+                    .get(&default_root)
                     .cloned()
                     .expect("default state must exist")
             }
@@ -144,7 +145,11 @@ impl SynrepoServer {
         description = "Search the repository using lexical queries."
     )]
     async fn synrepo_search(&self, Parameters(params): Parameters<search::SearchParams>) -> String {
-        search::handle_search(&self.resolve_state(params.repo_root.clone()), params.query, params.limit)
+        search::handle_search(
+            &self.resolve_state(params.repo_root.clone()),
+            params.query,
+            params.limit,
+        )
     }
 
     #[tool(
@@ -155,7 +160,11 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<docs::DocsSearchParams>,
     ) -> String {
-        docs::handle_docs_search(&self.resolve_state(params.repo_root.clone()), params.query, params.limit)
+        docs::handle_docs_search(
+            &self.resolve_state(params.repo_root.clone()),
+            params.query,
+            params.limit,
+        )
     }
 
     #[tool(
@@ -182,7 +191,12 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<primitives::EdgesParams>,
     ) -> String {
-        primitives::handle_edges(&self.resolve_state(None), params.id, params.direction, params.edge_types)
+        primitives::handle_edges(
+            &self.resolve_state(None),
+            params.id,
+            params.direction,
+            params.edge_types,
+        )
     }
 
     #[tool(
@@ -226,7 +240,12 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<search::WhereToEditParams>,
     ) -> String {
-        search::handle_where_to_edit(&self.resolve_state(None), params.task, params.limit, params.budget_tokens)
+        search::handle_where_to_edit(
+            &self.resolve_state(None),
+            params.task,
+            params.limit,
+            params.budget_tokens,
+        )
     }
 
     #[tool(
@@ -434,7 +453,12 @@ impl SynrepoServer {
         Parameters(params): Parameters<search::WhereToEditParams>,
     ) -> String {
         self.record_workflow("find");
-        search::handle_where_to_edit(&self.resolve_state(None), params.task, params.limit, params.budget_tokens)
+        search::handle_where_to_edit(
+            &self.resolve_state(None),
+            params.task,
+            params.limit,
+            params.budget_tokens,
+        )
     }
 
     #[tool(
@@ -548,7 +572,12 @@ impl SynrepoServer {
         &self,
         Parameters(params): Parameters<audit::RecentActivityParams>,
     ) -> String {
-        audit::handle_recent_activity(&self.resolve_state(None), params.kinds, params.limit, params.since)
+        audit::handle_recent_activity(
+            &self.resolve_state(None),
+            params.kinds,
+            params.limit,
+            params.since,
+        )
     }
 
     #[tool(
@@ -563,7 +592,11 @@ impl SynrepoServer {
             limit: params.limit.unwrap_or(20),
             since_days: params.since_days.unwrap_or(30),
         };
-        match collect_handoffs(&self.resolve_state(None).repo_root, &self.resolve_state(None).config, &request) {
+        match collect_handoffs(
+            &self.resolve_state(None).repo_root,
+            &self.resolve_state(None).config,
+            &request,
+        ) {
             Ok(items) => handoffs_to_json(&items),
             Err(e) => serde_json::json!({
                 "error": e.to_string()

@@ -4,7 +4,7 @@ use std::{
     fs,
     sync::{
         atomic::{AtomicBool, Ordering},
-        mpsc, Arc, Mutex, MutexGuard,
+        mpsc, Arc,
     },
     thread,
     time::{Duration, Instant},
@@ -15,20 +15,7 @@ use crate::pipeline::watch::{
     WatchControlRequest, WatchControlResponse, WatchEvent, WatchServiceMode, WatchServiceStatus,
 };
 
-use super::{setup_test_repo, wait_for};
-
-#[cfg(unix)]
-static WATCH_SERVICE_TEST_LOCK: Mutex<()> = Mutex::new(());
-
-#[cfg(unix)]
-fn watch_service_guard() -> (MutexGuard<'static, ()>, crate::test_support::GlobalTestLock) {
-    (
-        WATCH_SERVICE_TEST_LOCK
-            .lock()
-            .expect("watch service test lock poisoned"),
-        crate::test_support::global_test_lock("watch-service"),
-    )
-}
+use super::{setup_test_repo, wait_for, watch_service_guard};
 
 #[cfg(unix)]
 #[test]
@@ -64,7 +51,11 @@ fn watch_service_handles_status_reconcile_and_stop() {
     let status = request_watch_control(&synrepo_dir, WatchControlRequest::Status).unwrap();
     assert!(matches!(status, WatchControlResponse::Status { .. }));
 
-    let reconcile = request_watch_control(&synrepo_dir, WatchControlRequest::ReconcileNow { fast: false }).unwrap();
+    let reconcile = request_watch_control(
+        &synrepo_dir,
+        WatchControlRequest::ReconcileNow { fast: false },
+    )
+    .unwrap();
     assert!(matches!(reconcile, WatchControlResponse::Reconcile { .. }));
 
     let stop = request_watch_control(&synrepo_dir, WatchControlRequest::Stop).unwrap();
@@ -78,7 +69,7 @@ fn stop_bridge_acknowledges_without_waiting_for_loop_reply() {
     let (tx, rx) = mpsc::channel();
     let started = Instant::now();
 
-    let response = super::super::service::bridge_stop_request(&tx, &stop_flag);
+    let response = super::super::control_bridge::bridge_stop_request(&tx, &stop_flag);
 
     assert!(
         started.elapsed() < Duration::from_secs(1),
@@ -129,7 +120,11 @@ fn watch_service_records_lock_conflict_when_writer_lock_is_held() {
     };
     let _flock = crate::pipeline::writer::hold_writer_flock_with_ownership(&lock_path, &owner);
 
-    let response = request_watch_control(&synrepo_dir, WatchControlRequest::ReconcileNow { fast: false }).unwrap();
+    let response = request_watch_control(
+        &synrepo_dir,
+        WatchControlRequest::ReconcileNow { fast: false },
+    )
+    .unwrap();
     match response {
         WatchControlResponse::Reconcile { outcome, .. } => {
             assert_eq!(outcome.as_str(), "lock-conflict");

@@ -10,8 +10,8 @@ use super::SynrepoState;
 /// Parameters for the `synrepo_node` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct NodeParams {
-        pub repo_root: Option<std::path::PathBuf>,
-/// Node ID in display form (e.g. "file_0000000000000042",
+    pub repo_root: Option<std::path::PathBuf>,
+    /// Node ID in display form (e.g. "file_0000000000000042",
     /// "symbol_0000000000000024", "concept_0000000000000099").
     pub id: String,
 }
@@ -19,8 +19,8 @@ pub struct NodeParams {
 /// Parameters for the `synrepo_edges` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct EdgesParams {
-        pub repo_root: Option<std::path::PathBuf>,
-/// Node ID in display form.
+    pub repo_root: Option<std::path::PathBuf>,
+    /// Node ID in display form.
     pub id: String,
     /// Direction: "outbound" (default) or "inbound".
     #[serde(default = "default_direction")]
@@ -36,24 +36,24 @@ fn default_direction() -> String {
 /// Parameters for the `synrepo_query` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct QueryParams {
-        pub repo_root: Option<std::path::PathBuf>,
-/// Query string: "outbound <node_id> [edge_kind]" or "inbound <node_id> [edge_kind]".
+    pub repo_root: Option<std::path::PathBuf>,
+    /// Query string: "outbound <node_id> [edge_kind]" or "inbound <node_id> [edge_kind]".
     pub query: String,
 }
 
 /// Parameters for the `synrepo_overlay` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct OverlayParams {
-        pub repo_root: Option<std::path::PathBuf>,
-/// Node ID in display form.
+    pub repo_root: Option<std::path::PathBuf>,
+    /// Node ID in display form.
     pub id: String,
 }
 
 /// Parameters for the `synrepo_provenance` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ProvenanceParams {
-        pub repo_root: Option<std::path::PathBuf>,
-/// Node ID in display form.
+    pub repo_root: Option<std::path::PathBuf>,
+    /// Node ID in display form.
     pub id: String,
 }
 

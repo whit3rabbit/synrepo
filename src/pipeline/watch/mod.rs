@@ -5,6 +5,7 @@
 //! on-demand reconciles still flow through `run_reconcile_pass`.
 
 mod control;
+mod control_bridge;
 mod filter;
 pub(crate) mod lease;
 mod pending;

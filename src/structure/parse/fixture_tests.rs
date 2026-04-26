@@ -341,7 +341,10 @@ const FIXTURES: &[Fixture] = &[
         name: "javascript_definitions",
         path: "src/fixture.js",
         source: JS_SOURCE,
-        expected_symbols: &[("greet", SymbolKind::Function), ("Greeter", SymbolKind::Class)],
+        expected_symbols: &[
+            ("greet", SymbolKind::Function),
+            ("Greeter", SymbolKind::Class),
+        ],
         expected_imports: &["fs"],
     },
     Fixture {

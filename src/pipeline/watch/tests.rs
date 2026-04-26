@@ -1,6 +1,7 @@
 use std::{
     fs,
     path::PathBuf,
+    sync::{Mutex, MutexGuard},
     thread,
     time::{Duration, Instant},
 };
@@ -13,6 +14,7 @@ use crate::{config::Config, store::compatibility::write_runtime_snapshot};
 
 mod daemon;
 mod filter;
+mod keepalive;
 mod lease;
 mod reconcile;
 mod service;
@@ -37,4 +39,18 @@ pub(super) fn wait_for(mut predicate: impl FnMut() -> bool, timeout: Duration) {
         thread::sleep(Duration::from_millis(25));
     }
     panic!("condition was not met within {:?}", timeout);
+}
+
+#[cfg(unix)]
+static WATCH_SERVICE_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+#[cfg(unix)]
+pub(super) fn watch_service_guard() -> (MutexGuard<'static, ()>, crate::test_support::GlobalTestLock)
+{
+    (
+        WATCH_SERVICE_TEST_LOCK
+            .lock()
+            .expect("watch service test lock poisoned"),
+        crate::test_support::global_test_lock("watch-service"),
+    )
 }

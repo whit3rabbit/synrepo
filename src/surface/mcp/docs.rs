@@ -9,8 +9,8 @@ use super::{helpers::render_result, SynrepoState};
 /// Parameters for the `synrepo_docs_search` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct DocsSearchParams {
-        pub repo_root: Option<std::path::PathBuf>,
-/// Lexical query string against explaind commentary docs.
+    pub repo_root: Option<std::path::PathBuf>,
+    /// Lexical query string against explaind commentary docs.
     pub query: String,
     /// Maximum number of results to return. Defaults to 20.
     #[serde(default = "default_limit")]

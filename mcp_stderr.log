@@ -1,8 +1,0 @@
-    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.15s
-     Running `target/debug/synrepo --repo /Users/whit3rabbit/Documents/GitHub/synrepo mcp`
-synrepo: mcp auto-started watch daemon for /Users/whit3rabbit/Documents/GitHub/synrepo (pid 41462)
-[2m2026-04-26T13:53:18.124591Z[0m [31mERROR[0m [2mrmcp::transport::async_rw[0m[2m:[0m Error reading from stream: serde error EOF while parsing a value at line 1 column 0
-synrepo: mcp cleanup starting (1 watchers to stop)
-synrepo: mcp stopping auto-started watch daemon for /Users/whit3rabbit/Documents/GitHub/synrepo
-synrepo: mcp cleanup finished
-Error: connection closed: initialize request

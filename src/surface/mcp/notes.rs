@@ -28,8 +28,8 @@ fn default_limit() -> usize {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct NoteAddParams {
-        pub repo_root: Option<std::path::PathBuf>,
-pub target_kind: AgentNoteTargetKind,
+    pub repo_root: Option<std::path::PathBuf>,
+    pub target_kind: AgentNoteTargetKind,
     pub target: String,
     pub claim: String,
     #[serde(default = "default_actor")]
@@ -46,8 +46,8 @@ pub target_kind: AgentNoteTargetKind,
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct NoteLinkParams {
-        pub repo_root: Option<std::path::PathBuf>,
-pub from_note: String,
+    pub repo_root: Option<std::path::PathBuf>,
+    pub from_note: String,
     pub to_note: String,
     #[serde(default = "default_actor")]
     pub actor: String,
@@ -55,8 +55,8 @@ pub from_note: String,
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct NoteSupersedeParams {
-        pub repo_root: Option<std::path::PathBuf>,
-pub old_note: String,
+    pub repo_root: Option<std::path::PathBuf>,
+    pub old_note: String,
     pub target_kind: AgentNoteTargetKind,
     pub target: String,
     pub claim: String,
@@ -74,8 +74,8 @@ pub old_note: String,
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct NoteForgetParams {
-        pub repo_root: Option<std::path::PathBuf>,
-pub note_id: String,
+    pub repo_root: Option<std::path::PathBuf>,
+    pub note_id: String,
     #[serde(default = "default_actor")]
     pub actor: String,
     #[serde(default)]
@@ -84,8 +84,8 @@ pub note_id: String,
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct NoteVerifyParams {
-        pub repo_root: Option<std::path::PathBuf>,
-pub note_id: String,
+    pub repo_root: Option<std::path::PathBuf>,
+    pub note_id: String,
     #[serde(default = "default_actor")]
     pub actor: String,
     #[serde(default)]
@@ -94,8 +94,8 @@ pub note_id: String,
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct NotesParams {
-        pub repo_root: Option<std::path::PathBuf>,
-#[serde(default)]
+    pub repo_root: Option<std::path::PathBuf>,
+    #[serde(default)]
     pub target_kind: Option<AgentNoteTargetKind>,
     #[serde(default)]
     pub target: Option<String>,
