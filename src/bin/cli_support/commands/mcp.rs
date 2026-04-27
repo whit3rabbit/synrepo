@@ -2,16 +2,24 @@
 
 use parking_lot::RwLock;
 use std::collections::{HashMap, HashSet};
+use std::future::Future;
 use std::sync::Arc;
 
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
-    model::{ServerCapabilities, ServerInfo},
-    tool, tool_handler, tool_router, ServerHandler,
+    model::{
+        ListResourceTemplatesResult, PaginatedRequestParams, RawResourceTemplate,
+        ReadResourceRequestParams, ReadResourceResult, ResourceContents, ResourceTemplate,
+        ServerCapabilities, ServerInfo,
+    },
+    service::{RequestContext, RoleServer},
+    tool, tool_handler, tool_router, ErrorData as McpError, ServerHandler,
 };
 use synrepo::surface::handoffs::HandoffsRequest;
 use synrepo::surface::handoffs::{collect_handoffs, to_json as handoffs_to_json};
-use synrepo::surface::mcp::{audit, cards, docs, notes, primitives, search, SynrepoState};
+use synrepo::surface::mcp::{
+    audit, cards, context_pack, docs, notes, primitives, search, SynrepoState,
+};
 
 pub(crate) struct SynrepoServer {
     states: Arc<RwLock<HashMap<std::path::PathBuf, Arc<SynrepoState>>>>,
@@ -110,17 +118,71 @@ impl SynrepoServer {
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for SynrepoServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo::new(ServerCapabilities::builder().enable_tools().build()).with_instructions(
+        ServerInfo::new(
+            ServerCapabilities::builder()
+                .enable_tools()
+                .enable_resources()
+                .build(),
+        )
+        .with_instructions(
             "synrepo provides structured code-intelligence context. \
              Required workflow: synrepo_orient to start, synrepo_find to route a task, \
              synrepo_explain for bounded details, synrepo_impact (or its shorthand synrepo_risks) before edits, \
              synrepo_tests before claiming done, and synrepo_changed after edits. \
              Use synrepo_minimum_context as the bounded neighborhood step once a focal target is known. \
+             Use synrepo_context_pack when batching several read-only context artifacts is cheaper than serial tool calls. \
              Read full source files only after card routing identifies the target or when a bounded card is insufficient; \
              that is an explicit escalation, not the default first step. \
              Graph-backed structural facts are authoritative; overlay commentary and advisory notes never define source truth. \
              Existing task-first, audit, overlay, and graph primitive tools remain available.",
         )
+    }
+
+    fn list_resource_templates(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: RequestContext<RoleServer>,
+    ) -> impl Future<Output = Result<ListResourceTemplatesResult, McpError>> + Send + '_ {
+        std::future::ready(Ok(ListResourceTemplatesResult::with_all_items(vec![
+            ResourceTemplate::new(
+                RawResourceTemplate::new("synrepo://card/{target}", "synrepo card")
+                    .with_description("Read a card-shaped JSON context artifact.")
+                    .with_mime_type("application/json"),
+                None,
+            ),
+            ResourceTemplate::new(
+                RawResourceTemplate::new("synrepo://file/{path}/outline", "synrepo file outline")
+                    .with_description("Read a compact file outline with symbols and hashes.")
+                    .with_mime_type("application/json"),
+                None,
+            ),
+            ResourceTemplate::new(
+                RawResourceTemplate::new(
+                    "synrepo://context-pack?goal={goal}",
+                    "synrepo context pack",
+                )
+                .with_description("Read a batched read-only context pack.")
+                .with_mime_type("application/json"),
+                None,
+            ),
+        ])))
+    }
+
+    fn read_resource(
+        &self,
+        request: ReadResourceRequestParams,
+        _context: RequestContext<RoleServer>,
+    ) -> impl Future<Output = Result<ReadResourceResult, McpError>> + Send + '_ {
+        let state = self.resolve_state(None);
+        let uri = request.uri;
+        let result = match context_pack::read_resource(&state, &uri) {
+            Ok(text) => Ok(ReadResourceResult::new(vec![ResourceContents::text(
+                text, uri,
+            )
+            .with_mime_type("application/json")])),
+            Err(message) => Err(McpError::resource_not_found(message, None)),
+        };
+        std::future::ready(result)
     }
 }
 
@@ -165,6 +227,18 @@ impl SynrepoServer {
             params.query,
             params.limit,
         )
+    }
+
+    #[tool(
+        name = "synrepo_context_pack",
+        description = "Batch read-only context artifacts (file outlines, cards, neighborhoods, tests, call paths, and search) into one token-accounted response. Default budget is tiny; escalate to normal for local understanding and deep only before edits."
+    )]
+    async fn synrepo_context_pack(
+        &self,
+        Parameters(params): Parameters<context_pack::ContextPackParams>,
+    ) -> String {
+        let repo_root = params.repo_root.clone();
+        context_pack::handle_context_pack(&self.resolve_state(repo_root), params)
     }
 
     #[tool(

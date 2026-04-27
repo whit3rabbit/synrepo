@@ -64,6 +64,7 @@ Rule of thumb: `tiny` to find, `normal` to understand, `deep` to write.
 - `synrepo_risks(target, budget?, budget_tokens?)` — shorthand for `synrepo_impact`
 - `synrepo_tests(scope, budget?, budget_tokens?)` — workflow alias for test discovery
 - `synrepo_changed()` — workflow alias for changed-context review
+- `synrepo_context_pack(goal?, targets?, budget?, budget_tokens?, include_tests?, include_notes?, limit?)` — batch read-only context artifacts into one token-accounted response
 - `synrepo_card(target, budget?)` — card for a symbol or file
 - `synrepo_search(query, limit?)` — lexical search
 - `synrepo_docs_search(query, limit?)` — advisory advisory commentary search
@@ -82,6 +83,7 @@ Rule of thumb: `tiny` to find, `normal` to understand, `deep` to write.
 - Use `tiny` cards to orient and route.
 - Use `normal` cards to understand a neighborhood.
 - Use `deep` cards only before writing code, or when exact source or body details matter.
+- Use `synrepo_context_pack` when several known files, symbols, directories, tests, or call paths are needed together; it preserves read-only behavior and returns a shared `context_state`.
 
 Default to `tiny`.
 

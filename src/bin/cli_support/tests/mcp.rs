@@ -325,6 +325,24 @@ fn mcp_source_registers_docs_search_tool() {
 }
 
 #[test]
+fn mcp_source_registers_context_pack_and_resources() {
+    let source = fs::read_to_string("src/bin/cli_support/commands/mcp.rs")
+        .expect("read MCP registration source");
+    assert!(
+        source.contains("name = \"synrepo_context_pack\""),
+        "MCP registration must include synrepo_context_pack"
+    );
+    assert!(
+        source.contains(".enable_resources()"),
+        "MCP server must advertise resource support"
+    );
+    assert!(
+        source.contains("synrepo://file/{path}/outline"),
+        "MCP resource templates must include file outlines"
+    );
+}
+
+#[test]
 fn mcp_source_registers_workflow_aliases() {
     let source = fs::read_to_string("src/bin/cli_support/commands/mcp.rs")
         .expect("read MCP registration source");

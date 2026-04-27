@@ -29,10 +29,15 @@ Keep `src/bin/cli_support/commands/mcp.rs` as the single registration file. The 
 Current registrations (see `mcp.rs` for schemas):
 
 **High-level / agent-facing:**
-`synrepo_overview`, `synrepo_card`, `synrepo_search`, `synrepo_docs_search`, `synrepo_where_to_edit`, `synrepo_change_impact`, `synrepo_change_risk`, `synrepo_entrypoints`, `synrepo_test_surface`, `synrepo_module_card`, `synrepo_public_api`, `synrepo_minimum_context`, `synrepo_call_path`, `synrepo_refresh_commentary`, `synrepo_findings`, `synrepo_recent_activity`, `synrepo_next_actions`
+`synrepo_overview`, `synrepo_card`, `synrepo_context_pack`, `synrepo_search`, `synrepo_docs_search`, `synrepo_where_to_edit`, `synrepo_change_impact`, `synrepo_change_risk`, `synrepo_entrypoints`, `synrepo_test_surface`, `synrepo_module_card`, `synrepo_public_api`, `synrepo_minimum_context`, `synrepo_call_path`, `synrepo_refresh_commentary`, `synrepo_findings`, `synrepo_recent_activity`, `synrepo_next_actions`
 
 **Low-level primitives:**
 `synrepo_node`, `synrepo_edges`, `synrepo_query`, `synrepo_overlay`, `synrepo_provenance`
+
+**Resources:**
+`synrepo://card/{target}`, `synrepo://file/{path}/outline`, `synrepo://context-pack?goal={goal}`
+
+Resources are read-only mirrors of tool-backed context. Tool-only hosts should call `synrepo_context_pack`; resource-aware hosts can cache the URI forms.
 
 ## Adding or changing a tool
 

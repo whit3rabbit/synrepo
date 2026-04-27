@@ -1,0 +1,122 @@
+use std::fs;
+
+use tempfile::tempdir;
+
+use crate::bootstrap::bootstrap;
+use crate::config::Config;
+use crate::surface::mcp::SynrepoState;
+
+use super::{build_context_pack, ContextPackParams, ContextPackTarget};
+
+fn make_state() -> (tempfile::TempDir, SynrepoState) {
+    let home = tempdir().unwrap();
+    let _home_guard = crate::config::test_home::HomeEnvGuard::redirect_to(home.path());
+    let dir = tempdir().unwrap();
+    let repo = dir.path();
+    fs::create_dir_all(repo.join("src")).unwrap();
+    fs::write(
+        repo.join("src/lib.rs"),
+        "pub fn alpha() {}\npub fn beta() { alpha(); }\n",
+    )
+    .unwrap();
+    fs::write(repo.join("src/other.rs"), "pub fn gamma() {}\n").unwrap();
+    bootstrap(repo, None, false).unwrap();
+    let state = SynrepoState {
+        config: Config::load(repo).unwrap(),
+        repo_root: repo.to_path_buf(),
+    };
+    (dir, state)
+}
+
+#[test]
+fn context_pack_returns_file_outline_and_state() {
+    let (_dir, state) = make_state();
+    let value = build_context_pack(
+        &state,
+        ContextPackParams {
+            repo_root: None,
+            goal: Some("inspect lib".to_string()),
+            targets: vec![ContextPackTarget {
+                kind: "file".to_string(),
+                target: "src/lib.rs".to_string(),
+                budget: Some("normal".to_string()),
+            }],
+            budget: "tiny".to_string(),
+            budget_tokens: None,
+            include_tests: false,
+            include_notes: false,
+            limit: 8,
+        },
+    )
+    .unwrap();
+
+    assert_eq!(value["schema_version"], 1);
+    assert_eq!(value["artifacts"][0]["artifact_type"], "file_outline");
+    assert_eq!(value["artifacts"][0]["content"]["path"], "src/lib.rs");
+    assert!(value["context_state"]["source_hashes"]
+        .as_array()
+        .is_some_and(|hashes| !hashes.is_empty()));
+}
+
+#[test]
+fn context_pack_preserves_order_and_omits_over_budget() {
+    let (_dir, state) = make_state();
+    let value = build_context_pack(
+        &state,
+        ContextPackParams {
+            repo_root: None,
+            goal: None,
+            targets: vec![
+                ContextPackTarget {
+                    kind: "file".to_string(),
+                    target: "src/lib.rs".to_string(),
+                    budget: None,
+                },
+                ContextPackTarget {
+                    kind: "file".to_string(),
+                    target: "src/other.rs".to_string(),
+                    budget: None,
+                },
+            ],
+            budget: "tiny".to_string(),
+            budget_tokens: Some(1),
+            include_tests: false,
+            include_notes: false,
+            limit: 8,
+        },
+    )
+    .unwrap();
+
+    assert_eq!(value["artifacts"][0]["target"], "src/lib.rs");
+    assert_eq!(value["omitted"][0]["target"], "src/other.rs");
+    assert_eq!(value["context_state"]["truncation_applied"], true);
+}
+
+#[test]
+fn context_pack_metrics_record_once_per_retained_artifact() {
+    let (_dir, state) = make_state();
+    let synrepo_dir = Config::synrepo_dir(&state.repo_root);
+    let _ = fs::remove_file(synrepo_dir.join("state").join("context-metrics.json"));
+
+    let _value = build_context_pack(
+        &state,
+        ContextPackParams {
+            repo_root: None,
+            goal: None,
+            targets: vec![ContextPackTarget {
+                kind: "file".to_string(),
+                target: "src/lib.rs".to_string(),
+                budget: None,
+            }],
+            budget: "tiny".to_string(),
+            budget_tokens: None,
+            include_tests: false,
+            include_notes: false,
+            limit: 8,
+        },
+    )
+    .unwrap();
+
+    let metrics = crate::pipeline::context_metrics::load(&synrepo_dir).unwrap();
+    assert_eq!(metrics.cards_served_total, 1);
+}

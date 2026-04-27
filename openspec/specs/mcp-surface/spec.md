@@ -213,6 +213,29 @@ synrepo SHALL expose a `synrepo_change_risk(target?, budget?)` MCP tool that ret
 - **WHEN** an MCP client connects and retrieves the tool list
 - **THEN** `synrepo_change_risk` appears in the available tools
 
+### Requirement: Expose synrepo_context_pack as a batched read-only context tool
+synrepo SHALL expose `synrepo_context_pack(goal?, targets?, budget?, budget_tokens?, include_tests?, include_notes?, limit?)` as an MCP tool that batches read-only context artifacts into one response. Each target SHALL use `{ kind, target, budget? }`, where `kind` is one of `file`, `symbol`, `directory`, `minimum_context`, `test_surface`, `call_path`, or `search`. The response SHALL include `schema_version`, `context_state`, `artifacts`, `omitted`, and `totals`. Each artifact SHALL include `artifact_type`, `target`, `status`, `content`, and `context_accounting`. The tool SHALL NOT mutate repository files, overlays, or external process state except for existing best-effort context metrics.
+
+#### Scenario: Batch file and symbol context
+- **WHEN** an agent invokes `synrepo_context_pack` with file and symbol targets
+- **THEN** the response includes artifacts in request order
+- **AND** the response includes a `context_state` with `graph_epoch`, `repo_root`, `source_hashes`, token estimates, and truncation state
+
+#### Scenario: Numeric budget omits lower-ranked artifacts
+- **WHEN** an agent invokes `synrepo_context_pack` with `budget_tokens` lower than the full response estimate
+- **THEN** synrepo keeps the first artifact, records omitted later artifacts under `omitted`, and sets `context_state.truncation_applied` to true
+
+### Requirement: Expose read-only MCP resource templates for context artifacts
+synrepo SHALL advertise read-only MCP resource templates for `synrepo://card/{target}`, `synrepo://file/{path}/outline`, and `synrepo://context-pack?goal={goal}`. Resource reads SHALL return JSON content equivalent to the corresponding tool-backed context path and SHALL NOT add mutation capability.
+
+#### Scenario: List resource templates
+- **WHEN** an MCP client lists resource templates
+- **THEN** the response includes card, file outline, and context-pack URI templates
+
+#### Scenario: Read file outline resource
+- **WHEN** an MCP client reads `synrepo://file/src/lib.rs/outline`
+- **THEN** synrepo returns JSON containing a `file_outline` artifact and a `context_state`
+
 ### Requirement: Expose synrepo_entrypoints as a task-first MCP tool
 synrepo SHALL expose a `synrepo_entrypoints(scope?, budget?)` MCP tool that returns an `EntryPointCard` for the requested scope. The `scope` parameter SHALL be an optional path prefix string; when absent, the compiler scans all indexed files. The `budget` parameter SHALL accept `"tiny"` (default), `"normal"`, or `"deep"`. Results SHALL be sorted by kind (binary first, then cli_command, http_handler, lib_root) then by file path within each kind. The result set SHALL be limited to 20 entries by default. The tool SHALL return a parseable JSON object and SHALL NOT raise an error when no entry points are found — it returns an empty `entry_points` list instead.
 
