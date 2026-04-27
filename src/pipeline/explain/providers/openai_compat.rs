@@ -227,7 +227,7 @@ impl CommentaryGenerator for OpenAiCompatProvider {
 
         let body = ChatRequest {
             model: &self.model,
-            max_tokens: 512,
+            max_tokens: COMMENTARY_MAX_OUTPUT_TOKENS,
             messages: vec![
                 ChatMessage {
                     role: "system",
@@ -260,14 +260,22 @@ impl CommentaryGenerator for OpenAiCompatProvider {
             .as_ref()
             .map(|u| (u.prompt_tokens, u.completion_tokens));
 
-        let text = sanitize_commentary_text(
-            &parsed
-                .choices
-                .into_iter()
-                .next()
-                .and_then(|c| c.message.content)
-                .unwrap_or_default(),
-        );
+        let raw_text = parsed
+            .choices
+            .into_iter()
+            .next()
+            .and_then(|c| c.message.content)
+            .unwrap_or_default();
+        let Some(text) = sanitize_generated_commentary_text(&raw_text) else {
+            let reported = extras.usage_override.or(reported_raw);
+            let usage = resolve_usage(UsageResolution::from_output_text(
+                reported,
+                estimated_tokens,
+                "",
+            ));
+            ctx.complete_with_cost(usage, extras.billed_cost, 0);
+            return Ok(None);
+        };
 
         let reported = extras.usage_override.or(reported_raw);
         let usage = resolve_usage(UsageResolution::from_output_text(

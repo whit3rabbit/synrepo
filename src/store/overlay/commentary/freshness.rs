@@ -14,6 +14,7 @@ pub fn derive_freshness(entry: &CommentaryEntry, current_content_hash: &str) -> 
     }
     if entry.provenance.pass_id.starts_with("commentary-v1")
         || entry.provenance.pass_id.starts_with("commentary-v2")
+        || entry.provenance.pass_id.starts_with("commentary-v3")
     {
         return FreshnessState::Stale;
     }

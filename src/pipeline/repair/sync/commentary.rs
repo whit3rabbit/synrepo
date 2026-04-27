@@ -77,6 +77,7 @@ fn commentary_rows_for_refresh(
         .map(|entry| {
             let hash = if entry.provenance.pass_id.starts_with("commentary-v1")
                 || entry.provenance.pass_id.starts_with("commentary-v2")
+                || entry.provenance.pass_id.starts_with("commentary-v3")
             {
                 String::new()
             } else {

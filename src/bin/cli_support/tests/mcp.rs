@@ -39,6 +39,10 @@ const EXPLAIN_ENV: &[&str] = &[
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
 
+const GENERATED_COMMENTARY: &str = "## Purpose\nGenerated commentary.\n\n## How It Fits\nTemplate text.\n\n## Associated Nodes\nTemplate text.\n\n## Important Gotchas\nTemplate text.\n\n## Associated Tests\nTemplate text.\n\n## TODOs / Dead Code / Unfinished Work\nTemplate text.\n\n## Security Notes\nLevel: unknown. Template text.\n\n## Context Confidence\nTemplate text.";
+
+const GENERATED_COMMENTARY_RESPONSE: &str = r###"{"choices":[{"message":{"content":"## Purpose\nGenerated commentary.\n\n## How It Fits\nTemplate text.\n\n## Associated Nodes\nTemplate text.\n\n## Important Gotchas\nTemplate text.\n\n## Associated Tests\nTemplate text.\n\n## TODOs / Dead Code / Unfinished Work\nTemplate text.\n\n## Security Notes\nLevel: unknown. Template text.\n\n## Context Confidence\nTemplate text."}}],"usage":{"prompt_tokens":11,"completion_tokens":80}}"###;
+
 struct EnvGuard {
     _guard: std::sync::MutexGuard<'static, ()>,
 }
@@ -199,9 +203,7 @@ fn prepare_state_fails_when_compatibility_snapshot_is_missing() {
 fn refresh_commentary_via_mcp_records_explain_accounting() {
     let _env = EnvGuard::new();
     let (dir, repo) = setup_bootstrapped_repo();
-    let (endpoint, server) = spawn_openai_compat_server(
-        r#"{"choices":[{"message":{"content":"Generated commentary."}}],"usage":{"prompt_tokens":11,"completion_tokens":7}}"#,
-    );
+    let (endpoint, server) = spawn_openai_compat_server(GENERATED_COMMENTARY_RESPONSE);
     write_local_explain_config(&repo, &endpoint);
     materialize_overlay(&repo);
 
@@ -220,7 +222,7 @@ fn refresh_commentary_via_mcp_records_explain_accounting() {
         json["status"], "refreshed",
         "unexpected MCP output: {output}"
     );
-    assert_eq!(json["commentary"], "Generated commentary.");
+    assert_eq!(json["commentary"], GENERATED_COMMENTARY);
     let node_id = json["node_id"]
         .as_str()
         .expect("refresh_commentary should return node_id");
@@ -271,7 +273,7 @@ fn refresh_commentary_via_mcp_records_explain_accounting() {
     assert_eq!(totals.failures, 0);
     assert_eq!(totals.budget_blocked, 0);
     assert_eq!(totals.input_tokens, 11);
-    assert_eq!(totals.output_tokens, 7);
+    assert_eq!(totals.output_tokens, 80);
     assert_eq!(totals.usd_cost, 0.0);
     assert!(!totals.any_unpriced);
 

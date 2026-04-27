@@ -23,7 +23,7 @@ const PROVIDER: &str = "gemini";
 pub const DEFAULT_MODEL: &str = "gemini-1.5-flash";
 
 const API_URL_BASE: &str = "https://generativelanguage.googleapis.com/v1beta/models";
-const PASS_ID: &str = "commentary-v3-gemini";
+const PASS_ID: &str = "commentary-v4-gemini";
 const CROSS_LINK_PASS_ID: &str = "cross-link-v1-gemini";
 
 /// Build the full API URL for a given model.
@@ -115,7 +115,7 @@ impl CommentaryGenerator for GeminiCommentaryGenerator {
             }
         };
 
-        let text = sanitize_commentary_text(
+        let Some(text) = sanitize_generated_commentary_text(
             &parsed
                 .candidates
                 .into_iter()
@@ -123,7 +123,20 @@ impl CommentaryGenerator for GeminiCommentaryGenerator {
                 .and_then(|c| c.content)
                 .and_then(|content| content.parts.into_iter().next().map(|p| p.text))
                 .unwrap_or_default(),
-        );
+        ) else {
+            ctx.complete(
+                resolve_usage(UsageResolution::from_output_text(
+                    parsed
+                        .usage_metadata
+                        .as_ref()
+                        .map(|u| (u.prompt_token_count, u.candidates_token_count)),
+                    estimated_tokens,
+                    "",
+                )),
+                0,
+            );
+            return Ok(None);
+        };
 
         let usage = resolve_usage(UsageResolution::from_output_text(
             parsed

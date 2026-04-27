@@ -24,7 +24,7 @@ const GENERATION_URL: &str = "https://openrouter.ai/api/v1/generation";
 const CONFIG: OpenAiCompatConfig = OpenAiCompatConfig {
     provider: "openrouter",
     api_url: "https://openrouter.ai/api/v1/chat/completions",
-    pass_id: "commentary-v3-openrouter",
+    pass_id: "commentary-v4-openrouter",
     cross_link_pass_id: "cross-link-v1-openrouter",
     default_model: DEFAULT_MODEL,
     extra_headers: &[

@@ -10,7 +10,7 @@ use crate::overlay::{
     OverlayEpistemic, OverlayLink,
 };
 pub use crate::pipeline::explain::commentary_template::{
-    COMMENTARY_MAX_OUTPUT_TOKENS, COMMENTARY_SYSTEM_PROMPT,
+    has_required_sections, COMMENTARY_MAX_OUTPUT_TOKENS, COMMENTARY_SYSTEM_PROMPT,
 };
 use crate::pipeline::explain::cross_link::{score, CandidatePair, CandidateScope};
 
@@ -174,7 +174,17 @@ pub fn sanitize_commentary_text(raw: &str) -> String {
     }
     text = strip_markdown_fence(&text);
     text = strip_model_preamble(&text);
+    text = strip_markdown_fence_markers(&text);
     text.trim().trim_matches('`').trim().to_string()
+}
+
+/// Sanitize model output and reject incomplete structured commentary.
+pub fn sanitize_generated_commentary_text(raw: &str) -> Option<String> {
+    let text = sanitize_commentary_text(raw);
+    if text.is_empty() || !has_required_sections(&text) {
+        return None;
+    }
+    Some(text)
 }
 
 fn strip_markdown_fence(raw: &str) -> String {
@@ -189,6 +199,13 @@ fn strip_markdown_fence(raw: &str) -> String {
         body.pop();
     }
     body.join("\n").trim().to_string()
+}
+
+fn strip_markdown_fence_markers(raw: &str) -> String {
+    raw.lines()
+        .filter(|line| !line.trim_start().starts_with("```"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn strip_model_preamble(raw: &str) -> String {
@@ -208,7 +225,7 @@ fn strip_model_preamble(raw: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::sanitize_commentary_text;
+    use super::{sanitize_commentary_text, sanitize_generated_commentary_text};
 
     #[test]
     fn sanitize_commentary_text_strips_think_blocks() {
@@ -229,8 +246,19 @@ mod tests {
     }
 
     #[test]
+    fn sanitize_commentary_text_strips_internal_fence_markers() {
+        let text = sanitize_commentary_text("## Purpose\n```rust\nlet value = 1;\n```\nDone.");
+        assert_eq!(text, "## Purpose\nlet value = 1;\nDone.");
+    }
+
+    #[test]
     fn sanitize_commentary_text_strips_common_preamble() {
         let text = sanitize_commentary_text("Here is the commentary:\n## Purpose\nUseful.");
         assert_eq!(text, "## Purpose\nUseful.");
+    }
+
+    #[test]
+    fn sanitize_generated_commentary_text_rejects_partial_template() {
+        assert!(sanitize_generated_commentary_text("## Purpose\nOnly one section.").is_none());
     }
 }
