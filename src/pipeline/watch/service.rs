@@ -241,6 +241,16 @@ pub fn run_watch_service(
             })?;
     }
 
+    maybe_run_post_reconcile_auto_sync(
+        repo_root,
+        config,
+        synrepo_dir,
+        &startup,
+        &auto_sync_enabled,
+        &auto_sync_blocked,
+        &events,
+    );
+
     let mut last_reconcile_at = std::time::Instant::now();
     let keepalive_interval = config.reconcile_keepalive_seconds;
 

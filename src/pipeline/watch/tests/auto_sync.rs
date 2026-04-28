@@ -22,7 +22,7 @@ use crate::{
 use super::{setup_test_repo, wait_for, watch_service_guard};
 
 #[test]
-fn watch_auto_sync_repairs_only_cheap_surfaces() {
+fn watch_auto_sync_repairs_stale_export_after_startup_reconcile() {
     let _guard = watch_service_guard();
     let (_dir, repo, config, synrepo_dir) = setup_test_repo();
     write_stale_export_manifest(&repo, &config);
@@ -45,8 +45,63 @@ fn watch_auto_sync_repairs_only_cheap_surfaces() {
     });
 
     wait_for_service(&synrepo_dir);
+    let summary = recv_auto_sync_finished(&event_rx);
+    assert_summary_repairs_only_export(summary);
+
+    let manifest = load_manifest(&repo, &config).expect("export manifest should exist");
+    assert_ne!(manifest.last_reconcile_at, "stale-epoch");
+
+    let _ = request_watch_control(&synrepo_dir, WatchControlRequest::Stop);
+    handle.join().unwrap();
+}
+
+#[test]
+fn watch_auto_sync_repairs_only_cheap_surfaces_after_manual_reconcile() {
+    let _guard = watch_service_guard();
+    let (_dir, repo, mut config, synrepo_dir) = setup_test_repo();
+    config.auto_sync_enabled = false;
+
+    let service_repo = repo.clone();
+    let service_config = config.clone();
+    let service_synrepo = synrepo_dir.clone();
+    let (event_tx, event_rx) = crossbeam_channel::bounded::<WatchEvent>(32);
+
+    let handle = std::thread::spawn(move || {
+        run_watch_service(
+            &service_repo,
+            &service_config,
+            &WatchConfig::default(),
+            &service_synrepo,
+            WatchServiceMode::Foreground,
+            Some(event_tx),
+        )
+        .unwrap();
+    });
+
+    wait_for_service(&synrepo_dir);
+    assert_no_auto_sync_event(&event_rx, Duration::from_millis(200));
+    let response = request_watch_control(
+        &synrepo_dir,
+        WatchControlRequest::SetAutoSync { enabled: true },
+    )
+    .expect("enable auto-sync");
+    assert!(
+        matches!(response, WatchControlResponse::Ack { .. }),
+        "expected auto-sync ack, got {response:?}"
+    );
+    write_stale_export_manifest(&repo, &config);
     request_reconcile(&synrepo_dir);
     let summary = recv_auto_sync_finished(&event_rx);
+    assert_summary_repairs_only_export(summary);
+
+    let manifest = load_manifest(&repo, &config).expect("export manifest should exist");
+    assert_ne!(manifest.last_reconcile_at, "stale-epoch");
+
+    let _ = request_watch_control(&synrepo_dir, WatchControlRequest::Stop);
+    handle.join().unwrap();
+}
+
+fn assert_summary_repairs_only_export(summary: crate::pipeline::repair::SyncSummary) {
     let repaired: Vec<_> = summary
         .repaired
         .iter()
@@ -62,12 +117,6 @@ fn watch_auto_sync_repairs_only_cheap_surfaces() {
             .all(|surface| crate::pipeline::repair::CHEAP_AUTO_SYNC_SURFACES.contains(surface)),
         "auto-sync must only repair cheap surfaces; repaired={repaired:?}"
     );
-
-    let manifest = load_manifest(&repo, &config).expect("export manifest should exist");
-    assert_ne!(manifest.last_reconcile_at, "stale-epoch");
-
-    let _ = request_watch_control(&synrepo_dir, WatchControlRequest::Stop);
-    handle.join().unwrap();
 }
 
 #[test]

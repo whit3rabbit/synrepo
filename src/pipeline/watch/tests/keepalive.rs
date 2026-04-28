@@ -15,6 +15,7 @@ fn watch_service_performs_periodic_keepalive_reconcile() {
     let (_dir, repo, mut config, synrepo_dir) = setup_test_repo();
 
     config.reconcile_keepalive_seconds = 1;
+    config.auto_sync_enabled = false;
 
     let service_repo = repo.clone();
     let service_config = config.clone();
