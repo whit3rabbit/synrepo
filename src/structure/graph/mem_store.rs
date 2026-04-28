@@ -146,6 +146,7 @@ impl GraphReader for MemGraphStore {
             String,
             super::SymbolKind,
             super::Visibility,
+            String,
         )>,
     > {
         self.graph.all_symbols_for_resolution()

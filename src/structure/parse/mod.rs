@@ -100,6 +100,18 @@ pub struct ExtractedEdge {
     pub kind: EdgeKind,
 }
 
+/// Enclosing caller identity carried with a call reference.
+///
+/// The pair matches the symbol identity inputs available before stage 4 has
+/// access to persisted `SymbolNodeId`s for the current compile.
+#[derive(Clone, Debug)]
+pub struct ExtractedCallerSymbol {
+    /// Fully qualified caller symbol name within the file.
+    pub qualified_name: String,
+    /// Body hash paired with the qualified name to identify the exact symbol.
+    pub body_hash: String,
+}
+
 /// A call site reference extracted during parse for stage-4 resolution.
 ///
 /// The callee name is the local name as it appears at the call site. Stage 4
@@ -115,6 +127,8 @@ pub struct ExtractedCallRef {
     pub callee_prefix: Option<String>,
     /// True for method/attribute calls (`obj.method()`), false for free calls.
     pub is_method: bool,
+    /// Enclosing caller symbol, absent for module-scope call sites.
+    pub caller: Option<ExtractedCallerSymbol>,
 }
 
 /// An import/use reference extracted during parse for stage-4 resolution.

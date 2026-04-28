@@ -79,7 +79,7 @@ pub(super) fn emit_imports_for_file(
                 from: NodeId::File(item.file_id),
                 to: NodeId::File(target_id),
                 kind: EdgeKind::Imports,
-                owner_file_id: None,
+                owner_file_id: Some(item.file_id),
                 last_observed_rev: None,
                 retired_at_rev: None,
                 epistemic: Epistemic::ParserObserved,

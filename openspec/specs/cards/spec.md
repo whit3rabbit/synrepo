@@ -18,27 +18,20 @@ synrepo SHALL define explicit card budget tiers and the order in which lower-pri
 - **AND** truncation happens by declared priority instead of accidental omission
 
 ### Requirement: Budget tiers implement a progressive-disclosure protocol
+
 synrepo's three budget tiers (`tiny`, `normal`, `deep`) SHALL be treated as a deliberate three-surface interaction pattern, not merely a size knob. Agents SHALL begin with `tiny` or `normal` to orient, and escalate to `deep` only when a specific field requires it. The card compiler SHALL maintain this contract across all card types: `tiny` returns index-quality signals, `normal` returns neighborhood-quality context (signature, neighbors, co-change partners), and `deep` returns inspection-quality detail (source body, full overlay content, full neighbor cards).
 
-#### Scenario: Agent orients with tiny budget first
-- **WHEN** an agent begins work on an unfamiliar symbol or file
-- **THEN** a `tiny` budget request returns enough signal (name, kind, location, edge counts) to decide whether to escalate
-- **AND** no source body, overlay commentary, or neighbor detail is included at `tiny` budget
+#### Scenario: SymbolCard deep budget includes graph callers and callees
 
-#### Scenario: Agent escalates from tiny to normal
-- **WHEN** an agent determines a symbol is relevant after a `tiny`-budget response
-- **THEN** a `normal` budget request adds signature, doc comment, co-change partners, and structural neighbor summaries
-- **AND** source body and full overlay content remain absent at `normal` budget
+- **WHEN** a `SymbolCard` is requested at `deep` budget for a symbol with symbol-to-symbol `Calls` edges
+- **THEN** `callers` includes inbound caller symbols from graph-backed `Calls` edges
+- **AND** `callees` includes outbound callee symbols from graph-backed `Calls` edges
 
-#### Scenario: Agent escalates to deep only for inspection
-- **WHEN** an agent needs to read or edit a symbol's implementation
-- **THEN** a `deep` budget request adds source body, full overlay commentary, full neighbor cards, and proposed cross-links
-- **AND** the escalation is explicit — callers do not receive `deep` content unless they request it
+#### Scenario: SymbolCard tight budgets withhold graph callers and callees
 
-#### Scenario: Budget tier is preserved in the response
-- **WHEN** any card is returned by the card compiler or an MCP tool
-- **THEN** the response includes a field identifying the budget tier used
-- **AND** callers can distinguish a `tiny`-budget response from a `normal` or `deep` response without inspecting field presence
+- **WHEN** a `SymbolCard` is requested at `tiny` or `normal` budget
+- **THEN** `callers` and `callees` SHALL remain omitted or empty
+- **AND** callers can escalate to `deep` when full symbol call neighbors are needed
 
 ### Requirement: Distinguish graph-backed and overlay-backed card fields
 synrepo SHALL label card fields by source store and freshness so agents can distinguish current structural facts from optional overlay content. The `overlay_commentary` field on `SymbolCard` SHALL carry one of five freshness states: `fresh`, `stale`, `invalid`, `missing`, or `unsupported`. The `proposed_links` field on `SymbolCard` and `FileCard` SHALL carry zero or more surfaced cross-link candidates, each labeled with its overlay source store, freshness state (`fresh` | `stale` | `source_deleted` | `invalid` | `missing`), and confidence tier (`high` | `review_queue`). `below_threshold` candidates SHALL NOT appear in `proposed_links`. At `tiny` and `normal` budget tiers, both `overlay_commentary` and `proposed_links` are omitted and the response MAY include `commentary_state: "budget_withheld"` and `links_state: "budget_withheld"` so callers can distinguish budget-withheld from absent. At `deep` budget, each field is populated if content exists; otherwise the state label reflects the actual absence reason.
@@ -204,7 +197,6 @@ The card SHALL compute a weighted risk score and map it to a risk level: `low` (
 - **THEN** `last_change` is either `null` or carries `granularity: "unknown"` with the readiness reason discoverable from the accompanying `FileCard.git_intelligence.status` when both cards are read together
 - **AND** the card does not invent a revision or author
 
-
 ### Requirement: Define PublicAPICard
 
 A `PublicAPICard` SHALL aggregate the exported API surface of a directory: public symbols, public entry points, and (at `deep` budget) recently changed public API. Visibility is inferred from `SymbolNode.signature`: a symbol is public if its signature starts with `pub`. This heuristic is Rust-specific; non-Rust directories return empty symbol lists in v1.
@@ -308,3 +300,4 @@ The `tiny`, `normal`, and `deep` budget tiers SHALL remain valid and backward co
 - **WHEN** a caller requests a card with only a budget tier
 - **THEN** synrepo applies the existing tier behavior
 - **AND** the response still includes context accounting metadata
+

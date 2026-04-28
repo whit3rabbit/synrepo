@@ -66,17 +66,33 @@ pub trait GraphReader: Send + Sync {
         Ok(out)
     }
 
-    /// Return `(id, file_id, qualified_name, kind, visibility)` tuples for all
+    /// Return `(id, file_id, qualified_name, kind, visibility, body_hash)` tuples for all
     /// active symbol nodes, used by stage-4 call-scope narrowing.
     #[allow(clippy::type_complexity)]
     fn all_symbols_for_resolution(
         &self,
-    ) -> crate::Result<Vec<(SymbolNodeId, FileNodeId, String, SymbolKind, Visibility)>> {
+    ) -> crate::Result<
+        Vec<(
+            SymbolNodeId,
+            FileNodeId,
+            String,
+            SymbolKind,
+            Visibility,
+            String,
+        )>,
+    > {
         let names = self.all_symbol_names()?;
         let mut out = Vec::with_capacity(names.len());
         for (sym_id, file_id, qname) in names {
             if let Ok(Some(sym)) = self.get_symbol(sym_id) {
-                out.push((sym_id, file_id, qname, sym.kind, sym.visibility));
+                out.push((
+                    sym_id,
+                    file_id,
+                    qname,
+                    sym.kind,
+                    sym.visibility,
+                    sym.body_hash,
+                ));
             }
         }
         Ok(out)

@@ -61,13 +61,17 @@ Structural parsing supports Rust, Python, TypeScript/TSX, and Go.
 1. **Discover** — substrate walk, `.gitignore`/`.synignore` respected per discovery root. The root set is the primary checkout plus linked worktrees by default; initialized submodules are opt-in and walked as separate roots.
 2. **Parse code** — tree-sitter symbol extraction; emits `FileNode`, `SymbolNode`, `Defines` edges.
 3. **Parse prose** — concept node extraction from configured markdown directories.
-4. **Cross-file edge resolution** — emits `Calls` (file→symbol, scoped resolution: +100 same-file, +50 imported, +20/+10/-100 visibility, +30 kind, +40 prefix. Edges only > 0 AND (unique OR tied ≥50)) and `Imports` (file→file). Resolvers: TypeScript/TSX (relative path), Python (dotted module), Rust (`crate::`/`self::`/`super::` plus bare top-level crate paths with longest-match selection), Go (module-prefix stripping via `go.mod`, fanning out to every `.go` file in the target package). `Inherits`, `References`, `Mentions` are not yet emitted.
+4. **Cross-file edge resolution** — emits `Calls` (file→symbol for transition and module-scope calls, symbol→symbol for calls inside an extracted caller symbol; scoped resolution: +100 same-file, +50 imported, +20/+10/-100 visibility, +30 kind, +40 prefix. Edges only > 0 AND (unique OR tied ≥50)) and `Imports` (file→file). Resolvers: TypeScript/TSX (relative path), Python (dotted module), Rust (`crate::`/`self::`/`super::` plus bare top-level crate paths with longest-match selection), Go (module-prefix stripping via `go.mod`, fanning out to every `.go` file in the target package). `Inherits`, `References`, `Mentions` are not yet emitted.
 5. **Git mining** — deterministic first-parent history sampling per discovery root; emits `CoChangesWith` edges via `git_intelligence/emit.rs`. Cross-root Git edges are not emitted.
 6. **Identity cascade** — content-hash rename, split/merge detection, git rename fallback; emits `SplitFrom` / `MergedFrom`. Preserves `FileNodeId` across renames and records old paths in `path_history`.
 7. **Drift scoring** — Jaccard distance on persisted structural fingerprints; writes sidecar `edge_drift` and `file_fingerprints` tables.
 8. **ArcSwap publish** — rebuild immutable `Graph` from SQLite, then atomically publish via `ArcSwap`.
 
 Stages 1–4 run in a single atomic SQLite transaction (`run_structural_compile`). Stage 4 reads uncommitted nodes from stages 1–3 via read-your-own-writes on the same connection. Watch-triggered reconciles can scope stages 1–6 to the discovery root that owns the changed path, leaving sibling roots untouched.
+
+#### Body-Scope Calls
+
+Call extraction carries the enclosing caller symbol's `(qualified_name, body_hash)` pair. Stage 4 resolves that pair against the active symbols from the same transaction and emits a symbol-to-symbol `Calls` edge when the callee scores to a positive candidate. If no enclosing caller exists, for example a module-top-level statement, stage 4 keeps the file-to-symbol `Calls` edge only.
 
 ### Overlay and audit surfaces
 

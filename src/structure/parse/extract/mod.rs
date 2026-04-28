@@ -1,3 +1,4 @@
+mod call_refs;
 mod docs;
 mod qualname;
 mod visibility;
@@ -7,9 +8,7 @@ use std::sync::OnceLock;
 
 use tree_sitter::StreamingIterator as _;
 
-use super::{
-    CallMode, ExtractedCallRef, ExtractedImportRef, ExtractedSymbol, Language, ParseOutput,
-};
+use super::{ExtractedImportRef, ExtractedSymbol, Language, ParseOutput};
 
 /// Cached definition query with capture indices for "item" and "name".
 struct DefinitionQuery {
@@ -281,7 +280,7 @@ pub fn parse_file(path: &Path, content: &[u8]) -> crate::Result<Option<ParseOutp
         });
     }
 
-    let call_refs = extract_call_refs(language, &tree, content)?;
+    let call_refs = call_refs::extract_call_refs(language, &tree, content, &symbols)?;
     let import_refs = extract_import_refs(language, &tree, content)?;
 
     Ok(Some(ParseOutput {
@@ -291,57 +290,6 @@ pub fn parse_file(path: &Path, content: &[u8]) -> crate::Result<Option<ParseOutp
         call_refs,
         import_refs,
     }))
-}
-
-/// Extract call-site references from a parsed file for stage-4 resolution.
-fn extract_call_refs(
-    language: Language,
-    tree: &tree_sitter::Tree,
-    content: &[u8],
-) -> crate::Result<Vec<ExtractedCallRef>> {
-    // Use cached call query
-    let Some(call_query) = get_call_query(language) else {
-        return Ok(vec![]);
-    };
-
-    let callee_idx = call_query.callee_idx;
-    let prefix_idx = call_query.prefix_idx;
-    let call_mode_map = language.call_mode_map();
-    let mut cursor = tree_sitter::QueryCursor::new();
-    let mut matches = cursor.matches(&call_query.query, tree.root_node(), content);
-    let mut refs = Vec::new();
-
-    while let Some(m) = matches.next() {
-        let pattern_index = m.pattern_index;
-        let is_method = call_mode_map
-            .get(pattern_index)
-            .map(|&mode| mode == CallMode::Method)
-            .unwrap_or(false);
-
-        // Find the @callee capture
-        for capture in m.captures.iter().filter(|c| c.index == callee_idx) {
-            let name = node_text(capture.node, content);
-            if name.is_empty() {
-                continue;
-            }
-
-            // Find the @callee_prefix capture if present
-            let callee_prefix = prefix_idx.and_then(|idx| {
-                m.captures
-                    .iter()
-                    .find(|c| c.index == idx)
-                    .map(|c| node_text(c.node, content))
-            });
-
-            refs.push(ExtractedCallRef {
-                callee_name: name,
-                callee_prefix: callee_prefix.filter(|s| !s.is_empty()),
-                is_method,
-            });
-        }
-    }
-
-    Ok(refs)
 }
 
 /// Extract import/use references from a parsed file for stage-4 resolution.

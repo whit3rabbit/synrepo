@@ -17,7 +17,8 @@ use super::epistemic::Epistemic;
 pub enum EdgeKind {
     /// `from` imports `to` (module-level import statement).
     Imports,
-    /// `from` calls `to` (function call).
+    /// `from` calls `to` (function call). File-scoped and symbol-scoped
+    /// endpoints are both valid during the symbol-call transition.
     Calls,
     /// `from` inherits from `to` (class inheritance / trait bound).
     Inherits,

@@ -41,7 +41,7 @@ pub use context::CrossFilePending;
 
 use context::{build_indices, ImportsMap};
 use imports::emit_imports_for_file;
-use scoring::emit_calls_for_file;
+use scoring::{emit_calls_for_file, CallResolutionLookups};
 
 use crate::{
     core::ids::{FileNodeId, SymbolNodeId},
@@ -61,7 +61,7 @@ pub fn run_cross_file_resolution(
         return Ok(0);
     }
 
-    let (ctx, name_index, symbol_meta) = build_indices(graph, pending, repo_root)?;
+    let (ctx, name_index, symbol_meta, caller_index) = build_indices(graph, pending, repo_root)?;
 
     // Imports map: populated as Imports edges are emitted, before Calls resolution.
     // Maps importing_file -> set of imported file IDs.
@@ -76,6 +76,7 @@ pub fn run_cross_file_resolution(
     // Global call-resolution counters (accumulated per-file).
     let mut total_calls_resolved_uniquely = 0usize;
     let mut total_calls_resolved_ambiguously = 0usize;
+    let mut total_symbol_calls_emitted = 0usize;
     let mut total_calls_dropped_weak = 0usize;
     let mut total_calls_dropped_no_candidates = 0usize;
 
@@ -86,8 +87,11 @@ pub fn run_cross_file_resolution(
 
         let call_stats = emit_calls_for_file(
             graph,
-            &name_index,
-            &symbol_meta,
+            CallResolutionLookups {
+                name_index: &name_index,
+                symbol_meta: &symbol_meta,
+                caller_index: &caller_index,
+            },
             item,
             imports,
             revision,
@@ -98,6 +102,7 @@ pub fn run_cross_file_resolution(
         // Accumulate into global counters.
         total_calls_resolved_uniquely += call_stats.calls_resolved_uniquely;
         total_calls_resolved_ambiguously += call_stats.calls_resolved_ambiguously;
+        total_symbol_calls_emitted += call_stats.symbol_calls_emitted;
         total_calls_dropped_weak += call_stats.calls_dropped_weak;
         total_calls_dropped_no_candidates += call_stats.calls_dropped_no_candidates;
     }
@@ -106,6 +111,7 @@ pub fn run_cross_file_resolution(
     tracing::trace!(
         total_calls_resolved_uniquely,
         total_calls_resolved_ambiguously,
+        total_symbol_calls_emitted,
         total_calls_dropped_weak,
         total_calls_dropped_no_candidates,
         "stage4 call-resolution global summary"

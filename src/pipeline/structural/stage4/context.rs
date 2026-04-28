@@ -14,6 +14,7 @@ use crate::{
 
 pub(super) type NameIndex = HashMap<String, Vec<SymbolNodeId>>;
 pub(super) type SymbolMetaMap = HashMap<SymbolNodeId, SymbolMeta>;
+pub(super) type CallerIndex = HashMap<(FileNodeId, String, String), SymbolNodeId>;
 
 /// Scope map: for each file, the set of files it imports (direct imports only).
 /// Built as Imports edges are emitted, before the Calls resolution loop.
@@ -67,7 +68,7 @@ pub(super) fn build_indices(
     graph: &mut dyn GraphStore,
     pending: &[CrossFilePending],
     repo_root: &Path,
-) -> crate::Result<(ResolverContext, NameIndex, SymbolMetaMap)> {
+) -> crate::Result<(ResolverContext, NameIndex, SymbolMetaMap, CallerIndex)> {
     // Build short-name index and per-symbol metadata in a single pass using
     // the bulk resolver query (one SELECT, visibility parsed from the blob).
     // SQLite read-your-own-writes lets us see stages 1-3's inserts inside the
@@ -75,7 +76,8 @@ pub(super) fn build_indices(
     let all_symbols = graph.all_symbols_for_resolution()?;
     let mut name_index: NameIndex = HashMap::with_capacity(all_symbols.len());
     let mut symbol_meta: SymbolMetaMap = HashMap::with_capacity(all_symbols.len());
-    for (sym_id, file_id, qname, kind, visibility) in all_symbols {
+    let mut caller_index: CallerIndex = HashMap::with_capacity(all_symbols.len());
+    for (sym_id, file_id, qname, kind, visibility, body_hash) in all_symbols {
         let Some(file) = graph.get_file(file_id)? else {
             continue;
         };
@@ -91,9 +93,10 @@ pub(super) fn build_indices(
                 root_id: file.root_id,
                 visibility,
                 kind,
-                qualified_name: qname,
+                qualified_name: qname.clone(),
             },
         );
+        caller_index.insert((file_id, qname, body_hash), sym_id);
     }
 
     // Build file_index and files_by_dir in a single pass so both share the
@@ -154,5 +157,5 @@ pub(super) fn build_indices(
         rust_crate_src_by_dir,
     };
 
-    Ok((ctx, name_index, symbol_meta))
+    Ok((ctx, name_index, symbol_meta, caller_index))
 }

@@ -6,7 +6,7 @@ A context compiler for AI coding agents.
 
 ## What synrepo is
 
-synrepo precomputes a small, deterministic, queryable working set of facts about a software project and serves that working set to coding agents through an MCP server in tight, task-shaped, token-budgeted packets called *cards*. Today the strongest shipped signals are symbol definitions, import relationships, and approximate dependency hints, with **co-change links, git hotspots, and change impact analysis** now wired into the card surface. Higher-fidelity symbol-to-symbol call graphs and cross-language dependency proof remain follow-on work.
+synrepo precomputes a small, deterministic, queryable working set of facts about a software project and serves that working set to coding agents through an MCP server in tight, task-shaped, token-budgeted packets called *cards*. Today the strongest shipped signals are symbol definitions, import relationships, symbol-to-symbol call hints, and approximate dependency hints, with **co-change links, git hotspots, and change impact analysis** now wired into the card surface. Full type-aware cross-language dependency proof remains follow-on work.
 
 Underneath, [syntext](https://github.com/whit3rabbit/syntext) provides deterministic lexical search; tree-sitter via per-language Rust crates provides structural parsing; sqlite holds the canonical graph of facts the parsers and git observed directly. An LLM is layered on top, strictly off the critical path, to compress long material into commentary and to propose cross-links between code and prose — but everything the LLM produces lives in a clearly separate **overlay store** that is queryable alongside the graph but is never part of it. The graph holds only what was directly observed. The overlay holds what was inferred, with provenance and confidence visible to agents that ask.
 
@@ -118,9 +118,8 @@ SymbolCard for `parse_query` (function)
   signature: pub fn parse_query(input: &str) -> Result<Query, ParseError>
   doc-comment: "Parse a query string into a typed Query AST..."
   source body: available at `deep` budget
-  callers/callees: shipped (file-scoped Calls edges; symbol-to-symbol
-    precision is still approximate name resolution, not full type-aware
-    binding)
+  callers/callees: shipped (symbol-to-symbol Calls edges; precision is
+    approximate name resolution, not full type-aware binding)
   tests touching this symbol: pending dedicated TestSurfaceCard wiring
   last meaningful change: shipped; uses symbol-level granularity by diffing
     `body_hash` transitions across the sampled git history. Tracked by
@@ -234,7 +233,7 @@ The data already exists: `.synrepo/state/reconcile-state.json`, `.synrepo/state/
 
 ## The two pipelines
 
-**Structural pipeline (hot path, no LLM).** Runs on every change, synchronously, seconds even on thousand-file refactors. Walks the configured roots, parses code via tree-sitter (supporting Rust, Python, TypeScript/TSX, and Go), parses prose via the Markdown parser, mines git history, computes derived structural facts (reachability, dead code, hidden coupling, drift scores), commits to sqlite and syntext. Stage 4 resolution is **scoped and scored (`stage4-call-scope-narrowing-v1`)**, using a rubric (same file, imports, visibility, kind, prefix) to drastically narrow `Calls` edges. Visibility (`Public`, `Crate`, `Private`) is a first-class, cross-language field (`cross-language-symbol-visibility-v1`). Changed files are upserted in place (preserving stable node identity), and stale observations are soft-retired rather than cascade-deleted, so drift scoring and provenance remain coherent across revisions. That's the whole critical path — no cascade budget, no deferral, no nightly queue. A 1,000-file refactor gets its graph updated in a few seconds of tree-sitter plus the graph write. Agents never read stale structural state.
+**Structural pipeline (hot path, no LLM).** Runs on every change, synchronously, seconds even on thousand-file refactors. Walks the configured roots, parses code via tree-sitter (supporting Rust, Python, TypeScript/TSX, and Go), parses prose via the Markdown parser, mines git history, computes derived structural facts (reachability, dead code, hidden coupling, drift scores), commits to sqlite and syntext. Stage 4 resolution is **scoped and scored (`stage4-call-scope-narrowing-v1`)**, using a rubric (same file, imports, visibility, kind, prefix) to drastically narrow `Calls` edges. Calls with an enclosing function or method now also emit symbol-to-symbol edges, while module-scope calls remain file-scoped. Visibility (`Public`, `Crate`, `Private`) is a first-class, cross-language field (`cross-language-symbol-visibility-v1`). Changed files are upserted in place (preserving stable node identity), and stale observations are soft-retired rather than cascade-deleted, so drift scoring and provenance remain coherent across revisions. That's the whole critical path — no cascade budget, no deferral, no nightly queue. A 1,000-file refactor gets its graph updated in a few seconds of tree-sitter plus the graph write. Agents never read stale structural state.
 
 **Explain pipeline (cold path, LLM-driven, lazy).** Never blocks the structural pipeline. Never blocks MCP queries. Runs in three triggering modes: on-demand (an MCP tool asked for commentary or a card at `deep` tier), background (low-priority worker regenerating overlay during idle time), or explicit (the user ran `synrepo sync --generate-cross-links`). Produces card commentary, proposes cross-links, runs lint. Everything it produces goes into the overlay. Input never includes other overlay content, enforced at the retrieval layer.
 

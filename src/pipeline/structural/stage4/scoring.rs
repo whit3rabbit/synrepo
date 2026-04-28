@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use super::context::{CrossFilePending, NameIndex, SymbolMeta, SymbolMetaMap};
+use super::context::{CallerIndex, CrossFilePending, NameIndex, SymbolMeta, SymbolMetaMap};
 use crate::{
     core::ids::{FileNodeId, NodeId, SymbolNodeId},
     pipeline::structural::ids::derive_edge_id,
@@ -28,20 +28,26 @@ const TIE_EMIT_CUTOFF: i32 = IMPORTED_FILE_BONUS;
 pub(super) struct CallStats {
     pub(super) calls_resolved_uniquely: usize,
     pub(super) calls_resolved_ambiguously: usize,
+    pub(super) symbol_calls_emitted: usize,
     pub(super) calls_dropped_weak: usize,
     pub(super) calls_dropped_no_candidates: usize,
 }
 
 impl CallStats {
     pub(super) fn emitted_edges(&self) -> usize {
-        self.calls_resolved_uniquely + self.calls_resolved_ambiguously
+        self.calls_resolved_uniquely + self.calls_resolved_ambiguously + self.symbol_calls_emitted
     }
+}
+
+pub(super) struct CallResolutionLookups<'a> {
+    pub(super) name_index: &'a NameIndex,
+    pub(super) symbol_meta: &'a SymbolMetaMap,
+    pub(super) caller_index: &'a CallerIndex,
 }
 
 pub(super) fn emit_calls_for_file(
     graph: &mut dyn GraphStore,
-    name_index: &NameIndex,
-    symbol_meta: &SymbolMetaMap,
+    lookups: CallResolutionLookups<'_>,
     item: &CrossFilePending,
     imports: &HashSet<FileNodeId>,
     revision: &str,
@@ -50,7 +56,8 @@ pub(super) fn emit_calls_for_file(
     let mut stats = CallStats::default();
 
     for call_ref in &item.call_refs {
-        let candidates = name_index
+        let candidates = lookups
+            .name_index
             .get(&call_ref.callee_name)
             .map(Vec::as_slice)
             .unwrap_or(&[]);
@@ -63,7 +70,8 @@ pub(super) fn emit_calls_for_file(
 
         scored.clear();
         scored.extend(candidates.iter().filter_map(|callee_id| {
-            symbol_meta
+            lookups
+                .symbol_meta
                 .get(callee_id)
                 .filter(|meta| meta.root_id == item.root_id)
                 .map(|meta| {
@@ -117,6 +125,17 @@ pub(super) fn emit_calls_for_file(
         for (callee_id, s) in scored.iter() {
             if *s != top_score {
                 continue;
+            }
+            if let Some(caller_id) = resolve_caller_id(call_ref, item.file_id, lookups.caller_index)
+            {
+                graph.insert_edge(build_symbol_calls_edge(
+                    caller_id,
+                    *callee_id,
+                    item.file_id,
+                    revision,
+                    &item.file_path,
+                ))?;
+                stats.symbol_calls_emitted += 1;
             }
             graph.insert_edge(build_calls_edge(
                 item.file_id,
@@ -187,6 +206,21 @@ fn score_candidate(
     score
 }
 
+fn resolve_caller_id(
+    call_ref: &ExtractedCallRef,
+    file_id: FileNodeId,
+    caller_index: &CallerIndex,
+) -> Option<SymbolNodeId> {
+    let caller = call_ref.caller.as_ref()?;
+    caller_index
+        .get(&(
+            file_id,
+            caller.qualified_name.clone(),
+            caller.body_hash.clone(),
+        ))
+        .copied()
+}
+
 fn build_calls_edge(
     from_file: FileNodeId,
     callee: SymbolNodeId,
@@ -202,7 +236,32 @@ fn build_calls_edge(
         from: NodeId::File(from_file),
         to: NodeId::Symbol(callee),
         kind: EdgeKind::Calls,
-        owner_file_id: None,
+        owner_file_id: Some(from_file),
+        last_observed_rev: None,
+        retired_at_rev: None,
+        epistemic: Epistemic::ParserObserved,
+        drift_score: 0.0,
+        provenance: make_provenance("stage4_calls", revision, file_path, ""),
+    }
+}
+
+fn build_symbol_calls_edge(
+    caller: SymbolNodeId,
+    callee: SymbolNodeId,
+    owner_file_id: FileNodeId,
+    revision: &str,
+    file_path: &str,
+) -> Edge {
+    Edge {
+        id: derive_edge_id(
+            NodeId::Symbol(caller),
+            NodeId::Symbol(callee),
+            EdgeKind::Calls,
+        ),
+        from: NodeId::Symbol(caller),
+        to: NodeId::Symbol(callee),
+        kind: EdgeKind::Calls,
+        owner_file_id: Some(owner_file_id),
         last_observed_rev: None,
         retired_at_rev: None,
         epistemic: Epistemic::ParserObserved,

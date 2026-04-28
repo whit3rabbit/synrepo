@@ -198,6 +198,57 @@ fn symbol_card_snapshots_with_signature_and_doc_comment() {
     assert_snapshot!("symbol_card_deep", deep);
 }
 
+#[test]
+fn symbol_card_deep_includes_symbol_callers_and_callees() {
+    let repo = tempdir().unwrap();
+    fs::create_dir_all(repo.path().join("src")).unwrap();
+    fs::write(
+        repo.path().join("src/lib.rs"),
+        "pub fn helper() -> u32 { 1 }\npub fn entry() -> u32 { helper() }\n",
+    )
+    .unwrap();
+
+    let graph = bootstrap(&repo);
+    let file = graph.file_by_path("src/lib.rs").unwrap().unwrap();
+    let mut entry_id = None;
+    let mut helper_id = None;
+    for edge in graph
+        .outbound(NodeId::File(file.id), Some(EdgeKind::Defines))
+        .unwrap()
+    {
+        let NodeId::Symbol(id) = edge.to else {
+            continue;
+        };
+        let symbol = graph.get_symbol(id).unwrap().unwrap();
+        match symbol.display_name.as_str() {
+            "entry" => entry_id = Some(id),
+            "helper" => helper_id = Some(id),
+            _ => {}
+        }
+    }
+    let entry_id = entry_id.expect("entry symbol must exist");
+    let helper_id = helper_id.expect("helper symbol must exist");
+    let compiler = make_compiler(graph, &repo);
+
+    let entry = compiler.symbol_card(entry_id, Budget::Deep).unwrap();
+    assert!(
+        entry.callees.iter().any(|callee| callee.id == helper_id),
+        "entry card must include helper as a callee; got {:?}",
+        entry.callees
+    );
+
+    let helper = compiler.symbol_card(helper_id, Budget::Deep).unwrap();
+    assert!(
+        helper.callers.iter().any(|caller| caller.id == entry_id),
+        "helper card must include entry as a caller; got {:?}",
+        helper.callers
+    );
+
+    let normal = compiler.symbol_card(entry_id, Budget::Normal).unwrap();
+    assert!(normal.callers.is_empty());
+    assert!(normal.callees.is_empty());
+}
+
 // 7.5: entry_point_card returns empty list (no panic) when no files are indexed
 #[test]
 fn entry_point_card_empty_repo_returns_no_panic() {

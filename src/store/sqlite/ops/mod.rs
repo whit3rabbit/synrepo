@@ -109,6 +109,7 @@ impl GraphReader for SqliteGraphStore {
             String,
             crate::structure::graph::SymbolKind,
             crate::structure::graph::Visibility,
+            String,
         )>,
     > {
         lists::all_symbols_for_resolution(self)

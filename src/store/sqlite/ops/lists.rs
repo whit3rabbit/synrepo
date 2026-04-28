@@ -9,7 +9,14 @@ use super::super::SqliteGraphStore;
 type SymbolSummary = (SymbolNodeId, FileNodeId, String, String, String);
 
 /// Return type for all_symbols_for_resolution.
-type SymbolForResolution = (SymbolNodeId, FileNodeId, String, SymbolKind, Visibility);
+type SymbolForResolution = (
+    SymbolNodeId,
+    FileNodeId,
+    String,
+    SymbolKind,
+    Visibility,
+    String,
+);
 
 /// Get all file paths and their IDs, ordered by path.
 pub fn all_file_paths(store: &SqliteGraphStore) -> crate::Result<Vec<(String, FileNodeId)>> {
@@ -71,7 +78,7 @@ pub fn all_symbol_names(
 }
 
 /// Get all active symbols with the fields stage-4 resolution needs
-/// (ID, file ID, qualified name, kind, visibility).
+/// (ID, file ID, qualified name, kind, visibility, body hash).
 ///
 /// `kind` is read from its dedicated column; `visibility` is deserialized
 /// from a thin slice of the `data` JSON blob (one allocation per row,
@@ -87,7 +94,7 @@ pub fn all_symbols_for_resolution(
 
     let conn = store.conn.lock();
     let mut stmt = conn.prepare_cached(
-        "SELECT id, file_id, qualified_name, kind, data FROM symbols WHERE retired_at_rev IS NULL ORDER BY id",
+        "SELECT id, file_id, qualified_name, kind, data, body_hash FROM symbols WHERE retired_at_rev IS NULL ORDER BY id",
     )?;
     let rows = stmt
         .query_map([], |row| {
@@ -97,12 +104,13 @@ pub fn all_symbols_for_resolution(
                 row.get::<_, String>(2)?,
                 row.get::<_, String>(3)?,
                 row.get::<_, String>(4)?,
+                row.get::<_, String>(5)?,
             ))
         })?
         .collect::<Result<Vec<_>, _>>()?;
 
     let mut out = Vec::with_capacity(rows.len());
-    for (sym_id, file_id, qname, kind_label, data) in rows {
+    for (sym_id, file_id, qname, kind_label, data, body_hash) in rows {
         let Some(kind) = SymbolKind::from_label(&kind_label) else {
             continue;
         };
@@ -115,6 +123,7 @@ pub fn all_symbols_for_resolution(
             qname,
             kind,
             visibility,
+            body_hash,
         ));
     }
     Ok(out)

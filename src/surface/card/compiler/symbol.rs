@@ -4,7 +4,7 @@ use std::sync::Arc;
 use crate::{
     core::ids::{NodeId, SymbolNodeId},
     overlay::{FreshnessState, OverlayStore},
-    structure::graph::GraphReader,
+    structure::graph::{Edge, EdgeKind, GraphReader},
     surface::card::accounting::{raw_file_token_estimate, ContextAccounting},
     surface::card::git::symbol_last_change_from_insights,
     surface::card::types::{Freshness, OverlayCommentary},
@@ -39,10 +39,24 @@ pub(super) fn symbol_card(
 
     let defined_at = format!("{}:{}", file.path, symbol.body_byte_range.0);
 
-    // Phase 1: edges are file→symbol, not symbol→symbol.
-    // Empty until symbol→symbol Calls edges land in stage 5.
-    let callers: Vec<SymbolRef> = vec![];
-    let callees: Vec<SymbolRef> = vec![];
+    let (callers, callees) = if budget == Budget::Deep {
+        (
+            symbol_refs_from_edges(
+                ctx.graph
+                    .inbound(NodeId::Symbol(id), Some(EdgeKind::Calls))?,
+                |edge| edge.from,
+                ctx.graph,
+            )?,
+            symbol_refs_from_edges(
+                ctx.graph
+                    .outbound(NodeId::Symbol(id), Some(EdgeKind::Calls))?,
+                |edge| edge.to,
+                ctx.graph,
+            )?,
+        )
+    } else {
+        (Vec::new(), Vec::new())
+    };
 
     // Source body: only for Deep budget.
     let source_body = if budget == Budget::Deep {
@@ -127,6 +141,31 @@ pub(super) fn symbol_card(
         vec![file.content_hash],
     );
     Ok(card)
+}
+
+fn symbol_refs_from_edges(
+    edges: Vec<Edge>,
+    endpoint: impl Fn(&Edge) -> NodeId,
+    graph: &dyn GraphReader,
+) -> crate::Result<Vec<SymbolRef>> {
+    let mut refs = Vec::new();
+    for edge in edges {
+        let NodeId::Symbol(symbol_id) = endpoint(&edge) else {
+            continue;
+        };
+        let Some(symbol) = graph.get_symbol(symbol_id)? else {
+            continue;
+        };
+        let Some(file) = graph.get_file(symbol.file_id)? else {
+            continue;
+        };
+        refs.push(SymbolRef {
+            id: symbol_id,
+            qualified_name: symbol.qualified_name,
+            location: format!("{}:{}", file.path, symbol.body_byte_range.0),
+        });
+    }
+    Ok(refs)
 }
 
 /// Resolve commentary for a Deep-budget card.
