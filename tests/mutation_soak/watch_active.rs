@@ -2,7 +2,8 @@ use std::fs;
 
 use super::support::{
     assert_failure_contains, compact_state_path, export_manifest_path, init_repo, read_optional,
-    reconcile_state_path, run, start_watch_daemon, stop_watch, synrepo_dir, write_upgrade_drift,
+    reconcile_state_path, run, run_ok, start_watch_daemon, stop_watch, synrepo_dir,
+    write_upgrade_drift,
 };
 
 #[test]
@@ -60,4 +61,39 @@ fn mutation_commands_stay_blocked_while_watch_is_active() {
             .exists()
             || true
     );
+}
+
+#[test]
+#[ignore = "release-gate soak test; run with `cargo test --test mutation_soak -- --ignored --test-threads=1`"]
+fn mutation_soak_sync_through_watch() {
+    let repo = init_repo();
+    let repo_path = repo.path();
+
+    start_watch_daemon(repo_path);
+
+    for _ in 0..10 {
+        let output = run(repo_path, &["sync"]);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            output.status.success(),
+            "sync should delegate through watch; stderr={stderr} stdout={stdout}"
+        );
+        assert!(
+            stderr.contains("Delegated sync to active watch service"),
+            "sync must use the watch control path; stderr={stderr}"
+        );
+        assert!(
+            stdout.contains("sync:"),
+            "sync summary should still render; stdout={stdout}"
+        );
+    }
+
+    let status = run_ok(repo_path, &["watch", "status"]);
+    assert!(
+        status.contains("state:        running"),
+        "watch should remain healthy after delegated syncs; status={status}"
+    );
+
+    stop_watch(repo_path);
 }

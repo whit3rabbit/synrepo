@@ -1,7 +1,6 @@
 //! CLI argument types for synrepo.
 //!
-//! Pure declarative clap derives with zero runtime logic.
-//! The dispatcher lives in `cli.rs`.
+//! Declarative clap derives; runtime dispatch lives in `cli.rs`.
 
 mod convert;
 mod subcommands;
@@ -367,7 +366,11 @@ pub(crate) enum Command {
     },
 
     /// Start the MCP server over stdio.
-    Mcp,
+    Mcp {
+        /// Explicitly expose edit-capable MCP tools.
+        #[arg(long)]
+        allow_edits: bool,
+    },
 
     /// Uninstall synrepo artifacts from the current repo.
     ///

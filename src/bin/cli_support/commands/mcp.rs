@@ -18,7 +18,7 @@ use rmcp::{
 use synrepo::surface::handoffs::HandoffsRequest;
 use synrepo::surface::handoffs::{collect_handoffs, to_json as handoffs_to_json};
 use synrepo::surface::mcp::{
-    audit, cards, context_pack, docs, notes, primitives, search, SynrepoState,
+    audit, cards, context_pack, docs, edits, notes, primitives, search, SynrepoState,
 };
 
 pub(crate) struct SynrepoServer {
@@ -26,6 +26,7 @@ pub(crate) struct SynrepoServer {
     auto_started_roots: Arc<RwLock<HashSet<std::path::PathBuf>>>,
     default_repo_root: std::path::PathBuf,
     tool_router: ToolRouter<Self>,
+    allow_edits: bool,
 }
 
 impl Clone for SynrepoServer {
@@ -35,21 +36,28 @@ impl Clone for SynrepoServer {
             auto_started_roots: Arc::clone(&self.auto_started_roots),
             default_repo_root: self.default_repo_root.clone(),
             tool_router: self.tool_router.clone(),
+            allow_edits: self.allow_edits,
         }
     }
 }
 
 impl SynrepoServer {
-    pub(crate) fn new(state: SynrepoState) -> Self {
+    pub(crate) fn new(state: SynrepoState, allow_edits: bool) -> Self {
         let repo_root = state.repo_root.clone();
         let mut states = HashMap::new();
         states.insert(repo_root.clone(), Arc::new(state));
         let auto_started_roots = HashSet::new();
+        let mut tool_router = Self::tool_router();
+        if !allow_edits {
+            tool_router.remove_route("synrepo_prepare_edit_context");
+            tool_router.remove_route("synrepo_apply_anchor_edits");
+        }
         let server = Self {
             states: Arc::new(RwLock::new(states)),
             auto_started_roots: Arc::new(RwLock::new(auto_started_roots)),
             default_repo_root: repo_root.clone(),
-            tool_router: Self::tool_router(),
+            tool_router,
+            allow_edits,
         };
 
         // Auto-trigger watch daemon for the default root.
@@ -113,6 +121,15 @@ impl SynrepoServer {
         let synrepo_dir = synrepo::config::Config::synrepo_dir(&state.repo_root);
         synrepo::pipeline::context_metrics::record_workflow_call_best_effort(&synrepo_dir, tool);
     }
+
+    #[cfg(test)]
+    pub(crate) fn registered_tool_names(&self) -> Vec<String> {
+        self.tool_router
+            .list_all()
+            .into_iter()
+            .map(|tool| tool.name.to_string())
+            .collect()
+    }
 }
 
 #[tool_handler(router = self.tool_router)]
@@ -131,6 +148,7 @@ impl ServerHandler for SynrepoServer {
              synrepo_tests before claiming done, and synrepo_changed after edits. \
              Use synrepo_minimum_context as the bounded neighborhood step once a focal target is known. \
              Use synrepo_context_pack when batching several read-only context artifacts is cheaper than serial tool calls. \
+             Edit tools are absent unless this server was started with synrepo mcp --allow-edits; when present, call prepare before apply. \
              Read full source files only after card routing identifies the target or when a bounded card is insufficient; \
              that is an explicit escalation, not the default first step. \
              Graph-backed structural facts are authoritative; overlay commentary and advisory notes never define source truth. \
@@ -652,6 +670,28 @@ impl SynrepoServer {
             params.limit,
             params.since,
         )
+    }
+
+    #[tool(
+        name = "synrepo_prepare_edit_context",
+        description = "Edit-enabled workflow step: prepare session-scoped line anchors and compact source context for a file, symbol, or range. This tool does not write files; source mutation can occur only through synrepo_apply_anchor_edits."
+    )]
+    async fn synrepo_prepare_edit_context(
+        &self,
+        Parameters(params): Parameters<edits::PrepareEditContextParams>,
+    ) -> String {
+        edits::handle_prepare_edit_context(&self.resolve_state(params.repo_root.clone()), params)
+    }
+
+    #[tool(
+        name = "synrepo_apply_anchor_edits",
+        description = "Edit-enabled workflow step: validate prepared anchors, content hashes, and boundary text before applying source edits. This tool can mutate source files only when the server was started with synrepo mcp --allow-edits."
+    )]
+    async fn synrepo_apply_anchor_edits(
+        &self,
+        Parameters(params): Parameters<edits::ApplyAnchorEditsParams>,
+    ) -> String {
+        edits::handle_apply_anchor_edits(&self.resolve_state(params.repo_root.clone()), params)
     }
 
     #[tool(

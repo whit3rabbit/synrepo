@@ -9,6 +9,7 @@ mod export;
 mod graph;
 mod links;
 mod mcp;
+mod mcp_edits;
 mod notes;
 mod overlay_scale;
 mod reconcile;

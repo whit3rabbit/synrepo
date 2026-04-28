@@ -24,6 +24,7 @@ pub mod card_accounting;
 pub mod cards;
 pub mod context_pack;
 pub mod docs;
+pub mod edits;
 pub mod helpers;
 pub mod notes;
 pub mod primitives;

@@ -357,7 +357,7 @@ fn dispatch(command: Command, repo_root: &Path, tui_opts: TuiOptions) -> anyhow:
         Command::Doctor { json } => doctor(repo_root, json),
         Command::Dashboard => run_dashboard_command(repo_root, tui_opts),
         Command::Server { metrics } => server(repo_root, &metrics),
-        Command::Mcp => run_mcp_server(repo_root),
+        Command::Mcp { allow_edits } => run_mcp_server(repo_root, allow_edits),
         Command::Remove {
             tool,
             apply,

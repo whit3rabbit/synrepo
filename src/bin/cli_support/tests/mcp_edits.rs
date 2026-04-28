@@ -1,0 +1,63 @@
+use std::fs;
+
+use tempfile::tempdir;
+
+use crate::{cli_support::commands::mcp::SynrepoServer, prepare_mcp_state};
+use synrepo::bootstrap::bootstrap;
+
+fn setup_bootstrapped_repo() -> (tempfile::TempDir, std::path::PathBuf) {
+    let dir = tempdir().unwrap();
+    let repo = dir.path();
+    fs::write(repo.join("lib.rs"), "fn main() {}").unwrap();
+    bootstrap(repo, None, false).unwrap();
+    let repo_path = repo.to_path_buf();
+    (dir, repo_path)
+}
+
+#[test]
+fn mcp_edit_tools_are_hidden_until_allow_edits() {
+    let (dir, repo) = setup_bootstrapped_repo();
+    let state = prepare_mcp_state(&repo).expect("MCP state should load");
+    let server = SynrepoServer::new(state, false);
+    let tools = server.registered_tool_names();
+    assert!(
+        !tools
+            .iter()
+            .any(|tool| tool == "synrepo_prepare_edit_context"),
+        "default MCP must not advertise prepare edit tool"
+    );
+    assert!(
+        !tools
+            .iter()
+            .any(|tool| tool == "synrepo_apply_anchor_edits"),
+        "default MCP must not advertise apply edit tool"
+    );
+    assert!(
+        tools.iter().any(|tool| tool == "synrepo_context_pack"),
+        "read-first tools must remain available"
+    );
+    server.stop_auto_started_watchers();
+    drop(dir);
+}
+
+#[test]
+fn mcp_edit_tools_are_registered_when_allow_edits() {
+    let (dir, repo) = setup_bootstrapped_repo();
+    let state = prepare_mcp_state(&repo).expect("MCP state should load");
+    let server = SynrepoServer::new(state, true);
+    let tools = server.registered_tool_names();
+    assert!(
+        tools
+            .iter()
+            .any(|tool| tool == "synrepo_prepare_edit_context"),
+        "edit-enabled MCP must advertise prepare edit tool"
+    );
+    assert!(
+        tools
+            .iter()
+            .any(|tool| tool == "synrepo_apply_anchor_edits"),
+        "edit-enabled MCP must advertise apply edit tool"
+    );
+    server.stop_auto_started_watchers();
+    drop(dir);
+}

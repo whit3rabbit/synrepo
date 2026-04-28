@@ -8,9 +8,12 @@ This file stays focused on the MCP surface exposed by `synrepo mcp`: handler lay
 ```bash
 cargo run -- mcp                    # stdio server for the current repo
 cargo run -- mcp --repo <path>      # stdio server for a specific repo
+cargo run -- mcp --allow-edits      # explicitly expose anchored edit tools
 ```
 
 The server is a subcommand of the `synrepo` binary. There is no separate crate. Transport is stdio only.
+
+MCP is read-first by default. Edit-capable tools are absent from `tools/list` unless the process was started with `synrepo mcp --allow-edits`. Repository or user configuration may further restrict editing later, but config alone must never enable mutating tools.
 
 ## Where things live
 
@@ -31,6 +34,9 @@ Current registrations (see `mcp.rs` for schemas):
 **High-level / agent-facing:**
 `synrepo_overview`, `synrepo_card`, `synrepo_context_pack`, `synrepo_search`, `synrepo_docs_search`, `synrepo_where_to_edit`, `synrepo_change_impact`, `synrepo_change_risk`, `synrepo_entrypoints`, `synrepo_test_surface`, `synrepo_module_card`, `synrepo_public_api`, `synrepo_minimum_context`, `synrepo_call_path`, `synrepo_refresh_commentary`, `synrepo_findings`, `synrepo_recent_activity`, `synrepo_next_actions`
 
+**Edit-enabled only (`synrepo mcp --allow-edits`):**
+`synrepo_prepare_edit_context`, `synrepo_apply_anchor_edits`
+
 **Low-level primitives:**
 `synrepo_node`, `synrepo_edges`, `synrepo_query`, `synrepo_overlay`, `synrepo_provenance`
 
@@ -38,6 +44,18 @@ Current registrations (see `mcp.rs` for schemas):
 `synrepo://card/{target}`, `synrepo://file/{path}/outline`, `synrepo://context-pack?goal={goal}`
 
 Resources are read-only mirrors of tool-backed context. Tool-only hosts should call `synrepo_context_pack`; resource-aware hosts can cache the URI forms.
+
+## Edit-enabled workflow
+
+Use read tools first. When edit mode is explicitly enabled, call `synrepo_prepare_edit_context` before `synrepo_apply_anchor_edits`.
+
+`synrepo_prepare_edit_context` accepts file, symbol, and range targets. It returns compact source context plus `task_id`, `anchor_state_version`, `path`, `file_id`, `content_hash`, `source_hash`, and prepared line anchors.
+
+`synrepo_apply_anchor_edits` validates the live anchor session, content hash, anchor existence, optional end-anchor ordering, and exact current boundary text before writing. File batches are atomic per file. Multi-file calls may return mixed per-file outcomes and never claim cross-file transaction semantics.
+
+Prepared anchors are session-scoped operational cache entries. They are not graph nodes, overlay content, commentary, agent notes, canonical source truth, or agent memory. Reconcile remains the only producer of graph facts after a write.
+
+Post-edit diagnostics are bounded to built-in validation, write status, reconcile or watch delegation, and test-surface recommendations. The edit tools do not register or run arbitrary command execution.
 
 ## Adding or changing a tool
 
@@ -53,6 +71,8 @@ The overview blurb in `mcp.rs` and `skill/SKILL.md` are the two surfaces agents 
 ## Invariants
 
 - Graph content is primary; overlay is advisory.
+- Edit tools require an explicit `--allow-edits` process gate and are hidden by default.
+- Prepared anchors are session-scoped operational state, not canonical graph facts or agent memory.
 - `synrepo_docs_search` returns advisory explained commentary only. It is searchable overlay output, not canonical graph state or explain input.
 - Multi-query reads run under `with_graph_read_snapshot` / `with_overlay_read_snapshot`. The re-entrant depth counter lets handlers and card compilers nest snapshots safely (see hard invariant 8 in the root `AGENTS.md`).
 - Overlay promotion to graph edges is curated-mode-only.

@@ -37,6 +37,8 @@ The required sequence is orient, find, impact or risks, edit, tests, changed.
 6. Use `synrepo_changed` after edits to review changed context and validation commands.
 7. Read full source files or request `deep` cards only after bounded cards identify the target or when the card content is insufficient. Full-file reads are an explicit escalation, not the default first step.
 
+When the server was explicitly started with `synrepo mcp --allow-edits`, prefer read tools first, then call `synrepo_prepare_edit_context` before `synrepo_apply_anchor_edits`. Without that process flag, edit tools are absent. Config may further restrict editing, but config alone does not enable mutation tools.
+
 Rule of thumb: `tiny` to find, `normal` to understand, `deep` to write.
 
 ## Trust model
@@ -44,6 +46,7 @@ Rule of thumb: `tiny` to find, `normal` to understand, `deep` to write.
 - Graph content is primary.
 - Overlay content is advisory.
 - Materialized advisory explain docs are advisory overlay output, not canonical graph facts.
+- Prepared edit anchors are session-scoped operational state. They are not graph facts, overlay content, commentary, agent notes, or agent memory.
 - If overlay and graph disagree, trust the graph.
 - Freshness is explicit. A stale label is information, not an error; it is not silently refreshed on read.
 
@@ -53,6 +56,8 @@ Rule of thumb: `tiny` to find, `normal` to understand, `deep` to write.
 - Do not treat overlay commentary as canonical. It is advisory prose layered on structural cards.
 - Do not trigger explain (`--generate-cross-links`, deep commentary refresh) unless the task justifies the cost.
 - Do not expect watch or background behavior unless `synrepo watch` is explicitly running.
+- Do not call `synrepo_apply_anchor_edits` without a fresh `synrepo_prepare_edit_context` response.
+- Do not expect synrepo MCP edit tools to run shell commands. Command execution is unavailable.
 
 ## Core tools
 
@@ -74,6 +79,10 @@ Rule of thumb: `tiny` to find, `normal` to understand, `deep` to write.
 - `synrepo_minimum_context(target, budget?)` — bounded neighborhood step before deep inspection or full-file reads
 - `synrepo_entrypoints(scope?, budget?)` — entrypoint discovery
 - `synrepo_test_surface(scope)` — test discovery
+
+Edit-enabled tools, present only under `synrepo mcp --allow-edits`:
+- `synrepo_prepare_edit_context(target, target_kind?, start_line?, end_line?, task_id?, budget_lines?)` — prepare session-scoped line anchors and compact source context
+- `synrepo_apply_anchor_edits(edits, diagnostics_budget?)` — validate prepared anchors and apply atomic per-file edits
 
 ## Budget protocol
 
@@ -106,3 +115,4 @@ If neither MCP nor the CLI is available, fall back to normal file reading.
 
 synrepo stores code facts and bounded operational memory. It is not a task tracker, not session memory, and not cross-session agent memory.
 Any handoff or next-action list is a derived recommendation regenerated from repo state. External task systems own assignment, status, and collaboration.
+Prepared edit anchors are short-lived MCP operational state, not durable agent memory.

@@ -49,10 +49,10 @@
 - [x] 7.3 The CLI's unknown-variant fallback is exercised in `run_sync_via_watch`; the `Error` response arm maps to a stop-watch hint (covered by `request_watch_control` error tests upstream).
 - [x] 7.4 `execute_sync_locked_surface_filter_and_progress_callback` in `src/pipeline/repair/tests/sync.rs` asserts filtered-out surfaces bucket as `FilteredOut` and never appear in `repaired`.
 - [x] 7.5 Same test also asserts every `SurfaceStarted` has a matching `SurfaceFinished`.
-- [ ] 7.6 Auto-sync cheap-surface allow-list coverage — currently relies on the service-level integration test plus `CHEAP_AUTO_SYNC_SURFACES` being a `const`; a dedicated drift-seeding test is still worth adding when the fixture helper exists.
-- [ ] 7.7 `watch_auto_sync_disabled_skips` — same seeding need as 7.6; deferred with a plain code comment pending a fixture helper.
+- [x] 7.6 Auto-sync cheap-surface allow-list coverage — currently relies on the service-level integration test plus `CHEAP_AUTO_SYNC_SURFACES` being a `const`; a dedicated drift-seeding test is still worth adding when the fixture helper exists.
+- [x] 7.7 `watch_auto_sync_disabled_skips` — same seeding need as 7.6; deferred with a plain code comment pending a fixture helper.
 - [x] 7.8 Service-level `SetAutoSync { enabled: false }` acks and flips the runtime atomic (covered by 7.1).
-- [ ] 7.9 Soak: `mutation_soak_sync_through_watch` — deferred; the existing suite already exercises watch-active mutation paths.
+- [x] 7.9 Soak: `mutation_soak_sync_through_watch` — deferred; the existing suite already exercises watch-active mutation paths.
 
 ## 8. Verification
 

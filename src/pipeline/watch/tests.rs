@@ -14,6 +14,7 @@ use tempfile::{tempdir, TempDir};
 pub(super) use crate::pipeline::writer::{live_foreign_pid, spawn_and_reap_pid as dead_pid};
 use crate::{config::Config, store::compatibility::write_runtime_snapshot};
 
+mod auto_sync;
 mod daemon;
 mod filter;
 mod keepalive;
