@@ -1,5 +1,32 @@
 # Design: Git worktree and submodule discovery
 
+## `gix` API survey
+
+Verified against `gix = 0.82.0` from this repository's lockfile.
+
+`Repository::worktrees()` returns only linked worktrees, not the main worktree. Each item is a `gix::worktree::Proxy` sorted by private git-dir path. The proxy exposes:
+
+- `base() -> io::Result<PathBuf>`: checkout root, derived from the linked worktree's `gitdir` file. The path might not exist anymore.
+- `git_dir() -> &Path`: private linked-worktree git dir, usually under the main repository's `.git/worktrees/<id>`.
+- `id() -> &BStr`: linked worktree id, derived from that private git-dir folder name.
+- `is_locked()` and `lock_reason()`: prune/move/delete lock metadata.
+- `into_repo()` and `into_repo_with_possibly_inaccessible_worktree()`: open the linked worktree as a `gix::Repository`.
+
+The worktree proxy does not directly expose an active branch or head commit as fields. Open the proxy as a repository and query `head()` / `head_id()` style repository APIs when history mining needs the current head.
+
+`Repository::submodules()` returns `Result<Option<impl Iterator<Item = gix::Submodule<'_>>>>`. It reads `.gitmodules` from the worktree when present, otherwise it can fall back through the index or current tree via `modules()`. Each `Submodule` exposes:
+
+- `name()` and `validated_name()`: configured name and safe path component validation.
+- `path()`: path relative to the superproject worktree.
+- `url()`: configured clone/update URL, with configuration overrides applied.
+- `branch()`: optional configured tracking branch. This is configuration, not necessarily the checked-out submodule HEAD.
+- `fetch_recurse()`: configured `fetchRecurseSubmodules` value, falling back to `fetch.recurseSubmodules`.
+- `is_active()`: active-submodule policy evaluation.
+- `index_id()` and `head_id()`: gitlink commit recorded in the superproject index or HEAD tree.
+- `git_dir()`, `work_dir()`, `git_dir_try_old_form()`, `state()`, and `open()`: paths/state/opening for initialized submodule repositories.
+
+Nested submodule recursion is not automatic. To recurse when `include_submodules` is enabled, open a submodule repository with `Submodule::open()` and enumerate its own `submodules()` with an explicit depth limit. This change uses a default depth of 3 for the planned implementation.
+
 ## Decision 1 — Submodule policy
 
 Default: **opaque** (record the mount point, do not walk). Rationale:
@@ -12,14 +39,17 @@ Expose `include_submodules: bool` (default `false`) as the opt-in. When `true`, 
 
 ## Decision 2 — `FileNodeId` discriminant shape
 
-Salt the content hash with a **stable hash of the root's canonical absolute path**, resolved via `std::fs::canonicalize`. Rationale:
+Salt the content hash with a stable root discriminator. The primary checkout uses the literal discriminator `primary`; linked worktrees and submodules use a stable hash of the root's canonical absolute path, resolved via `std::fs::canonicalize`. Rationale:
 
 - Preserves invariant 3 (`FileNodeId` stable across renames within a root) because renames keep the same root path.
 - Two physical checkouts of the same upstream (e.g., `/home/user/project` and `/home/user/project-wt-feature`) produce distinct IDs even when file content is byte-identical, preventing collision.
+- The primary checkout remains deterministic across tempdir-backed tests and runtime migration. A single graph has only one primary root, so `primary` is sufficient to separate it from linked roots.
 - Linked-worktree path is stable across a session (worktree paths are part of git's metadata and rarely change).
 - Alternative (`.git/worktrees/<name>/HEAD` SHA): rejected because the HEAD SHA changes on every commit, invalidating IDs every time the worktree moves forward — catastrophic for drift scoring.
 
 Schema change: store the discriminant alongside each `FileNode` as a `root_id` column in the SQLite schema. Bump compatibility version; existing graphs fall back to "primary root" via migration.
+
+Path uniqueness also moves from `path` alone to `(root_id, path)`. This is required because the primary checkout and a linked worktree commonly contain the same repo-relative path, for example `src/lib.rs`. Public path-only lookups may remain as compatibility shims for single-root callers, but structural compile, discovery, and watch scoping must use root-aware lookup APIs.
 
 ## Decision 3 — Worktree inclusion default
 

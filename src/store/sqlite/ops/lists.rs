@@ -14,7 +14,7 @@ type SymbolForResolution = (SymbolNodeId, FileNodeId, String, SymbolKind, Visibi
 /// Get all file paths and their IDs, ordered by path.
 pub fn all_file_paths(store: &SqliteGraphStore) -> crate::Result<Vec<(String, FileNodeId)>> {
     let conn = store.conn.lock();
-    let mut stmt = conn.prepare_cached("SELECT path, id FROM files ORDER BY path")?;
+    let mut stmt = conn.prepare_cached("SELECT path, id FROM files ORDER BY root_id, path")?;
     let rows = stmt
         .query_map([], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))

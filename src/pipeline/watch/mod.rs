@@ -13,6 +13,7 @@ mod post_compile;
 pub(crate) mod reconcile;
 mod service;
 mod status;
+mod sync;
 
 pub use control::{
     control_endpoint_reachable, request_watch_control, WatchControlRequest, WatchControlResponse,

@@ -33,12 +33,17 @@ pub(super) fn stages_1_to_3(
     config: &Config,
     graph: &mut dyn GraphStore,
     discovered: &[DiscoveredFile],
-    discovered_paths: &BTreeSet<String>,
+    discovered_paths: &BTreeSet<(String, String)>,
+    active_root_ids: Option<&BTreeSet<String>>,
     compile_rev: Option<u64>,
 ) -> crate::Result<StagesTxnResult> {
     let existing_file_paths = graph.all_file_paths()?;
-    let disappeared_by_hash =
-        load_disappeared_by_hash(graph, &existing_file_paths, discovered_paths)?;
+    let disappeared_by_hash = load_disappeared_by_hash(
+        graph,
+        &existing_file_paths,
+        discovered_paths,
+        active_root_ids,
+    )?;
     let mut rename_matched_old_paths = HashSet::new();
 
     delete_missing_concepts(graph, config, discovered)?;
@@ -52,7 +57,7 @@ pub(super) fn stages_1_to_3(
         concept_nodes_emitted: 0,
         identities_resolved: 0,
         cross_file_pending: Vec::new(),
-        file_map: existing_file_paths.iter().cloned().collect(),
+        file_map: load_existing_file_map(graph, &existing_file_paths)?,
     };
 
     process_supported_code_files(
@@ -72,6 +77,7 @@ pub(super) fn stages_1_to_3(
         graph,
         discovered_paths,
         &existing_file_paths,
+        active_root_ids,
         &mut rename_matched_old_paths,
         discovered,
         &revision,
@@ -84,6 +90,7 @@ pub(super) fn stages_1_to_3(
         graph,
         discovered_paths,
         &existing_file_paths,
+        active_root_ids,
         &rename_matched_old_paths,
     )?;
 
@@ -105,20 +112,24 @@ pub(super) struct StageState {
     pub(super) concept_nodes_emitted: usize,
     pub(super) identities_resolved: usize,
     pub(super) cross_file_pending: Vec<CrossFilePending>,
-    pub(super) file_map: HashMap<String, FileNodeId>,
+    pub(super) file_map: HashMap<(String, String), FileNodeId>,
 }
 
 fn load_disappeared_by_hash(
     graph: &mut dyn GraphStore,
     existing_file_paths: &[(String, FileNodeId)],
-    discovered_paths: &BTreeSet<String>,
-) -> crate::Result<HashMap<String, FileNode>> {
+    discovered_paths: &BTreeSet<(String, String)>,
+    active_root_ids: Option<&BTreeSet<String>>,
+) -> crate::Result<HashMap<(String, String), FileNode>> {
     let mut disappeared_by_hash = HashMap::new();
-    for (path, _) in existing_file_paths {
-        if !discovered_paths.contains(path) {
-            if let Some(node) = graph.file_by_path(path)? {
+    for (path, file_id) in existing_file_paths {
+        if let Some(node) = graph.get_file(*file_id)? {
+            if active_root_ids.is_some_and(|roots| !roots.contains(&node.root_id)) {
+                continue;
+            }
+            if !discovered_paths.contains(&(node.root_id.clone(), path.clone())) {
                 disappeared_by_hash
-                    .entry(node.content_hash.clone())
+                    .entry((node.root_id.clone(), node.content_hash.clone()))
                     .or_insert(node);
             }
         }
@@ -126,15 +137,35 @@ fn load_disappeared_by_hash(
     Ok(disappeared_by_hash)
 }
 
+fn load_existing_file_map(
+    graph: &mut dyn GraphStore,
+    existing_file_paths: &[(String, FileNodeId)],
+) -> crate::Result<HashMap<(String, String), FileNodeId>> {
+    let mut file_map = HashMap::new();
+    for (_, file_id) in existing_file_paths {
+        if let Some(node) = graph.get_file(*file_id)? {
+            file_map.insert((node.root_id, node.path), *file_id);
+        }
+    }
+    Ok(file_map)
+}
+
 fn delete_missing_files(
     graph: &mut dyn GraphStore,
-    discovered_paths: &BTreeSet<String>,
+    discovered_paths: &BTreeSet<(String, String)>,
     existing_file_paths: &[(String, FileNodeId)],
+    active_root_ids: Option<&BTreeSet<String>>,
     rename_matched_old_paths: &HashSet<String>,
 ) -> crate::Result<()> {
     for (path, file_id) in existing_file_paths {
-        if !discovered_paths.contains(path) && !rename_matched_old_paths.contains(path) {
-            graph.delete_node(NodeId::File(*file_id))?;
+        if let Some(node) = graph.get_file(*file_id)? {
+            if active_root_ids.is_some_and(|roots| !roots.contains(&node.root_id)) {
+                continue;
+            }
+            let key = (node.root_id, path.clone());
+            if !discovered_paths.contains(&key) && !rename_matched_old_paths.contains(path) {
+                graph.delete_node(NodeId::File(*file_id))?;
+            }
         }
     }
     Ok(())

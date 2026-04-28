@@ -65,6 +65,7 @@ pub(crate) fn setup_curated_link_repo(pass_id: &str) -> SeededLinkRepo {
     graph
         .upsert_file(FileNode {
             id: file_id,
+            root_id: "primary".to_string(),
             path: target_path.to_string(),
             path_history: Vec::new(),
             content_hash: "abc123".to_string(),

@@ -25,6 +25,17 @@ pub fn derive_symbol_revisions(
     graph: &mut dyn GraphStore,
     max_commits: usize,
 ) -> crate::Result<()> {
+    derive_symbol_revisions_for_root(repo_root, context, graph, max_commits, "primary")
+}
+
+/// Derive symbol-scoped revisions for files within one discovery root.
+pub fn derive_symbol_revisions_for_root(
+    repo_root: &Path,
+    context: &crate::pipeline::git::GitIntelligenceContext,
+    graph: &mut dyn GraphStore,
+    max_commits: usize,
+    root_id: &str,
+) -> crate::Result<()> {
     if context.repository().is_degraded() {
         return Ok(());
     }
@@ -33,8 +44,15 @@ pub fn derive_symbol_revisions(
     let change_sets = index.change_sets();
 
     // Build file_id -> file_path reverse map.
-    let file_paths = graph.all_file_paths()?;
-    let id_to_path: HashMap<_, _> = file_paths.iter().map(|(p, id)| (id, p.clone())).collect();
+    let mut id_to_path = HashMap::new();
+    for (_, file_id) in graph.all_file_paths()? {
+        let Some(file) = graph.get_file(file_id)? else {
+            continue;
+        };
+        if file.root_id == root_id {
+            id_to_path.insert(file.id, file.path);
+        }
+    }
 
     // Load all current symbols grouped by file path, keyed by (qualified_name, kind).
     // all_symbols_summary returns (id, file_id, qname, kind_label, body_hash) in a
@@ -42,7 +60,7 @@ pub fn derive_symbol_revisions(
     let symbol_summary = graph.all_symbols_summary()?;
     let mut current_by_file: HashMap<String, HashMap<SymbolKey, (u128, String)>> = HashMap::new();
     for (sym_id, file_id, qname, kind_label, body_hash) in &symbol_summary {
-        let Some(path) = id_to_path.get(&file_id) else {
+        let Some(path) = id_to_path.get(file_id) else {
             continue;
         };
         let key = (qname.clone(), kind_label.clone());

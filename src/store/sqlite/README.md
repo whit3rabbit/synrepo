@@ -36,7 +36,7 @@ Base tables:
 
 | Table | Key columns | Notes |
 |-------|-------------|-------|
-| `files` | `id PK`, `path UNIQUE`, `last_observed_rev`, `data` | `data` is the JSON-encoded `FileNode`. |
+| `files` | `id PK`, `root_id`, `path`, `last_observed_rev`, `data`; unique `(root_id, path)` | `data` is the JSON-encoded `FileNode`. |
 | `symbols` | `id PK`, `file_id`, `qualified_name`, `kind`, `first_seen_rev`, `last_modified_rev`, `last_observed_rev`, `retired_at_rev`, `data` | `idx_symbols_file_id` on `file_id`. |
 | `concepts` | `id PK`, `path UNIQUE`, `last_observed_rev`, `data` | Only populated from human-authored markdown (invariant 7). |
 | `edges` | `id PK`, `from_node_id`, `to_node_id`, `kind`, `owner_file_id`, `last_observed_rev`, `retired_at_rev`, `data` | Indexes on `(from_node_id, kind)` and `(to_node_id, kind)`. |

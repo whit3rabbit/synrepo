@@ -23,6 +23,7 @@ fn filter_repo_events_ignores_synrepo_only_bursts() {
 
     let filtered = super::super::filter::filter_repo_events(
         vec![runtime_event, source_event],
+        std::slice::from_ref(&repo),
         &repo,
         &synrepo_dir,
         &[],
@@ -46,6 +47,7 @@ fn filter_repo_events_ignores_generated_export_bursts() {
 
     let filtered = super::super::filter::filter_repo_events(
         vec![export_event, source_event],
+        std::slice::from_ref(&repo),
         &repo,
         &synrepo_dir,
         &[export_dir],
@@ -69,6 +71,7 @@ fn filter_repo_events_ignores_repo_relative_runtime_paths() {
 
     let filtered = super::super::filter::filter_repo_events(
         vec![runtime_event, source_event],
+        std::slice::from_ref(&repo),
         &repo,
         &synrepo_dir,
         &[],
@@ -86,6 +89,7 @@ fn collect_repo_paths_skips_missing_non_removal_paths() {
 
     let paths = super::super::filter::collect_repo_paths(
         &[ambiguous_runtime_event],
+        std::slice::from_ref(&repo),
         &repo,
         &synrepo_dir,
         &[],
@@ -101,8 +105,13 @@ fn collect_repo_paths_keeps_missing_removal_paths() {
         Event::new(EventKind::Remove(RemoveKind::File)).add_path(PathBuf::from("src/old.rs")),
     );
 
-    let paths =
-        super::super::filter::collect_repo_paths(&[source_remove_event], &repo, &synrepo_dir, &[]);
+    let paths = super::super::filter::collect_repo_paths(
+        &[source_remove_event],
+        std::slice::from_ref(&repo),
+        &repo,
+        &synrepo_dir,
+        &[],
+    );
 
     assert_eq!(paths, vec![repo.join("src/old.rs")]);
 }

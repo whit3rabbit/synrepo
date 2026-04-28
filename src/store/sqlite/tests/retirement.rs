@@ -17,6 +17,7 @@ fn open_memory_store() -> SqliteGraphStore {
 fn make_file(id: u64, path: &str) -> FileNode {
     FileNode {
         id: FileNodeId(id as u128),
+        root_id: "primary".to_string(),
         path: path.to_string(),
         path_history: vec![],
         content_hash: format!("hash_{id}"),

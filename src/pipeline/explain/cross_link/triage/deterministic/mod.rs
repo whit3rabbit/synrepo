@@ -216,6 +216,7 @@ mod tests {
     fn file_node(id: u64, path: &str) -> FileNode {
         FileNode {
             id: FileNodeId(id as u128),
+            root_id: "primary".to_string(),
             path: path.into(),
             path_history: Vec::new(),
             content_hash: format!("hash-{id}"),

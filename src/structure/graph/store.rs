@@ -22,6 +22,13 @@ pub trait GraphReader: Send + Sync {
     /// Find the file node currently associated with a given path.
     fn file_by_path(&self, path: &str) -> crate::Result<Option<FileNode>>;
 
+    /// Find the file node currently associated with a path inside a specific root.
+    fn file_by_root_path(&self, root_id: &str, path: &str) -> crate::Result<Option<FileNode>> {
+        Ok(self
+            .file_by_path(path)?
+            .filter(|file| file.root_id == root_id))
+    }
+
     /// All outbound edges from a node, optionally filtered by kind.
     fn outbound(&self, from: NodeId, kind: Option<EdgeKind>) -> crate::Result<Vec<Edge>>;
 

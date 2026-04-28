@@ -157,6 +157,7 @@ fn seed_fixture_graph(graph: &mut SqliteGraphStore, with_second_pair: bool, code
     graph
         .upsert_file(FileNode {
             id: FileNodeId(1),
+            root_id: "primary".to_string(),
             path: "docs/adr/0001-auth.md".to_string(),
             path_history: Vec::new(),
             content_hash: "doc-hash-1".to_string(),
@@ -171,6 +172,7 @@ fn seed_fixture_graph(graph: &mut SqliteGraphStore, with_second_pair: bool, code
     graph
         .upsert_file(FileNode {
             id: FileNodeId(10),
+            root_id: "primary".to_string(),
             path: "src/lib.rs".to_string(),
             path_history: Vec::new(),
             content_hash: "code-hash".to_string(),
@@ -249,6 +251,7 @@ fn seed_fixture_graph(graph: &mut SqliteGraphStore, with_second_pair: bool, code
         graph
             .upsert_file(FileNode {
                 id: FileNodeId(2),
+                root_id: "primary".to_string(),
                 path: "docs/adr/0002-authorize.md".to_string(),
                 path_history: Vec::new(),
                 content_hash: "doc-hash-2".to_string(),

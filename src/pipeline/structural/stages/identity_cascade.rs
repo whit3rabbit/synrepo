@@ -17,8 +17,9 @@ use crate::{
 #[allow(clippy::too_many_arguments)]
 pub(super) fn run_identity_cascade(
     graph: &mut dyn GraphStore,
-    discovered_paths: &BTreeSet<String>,
+    discovered_paths: &BTreeSet<(String, String)>,
     existing_file_paths: &[(String, FileNodeId)],
+    active_root_ids: Option<&BTreeSet<String>>,
     rename_matched_old_paths: &mut HashSet<String>,
     _discovered: &[DiscoveredFile],
     revision: &str,
@@ -27,9 +28,14 @@ pub(super) fn run_identity_cascade(
 ) -> crate::Result<usize> {
     // Collect disappeared files not already matched by content-hash rename.
     let mut disappeared = Vec::new();
-    for (path, _) in existing_file_paths {
-        if !discovered_paths.contains(path) && !rename_matched_old_paths.contains(path) {
-            if let Some(node) = graph.file_by_path(path)? {
+    for (path, file_id) in existing_file_paths {
+        if let Some(node) = graph.get_file(*file_id)? {
+            if active_root_ids.is_some_and(|roots| !roots.contains(&node.root_id)) {
+                continue;
+            }
+            if !discovered_paths.contains(&(node.root_id.clone(), path.clone()))
+                && !rename_matched_old_paths.contains(path)
+            {
                 disappeared.push(node);
             }
         }
@@ -40,16 +46,17 @@ pub(super) fn run_identity_cascade(
     }
 
     // Collect new files (paths that weren't in existing but are in discovered).
-    let existing_path_set: HashSet<&str> = existing_file_paths
+    let existing_path_set: HashSet<(String, String)> = existing_file_paths
         .iter()
-        .map(|(p, _)| p.as_str())
+        .filter_map(|(_, id)| graph.get_file(*id).ok().flatten())
+        .map(|node| (node.root_id, node.path))
         .collect();
     let mut new_files = Vec::new();
-    for path in discovered_paths
+    for (root_id, path) in discovered_paths
         .iter()
-        .filter(|p| !existing_path_set.contains(p.as_str()))
+        .filter(|key| !existing_path_set.contains(*key))
     {
-        if let Some(node) = graph.file_by_path(path)? {
+        if let Some(node) = graph.file_by_root_path(root_id, path)? {
             new_files.push(node);
         }
     }

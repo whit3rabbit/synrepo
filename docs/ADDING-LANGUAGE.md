@@ -19,6 +19,8 @@ Structural parsing currently supports Rust, Python, TypeScript, TSX, and Go. Add
 3. **`src/structure/parse/fixture_tests.rs`** — add an entry to the `FIXTURES` table with representative source, expected `(symbol_name, SymbolKind)` pairs, and expected `import_refs`. The `fixtures_cover_every_supported_language` test will fail until this is present.
 4. **`src/structure/parse/extract/visibility.rs`** — add a match arm for the new variant in `extract_visibility` to populate `Visibility::Public`, `Visibility::Private`, or `Visibility::Crate` per the language's visibility rules.
 
+Multi-root discovery does not change per-language fixture shape. Parser fixtures still model one file's contents; worktree/submodule behavior is covered by discovery and structural integration tests.
+
 ## Files you PROBABLY need to touch
 
 5. **`src/structure/parse/extract/docs.rs`** — add `match` arms for the new variant in `extract_doc_comment` and `extract_signature` if you want doc-comment and signature extraction. Without this, the new language gets `None` for both (Go is the current example of an unwired language here).

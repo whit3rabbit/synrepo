@@ -6,13 +6,21 @@ use tempfile::tempdir;
 
 #[test]
 fn derive_file_id_is_deterministic() {
+    let root = "root-a";
     let hash = "abc123def456abc123def456abc123def456abc123def456abc123def456abc1";
-    let id1 = ids::derive_file_id(hash);
-    let id2 = ids::derive_file_id(hash);
+    let id1 = ids::derive_file_id(root, hash);
+    let id2 = ids::derive_file_id(root, hash);
     assert_eq!(id1, id2);
 
     let other = "000000000000000000000000000000000000000000000000000000000000000a";
-    assert_ne!(ids::derive_file_id(hash), ids::derive_file_id(other));
+    assert_ne!(
+        ids::derive_file_id(root, hash),
+        ids::derive_file_id(root, other)
+    );
+    assert_ne!(
+        ids::derive_file_id(root, hash),
+        ids::derive_file_id("root-b", hash)
+    );
 }
 
 #[test]

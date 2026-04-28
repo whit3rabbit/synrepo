@@ -11,7 +11,7 @@ Files must stay under 400 lines; split into sub-modules before they grow past th
 - Spec: `openspec/specs/foundation/spec.md`
 
 **1. Substrate** (`src/substrate/`) — File discovery, classification, and lexical index. Must not import from structure.
-- `discover.rs` — filesystem walk via the `ignore` crate (respects `.gitignore`); produces `DiscoveredFile`
+- `discover.rs` — filesystem walk via the `ignore` crate (respects `.gitignore`); produces `DiscoveredFile` from the primary checkout, linked worktrees when `include_worktrees = true`, and initialized submodules when `include_submodules = true`
 - `classify.rs` — maps files to `FileClass` (SupportedCode { language }, TextCode, Markdown, Jupyter, Skipped)
 - `index.rs` — wraps `syntext` for n-gram lexical indexing and search; builds/queries `.synrepo/index/`
 - Spec: `openspec/specs/substrate/spec.md`
@@ -25,7 +25,7 @@ Files must stay under 400 lines; split into sub-modules before they grow past th
 - `rationale.rs` — inline `// DECISION:` marker extraction from code files; results stored on `FileNode.inline_decisions`; cannot produce `ConceptNode` (invariant 7)
 - Spec: `openspec/specs/graph/spec.md`
 
-Node types: `FileNode` (content-hash identity), `SymbolNode` (tree-sitter extracted), `ConceptNode` (only from human-authored markdown in configured dirs such as `docs/concepts/`, `docs/adr/`; explain cannot create these).
+Node types: `FileNode` (root-discriminated content-hash identity), `SymbolNode` (tree-sitter extracted), `ConceptNode` (only from human-authored markdown in configured dirs such as `docs/concepts/`, `docs/adr/`; explain cannot create these).
 
 **3. Overlay** (`src/overlay/mod.rs`) — LLM-authored content in a physically separate SQLite database from the graph. Defines `OverlayStore`, `OverlayLink`, `OverlayEpistemic` (`machine_authored_high_conf` | `machine_authored_low_conf`), `CitedSpan`. Phase 4+ only; the module exists to establish the architectural boundary from the start.
 - Spec: `openspec/specs/overlay/spec.md`
@@ -58,16 +58,16 @@ Node types: `FileNode` (content-hash identity), `SymbolNode` (tree-sitter extrac
 
 Structural parsing supports Rust, Python, TypeScript/TSX, and Go.
 
-1. **Discover** — substrate walk, `.gitignore`/`.synignore` respected.
+1. **Discover** — substrate walk, `.gitignore`/`.synignore` respected per discovery root. The root set is the primary checkout plus linked worktrees by default; initialized submodules are opt-in and walked as separate roots.
 2. **Parse code** — tree-sitter symbol extraction; emits `FileNode`, `SymbolNode`, `Defines` edges.
 3. **Parse prose** — concept node extraction from configured markdown directories.
 4. **Cross-file edge resolution** — emits `Calls` (file→symbol, scoped resolution: +100 same-file, +50 imported, +20/+10/-100 visibility, +30 kind, +40 prefix. Edges only > 0 AND (unique OR tied ≥50)) and `Imports` (file→file). Resolvers: TypeScript/TSX (relative path), Python (dotted module), Rust (`crate::`/`self::`/`super::` plus bare top-level crate paths with longest-match selection), Go (module-prefix stripping via `go.mod`, fanning out to every `.go` file in the target package). `Inherits`, `References`, `Mentions` are not yet emitted.
-5. **Git mining** — deterministic first-parent history sampling; emits `CoChangesWith` edges via `git_intelligence/emit.rs`.
+5. **Git mining** — deterministic first-parent history sampling per discovery root; emits `CoChangesWith` edges via `git_intelligence/emit.rs`. Cross-root Git edges are not emitted.
 6. **Identity cascade** — content-hash rename, split/merge detection, git rename fallback; emits `SplitFrom` / `MergedFrom`. Preserves `FileNodeId` across renames and records old paths in `path_history`.
 7. **Drift scoring** — Jaccard distance on persisted structural fingerprints; writes sidecar `edge_drift` and `file_fingerprints` tables.
 8. **ArcSwap publish** — rebuild immutable `Graph` from SQLite, then atomically publish via `ArcSwap`.
 
-Stages 1–4 run in a single atomic SQLite transaction (`run_structural_compile`). Stage 4 reads uncommitted nodes from stages 1–3 via read-your-own-writes on the same connection.
+Stages 1–4 run in a single atomic SQLite transaction (`run_structural_compile`). Stage 4 reads uncommitted nodes from stages 1–3 via read-your-own-writes on the same connection. Watch-triggered reconciles can scope stages 1–6 to the discovery root that owns the changed path, leaving sibling roots untouched.
 
 ### Overlay and audit surfaces
 

@@ -85,6 +85,7 @@ pub(super) fn seed_graph(repo_root: &std::path::Path) -> SeededGraphIds {
     store
         .upsert_file(FileNode {
             id: file_id,
+            root_id: "primary".to_string(),
             path: "src/lib.rs".to_string(),
             path_history: vec!["src/old_lib.rs".to_string()],
             content_hash: "abc123".to_string(),

@@ -72,6 +72,7 @@ fn seed_graph(graph: &mut SqliteGraphStore) {
     graph
         .upsert_file(FileNode {
             id: FileNodeId(1),
+            root_id: "primary".to_string(),
             path: "docs/adr/0001-auth.md".to_string(),
             path_history: Vec::new(),
             content_hash: "doc-hash".to_string(),
@@ -86,6 +87,7 @@ fn seed_graph(graph: &mut SqliteGraphStore) {
     graph
         .upsert_file(FileNode {
             id: FileNodeId(2),
+            root_id: "primary".to_string(),
             path: "src/lib.rs".to_string(),
             path_history: Vec::new(),
             content_hash: "code-hash".to_string(),

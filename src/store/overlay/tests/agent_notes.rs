@@ -29,6 +29,7 @@ fn note(target: &str, claim: &str) -> AgentNote {
 fn file_node(path: &str, hash: &str) -> FileNode {
     FileNode {
         id: FileNodeId(42),
+        root_id: "primary".to_string(),
         path: path.to_string(),
         path_history: Vec::new(),
         content_hash: hash.to_string(),

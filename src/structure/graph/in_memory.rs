@@ -18,6 +18,8 @@ pub struct Graph {
     pub files: HashMap<FileNodeId, FileNode>,
     /// Reverse lookup from repo-relative file path to file node ID.
     pub files_by_path: HashMap<String, FileNodeId>,
+    /// Reverse lookup from `(root_id, repo-relative path)` to file node ID.
+    pub files_by_root_path: HashMap<(String, String), FileNodeId>,
     /// Active symbol nodes keyed by stable ID.
     pub symbols: HashMap<SymbolNodeId, SymbolNode>,
     /// File-owned symbol membership index.
@@ -50,6 +52,7 @@ impl Graph {
             published_at: UNIX_EPOCH,
             files: HashMap::new(),
             files_by_path: HashMap::new(),
+            files_by_root_path: HashMap::new(),
             symbols: HashMap::new(),
             symbols_by_file: HashMap::new(),
             symbols_by_short_name: HashMap::new(),
@@ -67,7 +70,10 @@ impl Graph {
 
         for (path, file_id) in reader.all_file_paths()? {
             if let Some(file) = reader.get_file(file_id)? {
-                graph.files_by_path.insert(path, file_id);
+                graph.files_by_path.insert(path.clone(), file_id);
+                graph
+                    .files_by_root_path
+                    .insert((file.root_id.clone(), path), file_id);
                 graph.files.insert(file_id, file);
             }
         }
@@ -211,6 +217,14 @@ impl GraphReader for Graph {
             .cloned())
     }
 
+    fn file_by_root_path(&self, root_id: &str, path: &str) -> crate::Result<Option<FileNode>> {
+        Ok(self
+            .files_by_root_path
+            .get(&(root_id.to_string(), path.to_string()))
+            .and_then(|id| self.files.get(id))
+            .cloned())
+    }
+
     fn outbound(&self, from: NodeId, kind: Option<EdgeKind>) -> crate::Result<Vec<Edge>> {
         let edges = self.edges_by_from.get(&from).cloned().unwrap_or_default();
         Ok(filter_edges_by_kind(edges, kind))
@@ -302,6 +316,7 @@ fn filter_edges_by_kind(edges: Vec<Edge>, kind: Option<EdgeKind>) -> Vec<Edge> {
 fn approx_file_node_bytes(file: &FileNode) -> usize {
     size_of::<FileNode>()
         + file.path.capacity()
+        + file.root_id.capacity()
         + file
             .path_history
             .iter()

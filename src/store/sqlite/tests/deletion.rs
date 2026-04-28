@@ -16,6 +16,7 @@ fn deleting_a_file_removes_child_symbols_and_incident_edges() {
 
     let file = FileNode {
         id: FileNodeId(1),
+        root_id: "primary".to_string(),
         path: "src/main.rs".to_string(),
         path_history: Vec::new(),
         content_hash: "main".to_string(),
@@ -79,6 +80,7 @@ fn deleting_a_file_removes_edges_for_all_symbols_in_one_pass() {
 
     let file = FileNode {
         id: FileNodeId(1),
+        root_id: "primary".to_string(),
         path: "src/main.rs".to_string(),
         path_history: Vec::new(),
         content_hash: "main".to_string(),
@@ -199,6 +201,7 @@ fn delete_edges_by_kind_removes_only_matching_edges() {
 
     let file_a = FileNode {
         id: FileNodeId(1),
+        root_id: "primary".to_string(),
         path: "src/a.rs".to_string(),
         path_history: Vec::new(),
         content_hash: "a".to_string(),
@@ -211,6 +214,7 @@ fn delete_edges_by_kind_removes_only_matching_edges() {
     };
     let file_b = FileNode {
         id: FileNodeId(2),
+        root_id: "primary".to_string(),
         path: "src/b.rs".to_string(),
         path_history: Vec::new(),
         content_hash: "b".to_string(),
@@ -223,6 +227,7 @@ fn delete_edges_by_kind_removes_only_matching_edges() {
     };
     let file_c = FileNode {
         id: FileNodeId(3),
+        root_id: "primary".to_string(),
         path: "src/c.rs".to_string(),
         path_history: Vec::new(),
         content_hash: "c".to_string(),

@@ -1,9 +1,10 @@
 ---
 source: src/surface/card/compiler/tests/basic.rs
+assertion_line: 189
 expression: tiny
 ---
 {
-  "symbol": "sym_d4df48aace678ef3b1378965e1d10cc0",
+  "symbol": "sym_1c1405bbed994f380f5fadba849d2170",
   "name": "add",
   "qualified_name": "add",
   "defined_at": "src/lib.rs:31",

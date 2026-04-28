@@ -22,6 +22,7 @@ use super::context::ResolverContext;
 pub(super) fn resolve_rust_use(
     module_ref: &str,
     importing_file: &str,
+    root_id: &str,
     ctx: &ResolverContext,
 ) -> Vec<String> {
     let importing_abs = ctx.repo_root.join(importing_file);
@@ -62,7 +63,7 @@ pub(super) fn resolve_rust_use(
         Some(first) => {
             // Bare path: treat as crate-relative only when the first segment
             // matches a top-level directory or file under the crate `src/`.
-            if !rust_crate_has_top_level(ctx, &crate_src_rel, first) {
+            if !rust_crate_has_top_level(ctx, &crate_src_rel, first, root_id) {
                 return Vec::new();
             }
             segments.iter().map(|s| s.to_string()).collect()
@@ -186,6 +187,7 @@ fn rust_crate_has_top_level(
     ctx: &ResolverContext,
     crate_src_rel: &[String],
     first_segment: &str,
+    root_id: &str,
 ) -> bool {
     let crate_src_prefix = crate_src_rel.join("/");
     let rs_key = if crate_src_prefix.is_empty() {
@@ -193,7 +195,7 @@ fn rust_crate_has_top_level(
     } else {
         format!("{crate_src_prefix}/{first_segment}.rs")
     };
-    if ctx.file_index.contains_key(&rs_key) {
+    if ctx.file_index.contains_key(&(root_id.to_string(), rs_key)) {
         return true;
     }
     let dir_key = if crate_src_prefix.is_empty() {
@@ -201,5 +203,6 @@ fn rust_crate_has_top_level(
     } else {
         format!("{crate_src_prefix}/{first_segment}")
     };
-    ctx.files_by_dir.contains_key(&dir_key)
+    ctx.files_by_dir
+        .contains_key(&(root_id.to_string(), dir_key))
 }

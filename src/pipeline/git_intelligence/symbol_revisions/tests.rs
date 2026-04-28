@@ -62,6 +62,7 @@ fn setup_graph() -> (
     graph
         .upsert_file(FileNode {
             id: file_id,
+            root_id: "primary".to_string(),
             path: "lib.rs".to_string(),
             path_history: vec![],
             content_hash: "abc123".to_string(),

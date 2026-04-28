@@ -16,17 +16,19 @@ use rusqlite::params;
 pub fn upsert_file(store: &mut SqliteGraphStore, node: FileNode) -> crate::Result<()> {
     let data = encode_json(&node)?;
     let id = node.id.to_string();
+    let root_id = node.root_id;
     let path = node.path;
     let last_obs = node.last_observed_rev.map(|r| r as i64);
 
     store.conn.lock().execute(
-        "INSERT INTO files (id, path, last_observed_rev, data)
-         VALUES (?1, ?2, ?3, ?4)
+        "INSERT INTO files (id, root_id, path, last_observed_rev, data)
+         VALUES (?1, ?2, ?3, ?4, ?5)
          ON CONFLICT(id) DO UPDATE SET
+             root_id = excluded.root_id,
              path = excluded.path,
              last_observed_rev = excluded.last_observed_rev,
              data = excluded.data",
-        params![id, path, last_obs, data],
+        params![id, root_id, path, last_obs, data],
     )?;
     Ok(())
 }
@@ -128,7 +130,21 @@ pub fn file_by_path(store: &SqliteGraphStore, path: &str) -> crate::Result<Optio
     let conn = store.conn.lock();
     load_row(
         &conn,
-        "SELECT data FROM files WHERE path = ?1",
+        "SELECT data FROM files WHERE path = ?1 ORDER BY root_id, id LIMIT 1",
         params![path],
+    )
+}
+
+/// Get a file node by root and path.
+pub fn file_by_root_path(
+    store: &SqliteGraphStore,
+    root_id: &str,
+    path: &str,
+) -> crate::Result<Option<FileNode>> {
+    let conn = store.conn.lock();
+    load_row(
+        &conn,
+        "SELECT data FROM files WHERE root_id = ?1 AND path = ?2",
+        params![root_id, path],
     )
 }

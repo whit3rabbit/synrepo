@@ -15,6 +15,7 @@ use tempfile::tempdir;
 fn make_file(id: u64, path: &str) -> FileNode {
     FileNode {
         id: FileNodeId(id as u128),
+        root_id: "primary".to_string(),
         path: path.to_string(),
         path_history: Vec::new(),
         content_hash: format!("hash-{id:x}"),

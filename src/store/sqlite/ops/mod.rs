@@ -38,6 +38,14 @@ impl GraphReader for SqliteGraphStore {
         nodes::file_by_path(self, path)
     }
 
+    fn file_by_root_path(
+        &self,
+        root_id: &str,
+        path: &str,
+    ) -> crate::Result<Option<crate::structure::graph::FileNode>> {
+        nodes::file_by_root_path(self, root_id, path)
+    }
+
     fn outbound(
         &self,
         from: NodeId,

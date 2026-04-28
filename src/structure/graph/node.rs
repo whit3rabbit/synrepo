@@ -116,6 +116,9 @@ impl SymbolKind {
 pub struct FileNode {
     /// Stable identifier.
     pub id: FileNodeId,
+    /// Stable root discriminator for the checkout/submodule that owns this file.
+    #[serde(default = "default_file_root_id")]
+    pub root_id: String,
     /// Current path relative to the repo root.
     pub path: String,
     /// Previous paths the file has had, newest first. Appended on rename.
@@ -138,6 +141,10 @@ pub struct FileNode {
     pub epistemic: Epistemic,
     /// Provenance metadata.
     pub provenance: Provenance,
+}
+
+fn default_file_root_id() -> String {
+    "primary".to_string()
 }
 
 /// A symbol node in the canonical graph.

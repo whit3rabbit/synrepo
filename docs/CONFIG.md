@@ -6,6 +6,8 @@ Runtime config lives in `.synrepo/config.toml`; the struct is `Config` in `src/c
 |-------|---------|-------|
 | `mode` | `auto` | `auto` or `curated` |
 | `roots` | `["."]` | Roots to index, relative to repo root |
+| `include_worktrees` | `true` | Include linked git worktrees as additional discovery roots |
+| `include_submodules` | `false` | Include initialized git submodules as additional discovery roots |
 | `concept_directories` | `["docs/concepts", "docs/adr", "docs/decisions"]` | Concept/ADR dirs; changing this field triggers a graph advisory in the compat report |
 | `git_commit_depth` | `500` | History depth budget for deterministic Git-intelligence sampling and file-scoped summaries |
 | `max_file_size_bytes` | `1048576` (1 MB) | Files larger than this are skipped |
@@ -17,6 +19,8 @@ Runtime config lives in `.synrepo/config.toml`; the struct is `Config` in `src/c
 ## Notes
 
 - Adding a fourth `concept_directories` entry (e.g. `architecture/decisions`) triggers a config-sensitive compatibility check — the compat report raises a graph advisory.
+- `include_worktrees` is on by default. Each linked worktree is indexed as a separate root with its own file identity domain.
+- `include_submodules` is off by default. When enabled, initialized submodules are indexed as separate roots; nested submodules recurse to a bounded depth.
 - `max_graph_snapshot_bytes` is advisory. Oversized snapshots still publish with a warning; set to `0` to force readers onto the SQLite path.
 - `redact_globs` is hard: matched files are never indexed and never reach any parser, so they cannot leak into cards, exports, or overlay candidates.
 - `auto_sync_enabled` is read once at watch startup and seeds an in-process atomic flag. The dashboard `A` keybinding flips that atomic for the running watch service but does NOT rewrite this file. To change the default persistently, edit `config.toml` and restart watch. The runtime allow-list is hard-coded (`CHEAP_AUTO_SYNC_SURFACES` in `src/pipeline/repair/sync/mod.rs`); commentary refresh and other token-cost surfaces are never auto-run.

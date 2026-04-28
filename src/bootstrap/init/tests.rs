@@ -1,7 +1,7 @@
 use super::{atomic_write_file, bootstrap};
 use crate::bootstrap::BootstrapHealth;
 use crate::config::{Config, Mode};
-use crate::store::compatibility::{self, StoreId};
+use crate::store::compatibility::{self, StoreId, STORE_FORMAT_VERSION};
 use crate::store::sqlite::SqliteGraphStore;
 use tempfile::tempdir;
 
@@ -209,9 +209,10 @@ fn bootstrap_blocks_on_newer_graph_store_version() {
     let mut snapshot =
         compatibility::write_runtime_snapshot(&synrepo_dir, &Config::load(repo.path()).unwrap())
             .unwrap();
-    snapshot
-        .store_format_versions
-        .insert(StoreId::Graph.as_str().to_string(), 2);
+    snapshot.store_format_versions.insert(
+        StoreId::Graph.as_str().to_string(),
+        STORE_FORMAT_VERSION + 1,
+    );
     std::fs::write(
         compatibility::snapshot_path(&synrepo_dir),
         serde_json::to_vec_pretty(&snapshot).unwrap(),

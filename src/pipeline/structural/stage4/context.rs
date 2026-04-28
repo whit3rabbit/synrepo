@@ -23,6 +23,7 @@ pub(super) type ImportsMap = HashMap<FileNodeId, HashSet<FileNodeId>>;
 #[derive(Clone, Debug)]
 pub(super) struct SymbolMeta {
     pub(super) file_id: FileNodeId,
+    pub(super) root_id: String,
     pub(super) visibility: Visibility,
     pub(super) kind: SymbolKind,
     pub(super) qualified_name: String,
@@ -35,13 +36,12 @@ pub(super) struct SymbolMeta {
 /// import_ref.
 pub(super) struct ResolverContext {
     pub(super) repo_root: PathBuf,
-    /// Every file the graph knows about, keyed by repo-relative path
-    /// (forward-slash separators on all platforms).
-    pub(super) file_index: HashMap<String, FileNodeId>,
+    /// Every file the graph knows about, keyed by `(root_id, repo-relative path)`.
+    pub(super) file_index: HashMap<(String, String), FileNodeId>,
     /// Files grouped by parent directory. The empty string key holds
     /// repo-root files. Used for O(1) "directory exists" checks and Go
     /// package fan-out without a filesystem walk.
-    pub(super) files_by_dir: HashMap<String, Vec<String>>,
+    pub(super) files_by_dir: HashMap<(String, String), Vec<String>>,
     /// `module ...` line from `<repo_root>/go.mod`, or `None`.
     pub(super) go_module_prefix: Option<String>,
     /// `go_module_prefix` with a trailing `/`, precomputed so per-import prefix
@@ -57,6 +57,7 @@ pub(super) struct ResolverContext {
 /// Pending cross-file resolution work for one file parsed this cycle.
 pub struct CrossFilePending {
     pub file_id: FileNodeId,
+    pub root_id: String,
     pub file_path: String,
     pub call_refs: Vec<ExtractedCallRef>,
     pub import_refs: Vec<ExtractedImportRef>,
@@ -75,6 +76,9 @@ pub(super) fn build_indices(
     let mut name_index: NameIndex = HashMap::with_capacity(all_symbols.len());
     let mut symbol_meta: SymbolMetaMap = HashMap::with_capacity(all_symbols.len());
     for (sym_id, file_id, qname, kind, visibility) in all_symbols {
+        let Some(file) = graph.get_file(file_id)? else {
+            continue;
+        };
         let short = qname.rsplit("::").next().unwrap_or(qname.as_str());
         name_index
             .entry(short.to_string())
@@ -84,6 +88,7 @@ pub(super) fn build_indices(
             sym_id,
             SymbolMeta {
                 file_id,
+                root_id: file.root_id,
                 visibility,
                 kind,
                 qualified_name: qname,
@@ -94,24 +99,29 @@ pub(super) fn build_indices(
     // Build file_index and files_by_dir in a single pass so both share the
     // same allocation and enumerate the same set.
     let all_files = graph.all_file_paths()?;
-    let mut file_index: HashMap<String, FileNodeId> = HashMap::with_capacity(all_files.len());
-    let mut files_by_dir: HashMap<String, Vec<String>> = HashMap::new();
+    let mut file_index: HashMap<(String, String), FileNodeId> =
+        HashMap::with_capacity(all_files.len());
+    let mut files_by_dir: HashMap<(String, String), Vec<String>> = HashMap::new();
     for (path, file_id) in all_files {
+        let Some(file) = graph.get_file(file_id)? else {
+            continue;
+        };
+        let root_id = file.root_id;
         match path.rsplit_once('/') {
             Some((dir, file)) => {
                 files_by_dir
-                    .entry(dir.to_string())
+                    .entry((root_id.clone(), dir.to_string()))
                     .or_default()
                     .push(file.to_string());
             }
             None => {
                 files_by_dir
-                    .entry(String::new())
+                    .entry((root_id.clone(), String::new()))
                     .or_default()
                     .push(path.clone());
             }
         }
-        file_index.insert(path, file_id);
+        file_index.insert((root_id, path), file_id);
     }
 
     let go_module_prefix = load_go_module_prefix(repo_root);

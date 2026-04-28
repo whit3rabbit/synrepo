@@ -10,14 +10,16 @@ use notify_debouncer_full::{
 
 use crate::{config::Config, core::path_safety::safe_join_in_repo};
 
-pub(crate) fn ignored_generated_dirs(repo_root: &Path, config: &Config) -> Vec<PathBuf> {
-    safe_join_in_repo(repo_root, &config.export_dir)
-        .into_iter()
+pub(crate) fn ignored_generated_dirs(repo_roots: &[PathBuf], config: &Config) -> Vec<PathBuf> {
+    repo_roots
+        .iter()
+        .filter_map(|root| safe_join_in_repo(root, &config.export_dir))
         .collect()
 }
 
 pub(crate) fn filter_repo_events(
     events: Vec<DebouncedEvent>,
+    repo_roots: &[PathBuf],
     repo_root: &Path,
     synrepo_dir: &Path,
     ignored_dirs: &[PathBuf],
@@ -40,7 +42,7 @@ pub(crate) fn filter_repo_events(
 
             event.paths.iter().any(|path| {
                 let path = repo_normalized_path(path, repo_root, synrepo_dir);
-                is_collectable_repo_path(&path, repo_root, synrepo_dir, ignored_dirs, &event.kind)
+                is_collectable_repo_path(&path, repo_roots, synrepo_dir, ignored_dirs, &event.kind)
             })
         })
         .collect()
@@ -48,19 +50,19 @@ pub(crate) fn filter_repo_events(
 
 pub(crate) fn collect_repo_paths(
     events: &[DebouncedEvent],
+    repo_roots: &[PathBuf],
     repo_root: &Path,
     synrepo_dir: &Path,
     ignored_dirs: &[PathBuf],
 ) -> Vec<PathBuf> {
-    let git_dir = repo_root.join(".git");
     let mut paths = std::collections::BTreeSet::new();
     for event in events {
         for path in &event.paths {
             let path = repo_normalized_path(path, repo_root, synrepo_dir);
-            if !path.starts_with(repo_root) {
+            if !path_starts_with_any_root(&path, repo_roots) {
                 continue;
             }
-            if path.starts_with(synrepo_dir) || path.starts_with(&git_dir) {
+            if path.starts_with(synrepo_dir) || path_starts_with_any_git_dir(&path, repo_roots) {
                 continue;
             }
             if ignored_dirs.iter().any(|dir| path.starts_with(dir)) {
@@ -77,22 +79,31 @@ pub(crate) fn collect_repo_paths(
 
 fn is_collectable_repo_path(
     path: &Path,
-    repo_root: &Path,
+    repo_roots: &[PathBuf],
     synrepo_dir: &Path,
     ignored_dirs: &[PathBuf],
     kind: &EventKind,
 ) -> bool {
-    let git_dir = repo_root.join(".git");
-    if !path.starts_with(repo_root) {
+    if !path_starts_with_any_root(path, repo_roots) {
         return false;
     }
-    if path.starts_with(synrepo_dir) || path.starts_with(&git_dir) {
+    if path.starts_with(synrepo_dir) || path_starts_with_any_git_dir(path, repo_roots) {
         return false;
     }
     if ignored_dirs.iter().any(|dir| path.starts_with(dir)) {
         return false;
     }
     is_collectable_existing_or_missing_path(path, kind)
+}
+
+fn path_starts_with_any_root(path: &Path, repo_roots: &[PathBuf]) -> bool {
+    repo_roots.iter().any(|root| path.starts_with(root))
+}
+
+fn path_starts_with_any_git_dir(path: &Path, repo_roots: &[PathBuf]) -> bool {
+    repo_roots
+        .iter()
+        .any(|root| path.starts_with(root.join(".git")))
 }
 
 fn is_collectable_existing_or_missing_path(path: &Path, kind: &EventKind) -> bool {

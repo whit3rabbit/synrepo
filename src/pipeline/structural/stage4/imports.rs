@@ -52,16 +52,17 @@ pub(super) fn emit_imports_for_file(
     let mut emitted = 0usize;
 
     for import_ref in &item.import_refs {
-        let candidates = resolve_import_ref(&import_ref.module_ref, &item.file_path, ctx);
+        let candidates =
+            resolve_import_ref(&import_ref.module_ref, &item.file_path, &item.root_id, ctx);
         let targets: Vec<FileNodeId> = if importing_lang == Some(Language::Go) {
             candidates
                 .into_iter()
-                .filter_map(|p| ctx.file_index.get(&p).copied())
+                .filter_map(|p| ctx.file_index.get(&(item.root_id.clone(), p)).copied())
                 .collect()
         } else {
             candidates
                 .into_iter()
-                .find_map(|p| ctx.file_index.get(&p).copied())
+                .find_map(|p| ctx.file_index.get(&(item.root_id.clone(), p)).copied())
                 .into_iter()
                 .collect()
         };
@@ -113,6 +114,7 @@ pub(super) fn emit_imports_for_file(
 pub(super) fn resolve_import_ref(
     module_ref: &str,
     importing_file: &str,
+    root_id: &str,
     ctx: &ResolverContext,
 ) -> Vec<String> {
     if module_ref.is_empty() {
@@ -125,14 +127,14 @@ pub(super) fn resolve_import_ref(
         .and_then(Language::from_extension);
 
     match importing_lang {
-        Some(Language::Rust) => return resolve_rust_use(module_ref, importing_file, ctx),
+        Some(Language::Rust) => return resolve_rust_use(module_ref, importing_file, root_id, ctx),
         Some(Language::Go) => {
             // `interpreted_string_literal` captures include the surrounding quotes.
             let stripped = module_ref
                 .strip_prefix('"')
                 .and_then(|s| s.strip_suffix('"'))
                 .unwrap_or(module_ref);
-            return resolve_go_import(stripped, ctx);
+            return resolve_go_import(stripped, root_id, ctx);
         }
         _ => {}
     }
@@ -200,7 +202,7 @@ pub(super) fn resolve_import_ref(
 /// with the declared module prefix. Otherwise strips the prefix and returns
 /// every `.go` file the graph indexed inside the remainder directory (sub-
 /// packages are separate import targets).
-fn resolve_go_import(module_ref: &str, ctx: &ResolverContext) -> Vec<String> {
+fn resolve_go_import(module_ref: &str, root_id: &str, ctx: &ResolverContext) -> Vec<String> {
     let Some(prefix) = ctx.go_module_prefix.as_deref() else {
         return Vec::new();
     };
@@ -218,7 +220,10 @@ fn resolve_go_import(module_ref: &str, ctx: &ResolverContext) -> Vec<String> {
         }
     };
 
-    let Some(files) = ctx.files_by_dir.get(remainder) else {
+    let Some(files) = ctx
+        .files_by_dir
+        .get(&(root_id.to_string(), remainder.to_string()))
+    else {
         return Vec::new();
     };
 

@@ -22,7 +22,7 @@ pub(super) fn process_supported_code_files(
     graph: &mut dyn GraphStore,
     discovered: &[DiscoveredFile],
     revision: &str,
-    disappeared_by_hash: &HashMap<String, FileNode>,
+    disappeared_by_hash: &HashMap<(String, String), FileNode>,
     rename_matched_old_paths: &mut HashSet<String>,
     state: &mut StageState,
     compile_rev: Option<u64>,
@@ -38,7 +38,7 @@ pub(super) fn process_supported_code_files(
         };
 
         let content_hash = hex::encode(blake3::hash(&content).as_bytes());
-        let existing = graph.file_by_path(&file.relative_path)?;
+        let existing = graph.file_by_root_path(&file.root_discriminant, &file.relative_path)?;
         let is_content_change = existing
             .as_ref()
             .is_some_and(|n| n.content_hash != content_hash);
@@ -58,6 +58,7 @@ pub(super) fn process_supported_code_files(
 
         let file_id = resolve_file_id(
             existing.as_ref(),
+            &file.root_discriminant,
             &content_hash,
             disappeared_by_hash,
             rename_matched_old_paths,
@@ -73,9 +74,10 @@ pub(super) fn process_supported_code_files(
         // Upsert file node: preserves FileNodeId, advances content_hash.
         graph.upsert_file(FileNode {
             id: file_id,
+            root_id: file.root_discriminant.clone(),
             path: file.relative_path.clone(),
             path_history: disappeared_by_hash
-                .get(&content_hash)
+                .get(&(file.root_discriminant.clone(), content_hash.clone()))
                 .map(|old| {
                     let mut h = old.path_history.clone();
                     h.insert(0, old.path.clone());
@@ -90,7 +92,10 @@ pub(super) fn process_supported_code_files(
             epistemic: Epistemic::ParserObserved,
             provenance: make_provenance("discover", revision, &file.relative_path, &content_hash),
         })?;
-        state.file_map.insert(file.relative_path.clone(), file_id);
+        state.file_map.insert(
+            (file.root_discriminant.clone(), file.relative_path.clone()),
+            file_id,
+        );
 
         // Track which symbol IDs are emitted this pass so we can retire the rest.
         let mut emitted_symbol_ids = HashSet::new();
@@ -155,6 +160,7 @@ pub(super) fn process_supported_code_files(
             if !parsed.call_refs.is_empty() || !parsed.import_refs.is_empty() {
                 state.cross_file_pending.push(CrossFilePending {
                     file_id,
+                    root_id: file.root_discriminant.clone(),
                     file_path: file.relative_path.clone(),
                     call_refs: parsed.call_refs,
                     import_refs: parsed.import_refs,
@@ -187,18 +193,21 @@ pub(super) fn process_supported_code_files(
 
 fn resolve_file_id(
     existing: Option<&FileNode>,
+    root_discriminant: &str,
     content_hash: &str,
-    disappeared_by_hash: &HashMap<String, FileNode>,
+    disappeared_by_hash: &HashMap<(String, String), FileNode>,
     rename_matched_old_paths: &mut HashSet<String>,
     identities_resolved: &mut usize,
 ) -> FileNodeId {
     if let Some(file_node) = existing {
         return file_node.id;
     }
-    if let Some(old_node) = disappeared_by_hash.get(content_hash) {
+    if let Some(old_node) =
+        disappeared_by_hash.get(&(root_discriminant.to_string(), content_hash.to_string()))
+    {
         rename_matched_old_paths.insert(old_node.path.clone());
         *identities_resolved += 1;
         return old_node.id;
     }
-    derive_file_id(content_hash)
+    derive_file_id(root_discriminant, content_hash)
 }

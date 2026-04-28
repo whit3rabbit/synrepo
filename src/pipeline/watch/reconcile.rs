@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use crate::{config::Config, store::sqlite::SqliteGraphStore};
 
 use super::super::{
-    structural::{run_structural_compile, CompileSummary},
+    structural::{run_structural_compile, run_structural_compile_for_root_ids, CompileSummary},
     writer::{acquire_writer_lock, now_rfc3339, LockError},
 };
 use super::post_compile::{finish_runtime_surfaces, RepoIndexStrategy};
@@ -104,7 +104,16 @@ pub(crate) fn run_reconcile_pass_with_touched_paths(
         Err(err) => return ReconcileOutcome::Failed(err.to_string()),
     };
 
-    match run_structural_compile(repo_root, config, &mut graph) {
+    let active_root_ids =
+        touched_paths.and_then(|paths| active_root_ids_for_paths(repo_root, config, paths));
+    let compile_result = match active_root_ids.as_ref() {
+        Some(root_ids) => {
+            run_structural_compile_for_root_ids(repo_root, config, &mut graph, root_ids)
+        }
+        None => run_structural_compile(repo_root, config, &mut graph),
+    };
+
+    match compile_result {
         Ok(summary) => {
             if !fast {
                 if let Err(err) = emit_cochange_edges_pass(repo_root, config, &mut graph) {
@@ -129,6 +138,38 @@ pub(crate) fn run_reconcile_pass_with_touched_paths(
     }
 }
 
+fn active_root_ids_for_paths(
+    repo_root: &Path,
+    config: &Config,
+    touched_paths: &[PathBuf],
+) -> Option<std::collections::BTreeSet<String>> {
+    let roots = crate::substrate::discover_roots(repo_root, config);
+    let mut active = std::collections::BTreeSet::new();
+    for path in touched_paths {
+        let normalized = canonicalize_event_path(path);
+        let owner = roots
+            .iter()
+            .filter(|root| normalized.starts_with(&root.absolute_path))
+            .max_by_key(|root| root.absolute_path.as_os_str().len());
+        if let Some(root) = owner {
+            active.insert(root.discriminant.clone());
+        }
+    }
+    (!active.is_empty()).then_some(active)
+}
+
+fn canonicalize_event_path(path: &Path) -> PathBuf {
+    path.canonicalize()
+        .ok()
+        .or_else(|| {
+            let name = path.file_name()?;
+            let parent = path.parent()?;
+            let canonical_parent = parent.canonicalize().ok()?;
+            Some(canonical_parent.join(name))
+        })
+        .unwrap_or_else(|| path.to_path_buf())
+}
+
 /// Re-emit all CoChangesWith edges from the current git history.
 ///
 /// Full re-emit strategy: delete all existing CoChangesWith edges, then
@@ -142,21 +183,18 @@ pub fn emit_cochange_edges_pass(
     use crate::pipeline::git::GitIntelligenceContext;
     use crate::pipeline::git_intelligence::{analyze_recent_history, emit_cochange_edges};
     use crate::structure::graph::EdgeKind;
-    use std::collections::HashMap;
-
-    let context = GitIntelligenceContext::inspect(repo_root, config);
-    let max_commits = config.git_commit_depth as usize;
-    let insights = analyze_recent_history(&context, max_commits, 100)?;
-    let revision = insights.history.status.source_revision.clone();
-
-    let file_paths = graph.all_file_paths()?;
-    let file_index: HashMap<String, crate::core::ids::FileNodeId> =
-        file_paths.into_iter().collect();
 
     graph.begin()?;
     if let Err(err) = (|| -> crate::Result<()> {
         graph.delete_edges_by_kind(EdgeKind::CoChangesWith)?;
-        emit_cochange_edges(graph, &insights, &file_index, &revision)?;
+        for root in crate::substrate::discover_roots(repo_root, config) {
+            let context = GitIntelligenceContext::inspect(&root.absolute_path, config);
+            let max_commits = config.git_commit_depth as usize;
+            let insights = analyze_recent_history(&context, max_commits, 100)?;
+            let revision = insights.history.status.source_revision.clone();
+            let file_index = file_index_for_root(graph, &root.discriminant)?;
+            emit_cochange_edges(graph, &insights, &file_index, &revision)?;
+        }
         Ok(())
     })() {
         let _ = graph.rollback();
@@ -175,14 +213,22 @@ pub fn emit_symbol_revisions_pass(
     graph: &mut dyn crate::structure::graph::GraphStore,
 ) -> crate::Result<()> {
     use crate::pipeline::git::GitIntelligenceContext;
-    use crate::pipeline::git_intelligence::derive_symbol_revisions;
+    use crate::pipeline::git_intelligence::derive_symbol_revisions_for_root;
 
-    let context = GitIntelligenceContext::inspect(repo_root, config);
     let max_commits = config.git_commit_depth as usize;
 
     graph.begin()?;
     if let Err(err) = (|| -> crate::Result<()> {
-        derive_symbol_revisions(repo_root, &context, graph, max_commits)?;
+        for root in crate::substrate::discover_roots(repo_root, config) {
+            let context = GitIntelligenceContext::inspect(&root.absolute_path, config);
+            derive_symbol_revisions_for_root(
+                &root.absolute_path,
+                &context,
+                graph,
+                max_commits,
+                &root.discriminant,
+            )?;
+        }
         Ok(())
     })() {
         let _ = graph.rollback();
@@ -190,6 +236,22 @@ pub fn emit_symbol_revisions_pass(
     }
     graph.commit()?;
     Ok(())
+}
+
+fn file_index_for_root(
+    graph: &dyn crate::structure::graph::GraphStore,
+    root_id: &str,
+) -> crate::Result<std::collections::HashMap<String, crate::core::ids::FileNodeId>> {
+    let mut file_index = std::collections::HashMap::new();
+    for (_, file_id) in graph.all_file_paths()? {
+        let Some(file) = graph.get_file(file_id)? else {
+            continue;
+        };
+        if file.root_id == root_id {
+            file_index.insert(file.path, file.id);
+        }
+    }
+    Ok(file_index)
 }
 
 /// Persist a reconcile outcome to `.synrepo/state/reconcile-state.json`.

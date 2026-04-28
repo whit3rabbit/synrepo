@@ -144,6 +144,11 @@ impl SqliteGraphStore {
         GraphReader::file_by_path(self, path)
     }
 
+    /// Inherent shim for the root-aware read-only graph surface.
+    pub fn file_by_root_path(&self, root_id: &str, path: &str) -> crate::Result<Option<FileNode>> {
+        GraphReader::file_by_root_path(self, root_id, path)
+    }
+
     /// Inherent shim for the read-only graph surface.
     pub fn outbound(&self, from: NodeId, kind: Option<EdgeKind>) -> crate::Result<Vec<Edge>> {
         GraphReader::outbound(self, from, kind)

@@ -73,13 +73,37 @@ pub fn run_structural_compile(
     config: &Config,
     graph: &mut dyn GraphStore,
 ) -> crate::Result<CompileSummary> {
+    run_structural_compile_scoped(repo_root, config, graph, None)
+}
+
+/// Run one structural compile cycle scoped to specific discovery roots.
+pub(crate) fn run_structural_compile_for_root_ids(
+    repo_root: &Path,
+    config: &Config,
+    graph: &mut dyn GraphStore,
+    active_root_ids: &BTreeSet<String>,
+) -> crate::Result<CompileSummary> {
+    run_structural_compile_scoped(repo_root, config, graph, Some(active_root_ids))
+}
+
+fn run_structural_compile_scoped(
+    repo_root: &Path,
+    config: &Config,
+    graph: &mut dyn GraphStore,
+    active_root_ids: Option<&BTreeSet<String>>,
+) -> crate::Result<CompileSummary> {
     let start = Instant::now();
 
-    let discovered = substrate::discover(repo_root, config)?;
+    let mut discovered = substrate::discover(repo_root, config)?;
+    if let Some(active_root_ids) = active_root_ids {
+        discovered.retain(|file| active_root_ids.contains(&file.root_discriminant));
+    }
     let files_discovered = discovered.len();
 
-    let discovered_paths: BTreeSet<String> =
-        discovered.iter().map(|f| f.relative_path.clone()).collect();
+    let discovered_paths: BTreeSet<(String, String)> = discovered
+        .iter()
+        .map(|f| (f.root_discriminant.clone(), f.relative_path.clone()))
+        .collect();
 
     // All four stages run inside a single transaction so readers never observe
     // a partially-compiled graph (nodes present but cross-file edges absent).
@@ -102,6 +126,7 @@ pub fn run_structural_compile(
             graph,
             &discovered,
             &discovered_paths,
+            active_root_ids,
             compile_rev,
         )?;
         let edges = stage4::run_cross_file_resolution(

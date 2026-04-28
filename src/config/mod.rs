@@ -31,6 +31,14 @@ pub struct Config {
     #[serde(default = "default_roots")]
     pub roots: Vec<String>,
 
+    /// Include linked git worktrees as additional discovery roots.
+    #[serde(default = "default_include_worktrees", alias = "discover_worktrees")]
+    pub include_worktrees: bool,
+
+    /// Include initialized git submodules as additional discovery roots.
+    #[serde(default = "default_include_submodules", alias = "discover_submodules")]
+    pub include_submodules: bool,
+
     /// Directories that contain human-authored concept/decision files.
     /// If empty, concept nodes are disabled in auto mode.
     #[serde(default = "default_concept_dirs")]
@@ -147,6 +155,14 @@ fn default_concept_dirs() -> Vec<String> {
     ]
 }
 
+fn default_include_worktrees() -> bool {
+    true
+}
+
+fn default_include_submodules() -> bool {
+    false
+}
+
 fn default_git_commit_depth() -> u32 {
     500
 }
@@ -208,6 +224,8 @@ impl Default for Config {
         Self {
             mode: Mode::default(),
             roots: default_roots(),
+            include_worktrees: default_include_worktrees(),
+            include_submodules: default_include_submodules(),
             concept_directories: default_concept_dirs(),
             git_commit_depth: default_git_commit_depth(),
             max_file_size_bytes: default_max_file_size(),
@@ -281,6 +299,12 @@ impl Config {
         // Only override roots if it's not the default ["."]
         if other.roots != default_roots() {
             self.roots = other.roots;
+        }
+        if other.include_worktrees != default_include_worktrees() {
+            self.include_worktrees = other.include_worktrees;
+        }
+        if other.include_submodules != default_include_submodules() {
+            self.include_submodules = other.include_submodules;
         }
         if other.concept_directories != default_concept_dirs() {
             self.concept_directories = other.concept_directories;

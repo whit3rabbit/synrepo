@@ -65,7 +65,10 @@ pub(super) fn process_markdown_concepts(
             state.concept_nodes_emitted += 1;
 
             for governs_path in &governs_paths {
-                if let Some(&file_id) = state.file_map.get(governs_path.as_str()) {
+                if let Some(&file_id) = state
+                    .file_map
+                    .get(&(file.root_discriminant.clone(), governs_path.clone()))
+                {
                     let from = NodeId::Concept(concept_id);
                     let to = NodeId::File(file_id);
                     graph.insert_edge(Edge {

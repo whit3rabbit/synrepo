@@ -126,6 +126,7 @@ mod tests {
         // Insert two file nodes so outbound queries work.
         let file_a = crate::structure::graph::FileNode {
             id: FileNodeId(1),
+            root_id: "primary".to_string(),
             path: "src/a.rs".to_string(),
             path_history: vec![],
             content_hash: "a".to_string(),
@@ -138,6 +139,7 @@ mod tests {
         };
         let file_b = crate::structure::graph::FileNode {
             id: FileNodeId(2),
+            root_id: "primary".to_string(),
             path: "src/b.rs".to_string(),
             path_history: vec![],
             content_hash: "b".to_string(),
@@ -182,6 +184,7 @@ mod tests {
 
         let file_a = crate::structure::graph::FileNode {
             id: FileNodeId(1),
+            root_id: "primary".to_string(),
             path: "src/a.rs".to_string(),
             path_history: vec![],
             content_hash: "a".to_string(),
@@ -194,6 +197,7 @@ mod tests {
         };
         let file_b = crate::structure::graph::FileNode {
             id: FileNodeId(2),
+            root_id: "primary".to_string(),
             path: "src/b.rs".to_string(),
             path_history: vec![],
             content_hash: "b".to_string(),
@@ -230,6 +234,7 @@ mod tests {
 
         let file_a = crate::structure::graph::FileNode {
             id: FileNodeId(1),
+            root_id: "primary".to_string(),
             path: "src/a.rs".to_string(),
             path_history: vec![],
             content_hash: "a".to_string(),

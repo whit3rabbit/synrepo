@@ -14,11 +14,13 @@ use serde::{Deserialize, Serialize};
 pub(crate) mod test_support;
 
 mod renames;
+mod roots;
 
 #[cfg(test)]
 mod tests;
 
 pub use renames::detect_recent_renames;
+pub use roots::{discover_related_roots, GitDiscoveryRoot, GitDiscoveryRootKind};
 
 /// A snapshot of repository Git state relevant to deterministic pipeline work.
 #[derive(Clone, Debug, Eq, PartialEq)]

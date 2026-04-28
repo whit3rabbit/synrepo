@@ -63,12 +63,15 @@ pub(super) fn emit_calls_for_file(
 
         scored.clear();
         scored.extend(candidates.iter().filter_map(|callee_id| {
-            symbol_meta.get(callee_id).map(|meta| {
-                (
-                    *callee_id,
-                    score_candidate(call_ref, meta, item.file_id, imports),
-                )
-            })
+            symbol_meta
+                .get(callee_id)
+                .filter(|meta| meta.root_id == item.root_id)
+                .map(|meta| {
+                    (
+                        *callee_id,
+                        score_candidate(call_ref, meta, item.file_id, imports),
+                    )
+                })
         }));
 
         let Some(&(_, top_score)) = scored.iter().max_by_key(|(_, s)| *s) else {

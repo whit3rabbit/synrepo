@@ -242,3 +242,95 @@ fn reconcile_emits_cochange_edges_on_repo_with_multi_file_commits() {
         "expected CoChangesWith edges after reconcile on repo with multi-file commits"
     );
 }
+
+#[test]
+fn touched_worktree_reconcile_does_not_delete_sibling_worktree_files() {
+    use super::super::reconcile::run_reconcile_pass_with_touched_paths;
+    use crate::{
+        store::{compatibility::write_runtime_snapshot, sqlite::SqliteGraphStore},
+        substrate::{discover_roots, DiscoveryRootKind},
+    };
+    use std::{path::Path, process::Command};
+
+    let main = tempfile::tempdir().unwrap();
+    let wt_a = tempfile::tempdir().unwrap();
+    let wt_b = tempfile::tempdir().unwrap();
+    fs::create_dir_all(main.path().join("src")).unwrap();
+    fs::write(main.path().join("src/lib.rs"), "pub fn main_root() {}\n").unwrap();
+    git(main.path(), &["init"]);
+    git(main.path(), &["config", "user.email", "test@example.com"]);
+    git(main.path(), &["config", "user.name", "Test User"]);
+    git(main.path(), &["add", "."]);
+    git(main.path(), &["commit", "-m", "initial"]);
+    fs::remove_dir(wt_a.path()).unwrap();
+    fs::remove_dir(wt_b.path()).unwrap();
+    git(
+        main.path(),
+        &["worktree", "add", "-b", "wt-a", path_str(wt_a.path())],
+    );
+    git(
+        main.path(),
+        &["worktree", "add", "-b", "wt-b", path_str(wt_b.path())],
+    );
+    fs::write(wt_a.path().join("src/a_only.rs"), "pub fn a_only() {}\n").unwrap();
+    fs::write(wt_b.path().join("src/b_only.rs"), "pub fn b_only() {}\n").unwrap();
+
+    let config = crate::config::Config::default();
+    let synrepo_dir = main.path().join(".synrepo");
+    fs::create_dir_all(synrepo_dir.join("state")).unwrap();
+    write_runtime_snapshot(&synrepo_dir, &config).unwrap();
+
+    let first = run_reconcile_pass(main.path(), &config, &synrepo_dir, true);
+    assert!(matches!(first, ReconcileOutcome::Completed(_)));
+
+    let roots = discover_roots(main.path(), &config);
+    let wt_b_root = roots
+        .iter()
+        .find(|root| {
+            root.kind == DiscoveryRootKind::Worktree
+                && root.absolute_path == wt_b.path().canonicalize().unwrap()
+        })
+        .unwrap()
+        .discriminant
+        .clone();
+
+    fs::remove_file(wt_b.path().join("src/b_only.rs")).unwrap();
+    fs::write(wt_a.path().join("src/a_only.rs"), "pub fn a_only_v2() {}\n").unwrap();
+    let touched = [wt_a.path().join("src/a_only.rs")];
+    let second = run_reconcile_pass_with_touched_paths(
+        main.path(),
+        &config,
+        &synrepo_dir,
+        Some(&touched),
+        true,
+    );
+    assert!(matches!(second, ReconcileOutcome::Completed(_)));
+
+    let graph = SqliteGraphStore::open(&synrepo_dir.join("graph")).unwrap();
+    assert!(
+        graph
+            .file_by_root_path(&wt_b_root, "src/b_only.rs")
+            .unwrap()
+            .is_some(),
+        "scoped reconcile for worktree A must not delete missing files from worktree B"
+    );
+
+    fn git(cwd: &Path, args: &[&str]) {
+        let output = Command::new("git")
+            .args(args)
+            .current_dir(cwd)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "git {:?} failed\nstdout:\n{}\nstderr:\n{}",
+            args,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    fn path_str(path: &Path) -> &str {
+        path.to_str().unwrap()
+    }
+}

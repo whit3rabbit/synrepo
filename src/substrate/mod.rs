@@ -11,7 +11,7 @@ pub mod index;
 pub mod embedding;
 
 pub use classify::{classify, FileClass, SkipReason};
-pub use discover::{discover, DiscoveredFile};
+pub use discover::{discover, discover_roots, DiscoveredFile, DiscoveryRoot, DiscoveryRootKind};
 pub use incremental::{sync_index_incremental, IndexSyncMode, IndexSyncReport};
 pub use index::{build_index, search, search_with_options, IndexBuildReport};
 

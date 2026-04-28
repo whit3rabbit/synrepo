@@ -12,9 +12,12 @@ pub(super) fn init_schema(conn: &Connection) -> crate::Result<()> {
 
         CREATE TABLE IF NOT EXISTS files (
             id TEXT PRIMARY KEY,
-            path TEXT NOT NULL UNIQUE,
+            root_id TEXT NOT NULL DEFAULT 'primary',
+            path TEXT NOT NULL,
             data TEXT NOT NULL
         ) WITHOUT ROWID;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_files_root_path ON files(root_id, path);
 
         CREATE TABLE IF NOT EXISTS symbols (
             id TEXT PRIMARY KEY,
@@ -87,6 +90,11 @@ pub(super) fn init_schema(conn: &Connection) -> crate::Result<()> {
             "ALTER TABLE files ADD COLUMN last_observed_rev INTEGER NULL",
         ),
         (
+            "files",
+            "root_id",
+            "ALTER TABLE files ADD COLUMN root_id TEXT NOT NULL DEFAULT 'primary'",
+        ),
+        (
             "symbols",
             "last_observed_rev",
             "ALTER TABLE symbols ADD COLUMN last_observed_rev INTEGER NULL",
@@ -141,6 +149,13 @@ pub(super) fn init_schema(conn: &Connection) -> crate::Result<()> {
 
     // Index on body_hash for future filter/join queries.
     conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_symbols_body_hash ON symbols(body_hash)")?;
+
+    conn.execute_batch(
+        "UPDATE files SET root_id = COALESCE(json_extract(data, '$.root_id'), root_id, 'primary')",
+    )?;
+    conn.execute_batch(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_files_root_path ON files(root_id, path)",
+    )?;
 
     // Backfill body_hash from the JSON blob for existing rows.
     conn.execute_batch(

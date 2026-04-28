@@ -3,12 +3,13 @@
 //! Respects `.gitignore`, `.git/info/exclude`, and synrepo's own `.synignore`.
 
 use crate::config::Config;
+use crate::pipeline::git::{discover_related_roots, GitDiscoveryRootKind};
 use ignore::{
     gitignore::{Gitignore, GitignoreBuilder},
     WalkBuilder,
 };
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     fs::File,
     io::Read,
     path::{Path, PathBuf},
@@ -16,11 +17,17 @@ use std::{
 
 use super::classify::{classify_candidate, FileClass, SNIFF_HEAD_BYTES};
 
+const PRIMARY_ROOT_DISCRIMINANT: &str = "primary";
+
 /// A file that the discovery pass decided is worth processing.
 #[derive(Clone, Debug)]
 pub struct DiscoveredFile {
     /// Absolute path on disk.
     pub absolute_path: PathBuf,
+    /// Stable discriminator for the root that owns this file.
+    pub root_discriminant: String,
+    /// Kind of discovery root that owns this file.
+    pub root_kind: DiscoveryRootKind,
     /// Path relative to the repo root.
     pub relative_path: String,
     /// Classification.
@@ -29,15 +36,52 @@ pub struct DiscoveredFile {
     pub size_bytes: u64,
 }
 
+/// A filesystem root included in one discovery pass.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DiscoveryRoot {
+    /// Absolute checkout/submodule path.
+    pub absolute_path: PathBuf,
+    /// Stable hash used to isolate file identity for this root.
+    pub discriminant: String,
+    /// Root source.
+    pub kind: DiscoveryRootKind,
+}
+
+/// Source category for a discovery root.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DiscoveryRootKind {
+    /// The repository root passed to discovery.
+    Primary,
+    /// A linked git worktree.
+    Worktree,
+    /// An initialized git submodule.
+    Submodule,
+}
+
 /// Walk the configured roots and yield classified files.
 ///
-/// Phase 0 implementation: honors `.gitignore` via the `ignore` crate,
-/// applies size cap, applies redaction globs, sniffs encoding. Does not
-/// yet integrate with git worktrees or submodules, which remains phase 1.
+/// Honors `.gitignore` via the `ignore` crate, applies size cap, applies
+/// redaction globs, sniffs encoding, and walks configured git worktree and
+/// submodule roots.
 pub fn discover(repo_root: &Path, config: &Config) -> crate::Result<Vec<DiscoveredFile>> {
-    let redaction_matcher = build_redaction_matcher(repo_root, &config.redact_globs)?;
+    let roots = discover_roots(repo_root, config);
     let mut discovered = BTreeMap::new();
-    let mut walker = WalkBuilder::new(repo_root);
+
+    for root in roots {
+        let redaction_matcher = build_redaction_matcher(&root.absolute_path, &config.redact_globs)?;
+        walk_root(&root, config, &redaction_matcher, &mut discovered)?;
+    }
+
+    Ok(discovered.into_values().collect())
+}
+
+fn walk_root(
+    root: &DiscoveryRoot,
+    config: &Config,
+    redaction_matcher: &Gitignore,
+    discovered: &mut BTreeMap<(String, String), DiscoveredFile>,
+) -> crate::Result<()> {
+    let mut walker = WalkBuilder::new(&root.absolute_path);
     walker.hidden(false);
     walker.git_ignore(true);
     walker.git_exclude(true);
@@ -65,7 +109,7 @@ pub fn discover(repo_root: &Path, config: &Config) -> crate::Result<Vec<Discover
         }
 
         let absolute_path = entry.into_path();
-        let relative_path = match absolute_path.strip_prefix(repo_root) {
+        let relative_path = match absolute_path.strip_prefix(&root.absolute_path) {
             Ok(path) => path.to_path_buf(),
             Err(_) => continue,
         };
@@ -100,16 +144,76 @@ pub fn discover(repo_root: &Path, config: &Config) -> crate::Result<Vec<Discover
 
         let relative_path = normalize_relative_path(&relative_path);
         discovered
-            .entry(relative_path.clone())
+            .entry((root.discriminant.clone(), relative_path.clone()))
             .or_insert(DiscoveredFile {
                 absolute_path,
+                root_discriminant: root.discriminant.clone(),
+                root_kind: root.kind,
                 relative_path,
                 class,
                 size_bytes,
             });
     }
 
-    Ok(discovered.into_values().collect())
+    Ok(())
+}
+
+/// Enumerate discovery roots for the configured repository.
+pub fn discover_roots(repo_root: &Path, config: &Config) -> Vec<DiscoveryRoot> {
+    let primary_path = canonical_or_original(repo_root);
+    let primary = DiscoveryRoot {
+        discriminant: PRIMARY_ROOT_DISCRIMINANT.to_string(),
+        absolute_path: primary_path,
+        kind: DiscoveryRootKind::Primary,
+    };
+
+    let mut roots = vec![primary.clone()];
+    let mut seen = BTreeSet::from([primary.discriminant.clone()]);
+    for root in discover_related_roots(
+        repo_root,
+        config.include_worktrees,
+        config.include_submodules,
+    ) {
+        let kind = match root.kind {
+            GitDiscoveryRootKind::Worktree => DiscoveryRootKind::Worktree,
+            GitDiscoveryRootKind::Submodule => DiscoveryRootKind::Submodule,
+        };
+        push_root(&mut roots, &mut seen, root.absolute_path, kind);
+    }
+
+    roots
+}
+
+fn push_root(
+    roots: &mut Vec<DiscoveryRoot>,
+    seen: &mut BTreeSet<String>,
+    path: PathBuf,
+    kind: DiscoveryRootKind,
+) {
+    let absolute_path = canonical_or_original(&path);
+    let discriminant = derive_root_discriminant(&absolute_path);
+    if seen.insert(discriminant.clone()) {
+        roots.push(DiscoveryRoot {
+            absolute_path,
+            discriminant,
+            kind,
+        });
+    }
+}
+
+fn canonical_or_original(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
+/// Derive the stable root discriminator used to separate identical files in
+/// distinct physical checkouts.
+pub(crate) fn derive_root_discriminant(root: &Path) -> String {
+    let stable_path = root
+        .canonicalize()
+        .unwrap_or_else(|_| root.to_path_buf())
+        .to_string_lossy()
+        .into_owned();
+    hex::encode(blake3::hash(stable_path.as_bytes()).as_bytes())
 }
 
 pub(crate) fn build_redaction_matcher(

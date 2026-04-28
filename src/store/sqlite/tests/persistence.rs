@@ -18,6 +18,7 @@ fn graph_store_round_trips_nodes_edges_and_provenance() {
 
     let file = FileNode {
         id: FileNodeId(0x42),
+        root_id: "primary".to_string(),
         path: "src/lib.rs".to_string(),
         path_history: vec!["src/old_lib.rs".to_string()],
         content_hash: "abc123".to_string(),
@@ -119,6 +120,7 @@ fn persisted_stats_count_nodes_and_edges_by_kind() {
 
     let file = FileNode {
         id: FileNodeId(10),
+        root_id: "primary".to_string(),
         path: "src/lib.rs".to_string(),
         path_history: Vec::new(),
         content_hash: "a".to_string(),

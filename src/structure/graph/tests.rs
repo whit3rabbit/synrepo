@@ -25,6 +25,7 @@ fn sample_provenance(path: &str) -> Provenance {
 fn sample_file(id: u64, path: &str) -> FileNode {
     FileNode {
         id: FileNodeId(id as u128),
+        root_id: "primary".to_string(),
         path: path.to_string(),
         path_history: Vec::new(),
         content_hash: format!("file-hash-{id}"),

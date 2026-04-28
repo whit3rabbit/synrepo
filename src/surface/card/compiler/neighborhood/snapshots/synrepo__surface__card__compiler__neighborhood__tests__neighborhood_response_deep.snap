@@ -1,5 +1,6 @@
 ---
 source: src/surface/card/compiler/neighborhood/tests.rs
+assertion_line: 214
 expression: deep
 ---
 {
@@ -18,7 +19,7 @@ expression: deep
       "truncation_applied": false
     },
     "drift_flag": null,
-    "file": "file_9af6693ae5dcd892434e192a33af3625",
+    "file": "file_da7126252fc52382b57d357eb90beb47",
     "git_intelligence": null,
     "imported_by": [],
     "imports": [],
@@ -26,7 +27,7 @@ expression: deep
     "source_store": "graph",
     "symbols": [
       {
-        "id": "sym_c91e9e253fe55f8802f3bf861682fb4b",
+        "id": "sym_0428e9f2f46549976b560f5b402d03ee",
         "location": "src/lib.rs:22",
         "qualified_name": "add"
       }
