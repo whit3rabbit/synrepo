@@ -6,7 +6,7 @@
 
 `synrepo` gives coding agents a compact, queryable map of your repository so they can stop reading source cold and start with the smallest useful context.
 
-It builds a local structural model of the repo, keeps it fresh, and exposes it through read-only MCP tools plus a guided dashboard. It is not session memory and it is not a task tracker. It is repo intelligence for coding agents.
+It builds a local structural model of the repo, keeps it fresh, and exposes it through read-only MCP tools plus a guided dashboard. It is not session memory and it is not a task tracker. It is repo intelligence for coding agents. See [docs/MCP.md](docs/MCP.md) for the MCP workflow and tool surface.
 
 The default agent loop is explicit: orient, find bounded cards, inspect impact, edit, validate tests, then review changed context. Synrepo responses are budgeted by default. Large source files are not the default response unit unless a caller explicitly escalates.
 
@@ -55,7 +55,7 @@ synrepo
 - `synrepo`: open the guided operator UI. On a ready repo, this lands in the dashboard.
 - `synrepo watch --daemon`: keep the local repo model fresh as files change. Cheap repair surfaces (export regeneration, retired-observation compaction) auto-run after each drift-producing reconcile when `auto_sync_enabled = true` (the default in `.synrepo/config.toml`).
 - `synrepo status`: verify health, freshness, and whether anything needs attention.
-- `synrepo mcp`: serve read-only repo intelligence to the agent over stdio.
+- `synrepo mcp`: serve read-only repo intelligence to the agent over stdio. See [docs/MCP.md](docs/MCP.md) for tool groups, resources, and edit-gated behavior.
 - The dashboard Explain tab refreshes advisory commentary when you want machine-authored summaries for missing or stale areas.
 
 ## Daily Workflow
@@ -63,10 +63,11 @@ synrepo
 1. Run `synrepo` or `synrepo dashboard` to inspect the current repo state.
 2. Keep `synrepo watch --daemon` running while you work if you want automatic refresh.
 3. Use `synrepo status` when you want a quick health check.
-4. Let the agent query `synrepo_orient`, `synrepo_find`, `synrepo_explain`, `synrepo_impact`, `synrepo_tests`, and `synrepo_changed` instead of opening large files first.
-5. Use `synrepo explain <target> --budget 1000`, `synrepo impact <target> --budget 2000`, or `synrepo tests <path> --budget 1500` for the same flow outside MCP.
-6. Use the dashboard Explain tab if you want fresh commentary on the parts of the repo that just moved.
-7. Use `synrepo check` and `synrepo sync` when health or repair surfaces need manual attention.
+4. Let the agent query `synrepo_orient`, `synrepo_find`, `synrepo_explain`, `synrepo_impact` or `synrepo_risks`, `synrepo_tests`, and `synrepo_changed` instead of opening large files first.
+5. Use `synrepo_context_pack` when the agent needs several read-only context artifacts in one token-accounted response.
+6. Use `synrepo explain <target> --budget 1000`, `synrepo impact <target> --budget 2000`, or `synrepo tests <path> --budget 1500` for the same flow outside MCP.
+7. Use the dashboard Explain tab if you want fresh commentary on the parts of the repo that just moved.
+8. Use `synrepo check` and `synrepo sync` when health or repair surfaces need manual attention.
 
 ## Trust Model
 
@@ -86,6 +87,8 @@ synrepo
 | Shim-only | `copilot`, `generic`, `gemini`, `goose`, `kiro`, `qwen`, `junie`, `tabnine`, `trae` | Initializes `.synrepo/` and writes the repo-local skill or instruction file | Point the agent at `synrepo mcp --repo .` in that tool's own MCP config |
 
 For Codex, `synrepo setup codex` writes the skill to `.agents/skills/synrepo/SKILL.md` and registers MCP in trusted project `.codex/config.toml` using `[mcp_servers.synrepo]`. For a global Codex registration with the installed binary, run `codex mcp add synrepo -- synrepo mcp --repo .`; for an npm-distributed build, run `codex mcp add synrepo -- npx -y synrepo mcp --repo .`. You can also add the same table to `~/.codex/config.toml`.
+
+MCP usage details, including resources, advisory overlay tools, and edit-gated tools, live in [docs/MCP.md](docs/MCP.md).
 
 Use `synrepo agent-setup <tool>` if you only want to regenerate the instruction file without running the full onboarding flow.
 

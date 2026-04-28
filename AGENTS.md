@@ -10,6 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) and other coding age
 |-------|------|
 | Layer architecture, pipeline stages, storage layout, snapshot rules | `docs/ARCHITECTURE.md` |
 | Config fields and defaults | `docs/CONFIG.md` |
+| MCP workflow, tool surface, resources, agent integration behavior | `docs/MCP.md` |
 | Explain providers, API keys, telemetry | `docs/EXPLAIN.md` |
 | Adding a new tree-sitter language | `docs/ADDING-LANGUAGE.md` |
 | Full foundational design (data model, trust model, evaluation) | `docs/FOUNDATION.md` |

@@ -1,6 +1,6 @@
 # synrepo MCP server
 
-Front-door product docs live in [`README.md`](../../../README.md).
+Front-door product docs live in [`README.md`](../../../README.md) and [`docs/MCP.md`](../../../docs/MCP.md).
 This file stays focused on the MCP surface exposed by `synrepo mcp`: handler layout, tool registration, and invariants.
 
 ## Run
@@ -22,6 +22,7 @@ MCP is read-first by default. Edit-capable tools are absent from `tools/list` un
 | Tool registration, JSON schemas, dispatch | `src/bin/cli_support/commands/mcp.rs` |
 | Per-request handler logic | `src/surface/mcp/*.rs` (this directory) |
 | Shared state (`SynrepoState`, snapshot helpers) | `src/surface/mcp/mod.rs` |
+| Public MCP guide | `docs/MCP.md` |
 | Agent-facing protocol doc | `skill/SKILL.md` (repo root) |
 | Spec | `openspec/specs/mcp-surface/spec.md` |
 
@@ -31,8 +32,17 @@ Keep `src/bin/cli_support/commands/mcp.rs` as the single registration file. The 
 
 Current registrations (see `mcp.rs` for schemas):
 
-**High-level / agent-facing:**
-`synrepo_overview`, `synrepo_card`, `synrepo_context_pack`, `synrepo_search`, `synrepo_docs_search`, `synrepo_where_to_edit`, `synrepo_change_impact`, `synrepo_change_risk`, `synrepo_entrypoints`, `synrepo_test_surface`, `synrepo_module_card`, `synrepo_public_api`, `synrepo_minimum_context`, `synrepo_call_path`, `synrepo_refresh_commentary`, `synrepo_findings`, `synrepo_recent_activity`, `synrepo_next_actions`
+**Workflow aliases:**
+`synrepo_orient`, `synrepo_find`, `synrepo_explain`, `synrepo_impact`, `synrepo_risks`, `synrepo_tests`, `synrepo_changed`
+
+**Task-first read tools:**
+`synrepo_overview`, `synrepo_card`, `synrepo_context_pack`, `synrepo_search`, `synrepo_where_to_edit`, `synrepo_change_impact`, `synrepo_change_risk`, `synrepo_entrypoints`, `synrepo_test_surface`, `synrepo_module_card`, `synrepo_public_api`, `synrepo_minimum_context`, `synrepo_call_path`, `synrepo_next_actions`
+
+**Advisory overlay and audit tools:**
+`synrepo_docs_search`, `synrepo_refresh_commentary`, `synrepo_findings`, `synrepo_recent_activity`
+
+**Advisory agent note tools:**
+`synrepo_note_add`, `synrepo_note_link`, `synrepo_note_supersede`, `synrepo_note_forget`, `synrepo_note_verify`, `synrepo_notes`
 
 **Edit-enabled only (`synrepo mcp --allow-edits`):**
 `synrepo_prepare_edit_context`, `synrepo_apply_anchor_edits`
@@ -64,9 +74,10 @@ Post-edit diagnostics are bounded to built-in validation, write status, reconcil
 3. Update `skill/SKILL.md`:
    - Agent-facing tool: add to `## Core tools`.
    - Primitive: leave out of `Core tools` but mention in the `synrepo_overview` description string in `mcp.rs`.
-4. If the change alters budget tiers, freshness semantics, or trust model, update the corresponding `SKILL.md` sections.
+4. Update `docs/MCP.md` when the public tool surface, resource list, workflow, trust model, or edit-gating behavior changes.
+5. If the change alters budget tiers, freshness semantics, or trust model, update the corresponding `SKILL.md` sections.
 
-The overview blurb in `mcp.rs` and `skill/SKILL.md` are the two surfaces agents see first. They must tell the same story.
+The overview blurb in `mcp.rs`, `skill/SKILL.md`, and `docs/MCP.md` are the surfaces agents and operators see first. They must tell the same story.
 
 ## Invariants
 

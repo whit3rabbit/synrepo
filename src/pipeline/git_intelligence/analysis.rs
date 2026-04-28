@@ -121,10 +121,18 @@ fn record_change_set(
     }
 }
 
+/// Skip co-change recording for commits touching more than this many paths.
+/// Bulk commits (vendoring, mass refactoring) carry no meaningful co-change signal
+/// and would produce O(n^2) pairs.
+const MAX_CO_CHANGE_PATHS: usize = 100;
+
 fn record_co_changes(
     changed_paths: &[String],
     co_change_counts: &mut BTreeMap<(String, String), usize>,
 ) {
+    if changed_paths.len() > MAX_CO_CHANGE_PATHS {
+        return;
+    }
     for (index, left) in changed_paths.iter().enumerate() {
         for right in changed_paths.iter().skip(index + 1) {
             let pair = if left <= right {
