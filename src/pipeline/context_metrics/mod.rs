@@ -4,7 +4,8 @@
 //! calls or responses synrepo served) from **estimated** counters (values
 //! derived from card-accounting comparisons). Callers that persist or render
 //! these metrics MUST preserve that separation — see
-//! [`ContextMetrics`] field docs and [`prometheus`] for the wire format.
+//! [`ContextMetrics`] field docs and the `prometheus` module for the wire
+//! format.
 
 use std::collections::BTreeMap;
 use std::fs;

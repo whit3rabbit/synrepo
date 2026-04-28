@@ -1,5 +1,5 @@
 //! Setup wizard state machine logic (impl blocks).
-//! Type definitions live in [`super::state_types`].
+//! Type definitions live in the sibling `state_types` module.
 
 use crossterm::event::{KeyCode, KeyModifiers};
 

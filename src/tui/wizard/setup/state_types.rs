@@ -94,9 +94,9 @@ pub struct SetupWizardState {
     pub mode_cursor: usize,
     /// Cursor index in the target list: 0..N for targets, N for "Skip".
     pub target_cursor: usize,
-    /// Cursor index into [`EXPLAIN_ROWS`].
+    /// Cursor index into [`crate::tui::wizard::setup::EXPLAIN_ROWS`].
     pub explain_cursor: usize,
-    /// Cursor index into [`LOCAL_PRESETS`].
+    /// Cursor index into [`crate::tui::wizard::setup::LOCAL_PRESETS`].
     pub local_preset_cursor: usize,
     /// Committed mode (set on Enter at `SelectMode`).
     pub mode: Mode,

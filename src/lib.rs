@@ -3,16 +3,16 @@
 //! Architecture (four layers, bottom to top):
 //!
 //! 1. **Substrate layer** — file discovery, classification, and [`syntext`] n-gram index.
-//!    - [`substrate::discover`] walks the filesystem
-//!    - [`substrate::classify`] maps files to content tiers
+//!    - [`mod@substrate::discover`] walks the filesystem
+//!    - [`mod@substrate::classify`] maps files to content tiers
 //!    - [`substrate::index`] builds and queries the lexical index
 //! 2. **Structure layer** — the canonical graph of observed facts:
-//!    - [`parse`] runs tree-sitter and the markdown parser
-//!    - [`graph`] is the sqlite-backed graph store
-//!    - [`identity`] handles AST-based rename detection
-//!    - [`drift`] scores per-edge Jaccard distance over persisted structural
+//!    - [`structure::parse`] runs tree-sitter and the markdown parser
+//!    - [`structure::graph`] is the sqlite-backed graph store
+//!    - [`structure::identity`] handles AST-based rename detection
+//!    - [`structure::drift`] scores per-edge Jaccard distance over persisted structural
 //!      fingerprints (stage 7 — implemented, sidecar `edge_drift` / `file_fingerprints` tables).
-//!    - [`graph::snapshot`] publishes the immutable in-memory `Graph` after each successful compile.
+//!    - [`structure::graph::snapshot`] publishes the immutable in-memory `Graph` after each successful compile.
 //! 3. **Overlay layer** — LLM-authored content, physically separate from the graph.
 //!    Phase 4+ only; module exists to enforce the architectural boundary. See [`overlay`].
 //! 4. **Surface layer** — CLI (`src/bin/cli.rs`), MCP server (`synrepo mcp` subcommand),

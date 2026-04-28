@@ -160,6 +160,14 @@ pub struct AppState {
     /// modes: if the user triggers explain from within the TUI host (future)
     /// or any other in-process call site fires, the events merge into the log.
     pub(crate) explain_rx: Receiver<ExplainEvent>,
+    /// Background-thread supervisor for the auto/manual `bootstrap()` path
+    /// that materializes the graph when the dashboard observes
+    /// `graph_stats.is_none()`. Lifecycle is owned by the dashboard: the
+    /// thread is spawned lazily and reaped during `tick()`.
+    pub(crate) materializer: crate::tui::materializer::MaterializerSupervisor,
+    /// View-layer mirror of `materializer.state()`. Updated from `tick()`
+    /// once per refresh so widgets can render without holding `&mut`.
+    pub materialize_state: crate::tui::materializer::MaterializeState,
 }
 
 use crate::surface::status_snapshot::StatusSnapshot;

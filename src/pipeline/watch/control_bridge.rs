@@ -13,7 +13,10 @@ use std::{
     time::Duration,
 };
 
-use interprocess::local_socket::{traits::Listener as _, ListenerNonblockingMode, ListenerOptions};
+use interprocess::local_socket::{
+    traits::{Listener as _, Stream as _},
+    ListenerNonblockingMode, ListenerOptions,
+};
 
 use super::{
     control::{
@@ -59,8 +62,8 @@ pub(super) fn spawn_control_listener(
         while !stop_flag.load(Ordering::Relaxed) {
             match listener.accept() {
                 Ok(stream) => {
-                    // Set a read timeout to prevent abandoned connections from
-                    // leaking handler threads indefinitely.
+                    // Prevent abandoned connections from blocking a handler
+                    // thread forever while waiting for a newline-framed request.
                     set_stream_read_timeout(&stream, Duration::from_secs(5));
 
                     let state_handle = state_handle.clone();
@@ -76,9 +79,7 @@ pub(super) fn spawn_control_listener(
                             Ok(WatchControlRequest::Status) => WatchControlResponse::Status {
                                 snapshot: state_handle.snapshot(),
                             },
-                            Ok(WatchControlRequest::Stop) => {
-                                bridge_stop_request(&tx, &stop_flag)
-                            }
+                            Ok(WatchControlRequest::Stop) => bridge_stop_request(&tx, &stop_flag),
                             Ok(WatchControlRequest::ReconcileNow { fast }) => {
                                 bridge_reconcile_request(&tx, fast)
                             }
@@ -98,9 +99,7 @@ pub(super) fn spawn_control_listener(
                                 message: error.to_string(),
                             },
                         };
-                        if let Err(error) =
-                            write_control_response(&stream, &endpoint, &response)
-                        {
+                        if let Err(error) = write_control_response(&stream, &endpoint, &response) {
                             tracing::warn!(error = %error, "failed to write watch control response");
                         }
                     });
@@ -117,35 +116,10 @@ pub(super) fn spawn_control_listener(
     }))
 }
 
-/// Set `SO_RCVTIMEO` on the local socket stream so that a hanging client
-/// (connects but never sends) does not leak the handler thread forever.
-#[cfg(unix)]
 fn set_stream_read_timeout(stream: &interprocess::local_socket::Stream, timeout: Duration) {
-    use std::os::unix::io::AsRawFd;
-    let fd = stream.as_raw_fd();
-    let tv = libc::timeval {
-        tv_sec: timeout.as_secs() as _,
-        tv_usec: timeout.subsec_micros() as _,
-    };
-    let result = unsafe {
-        libc::setsockopt(
-            fd,
-            libc::SOL_SOCKET,
-            libc::SO_RCVTIMEO,
-            &tv as *const _ as *const _,
-            std::mem::size_of::<libc::timeval>() as _,
-        )
-    };
-    if result != 0 {
-        tracing::warn!("failed to set SO_RCVTIMEO on watch control stream");
+    if let Err(error) = stream.set_recv_timeout(Some(timeout)) {
+        tracing::warn!(error = %error, "failed to set watch control stream read timeout");
     }
-}
-
-#[cfg(not(unix))]
-fn set_stream_read_timeout(
-    _stream: &interprocess::local_socket::Stream,
-    _timeout: Duration,
-) {
 }
 
 pub(super) fn bridge_stop_request(

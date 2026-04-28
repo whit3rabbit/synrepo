@@ -2,7 +2,7 @@
 //!
 //! Identity stability is the single most important correctness property in
 //! synrepo. File node identity survives renames via AST-based detection
-//! (see [`crate::identity`]); symbol node identity is keyed on
+//! (see [`crate::structure::identity`]); symbol node identity is keyed on
 //! `(file_node_id, qualified_name, kind, body_hash)`.
 
 use std::{error::Error, fmt, str::FromStr};

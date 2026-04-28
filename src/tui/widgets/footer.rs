@@ -24,6 +24,10 @@ pub struct FooterWidget<'a> {
     pub toast: Option<&'a str>,
     /// Poll-mode watch toggle label, when the dashboard exposes `w`.
     pub watch_toggle_label: Option<&'a str>,
+    /// Render the `[M] generate graph` hint when the snapshot reports
+    /// `graph: not materialized` so the operator sees the manual escape
+    /// hatch alongside the auto-fire path.
+    pub materialize_hint_visible: bool,
 }
 
 /// A hint group (label + key) with a priority used to drop low-value hints
@@ -105,6 +109,16 @@ impl FooterWidget<'_> {
                 Span::styled("[r]", self.theme.agent_style()),
             ],
         });
+        if self.materialize_hint_visible {
+            groups.push(HintGroup {
+                priority: 1,
+                spans: vec![
+                    Span::styled("  graph ", self.theme.muted_style()),
+                    Span::styled("[M] ", self.theme.agent_style()),
+                    Span::styled("generate", self.theme.stale_style()),
+                ],
+            });
+        }
         if let Some(label) = self.watch_toggle_label {
             groups.push(HintGroup {
                 priority: 2,
@@ -183,8 +197,26 @@ mod tests {
             theme: &theme,
             toast: None,
             watch_toggle_label,
+            materialize_hint_visible: false,
         };
         (widget.build_hints(), theme)
+    }
+
+    fn footer_with_materialize(
+        active: ActiveTab,
+        watch_toggle_label: Option<&str>,
+        materialize_hint_visible: bool,
+    ) -> Vec<HintGroup> {
+        let theme = Theme::plain();
+        let widget = FooterWidget {
+            active,
+            follow_mode: false,
+            theme: &theme,
+            toast: None,
+            watch_toggle_label,
+            materialize_hint_visible,
+        };
+        widget.build_hints()
     }
 
     fn rendered_text(spans: &[Span<'static>]) -> String {
@@ -249,6 +281,7 @@ mod tests {
             theme: &theme,
             toast: Some("Refreshed: 12 files, 34 symbols"),
             watch_toggle_label: Some("stop"),
+            materialize_hint_visible: false,
         };
         let area = Rect::new(0, 0, 80, 1);
         let mut buf = Buffer::empty(area);
@@ -288,5 +321,25 @@ mod tests {
         let spans = fit_groups(groups, 200);
         let text = rendered_text(&spans);
         assert!(!text.contains("watch"));
+    }
+
+    #[test]
+    fn shows_materialize_hint_when_graph_missing() {
+        let groups = footer_with_materialize(ActiveTab::Health, None, true);
+        let spans = fit_groups(groups, 200);
+        let text = rendered_text(&spans);
+        assert!(text.contains("[M]"), "missing [M] hint: {text:?}");
+        assert!(
+            text.contains("generate"),
+            "missing generate label: {text:?}"
+        );
+    }
+
+    #[test]
+    fn omits_materialize_hint_when_graph_present() {
+        let groups = footer_with_materialize(ActiveTab::Health, None, false);
+        let spans = fit_groups(groups, 200);
+        let text = rendered_text(&spans);
+        assert!(!text.contains("[M]"), "stray [M] hint: {text:?}");
     }
 }

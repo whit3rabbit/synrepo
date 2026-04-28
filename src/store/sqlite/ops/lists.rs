@@ -18,6 +18,18 @@ type SymbolForResolution = (
     String,
 );
 
+fn parse_graph_id<T>(value: &str, column: &str) -> crate::Result<T>
+where
+    T: std::str::FromStr,
+    T::Err: std::fmt::Display,
+{
+    value.parse::<T>().map_err(|error| {
+        crate::Error::Other(anyhow::anyhow!(
+            "invalid graph store {column} `{value}`: {error}"
+        ))
+    })
+}
+
 /// Get all file paths and their IDs, ordered by path.
 pub fn all_file_paths(store: &SqliteGraphStore) -> crate::Result<Vec<(String, FileNodeId)>> {
     let conn = store.conn.lock();
@@ -27,10 +39,9 @@ pub fn all_file_paths(store: &SqliteGraphStore) -> crate::Result<Vec<(String, Fi
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(rows
-        .into_iter()
-        .map(|(p, id)| (p, id.parse::<FileNodeId>().unwrap()))
-        .collect())
+    rows.into_iter()
+        .map(|(p, id)| Ok((p, parse_graph_id::<FileNodeId>(&id, "files.id")?)))
+        .collect()
 }
 
 /// Get all concept paths and their IDs, ordered by path.
@@ -42,10 +53,9 @@ pub fn all_concept_paths(store: &SqliteGraphStore) -> crate::Result<Vec<(String,
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })?
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(rows
-        .into_iter()
-        .map(|(p, id)| (p, id.parse::<ConceptNodeId>().unwrap()))
-        .collect())
+    rows.into_iter()
+        .map(|(p, id)| Ok((p, parse_graph_id::<ConceptNodeId>(&id, "concepts.id")?)))
+        .collect()
 }
 
 /// Get all active symbol IDs, their file IDs, and qualified names.
@@ -65,16 +75,15 @@ pub fn all_symbol_names(
             ))
         })?
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(rows
-        .into_iter()
+    rows.into_iter()
         .map(|(sym_id, file_id, name)| {
-            (
-                sym_id.parse::<SymbolNodeId>().unwrap(),
-                file_id.parse::<FileNodeId>().unwrap(),
+            Ok((
+                parse_graph_id::<SymbolNodeId>(&sym_id, "symbols.id")?,
+                parse_graph_id::<FileNodeId>(&file_id, "symbols.file_id")?,
                 name,
-            )
+            ))
         })
-        .collect())
+        .collect()
 }
 
 /// Get all active symbols with the fields stage-4 resolution needs
@@ -118,8 +127,8 @@ pub fn all_symbols_for_resolution(
             .map(|s| s.visibility)
             .unwrap_or_default();
         out.push((
-            sym_id.parse::<SymbolNodeId>().unwrap(),
-            file_id.parse::<FileNodeId>().unwrap(),
+            parse_graph_id::<SymbolNodeId>(&sym_id, "symbols.id")?,
+            parse_graph_id::<FileNodeId>(&file_id, "symbols.file_id")?,
             qname,
             kind,
             visibility,
@@ -147,16 +156,15 @@ pub fn all_symbols_summary(store: &SqliteGraphStore) -> crate::Result<Vec<Symbol
             ))
         })?
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(rows
-        .into_iter()
+    rows.into_iter()
         .map(|(sym_id, file_id, qname, kind, body_hash)| {
-            (
-                sym_id.parse::<SymbolNodeId>().unwrap(),
-                file_id.parse::<FileNodeId>().unwrap(),
+            Ok((
+                parse_graph_id::<SymbolNodeId>(&sym_id, "symbols.id")?,
+                parse_graph_id::<FileNodeId>(&file_id, "symbols.file_id")?,
                 qname,
                 kind,
                 body_hash,
-            )
+            ))
         })
-        .collect())
+        .collect()
 }

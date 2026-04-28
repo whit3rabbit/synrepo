@@ -11,7 +11,7 @@
 //!   (temp file + fsync + rename) so a crash never leaves it truncated.
 //!
 //! This module does not hold any long-lived state; [`record_event`] is
-//! invoked synchronously from [`super::telemetry::publish`] after every
+//! invoked synchronously from [`crate::pipeline::explain::telemetry::publish::publish`] after every
 //! event is fanned out.
 
 mod record;

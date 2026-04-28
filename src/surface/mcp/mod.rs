@@ -8,7 +8,6 @@
 //! `SynrepoState` is the shared read-only state held across all tool
 //! invocations. It is constructed by the binary-side MCP command and
 //! passed to every handler.
-#![allow(missing_docs)]
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -19,15 +18,25 @@ use crate::config::Config;
 use crate::structure::graph::snapshot;
 use crate::surface::card::compiler::GraphCardCompiler;
 
+#[doc(hidden)]
 pub mod audit;
+#[doc(hidden)]
 pub mod card_accounting;
+#[doc(hidden)]
 pub mod cards;
+#[doc(hidden)]
 pub mod context_pack;
+#[doc(hidden)]
 pub mod docs;
+#[doc(hidden)]
 pub mod edits;
+#[doc(hidden)]
 pub mod helpers;
+#[doc(hidden)]
 pub mod notes;
+#[doc(hidden)]
 pub mod primitives;
+#[doc(hidden)]
 pub mod search;
 
 mod findings;

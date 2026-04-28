@@ -20,9 +20,10 @@ use crate::pipeline::watch::WatchEvent;
 use crate::surface::readiness::ReadinessMatrix;
 use crate::tui::app::{poll_key, ActiveTab, AppState, DashboardExit};
 use crate::tui::explain_run::run_explain_in_dashboard;
+use crate::tui::materializer::MaterializeState;
 use crate::tui::probe::{
     build_activity_vm, build_header_vm, build_health_vm, build_next_actions, build_trust_vm,
-    display_repo_path, HealthRow, HealthVm,
+    display_repo_path, HealthRow, HealthVm, Severity,
 };
 use crate::tui::theme::Theme;
 use crate::tui::widgets::{
@@ -149,6 +150,7 @@ fn draw_dashboard(frame: &mut ratatui::Frame, state: &AppState) {
         }
         ActiveTab::Health => {
             let mut health_vm = build_health_vm(&state.snapshot);
+            override_graph_row_when_materializing(&mut health_vm, &state.materialize_state);
             append_readiness_rows(&mut health_vm, &state.repo_root, &state.snapshot);
             let health = HealthWidget {
                 vm: &health_vm,
@@ -192,8 +194,24 @@ fn draw_dashboard(frame: &mut ratatui::Frame, state: &AppState) {
         theme: &state.theme,
         toast: state.active_toast(),
         watch_toggle_label: state.watch_toggle_label(),
+        materialize_hint_visible: state.snapshot.graph_stats.is_none()
+            && state.snapshot.initialized,
     };
     frame.render_widget(footer, outer[3]);
+}
+
+/// Replace the "graph: not materialized" row label while a bootstrap thread
+/// is in flight so the operator sees "materializing... (Ns)" with elapsed
+/// time, matching the way the spinner reflects the watch reconcile.
+fn override_graph_row_when_materializing(vm: &mut HealthVm, state: &MaterializeState) {
+    let MaterializeState::Running { started_at } = state else {
+        return;
+    };
+    if let Some(row) = vm.rows.iter_mut().find(|r| r.label == "graph") {
+        let elapsed = started_at.elapsed().as_secs();
+        row.value = format!("materializing... ({elapsed}s)");
+        row.severity = Severity::Stale;
+    }
 }
 
 /// Append capability-readiness rows to the Health pane so the dashboard shows

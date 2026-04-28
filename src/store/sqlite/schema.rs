@@ -17,8 +17,6 @@ pub(super) fn init_schema(conn: &Connection) -> crate::Result<()> {
             data TEXT NOT NULL
         ) WITHOUT ROWID;
 
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_files_root_path ON files(root_id, path);
-
         CREATE TABLE IF NOT EXISTS symbols (
             id TEXT PRIMARY KEY,
             file_id TEXT NOT NULL,

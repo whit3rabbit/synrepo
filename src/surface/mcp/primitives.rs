@@ -37,7 +37,7 @@ fn default_direction() -> String {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct QueryParams {
     pub repo_root: Option<std::path::PathBuf>,
-    /// Query string: "outbound <node_id> [edge_kind]" or "inbound <node_id> [edge_kind]".
+    /// Query string: "outbound <node_id> \[edge_kind]" or "inbound <node_id> \[edge_kind]".
     pub query: String,
 }
 

@@ -1,6 +1,6 @@
 //! Repair wizard: guided recovery flow for partial repos.
 //!
-//! Walks the operator through the [`Missing`] list produced by the runtime
+//! Walks the operator through the [`crate::bootstrap::runtime_probe::Missing`] list produced by the runtime
 //! probe, exposing toggleable repair actions. Destructive actions (in
 //! particular `synrepo upgrade --apply`) default to *off* and require an
 //! explicit toggle; every action is visible in a confirm step before any

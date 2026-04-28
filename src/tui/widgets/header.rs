@@ -1,7 +1,7 @@
 //! Header widget: repo path, reconcile/watch/lock/MCP status row, and a
 //! hand-rolled braille spinner that animates while a reconcile pass is in
 //! flight. The spinner frame index lives on `AppState::frame`; the widget
-//! stays stateless and picks a glyph from [`SPINNER_FRAMES`] modulo the
+//! stays stateless and picks a glyph from `SPINNER_FRAMES` modulo the
 //! array length.
 
 use ratatui::buffer::Buffer;

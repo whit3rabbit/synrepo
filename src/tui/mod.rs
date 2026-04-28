@@ -37,6 +37,7 @@ pub mod actions;
 pub mod app;
 pub mod dashboard;
 mod explain_run;
+pub(crate) mod materializer;
 pub mod probe;
 pub mod theme;
 mod watcher;

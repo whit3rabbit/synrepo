@@ -15,8 +15,8 @@ use crate::store::{overlay::SqliteOverlayStore, sqlite::SqliteGraphStore};
 use crate::structure::graph::with_graph_read_snapshot;
 use crate::surface::status_snapshot::StatusSnapshot;
 use crate::tui::actions::{
-    outcome_to_log, reconcile_now, set_auto_sync, start_watch_daemon, stop_watch, sync_now,
-    ActionContext, ActionOutcome,
+    materialize_now, outcome_to_log, reconcile_now, set_auto_sync, start_watch_daemon, stop_watch,
+    sync_now, ActionContext, ActionOutcome,
 };
 use crate::tui::widgets::QuickAction;
 
@@ -168,6 +168,7 @@ impl AppState {
             KeyCode::Char('R') => self.handle_reconcile_now(),
             KeyCode::Char('S') => self.handle_sync_now(),
             KeyCode::Char('A') => self.handle_toggle_auto_sync(),
+            KeyCode::Char('M') => self.handle_materialize_now(),
             KeyCode::Char('w') => self.handle_watch_toggle(),
             KeyCode::Char('i') => {
                 self.launch_integration = true;
@@ -250,6 +251,14 @@ impl AppState {
         true
     }
 
+    fn handle_materialize_now(&mut self) -> bool {
+        let ctx = ActionContext::new(&self.repo_root);
+        let outcome = materialize_now(&ctx, &mut self.materializer);
+        self.set_toast(action_outcome_toast("materialize", &outcome));
+        self.log.push(outcome_to_log("materialize", &outcome));
+        true
+    }
+
     fn handle_sync_now(&mut self) -> bool {
         let ctx = ActionContext::new(&self.repo_root);
         let outcome = sync_now(&ctx);
@@ -319,6 +328,13 @@ pub(super) fn quick_actions_for(mode: &AppMode, snapshot: &StatusSnapshot) -> Ve
         label: "refresh snapshot".to_string(),
         disabled: false,
     }];
+    if snapshot.graph_stats.is_none() && snapshot.initialized {
+        actions.push(QuickAction {
+            key: "M".to_string(),
+            label: "generate graph".to_string(),
+            disabled: false,
+        });
+    }
     if let Some(watch_label) = watch_toggle_label_for(mode, snapshot) {
         actions.push(QuickAction {
             key: "w".to_string(),

@@ -2,7 +2,7 @@
 //! can show explain activity live and the accounting writer can record
 //! accurate per-repo usage totals.
 //!
-//! Providers call [`publish`] at three moments on every API round-trip:
+//! Providers call [`publish::publish`] at three moments on every API round-trip:
 //!
 //! 1. [`ExplainEvent::CallStarted`] before the HTTP request leaves the process.
 //! 2. [`ExplainEvent::CallCompleted`] after a successful response (with the
@@ -20,9 +20,9 @@
 //! event on full (bounded, 256) or disconnected receivers. Drops are counted
 //! and exposed for surface-layer diagnostics.
 //!
-//! Accounting is a side effect of [`publish`]: if the process-wide
+//! Accounting is a side effect of [`publish::publish`]: if the process-wide
 //! `.synrepo/` directory has been registered via [`set_synrepo_dir`], events
-//! are synchronously forwarded to [`accounting::record_event`]. That keeps
+//! are synchronously forwarded to [`crate::pipeline::explain::accounting::record_event`]. That keeps
 //! the JSONL + totals snapshot consistent with what the TUI observes,
 //! without needing a dedicated writer thread.
 

@@ -6,7 +6,7 @@
 //! ownership and writer-lock ownership are both enforced.
 //!
 //! Actions return a structured [`ActionOutcome`] the dashboard can surface in
-//! its bounded log pane. Callers lift the outcome into a [`LogEntry`] via
+//! its bounded log pane. Callers lift the outcome into a [`crate::tui::widgets::LogEntry`] via
 //! [`outcome_to_log`].
 
 use std::path::{Path, PathBuf};
@@ -15,6 +15,7 @@ use crate::config::Config;
 
 mod auto_sync;
 mod helpers;
+mod materialize;
 mod reconcile;
 mod sync;
 mod watch;
@@ -22,6 +23,7 @@ mod watch;
 pub use auto_sync::set_auto_sync;
 pub(crate) use helpers::now_rfc3339;
 pub use helpers::{outcome_to_log, writer_lock_hint};
+pub use materialize::materialize_now;
 pub use reconcile::reconcile_now;
 pub use sync::sync_now;
 pub use watch::{start_watch_daemon, stop_watch};

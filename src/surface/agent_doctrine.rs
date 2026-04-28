@@ -1,6 +1,6 @@
 //! Canonical agent doctrine for every synrepo-facing surface.
 //!
-//! The macros [`doctrine_block!`] and [`tool_desc_escalation_line!`] expand to
+//! The macros `doctrine_block!` and `tool_desc_escalation_line!` expand to
 //! string literals so they can be embedded by `concat!` at compile time in
 //! agent shims and MCP tool description attributes. The [`DOCTRINE_BLOCK`] and
 //! [`TOOL_DESC_ESCALATION_LINE`] constants expose the same text as `&'static
@@ -53,7 +53,7 @@ Graph-backed structural facts (files, symbols, edges) remain the authoritative s
 }
 
 /// One-sentence escalation default appended to card-returning MCP tool
-/// descriptions. Tied to [`doctrine_block!`] so the wording cannot drift per
+/// descriptions. Tied to `doctrine_block!` so the wording cannot drift per
 /// tool.
 #[macro_export]
 macro_rules! tool_desc_escalation_line {
