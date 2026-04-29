@@ -224,9 +224,12 @@ fn run_bootstrap(repo_root: &Path) -> MaterializeOutcome {
 }
 
 fn read_graph_stats(repo_root: &Path) -> anyhow::Result<(usize, usize)> {
+    use crate::structure::graph::with_graph_read_snapshot;
     let synrepo_dir = crate::config::Config::synrepo_dir(repo_root);
     let graph = SqliteGraphStore::open_existing(&synrepo_dir.join("graph"))?;
-    let stats = graph.persisted_stats()?;
+    // Why: persisted_stats issues several COUNT(*) queries; without a snapshot
+    // a writer commit between them could surface mixed epochs (invariant 8).
+    let stats = with_graph_read_snapshot(&graph, |_| graph.persisted_stats())?;
     Ok((stats.file_nodes, stats.symbol_nodes))
 }
 

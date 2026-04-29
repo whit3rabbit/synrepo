@@ -90,6 +90,7 @@ pub(super) fn from_uninstall_kinds(actions: Vec<UninstallActionKind>) -> Vec<Rem
                 RemoveAction::RemoveGitignoreLine { entry }
             }
             UninstallActionKind::DeleteSynrepoDir => RemoveAction::DeleteSynrepoDir,
+            other => panic!("unsupported action returned to synrepo remove: {other:?}"),
         })
         .collect()
 }

@@ -168,9 +168,28 @@ pub fn execute_sync_locked(
         }
     }
 
-    if let Ok(count) = resolve_pending_promotions(synrepo_dir) {
-        if count > 0 {
-            actions_taken.push(format!("resolved {count} stuck pending_promotion row(s)"));
+    // Why: resolve_pending_promotions touches the overlay; a silent Err here
+    // would hide overlay corruption and leave stuck rows invisible to the
+    // operator. Surface failure as a Blocked finding so `synrepo status` shows
+    // it on the next run.
+    match resolve_pending_promotions(synrepo_dir) {
+        Ok(count) => {
+            if count > 0 {
+                actions_taken.push(format!("resolved {count} stuck pending_promotion row(s)"));
+            }
+        }
+        Err(err) => {
+            actions_taken.push(format!("resolve_pending_promotions failed: {err}"));
+            blocked.push(RepairFinding {
+                surface: RepairSurface::ProposedLinksOverlay,
+                drift_class: DriftClass::Blocked,
+                severity: Severity::Blocked,
+                target_id: None,
+                recommended_action: RepairAction::ManualReview,
+                notes: Some(format!(
+                    "Could not resolve stuck pending_promotion rows: {err}"
+                )),
+            });
         }
     }
 
@@ -302,9 +321,12 @@ pub fn resolve_pending_promotions(synrepo_dir: &Path) -> crate::Result<usize> {
         };
 
         let edge_id = derive_edge_id(from, to, edge_kind);
+        // Why: previously `unwrap_or_default()` silently treated graph read
+        // failures as "no edge exists", which would route the candidate to
+        // reset_candidate_to_active even when the truth was unknown.
+        // Propagate so the caller can surface a Blocked finding.
         let edge_exists = graph
-            .outbound(from, Some(edge_kind))
-            .unwrap_or_default()
+            .outbound(from, Some(edge_kind))?
             .iter()
             .any(|e| e.to == to);
 

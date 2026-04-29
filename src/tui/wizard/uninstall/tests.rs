@@ -51,6 +51,36 @@ mod tests {
     }
 
     #[test]
+    fn guided_data_rows_start_unchecked() {
+        let actions = vec![
+            UninstallActionKind::DeleteProjectSynrepoDir {
+                project: PathBuf::from("/repo"),
+                path: PathBuf::from("/repo/.synrepo"),
+            },
+            UninstallActionKind::RemoveExportDir {
+                project: PathBuf::from("/repo"),
+                path: PathBuf::from("/repo/synrepo-context"),
+            },
+            UninstallActionKind::DeleteGlobalSynrepoDir {
+                path: PathBuf::from("/home/user/.synrepo"),
+            },
+        ];
+        let s = UninstallWizardState::new(&actions, &[]);
+        assert!(s.rows.iter().all(|row| row.destructive));
+        assert!(s.rows.iter().all(|row| !row.enabled));
+    }
+
+    #[test]
+    fn safe_binary_delete_row_starts_checked_but_destructive() {
+        let actions = vec![UninstallActionKind::DeleteBinary {
+            path: PathBuf::from("/home/user/.local/bin/synrepo"),
+        }];
+        let s = UninstallWizardState::new(&actions, &[]);
+        assert!(s.rows[0].destructive);
+        assert!(s.rows[0].enabled);
+    }
+
+    #[test]
     fn labels_are_rendered_for_each_action() {
         let s = UninstallWizardState::new(&seed_actions(), &[]);
         assert!(s.rows[0].label.contains("claude"));

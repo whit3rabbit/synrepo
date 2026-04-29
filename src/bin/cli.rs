@@ -17,8 +17,8 @@ use syntext::SearchOptions;
 use tracing_subscriber::EnvFilter;
 
 use cli_support::cli_args::{
-    BenchCommand, Cli, Command, GraphCommand, LinksCommand, NotesCommand, ProjectCommand,
-    StatsCommand, WatchCommand,
+    AgentSetupArgs, BenchCommand, Cli, Command, GraphCommand, LinksCommand, NotesCommand,
+    ProjectCommand, SetupArgs, StatsCommand, UninstallArgs, WatchCommand,
 };
 #[cfg(test)]
 use cli_support::commands::prepare_mcp_state;
@@ -31,7 +31,7 @@ use cli_support::commands::{
     notes_forget, notes_link, notes_list, notes_supersede, notes_verify, project_add,
     project_inspect, project_list, project_remove, reconcile, remove, resolve_tool_resolution,
     risks_alias, run_mcp_server, search, server, setup_many_resolved, stats_context, status, sync,
-    tests_alias, upgrade, watch, watch_internal, watch_status, watch_stop, StatFormat,
+    tests_alias, uninstall, upgrade, watch, watch_internal, watch_status, watch_stop, StatFormat,
 };
 // Re-exported for `cli_support::tests::agent_setup` via `crate::agent_setup`.
 // cli.rs dispatches through `agent_setup_many` but the test binary compiles
@@ -83,17 +83,17 @@ fn dispatch(
             project_inspect(repo_root, path, json)
         }
         Command::Project(ProjectCommand::Remove { path }) => project_remove(repo_root, path),
-        Command::AgentSetup {
+        Command::AgentSetup(AgentSetupArgs {
             tool,
             only,
             skip,
             force,
             regen,
-        } => {
+        }) => {
             let resolution = resolve_tool_resolution(tool, &only, &skip)?;
             agent_setup_many_resolved(repo_root, &resolution, force, regen)
         }
-        Command::Setup {
+        Command::Setup(SetupArgs {
             tool,
             only,
             skip,
@@ -102,7 +102,7 @@ fn dispatch(
             gitignore,
             project,
             global,
-        } => {
+        }) => {
             if global {
                 eprintln!("warning: `synrepo setup --global` is deprecated; global setup is now the default");
             }
@@ -384,6 +384,13 @@ fn dispatch(
             keep_synrepo_dir,
             force,
         } => remove(repo_root, tool, apply, json, keep_synrepo_dir, force),
+        Command::Uninstall(UninstallArgs {
+            apply,
+            json,
+            force,
+            delete_data,
+            keep_binary,
+        }) => uninstall(repo_root, apply, json, force, delete_data, keep_binary),
     }
 }
 

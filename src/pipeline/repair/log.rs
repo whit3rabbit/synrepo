@@ -78,8 +78,13 @@ pub fn append_resolution_log(synrepo_dir: &Path, entry: &ResolutionLogEntry) {
             mark_repair_log_degraded(synrepo_dir, &format!("open failed: {e}"));
         }
         Ok(mut f) => {
-            if let Err(e) = writeln!(f, "{line}") {
-                tracing::warn!(path = ?log_path, error = %e, "failed to write repair log entry");
+            // Why: writeln + sync_data, treated as one unit. A crash between
+            // write and fsync would silently lose the entry without setting
+            // the degraded marker. The sync_data failure path also marks
+            // degraded so operators see "write succeeded but flush failed".
+            let write_result = writeln!(f, "{line}").and_then(|()| f.sync_data());
+            if let Err(e) = write_result {
+                tracing::warn!(path = ?log_path, error = %e, "failed to write/flush repair log entry");
                 mark_repair_log_degraded(synrepo_dir, &format!("write failed: {e}"));
             } else {
                 clear_repair_log_degraded(synrepo_dir);

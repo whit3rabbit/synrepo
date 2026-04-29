@@ -5,9 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::agent_install::{
-    skill_manifest_path, SYNREPO_INSTALL_NAME, SYNREPO_INSTALL_OWNER,
-};
+use crate::agent_install::{skill_manifest_path, SYNREPO_INSTALL_NAME, SYNREPO_INSTALL_OWNER};
 
 use super::types::{AgentIntegration, AgentTargetKind};
 

@@ -30,6 +30,10 @@ The default agent loop is explicit: orient, find bounded cards, inspect impact, 
 
 The install scripts verify downloads against the release `SHA256SUMS` before installing. On macOS they use Homebrew when `brew` is on `PATH` unless `SYNREPO_SKIP_BREW=1` is set. Otherwise the shell script installs to `~/.local/bin`, and the PowerShell script installs to `%LOCALAPPDATA%\synrepo\`.
 
+### Uninstall
+
+Run `synrepo uninstall` for the guided teardown. It removes synrepo-owned agent skills or instructions, MCP entries, Git hooks, and install registry rows first. Project `.synrepo/` directories and `~/.synrepo` database/cache files are kept by default; pass `--delete-data` after reviewing the dry run to include them. Direct binaries installed by the script can be deleted at the end when the path is safe, while Homebrew and Cargo installs print the exact uninstall command.
+
 ### First Run
 
 In your repository root:
@@ -56,6 +60,7 @@ synrepo
 - `synrepo watch --daemon`: keep the local repo model fresh as files change. Cheap repair surfaces (export regeneration, retired-observation compaction) auto-run after each drift-producing reconcile when `auto_sync_enabled = true` (the default in `.synrepo/config.toml`).
 - `synrepo status`: verify health, freshness, and whether anything needs attention.
 - `synrepo mcp`: serve read-only repo intelligence to the agent over stdio. See [docs/MCP.md](docs/MCP.md) for tool groups, resources, and edit-gated behavior.
+- `synrepo uninstall`: guided teardown for agent integrations, hooks, project data, global state, and binary removal.
 - The dashboard Explain tab refreshes advisory commentary when you want machine-authored summaries for missing or stale areas.
 
 ## Daily Workflow

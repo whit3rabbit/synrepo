@@ -66,56 +66,10 @@ pub(crate) enum Command {
     Project(ProjectCommand),
 
     /// Generate the agent's skill or instructions file for the specified agent CLI.
-    AgentSetup {
-        /// Target agent CLI. Omit when using `--only` or `--skip`.
-        #[arg(conflicts_with_all = ["only", "skip"])]
-        tool: Option<AgentTool>,
-        /// Comma-separated list of targets to set up. Mutually exclusive
-        /// with the positional `tool` argument and with `--skip`.
-        #[arg(long, value_delimiter = ',', conflicts_with = "skip")]
-        only: Vec<AgentTool>,
-        /// Apply to every known target except these. Comma-separated.
-        /// Mutually exclusive with the positional `tool` argument and with `--only`.
-        #[arg(long, value_delimiter = ',', conflicts_with = "only")]
-        skip: Vec<AgentTool>,
-        /// Overwrite an existing skill or instructions file if one already exists.
-        #[arg(long)]
-        force: bool,
-        /// Compare existing file against the current template; overwrite if different.
-        #[arg(long)]
-        regen: bool,
-    },
+    AgentSetup(AgentSetupArgs),
 
     /// Set up synrepo for this repo and wire an agent.
-    Setup {
-        /// Target client to set up. Omit to launch the interactive wizard,
-        /// or pair with `--only`/`--skip` for multi-client setup.
-        #[arg(conflicts_with_all = ["only", "skip"])]
-        tool: Option<AgentTool>,
-        /// Comma-separated list of targets to set up in one pass. Mutually
-        /// exclusive with the positional `tool` argument and with `--skip`.
-        #[arg(long, value_delimiter = ',', conflicts_with = "skip")]
-        only: Vec<AgentTool>,
-        /// Apply setup to every known target except these. Comma-separated.
-        /// Mutually exclusive with the positional `tool` argument and `--only`.
-        #[arg(long, value_delimiter = ',', conflicts_with = "only")]
-        skip: Vec<AgentTool>,
-        /// Force re-initialization and overwrite existing configs.
-        #[arg(long)]
-        force: bool,
-        /// After normal setup, launch the explain sub-wizard and patch config.
-        #[arg(long)]
-        explain: bool,
-        /// Add .synrepo/ to the root .gitignore file.
-        #[arg(long)]
-        gitignore: bool,
-        /// Configure the MCP server in this project instead of user-global config.
-        #[arg(long, conflicts_with = "global")]
-        project: bool,
-        /// Deprecated no-op: global setup is now the default.
-        #[arg(long, hide = true, conflicts_with = "project")]
-        global: bool,
-    },
+    Setup(SetupArgs),
 
     /// Run a structural compile pass against the current repository state.
     Reconcile {
@@ -398,4 +352,7 @@ pub(crate) enum Command {
         #[arg(long)]
         force: bool,
     },
+
+    /// Guided full uninstall across projects, integrations, data, and binary.
+    Uninstall(UninstallArgs),
 }

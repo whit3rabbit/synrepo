@@ -289,16 +289,43 @@ pub fn prune_dead_edges(
         return Ok(());
     }
 
-    let mut pruned = 0;
+    let mut pruned = 0usize;
+    let mut failed = 0usize;
+    let mut last_err: Option<crate::Error> = None;
     for (edge_id, _) in &dead {
-        if graph.delete_edge(*edge_id).is_ok() {
-            pruned += 1;
+        match graph.delete_edge(*edge_id) {
+            Ok(()) => pruned += 1,
+            Err(err) => {
+                tracing::warn!(edge_id = %edge_id, error = %err, "delete_edge failed during prune_dead_edges");
+                failed += 1;
+                last_err = Some(err);
+            }
         }
     }
 
-    actions_taken.push(format!("pruned {pruned} dead edges (drift 1.0)"));
-    repaired.push(finding.clone());
-    Ok(())
+    let total = dead.len();
+    if failed == 0 {
+        actions_taken.push(format!("pruned {pruned} dead edges (drift 1.0)"));
+        repaired.push(finding.clone());
+        Ok(())
+    } else if pruned > 0 {
+        // Why: partial success — operator needs to see the failed count, but
+        // returning Err would lose the partial-progress signal. Push a noisy
+        // action message and still mark repaired so the caller proceeds.
+        actions_taken.push(format!(
+            "pruned {pruned}/{total} dead edges (drift 1.0); {failed} failure(s)"
+        ));
+        repaired.push(finding.clone());
+        Ok(())
+    } else {
+        // All deletes failed — surface the last error so the caller can route
+        // this as a Blocked finding.
+        Err(last_err.unwrap_or_else(|| {
+            crate::Error::Other(anyhow::anyhow!(
+                "prune_dead_edges: all {total} delete_edge calls failed"
+            ))
+        }))
+    }
 }
 
 /// Record a reconcile attempt and persist state.
@@ -331,11 +358,18 @@ pub fn record_reconcile_attempt(
 
     let outcome = match run_structural_compile(repo_root, config, &mut graph) {
         Ok(summary) => {
+            // Why: the co-change and symbol-revision passes are derived/
+            // advisory layers. A failure here leaves a partial graph but does
+            // not invalidate the structural reconcile, so we keep the outcome
+            // Completed and surface the failure via actions_taken so operators
+            // see partial-success in `synrepo status`.
             if let Err(err) = emit_cochange_edges_pass(repo_root, config, &mut graph) {
                 tracing::warn!(error = %err, "co-change edge emission failed; continuing");
+                actions_taken.push(format!("co-change edge emission failed: {err}"));
             }
             if let Err(err) = emit_symbol_revisions_pass(repo_root, config, &mut graph) {
                 tracing::warn!(error = %err, "symbol revision derivation failed; continuing");
+                actions_taken.push(format!("symbol revision derivation failed: {err}"));
             }
             if let Err(err) = finish_runtime_surfaces(
                 repo_root,

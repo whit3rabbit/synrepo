@@ -73,6 +73,7 @@ cargo run -- watch stop            # stop active watch service or clean stale wa
 cargo run -- agent-setup <tool>    # write integration shim; automated tier (writes shim + MCP config): claude, codex, open-code, cursor, windsurf, roo; shim-only tier (writes shim only): copilot, generic, gemini, goose, kiro, qwen, junie, tabnine, trae; --regen to update if stale
 cargo run -- setup                 # full onboarding: interactive TUI wizard (mode + agent target + explain)
 cargo run -- setup <tool>          # full onboarding: scripted (init + shim + MCP register + first reconcile); --explain appends the explain sub-wizard
+cargo run -- uninstall [--apply --force]  # guided full teardown; keeps .synrepo/ and ~/.synrepo data unless --delete-data is selected
 cargo run -- search <query>        # lexical search
 cargo run -- graph query "outbound <node_id> [edge_kind]"  # graph traversal
 cargo run -- graph stats           # node/edge counts

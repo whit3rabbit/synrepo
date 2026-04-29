@@ -25,17 +25,21 @@ pub fn write_drift_scores(
     edge_scores: &[(EdgeId, f32)],
     revision: &str,
 ) -> crate::Result<()> {
-    let conn = store.conn.lock();
-    conn.execute_batch("BEGIN")?;
+    // Why: rusqlite Transaction RAII rolls back on drop. The previous manual
+    // BEGIN/COMMIT via execute_batch leaked an open transaction on the
+    // connection if any per-row insert failed via `?`, breaking the next
+    // caller that locked the same connection.
+    let mut conn = store.conn.lock();
+    let tx = conn.transaction()?;
     for (edge_id, score) in edge_scores {
-        conn.execute(
+        tx.execute(
             "INSERT INTO edge_drift (edge_id, revision, drift_score)
              VALUES (?1, ?2, ?3)
              ON CONFLICT(edge_id, revision) DO UPDATE SET drift_score = excluded.drift_score",
             params![edge_id.to_string(), revision, score],
         )?;
     }
-    conn.execute_batch("COMMIT")?;
+    tx.commit()?;
     Ok(())
 }
 
@@ -53,10 +57,16 @@ pub fn read_drift_scores(
             Ok((row.get::<_, String>(0)?, row.get::<_, f32>(1)?))
         })?
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(rows
-        .into_iter()
-        .map(|(id, score)| (id.parse::<EdgeId>().unwrap(), score))
-        .collect())
+    let mut out = Vec::with_capacity(rows.len());
+    for (id, score) in rows {
+        let edge_id = id.parse::<EdgeId>().map_err(|e| {
+            crate::Error::Other(anyhow::anyhow!(
+                "invalid edge_id in edge_drift row {id:?}: {e}"
+            ))
+        })?;
+        out.push((edge_id, score));
+    }
+    Ok(out)
 }
 
 /// Delete drift scores older than the given revision.
@@ -96,18 +106,19 @@ pub fn write_fingerprints(
     fingerprints: &[(FileNodeId, StructuralFingerprint)],
     revision: &str,
 ) -> crate::Result<()> {
-    let conn = store.conn.lock();
-    conn.execute_batch("BEGIN")?;
+    // Why: see write_drift_scores; same transaction-leak hazard.
+    let mut conn = store.conn.lock();
+    let tx = conn.transaction()?;
     for (file_id, fp) in fingerprints {
         let data = serde_json::to_string(fp).map_err(|e| anyhow::anyhow!(e))?;
-        conn.execute(
+        tx.execute(
             "INSERT INTO file_fingerprints (file_node_id, revision, fingerprint)
              VALUES (?1, ?2, ?3)
              ON CONFLICT(file_node_id, revision) DO UPDATE SET fingerprint = excluded.fingerprint",
             params![file_id.to_string(), revision, data],
         )?;
     }
-    conn.execute_batch("COMMIT")?;
+    tx.commit()?;
     Ok(())
 }
 
@@ -129,7 +140,12 @@ pub fn read_fingerprints(
     for (id, data) in rows {
         let fp: StructuralFingerprint =
             serde_json::from_str(&data).map_err(|e| anyhow::anyhow!(e))?;
-        map.insert(id.parse::<FileNodeId>().unwrap(), fp);
+        let file_id = id.parse::<FileNodeId>().map_err(|e| {
+            crate::Error::Other(anyhow::anyhow!(
+                "invalid file_node_id in file_fingerprints row {id:?}: {e}"
+            ))
+        })?;
+        map.insert(file_id, fp);
     }
     Ok(map)
 }

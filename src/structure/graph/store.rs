@@ -367,10 +367,12 @@ pub struct CompactionSummary {
 /// and surfacing an end-failure would mask the caller's original error.
 struct SnapshotGuard<'a>(&'a dyn GraphStore);
 
-impl<'a> Drop for SnapshotGuard<'a> {
+impl Drop for SnapshotGuard<'_> {
     fn drop(&mut self) {
         if let Err(err) = self.0.end_read_snapshot() {
-            tracing::debug!(error = %err, "end_read_snapshot failed; ignoring");
+            // Why: warn level so a stuck COMMIT (busy_timeout exhaustion)
+            // is visible in default log output, not buried at debug.
+            tracing::warn!(error = %err, "graph end_read_snapshot failed; ignoring");
         }
     }
 }

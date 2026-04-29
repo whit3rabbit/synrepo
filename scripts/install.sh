@@ -93,6 +93,35 @@ ensure_path_on_shell_rc() {
     printf '    Run: source "%s"  (or restart your shell)\n' "${_rc}"
 }
 
+toml_escape() {
+    printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+record_binary_install() {
+    _binary_path="$1"
+    _method="$2"
+    _registry_dir="${HOME}/.synrepo"
+    _registry="${_registry_dir}/projects.toml"
+    _tmp="${_registry}.tmp.$$"
+    mkdir -p "${_registry_dir}"
+    if [ -f "${_registry}" ]; then
+        awk '
+            /^\[binary\]$/ { skip = 1; next }
+            /^\[/ { skip = 0 }
+            skip != 1 { print }
+        ' "${_registry}" > "${_tmp}"
+    else
+        : > "${_tmp}"
+    fi
+    {
+        printf '\n[binary]\n'
+        printf 'path = "%s"\n' "$(toml_escape "${_binary_path}")"
+        printf 'install_method = "%s"\n' "$(toml_escape "${_method}")"
+        printf 'installed_at = "%s"\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+    } >> "${_tmp}"
+    mv "${_tmp}" "${_registry}"
+}
+
 main() {
     trap cleanup EXIT INT TERM
 
@@ -136,6 +165,8 @@ EOF
         brew install --cask "${BREW_TARGET}" || true
         if brew list --cask synrepo >/dev/null 2>&1; then
             info "Installed synrepo via Homebrew."
+            _BREW_BIN="$(command -v synrepo 2>/dev/null || printf 'synrepo')"
+            record_binary_install "${_BREW_BIN}" "homebrew"
             printf '    Upgrade later: brew upgrade --cask %s\n' "${BREW_TARGET}"
             synrepo --version 2>/dev/null || true
             exit 0
@@ -187,6 +218,7 @@ EOF
     cp "${_TMPDIR}/synrepo" "${_DEST_DIR}/synrepo"
     chmod 755 "${_DEST_DIR}/synrepo"
     info "Installed synrepo ${_VERSION} to ${_DEST_DIR}/synrepo"
+    record_binary_install "${_DEST_DIR}/synrepo" "direct"
 
     # --- PATH handling ---
     case ":${PATH}:" in

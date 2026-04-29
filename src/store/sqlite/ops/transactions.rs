@@ -46,6 +46,12 @@ pub fn end_read_snapshot(store: &SqliteGraphStore) -> crate::Result<()> {
         let conn = store.conn.lock();
         match conn.execute_batch("COMMIT") {
             Ok(()) => Ok(()),
+            // Why: SQLite returns the generic SQLITE_ERROR code for "COMMIT
+            // outside a transaction", so the error code alone cannot
+            // distinguish this case. The string match is intentional. If
+            // SQLite changes the message phrasing, this swallow stops working
+            // and a legitimate error surfaces — a fail-loud regression that
+            // we would catch at test time.
             Err(err) if err.to_string().contains("no transaction") => Ok(()),
             Err(err) => Err(err.into()),
         }

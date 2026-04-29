@@ -85,6 +85,43 @@ function Add-ToUserPath {
     Write-Info "Added $Dir to user PATH. Open a new shell for other processes to pick it up."
 }
 
+function ConvertTo-TomlString {
+    param([string]$Value)
+    return $Value.Replace('\', '\\').Replace('"', '\"')
+}
+
+function Write-BinaryInstallRecord {
+    param(
+        [string]$Path,
+        [string]$Method
+    )
+
+    $registryDir = Join-Path $env:USERPROFILE '.synrepo'
+    $registry    = Join-Path $registryDir 'projects.toml'
+    New-Item -ItemType Directory -Force -Path $registryDir | Out-Null
+
+    $kept = @()
+    if (Test-Path -LiteralPath $registry) {
+        $skip = $false
+        foreach ($line in Get-Content -LiteralPath $registry) {
+            if ($line -eq '[binary]') {
+                $skip = $true
+                continue
+            }
+            if ($line.StartsWith('[')) { $skip = $false }
+            if (-not $skip) { $kept += $line }
+        }
+    }
+
+    $stamp = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+    $kept += ''
+    $kept += '[binary]'
+    $kept += "path = `"$(ConvertTo-TomlString -Value $Path)`""
+    $kept += "install_method = `"$(ConvertTo-TomlString -Value $Method)`""
+    $kept += "installed_at = `"$stamp`""
+    Set-Content -LiteralPath $registry -Value $kept -Encoding UTF8
+}
+
 $ver = Resolve-Version -Requested $Version
 
 if (-not $InstallDir) {
@@ -122,6 +159,7 @@ try {
     $dest = Join-Path $InstallDir $Binary
     Move-Item -LiteralPath $assetPath -Destination $dest -Force
     Write-Info "Installed synrepo $ver to $dest"
+    Write-BinaryInstallRecord -Path $dest -Method 'windows-direct'
 
     if (-not $SkipPathUpdate) {
         Add-ToUserPath -Dir $InstallDir

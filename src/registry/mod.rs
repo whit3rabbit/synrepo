@@ -13,13 +13,19 @@ use serde::{Deserialize, Serialize};
 use crate::config::home_dir;
 use crate::pipeline::writer::now_rfc3339;
 
+mod install_records;
 pub mod io;
+
+pub use install_records::{
+    record_binary, record_binary_uninstall, record_hooks, record_hooks_uninstall,
+    record_uninstall_progress,
+};
 
 #[cfg(test)]
 mod tests;
 
 /// Current schema version. Bump on any breaking change to the on-disk shape.
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 
 /// Root document of `~/.synrepo/projects.toml`.
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -30,6 +36,10 @@ pub struct Registry {
     /// One entry per project this user has initialized.
     #[serde(default, rename = "project")]
     pub projects: Vec<ProjectEntry>,
+    /// Best-effort record for the installed synrepo binary. Older install
+    /// methods may omit this; uninstall falls back to path inference.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub binary: Option<BinaryEntry>,
 }
 
 /// One project's install record.
@@ -55,6 +65,9 @@ pub struct ProjectEntry {
     /// Per-agent install records (one per successful `setup` / `agent-setup`).
     #[serde(default, rename = "agents")]
     pub agents: Vec<AgentEntry>,
+    /// Per-project Git hooks installed by `synrepo install-hooks`.
+    #[serde(default, rename = "hooks")]
+    pub hooks: Vec<HookEntry>,
 }
 
 /// One per-agent install record inside a [`ProjectEntry`].
@@ -81,6 +94,31 @@ pub struct AgentEntry {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mcp_backup_path: Option<String>,
     /// ISO 8601 UTC timestamp of the latest install for this tool.
+    pub installed_at: String,
+}
+
+/// One Git hook installed or modified by synrepo.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct HookEntry {
+    /// Hook name, for example "post-commit".
+    pub name: String,
+    /// Hook path. Project-local paths are stored relative to the project root
+    /// when possible; linked worktree hook dirs may be absolute.
+    pub path: String,
+    /// Installation mode: "full_file", "marked_block", or "legacy".
+    pub mode: String,
+    /// ISO 8601 UTC timestamp of the latest install for this hook.
+    pub installed_at: String,
+}
+
+/// Best-effort binary install record.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct BinaryEntry {
+    /// Absolute path to the binary that was installed.
+    pub path: PathBuf,
+    /// Install method, for example "direct", "homebrew", "cargo", or "windows-direct".
+    pub install_method: String,
+    /// ISO 8601 UTC timestamp of the install.
     pub installed_at: String,
 }
 
@@ -163,6 +201,7 @@ pub fn record_project(project: &Path) -> anyhow::Result<ProjectEntry> {
         root_gitignore_entry_added: false,
         export_gitignore_entry_added: false,
         agents: Vec::new(),
+        hooks: Vec::new(),
     };
     registry.projects.push(entry.clone());
     io::save_to(&path, &registry)?;
@@ -194,6 +233,7 @@ pub fn record_install(project: &Path, root_gitignore_added: bool) -> anyhow::Res
                 root_gitignore_entry_added: root_gitignore_added,
                 export_gitignore_entry_added: false,
                 agents: Vec::new(),
+                hooks: Vec::new(),
             });
         }
     }
@@ -221,6 +261,7 @@ pub fn record_agent(project: &Path, agent: AgentEntry) -> anyhow::Result<()> {
                 root_gitignore_entry_added: false,
                 export_gitignore_entry_added: false,
                 agents: Vec::new(),
+                hooks: Vec::new(),
             });
             registry
                 .projects

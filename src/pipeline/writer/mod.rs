@@ -200,9 +200,19 @@ pub fn acquire_writer_lock(synrepo_dir: &Path) -> Result<WriterLock, LockError> 
         // Another fd holds the kernel flock. Read ownership JSON for a useful
         // error message; retry briefly to ride out the window between a
         // winner's flock acquire and its ownership write.
-        let pid = read_ownership_with_retry(&lock_path)
-            .map(|o| o.pid)
-            .unwrap_or(0);
+        // Why: distinguish NotFound (transient race; pid 0 is a fine signal)
+        // from Malformed (real corruption that operators must see, not
+        // silently downgrade to "held by pid 0").
+        let pid = match read_ownership_with_retry(&lock_path) {
+            Ok(o) => o.pid,
+            Err(WriterOwnershipError::NotFound) => 0,
+            Err(WriterOwnershipError::Malformed(detail)) => {
+                return Err(LockError::Malformed {
+                    lock_path: lock_path.clone(),
+                    detail,
+                });
+            }
+        };
         // Our own pid here means a different thread in this process holds the
         // flock on a non-registered fd (test shim or invariant violation);
         // same-thread re-entry would have been served by try_reenter above.
@@ -224,7 +234,14 @@ pub fn acquire_writer_lock(synrepo_dir: &Path) -> Result<WriterLock, LockError> 
         pid: std::process::id(),
         acquired_at: now_rfc3339(),
     };
-    let json = serde_json::to_string(&ownership).expect("WriterOwnership serializes without error");
+    // Why: serialize is statically infallible for WriterOwnership today (two
+    // primitive fields), but a future field addition could regress that with
+    // the kernel flock already held — propagate as I/O error rather than panic
+    // and orphan the lock.
+    let json = serde_json::to_string(&ownership).map_err(|e| LockError::Io {
+        path: lock_path.clone(),
+        source: std::io::Error::other(format!("serialize WriterOwnership failed: {e}")),
+    })?;
     write_lock_metadata(&lock_path, &json)?;
 
     insert_initial_lock(&lock_path, file, ownership.clone())?;

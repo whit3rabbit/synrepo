@@ -12,6 +12,7 @@ mod docs;
 mod doctor;
 mod export;
 mod handoffs;
+mod hooks;
 mod links;
 pub(crate) mod mcp;
 mod mcp_runtime;
@@ -24,12 +25,13 @@ mod setup;
 mod setup_explain;
 mod setup_mcp_backup;
 mod status;
+mod uninstall;
 mod upgrade;
 mod watch;
 
 #[cfg(test)]
 pub(crate) use basic::change_risk_output;
-pub(crate) use basic::{agent_setup, change_risk, init, install_hooks};
+pub(crate) use basic::{agent_setup, change_risk, init};
 pub(crate) use ci_run::ci_run;
 #[cfg(test)]
 pub(crate) use ci_run::{ci_run_output, CiRunOptions};
@@ -46,6 +48,7 @@ pub(crate) use docs::{
 pub(crate) use doctor::doctor;
 pub(crate) use export::export;
 pub(crate) use handoffs::handoffs;
+pub(crate) use hooks::install_hooks;
 pub(crate) use links::{findings, links_accept, links_list, links_reject, links_review};
 #[cfg(test)]
 pub(crate) use links::{
@@ -82,6 +85,7 @@ pub(crate) use setup::{
 pub(crate) use setup_explain::step_apply_explain;
 pub(crate) use setup_mcp_backup::{mcp_config_has_synrepo, step_backup_mcp_config};
 pub(crate) use status::{status, status_output};
+pub(crate) use uninstall::uninstall;
 #[cfg(test)]
 pub(crate) use upgrade::report_reconcile_outcome;
 pub(crate) use upgrade::upgrade;

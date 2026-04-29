@@ -304,3 +304,21 @@ synrepo SHALL delegate MCP server registration, agent skill placement, and agent
 - **THEN** the upgrade reports the divergence and exits non-zero unless the operator passes a confirmation flag
 - **AND** no file is mutated without the confirmation
 
+### Requirement: Guide full product uninstall
+`synrepo uninstall` SHALL provide a guided full-product teardown distinct from repo-local `synrepo remove`. The flow SHALL plan synrepo-owned agent skills or instructions, MCP entries, Git hooks, project `.synrepo/` directories, generated export output, `~/.synrepo`, and binary removal or package-manager follow-up. Database/cache data rows SHALL be kept by default unless the operator selects them in the TTY wizard or passes `--delete-data` in a non-interactive run.
+
+#### Scenario: Dry-run keeps data by default
+- **WHEN** the user runs `synrepo uninstall --json`
+- **THEN** the plan includes project `.synrepo/` and `~/.synrepo` rows when present
+- **AND** those rows are marked disabled by default
+- **AND** agent/MCP/hook rows are marked enabled when they are synrepo-owned
+
+#### Scenario: Full data teardown is explicit
+- **WHEN** the user runs `synrepo uninstall --apply --force --delete-data`
+- **THEN** project `.synrepo/` directories and generated export directories are selected
+- **AND** root `.gitignore` cleanup for `.synrepo/` or export output runs only after the corresponding generated directory deletion succeeds
+
+#### Scenario: Binary removal is last and guarded
+- **WHEN** the current executable is a direct install path outside the repository build output
+- **THEN** `synrepo uninstall` plans direct binary deletion after project and global cleanup
+- **AND** Homebrew or Cargo-managed binaries are reported as manual follow-up commands instead of being deleted directly

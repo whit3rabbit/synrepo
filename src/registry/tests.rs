@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use tempfile::tempdir;
 
-use super::{io, AgentEntry, ProjectEntry, Registry, SCHEMA_VERSION};
+use super::{io, AgentEntry, HookEntry, ProjectEntry, Registry, SCHEMA_VERSION};
 
 fn sample_project(path: &Path) -> ProjectEntry {
     ProjectEntry {
@@ -23,6 +23,7 @@ fn sample_project(path: &Path) -> ProjectEntry {
             mcp_backup_path: Some(".mcp.json.bak".to_string()),
             installed_at: "2026-04-19T00:00:05Z".to_string(),
         }],
+        hooks: Vec::new(),
     }
 }
 
@@ -131,6 +132,7 @@ fn agent_entry_omits_optional_fields_when_none() {
             mcp_backup_path: None,
             installed_at: "2026-04-19T00:00:00Z".to_string(),
         }],
+        hooks: Vec::new(),
     });
     io::save_to(&path, &registry).unwrap();
     let text = fs::read_to_string(&path).unwrap();
@@ -139,6 +141,26 @@ fn agent_entry_omits_optional_fields_when_none() {
         "None fields should be skipped: {text}"
     );
     assert!(!text.contains("mcp_backup_path"));
+}
+
+#[test]
+fn hook_entries_round_trip() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("projects.toml");
+    let mut project = sample_project(dir.path());
+    project.hooks.push(HookEntry {
+        name: "post-commit".to_string(),
+        path: ".git/hooks/post-commit".to_string(),
+        mode: "marked_block".to_string(),
+        installed_at: "2026-04-29T00:00:00Z".to_string(),
+    });
+    let mut registry = Registry::default();
+    registry.projects.push(project);
+
+    io::save_to(&path, &registry).unwrap();
+    let reloaded = io::load_from(&path).unwrap();
+    assert_eq!(reloaded.projects[0].hooks.len(), 1);
+    assert_eq!(reloaded.projects[0].hooks[0].name, "post-commit");
 }
 
 #[test]

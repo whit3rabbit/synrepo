@@ -121,6 +121,15 @@ pub fn all_symbols_for_resolution(
     let mut out = Vec::with_capacity(rows.len());
     for (sym_id, file_id, qname, kind_label, data, body_hash) in rows {
         let Some(kind) = SymbolKind::from_label(&kind_label) else {
+            // Why: an unknown kind label means schema/binary drift between
+            // when the row was written and the running binary. Surface it
+            // so operators can investigate, then skip rather than fail the
+            // entire query for one rotten row.
+            tracing::warn!(
+                symbol_id = %sym_id,
+                kind_label = %kind_label,
+                "skipping symbol with unknown SymbolKind label"
+            );
             continue;
         };
         let visibility = serde_json::from_str::<VisibilitySlice>(&data)

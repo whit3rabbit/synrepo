@@ -3,6 +3,79 @@
 use clap::{Args, Subcommand};
 use std::path::PathBuf;
 
+use crate::cli_support::agent_shims::AgentTool;
+
+#[derive(Args)]
+pub(crate) struct AgentSetupArgs {
+    /// Target agent CLI. Omit when using `--only` or `--skip`.
+    #[arg(conflicts_with_all = ["only", "skip"])]
+    pub(crate) tool: Option<AgentTool>,
+    /// Comma-separated list of targets to set up. Mutually exclusive
+    /// with the positional `tool` argument and with `--skip`.
+    #[arg(long, value_delimiter = ',', conflicts_with = "skip")]
+    pub(crate) only: Vec<AgentTool>,
+    /// Apply to every known target except these. Comma-separated.
+    /// Mutually exclusive with the positional `tool` argument and with `--only`.
+    #[arg(long, value_delimiter = ',', conflicts_with = "only")]
+    pub(crate) skip: Vec<AgentTool>,
+    /// Overwrite an existing skill or instructions file if one already exists.
+    #[arg(long)]
+    pub(crate) force: bool,
+    /// Compare existing file against the current template; overwrite if different.
+    #[arg(long)]
+    pub(crate) regen: bool,
+}
+
+#[derive(Args)]
+pub(crate) struct SetupArgs {
+    /// Target client to set up. Omit to launch the interactive wizard,
+    /// or pair with `--only`/`--skip` for multi-client setup.
+    #[arg(conflicts_with_all = ["only", "skip"])]
+    pub(crate) tool: Option<AgentTool>,
+    /// Comma-separated list of targets to set up in one pass. Mutually
+    /// exclusive with the positional `tool` argument and with `--skip`.
+    #[arg(long, value_delimiter = ',', conflicts_with = "skip")]
+    pub(crate) only: Vec<AgentTool>,
+    /// Apply setup to every known target except these. Comma-separated.
+    /// Mutually exclusive with the positional `tool` argument and `--only`.
+    #[arg(long, value_delimiter = ',', conflicts_with = "only")]
+    pub(crate) skip: Vec<AgentTool>,
+    /// Force re-initialization and overwrite existing configs.
+    #[arg(long)]
+    pub(crate) force: bool,
+    /// After normal setup, launch the explain sub-wizard and patch config.
+    #[arg(long)]
+    pub(crate) explain: bool,
+    /// Add .synrepo/ to the root .gitignore file.
+    #[arg(long)]
+    pub(crate) gitignore: bool,
+    /// Configure the MCP server in this project instead of user-global config.
+    #[arg(long, conflicts_with = "global")]
+    pub(crate) project: bool,
+    /// Deprecated no-op: global setup is now the default.
+    #[arg(long, hide = true, conflicts_with = "project")]
+    pub(crate) global: bool,
+}
+
+#[derive(Args)]
+pub(crate) struct UninstallArgs {
+    /// Execute the plan. Without this flag, non-TTY output is a dry run.
+    #[arg(long)]
+    pub(crate) apply: bool,
+    /// Emit JSON instead of the human-readable plan / summary.
+    #[arg(long)]
+    pub(crate) json: bool,
+    /// Non-interactive: apply selected actions and override watch-daemon blocks.
+    #[arg(long)]
+    pub(crate) force: bool,
+    /// Select database/cache deletion rows in non-interactive runs.
+    #[arg(long)]
+    pub(crate) delete_data: bool,
+    /// Keep the synrepo binary even when direct deletion is safe.
+    #[arg(long)]
+    pub(crate) keep_binary: bool,
+}
+
 #[derive(Args)]
 pub(crate) struct CiRunArgs {
     /// Target file path, node ID, or symbol name. Repeat to include several cards.

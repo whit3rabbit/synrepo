@@ -19,7 +19,7 @@ use crossterm::event::{KeyCode, KeyModifiers};
 /// One action that may be applied by `synrepo remove`. Library-owned so the
 /// wizard can be unit-tested without the bin crate, and so the bin can
 /// translate its own `RemoveAction` into this and back.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum UninstallActionKind {
     /// Delete an agent shim file.
     RemoveShim {
@@ -43,6 +43,47 @@ pub enum UninstallActionKind {
     },
     /// Delete `.synrepo/` and everything inside it. Destructive; defaults off.
     DeleteSynrepoDir,
+    /// Remove one synrepo-owned Git hook from a project.
+    RemoveHook {
+        /// Project root.
+        project: PathBuf,
+        /// Hook name, for example "post-commit".
+        name: String,
+        /// Absolute hook path.
+        path: PathBuf,
+    },
+    /// Delete one project's `.synrepo/` directory. Destructive; defaults off.
+    DeleteProjectSynrepoDir {
+        /// Project root.
+        project: PathBuf,
+        /// Absolute `.synrepo/` path.
+        path: PathBuf,
+    },
+    /// Strip a synrepo-owned generated-file line from a project's `.gitignore`.
+    RemoveProjectGitignoreLine {
+        /// Project root.
+        project: PathBuf,
+        /// Literal line to remove.
+        entry: String,
+    },
+    /// Delete generated export output. Destructive; defaults off.
+    RemoveExportDir {
+        /// Project root.
+        project: PathBuf,
+        /// Absolute export directory path.
+        path: PathBuf,
+    },
+    /// Delete `~/.synrepo/`. Destructive; defaults off.
+    DeleteGlobalSynrepoDir {
+        /// Absolute global synrepo directory path.
+        path: PathBuf,
+    },
+    /// Delete the installed binary. Destructive but defaults on only when the
+    /// planner has already classified the path as safe for direct deletion.
+    DeleteBinary {
+        /// Absolute binary path.
+        path: PathBuf,
+    },
 }
 
 /// Plan produced by a completed uninstall wizard. Actions run in the order
@@ -126,12 +167,13 @@ impl UninstallWizardState {
             .iter()
             .cloned()
             .map(|kind| {
-                let destructive = matches!(kind, UninstallActionKind::DeleteSynrepoDir);
+                let destructive = is_destructive(&kind);
+                let enabled = enabled_by_default(&kind);
                 let label = render_label(&kind);
                 ActionRow {
                     kind,
                     label,
-                    enabled: !destructive,
+                    enabled,
                     destructive,
                 }
             })
@@ -233,5 +275,60 @@ fn render_label(kind: &UninstallActionKind) -> String {
         UninstallActionKind::DeleteSynrepoDir => {
             "! Delete .synrepo/ (removes cached graph, overlay, and index data)".to_string()
         }
+        UninstallActionKind::RemoveHook {
+            project,
+            name,
+            path,
+        } => {
+            format!(
+                "Remove {name} hook for {} ({})",
+                project.display(),
+                path.display()
+            )
+        }
+        UninstallActionKind::DeleteProjectSynrepoDir { project, path } => {
+            format!(
+                "! Delete .synrepo/ data for {} ({})",
+                project.display(),
+                path.display()
+            )
+        }
+        UninstallActionKind::RemoveProjectGitignoreLine { project, entry } => {
+            format!("Remove `{entry}` from {} .gitignore", project.display())
+        }
+        UninstallActionKind::RemoveExportDir { project, path } => {
+            format!(
+                "! Delete generated export output for {} ({})",
+                project.display(),
+                path.display()
+            )
+        }
+        UninstallActionKind::DeleteGlobalSynrepoDir { path } => {
+            format!("! Delete global synrepo state ({})", path.display())
+        }
+        UninstallActionKind::DeleteBinary { path } => {
+            format!("Delete synrepo binary ({})", path.display())
+        }
     }
+}
+
+fn is_destructive(kind: &UninstallActionKind) -> bool {
+    matches!(
+        kind,
+        UninstallActionKind::DeleteSynrepoDir
+            | UninstallActionKind::DeleteProjectSynrepoDir { .. }
+            | UninstallActionKind::RemoveExportDir { .. }
+            | UninstallActionKind::DeleteGlobalSynrepoDir { .. }
+            | UninstallActionKind::DeleteBinary { .. }
+    )
+}
+
+fn enabled_by_default(kind: &UninstallActionKind) -> bool {
+    !matches!(
+        kind,
+        UninstallActionKind::DeleteSynrepoDir
+            | UninstallActionKind::DeleteProjectSynrepoDir { .. }
+            | UninstallActionKind::RemoveExportDir { .. }
+            | UninstallActionKind::DeleteGlobalSynrepoDir { .. }
+    )
 }

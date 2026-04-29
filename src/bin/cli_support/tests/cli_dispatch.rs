@@ -177,19 +177,30 @@ fn upgrade_dispatches_to_upgrade_variant() {
 #[test]
 fn agent_setup_dispatches_to_agent_setup_variant() {
     let cli = parse(&["agent-setup", "claude"]);
-    matches!(cli.command, Some(Command::AgentSetup { .. }))
+    matches!(cli.command, Some(Command::AgentSetup(_)))
         .then_some(())
         .expect("agent-setup claude should parse to Command::AgentSetup");
 }
 
 #[test]
+fn uninstall_dispatches_to_uninstall_variant() {
+    let cli = parse(&["uninstall", "--apply", "--force", "--delete-data"]);
+    let Some(Command::Uninstall(args)) = cli.command else {
+        panic!("uninstall should parse to Command::Uninstall");
+    };
+    assert!(args.apply);
+    assert!(args.force);
+    assert!(args.delete_data);
+}
+
+#[test]
 fn setup_without_tool_parses_to_wizard_mode() {
     let cli = parse(&["setup"]);
-    let Some(Command::Setup { tool, .. }) = cli.command else {
+    let Some(Command::Setup(args)) = cli.command else {
         panic!("`setup` (no tool) should parse to Command::Setup");
     };
     assert!(
-        tool.is_none(),
+        args.tool.is_none(),
         "omitting the tool positional must leave tool unset so the dispatcher routes to the wizard"
     );
 }
@@ -197,11 +208,11 @@ fn setup_without_tool_parses_to_wizard_mode() {
 #[test]
 fn setup_with_tool_still_parses_with_tool_set() {
     let cli = parse(&["setup", "claude"]);
-    let Some(Command::Setup { tool, .. }) = cli.command else {
+    let Some(Command::Setup(args)) = cli.command else {
         panic!("`setup claude` should parse to Command::Setup");
     };
     assert!(
-        tool.is_some(),
+        args.tool.is_some(),
         "passing a tool positional must populate Command::Setup.tool so the scripted path runs"
     );
 }

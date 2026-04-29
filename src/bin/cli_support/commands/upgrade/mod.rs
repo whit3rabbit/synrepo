@@ -12,9 +12,8 @@ use legacy_installs::{apply_legacy_agent_installs, detect_legacy_agent_installs}
 
 /// Print a dry-run compatibility plan or execute it with `--apply`.
 pub(crate) fn upgrade(repo_root: &Path, apply: bool) -> anyhow::Result<()> {
-    let config = Config::load(repo_root).map_err(|e| {
-        anyhow::anyhow!("upgrade: not initialized: run `synrepo init` first ({e})")
-    })?;
+    let config = Config::load(repo_root)
+        .map_err(|e| anyhow::anyhow!("upgrade: not initialized: run `synrepo init` first ({e})"))?;
     let synrepo_dir = Config::synrepo_dir(repo_root);
 
     let report = evaluate_runtime(&synrepo_dir, synrepo_dir.exists(), &config)

@@ -1,8 +1,23 @@
 use std::path::Path;
 
-use crate::{core::ids::NodeId, store::sqlite::SqliteGraphStore, structure::graph::EdgeKind};
+use crate::{
+    core::ids::NodeId,
+    store::sqlite::SqliteGraphStore,
+    structure::graph::{with_graph_read_snapshot, EdgeKind},
+};
 
 use super::{DriftClass, RepairAction, RepairFinding, RepairSurface, Severity};
+
+fn blocked_finding(reason: String) -> RepairFinding {
+    RepairFinding {
+        surface: RepairSurface::DeclaredLinks,
+        drift_class: DriftClass::Blocked,
+        severity: Severity::Blocked,
+        target_id: None,
+        recommended_action: RepairAction::ManualReview,
+        notes: Some(reason),
+    }
+}
 
 /// Check declared links: verify every Governs edge target still exists.
 ///
@@ -29,17 +44,23 @@ pub(super) fn check_declared_links(synrepo_dir: &Path) -> RepairFinding {
         }
     };
 
+    // Why: every read below (persisted_stats, all_concept_paths, outbound,
+    // get_file/symbol/concept) walks the graph; a writer commit between them
+    // would surface mixed epochs (invariant 8). One snapshot pins a single
+    // committed view for the whole verification.
+    let snapshot_result =
+        with_graph_read_snapshot(&store, |_| Ok(check_declared_links_inner(&store)));
+    match snapshot_result {
+        Ok(finding) => finding,
+        Err(err) => blocked_finding(format!("Snapshot failed: {err}")),
+    }
+}
+
+fn check_declared_links_inner(store: &SqliteGraphStore) -> RepairFinding {
     let stats = match store.persisted_stats() {
         Ok(s) => s,
         Err(err) => {
-            return RepairFinding {
-                surface: RepairSurface::DeclaredLinks,
-                drift_class: DriftClass::Blocked,
-                severity: Severity::Blocked,
-                target_id: None,
-                recommended_action: RepairAction::ManualReview,
-                notes: Some(format!("Cannot read graph stats: {err}")),
-            };
+            return blocked_finding(format!("Cannot read graph stats: {err}"));
         }
     };
 
