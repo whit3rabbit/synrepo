@@ -5,33 +5,33 @@ expression: normal
 ---
 {
   "focal_card": {
-    "approx_tokens": 10,
+    "file": "file_da7126252fc52382b57d357eb90beb47",
+    "path": "src/lib.rs",
+    "symbols": [
+      {
+        "id": "sym_0428e9f2f46549976b560f5b402d03ee",
+        "qualified_name": "add",
+        "location": "src/lib.rs:22"
+      }
+    ],
+    "imported_by": [],
+    "imports": [],
     "co_changes": [],
+    "git_intelligence": null,
+    "drift_flag": null,
+    "approx_tokens": 10,
     "context_accounting": {
       "budget_tier": "normal",
-      "estimated_savings_ratio": 0.375,
+      "token_estimate": 10,
       "raw_file_token_estimate": 16,
+      "estimated_savings_ratio": 0.375,
       "source_hashes": [
         "26535f89bfda506331673d0cd2c73c4311fc9f61f361b7188e84cb858e8f8986"
       ],
       "stale": false,
-      "token_estimate": 10,
       "truncation_applied": false
     },
-    "drift_flag": null,
-    "file": "file_da7126252fc52382b57d357eb90beb47",
-    "git_intelligence": null,
-    "imported_by": [],
-    "imports": [],
-    "path": "src/lib.rs",
-    "source_store": "graph",
-    "symbols": [
-      {
-        "id": "sym_0428e9f2f46549976b560f5b402d03ee",
-        "location": "src/lib.rs:22",
-        "qualified_name": "add"
-      }
-    ]
+    "source_store": "graph"
   },
   "neighbors": null,
   "neighbor_summaries": [],

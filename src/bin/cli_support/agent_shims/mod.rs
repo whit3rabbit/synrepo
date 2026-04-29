@@ -6,9 +6,8 @@
 //! examples live in `skill/SKILL.md`; the shim is the minimum kit an agent
 //! needs to use synrepo correctly without reading SKILL.md.
 
-use std::path::{Path, PathBuf};
-
 pub(crate) mod doctrine;
+mod paths;
 pub(crate) mod registry;
 mod shims;
 
@@ -20,6 +19,16 @@ use shims::{
     JUNIE_SHIM, KIRO_SHIM, OPENCODE_SHIM, QWEN_SHIM, ROO_SHIM, TABNINE_SHIM, TRAE_SHIM,
     WINDSURF_SHIM,
 };
+
+pub(crate) use synrepo::agent_install::{SYNREPO_INSTALL_NAME, SYNREPO_INSTALL_OWNER};
+
+pub(crate) fn scope_label(scope: &agent_config::Scope) -> &'static str {
+    match scope {
+        agent_config::Scope::Global => "global",
+        agent_config::Scope::Local(_) => "project",
+        _ => "global",
+    }
+}
 
 /// Two-tier support matrix. `Automated` agents get the project-scoped MCP
 /// server entry written into their config (`.mcp.json`, `.codex/config.toml`,
@@ -38,6 +47,20 @@ pub(crate) enum AutomationTier {
     Automated,
     /// `synrepo setup` writes the shim only; the operator wires MCP by hand.
     ShimOnly,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum ShimPlacement {
+    Skill {
+        name: &'static str,
+    },
+    Instruction {
+        name: &'static str,
+        placement: agent_config::InstructionPlacement,
+    },
+    /// Synrepo-local fallback for targets not yet covered by agent-config.
+    /// Today this covers `Generic`, `Goose`, `Kiro`, and `Tabnine`.
+    Local,
 }
 
 /// Agent CLI target for shim generation.
@@ -94,26 +117,84 @@ impl AgentTool {
     }
 
     /// Which support tier this agent falls into. See [`AutomationTier`].
-    /// The exhaustive match is load-bearing: any new `AgentTool` variant
-    /// fails the build until it is explicitly placed in a tier.
+    /// MCP automation now follows the agent-config registry so adding support
+    /// upstream does not require another synrepo dispatch list.
     pub(crate) fn automation_tier(self) -> AutomationTier {
-        match self {
-            AgentTool::Claude
-            | AgentTool::Codex
-            | AgentTool::OpenCode
-            | AgentTool::Cursor
-            | AgentTool::Windsurf
-            | AgentTool::Roo => AutomationTier::Automated,
-            AgentTool::Copilot
-            | AgentTool::Generic
-            | AgentTool::Gemini
-            | AgentTool::Goose
-            | AgentTool::Kiro
-            | AgentTool::Qwen
-            | AgentTool::Junie
-            | AgentTool::Tabnine
-            | AgentTool::Trae => AutomationTier::ShimOnly,
+        if self.installer_supports_mcp() {
+            AutomationTier::Automated
+        } else {
+            AutomationTier::ShimOnly
         }
+    }
+
+    /// Stable agent-config integration id for this target. `Generic` and
+    /// harnesses not yet covered by agent-config stay synrepo-local.
+    pub(crate) fn agent_config_id(self) -> Option<&'static str> {
+        match self {
+            AgentTool::Claude => Some("claude"),
+            AgentTool::Cursor => Some("cursor"),
+            AgentTool::Copilot => Some("copilot"),
+            AgentTool::Generic => None,
+            AgentTool::Codex => Some("codex"),
+            AgentTool::Windsurf => Some("windsurf"),
+            AgentTool::OpenCode => Some("opencode"),
+            AgentTool::Gemini => Some("gemini"),
+            AgentTool::Goose => None,
+            AgentTool::Kiro => None,
+            AgentTool::Qwen => Some("qwen"),
+            AgentTool::Junie => Some("junie"),
+            AgentTool::Roo => Some("roo"),
+            AgentTool::Tabnine => Some("tabnine"),
+            AgentTool::Trae => Some("trae"),
+        }
+    }
+
+    /// True when the agent-config registry has an MCP installer for this tool.
+    pub(crate) fn installer_supports_mcp(self) -> bool {
+        self.agent_config_id()
+            .and_then(agent_config::mcp_by_id)
+            .is_some()
+    }
+
+    /// MCP scopes supported by the registered installer.
+    pub(crate) fn supported_scopes(self) -> &'static [agent_config::ScopeKind] {
+        self.agent_config_id()
+            .and_then(agent_config::mcp_by_id)
+            .map(|installer| installer.supported_mcp_scopes())
+            .unwrap_or(&[])
+    }
+
+    pub(crate) fn placement_kind(self) -> ShimPlacement {
+        let Some(id) = self.agent_config_id() else {
+            return ShimPlacement::Local;
+        };
+        if agent_config::skill_by_id(id).is_some() {
+            return ShimPlacement::Skill {
+                name: SYNREPO_INSTALL_NAME,
+            };
+        }
+        if agent_config::instruction_by_id(id).is_some() {
+            return ShimPlacement::Instruction {
+                name: SYNREPO_INSTALL_NAME,
+                placement: self.instruction_placement(),
+            };
+        }
+        ShimPlacement::Local
+    }
+
+    fn instruction_placement(self) -> agent_config::InstructionPlacement {
+        match self {
+            AgentTool::Roo => agent_config::InstructionPlacement::StandaloneFile,
+            _ => agent_config::InstructionPlacement::InlineBlock,
+        }
+    }
+
+    pub(crate) fn skill_description(self) -> &'static str {
+        "Use when a repository has synrepo context available."
+    }
+
+    pub(crate) fn shim_spec_body(self) -> &'static str {
+        self.shim_content()
     }
 
     /// Human-readable name for display.
@@ -134,61 +215,6 @@ impl AgentTool {
             AgentTool::Roo => "Roo Code",
             AgentTool::Tabnine => "Tabnine CLI",
             AgentTool::Trae => "Trae",
-        }
-    }
-
-    /// Path of the file written by `synrepo agent-setup`, relative to the repo root.
-    pub(crate) fn output_path(self, repo_root: &Path) -> PathBuf {
-        match self {
-            // Agent Skills standard: hosts auto-discover `<name>/SKILL.md` under
-            // a host-specific or shared `skills/` directory. Codex uses the
-            // shared `.agents/skills` repository location.
-            AgentTool::Claude => repo_root
-                .join(".claude")
-                .join("skills")
-                .join("synrepo")
-                .join("SKILL.md"),
-            AgentTool::Cursor => repo_root
-                .join(".cursor")
-                .join("skills")
-                .join("synrepo")
-                .join("SKILL.md"),
-            AgentTool::Copilot => repo_root.join("synrepo-copilot-instructions.md"),
-            AgentTool::Generic => repo_root.join("synrepo-agents.md"),
-            AgentTool::Codex => repo_root
-                .join(".agents")
-                .join("skills")
-                .join("synrepo")
-                .join("SKILL.md"),
-            AgentTool::Windsurf => repo_root
-                .join(".windsurf")
-                .join("skills")
-                .join("synrepo")
-                .join("SKILL.md"),
-            AgentTool::OpenCode => repo_root.join("AGENTS.md"),
-            AgentTool::Gemini => repo_root
-                .join(".gemini")
-                .join("skills")
-                .join("synrepo")
-                .join("SKILL.md"),
-            AgentTool::Goose => repo_root
-                .join(".goose")
-                .join("recipes")
-                .join("synrepo.yaml"),
-            AgentTool::Kiro => repo_root.join(".kiro").join("prompts").join("synrepo.md"),
-            AgentTool::Qwen => repo_root.join(".qwen").join("commands").join("synrepo.md"),
-            AgentTool::Junie => repo_root.join(".junie").join("commands").join("synrepo.md"),
-            AgentTool::Roo => repo_root.join(".roo").join("commands").join("synrepo.md"),
-            AgentTool::Tabnine => repo_root
-                .join(".tabnine")
-                .join("agent")
-                .join("commands")
-                .join("synrepo.toml"),
-            AgentTool::Trae => repo_root
-                .join(".trae")
-                .join("skills")
-                .join("synrepo")
-                .join("SKILL.md"),
         }
     }
 
@@ -240,21 +266,6 @@ impl AgentTool {
         }
     }
 
-    /// User-facing noun for the artifact written by `agent-setup`: `"skill"`
-    /// for tools that follow the Agent Skills standard (`SKILL.md` under
-    /// `.<tool>/skills/synrepo/`) and `"instructions"` otherwise. Derived
-    /// from [`output_path`] so the label cannot drift from the filename.
-    pub(crate) fn artifact_label(self) -> &'static str {
-        // `repo_root` is only used to build the prefix; the filename it
-        // contributes is independent of the root, so any path works here.
-        let p = self.output_path(Path::new(""));
-        if p.file_name().and_then(|n| n.to_str()) == Some("SKILL.md") {
-            "skill"
-        } else {
-            "instructions"
-        }
-    }
-
     /// Stable, machine-readable name matching the CLI kebab-case form
     /// (e.g. `OpenCode` → `"open-code"`). Used as the `tool` key in the install
     /// registry at `~/.synrepo/projects.toml` so remove can map tool strings
@@ -282,9 +293,8 @@ impl AgentTool {
     /// Project-root-relative path of the MCP config file this tool edits
     /// during `synrepo setup`. Returns `None` for shim-only-tier tools.
     ///
-    /// Mirrors the paths hard-coded in the matching `setup_*_mcp` functions
-    /// in `commands/setup.rs`; the `mcp_config_relative_path_matches_setup`
-    /// test in `agent_shims/tests.rs` pins the two sites together.
+    /// Kept for legacy project-local scans and backup prompts. New installs
+    /// use the agent-config report path instead.
     pub(crate) fn mcp_config_relative_path(self) -> Option<&'static str> {
         match self {
             AgentTool::Claude => Some(".mcp.json"),

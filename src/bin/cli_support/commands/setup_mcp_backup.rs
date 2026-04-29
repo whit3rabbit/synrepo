@@ -15,6 +15,8 @@ use anyhow::Context;
 use serde_json::Value;
 use toml_edit::DocumentMut;
 
+use agent_config::Scope;
+
 use crate::cli_support::agent_shims::AgentTool;
 use crate::cli_support::commands::setup::load_json_config;
 
@@ -24,11 +26,14 @@ use crate::cli_support::commands::setup::load_json_config;
 pub(crate) fn step_backup_mcp_config(
     repo_root: &Path,
     tool: AgentTool,
+    scope: &Scope,
 ) -> anyhow::Result<Option<String>> {
-    let Some(rel) = tool.mcp_config_relative_path() else {
+    let Some(path) = tool.resolved_mcp_config_path(scope).or_else(|| {
+        tool.mcp_config_relative_path()
+            .map(|rel| repo_root.join(rel))
+    }) else {
         return Ok(None);
     };
-    let path = repo_root.join(rel);
     let Some(backup) = maybe_backup_mcp_config(&path)? else {
         return Ok(None);
     };

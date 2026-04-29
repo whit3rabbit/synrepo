@@ -401,3 +401,97 @@ When edit mode is enabled, synrepo SHALL expose a two-step MCP workflow: `synrep
 - **AND** an MCP client lists tools
 - **THEN** no arbitrary command execution tool is registered as part of this workflow
 
+### Requirement: Resolve MCP repository state explicitly
+The MCP server SHALL resolve repository state from an optional default repository and an optional per-tool `repo_root` parameter. When `repo_root` is provided, the server SHALL canonicalize it, require that it is either the default repository or a registered managed project, prepare state for that repository, and return errors without falling back to another repository.
+
+#### Scenario: Repo-bound MCP call omits repo_root
+- **WHEN** the MCP server was started with a usable default repository and a repo-addressable tool omits `repo_root`
+- **THEN** the tool uses the default repository state
+
+#### Scenario: Global MCP call supplies registered repo_root
+- **WHEN** a repo-addressable tool is called with `repo_root = "/work/app"` and `/work/app` is registered
+- **THEN** the tool resolves and uses `/work/app` repository state
+
+#### Scenario: Global MCP call omits repo_root with no default
+- **WHEN** the MCP server has no usable default repository and a repo-addressable tool omits `repo_root`
+- **THEN** the tool returns an explicit error that `repo_root` is required
+- **AND** no other repository state is used
+
+#### Scenario: Tool supplies unregistered repo_root
+- **WHEN** a repo-addressable tool is called with a path that is not the default repository and is not registered
+- **THEN** the tool returns an error explaining that the repository is not managed by synrepo
+- **AND** the error names `synrepo project add <path>` as the remedy
+
+#### Scenario: Requested repository cannot be prepared
+- **WHEN** a requested registered repository is uninitialized, partial, or store-incompatible
+- **THEN** the tool returns the preparation error for that repository
+- **AND** the server does not fall back to the default repository
+
+### Requirement: Allow MCP startup without a default repository
+`synrepo mcp` SHALL be able to start from a non-repository working directory when it is intended to serve registered projects by explicit `repo_root`. Startup without a default repository SHALL NOT make any repository-addressable tool succeed unless the tool call supplies a resolvable `repo_root`.
+
+#### Scenario: Global agent launches MCP from home directory
+- **WHEN** an agent launches `synrepo mcp` from a directory that is not initialized with synrepo
+- **THEN** the MCP server starts in defaultless mode
+- **AND** repository data is served only after a tool call supplies a registered `repo_root`
+
+#### Scenario: Explicit repo override is invalid
+- **WHEN** the user launches `synrepo mcp --repo /work/app` and `/work/app` cannot be prepared
+- **THEN** startup fails with the repository preparation error
+- **AND** defaultless mode is not used to hide the explicit invalid override
+
+### Requirement: Accept repo_root on repo-addressable MCP tools
+Every MCP tool that reads or mutates repository-scoped synrepo state SHALL accept an optional `repo_root` parameter unless it is explicitly documented as server-default-only. Repo-addressable tools include card lookup, search, docs search, context pack, graph primitives, where-to-edit, impact/risk, entrypoints, notes, module/public API cards, workflow aliases, findings, recent activity, and edit-capable tools.
+
+#### Scenario: Graph primitive routes by repo_root
+- **WHEN** an agent calls `synrepo_edges` with a valid node ID and `repo_root = "/work/app"`
+- **THEN** the edge traversal runs against `/work/app`
+
+#### Scenario: Workflow alias routes by repo_root
+- **WHEN** an agent calls a workflow alias such as `synrepo_find` with `repo_root = "/work/app"`
+- **THEN** the workflow result and any per-repo metrics are associated with `/work/app`
+
+#### Scenario: Tool lacks repo_root support
+- **WHEN** a repository-scoped MCP tool cannot accept `repo_root`
+- **THEN** the tool description SHALL state that it only uses the server default repository
+- **AND** it SHALL return a clear error when no default repository exists
+
+### Requirement: MCP server registration is performed via the agent-config installer
+The synrepo CLI SHALL register the `synrepo` MCP server in agent harness configurations exclusively through the `agent-config` installer (`McpSpec` + `mcp_by_id(<id>).install_mcp(<scope>, <spec>)`). The installed entry SHALL run the `synrepo` binary directly (no node, npx, uv, or wrapper indirection). For global scope the spec SHALL pass no `--repo` argument; for project scope the spec SHALL pass `--repo .` so the server resolves to the configured repository. The owner tag for every MCP install written by synrepo SHALL be the literal string `"synrepo"`.
+
+#### Scenario: Global MCP install for Claude
+- **WHEN** synrepo registers the MCP server globally for Claude
+- **THEN** the installer writes an entry with `command = "synrepo"` and `args = ["mcp"]`
+- **AND** the install is owned by tag `"synrepo"`
+
+#### Scenario: Project-scoped MCP install for Codex
+- **WHEN** synrepo registers the MCP server project-scoped for Codex
+- **THEN** the installer writes an entry with `command = "synrepo"` and `args = ["mcp", "--repo", "."]` under `mcp_servers.synrepo`
+- **AND** the install is owned by tag `"synrepo"`
+
+#### Scenario: Repeated registration is idempotent
+- **WHEN** synrepo registers the MCP server twice with the same scope and content
+- **THEN** the second call reports `already_installed = true`
+- **AND** no file content changes on disk
+
+### Requirement: MCP install scope coverage tracks installer support
+The set of harnesses for which `synrepo setup` automates MCP registration SHALL be derived at runtime from `agent_config::mcp_by_id(<id>).is_some()` and that integration's `supported_scopes()`. synrepo SHALL NOT maintain a parallel hand-coded list of "automated" vs "shim-only" tiers for MCP registration. Harnesses that the installer does not support for a given scope SHALL be reported to the operator with the recommended fallback (project-scoped install, manual configuration, or unsupported).
+
+#### Scenario: New installer-supported harness becomes automated
+- **WHEN** a new agent harness gains MCP support in the agent-config crate
+- **THEN** updating the synrepo dependency surfaces that harness for `synrepo setup`
+- **AND** no per-harness MCP writer is added to synrepo
+
+#### Scenario: Installer reports an unsupported scope
+- **WHEN** `synrepo setup` is invoked for a harness that supports only one scope
+- **THEN** synrepo selects the supported scope or reports the limitation before writing anything
+- **AND** the operator is shown how to override the default scope
+
+### Requirement: Inline-secret refusal is surfaced as a setup error
+If a future synrepo MCP spec ever supplies an environment value to the installer in a way the installer would refuse (for example `InlineSecretInLocalScope`), `synrepo setup` SHALL surface the refusal as a setup error with the offending key name and SHALL NOT bypass the installer's secret policy. synrepo's own MCP server takes no secrets today, so the default path SHALL pass no inline secrets; this requirement governs future extensions.
+
+#### Scenario: Refused inline secret aborts setup
+- **WHEN** an MCP install would write an inline secret refused by the installer
+- **THEN** `synrepo setup` aborts with the integration ID and env-key name
+- **AND** no partial config is left on disk
+

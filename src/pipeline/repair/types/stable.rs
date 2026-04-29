@@ -28,6 +28,8 @@ pub enum RepairSurface {
     EdgeDrift,
     /// Retired graph observations awaiting compaction.
     RetiredObservations,
+    /// Legacy agent setup artifacts missing agent-config ownership metadata.
+    LegacyAgentInstalls,
 }
 
 impl RepairSurface {
@@ -45,6 +47,7 @@ impl RepairSurface {
             Self::ExportSurface => "export_surface",
             Self::EdgeDrift => "edge_drift",
             Self::RetiredObservations => "retired_observations",
+            Self::LegacyAgentInstalls => "legacy_agent_installs",
         }
     }
 }

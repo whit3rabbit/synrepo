@@ -30,6 +30,10 @@ fn repair_surface_stable_identifiers() {
         RepairSurface::RetiredObservations.as_str(),
         "retired_observations"
     );
+    assert_eq!(
+        RepairSurface::LegacyAgentInstalls.as_str(),
+        "legacy_agent_installs"
+    );
 }
 
 #[test]

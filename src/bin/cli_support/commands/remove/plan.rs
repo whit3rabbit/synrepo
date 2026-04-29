@@ -148,14 +148,7 @@ fn add_agent_actions(
     // Prefer the registry's recorded shim path (survives canonical-path
     // changes), fall back to `output_path()`.
     let shim_abs = registry_entry
-        .map(|e| {
-            let p = PathBuf::from(&e.shim_path);
-            if p.is_absolute() {
-                p
-            } else {
-                repo_root.join(p)
-            }
-        })
+        .map(|e| registry_path(repo_root, &e.shim_path))
         .unwrap_or_else(|| tool.output_path(repo_root));
     if shim_abs.exists() {
         plan.actions.push(RemoveAction::DeleteShim {
@@ -164,10 +157,17 @@ fn add_agent_actions(
         });
     }
 
-    if let Some(rel) = tool.mcp_config_relative_path() {
-        let abs = registry_entry
-            .and_then(|e| e.mcp_config_path.as_ref().map(|p| repo_root.join(p)))
-            .unwrap_or_else(|| repo_root.join(rel));
+    let mcp_abs = registry_entry
+        .and_then(|e| {
+            e.mcp_config_path
+                .as_ref()
+                .map(|p| registry_path(repo_root, p))
+        })
+        .or_else(|| {
+            tool.mcp_config_relative_path()
+                .map(|rel| repo_root.join(rel))
+        });
+    if let Some(abs) = mcp_abs {
         if cached_has_synrepo(&abs, mcp_check_cache) && !seen_mcp_paths.contains_key(&abs) {
             plan.actions.push(RemoveAction::StripMcpEntry {
                 tool: tool.canonical_name().to_string(),
@@ -189,6 +189,15 @@ fn add_agent_actions(
         if bak.exists() && !plan.preserved.contains(&bak) {
             plan.preserved.push(bak);
         }
+    }
+}
+
+fn registry_path(repo_root: &Path, stored: &str) -> PathBuf {
+    let path = PathBuf::from(stored);
+    if path.is_absolute() {
+        path
+    } else {
+        repo_root.join(path)
     }
 }
 

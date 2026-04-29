@@ -1,6 +1,10 @@
 use std::path::{Path, PathBuf};
 
-use crate::cli_support::agent_shims::{AgentTool, AutomationTier};
+use agent_config::{InstallStatus, Scope};
+
+use crate::cli_support::agent_shims::{
+    AgentTool, AutomationTier, SYNREPO_INSTALL_NAME, SYNREPO_INSTALL_OWNER,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ClientOutcome {
@@ -52,11 +56,13 @@ pub(crate) struct SetupPath {
 }
 
 impl SetupPath {
-    fn project(path: PathBuf) -> Self {
-        Self {
-            scope: SetupScope::Project,
-            path,
-        }
+    fn new(scope: &Scope, path: PathBuf) -> Self {
+        let scope = match scope {
+            Scope::Global => SetupScope::Global,
+            Scope::Local(_) => SetupScope::Project,
+            _ => SetupScope::Global,
+        };
+        Self { scope, path }
     }
 
     fn render(&self, repo_root: &Path) -> String {
@@ -115,19 +121,22 @@ pub(crate) struct ClientSetupEntry {
 }
 
 impl ClientSetupEntry {
-    pub(crate) fn skipped(repo_root: &Path, tool: AgentTool, detected: bool) -> Self {
+    pub(crate) fn skipped(
+        repo_root: &Path,
+        tool: AgentTool,
+        detected: bool,
+        scope: &Scope,
+    ) -> Self {
         let mut outcomes = Vec::new();
         push_if(&mut outcomes, detected, ClientOutcome::Detected);
         outcomes.push(ClientOutcome::Skipped);
         Self {
             tool,
             outcomes,
-            shim: classify_shim_freshness(repo_root, tool),
-            shim_path: SetupPath::project(tool.output_path(repo_root)),
-            mcp: classify_mcp_registration(repo_root, tool),
-            mcp_path: tool
-                .mcp_config_relative_path()
-                .map(|rel| SetupPath::project(repo_root.join(rel))),
+            shim: classify_shim_freshness(repo_root, tool, scope),
+            shim_path: SetupPath::new(scope, shim_path(repo_root, tool, scope)),
+            mcp: classify_mcp_registration(repo_root, tool, scope),
+            mcp_path: mcp_path(repo_root, tool, scope).map(|path| SetupPath::new(scope, path)),
             error: None,
         }
     }
@@ -139,9 +148,9 @@ pub(crate) struct ClientBefore {
 }
 
 impl ClientBefore {
-    pub(crate) fn observe(repo_root: &Path, tool: AgentTool) -> Self {
+    pub(crate) fn observe(repo_root: &Path, tool: AgentTool, scope: &Scope) -> Self {
         Self {
-            shim: classify_shim_freshness(repo_root, tool),
+            shim: classify_shim_freshness(repo_root, tool, scope),
         }
     }
 }
@@ -151,9 +160,10 @@ pub(crate) fn entry_after_success(
     tool: AgentTool,
     before: ClientBefore,
     detected: bool,
+    scope: &Scope,
 ) -> ClientSetupEntry {
-    let shim = classify_shim_freshness(repo_root, tool);
-    let mcp = classify_mcp_registration(repo_root, tool);
+    let shim = classify_shim_freshness(repo_root, tool, scope);
+    let mcp = classify_mcp_registration(repo_root, tool, scope);
     let mut outcomes = Vec::new();
     push_if(&mut outcomes, detected, ClientOutcome::Detected);
     match shim {
@@ -177,11 +187,9 @@ pub(crate) fn entry_after_success(
         tool,
         outcomes,
         shim,
-        shim_path: SetupPath::project(tool.output_path(repo_root)),
+        shim_path: SetupPath::new(scope, shim_path(repo_root, tool, scope)),
         mcp,
-        mcp_path: tool
-            .mcp_config_relative_path()
-            .map(|rel| SetupPath::project(repo_root.join(rel))),
+        mcp_path: mcp_path(repo_root, tool, scope).map(|path| SetupPath::new(scope, path)),
         error: None,
     }
 }
@@ -190,6 +198,7 @@ pub(crate) fn entry_after_failure(
     repo_root: &Path,
     tool: AgentTool,
     detected: bool,
+    scope: &Scope,
     error: &anyhow::Error,
 ) -> ClientSetupEntry {
     let mut outcomes = Vec::new();
@@ -198,32 +207,39 @@ pub(crate) fn entry_after_failure(
     ClientSetupEntry {
         tool,
         outcomes,
-        shim: classify_shim_freshness(repo_root, tool),
-        shim_path: SetupPath::project(tool.output_path(repo_root)),
-        mcp: classify_mcp_registration(repo_root, tool),
-        mcp_path: tool
-            .mcp_config_relative_path()
-            .map(|rel| SetupPath::project(repo_root.join(rel))),
+        shim: classify_shim_freshness(repo_root, tool, scope),
+        shim_path: SetupPath::new(scope, shim_path(repo_root, tool, scope)),
+        mcp: classify_mcp_registration(repo_root, tool, scope),
+        mcp_path: mcp_path(repo_root, tool, scope).map(|path| SetupPath::new(scope, path)),
         error: Some(format!("{error:#}")),
     }
 }
 
-pub(crate) fn classify_shim_freshness(repo_root: &Path, tool: AgentTool) -> ShimFreshness {
-    let path = tool.output_path(repo_root);
+pub(crate) fn classify_shim_freshness(
+    repo_root: &Path,
+    tool: AgentTool,
+    scope: &Scope,
+) -> ShimFreshness {
+    let path = shim_path(repo_root, tool, scope);
     if !path.exists() {
         return ShimFreshness::Missing;
     }
     match std::fs::read_to_string(&path) {
         Ok(existing) if existing == tool.shim_content() => ShimFreshness::Current,
+        Ok(existing) if existing.contains(tool.shim_spec_body()) => ShimFreshness::Current,
         Ok(_) | Err(_) => ShimFreshness::Stale,
     }
 }
 
-pub(crate) fn classify_mcp_registration(repo_root: &Path, tool: AgentTool) -> McpRegistration {
+pub(crate) fn classify_mcp_registration(
+    repo_root: &Path,
+    tool: AgentTool,
+    scope: &Scope,
+) -> McpRegistration {
     if matches!(tool.automation_tier(), AutomationTier::ShimOnly) {
         return McpRegistration::Unsupported;
     }
-    if mcp_registered(repo_root, tool) {
+    if mcp_registered(repo_root, tool, scope) {
         McpRegistration::Registered
     } else {
         McpRegistration::Missing
@@ -327,61 +343,32 @@ fn dedup_outcomes(outcomes: &mut Vec<ClientOutcome>) {
     });
 }
 
-fn mcp_registered(repo_root: &Path, tool: AgentTool) -> bool {
-    match tool {
-        AgentTool::Claude => json_mcp_servers_has_synrepo(&repo_root.join(".mcp.json")),
-        AgentTool::Cursor => json_mcp_servers_has_synrepo(&repo_root.join(".cursor/mcp.json")),
-        AgentTool::Windsurf => json_mcp_servers_has_synrepo(&repo_root.join(".windsurf/mcp.json")),
-        AgentTool::Roo => json_mcp_servers_has_synrepo(&repo_root.join(".roo/mcp.json")),
-        AgentTool::OpenCode => opencode_has_synrepo(&repo_root.join("opencode.json")),
-        AgentTool::Codex => codex_has_synrepo(&repo_root.join(".codex/config.toml")),
-        AgentTool::Copilot
-        | AgentTool::Generic
-        | AgentTool::Gemini
-        | AgentTool::Goose
-        | AgentTool::Kiro
-        | AgentTool::Qwen
-        | AgentTool::Junie
-        | AgentTool::Tabnine
-        | AgentTool::Trae => false,
+fn shim_path(repo_root: &Path, tool: AgentTool, scope: &Scope) -> PathBuf {
+    tool.resolved_shim_output_path(scope)
+        .unwrap_or_else(|| tool.output_path(repo_root))
+}
+
+fn mcp_path(repo_root: &Path, tool: AgentTool, scope: &Scope) -> Option<PathBuf> {
+    tool.resolved_mcp_config_path(scope).or_else(|| {
+        tool.mcp_config_relative_path()
+            .map(|rel| repo_root.join(rel))
+    })
+}
+
+fn mcp_registered(repo_root: &Path, tool: AgentTool, scope: &Scope) -> bool {
+    if let Some(installer) = tool.agent_config_id().and_then(agent_config::mcp_by_id) {
+        return installer
+            .mcp_status(scope, SYNREPO_INSTALL_NAME, SYNREPO_INSTALL_OWNER)
+            .map(|report| {
+                matches!(report.status, InstallStatus::InstalledOwned { ref owner } if owner == SYNREPO_INSTALL_OWNER)
+            })
+            .unwrap_or(false);
     }
-}
-
-fn json_mcp_servers_has_synrepo(path: &Path) -> bool {
-    let Ok(text) = std::fs::read_to_string(path) else {
-        return false;
-    };
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
-        return false;
-    };
-    value
-        .get("mcpServers")
-        .and_then(|servers| servers.get("synrepo"))
-        .is_some()
-}
-
-fn opencode_has_synrepo(path: &Path) -> bool {
-    let Ok(text) = std::fs::read_to_string(path) else {
-        return false;
-    };
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
-        return false;
-    };
-    value
-        .get("mcp")
-        .and_then(|servers| servers.get("synrepo"))
-        .is_some()
-}
-
-fn codex_has_synrepo(path: &Path) -> bool {
-    let Ok(text) = std::fs::read_to_string(path) else {
-        return false;
-    };
-    let Ok(doc) = text.parse::<toml_edit::DocumentMut>() else {
-        return false;
-    };
-    doc.get("mcp_servers")
-        .and_then(|item| item.as_table())
-        .and_then(|table| table.get("synrepo"))
-        .is_some()
+    mcp_path(repo_root, tool, scope)
+        .as_deref()
+        .map(crate::cli_support::commands::mcp_config_has_synrepo)
+        .transpose()
+        .ok()
+        .flatten()
+        .unwrap_or(false)
 }

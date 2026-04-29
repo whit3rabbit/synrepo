@@ -1,17 +1,37 @@
 use std::ffi::OsString;
 use std::fs;
+use std::path::Path;
 use tempfile::tempdir;
+
+use agent_config::{Scope, ScopeKind};
 
 use crate::cli_support::agent_shims::{AgentTool, AutomationTier};
 use crate::cli_support::commands::{
-    step_apply_explain, step_apply_integration, step_ensure_ready, step_init, step_register_mcp,
-    step_write_shim, StepOutcome,
+    resolve_setup_scope, step_apply_explain, step_apply_integration, step_ensure_ready, step_init,
+    step_register_mcp, step_write_shim, StepOutcome,
 };
 use synrepo::tui::wizard::setup::explain::{CloudProvider, LocalPreset};
 use synrepo::tui::{CloudCredentialSource, ExplainChoice};
 use toml::Value;
 
 const TEST_GLOBAL_CONFIG_PATH_ENV: &str = "SYNREPO_TEST_GLOBAL_CONFIG_PATH";
+
+fn local_scope(repo_root: &Path) -> Scope {
+    Scope::Local(repo_root.to_path_buf())
+}
+
+#[test]
+fn setup_scope_defaults_global_and_project_flag_selects_local() {
+    let dir = tempdir().unwrap();
+    assert!(matches!(
+        resolve_setup_scope(dir.path(), AgentTool::Claude, false),
+        Scope::Global
+    ));
+    assert!(matches!(
+        resolve_setup_scope(dir.path(), AgentTool::Claude, true),
+        Scope::Local(_)
+    ));
+}
 
 struct GlobalConfigPathGuard {
     original: Option<OsString>,
@@ -191,20 +211,27 @@ fn step_ensure_ready_skips_when_reconcile_state_exists() {
 #[test]
 fn step_register_mcp_claude_registers_then_idempotent() {
     let dir = tempdir().unwrap();
-    let first = step_register_mcp(dir.path(), AgentTool::Claude, false).unwrap();
+    let scope = local_scope(dir.path());
+    let first = step_register_mcp(dir.path(), AgentTool::Claude, &scope).unwrap();
     assert_eq!(first, StepOutcome::Applied);
     assert!(dir.path().join(".mcp.json").exists());
 
-    let second = step_register_mcp(dir.path(), AgentTool::Claude, false).unwrap();
+    let second = step_register_mcp(dir.path(), AgentTool::Claude, &scope).unwrap();
     assert_eq!(second, StepOutcome::AlreadyCurrent);
 }
 
 #[test]
 fn step_register_mcp_returns_not_automated_for_shim_only_targets() {
-    let targets = [AgentTool::Copilot, AgentTool::Generic, AgentTool::Gemini];
+    let targets = [
+        AgentTool::Generic,
+        AgentTool::Goose,
+        AgentTool::Kiro,
+        AgentTool::Trae,
+    ];
     for target in targets {
         let dir = tempdir().unwrap();
-        let outcome = step_register_mcp(dir.path(), target, false).unwrap();
+        let scope = local_scope(dir.path());
+        let outcome = step_register_mcp(dir.path(), target, &scope).unwrap();
         assert_eq!(
             outcome,
             StepOutcome::NotAutomated,
@@ -220,7 +247,8 @@ fn step_register_mcp_returns_not_automated_for_shim_only_targets() {
 #[test]
 fn step_write_shim_writes_claude_shim() {
     let dir = tempdir().unwrap();
-    let outcome = step_write_shim(dir.path(), AgentTool::Claude, false).unwrap();
+    let scope = local_scope(dir.path());
+    let outcome = step_write_shim(dir.path(), AgentTool::Claude, &scope, false).unwrap();
     assert_eq!(outcome, StepOutcome::Applied);
     assert!(AgentTool::Claude.output_path(dir.path()).exists());
 }
@@ -229,10 +257,11 @@ fn step_write_shim_writes_claude_shim() {
 fn step_write_shim_preserves_user_edited_shim_when_overwrite_false() {
     let dir = tempdir().unwrap();
     let shim_path = AgentTool::Claude.output_path(dir.path());
-    step_write_shim(dir.path(), AgentTool::Claude, false).unwrap();
+    let scope = local_scope(dir.path());
+    step_write_shim(dir.path(), AgentTool::Claude, &scope, false).unwrap();
     fs::write(&shim_path, "user-edited shim\n").unwrap();
 
-    let outcome = step_write_shim(dir.path(), AgentTool::Claude, false).unwrap();
+    let outcome = step_write_shim(dir.path(), AgentTool::Claude, &scope, false).unwrap();
 
     assert_eq!(outcome, StepOutcome::AlreadyCurrent);
     assert_eq!(
@@ -245,22 +274,26 @@ fn step_write_shim_preserves_user_edited_shim_when_overwrite_false() {
 fn step_write_shim_updates_stale_shim_when_overwrite_true() {
     let dir = tempdir().unwrap();
     let shim_path = AgentTool::Claude.output_path(dir.path());
-    step_write_shim(dir.path(), AgentTool::Claude, false).unwrap();
+    let scope = local_scope(dir.path());
+    step_write_shim(dir.path(), AgentTool::Claude, &scope, false).unwrap();
     fs::write(&shim_path, "user-edited shim\n").unwrap();
 
-    let outcome = step_write_shim(dir.path(), AgentTool::Claude, true).unwrap();
+    let outcome = step_write_shim(dir.path(), AgentTool::Claude, &scope, true).unwrap();
 
     assert_eq!(outcome, StepOutcome::Updated);
-    assert_eq!(
-        fs::read_to_string(&shim_path).unwrap(),
-        AgentTool::Claude.shim_content()
+    assert!(
+        fs::read_to_string(&shim_path)
+            .unwrap()
+            .contains(AgentTool::Claude.shim_content()),
+        "installer-rendered SKILL.md must include the canonical shim body"
     );
 }
 
 #[test]
 fn step_apply_integration_writes_shim_and_registers_mcp() {
     let dir = tempdir().unwrap();
-    let outcome = step_apply_integration(dir.path(), AgentTool::Claude, false, false).unwrap();
+    let scope = local_scope(dir.path());
+    let outcome = step_apply_integration(dir.path(), AgentTool::Claude, false, &scope).unwrap();
     assert_eq!(outcome, StepOutcome::Applied);
     assert!(AgentTool::Claude.output_path(dir.path()).exists());
     assert!(dir.path().join(".mcp.json").exists());
@@ -269,11 +302,12 @@ fn step_apply_integration_writes_shim_and_registers_mcp() {
 #[test]
 fn step_apply_integration_rerun_is_idempotent() {
     let dir = tempdir().unwrap();
-    step_apply_integration(dir.path(), AgentTool::Claude, false, false).unwrap();
+    let scope = local_scope(dir.path());
+    step_apply_integration(dir.path(), AgentTool::Claude, false, &scope).unwrap();
     let mcp_first = fs::read(dir.path().join(".mcp.json")).unwrap();
     let shim_first = fs::read(AgentTool::Claude.output_path(dir.path())).unwrap();
 
-    step_apply_integration(dir.path(), AgentTool::Claude, false, false).unwrap();
+    step_apply_integration(dir.path(), AgentTool::Claude, false, &scope).unwrap();
 
     let mcp_second = fs::read(dir.path().join(".mcp.json")).unwrap();
     let shim_second = fs::read(AgentTool::Claude.output_path(dir.path())).unwrap();
@@ -284,15 +318,15 @@ fn step_apply_integration_rerun_is_idempotent() {
 #[test]
 fn step_apply_integration_for_shim_only_targets_still_writes_shim() {
     let targets = [
-        AgentTool::Cursor,
-        AgentTool::Copilot,
-        AgentTool::Windsurf,
         AgentTool::Generic,
-        AgentTool::Gemini,
+        AgentTool::Goose,
+        AgentTool::Kiro,
+        AgentTool::Trae,
     ];
     for target in targets {
         let dir = tempdir().unwrap();
-        let outcome = step_apply_integration(dir.path(), target, false, false).unwrap();
+        let scope = local_scope(dir.path());
+        let outcome = step_apply_integration(dir.path(), target, false, &scope).unwrap();
         assert_eq!(
             outcome,
             StepOutcome::Applied,
@@ -315,20 +349,31 @@ fn automation_tier_matches_step_register_mcp_dispatch() {
 
     for target in <AgentTool as ValueEnum>::value_variants() {
         let dir = tempdir().unwrap();
-        let outcome = step_register_mcp(dir.path(), *target, false).unwrap();
+        let scope = local_scope(dir.path());
+        let outcome = step_register_mcp(dir.path(), *target, &scope);
         match target.automation_tier() {
+            AutomationTier::Automated if target.supported_scopes().contains(&ScopeKind::Local) => {
+                let outcome = outcome.unwrap();
+                assert!(
+                    matches!(
+                        outcome,
+                        StepOutcome::Applied | StepOutcome::AlreadyCurrent | StepOutcome::Updated
+                    ),
+                    "{target:?} is Automated but dispatch returned {outcome:?}"
+                );
+            }
             AutomationTier::Automated => assert!(
-                matches!(
+                outcome.is_err(),
+                "{target:?} lacks local support and should reject local registration"
+            ),
+            AutomationTier::ShimOnly => {
+                let outcome = outcome.unwrap();
+                assert_eq!(
                     outcome,
-                    StepOutcome::Applied | StepOutcome::AlreadyCurrent | StepOutcome::Updated
-                ),
-                "{target:?} is Automated but dispatch returned {outcome:?}"
-            ),
-            AutomationTier::ShimOnly => assert_eq!(
-                outcome,
-                StepOutcome::NotAutomated,
-                "{target:?} is ShimOnly but dispatch returned {outcome:?}"
-            ),
+                    StepOutcome::NotAutomated,
+                    "{target:?} is ShimOnly but dispatch returned {outcome:?}"
+                );
+            }
         }
     }
 }

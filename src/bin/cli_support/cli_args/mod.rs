@@ -62,6 +62,9 @@ pub(crate) enum Command {
         full: bool,
     },
 
+    #[command(subcommand)]
+    Project(ProjectCommand),
+
     /// Generate the agent's skill or instructions file for the specified agent CLI.
     AgentSetup {
         /// Target agent CLI. Omit when using `--only` or `--skip`.
@@ -100,18 +103,17 @@ pub(crate) enum Command {
         /// Force re-initialization and overwrite existing configs.
         #[arg(long)]
         force: bool,
-        /// After the normal setup steps complete, launch the explain sub-wizard
-        /// and patch repo-local `.synrepo/config.toml` plus user-scoped
-        /// `~/.synrepo/config.toml` as needed.
-        /// Off by default; opt-in makes the key-detected hint in `synrepo status`
-        /// actionable without requiring the user to hand-edit config.
+        /// After normal setup, launch the explain sub-wizard and patch config.
         #[arg(long)]
         explain: bool,
         /// Add .synrepo/ to the root .gitignore file.
         #[arg(long)]
         gitignore: bool,
-        /// Configure the MCP server globally instead of per-project.
-        #[arg(long)]
+        /// Configure the MCP server in this project instead of user-global config.
+        #[arg(long, conflicts_with = "global")]
+        project: bool,
+        /// Deprecated no-op: global setup is now the default.
+        #[arg(long, hide = true, conflicts_with = "project")]
         global: bool,
     },
 

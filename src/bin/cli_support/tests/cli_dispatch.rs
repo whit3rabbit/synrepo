@@ -9,7 +9,7 @@
 use clap::Parser;
 
 use super::super::cli_args::{
-    BenchCommand, Cli, Command, NotesCommand, StatsCommand, WatchCommand,
+    BenchCommand, Cli, Command, NotesCommand, ProjectCommand, StatsCommand, WatchCommand,
 };
 
 fn parse(args: &[&str]) -> Cli {
@@ -50,6 +50,33 @@ fn status_json_flag_round_trips() {
         panic!("status --json should parse to Command::Status");
     };
     assert!(json, "--json must flip the flag");
+}
+
+#[test]
+fn project_subcommands_parse() {
+    let add = parse(&["project", "add", "/tmp/app"]);
+    assert!(matches!(
+        add.command,
+        Some(Command::Project(ProjectCommand::Add { .. }))
+    ));
+
+    let list = parse(&["project", "list", "--json"]);
+    assert!(matches!(
+        list.command,
+        Some(Command::Project(ProjectCommand::List { json: true }))
+    ));
+
+    let inspect = parse(&["project", "inspect", "/tmp/app", "--json"]);
+    assert!(matches!(
+        inspect.command,
+        Some(Command::Project(ProjectCommand::Inspect { json: true, .. }))
+    ));
+
+    let remove = parse(&["project", "remove", "/tmp/app"]);
+    assert!(matches!(
+        remove.command,
+        Some(Command::Project(ProjectCommand::Remove { .. }))
+    ));
 }
 
 #[test]

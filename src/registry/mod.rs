@@ -62,9 +62,14 @@ pub struct ProjectEntry {
 pub struct AgentEntry {
     /// Matches `AgentTool::as_str()` / the CLI value (e.g. "claude", "codex").
     pub tool: String,
-    /// Path of the shim file, relative to the project root.
+    /// Install scope for this agent entry: "project" or "global".
+    #[serde(default = "default_agent_scope")]
+    pub scope: String,
+    /// Path of the shim file. Project-local paths are stored relative to the
+    /// project root; global paths are stored absolute.
     pub shim_path: String,
-    /// Path of the MCP config file we edited, relative to the project root.
+    /// Path of the MCP config file we edited. Project-local paths are stored
+    /// relative to the project root; global paths are stored absolute.
     /// `None` for shim-only-tier tools.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mcp_config_path: Option<String>,
@@ -81,6 +86,10 @@ pub struct AgentEntry {
 
 fn default_synrepo_dir() -> String {
     ".synrepo".to_string()
+}
+
+fn default_agent_scope() -> String {
+    "project".to_string()
 }
 
 /// Return the default registry path (`~/.synrepo/projects.toml`).
@@ -121,6 +130,43 @@ pub fn save(registry: &Registry) -> anyhow::Result<()> {
 pub fn get(project: &Path) -> anyhow::Result<Option<ProjectEntry>> {
     let registry = load()?;
     Ok(find_project(&registry, project).cloned())
+}
+
+/// Return true when `project` is present in the user-level registry.
+pub fn contains_project(project: &Path) -> anyhow::Result<bool> {
+    let registry = load()?;
+    Ok(find_project(&registry, project).is_some())
+}
+
+/// Record a managed project without changing existing per-agent metadata.
+///
+/// Preserves `initialized_at` and all install metadata on an existing entry.
+/// This is the user-facing project-manager path; install/uninstall flows keep
+/// using their narrower helpers so removal metadata semantics stay unchanged.
+pub fn record_project(project: &Path) -> anyhow::Result<ProjectEntry> {
+    let Some(path) = registry_path() else {
+        anyhow::bail!("cannot write registry: no home directory detected");
+    };
+    let mut registry = io::load_from(&path)?;
+    registry.schema_version = SCHEMA_VERSION;
+    let canonical = canonicalize(project);
+    if let Some(existing) = find_project_mut(&mut registry, &canonical) {
+        let entry = existing.clone();
+        io::save_to(&path, &registry)?;
+        return Ok(entry);
+    }
+
+    let entry = ProjectEntry {
+        path: canonical,
+        initialized_at: now_rfc3339(),
+        synrepo_dir: default_synrepo_dir(),
+        root_gitignore_entry_added: false,
+        export_gitignore_entry_added: false,
+        agents: Vec::new(),
+    };
+    registry.projects.push(entry.clone());
+    io::save_to(&path, &registry)?;
+    Ok(entry)
 }
 
 /// Record (or update) a project's init metadata.
@@ -227,6 +273,29 @@ pub fn record_uninstall(project: &Path) -> anyhow::Result<()> {
     let canonical = canonicalize(project);
     registry.projects.retain(|p| p.path != canonical);
     io::save_to(&path, &registry)
+}
+
+/// Remove a managed project entry without touching repository-local files.
+pub fn remove_project(project: &Path) -> anyhow::Result<Option<ProjectEntry>> {
+    let Some(path) = registry_path() else {
+        anyhow::bail!("cannot write registry: no home directory detected");
+    };
+    let mut registry = io::load_from(&path)?;
+    let canonical = canonicalize(project);
+    let removed = registry
+        .projects
+        .iter()
+        .position(|p| p.path == canonical)
+        .map(|idx| registry.projects.remove(idx));
+    if removed.is_some() {
+        io::save_to(&path, &registry)?;
+    }
+    Ok(removed)
+}
+
+/// Canonicalize a project path using the registry comparison rules.
+pub fn canonicalize_path(project: &Path) -> PathBuf {
+    canonicalize(project)
 }
 
 fn find_project<'a>(registry: &'a Registry, project: &Path) -> Option<&'a ProjectEntry> {

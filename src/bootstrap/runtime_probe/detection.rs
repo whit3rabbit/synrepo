@@ -5,6 +5,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::agent_install::{
+    skill_manifest_path, SYNREPO_INSTALL_NAME, SYNREPO_INSTALL_OWNER,
+};
+
 use super::types::{AgentIntegration, AgentTargetKind};
 
 /// Detect agent integration state for the given repo.
@@ -51,11 +55,44 @@ fn shim_exists(repo_root: &Path, target: AgentTargetKind) -> bool {
 
 /// Path to the shim output file for the given target.
 pub fn shim_output_path(repo_root: &Path, target: AgentTargetKind) -> PathBuf {
-    // Mirrors `AgentTool::output_path` in `src/bin/cli_support/agent_shims/mod.rs`.
-    // Duplicated here deliberately: the library crate cannot depend on the
-    // binary-crate-private agent_shims module. The pair of paths is narrow
-    // and change-resistant; the test suite for Phase 3 asserts per-target
-    // behavior, which will flag divergence.
+    let scope = agent_config::Scope::Local(repo_root.to_path_buf());
+    if let Some(path) = agent_config_shim_output_path(&scope, target) {
+        return path;
+    }
+    legacy_shim_output_path(repo_root, target)
+}
+
+fn agent_config_shim_output_path(
+    scope: &agent_config::Scope,
+    target: AgentTargetKind,
+) -> Option<PathBuf> {
+    let id = agent_config_id(target);
+    if let Some(skill) = agent_config::skill_by_id(id) {
+        let report = skill
+            .skill_status(scope, SYNREPO_INSTALL_NAME, SYNREPO_INSTALL_OWNER)
+            .ok()?;
+        return skill_manifest_path(report);
+    }
+    if let Some(instruction) = agent_config::instruction_by_id(id) {
+        return instruction
+            .instruction_status(scope, SYNREPO_INSTALL_NAME, SYNREPO_INSTALL_OWNER)
+            .ok()
+            .and_then(|report| report.config_path);
+    }
+    None
+}
+
+fn agent_config_id(target: AgentTargetKind) -> &'static str {
+    match target {
+        AgentTargetKind::Claude => "claude",
+        AgentTargetKind::Cursor => "cursor",
+        AgentTargetKind::Codex => "codex",
+        AgentTargetKind::Copilot => "copilot",
+        AgentTargetKind::Windsurf => "windsurf",
+    }
+}
+
+fn legacy_shim_output_path(repo_root: &Path, target: AgentTargetKind) -> PathBuf {
     match target {
         AgentTargetKind::Claude => repo_root
             .join(".claude")

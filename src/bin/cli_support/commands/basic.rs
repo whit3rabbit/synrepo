@@ -3,7 +3,11 @@ use std::path::Path;
 use synrepo::config::{Config, Mode};
 use synrepo::surface::card::{Budget, CardCompiler};
 
-use crate::cli_support::agent_shims::{registry as shim_registry, AgentTool};
+use agent_config::{AgentConfigError, InstallReport, Scope};
+
+use crate::cli_support::agent_shims::{
+    registry as shim_registry, AgentTool, ShimPlacement, SYNREPO_INSTALL_OWNER,
+};
 
 use super::watch::ensure_watch_not_running;
 
@@ -99,6 +103,44 @@ pub(crate) fn agent_setup(
     force: bool,
     regen: bool,
 ) -> anyhow::Result<()> {
+    agent_setup_with_scope(
+        repo_root,
+        tool,
+        &Scope::Local(repo_root.to_path_buf()),
+        force,
+        regen,
+    )
+}
+
+pub(crate) fn agent_setup_with_scope(
+    repo_root: &Path,
+    tool: AgentTool,
+    scope: &Scope,
+    force: bool,
+    regen: bool,
+) -> anyhow::Result<()> {
+    match tool.placement_kind() {
+        ShimPlacement::Skill { name } => install_skill_shim(tool, scope, name, force, regen)?,
+        ShimPlacement::Instruction { name, placement } => {
+            install_instruction_shim(tool, scope, name, placement, force, regen)?
+        }
+        ShimPlacement::Local => write_local_shim(repo_root, tool, force, regen)?,
+    }
+    println!("  {}", tool.include_instruction());
+
+    // Shim-only: no MCP config written, so removal should not expect an
+    // MCP entry for this agent in the project registry.
+    shim_registry::record_install_best_effort(repo_root, tool, scope, false, None);
+
+    Ok(())
+}
+
+fn write_local_shim(
+    repo_root: &Path,
+    tool: AgentTool,
+    force: bool,
+    regen: bool,
+) -> anyhow::Result<()> {
     let out_path = tool.output_path(repo_root);
     let content = tool.shim_content();
     let label = tool.artifact_label();
@@ -143,13 +185,94 @@ pub(crate) fn agent_setup(
             out_path.display()
         );
     }
-    println!("  {}", tool.include_instruction());
-
-    // Shim-only: no MCP config written, so removal should not expect an
-    // MCP entry for this agent in the project registry.
-    shim_registry::record_install_best_effort(repo_root, tool, false, None);
-
     Ok(())
+}
+
+fn install_skill_shim(
+    tool: AgentTool,
+    scope: &Scope,
+    name: &str,
+    force: bool,
+    regen: bool,
+) -> anyhow::Result<()> {
+    let Some(id) = tool.agent_config_id() else {
+        anyhow::bail!("{} has no agent-config integration id", tool.display_name());
+    };
+    let installer = agent_config::skill_by_id(id).ok_or_else(|| {
+        anyhow::anyhow!(
+            "{} does not support agent-config skills",
+            tool.display_name()
+        )
+    })?;
+    let spec = agent_config::SkillSpec::builder(name)
+        .owner(SYNREPO_INSTALL_OWNER)
+        .description(tool.skill_description())
+        .body(tool.shim_spec_body())
+        .adopt_unowned(force || regen)
+        .try_build()?;
+    let report = installer
+        .install_skill(scope, &spec)
+        .map_err(|err| installer_error(tool, "skill", err))?;
+    print_agent_install_report(tool, "skill", &report);
+    Ok(())
+}
+
+fn install_instruction_shim(
+    tool: AgentTool,
+    scope: &Scope,
+    name: &str,
+    placement: agent_config::InstructionPlacement,
+    force: bool,
+    regen: bool,
+) -> anyhow::Result<()> {
+    let Some(id) = tool.agent_config_id() else {
+        anyhow::bail!("{} has no agent-config integration id", tool.display_name());
+    };
+    let installer = agent_config::instruction_by_id(id).ok_or_else(|| {
+        anyhow::anyhow!(
+            "{} does not support agent-config instructions",
+            tool.display_name()
+        )
+    })?;
+    let spec = agent_config::InstructionSpec::builder(name)
+        .owner(SYNREPO_INSTALL_OWNER)
+        .placement(placement)
+        .body(tool.shim_spec_body())
+        .adopt_unowned(force || regen)
+        .try_build()?;
+    let report = installer
+        .install_instruction(scope, &spec)
+        .map_err(|err| installer_error(tool, "instructions", err))?;
+    print_agent_install_report(tool, "instructions", &report);
+    Ok(())
+}
+
+fn installer_error(tool: AgentTool, label: &str, err: AgentConfigError) -> anyhow::Error {
+    anyhow::Error::new(err).context(format!(
+        "failed to install {} {} through agent-config",
+        tool.display_name(),
+        label
+    ))
+}
+
+fn print_agent_install_report(tool: AgentTool, label: &str, report: &InstallReport) {
+    if report.already_installed {
+        println!("{} {label} is already current.", tool.display_name());
+        return;
+    }
+    for path in &report.created {
+        println!("Wrote {} {label}: {}", tool.display_name(), path.display());
+    }
+    for path in &report.patched {
+        println!(
+            "Updated {} {label}: {}",
+            tool.display_name(),
+            path.display()
+        );
+    }
+    for path in &report.backed_up {
+        println!("  Backup created: {}", path.display());
+    }
 }
 
 /// Install Git hooks (post-commit, post-merge, post-checkout) to trigger reconcile --fast.

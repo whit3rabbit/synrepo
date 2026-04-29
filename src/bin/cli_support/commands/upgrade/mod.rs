@@ -6,10 +6,14 @@ use synrepo::{
     store::compatibility::{apply_runtime_actions, evaluate_runtime, CompatAction, StoreId},
 };
 
+mod legacy_installs;
+
+use legacy_installs::{apply_legacy_agent_installs, detect_legacy_agent_installs};
+
 /// Print a dry-run compatibility plan or execute it with `--apply`.
 pub(crate) fn upgrade(repo_root: &Path, apply: bool) -> anyhow::Result<()> {
     let config = Config::load(repo_root).map_err(|e| {
-        anyhow::anyhow!("upgrade: not initialized — run `synrepo init` first ({e})")
+        anyhow::anyhow!("upgrade: not initialized: run `synrepo init` first ({e})")
     })?;
     let synrepo_dir = Config::synrepo_dir(repo_root);
 
@@ -31,11 +35,24 @@ pub(crate) fn upgrade(repo_root: &Path, apply: bool) -> anyhow::Result<()> {
         println!("  advisory: {warning}");
     }
 
+    let legacy_installs = detect_legacy_agent_installs(repo_root);
+    for install in &legacy_installs {
+        println!(
+            "{:<22} {:<16} legacy unowned {} install for {} at {}",
+            "agent-config",
+            "adopt",
+            install.surface.as_str(),
+            install.tool.canonical_name(),
+            install.path.display()
+        );
+    }
+
     if !apply {
         let has_work = report
             .entries
             .iter()
-            .any(|e| e.action != CompatAction::Continue);
+            .any(|e| e.action != CompatAction::Continue)
+            || !legacy_installs.is_empty();
         if has_work {
             println!("\nDry run. Run `synrepo upgrade --apply` to execute these actions.");
         } else {
@@ -80,7 +97,7 @@ pub(crate) fn upgrade(repo_root: &Path, apply: bool) -> anyhow::Result<()> {
     })
     .collect();
 
-    if ordered.is_empty() {
+    if ordered.is_empty() && legacy_installs.is_empty() {
         println!("\nAll stores are compatible. No upgrade needed.");
         return Ok(());
     }
@@ -88,14 +105,17 @@ pub(crate) fn upgrade(repo_root: &Path, apply: bool) -> anyhow::Result<()> {
     let _lock = acquire_write_admission(&synrepo_dir, "upgrade")
         .map_err(|err| map_lock_error("upgrade", err))?;
 
-    apply_runtime_actions(&synrepo_dir, &report)
-        .map_err(|e| anyhow::anyhow!("upgrade: failed to apply actions: {e}"))?;
+    if !ordered.is_empty() {
+        apply_runtime_actions(&synrepo_dir, &report)
+            .map_err(|e| anyhow::anyhow!("upgrade: failed to apply actions: {e}"))?;
+    }
 
     println!();
     for id in &ordered {
         let entry = report.entries.iter().find(|e| e.store_id == *id).unwrap();
         println!("  {} {}: cleared", entry.action.as_str(), id.as_str());
     }
+    apply_legacy_agent_installs(repo_root, &legacy_installs)?;
 
     // If any Rebuild action was applied, run a reconcile pass to repopulate.
     let needs_reconcile = report

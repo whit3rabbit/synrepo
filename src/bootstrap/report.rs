@@ -1,28 +1,14 @@
 //! Bootstrap health states and report type.
 
+use crate::bootstrap::runtime_probe::{all_agent_targets, shim_output_path};
 use crate::config::Mode;
 use std::path::{Path, PathBuf};
 
-/// Shim paths (relative to repo root) written by `synrepo agent-setup <tool>`.
-/// Listed in the preference order used when picking a pointer target.
-///
-/// Skill-bundle targets write to Agent Skills standard paths. Codex uses the
-/// shared `.agents/skills` repository location; the other listed hosts use
-/// per-tool skill directories.
-const KNOWN_SHIM_PATHS: &[&str] = &[
-    ".claude/skills/synrepo/SKILL.md",
-    ".cursor/skills/synrepo/SKILL.md",
-    ".agents/skills/synrepo/SKILL.md",
-    ".windsurf/skills/synrepo/SKILL.md",
-    ".gemini/skills/synrepo/SKILL.md",
-    "synrepo-copilot-instructions.md",
-    "synrepo-agents.md",
-];
-
 fn first_existing_shim(repo_root: &Path) -> Option<PathBuf> {
-    KNOWN_SHIM_PATHS
+    all_agent_targets()
         .iter()
-        .map(|rel| repo_root.join(rel))
+        .map(|target| shim_output_path(repo_root, *target))
+        .chain([repo_root.join("synrepo-agents.md")])
         .find(|p| p.is_file())
 }
 

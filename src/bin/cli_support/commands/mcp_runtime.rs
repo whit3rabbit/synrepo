@@ -11,9 +11,13 @@ use super::super::graph::check_store_ready;
 use super::mcp::SynrepoServer;
 
 /// Start the MCP server over stdio for the given repository root.
-pub(crate) fn run_mcp_server(repo_root: &Path, allow_edits: bool) -> anyhow::Result<()> {
+pub(crate) fn run_mcp_server(
+    repo_root: &Path,
+    allow_edits: bool,
+    explicit_repo: bool,
+) -> anyhow::Result<()> {
     let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
-    rt.block_on(async { serve(repo_root, allow_edits).await })
+    rt.block_on(async { serve(repo_root, allow_edits, explicit_repo).await })
 }
 
 /// Load config and gate on storage compatibility.
@@ -39,9 +43,20 @@ impl Drop for CleanupGuard {
     }
 }
 
-async fn serve(repo_root: &Path, allow_edits: bool) -> anyhow::Result<()> {
-    let state = prepare_state(repo_root)?;
-    let server = SynrepoServer::new(state, allow_edits);
+async fn serve(repo_root: &Path, allow_edits: bool, explicit_repo: bool) -> anyhow::Result<()> {
+    let default_state = match prepare_state(repo_root) {
+        Ok(state) => Some(state),
+        Err(error) if explicit_repo => return Err(error),
+        Err(error) => {
+            tracing::debug!(
+                error = %error,
+                repo_root = %repo_root.display(),
+                "starting MCP server without a default repository"
+            );
+            None
+        }
+    };
+    let server = SynrepoServer::new_optional(default_state, allow_edits);
     let _guard = CleanupGuard(server.clone());
     let service = server.serve(stdio()).await?;
     service.waiting().await?;

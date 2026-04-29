@@ -16,6 +16,7 @@ mod links;
 pub(crate) mod mcp;
 mod mcp_runtime;
 mod notes;
+mod project;
 mod remove;
 mod repair;
 mod server;
@@ -59,6 +60,11 @@ pub(crate) use notes::{
 };
 #[cfg(test)]
 pub(crate) use notes::{notes_add_output, notes_list_output};
+pub(crate) use project::{project_add, project_inspect, project_list, project_remove};
+#[cfg(test)]
+pub(crate) use project::{
+    project_add_output, project_inspect_output, project_list_output, project_remove_output,
+};
 pub(crate) use remove::remove;
 pub(crate) use repair::{check, reconcile, sync};
 pub(crate) use server::server;
@@ -66,12 +72,12 @@ pub(crate) use setup::{agent_setup_many_resolved, resolve_tool_resolution, setup
 #[cfg(test)]
 pub(crate) use setup::{
     classify_mcp_registration, classify_shim_freshness, entry_after_failure, entry_after_success,
-    render_client_setup_summary, setup_claude_mcp, setup_codex_mcp, setup_cursor_mcp,
-    setup_opencode_mcp, setup_roo_mcp, setup_windsurf_mcp, ClientBefore, ClientSetupEntry,
-    McpRegistration, ShimFreshness, StepOutcome,
+    render_client_setup_summary, ClientBefore, ClientSetupEntry, McpRegistration, ShimFreshness,
+    StepOutcome,
 };
 pub(crate) use setup::{
-    step_apply_integration, step_ensure_ready, step_init, step_register_mcp, step_write_shim,
+    resolve_setup_scope, step_apply_integration, step_ensure_ready, step_init, step_register_mcp,
+    step_write_shim,
 };
 pub(crate) use setup_explain::step_apply_explain;
 pub(crate) use setup_mcp_backup::{mcp_config_has_synrepo, step_backup_mcp_config};

@@ -5,12 +5,13 @@
 //! `commands/setup.rs`) share one code path without creating a module cycle
 //! between those two files.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
+use agent_config::Scope;
 use synrepo::pipeline::writer::now_rfc3339;
 use synrepo::registry::{self, AgentEntry};
 
-use super::AgentTool;
+use super::{scope_label, AgentTool};
 
 /// Best-effort registry update after a successful shim or full install.
 ///
@@ -30,24 +31,24 @@ use super::AgentTool;
 pub(crate) fn record_install_best_effort(
     repo_root: &Path,
     tool: AgentTool,
+    scope: &Scope,
     wrote_mcp_config: bool,
     mcp_backup_path: Option<String>,
 ) {
-    let shim_path = match tool
-        .output_path(repo_root)
-        .strip_prefix(repo_root)
-        .map(Path::to_path_buf)
-    {
-        Ok(rel) => rel.to_string_lossy().into_owned(),
-        Err(_) => tool.output_path(repo_root).to_string_lossy().into_owned(),
-    };
+    let shim_abs = tool
+        .resolved_shim_output_path(scope)
+        .unwrap_or_else(|| tool.output_path(repo_root));
+    let shim_path = registry_path_string(repo_root, &shim_abs);
     let mcp_config_path = if wrote_mcp_config {
-        tool.mcp_config_relative_path().map(|s| s.to_string())
+        tool.resolved_mcp_config_path(scope)
+            .map(|path| registry_path_string(repo_root, &path))
+            .or_else(|| tool.mcp_config_relative_path().map(str::to_string))
     } else {
         None
     };
     let entry = AgentEntry {
         tool: tool.canonical_name().to_string(),
+        scope: scope_label(scope).to_string(),
         shim_path,
         mcp_config_path,
         mcp_backup_path,
@@ -60,5 +61,12 @@ pub(crate) fn record_install_best_effort(
             "install registry update skipped after {} install",
             tool.display_name()
         );
+    }
+}
+
+fn registry_path_string(repo_root: &Path, path: &Path) -> String {
+    match path.strip_prefix(repo_root).map(PathBuf::from) {
+        Ok(rel) => rel.to_string_lossy().into_owned(),
+        Err(_) => path.to_string_lossy().into_owned(),
     }
 }

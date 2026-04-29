@@ -30,7 +30,7 @@ fn every_shim_embeds_doctrine_block() {
         AgentTool::Trae,
     ] {
         assert!(
-            tool.shim_content().contains(DOCTRINE_BLOCK),
+            tool.shim_spec_body().contains(DOCTRINE_BLOCK),
             "{} shim does not embed DOCTRINE_BLOCK verbatim",
             tool.display_name()
         );
@@ -48,6 +48,15 @@ fn doctrine_block_covers_required_sections() {
     assert!(DOCTRINE_BLOCK.contains("`deep`"));
     assert!(DOCTRINE_BLOCK.contains("not a task tracker"));
     assert!(DOCTRINE_BLOCK.contains("Refresh is explicit"));
+    assert!(DOCTRINE_BLOCK.contains("### MCP repository selection"));
+    assert!(DOCTRINE_BLOCK.contains("synrepo project add <path>"));
+}
+
+#[test]
+fn doctrine_mentions_global_repo_root_guidance_once() {
+    let needle =
+        "Global MCP configs that launch `synrepo mcp` serve registered projects by absolute path.";
+    assert_eq!(DOCTRINE_BLOCK.matches(needle).count(), 1);
 }
 
 #[test]
@@ -68,6 +77,8 @@ fn skill_md_includes_doctrine_lines_verbatim() {
         "synrepo stores code facts and bounded operational memory. It is not a task tracker, not session memory, and not cross-session agent memory.",
         "Any handoff or next-action list is a derived recommendation regenerated from repo state. External task systems own assignment, status, and collaboration.",
         "Freshness is explicit. A stale label is information, not an error; it is not silently refreshed on read.",
+        "Global MCP configs that launch `synrepo mcp` serve registered projects by absolute path.",
+        "If a tool reports that a repository is not managed by synrepo, ask the user to run `synrepo project add <path>`; do not bypass registry gating.",
     ];
 
     let missing: Vec<&str> = required
@@ -91,7 +102,8 @@ fn card_returning_mcp_tool_descriptions_share_escalation_line() {
         .join("bin")
         .join("cli_support")
         .join("commands")
-        .join("mcp.rs");
+        .join("mcp")
+        .join("tools.rs");
     let source = std::fs::read_to_string(&main_path)
         .unwrap_or_else(|e| panic!("read {}: {e}", main_path.display()));
 

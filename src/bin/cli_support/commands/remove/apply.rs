@@ -8,11 +8,16 @@
 use std::fs;
 use std::path::Path;
 
+use agent_config::{AgentConfigError, Scope, UninstallReport};
 use anyhow::Context;
 use serde_json::Value;
 use synrepo::config::Config;
 use toml_edit::DocumentMut;
 
+use crate::cli_support::agent_shims::{
+    AgentTool, ShimPlacement, SYNREPO_INSTALL_NAME, SYNREPO_INSTALL_OWNER,
+};
+use crate::cli_support::commands::mcp_config_has_synrepo;
 use crate::cli_support::commands::setup::{load_json_config, write_json_config};
 
 use super::{AppliedAction, ApplySummary, RemoveAction, RemovePlan};
@@ -21,8 +26,10 @@ pub(crate) fn apply_plan(repo_root: &Path, plan: &RemovePlan) -> anyhow::Result<
     let mut summary = ApplySummary::default();
     for action in &plan.actions {
         let result = match action {
-            RemoveAction::DeleteShim { path, .. } => delete_shim(path),
-            RemoveAction::StripMcpEntry { path, .. } => strip_mcp_entry(path),
+            RemoveAction::DeleteShim { tool, path } => uninstall_shim(repo_root, tool, path),
+            RemoveAction::StripMcpEntry { tool, path } => {
+                uninstall_mcp_entry(repo_root, tool, path)
+            }
             RemoveAction::RemoveGitignoreLine { entry } => {
                 synrepo::bootstrap::remove_from_root_gitignore(repo_root, entry).map(|_| ())
             }
@@ -43,6 +50,124 @@ pub(crate) fn apply_plan(repo_root: &Path, plan: &RemovePlan) -> anyhow::Result<
         });
     }
     Ok(summary)
+}
+
+fn uninstall_shim(repo_root: &Path, tool_name: &str, path: &Path) -> anyhow::Result<()> {
+    let Some(tool) = agent_tool(tool_name) else {
+        return delete_shim(path);
+    };
+    let scope = scope_for_path(repo_root, path);
+    let result = match tool.placement_kind() {
+        ShimPlacement::Skill { name } => {
+            let Some(id) = tool.agent_config_id() else {
+                return delete_shim(path);
+            };
+            let Some(installer) = agent_config::skill_by_id(id) else {
+                return delete_shim(path);
+            };
+            installer
+                .uninstall_skill(&scope, name, SYNREPO_INSTALL_OWNER)
+                .map_err(anyhow::Error::new)
+        }
+        ShimPlacement::Instruction { name, .. } => {
+            let Some(id) = tool.agent_config_id() else {
+                return delete_shim(path);
+            };
+            let Some(installer) = agent_config::instruction_by_id(id) else {
+                return delete_shim(path);
+            };
+            installer
+                .uninstall_instruction(&scope, name, SYNREPO_INSTALL_OWNER)
+                .map_err(anyhow::Error::new)
+        }
+        ShimPlacement::Local => return delete_shim(path),
+    };
+
+    match result {
+        Ok(report) if report_changed_or_gone(&report, path) => Ok(()),
+        Ok(_) => {
+            warn_legacy_remove(tool_name, path);
+            delete_shim(path)
+        }
+        Err(err) if is_unowned_agent_config_error(&err) => {
+            warn_legacy_remove(tool_name, path);
+            delete_shim(path)
+        }
+        Err(err) => Err(err).with_context(|| {
+            format!(
+                "failed to uninstall {} shim through agent-config",
+                tool.display_name()
+            )
+        }),
+    }
+}
+
+fn uninstall_mcp_entry(repo_root: &Path, tool_name: &str, path: &Path) -> anyhow::Result<()> {
+    let Some(tool) = agent_tool(tool_name) else {
+        return strip_mcp_entry(path);
+    };
+    let Some(id) = tool.agent_config_id() else {
+        return strip_mcp_entry(path);
+    };
+    let Some(installer) = agent_config::mcp_by_id(id) else {
+        return strip_mcp_entry(path);
+    };
+    let scope = scope_for_path(repo_root, path);
+    match installer.uninstall_mcp(&scope, SYNREPO_INSTALL_NAME, SYNREPO_INSTALL_OWNER) {
+        Ok(report) if report_changed_or_gone(&report, path) => Ok(()),
+        Ok(_) => {
+            if mcp_config_has_synrepo(path)? {
+                warn_legacy_remove(tool_name, path);
+                strip_mcp_entry(path)
+            } else {
+                Ok(())
+            }
+        }
+        Err(err) if is_present_unowned(&err) && mcp_config_has_synrepo(path)? => {
+            warn_legacy_remove(tool_name, path);
+            strip_mcp_entry(path)
+        }
+        Err(err) => Err(anyhow::Error::new(err)).with_context(|| {
+            format!(
+                "failed to uninstall synrepo MCP entry for {} through agent-config",
+                tool.display_name()
+            )
+        }),
+    }
+}
+
+fn agent_tool(tool_name: &str) -> Option<AgentTool> {
+    <AgentTool as clap::ValueEnum>::from_str(tool_name, false).ok()
+}
+
+fn scope_for_path(repo_root: &Path, path: &Path) -> Scope {
+    if path.starts_with(repo_root) {
+        Scope::Local(repo_root.to_path_buf())
+    } else {
+        Scope::Global
+    }
+}
+
+fn report_changed_or_gone(report: &UninstallReport, path: &Path) -> bool {
+    !report.not_installed || !path.exists()
+}
+
+fn is_unowned_agent_config_error(err: &anyhow::Error) -> bool {
+    err.downcast_ref::<AgentConfigError>()
+        .map(is_present_unowned)
+        .unwrap_or(false)
+}
+
+fn is_present_unowned(err: &AgentConfigError) -> bool {
+    matches!(err, AgentConfigError::NotOwnedByCaller { actual: None, .. })
+}
+
+fn warn_legacy_remove(tool_name: &str, path: &Path) {
+    eprintln!(
+        "warning: removing legacy unowned synrepo install for {tool_name} at {}; \
+         run `synrepo upgrade --apply` in repos with older installs to adopt them before removal.",
+        path.display()
+    );
 }
 
 fn delete_shim(path: &Path) -> anyhow::Result<()> {

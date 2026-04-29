@@ -18,48 +18,37 @@ fn canonical_name_matches_clap_value_enum_form() {
 }
 
 #[test]
-fn mcp_config_relative_path_is_set_iff_automation_tier_is_automated() {
+fn agent_config_ids_are_registered_or_documented_synrepo_only() {
     use clap::ValueEnum;
+    let synrepo_only = [AgentTool::Generic, AgentTool::Goose, AgentTool::Kiro];
     for variant in AgentTool::value_variants() {
-        match variant.automation_tier() {
-            AutomationTier::Automated => assert!(
-                variant.mcp_config_relative_path().is_some(),
-                "automated tool {variant:?} has no mcp_config_relative_path"
+        match variant.agent_config_id() {
+            Some(id) => assert!(
+                agent_config::by_id(id).is_some(),
+                "{variant:?} maps to unregistered agent-config id {id}"
             ),
-            AutomationTier::ShimOnly => assert!(
-                variant.mcp_config_relative_path().is_none(),
-                "shim-only tool {variant:?} reports an mcp_config_relative_path"
+            None => assert!(
+                synrepo_only.contains(variant),
+                "{variant:?} lacks an agent-config id but is not documented synrepo-only"
             ),
         }
     }
 }
 
 #[test]
-fn mcp_config_relative_path_pin() {
-    assert_eq!(
-        AgentTool::Claude.mcp_config_relative_path(),
-        Some(".mcp.json")
-    );
-    assert_eq!(
-        AgentTool::Codex.mcp_config_relative_path(),
-        Some(".codex/config.toml")
-    );
-    assert_eq!(
-        AgentTool::OpenCode.mcp_config_relative_path(),
-        Some("opencode.json")
-    );
-    assert_eq!(
-        AgentTool::Cursor.mcp_config_relative_path(),
-        Some(".cursor/mcp.json")
-    );
-    assert_eq!(
-        AgentTool::Windsurf.mcp_config_relative_path(),
-        Some(".windsurf/mcp.json")
-    );
-    assert_eq!(
-        AgentTool::Roo.mcp_config_relative_path(),
-        Some(".roo/mcp.json")
-    );
+fn automation_tier_tracks_agent_config_mcp_support() {
+    use clap::ValueEnum;
+    for variant in AgentTool::value_variants() {
+        assert_eq!(
+            variant.automation_tier(),
+            if variant.installer_supports_mcp() {
+                AutomationTier::Automated
+            } else {
+                AutomationTier::ShimOnly
+            },
+            "automation tier drifted from agent-config MCP registry for {variant:?}"
+        );
+    }
 }
 
 #[test]
@@ -84,57 +73,30 @@ fn test_display_name() {
 #[test]
 fn test_output_path() {
     let repo_root = std::path::Path::new("/mock/repo");
-    assert_eq!(
-        AgentTool::Claude.output_path(repo_root),
-        repo_root
-            .join(".claude")
-            .join("skills")
-            .join("synrepo")
-            .join("SKILL.md")
-    );
-    assert_eq!(
-        AgentTool::Cursor.output_path(repo_root),
-        repo_root
-            .join(".cursor")
-            .join("skills")
-            .join("synrepo")
-            .join("SKILL.md")
-    );
-    assert_eq!(
-        AgentTool::Copilot.output_path(repo_root),
-        repo_root.join("synrepo-copilot-instructions.md")
-    );
+    let scope = agent_config::Scope::Local(repo_root.to_path_buf());
+    for tool in [
+        AgentTool::Claude,
+        AgentTool::Cursor,
+        AgentTool::Copilot,
+        AgentTool::Codex,
+        AgentTool::Windsurf,
+        AgentTool::OpenCode,
+        AgentTool::Gemini,
+        AgentTool::Qwen,
+        AgentTool::Junie,
+        AgentTool::Roo,
+        AgentTool::Trae,
+    ] {
+        assert_eq!(
+            tool.output_path(repo_root),
+            tool.resolved_shim_output_path(&scope)
+                .expect("agent-config backed tool should report a shim path"),
+            "{tool:?} output path should come from agent-config status"
+        );
+    }
     assert_eq!(
         AgentTool::Generic.output_path(repo_root),
         repo_root.join("synrepo-agents.md")
-    );
-    assert_eq!(
-        AgentTool::Codex.output_path(repo_root),
-        repo_root
-            .join(".agents")
-            .join("skills")
-            .join("synrepo")
-            .join("SKILL.md")
-    );
-    assert_eq!(
-        AgentTool::Windsurf.output_path(repo_root),
-        repo_root
-            .join(".windsurf")
-            .join("skills")
-            .join("synrepo")
-            .join("SKILL.md")
-    );
-    assert_eq!(
-        AgentTool::OpenCode.output_path(repo_root),
-        repo_root.join("AGENTS.md")
-    );
-    assert_eq!(
-        AgentTool::Gemini.output_path(repo_root),
-        repo_root
-            .join(".gemini")
-            .join("skills")
-            .join("synrepo")
-            .join("SKILL.md")
     );
     assert_eq!(
         AgentTool::Goose.output_path(repo_root),
@@ -148,32 +110,12 @@ fn test_output_path() {
         repo_root.join(".kiro").join("prompts").join("synrepo.md")
     );
     assert_eq!(
-        AgentTool::Qwen.output_path(repo_root),
-        repo_root.join(".qwen").join("commands").join("synrepo.md")
-    );
-    assert_eq!(
-        AgentTool::Junie.output_path(repo_root),
-        repo_root.join(".junie").join("commands").join("synrepo.md")
-    );
-    assert_eq!(
-        AgentTool::Roo.output_path(repo_root),
-        repo_root.join(".roo").join("commands").join("synrepo.md")
-    );
-    assert_eq!(
         AgentTool::Tabnine.output_path(repo_root),
         repo_root
             .join(".tabnine")
             .join("agent")
             .join("commands")
             .join("synrepo.toml")
-    );
-    assert_eq!(
-        AgentTool::Trae.output_path(repo_root),
-        repo_root
-            .join(".trae")
-            .join("skills")
-            .join("synrepo")
-            .join("SKILL.md")
     );
 }
 

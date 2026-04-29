@@ -45,7 +45,7 @@ Then, on a ready repo:
 synrepo
 ```
 
-- `synrepo setup` initializes `.synrepo/`, writes the agent instructions or skill file, and registers project-scoped MCP where that integration is automated.
+- `synrepo setup` initializes `.synrepo/`, writes the agent instructions or skill file, and registers MCP globally where that integration is automated. Use `synrepo setup <tool> --project` for repo-local MCP config instead.
 - `synrepo` probes the repo and routes to setup, repair, or the dashboard based on current state.
 - `synrepo watch --daemon` is the normal follow-up if you want the repo model to stay fresh while you edit.
 
@@ -83,10 +83,10 @@ synrepo
 
 | Tier | Tools | What synrepo does | What you do |
 |---|---|---|---|
-| Automated | `claude`, `codex`, `cursor`, `windsurf`, `open-code`, `roo` | Initializes `.synrepo/`, writes the repo-local skill or instruction file, and registers the project-scoped MCP server in the agent's local config | Start the agent in the repo |
-| Shim-only | `copilot`, `generic`, `gemini`, `goose`, `kiro`, `qwen`, `junie`, `tabnine`, `trae` | Initializes `.synrepo/` and writes the repo-local skill or instruction file | Point the agent at `synrepo mcp --repo .` in that tool's own MCP config |
+| Automated | `claude`, `codex`, `copilot`, `cursor`, `gemini`, `junie`, `open-code`, `qwen`, `roo`, `tabnine`, `windsurf` | Initializes `.synrepo/`, writes the skill or instruction file through `agent-config`, and registers the MCP server in the agent's global config by default | Start the agent in the repo |
+| Shim-only | `generic`, `goose`, `kiro`, `trae` | Initializes `.synrepo/` and writes the repo-local skill or instruction file | Point the agent at `synrepo mcp --repo .` in that tool's own MCP config |
 
-For Codex, `synrepo setup codex` writes the skill to `.agents/skills/synrepo/SKILL.md` and registers MCP in trusted project `.codex/config.toml` using `[mcp_servers.synrepo]`. For a global Codex registration with the installed binary, run `codex mcp add synrepo -- synrepo mcp --repo .`; for an npm-distributed build, run `codex mcp add synrepo -- npx -y synrepo mcp --repo .`. You can also add the same table to `~/.codex/config.toml`.
+`synrepo setup <tool>` now prefers the agent's global config when `agent-config` supports it. Pass `--project` to write repo-local MCP config and launch the server as `synrepo mcp --repo .`. Legacy unowned setup artifacts can be adopted into the new ownership ledger with `synrepo upgrade --apply`.
 
 MCP usage details, including resources, advisory overlay tools, and edit-gated tools, live in [docs/MCP.md](docs/MCP.md).
 

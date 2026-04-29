@@ -5,7 +5,7 @@ use super::report::{
     entry_after_failure, entry_after_success, render_client_setup_summary,
     render_detected_client_summary, ClientBefore, ClientSetupEntry,
 };
-use super::steps::setup;
+use super::steps::{resolve_setup_scope, setup};
 use crate::cli_support::agent_shims::AgentTool;
 use crate::cli_support::commands::basic::agent_setup;
 
@@ -81,11 +81,25 @@ fn dedup_preserve_order(list: &mut Vec<AgentTool>) {
     list.retain(|tool| seen.insert(*tool));
 }
 
+fn scope_for_kind(
+    repo_root: &Path,
+    tool: AgentTool,
+    kind: &str,
+    project: bool,
+) -> agent_config::Scope {
+    if kind == "setup" {
+        resolve_setup_scope(repo_root, tool, project)
+    } else {
+        agent_config::Scope::Local(repo_root.to_path_buf())
+    }
+}
+
 fn run_many_with_skipped<F>(
     repo_root: &Path,
     tools: &[AgentTool],
     skipped: &[AgentTool],
     kind: &str,
+    project: bool,
     mut run_one: F,
 ) -> anyhow::Result<()>
 where
@@ -100,11 +114,15 @@ where
     let mut entries: Vec<ClientSetupEntry> = skipped
         .iter()
         .copied()
-        .map(|tool| ClientSetupEntry::skipped(repo_root, tool, detected.contains(&tool)))
+        .map(|tool| {
+            let scope = scope_for_kind(repo_root, tool, kind, project);
+            ClientSetupEntry::skipped(repo_root, tool, detected.contains(&tool), &scope)
+        })
         .collect();
 
     if let [single] = tools {
-        let before = ClientBefore::observe(repo_root, *single);
+        let scope = scope_for_kind(repo_root, *single, kind, project);
+        let before = ClientBefore::observe(repo_root, *single, &scope);
         return match run_one(*single) {
             Ok(()) => {
                 entries.push(entry_after_success(
@@ -112,6 +130,7 @@ where
                     *single,
                     before,
                     detected.contains(single),
+                    &scope,
                 ));
                 print!("{}", render_client_setup_summary(repo_root, kind, &entries));
                 Ok(())
@@ -121,6 +140,7 @@ where
                     repo_root,
                     *single,
                     detected.contains(single),
+                    &scope,
                     &err,
                 ));
                 print!("{}", render_client_setup_summary(repo_root, kind, &entries));
@@ -130,7 +150,8 @@ where
     }
     let mut failures: Vec<(AgentTool, anyhow::Error)> = Vec::new();
     for (idx, tool) in tools.iter().copied().enumerate() {
-        let before = ClientBefore::observe(repo_root, tool);
+        let scope = scope_for_kind(repo_root, tool, kind, project);
+        let before = ClientBefore::observe(repo_root, tool, &scope);
         println!(
             "\n=== [{}/{}] {} ===",
             idx + 1,
@@ -143,6 +164,7 @@ where
                 tool,
                 before,
                 detected.contains(&tool),
+                &scope,
             )),
             Err(err) => {
                 eprintln!("  error: {err:#}");
@@ -150,6 +172,7 @@ where
                     repo_root,
                     tool,
                     detected.contains(&tool),
+                    &scope,
                     &err,
                 ));
                 failures.push((tool, err));
@@ -182,14 +205,15 @@ pub(crate) fn setup_many_resolved(
     resolution: &ToolResolution,
     force: bool,
     gitignore: bool,
-    global: bool,
+    project: bool,
 ) -> anyhow::Result<()> {
     run_many_with_skipped(
         repo_root,
         &resolution.selected,
         &resolution.skipped,
         "setup",
-        |tool| setup(repo_root, tool, force, gitignore, global),
+        project,
+        |tool| setup(repo_root, tool, force, gitignore, project),
     )
 }
 
@@ -204,6 +228,7 @@ pub(crate) fn agent_setup_many_resolved(
         &resolution.selected,
         &resolution.skipped,
         "agent-setup",
+        true,
         |tool| agent_setup(repo_root, tool, force, regen),
     )
 }

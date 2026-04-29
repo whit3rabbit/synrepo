@@ -8,8 +8,8 @@ use synrepo::tui::{
 
 use super::agent_shims::{registry as shim_registry, AgentTool, AutomationTier};
 use super::commands::{
-    reconcile, step_apply_integration, step_backup_mcp_config, step_init, step_register_mcp,
-    step_write_shim, upgrade,
+    reconcile, resolve_setup_scope, step_apply_integration, step_backup_mcp_config, step_init,
+    step_register_mcp, step_write_shim, upgrade,
 };
 use super::setup_cmd::run_explain_step;
 
@@ -102,10 +102,15 @@ pub(crate) fn execute_repair_plan(repo_root: &Path, plan: RepairPlan) -> anyhow:
             tool.display_name(),
             tool.artifact_label()
         );
-        let backup = step_backup_mcp_config(repo_root, tool)?;
-        step_apply_integration(repo_root, tool, false, false)?;
+        let scope = resolve_setup_scope(repo_root, tool, false);
+        let backup = if matches!(scope, agent_config::Scope::Local(_)) {
+            step_backup_mcp_config(repo_root, tool, &scope)?
+        } else {
+            None
+        };
+        step_apply_integration(repo_root, tool, false, &scope)?;
         let wrote_mcp = matches!(tool.automation_tier(), AutomationTier::Automated);
-        shim_registry::record_install_best_effort(repo_root, tool, wrote_mcp, backup);
+        shim_registry::record_install_best_effort(repo_root, tool, &scope, wrote_mcp, backup);
     }
     println!("Repair complete.");
     Ok(())
@@ -119,17 +124,20 @@ pub(crate) fn execute_integration_plan(
     plan: IntegrationPlan,
 ) -> anyhow::Result<()> {
     let tool = AgentTool::from_target_kind(plan.target);
+    let scope = resolve_setup_scope(repo_root, tool, false);
     if plan.write_shim {
-        step_write_shim(repo_root, tool, plan.overwrite_shim)?;
+        step_write_shim(repo_root, tool, &scope, plan.overwrite_shim)?;
     }
     let mut backup: Option<String> = None;
     if plan.register_mcp {
-        backup = step_backup_mcp_config(repo_root, tool)?;
-        step_register_mcp(repo_root, tool, false)?;
+        if matches!(scope, agent_config::Scope::Local(_)) {
+            backup = step_backup_mcp_config(repo_root, tool, &scope)?;
+        }
+        step_register_mcp(repo_root, tool, &scope)?;
     }
     let wrote_mcp =
         plan.register_mcp && matches!(tool.automation_tier(), AutomationTier::Automated);
-    shim_registry::record_install_best_effort(repo_root, tool, wrote_mcp, backup);
+    shim_registry::record_install_best_effort(repo_root, tool, &scope, wrote_mcp, backup);
     println!("Integration complete.");
     Ok(())
 }

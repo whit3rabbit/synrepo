@@ -1,9 +1,32 @@
 use std::fs;
+use std::path::Path;
 use tempfile::tempdir;
 
-use crate::cli_support::commands::{
-    setup_claude_mcp, setup_cursor_mcp, setup_roo_mcp, setup_windsurf_mcp,
-};
+use agent_config::Scope;
+
+use crate::cli_support::agent_shims::AgentTool;
+use crate::cli_support::commands::{step_register_mcp, StepOutcome};
+
+fn setup_mcp(repo_root: &Path, tool: AgentTool) -> anyhow::Result<StepOutcome> {
+    let scope = Scope::Local(repo_root.to_path_buf());
+    step_register_mcp(repo_root, tool, &scope)
+}
+
+fn setup_claude_mcp(repo_root: &Path, _global: bool) -> anyhow::Result<StepOutcome> {
+    setup_mcp(repo_root, AgentTool::Claude)
+}
+
+fn setup_cursor_mcp(repo_root: &Path, _global: bool) -> anyhow::Result<StepOutcome> {
+    setup_mcp(repo_root, AgentTool::Cursor)
+}
+
+fn setup_windsurf_mcp(repo_root: &Path, _global: bool) -> anyhow::Result<StepOutcome> {
+    setup_mcp(repo_root, AgentTool::Windsurf)
+}
+
+fn setup_roo_mcp(repo_root: &Path, _global: bool) -> anyhow::Result<StepOutcome> {
+    setup_mcp(repo_root, AgentTool::Roo)
+}
 
 // ---------- Claude: .mcp.json ----------
 
@@ -15,9 +38,10 @@ fn claude_malformed_json_errors() {
     fs::write(&path, original).unwrap();
 
     let err = setup_claude_mcp(dir.path(), false).expect_err("must error on malformed JSON");
+    let message = format!("{err:#}");
     assert!(
-        err.to_string().contains("not valid JSON"),
-        "error must name parse failure: {err}"
+        message.contains("invalid JSON"),
+        "error must name parse failure: {message}"
     );
     let after = fs::read_to_string(&path).unwrap();
     assert_eq!(after, original, "malformed file must not be overwritten");
@@ -63,7 +87,7 @@ fn claude_duplicate_registration_idempotent() {
 }
 
 #[test]
-fn claude_existing_different_synrepo_is_replaced() {
+fn claude_existing_different_unowned_synrepo_is_refused() {
     let dir = tempdir().unwrap();
     let path = dir.path().join(".mcp.json");
     fs::write(
@@ -77,23 +101,27 @@ fn claude_existing_different_synrepo_is_replaced() {
     )
     .unwrap();
 
-    setup_claude_mcp(dir.path(), false).unwrap();
+    let err = setup_claude_mcp(dir.path(), false).expect_err("unowned synrepo entry must refuse");
+    assert!(
+        format!("{err:#}").contains("not owned by caller"),
+        "unexpected error: {err:#}"
+    );
 
     let parsed: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(parsed["mcpServers"]["synrepo"]["command"], "synrepo");
-    let args = parsed["mcpServers"]["synrepo"]["args"].as_array().unwrap();
-    assert_eq!(args.len(), 3);
+    assert_eq!(parsed["mcpServers"]["synrepo"]["command"], "legacy-bin");
 }
 
 #[test]
-fn claude_rejects_non_object_root() {
+fn claude_replaces_non_object_root_via_installer() {
     let dir = tempdir().unwrap();
     let path = dir.path().join(".mcp.json");
     fs::write(&path, "[\"not\", \"an\", \"object\"]").unwrap();
 
-    let err = setup_claude_mcp(dir.path(), false).expect_err("must error on non-object root");
-    assert!(err.to_string().contains("not a JSON object"));
+    setup_claude_mcp(dir.path(), false).unwrap();
+    let parsed: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(parsed["mcpServers"]["synrepo"]["command"], "synrepo");
 }
 
 // ---------- Cursor: .cursor/mcp.json ----------
@@ -106,7 +134,7 @@ fn cursor_malformed_json_errors() {
     fs::write(&path, "{ invalid }").unwrap();
 
     let err = setup_cursor_mcp(dir.path(), false).expect_err("must error on malformed JSON");
-    assert!(err.to_string().contains("not valid JSON"));
+    assert!(format!("{err:#}").contains("invalid JSON"));
     let after = fs::read_to_string(&path).unwrap();
     assert_eq!(
         after, "{ invalid }",
@@ -155,7 +183,7 @@ fn cursor_duplicate_registration_idempotent() {
 }
 
 #[test]
-fn cursor_existing_different_synrepo_is_replaced() {
+fn cursor_existing_different_unowned_synrepo_is_refused() {
     let dir = tempdir().unwrap();
     fs::create_dir_all(dir.path().join(".cursor")).unwrap();
     let path = dir.path().join(".cursor").join("mcp.json");
@@ -170,24 +198,28 @@ fn cursor_existing_different_synrepo_is_replaced() {
     )
     .unwrap();
 
-    setup_cursor_mcp(dir.path(), false).unwrap();
+    let err = setup_cursor_mcp(dir.path(), false).expect_err("unowned synrepo entry must refuse");
+    assert!(
+        format!("{err:#}").contains("not owned by caller"),
+        "unexpected error: {err:#}"
+    );
 
     let parsed: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(parsed["mcpServers"]["synrepo"]["command"], "synrepo");
-    let args = parsed["mcpServers"]["synrepo"]["args"].as_array().unwrap();
-    assert_eq!(args.len(), 3);
+    assert_eq!(parsed["mcpServers"]["synrepo"]["command"], "legacy-bin");
 }
 
 #[test]
-fn cursor_rejects_non_object_root() {
+fn cursor_replaces_non_object_root_via_installer() {
     let dir = tempdir().unwrap();
     fs::create_dir_all(dir.path().join(".cursor")).unwrap();
     let path = dir.path().join(".cursor").join("mcp.json");
     fs::write(&path, "[\"not\", \"an\", \"object\"]").unwrap();
 
-    let err = setup_cursor_mcp(dir.path(), false).expect_err("must error on non-object root");
-    assert!(err.to_string().contains("not a JSON object"));
+    setup_cursor_mcp(dir.path(), false).unwrap();
+    let parsed: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(parsed["mcpServers"]["synrepo"]["command"], "synrepo");
 }
 
 // ---------- Windsurf: .windsurf/mcp.json ----------
@@ -195,12 +227,12 @@ fn cursor_rejects_non_object_root() {
 #[test]
 fn windsurf_malformed_json_errors() {
     let dir = tempdir().unwrap();
-    let path = dir.path().join(".windsurf").join("mcp.json");
+    let path = dir.path().join(".windsurf").join("mcp_config.json");
     fs::create_dir_all(dir.path().join(".windsurf")).unwrap();
     fs::write(&path, "{ invalid }").unwrap();
 
     let err = setup_windsurf_mcp(dir.path(), false).expect_err("must error on malformed JSON");
-    assert!(err.to_string().contains("not valid JSON"));
+    assert!(format!("{err:#}").contains("invalid JSON"));
     let after = fs::read_to_string(&path).unwrap();
     assert_eq!(
         after, "{ invalid }",
@@ -212,7 +244,7 @@ fn windsurf_malformed_json_errors() {
 fn windsurf_preserves_unknown_keys() {
     let dir = tempdir().unwrap();
     fs::create_dir_all(dir.path().join(".windsurf")).unwrap();
-    let path = dir.path().join(".windsurf").join("mcp.json");
+    let path = dir.path().join(".windsurf").join("mcp_config.json");
     fs::write(
         &path,
         r#"{
@@ -242,17 +274,17 @@ fn windsurf_preserves_unknown_keys() {
 fn windsurf_duplicate_registration_idempotent() {
     let dir = tempdir().unwrap();
     setup_windsurf_mcp(dir.path(), false).unwrap();
-    let first = fs::read(dir.path().join(".windsurf").join("mcp.json")).unwrap();
+    let first = fs::read(dir.path().join(".windsurf").join("mcp_config.json")).unwrap();
     setup_windsurf_mcp(dir.path(), false).unwrap();
-    let second = fs::read(dir.path().join(".windsurf").join("mcp.json")).unwrap();
+    let second = fs::read(dir.path().join(".windsurf").join("mcp_config.json")).unwrap();
     assert_eq!(first, second, "rerun on identical content must be a no-op");
 }
 
 #[test]
-fn windsurf_existing_different_synrepo_is_replaced() {
+fn windsurf_existing_different_unowned_synrepo_is_refused() {
     let dir = tempdir().unwrap();
     fs::create_dir_all(dir.path().join(".windsurf")).unwrap();
-    let path = dir.path().join(".windsurf").join("mcp.json");
+    let path = dir.path().join(".windsurf").join("mcp_config.json");
     fs::write(
         &path,
         r#"{
@@ -264,24 +296,28 @@ fn windsurf_existing_different_synrepo_is_replaced() {
     )
     .unwrap();
 
-    setup_windsurf_mcp(dir.path(), false).unwrap();
+    let err = setup_windsurf_mcp(dir.path(), false).expect_err("unowned synrepo entry must refuse");
+    assert!(
+        format!("{err:#}").contains("not owned by caller"),
+        "unexpected error: {err:#}"
+    );
 
     let parsed: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(parsed["mcpServers"]["synrepo"]["command"], "synrepo");
-    let args = parsed["mcpServers"]["synrepo"]["args"].as_array().unwrap();
-    assert_eq!(args.len(), 3);
+    assert_eq!(parsed["mcpServers"]["synrepo"]["command"], "legacy-bin");
 }
 
 #[test]
-fn windsurf_rejects_non_object_root() {
+fn windsurf_replaces_non_object_root_via_installer() {
     let dir = tempdir().unwrap();
     fs::create_dir_all(dir.path().join(".windsurf")).unwrap();
-    let path = dir.path().join(".windsurf").join("mcp.json");
+    let path = dir.path().join(".windsurf").join("mcp_config.json");
     fs::write(&path, "[\"not\", \"an\", \"object\"]").unwrap();
 
-    let err = setup_windsurf_mcp(dir.path(), false).expect_err("must error on non-object root");
-    assert!(err.to_string().contains("not a JSON object"));
+    setup_windsurf_mcp(dir.path(), false).unwrap();
+    let parsed: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(parsed["mcpServers"]["synrepo"]["command"], "synrepo");
 }
 
 // ---------- Roo: .roo/mcp.json ----------
@@ -294,7 +330,7 @@ fn roo_malformed_json_errors() {
     fs::write(&path, "{ invalid }").unwrap();
 
     let err = setup_roo_mcp(dir.path(), false).expect_err("must error on malformed JSON");
-    assert!(err.to_string().contains("not valid JSON"));
+    assert!(format!("{err:#}").contains("invalid JSON"));
     let after = fs::read_to_string(&path).unwrap();
     assert_eq!(
         after, "{ invalid }",
@@ -343,7 +379,7 @@ fn roo_duplicate_registration_idempotent() {
 }
 
 #[test]
-fn roo_existing_different_synrepo_is_replaced() {
+fn roo_existing_different_unowned_synrepo_is_refused() {
     let dir = tempdir().unwrap();
     fs::create_dir_all(dir.path().join(".roo")).unwrap();
     let path = dir.path().join(".roo").join("mcp.json");
@@ -358,24 +394,28 @@ fn roo_existing_different_synrepo_is_replaced() {
     )
     .unwrap();
 
-    setup_roo_mcp(dir.path(), false).unwrap();
+    let err = setup_roo_mcp(dir.path(), false).expect_err("unowned synrepo entry must refuse");
+    assert!(
+        format!("{err:#}").contains("not owned by caller"),
+        "unexpected error: {err:#}"
+    );
 
     let parsed: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
-    assert_eq!(parsed["mcpServers"]["synrepo"]["command"], "synrepo");
-    let args = parsed["mcpServers"]["synrepo"]["args"].as_array().unwrap();
-    assert_eq!(args.len(), 3);
+    assert_eq!(parsed["mcpServers"]["synrepo"]["command"], "legacy-bin");
 }
 
 #[test]
-fn roo_rejects_non_object_root() {
+fn roo_replaces_non_object_root_via_installer() {
     let dir = tempdir().unwrap();
     fs::create_dir_all(dir.path().join(".roo")).unwrap();
     let path = dir.path().join(".roo").join("mcp.json");
     fs::write(&path, "[\"not\", \"an\", \"object\"]").unwrap();
 
-    let err = setup_roo_mcp(dir.path(), false).expect_err("must error on non-object root");
-    assert!(err.to_string().contains("not a JSON object"));
+    setup_roo_mcp(dir.path(), false).unwrap();
+    let parsed: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(parsed["mcpServers"]["synrepo"]["command"], "synrepo");
 }
 
 // opencode and atomic-write tests are in misc.rs.

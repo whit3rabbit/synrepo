@@ -8,8 +8,8 @@ use synrepo::tui::{
 
 use super::agent_shims::{registry as shim_registry, AgentTool, AutomationTier};
 use super::commands::{
-    step_apply_explain, step_apply_integration, step_backup_mcp_config, step_ensure_ready,
-    step_init,
+    resolve_setup_scope, step_apply_explain, step_apply_integration, step_backup_mcp_config,
+    step_ensure_ready, step_init,
 };
 use super::entry::{bare_ready_summary, bare_uninitialized_fallback};
 use super::explain_cmd::print_explain_discovery_hint;
@@ -44,10 +44,15 @@ pub(crate) fn execute_setup_plan(repo_root: &Path, plan: SetupPlan) -> anyhow::R
     step_init(repo_root, Some(plan.mode), false, false)?;
     if let Some(target) = plan.target {
         let tool = AgentTool::from_target_kind(target);
-        let backup = step_backup_mcp_config(repo_root, tool)?;
-        step_apply_integration(repo_root, tool, false, false)?;
+        let scope = resolve_setup_scope(repo_root, tool, false);
+        let backup = if matches!(scope, agent_config::Scope::Local(_)) {
+            step_backup_mcp_config(repo_root, tool, &scope)?
+        } else {
+            None
+        };
+        step_apply_integration(repo_root, tool, false, &scope)?;
         let wrote_mcp = matches!(tool.automation_tier(), AutomationTier::Automated);
-        shim_registry::record_install_best_effort(repo_root, tool, wrote_mcp, backup);
+        shim_registry::record_install_best_effort(repo_root, tool, &scope, wrote_mcp, backup);
     }
     if plan.explain.is_some() {
         step_apply_explain(repo_root, plan.explain.as_ref())?;

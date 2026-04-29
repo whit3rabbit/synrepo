@@ -18,17 +18,18 @@ fn agent_setup_regen_overwrites_non_utf8_existing() {
     let dir = tempdir().unwrap();
     let repo = dir.path();
 
-    let out_path = AgentTool::Claude.output_path(repo);
+    let tool = AgentTool::Generic;
+    let out_path = tool.output_path(repo);
     fs::create_dir_all(out_path.parent().unwrap()).unwrap();
     // Invalid UTF-8: lone 0x80 continuation byte and bare 0xFF.
     fs::write(&out_path, [0x80u8, 0xffu8, 0xfeu8, 0x80u8]).unwrap();
 
-    agent_setup(repo, AgentTool::Claude, false, true).expect("regen must succeed");
+    agent_setup(repo, tool, false, true).expect("regen must succeed");
 
     let after = fs::read_to_string(&out_path).expect("file must be valid UTF-8 after regen");
     assert_eq!(
         after,
-        AgentTool::Claude.shim_content(),
+        tool.shim_content(),
         "regen must overwrite non-UTF8 existing content with the canonical shim"
     );
 }
@@ -45,7 +46,8 @@ fn agent_setup_regen_follows_symlink_to_sibling() {
     let dir = tempdir().unwrap();
     let repo = dir.path();
 
-    let out_path = AgentTool::Claude.output_path(repo);
+    let tool = AgentTool::Generic;
+    let out_path = tool.output_path(repo);
     let parent = out_path.parent().unwrap();
     fs::create_dir_all(parent).unwrap();
 
@@ -53,7 +55,7 @@ fn agent_setup_regen_follows_symlink_to_sibling() {
     fs::write(&sibling, "sibling original").unwrap();
     symlink(&sibling, &out_path).unwrap();
 
-    agent_setup(repo, AgentTool::Claude, false, true).expect("regen must succeed");
+    agent_setup(repo, tool, false, true).expect("regen must succeed");
 
     // Symlink is preserved (not replaced by a regular file).
     let link_meta = fs::symlink_metadata(&out_path).unwrap();
@@ -66,7 +68,7 @@ fn agent_setup_regen_follows_symlink_to_sibling() {
     let sibling_content = fs::read_to_string(&sibling).unwrap();
     assert_eq!(
         sibling_content,
-        AgentTool::Claude.shim_content(),
+        tool.shim_content(),
         "write followed the symlink; sibling now holds the shim content"
     );
 }
@@ -79,7 +81,8 @@ fn agent_setup_returns_error_when_parent_is_a_file() {
     let dir = tempdir().unwrap();
     let repo = dir.path();
 
-    let out_path = AgentTool::Claude.output_path(repo);
+    let tool = AgentTool::Goose;
+    let out_path = tool.output_path(repo);
     let parent = out_path.parent().unwrap();
     // Create intermediate dirs up to the parent, then plant a regular file
     // at the parent path so `create_dir_all(parent)` fails.
@@ -88,7 +91,7 @@ fn agent_setup_returns_error_when_parent_is_a_file() {
     }
     fs::write(parent, "not a directory").unwrap();
 
-    let err = agent_setup(repo, AgentTool::Claude, false, false)
+    let err = agent_setup(repo, tool, false, false)
         .expect_err("must error when parent path is a regular file");
     let msg = err.to_string();
     assert!(
@@ -109,12 +112,13 @@ fn agent_setup_without_force_does_not_overwrite_malformed_existing() {
     let dir = tempdir().unwrap();
     let repo = dir.path();
 
-    let out_path = AgentTool::Claude.output_path(repo);
+    let tool = AgentTool::Generic;
+    let out_path = tool.output_path(repo);
     fs::create_dir_all(out_path.parent().unwrap()).unwrap();
     let garbage = "not-the-shim: arbitrary pre-existing content\n";
     fs::write(&out_path, garbage).unwrap();
 
-    agent_setup(repo, AgentTool::Claude, false, false)
+    agent_setup(repo, tool, false, false)
         .expect("must return Ok even when skipping an existing file");
 
     let after = fs::read_to_string(&out_path).unwrap();

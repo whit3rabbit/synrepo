@@ -1,7 +1,43 @@
+use std::ffi::OsString;
 use std::fs;
+use std::path::Path;
 use tempfile::tempdir;
 
-use crate::cli_support::commands::setup_codex_mcp;
+use agent_config::Scope;
+
+use crate::cli_support::agent_shims::AgentTool;
+use crate::cli_support::commands::{step_register_mcp, StepOutcome};
+
+fn setup_codex_mcp(repo_root: &Path, global: bool) -> anyhow::Result<StepOutcome> {
+    let scope = if global {
+        Scope::Global
+    } else {
+        Scope::Local(repo_root.to_path_buf())
+    };
+    step_register_mcp(repo_root, AgentTool::Codex, &scope)
+}
+
+struct EnvGuard {
+    key: &'static str,
+    original: Option<OsString>,
+}
+
+impl EnvGuard {
+    fn set(key: &'static str, value: &Path) -> Self {
+        let original = std::env::var_os(key);
+        std::env::set_var(key, value);
+        Self { key, original }
+    }
+}
+
+impl Drop for EnvGuard {
+    fn drop(&mut self) {
+        match &self.original {
+            Some(value) => std::env::set_var(self.key, value),
+            None => std::env::remove_var(self.key),
+        }
+    }
+}
 
 #[test]
 fn codex_malformed_toml_errors() {
@@ -12,9 +48,10 @@ fn codex_malformed_toml_errors() {
     fs::write(&path, original).unwrap();
 
     let err = setup_codex_mcp(dir.path(), false).expect_err("must error on malformed TOML");
+    let message = format!("{err:#}");
     assert!(
-        err.to_string().contains("not valid TOML"),
-        "error must name parse failure: {err}"
+        message.contains("invalid TOML"),
+        "error must name parse failure: {message}"
     );
     let after = fs::read_to_string(&path).unwrap();
     assert_eq!(after, original, "malformed file must not be overwritten");
@@ -123,7 +160,7 @@ fn codex_duplicate_in_different_section_untouched() {
 }
 
 #[test]
-fn codex_existing_different_synrepo_is_replaced() {
+fn codex_existing_different_unowned_synrepo_is_refused() {
     let dir = tempdir().unwrap();
     fs::create_dir_all(dir.path().join(".codex")).unwrap();
     let path = dir.path().join(".codex").join("config.toml");
@@ -133,28 +170,24 @@ fn codex_existing_different_synrepo_is_replaced() {
     )
     .unwrap();
 
-    setup_codex_mcp(dir.path(), false).unwrap();
+    let err = setup_codex_mcp(dir.path(), false).expect_err("unowned synrepo entry must refuse");
+    assert!(
+        format!("{err:#}").contains("not owned by caller"),
+        "unexpected error: {err:#}"
+    );
 
     let parsed: toml::Value = toml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
     assert_eq!(
         parsed["mcp_servers"]["synrepo"]["command"]
             .as_str()
             .unwrap(),
-        "synrepo"
-    );
-    assert_eq!(
-        parsed["mcp_servers"]["synrepo"]["args"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|v| v.as_str().unwrap())
-            .collect::<Vec<_>>(),
-        vec!["mcp", "--repo", "."]
+        "legacy-bin",
+        "setup must not take over unowned legacy content"
     );
 }
 
 #[test]
-fn codex_legacy_mcp_synrepo_is_migrated() {
+fn codex_legacy_mcp_synrepo_is_left_for_upgrade_migration() {
     let dir = tempdir().unwrap();
     fs::create_dir_all(dir.path().join(".codex")).unwrap();
     let path = dir.path().join(".codex").join("config.toml");
@@ -165,8 +198,8 @@ fn codex_legacy_mcp_synrepo_is_migrated() {
     let raw = fs::read_to_string(&path).unwrap();
     let parsed: toml::Value = toml::from_str(&raw).unwrap();
     assert!(
-        parsed.get("mcp").and_then(|v| v.get("synrepo")).is_none(),
-        "legacy [mcp].synrepo must be removed: {raw}"
+        parsed.get("mcp").and_then(|v| v.get("synrepo")).is_some(),
+        "legacy [mcp].synrepo must be left for upgrade adoption: {raw}"
     );
     assert_eq!(
         parsed["mcp_servers"]["synrepo"]["command"]
@@ -181,8 +214,38 @@ fn codex_rejects_non_table_mcp() {
     let dir = tempdir().unwrap();
     fs::create_dir_all(dir.path().join(".codex")).unwrap();
     let path = dir.path().join(".codex").join("config.toml");
-    fs::write(&path, "mcp_servers = \"not a table\"\n").unwrap();
+    let original = "mcp_servers = \"not a table\"\n";
+    fs::write(&path, original).unwrap();
 
     let err = setup_codex_mcp(dir.path(), false).expect_err("must error on non-table mcp_servers");
-    assert!(err.to_string().contains("not a table"));
+    assert!(
+        format!("{err:#}").contains("failed to register synrepo MCP for Codex CLI"),
+        "unexpected error: {err:#}"
+    );
+    assert_eq!(fs::read_to_string(&path).unwrap(), original);
+}
+
+#[test]
+fn codex_global_uses_codex_home_without_repo_flag() {
+    let home = tempdir().unwrap();
+    let codex_home = home.path().canonicalize().unwrap();
+    let _lock =
+        synrepo::test_support::global_test_lock(synrepo::config::test_home::HOME_ENV_TEST_LOCK);
+    let _guard = EnvGuard::set("CODEX_HOME", &codex_home);
+    let dir = tempdir().unwrap();
+
+    setup_codex_mcp(dir.path(), true).unwrap();
+
+    let parsed: toml::Value =
+        toml::from_str(&fs::read_to_string(codex_home.join("config.toml")).unwrap()).unwrap();
+    assert_eq!(
+        parsed["mcp_servers"]["synrepo"]["args"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["mcp"]
+    );
+    assert!(!dir.path().join(".codex").exists());
 }

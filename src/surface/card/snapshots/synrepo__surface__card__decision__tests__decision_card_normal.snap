@@ -1,11 +1,11 @@
 ---
 source: src/surface/card/decision.rs
-assertion_line: 108
+assertion_line: 97
 expression: rendered
 ---
 {
-  "decision_body": "We store the canonical graph in SQLite because it provides transactional writes and zero-dependency deployment without a separate server process.",
-  "governed_node_ids": [],
+  "title": "Use SQLite for Graph Storage",
   "status": "Accepted",
-  "title": "Use SQLite for Graph Storage"
+  "decision_body": "We store the canonical graph in SQLite because it provides transactional writes and zero-dependency deployment without a separate server process.",
+  "governed_node_ids": []
 }

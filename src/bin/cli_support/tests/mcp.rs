@@ -316,7 +316,7 @@ fn docs_search_via_mcp_returns_file_commentary_docs() {
 
 #[test]
 fn mcp_source_registers_docs_search_tool() {
-    let source = fs::read_to_string("src/bin/cli_support/commands/mcp.rs")
+    let source = fs::read_to_string("src/bin/cli_support/commands/mcp/tools.rs")
         .expect("read MCP registration source");
     assert!(
         source.contains("name = \"synrepo_docs_search\""),
@@ -326,12 +326,14 @@ fn mcp_source_registers_docs_search_tool() {
 
 #[test]
 fn mcp_source_registers_context_pack_and_resources() {
-    let source = fs::read_to_string("src/bin/cli_support/commands/mcp.rs")
+    let tools_source = fs::read_to_string("src/bin/cli_support/commands/mcp/tools.rs")
         .expect("read MCP registration source");
     assert!(
-        source.contains("name = \"synrepo_context_pack\""),
+        tools_source.contains("name = \"synrepo_context_pack\""),
         "MCP registration must include synrepo_context_pack"
     );
+    let source =
+        fs::read_to_string("src/bin/cli_support/commands/mcp.rs").expect("read MCP server source");
     assert!(
         source.contains(".enable_resources()"),
         "MCP server must advertise resource support"
@@ -344,7 +346,7 @@ fn mcp_source_registers_context_pack_and_resources() {
 
 #[test]
 fn mcp_source_registers_workflow_aliases() {
-    let source = fs::read_to_string("src/bin/cli_support/commands/mcp.rs")
+    let source = fs::read_to_string("src/bin/cli_support/commands/mcp/tools.rs")
         .expect("read MCP registration source");
     for alias in [
         "synrepo_orient",

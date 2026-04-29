@@ -9,9 +9,14 @@ use crate::cli_support::commands::{
     render_client_setup_summary, ClientBefore, ClientSetupEntry, McpRegistration, ShimFreshness,
 };
 
+fn local_scope(repo: &std::path::Path) -> agent_config::Scope {
+    agent_config::Scope::Local(repo.to_path_buf())
+}
+
 #[test]
 fn report_classifies_current_shim_from_canonical_template() {
     let dir = tempdir().unwrap();
+    let scope = local_scope(dir.path());
     let path = AgentTool::Claude.output_path(dir.path());
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(&path, AgentTool::Claude.shim_content()).unwrap();
@@ -21,7 +26,7 @@ fn report_classifies_current_shim_from_canonical_template() {
         "canonical shim must embed the canonical doctrine block"
     );
     assert_eq!(
-        classify_shim_freshness(dir.path(), AgentTool::Claude),
+        classify_shim_freshness(dir.path(), AgentTool::Claude, &scope),
         ShimFreshness::Current
     );
 }
@@ -29,16 +34,17 @@ fn report_classifies_current_shim_from_canonical_template() {
 #[test]
 fn report_classifies_stale_shim_and_renders_regen_guidance() {
     let dir = tempdir().unwrap();
+    let scope = local_scope(dir.path());
     let path = AgentTool::Claude.output_path(dir.path());
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(&path, "## Agent doctrine\nold doctrine\n").unwrap();
 
-    let before = ClientBefore::observe(dir.path(), AgentTool::Claude);
-    let entry = entry_after_success(dir.path(), AgentTool::Claude, before, false);
+    let before = ClientBefore::observe(dir.path(), AgentTool::Claude, &scope);
+    let entry = entry_after_success(dir.path(), AgentTool::Claude, before, false, &scope);
     let rendered = render_client_setup_summary(dir.path(), "agent-setup", &[entry]);
 
     assert_eq!(
-        classify_shim_freshness(dir.path(), AgentTool::Claude),
+        classify_shim_freshness(dir.path(), AgentTool::Claude, &scope),
         ShimFreshness::Stale
     );
     assert!(rendered.contains("[stale]"), "{rendered}");
@@ -51,16 +57,17 @@ fn report_classifies_stale_shim_and_renders_regen_guidance() {
 #[test]
 fn report_keeps_missing_mcp_registration_separate_from_current_shim() {
     let dir = tempdir().unwrap();
+    let scope = local_scope(dir.path());
     let path = AgentTool::Claude.output_path(dir.path());
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(&path, AgentTool::Claude.shim_content()).unwrap();
 
-    let before = ClientBefore::observe(dir.path(), AgentTool::Claude);
-    let entry = entry_after_success(dir.path(), AgentTool::Claude, before, false);
+    let before = ClientBefore::observe(dir.path(), AgentTool::Claude, &scope);
+    let entry = entry_after_success(dir.path(), AgentTool::Claude, before, false, &scope);
     let rendered = render_client_setup_summary(dir.path(), "setup", &[entry]);
 
     assert_eq!(
-        classify_mcp_registration(dir.path(), AgentTool::Claude),
+        classify_mcp_registration(dir.path(), AgentTool::Claude, &scope),
         McpRegistration::Missing
     );
     assert!(rendered.contains("[current]"), "{rendered}");
@@ -74,15 +81,18 @@ fn report_keeps_missing_mcp_registration_separate_from_current_shim() {
 #[test]
 fn report_classifies_codex_mcp_servers_schema_only() {
     let dir = tempdir().unwrap();
-    fs::create_dir_all(dir.path().join(".codex")).unwrap();
-    fs::write(
-        dir.path().join(".codex").join("config.toml"),
-        "[mcp_servers.synrepo]\ncommand = \"synrepo\"\nargs = [\"mcp\", \"--repo\", \".\"]\n",
-    )
-    .unwrap();
+    let scope = local_scope(dir.path());
+    let spec = agent_config::McpSpec::builder("synrepo")
+        .owner("synrepo")
+        .stdio("synrepo", ["mcp", "--repo", "."])
+        .build();
+    let _ = agent_config::mcp_by_id("codex")
+        .unwrap()
+        .install_mcp(&scope, &spec)
+        .unwrap();
 
     assert_eq!(
-        classify_mcp_registration(dir.path(), AgentTool::Codex),
+        classify_mcp_registration(dir.path(), AgentTool::Codex, &scope),
         McpRegistration::Registered
     );
 
@@ -92,7 +102,7 @@ fn report_classifies_codex_mcp_servers_schema_only() {
     )
     .unwrap();
     assert_eq!(
-        classify_mcp_registration(dir.path(), AgentTool::Codex),
+        classify_mcp_registration(dir.path(), AgentTool::Codex, &scope),
         McpRegistration::Missing,
         "legacy [mcp].synrepo must not be reported as current Codex MCP"
     );
@@ -101,7 +111,8 @@ fn report_classifies_codex_mcp_servers_schema_only() {
 #[test]
 fn report_renders_skipped_target_output() {
     let dir = tempdir().unwrap();
-    let entry = ClientSetupEntry::skipped(dir.path(), AgentTool::Copilot, true);
+    let scope = local_scope(dir.path());
+    let entry = ClientSetupEntry::skipped(dir.path(), AgentTool::Copilot, true, &scope);
     let rendered = render_client_setup_summary(dir.path(), "agent-setup", &[entry]);
 
     assert!(
@@ -113,8 +124,9 @@ fn report_renders_skipped_target_output() {
 #[test]
 fn report_renders_failed_target_output() {
     let dir = tempdir().unwrap();
+    let scope = local_scope(dir.path());
     let err = anyhow!("blocked path");
-    let entry = entry_after_failure(dir.path(), AgentTool::Claude, false, &err);
+    let entry = entry_after_failure(dir.path(), AgentTool::Claude, false, &scope, &err);
     let rendered = render_client_setup_summary(dir.path(), "agent-setup", &[entry]);
 
     assert!(rendered.contains("Claude Code [failed]"), "{rendered}");

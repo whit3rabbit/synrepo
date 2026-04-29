@@ -1,10 +1,13 @@
+use agent_config::{Scope, ScopeKind};
 use std::fs;
 use std::path::Path;
 use synrepo::config::Mode;
 
 use super::mcp_register;
-use crate::cli_support::agent_shims::{registry as shim_registry, AgentTool, AutomationTier};
-use crate::cli_support::commands::basic::{agent_setup, init};
+use crate::cli_support::agent_shims::{
+    registry as shim_registry, scope_label, AgentTool, AutomationTier,
+};
+use crate::cli_support::commands::basic::{agent_setup_with_scope, init};
 use crate::cli_support::commands::setup_mcp_backup::step_backup_mcp_config;
 
 /// Outcome of a single setup step. Tests assert on this rather than captured
@@ -28,19 +31,29 @@ pub(crate) fn setup(
     tool: AgentTool,
     force: bool,
     gitignore: bool,
-    global: bool,
+    project: bool,
 ) -> anyhow::Result<()> {
-    println!("Setting up synrepo for {}...", tool.display_name());
+    let scope = resolve_setup_scope(repo_root, tool, project);
+    println!(
+        "Setting up synrepo for {} ({})...",
+        tool.display_name(),
+        scope_label(&scope)
+    );
 
     step_init(repo_root, None, force, gitignore)?;
     // Back up the tool's MCP config before any mutation so `synrepo remove`
     // can preserve the stored path as a `.bak` sidecar.
-    let backup = step_backup_mcp_config(repo_root, tool)?;
-    step_apply_integration(repo_root, tool, force, global)?;
+    let backup = match &scope {
+        Scope::Local(_) => step_backup_mcp_config(repo_root, tool, &scope)?,
+        Scope::Global => None,
+        _ => None,
+    };
+    step_apply_integration(repo_root, tool, force, &scope)?;
     step_ensure_ready(repo_root)?;
+    synrepo::registry::record_project(repo_root)?;
 
     let wrote_mcp = matches!(tool.automation_tier(), AutomationTier::Automated);
-    shim_registry::record_install_best_effort(repo_root, tool, wrote_mcp, backup);
+    shim_registry::record_install_best_effort(repo_root, tool, &scope, wrote_mcp, backup);
 
     println!("\nSetup complete. Repo is ready. One Next Step:");
     match tool {
@@ -81,6 +94,24 @@ pub(crate) fn setup(
     Ok(())
 }
 
+pub(crate) fn resolve_setup_scope(repo_root: &Path, tool: AgentTool, project: bool) -> Scope {
+    if project {
+        return Scope::Local(repo_root.to_path_buf());
+    }
+    let scopes = tool.supported_scopes();
+    if scopes.contains(&ScopeKind::Global) {
+        Scope::Global
+    } else if scopes.contains(&ScopeKind::Local) {
+        println!(
+            "  {} does not support global MCP registration; falling back to project scope.",
+            tool.display_name()
+        );
+        Scope::Local(repo_root.to_path_buf())
+    } else {
+        Scope::Local(repo_root.to_path_buf())
+    }
+}
+
 /// Initialize `.synrepo/` if not present (or always with `force`). Returns
 /// `AlreadyCurrent` when the directory is present and `force` is false.
 pub(crate) fn step_init(
@@ -109,6 +140,7 @@ pub(crate) fn step_init(
 pub(crate) fn step_write_shim(
     repo_root: &Path,
     target: AgentTool,
+    scope: &Scope,
     overwrite: bool,
 ) -> anyhow::Result<StepOutcome> {
     let out_path = target.output_path(repo_root);
@@ -118,8 +150,13 @@ pub(crate) fn step_write_shim(
         target.artifact_label()
     );
 
+    if matches!(scope, Scope::Global) {
+        agent_setup_with_scope(repo_root, target, scope, overwrite, overwrite)?;
+        return Ok(StepOutcome::Applied);
+    }
+
     if !out_path.exists() {
-        agent_setup(repo_root, target, false, false)?;
+        agent_setup_with_scope(repo_root, target, scope, false, false)?;
         return Ok(StepOutcome::Applied);
     }
 
@@ -135,7 +172,7 @@ pub(crate) fn step_write_shim(
     let was_current = fs::read_to_string(&out_path)
         .map(|existing| existing == target.shim_content())
         .unwrap_or(false);
-    agent_setup(repo_root, target, true, true)?;
+    agent_setup_with_scope(repo_root, target, scope, true, true)?;
     Ok(if was_current {
         StepOutcome::AlreadyCurrent
     } else {
@@ -148,25 +185,18 @@ pub(crate) fn step_write_shim(
 pub(crate) fn step_register_mcp(
     repo_root: &Path,
     target: AgentTool,
-    global: bool,
+    scope: &Scope,
 ) -> anyhow::Result<StepOutcome> {
-    match target {
-        AgentTool::Claude => mcp_register::setup_claude_mcp(repo_root, global),
-        AgentTool::Codex => mcp_register::setup_codex_mcp(repo_root, global),
-        AgentTool::OpenCode => mcp_register::setup_opencode_mcp(repo_root, global),
-        AgentTool::Cursor => mcp_register::setup_cursor_mcp(repo_root, global),
-        AgentTool::Windsurf => mcp_register::setup_windsurf_mcp(repo_root, global),
-        AgentTool::Roo => mcp_register::setup_roo_mcp(repo_root, global),
-        other => {
-            debug_assert_eq!(other.automation_tier(), AutomationTier::ShimOnly);
-            println!(
-                "  {} uses instructions-only integration; register `synrepo mcp --repo .` \
-                 as a stdio MCP server in the agent's own config.",
-                other.display_name()
-            );
-            Ok(StepOutcome::NotAutomated)
-        }
+    if target.installer_supports_mcp() {
+        return mcp_register::register_synrepo_mcp(repo_root, target, scope.clone());
     }
+    debug_assert_eq!(target.automation_tier(), AutomationTier::ShimOnly);
+    println!(
+        "  {} uses instructions-only integration; register `synrepo mcp --repo .` \
+         as a stdio MCP server in the agent's own config.",
+        target.display_name()
+    );
+    Ok(StepOutcome::NotAutomated)
 }
 
 /// Composite integration step: write the shim, then register the MCP server.
@@ -174,10 +204,10 @@ pub(crate) fn step_apply_integration(
     repo_root: &Path,
     target: AgentTool,
     force: bool,
-    global: bool,
+    scope: &Scope,
 ) -> anyhow::Result<StepOutcome> {
-    let shim = step_write_shim(repo_root, target, force)?;
-    let mcp = step_register_mcp(repo_root, target, global)?;
+    let shim = step_write_shim(repo_root, target, scope, force)?;
+    let mcp = step_register_mcp(repo_root, target, scope)?;
     Ok(match (shim, mcp) {
         (StepOutcome::Applied | StepOutcome::Updated, _) => StepOutcome::Applied,
         (_, StepOutcome::Applied) | (_, StepOutcome::Updated) => StepOutcome::Applied,

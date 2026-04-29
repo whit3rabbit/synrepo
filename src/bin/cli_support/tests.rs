@@ -12,6 +12,7 @@ mod mcp;
 mod mcp_edits;
 mod notes;
 mod overlay_scale;
+mod project;
 mod reconcile;
 mod search;
 mod setup;

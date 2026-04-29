@@ -1,7 +1,32 @@
 use std::fs;
+use std::path::Path;
 use tempfile::tempdir;
 
-use crate::cli_support::commands::{setup_claude_mcp, setup_codex_mcp, setup_opencode_mcp};
+use agent_config::Scope;
+
+use crate::cli_support::agent_shims::AgentTool;
+use crate::cli_support::commands::{step_register_mcp, StepOutcome};
+
+fn setup_mcp(repo_root: &Path, tool: AgentTool, global: bool) -> anyhow::Result<StepOutcome> {
+    let scope = if global {
+        Scope::Global
+    } else {
+        Scope::Local(repo_root.to_path_buf())
+    };
+    step_register_mcp(repo_root, tool, &scope)
+}
+
+fn setup_claude_mcp(repo_root: &Path, global: bool) -> anyhow::Result<StepOutcome> {
+    setup_mcp(repo_root, AgentTool::Claude, global)
+}
+
+fn setup_codex_mcp(repo_root: &Path, global: bool) -> anyhow::Result<StepOutcome> {
+    setup_mcp(repo_root, AgentTool::Codex, global)
+}
+
+fn setup_opencode_mcp(repo_root: &Path, global: bool) -> anyhow::Result<StepOutcome> {
+    setup_mcp(repo_root, AgentTool::OpenCode, global)
+}
 
 // ---------- OpenCode: opencode.json ----------
 
@@ -25,7 +50,16 @@ fn opencode_preserves_unknown_keys() {
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
     assert_eq!(parsed["theme"], "dark");
     assert_eq!(parsed["mcp"]["other-server"], "other-cmd");
-    assert_eq!(parsed["mcp"]["synrepo"], "synrepo mcp --repo .");
+    assert_eq!(parsed["mcp"]["synrepo"]["type"], "local");
+    assert_eq!(
+        parsed["mcp"]["synrepo"]["command"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| value.as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["synrepo", "mcp", "--repo", "."]
+    );
 }
 
 #[test]
@@ -36,6 +70,35 @@ fn opencode_idempotent_on_rerun() {
     setup_opencode_mcp(dir.path(), false).unwrap();
     let second = fs::read(dir.path().join("opencode.json")).unwrap();
     assert_eq!(first, second);
+}
+
+#[test]
+fn opencode_global_uses_user_config_without_repo_flag() {
+    let _home_lock =
+        synrepo::test_support::global_test_lock(synrepo::config::test_home::HOME_ENV_TEST_LOCK);
+    let home = tempdir().unwrap();
+    let canonical_home = home.path().canonicalize().unwrap();
+    let _home_guard = synrepo::config::test_home::HomeEnvGuard::redirect_to(&canonical_home);
+    let dir = tempdir().unwrap();
+
+    setup_opencode_mcp(dir.path(), true).unwrap();
+
+    let path = canonical_home
+        .join(".config")
+        .join("opencode")
+        .join("opencode.json");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap();
+    assert_eq!(
+        parsed["mcp"]["synrepo"]["command"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| value.as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["synrepo", "mcp"]
+    );
+    assert!(!dir.path().join("opencode.json").exists());
 }
 
 // ---------- Atomic write semantics ----------

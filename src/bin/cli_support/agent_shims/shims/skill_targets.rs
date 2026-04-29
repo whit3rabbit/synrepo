@@ -96,9 +96,9 @@ synrepo precomputes a structural graph of the codebase from tree-sitter parsing 
 
 This skill belongs at `.agents/skills/synrepo/SKILL.md`.
 
-Register the MCP server with Codex using `codex mcp add synrepo -- synrepo mcp --repo .`.
-For an npm-distributed build, use `codex mcp add synrepo -- npx -y synrepo mcp --repo .` instead.
-You can also edit `~/.codex/config.toml` / trusted project `.codex/config.toml` directly:
+Project-scoped setup writes trusted project `.codex/config.toml`. Global Codex MCP registration is not automated by `synrepo setup`; if you configure `~/.codex/config.toml` manually, launch `synrepo mcp` and pass `repo_root` to repo-addressable tools.
+
+For project-scoped manual setup, edit trusted project `.codex/config.toml` directly:
 
 ```toml
 [mcp_servers.synrepo]

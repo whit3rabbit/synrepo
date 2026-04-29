@@ -6,7 +6,7 @@ use std::path::Path;
 use serde_json::json;
 use tempfile::TempDir;
 
-use crate::cli_support::agent_shims::AgentTool;
+use crate::cli_support::agent_shims::{AgentTool, SYNREPO_INSTALL_NAME, SYNREPO_INSTALL_OWNER};
 
 use super::{apply_plan, build_plan, RemoveAction};
 
@@ -216,6 +216,86 @@ fn apply_delete_shim_stops_at_non_empty_parent() {
         !fx.path().join(".claude").join("skills").exists(),
         "empty skills/ tree should still be cleaned"
     );
+}
+
+#[test]
+fn apply_owned_mcp_round_trip_uses_agent_config_uninstall() {
+    let fx = Fixture::new();
+    let scope = agent_config::Scope::Local(fx.path().to_path_buf());
+    let installer = agent_config::mcp_by_id("claude").unwrap();
+    let spec = agent_config::McpSpec::builder(SYNREPO_INSTALL_NAME)
+        .owner(SYNREPO_INSTALL_OWNER)
+        .stdio("synrepo", ["mcp", "--repo", "."])
+        .build();
+    let _ = installer.install_mcp(&scope, &spec).unwrap();
+
+    let plan = build_plan(fx.path(), Some(AgentTool::Claude), false).unwrap();
+    assert!(
+        plan.actions
+            .iter()
+            .any(|a| matches!(a, RemoveAction::StripMcpEntry { tool, .. } if tool == "claude")),
+        "owned MCP install should be planned for removal"
+    );
+    apply_plan(fx.path(), &plan).unwrap();
+
+    let status = installer
+        .mcp_status(&scope, SYNREPO_INSTALL_NAME, SYNREPO_INSTALL_OWNER)
+        .unwrap();
+    assert!(matches!(status.status, agent_config::InstallStatus::Absent));
+}
+
+#[test]
+fn apply_owned_skill_round_trip_uses_agent_config_uninstall() {
+    let fx = Fixture::new();
+    let scope = agent_config::Scope::Local(fx.path().to_path_buf());
+    let installer = agent_config::skill_by_id("claude").unwrap();
+    let spec = agent_config::SkillSpec::builder(SYNREPO_INSTALL_NAME)
+        .owner(SYNREPO_INSTALL_OWNER)
+        .description("Use when a repository has synrepo context available.")
+        .body("# synrepo\n")
+        .build();
+    let _ = installer.install_skill(&scope, &spec).unwrap();
+
+    let plan = build_plan(fx.path(), Some(AgentTool::Claude), false).unwrap();
+    assert!(
+        plan.actions
+            .iter()
+            .any(|a| matches!(a, RemoveAction::DeleteShim { tool, .. } if tool == "claude")),
+        "owned skill install should be planned for removal"
+    );
+    apply_plan(fx.path(), &plan).unwrap();
+
+    let status = installer
+        .skill_status(&scope, SYNREPO_INSTALL_NAME, SYNREPO_INSTALL_OWNER)
+        .unwrap();
+    assert!(matches!(status.status, agent_config::InstallStatus::Absent));
+}
+
+#[test]
+fn apply_owned_instruction_round_trip_uses_agent_config_uninstall() {
+    let fx = Fixture::new();
+    let scope = agent_config::Scope::Local(fx.path().to_path_buf());
+    let installer = agent_config::instruction_by_id("roo").unwrap();
+    let spec = agent_config::InstructionSpec::builder(SYNREPO_INSTALL_NAME)
+        .owner(SYNREPO_INSTALL_OWNER)
+        .placement(agent_config::InstructionPlacement::StandaloneFile)
+        .body("# synrepo\n")
+        .build();
+    let _ = installer.install_instruction(&scope, &spec).unwrap();
+
+    let plan = build_plan(fx.path(), Some(AgentTool::Roo), false).unwrap();
+    assert!(
+        plan.actions
+            .iter()
+            .any(|a| matches!(a, RemoveAction::DeleteShim { tool, .. } if tool == "roo")),
+        "owned instruction install should be planned for removal"
+    );
+    apply_plan(fx.path(), &plan).unwrap();
+
+    let status = installer
+        .instruction_status(&scope, SYNREPO_INSTALL_NAME, SYNREPO_INSTALL_OWNER)
+        .unwrap();
+    assert!(matches!(status.status, agent_config::InstallStatus::Absent));
 }
 
 #[test]

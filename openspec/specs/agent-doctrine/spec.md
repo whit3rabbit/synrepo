@@ -75,3 +75,53 @@ Generated shim freshness SHALL be evaluated against the canonical agent doctrine
 - **THEN** setup reports the shim as current
 - **AND** no write is performed for that shim
 
+### Requirement: Guide agents to pass repo_root for global MCP use
+Generated agent guidance SHALL explain that a global synrepo MCP integration serves registered projects by absolute repository path. In global or defaultless contexts, agents SHALL pass the current workspace's absolute path as `repo_root` to repo-addressable tools.
+
+#### Scenario: Agent reads global integration guidance
+- **WHEN** an agent reads generated synrepo doctrine or a generated shim after global integration support exists
+- **THEN** the guidance tells the agent to pass the current workspace root as `repo_root` when using a global MCP server
+- **AND** the guidance preserves the existing orient, find, impact, edit, tests, changed workflow
+
+#### Scenario: Repository is not registered
+- **WHEN** a global MCP tool reports that a repository is not managed by synrepo
+- **THEN** the guidance tells the agent to ask the user to run `synrepo project add <path>`
+- **AND** the guidance does not imply the agent should bypass registry gating
+
+### Requirement: Preserve repo-bound default behavior in doctrine
+Generated agent guidance SHALL state that repo-bound MCP configurations may omit `repo_root` because the server has a default repository, but passing the absolute repository root remains valid and preferred when an agent can identify it reliably.
+
+#### Scenario: Agent uses project-scoped MCP config
+- **WHEN** an agent is operating through a project-scoped MCP config that launches `synrepo mcp --repo .`
+- **THEN** the guidance permits omitting `repo_root`
+- **AND** it does not contradict the global guidance to pass `repo_root` when using a global server
+
+### Requirement: Agent shim and skill files are placed via the agent-config installer
+synrepo SHALL delegate the placement of agent integration shim and skill files to the `agent-config` installer's `SkillSpec` (for harnesses that support the Agent Skills standard) or `InstructionSpec` (for instruction-only harnesses). The doctrine block content SHALL remain a synrepo-owned compile-time constant (`doctrine_block!()` and the per-target shim modules) and SHALL be supplied to the installer as the spec `body`. The installer SHALL choose the on-disk path; synrepo SHALL NOT maintain a parallel per-harness output-path table for files the installer can place.
+
+#### Scenario: Skill file placement for a SKILL.md harness
+- **WHEN** synrepo runs `agent-setup` for a harness that supports skills
+- **THEN** the installer's `install_skill` writes the SKILL.md and any sibling assets at the harness-defined location
+- **AND** the doctrine content matches the synrepo `doctrine_block!` constant byte-for-byte
+
+#### Scenario: Instruction file placement for an instruction-only harness
+- **WHEN** synrepo runs `agent-setup` for an instruction-only harness
+- **THEN** the installer's `install_instruction` writes the file using the harness's preferred placement (`ReferencedFile`, `InlineBlock`, or `StandaloneFile`)
+- **AND** the synrepo doctrine content is preserved verbatim in the body
+
+### Requirement: Doctrine content remains the source of truth across delegated writes
+The compile-time enforcement that every agent-facing surface embeds the canonical doctrine block via `concat!` or equivalent SHALL continue to apply when files are written through the installer. The byte-identical test for shim content SHALL run against the spec bodies passed to the installer, not against post-write file contents alone, so the test fails before any installer call occurs whenever the doctrine content drifts between surfaces.
+
+#### Scenario: Drifted doctrine fails the test before install
+- **WHEN** a contributor edits one shim's body without updating the canonical doctrine
+- **THEN** the byte-identical test fails on the spec body comparison
+- **AND** no installer call is made during the test
+
+### Requirement: Migrate pre-existing shim files into the ownership ledger
+For shim and skill files that synrepo already wrote in a previous version (no `_agent_config_tag` marker, no ownership ledger entry), `synrepo upgrade --apply` SHALL adopt them through the installer with `owner = "synrepo"` so subsequent re-runs and removals stay aligned with the installer's ledger.
+
+#### Scenario: Legacy shim adopted on upgrade
+- **WHEN** the user runs `synrepo upgrade --apply` against a repository whose `.claude/skills/synrepo/SKILL.md` was written before this change
+- **THEN** the upgrade replays the placement through `install_skill`
+- **AND** subsequent `synrepo agent-setup --regen` and `synrepo remove` operate via the installer's ledger
+

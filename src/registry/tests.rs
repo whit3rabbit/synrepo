@@ -17,6 +17,7 @@ fn sample_project(path: &Path) -> ProjectEntry {
         export_gitignore_entry_added: false,
         agents: vec![AgentEntry {
             tool: "claude".to_string(),
+            scope: "project".to_string(),
             shim_path: ".claude/skills/synrepo/SKILL.md".to_string(),
             mcp_config_path: Some(".mcp.json".to_string()),
             mcp_backup_path: Some(".mcp.json.bak".to_string()),
@@ -124,6 +125,7 @@ fn agent_entry_omits_optional_fields_when_none() {
         export_gitignore_entry_added: false,
         agents: vec![AgentEntry {
             tool: "copilot".to_string(),
+            scope: "project".to_string(),
             shim_path: "synrepo-copilot-instructions.md".to_string(),
             mcp_config_path: None,
             mcp_backup_path: None,
@@ -137,4 +139,47 @@ fn agent_entry_omits_optional_fields_when_none() {
         "None fields should be skipped: {text}"
     );
     assert!(!text.contains("mcp_backup_path"));
+}
+
+#[test]
+fn record_project_preserves_existing_metadata() {
+    let _lock = crate::test_support::global_test_lock(crate::config::test_home::HOME_ENV_TEST_LOCK);
+    let home = tempdir().unwrap();
+    let _guard = crate::config::test_home::HomeEnvGuard::redirect_to(home.path());
+    let project = tempdir().unwrap();
+    let agent = AgentEntry {
+        tool: "claude".to_string(),
+        scope: "project".to_string(),
+        shim_path: ".claude/skills/synrepo/SKILL.md".to_string(),
+        mcp_config_path: Some(".mcp.json".to_string()),
+        mcp_backup_path: None,
+        installed_at: "2026-04-19T00:00:05Z".to_string(),
+    };
+    super::record_agent(project.path(), agent.clone()).unwrap();
+    let before = super::get(project.path()).unwrap().unwrap();
+
+    let after = super::record_project(project.path()).unwrap();
+
+    assert_eq!(after.initialized_at, before.initialized_at);
+    assert_eq!(after.agents, vec![agent]);
+}
+
+#[test]
+fn load_project_entry_with_missing_defaulted_fields() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("projects.toml");
+    fs::write(
+        &path,
+        format!(
+            "schema_version = 1\n\n[[project]]\npath = \"{}\"\ninitialized_at = \"2026-04-19T00:00:00Z\"\n",
+            dir.path().display()
+        ),
+    )
+    .unwrap();
+
+    let registry = io::load_from(&path).unwrap();
+    let project = &registry.projects[0];
+    assert_eq!(project.synrepo_dir, ".synrepo");
+    assert!(!project.root_gitignore_entry_added);
+    assert!(project.agents.is_empty());
 }

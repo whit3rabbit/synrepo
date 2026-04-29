@@ -28,6 +28,34 @@ pub(crate) enum WatchCommand {
 }
 
 #[derive(Subcommand)]
+pub(crate) enum ProjectCommand {
+    /// Register a repository as a managed project.
+    Add {
+        /// Repository path. Defaults to the current repo root.
+        path: Option<PathBuf>,
+    },
+    /// List managed projects and their current health.
+    List {
+        /// Emit JSON instead of human-readable output.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Inspect one managed project.
+    Inspect {
+        /// Repository path. Defaults to the current repo root.
+        path: Option<PathBuf>,
+        /// Emit JSON instead of human-readable output.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Unregister a managed project without deleting repository state.
+    Remove {
+        /// Repository path. Defaults to the current repo root.
+        path: Option<PathBuf>,
+    },
+}
+
+#[derive(Subcommand)]
 pub(crate) enum DocsCommand {
     /// Materialize editable explain docs from overlay commentary.
     Export {

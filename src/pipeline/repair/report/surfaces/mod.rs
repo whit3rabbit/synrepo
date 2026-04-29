@@ -2,6 +2,7 @@ mod agent_notes;
 mod commentary;
 mod cross_links;
 mod drift;
+mod legacy_installs;
 mod rationale;
 
 use crate::pipeline::diagnostics::{ReconcileHealth, ReconcileStaleness, WriterStatus};
@@ -17,6 +18,7 @@ pub use agent_notes::AgentNotesOverlayCheck;
 pub use commentary::{scan_commentary_staleness, CommentaryOverlayCheck, CommentaryScan};
 pub use cross_links::ProposedLinksOverlayCheck;
 pub use drift::{EdgeDriftCheck, RetiredObservationsCheck};
+pub use legacy_installs::LegacyAgentInstallsCheck;
 pub use rationale::StaleRationaleCheck;
 
 pub struct WriterLockCheck;

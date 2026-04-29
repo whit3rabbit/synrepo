@@ -39,6 +39,10 @@ The required sequence is orient, find, impact or risks, edit, tests, changed.
 
 When the server was explicitly started with `synrepo mcp --allow-edits`, prefer read tools first, then call `synrepo_prepare_edit_context` before `synrepo_apply_anchor_edits`. Without that process flag, edit tools are absent. Config may further restrict editing, but config alone does not enable mutation tools.
 
+Project-scoped MCP configs that launch `synrepo mcp --repo .` have a default repository, so `repo_root` may be omitted. Passing the absolute repository root is still valid and preferred when you can identify it reliably.
+
+Global MCP configs that launch `synrepo mcp` serve registered projects by absolute path. In global or defaultless contexts, pass the current workspace's absolute path as `repo_root` to repo-addressable tools. If a tool reports that a repository is not managed by synrepo, ask the user to run `synrepo project add <path>`; do not bypass registry gating.
+
 Rule of thumb: `tiny` to find, `normal` to understand, `deep` to write.
 
 ## Trust model

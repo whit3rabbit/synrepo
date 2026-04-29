@@ -56,6 +56,12 @@ pub struct ChangeImpactParams {
     pub target: String,
 }
 
+/// Parameters for repository-scoped MCP tools that otherwise need no input.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct RepoRootParams {
+    pub repo_root: Option<std::path::PathBuf>,
+}
+
 pub fn handle_search(state: &SynrepoState, query: String, limit: u32) -> String {
     let result: anyhow::Result<serde_json::Value> = (|| {
         let matches = crate::substrate::search(&state.config, &state.repo_root, &query)?;

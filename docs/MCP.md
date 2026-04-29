@@ -12,7 +12,7 @@ synrepo mcp --repo <path>      # stdio server for a specific repo
 synrepo mcp --allow-edits      # explicitly expose anchored edit tools
 ```
 
-Most users should prefer `synrepo setup <tool>`, which writes the local agent instructions and registers the project-scoped MCP server for supported integrations. Shim-only integrations still need their own MCP config pointed at `synrepo mcp --repo .`.
+Most users should prefer `synrepo setup <tool>`, which writes the agent instructions or skill and registers MCP through `agent-config` for supported integrations. The default is global agent config with `synrepo mcp`; pass `--project` to write repo-local MCP config that launches `synrepo mcp --repo .`. Shim-only integrations still need their own MCP config pointed at `synrepo mcp --repo .`.
 
 ## Default Agent Workflow
 

@@ -53,6 +53,41 @@ fn upgrade_apply_on_current_runtime_exits_zero() {
 }
 
 #[test]
+fn upgrade_apply_adopts_legacy_unowned_mcp_install() {
+    let (dir, repo) = setup_bootstrapped_repo();
+    let legacy = serde_json::json!({
+        "mcpServers": {
+            "synrepo": {
+                "command": "synrepo",
+                "args": ["mcp", "--repo", "."]
+            }
+        }
+    });
+    fs::write(
+        repo.join(".mcp.json"),
+        serde_json::to_string_pretty(&legacy).unwrap(),
+    )
+    .unwrap();
+
+    upgrade(&repo, true).expect("upgrade apply should adopt legacy MCP entries");
+
+    let scope = agent_config::Scope::Local(repo.clone());
+    let status = agent_config::mcp_by_id("claude")
+        .unwrap()
+        .mcp_status(&scope, "synrepo", "synrepo")
+        .unwrap();
+    assert!(
+        matches!(
+            status.status,
+            agent_config::InstallStatus::InstalledOwned { ref owner } if owner == "synrepo"
+        ),
+        "legacy MCP entry should now be owned by synrepo, got {:?}",
+        status.status
+    );
+    drop(dir);
+}
+
+#[test]
 fn report_reconcile_outcome_bails_on_failed() {
     use synrepo::pipeline::watch::ReconcileOutcome;
     let err = crate::report_reconcile_outcome(ReconcileOutcome::Failed("boom".into())).unwrap_err();

@@ -40,6 +40,7 @@
 #[cfg(test)]
 mod docs_drift;
 
+pub mod agent_install;
 pub mod bootstrap;
 pub mod config;
 pub mod core;
