@@ -51,8 +51,14 @@ impl Widget for HeaderWidget<'_> {
         // Left-most column of the repo-path row is a spinner or idle marker so
         // the operator sees liveness feedback regardless of which tab is up.
         let status_span: Span<'static> = if self.reconcile_active {
+            let marker =
+                if self.theme.accessibility.reduced_motion || self.theme.accessibility.ascii_only {
+                    "[RUN]"
+                } else {
+                    spinner_glyph(self.frame)
+                };
             Span::styled(
-                format!("{} reconciling  ", spinner_glyph(self.frame)),
+                format!("{marker} reconciling  "),
                 self.theme.watch_active_style(),
             )
         } else {

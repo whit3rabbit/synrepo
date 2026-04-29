@@ -6,8 +6,8 @@ use crate::pipeline::writer::{current_ownership, live_owner_pid, LockError, Writ
 use crate::tui::probe::Severity;
 use crate::tui::widgets::LogEntry;
 
-use super::ActionContext;
 use super::ActionOutcome;
+use super::{ActionContext, ProjectActionContext};
 
 pub(super) fn load_repo_config(ctx: &ActionContext, action: &str) -> Result<Config, ActionOutcome> {
     let local_config = ctx.synrepo_dir.join("config.toml");
@@ -133,6 +133,17 @@ pub fn outcome_to_log(tag: &str, outcome: &ActionOutcome) -> LogEntry {
         message,
         severity,
     }
+}
+
+/// Translate an action outcome into a log entry labelled with a project name.
+pub fn outcome_to_project_log(
+    ctx: &ProjectActionContext,
+    tag: &str,
+    outcome: &ActionOutcome,
+) -> LogEntry {
+    let mut entry = outcome_to_log(tag, outcome);
+    entry.message = format!("[{}] {}", ctx.project_name, entry.message);
+    entry
 }
 
 /// Minimal RFC 3339 stamp without pulling a format dep. Uses `OffsetDateTime`

@@ -2,15 +2,15 @@
 //!
 //! Pin the clap-level parse for every shipped subcommand so a future refactor
 //! that reorders, renames, or accidentally strips a subcommand fails loud
-//! without having to bring up the full runtime. These tests do NOT execute
-//! the commands — they only assert that `Cli::try_parse_from` resolves to the
-//! expected `Command` variant with the expected flag payload.
+//! without bringing up the runtime.
 
 use clap::Parser;
+use tempfile::tempdir;
 
 use super::super::cli_args::{
     BenchCommand, Cli, Command, NotesCommand, ProjectCommand, StatsCommand, WatchCommand,
 };
+use super::super::entry::bare_ready_summary;
 
 fn parse(args: &[&str]) -> Cli {
     let mut full = vec!["synrepo"];
@@ -24,6 +24,16 @@ fn bare_synrepo_has_no_subcommand() {
     assert!(
         cli.command.is_none(),
         "bare synrepo must leave Command unset so the router can take over"
+    );
+}
+
+#[test]
+fn bare_ready_summary_returns_error_when_synrepo_is_missing() {
+    let dir = tempdir().unwrap();
+    let err = bare_ready_summary(dir.path());
+    assert!(
+        err.is_err(),
+        "status summary must surface the missing .synrepo error"
     );
 }
 
@@ -76,6 +86,18 @@ fn project_subcommands_parse() {
     assert!(matches!(
         remove.command,
         Some(Command::Project(ProjectCommand::Remove { .. }))
+    ));
+
+    let use_cmd = parse(&["project", "use", "proj_abc"]);
+    assert!(matches!(
+        use_cmd.command,
+        Some(Command::Project(ProjectCommand::Use { .. }))
+    ));
+
+    let rename = parse(&["project", "rename", "proj_abc", "work-app"]);
+    assert!(matches!(
+        rename.command,
+        Some(Command::Project(ProjectCommand::Rename { .. }))
     ));
 }
 

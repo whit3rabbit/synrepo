@@ -93,6 +93,8 @@ impl AppState {
             log.push(entry);
         }
         Self {
+            project_id: None,
+            project_name: None,
             repo_root: repo_root.to_path_buf(),
             theme,
             mode,
@@ -105,10 +107,12 @@ impl AppState {
             launch_explain_setup: false,
             pending_explain: None,
             confirm_stop_watch: None,
+            pending_quick_confirm: None,
             picker: None,
             explain_preview: None,
             active_tab: ActiveTab::Live,
             scroll_offset: 0,
+            live_visible_rows: 18,
             follow_mode: true,
             frame: 0,
             reconcile_active: false,

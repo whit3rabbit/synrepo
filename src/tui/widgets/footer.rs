@@ -1,6 +1,4 @@
-//! One-line footer showing scroll + follow + quit hints. Rendered as a thin
-//! strip at the bottom of the dashboard so the operator always sees the
-//! keys available in the current tab.
+//! One-line footer showing dashboard key hints.
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -12,21 +10,17 @@ use crate::tui::theme::Theme;
 
 /// Key-hint footer strip.
 pub struct FooterWidget<'a> {
-    /// Current tab; footer content varies slightly per tab (e.g., scroll
-    /// hints only make sense on Live).
+    /// Current tab; footer content varies slightly per tab.
     pub active: ActiveTab,
     /// Whether the Live feed is in follow-bottom mode.
     pub follow_mode: bool,
     /// Active theme.
     pub theme: &'a Theme,
-    /// Transient message rendered in place of the hint row (e.g.
-    /// "Refreshed: N files, M symbols").
+    /// Transient message rendered in the footer row.
     pub toast: Option<&'a str>,
     /// Poll-mode watch toggle label, when the dashboard exposes `w`.
     pub watch_toggle_label: Option<&'a str>,
-    /// Render the `[M] generate graph` hint when the snapshot reports
-    /// `graph: not materialized` so the operator sees the manual escape
-    /// hatch alongside the auto-fire path.
+    /// Render the `[M] generate graph` hint when graph stats are missing.
     pub materialize_hint_visible: bool,
 }
 
@@ -47,8 +41,15 @@ impl HintGroup {
 impl Widget for FooterWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         if let Some(msg) = self.toast {
-            // Healthy style so it reads as confirmation rather than alert.
-            let line = Line::from(Span::styled(format!(" {msg}"), self.theme.healthy_style()));
+            let line = Line::from(vec![
+                Span::styled(format!(" {msg}"), self.theme.healthy_style()),
+                Span::styled("    projects ", self.theme.muted_style()),
+                Span::styled("[p]", self.theme.agent_style()),
+                Span::styled("  help ", self.theme.muted_style()),
+                Span::styled("[?]", self.theme.agent_style()),
+                Span::styled("  quit ", self.theme.muted_style()),
+                Span::styled("[q]", self.theme.agent_style()),
+            ]);
             Paragraph::new(line)
                 .style(self.theme.base_style())
                 .render(area, buf);
@@ -68,25 +69,39 @@ impl FooterWidget<'_> {
         groups.push(HintGroup {
             priority: 0,
             spans: vec![
+                Span::styled(" proj ", self.theme.muted_style()),
+                Span::styled("[p]", self.theme.agent_style()),
+            ],
+        });
+        groups.push(HintGroup {
+            priority: 0,
+            spans: vec![
+                Span::styled("  help ", self.theme.muted_style()),
+                Span::styled("[?]", self.theme.agent_style()),
+            ],
+        });
+        groups.push(HintGroup {
+            priority: 1,
+            spans: vec![
                 Span::styled(" tabs ", self.theme.muted_style()),
                 Span::styled("[Tab/1-5]", self.theme.agent_style()),
             ],
         });
         if matches!(self.active, ActiveTab::Live) {
-            // Scroll hint is the widest group and the easiest to drop first.
             groups.push(HintGroup {
                 priority: 5,
                 spans: vec![
                     Span::styled("  scroll ", self.theme.muted_style()),
                     Span::styled(
-                        "[\u{2191}/\u{2193} PgUp/PgDn Home/End]",
+                        if self.theme.accessibility.ascii_only {
+                            "[Up/Down PgUp/PgDn Home/End]"
+                        } else {
+                            "[\u{2191}/\u{2193} PgUp/PgDn Home/End]"
+                        },
                         self.theme.agent_style(),
                     ),
                 ],
             });
-            // Follow mode toggle. Ranked above `integration` because it
-            // exposes visible state (on/off) that the operator reads rather
-            // than a menu key they trigger.
             let follow_label = if self.follow_mode { "on" } else { "off" };
             let follow_style = if self.follow_mode {
                 self.theme.healthy_style()
@@ -94,7 +109,7 @@ impl FooterWidget<'_> {
                 self.theme.stale_style()
             };
             groups.push(HintGroup {
-                priority: 3,
+                priority: 2,
                 spans: vec![
                     Span::styled("  follow ", self.theme.muted_style()),
                     Span::styled("[f] ", self.theme.agent_style()),
@@ -103,7 +118,7 @@ impl FooterWidget<'_> {
             });
         }
         groups.push(HintGroup {
-            priority: 2,
+            priority: 3,
             spans: vec![
                 Span::styled("  refresh ", self.theme.muted_style()),
                 Span::styled("[r]", self.theme.agent_style()),
@@ -121,7 +136,7 @@ impl FooterWidget<'_> {
         }
         if let Some(label) = self.watch_toggle_label {
             groups.push(HintGroup {
-                priority: 2,
+                priority: 3,
                 spans: vec![
                     Span::styled("  watch ", self.theme.muted_style()),
                     Span::styled("[w] ", self.theme.agent_style()),
@@ -136,7 +151,6 @@ impl FooterWidget<'_> {
                 Span::styled("[i]", self.theme.agent_style()),
             ],
         });
-        // Last so `[q]` anchors the right edge once trimming kicks in.
         groups.push(HintGroup {
             priority: 0,
             spans: vec![
@@ -148,16 +162,12 @@ impl FooterWidget<'_> {
     }
 }
 
-/// Select hint groups that fit into `width` display columns. Drops
-/// higher-priority-number groups first, preserving essential tabs/quit hints
-/// even when the terminal is very narrow.
+/// Select hint groups that fit into `width` display columns.
 fn fit_groups(groups: Vec<HintGroup>, width: usize) -> Vec<Span<'static>> {
     let total: usize = groups.iter().map(HintGroup::width).sum();
     let mut kept: Vec<bool> = vec![true; groups.len()];
 
     if total > width {
-        // Walk groups in drop-first order (highest priority number, then
-        // rightmost index) and mark them dropped until the remaining set fits.
         let mut order: Vec<usize> = (0..groups.len())
             .filter(|i| groups[*i].priority > 0)
             .collect();
@@ -172,12 +182,55 @@ fn fit_groups(groups: Vec<HintGroup>, width: usize) -> Vec<Span<'static>> {
         }
     }
 
+    let visible: usize = groups
+        .iter()
+        .zip(&kept)
+        .filter(|(_, keep)| **keep)
+        .map(|(group, _)| group.width())
+        .sum();
+    if visible > width {
+        return compact_essential_hints(&groups, width);
+    }
+
     groups
         .into_iter()
         .zip(kept)
         .filter(|(_, keep)| *keep)
         .flat_map(|(g, _)| g.spans)
         .collect()
+}
+
+fn compact_essential_hints(groups: &[HintGroup], width: usize) -> Vec<Span<'static>> {
+    let mut keys: Vec<Span<'static>> = groups
+        .iter()
+        .filter(|group| group.priority == 0)
+        .filter_map(|group| {
+            group
+                .spans
+                .iter()
+                .find(|span| span.content.as_ref().starts_with('['))
+                .cloned()
+        })
+        .collect();
+
+    let key_width = keys.iter().map(Span::width).sum::<usize>() + keys.len().saturating_sub(1);
+    if key_width <= width {
+        return join_key_spans(keys);
+    }
+
+    keys.retain(|span| span.content.as_ref() == "[q]");
+    join_key_spans(keys)
+}
+
+fn join_key_spans(keys: Vec<Span<'static>>) -> Vec<Span<'static>> {
+    let mut spans = Vec::new();
+    for key in keys {
+        if !spans.is_empty() {
+            spans.push(Span::raw(" "));
+        }
+        spans.push(key);
+    }
+    spans
 }
 
 #[cfg(test)]
@@ -244,8 +297,8 @@ mod tests {
                 let spans = fit_groups(groups, width);
                 let text = rendered_text(&spans);
                 assert!(
-                    text.contains("tabs") && text.contains("[q]"),
-                    "tab={active:?} width={width} must keep tabs+quit, got {text:?}"
+                    text.contains("[p]") && text.contains("[?]") && text.contains("[q]"),
+                    "tab={active:?} width={width} must keep project/help/quit, got {text:?}"
                 );
                 let visible: usize = spans.iter().map(|s| s.width()).sum();
                 assert!(
@@ -259,7 +312,6 @@ mod tests {
     #[test]
     fn narrow_live_drops_scroll_before_follow() {
         let (groups, _) = footer(ActiveTab::Live, true, Some("stop"));
-        // 80 cols should not fit scroll+follow+all, but should keep follow.
         let spans = fit_groups(groups, 80);
         let text = rendered_text(&spans);
         assert!(
@@ -273,7 +325,7 @@ mod tests {
     }
 
     #[test]
-    fn toast_replaces_hint_row_when_set() {
+    fn toast_keeps_essential_hints_when_set() {
         let theme = Theme::plain();
         let widget = FooterWidget {
             active: ActiveTab::Live,
@@ -292,25 +344,25 @@ mod tests {
             "toast text must appear in footer row: {row:?}"
         );
         assert!(
-            !row.contains("tabs"),
-            "toast must suppress the hint row: {row:?}"
+            row.contains("[p]") && row.contains("[?]") && row.contains("[q]"),
+            "toast must keep essential hints: {row:?}"
         );
     }
 
     #[test]
     fn very_narrow_terminal_keeps_only_essentials() {
-        // Essentials (" tabs [Tab/1/2/3]  quit [q]") total 27 cols. At a
-        // width below that, fit_groups still returns them (ratatui clamps the
-        // remainder visually); we just verify the non-essential groups are
-        // all dropped.
         let (groups, _) = footer(ActiveTab::Live, false, Some("start"));
         let spans = fit_groups(groups, 30);
         let text = rendered_text(&spans);
-        assert!(text.contains("tabs"));
+        assert!(text.contains("[p]"));
+        assert!(text.contains("[?]"));
         assert!(text.contains("[q]"));
+        assert!(!text.contains("tabs"));
         assert!(!text.contains("scroll"));
         assert!(!text.contains("follow"));
         assert!(!text.contains("integration"));
+        assert!(!text.contains("watch"));
+        assert!(!text.contains("refresh"));
         let visible: usize = spans.iter().map(|s| s.width()).sum();
         assert!(visible <= 30, "visible={visible} text={text:?}");
     }

@@ -116,8 +116,10 @@ pub(crate) fn project_add_output(
         "registered"
     };
     Ok(format!(
-        "Project {action}: {}\n  health: {}\n  initialized_at: {}\n",
+        "Project {action}: {}\n  id: {}\n  name: {}\n  health: {}\n  initialized_at: {}\n",
         entry.path.display(),
+        entry.effective_id(),
+        entry.display_name(),
         health.state,
         entry.initialized_at
     ))
@@ -156,7 +158,9 @@ pub(crate) fn project_list_output(json: bool) -> anyhow::Result<String> {
     for project in projects {
         writeln!(
             out,
-            "{} [{}] {}",
+            "{}  {}  {} [{}] {}",
+            project.registry.effective_id(),
+            project.registry.display_name(),
             project.path.display(),
             project.health.state,
             project.health.detail
@@ -203,8 +207,10 @@ pub(crate) fn project_inspect_output(
 
     match entry {
         Some(entry) => Ok(format!(
-            "Managed project: {}\n  health: {} ({})\n  initialized_at: {}\n",
+            "Managed project: {}\n  id: {}\n  name: {}\n  health: {} ({})\n  initialized_at: {}\n",
             entry.path.display(),
+            entry.effective_id(),
+            entry.display_name(),
             health.state,
             health.detail,
             entry.initialized_at
@@ -217,6 +223,39 @@ pub(crate) fn project_inspect_output(
             suggestion.expect("unmanaged project has suggestion")
         )),
     }
+}
+
+pub(crate) fn project_use(selector: &str) -> anyhow::Result<()> {
+    print!("{}", project_use_output(selector)?);
+    Ok(())
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn project_use_output(selector: &str) -> anyhow::Result<String> {
+    let entry = registry::mark_project_opened(selector)?;
+    Ok(format!(
+        "Project selected: {}\n  id: {}\n  name: {}\n  path: {}\n",
+        entry.display_name(),
+        entry.effective_id(),
+        entry.display_name(),
+        entry.path.display()
+    ))
+}
+
+pub(crate) fn project_rename(selector: &str, name: &str) -> anyhow::Result<()> {
+    print!("{}", project_rename_output(selector, name)?);
+    Ok(())
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn project_rename_output(selector: &str, name: &str) -> anyhow::Result<String> {
+    let entry = registry::rename_project(selector, name)?;
+    Ok(format!(
+        "Project renamed: {}\n  id: {}\n  path: {}\n",
+        entry.display_name(),
+        entry.effective_id(),
+        entry.path.display()
+    ))
 }
 
 pub(crate) fn project_remove(repo_root: &Path, path: Option<PathBuf>) -> anyhow::Result<()> {

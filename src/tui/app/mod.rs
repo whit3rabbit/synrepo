@@ -2,6 +2,7 @@
 //! between dashboard (poll / live) mode and the various wizards. Wizard
 //! rendering still lives in `wizard.rs`; this module only owns the loop.
 
+mod action_handlers;
 mod confirm_stop_watch;
 mod explain_events;
 mod explain_picker;
@@ -46,6 +47,13 @@ pub enum AppMode {
     IntegrationWizard,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PendingQuickConfirm {
+    MaterializeGraph,
+    DocsCleanApply,
+    ToggleAutoSync,
+}
+
 /// Bounded in-memory event log, used by both poll and live modes. Capped at
 /// 128 entries so a long-running dashboard doesn't leak memory.
 #[derive(Clone, Debug)]
@@ -85,6 +93,10 @@ impl Default for EventLog {
 
 /// Mutable app state passed through the render loop.
 pub struct AppState {
+    /// Active project ID when the dashboard is hosted by the global shell.
+    pub project_id: Option<String>,
+    /// Active project display name when hosted by the global shell.
+    pub project_name: Option<String>,
     /// Active repo root.
     pub repo_root: PathBuf,
     /// Active theme.
@@ -114,6 +126,7 @@ pub struct AppState {
     /// explain while watch was still active; holds the pending mode until
     /// the operator answers yes (stop watch + launch) or no (cancel).
     pub confirm_stop_watch: Option<ConfirmStopWatchState>,
+    pending_quick_confirm: Option<PendingQuickConfirm>,
     /// Folder-picker sub-view state. `Some` while the operator is choosing
     /// which top-level directories to scope the next Explain run to; cleared
     /// on Esc, Enter, or any tab switch.
@@ -125,6 +138,8 @@ pub struct AppState {
     /// Rows-up-from-bottom for the Live tab. `0` pins the view to the newest
     /// entry; higher values scroll the frame up.
     pub scroll_offset: usize,
+    /// Last rendered Live-tab content row count for PageUp/PageDown movement.
+    pub live_visible_rows: usize,
     /// When true, new Live-feed entries snap the view back to the bottom.
     pub follow_mode: bool,
     /// Monotonic tick counter for the header spinner animation.

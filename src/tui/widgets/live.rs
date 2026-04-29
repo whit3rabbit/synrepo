@@ -200,13 +200,18 @@ fn feed_row(entry: &FeedEntry<'_>, theme: &Theme, now: OffsetDateTime) -> ListIt
     } else {
         theme.muted_style()
     };
-    ListItem::new(Line::from(vec![
+    let mut spans = Vec::new();
+    if is_fresh && (theme.accessibility.no_color || theme.accessibility.ascii_only) {
+        spans.push(Span::styled("new ", theme.agent_style()));
+    }
+    spans.extend([
         Span::styled(ts_display, ts_style),
         Span::raw(" "),
         Span::styled(format!("[{}]", entry.tag), tag_style),
         Span::raw(" "),
         message_span,
-    ]))
+    ]);
+    ListItem::new(Line::from(spans))
 }
 
 /// Parse an RFC 3339 timestamp and return true when it is within

@@ -15,12 +15,25 @@ pub enum ThemeVariant {
     Plain,
 }
 
+/// Accessibility switches shared by dashboard widgets.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct UiAccessibility {
+    /// Drop color styling.
+    pub no_color: bool,
+    /// Avoid animated status glyphs.
+    pub reduced_motion: bool,
+    /// Render using ASCII-only markers.
+    pub ascii_only: bool,
+}
+
 /// Semantic color tokens + rendering modifiers used by dashboard widgets.
 /// Always construct via [`Theme::dark`] or [`Theme::plain`].
 #[derive(Clone, Copy, Debug)]
 pub struct Theme {
     /// Which variant this theme was built from; useful for tests.
     pub variant: ThemeVariant,
+    /// Accessibility rendering preferences.
+    pub accessibility: UiAccessibility,
     /// Default foreground on panes.
     pub foreground: Color,
     /// Pane borders and chrome.
@@ -44,6 +57,7 @@ impl Theme {
     pub fn dark() -> Self {
         Theme {
             variant: ThemeVariant::Dark,
+            accessibility: UiAccessibility::default(),
             foreground: Color::Rgb(0xe0, 0xe0, 0xe0),
             border: Color::Rgb(0x60, 0x6a, 0x76),
             muted: Color::Rgb(0x98, 0xa0, 0xa8),
@@ -61,6 +75,11 @@ impl Theme {
     pub fn plain() -> Self {
         Theme {
             variant: ThemeVariant::Plain,
+            accessibility: UiAccessibility {
+                no_color: true,
+                reduced_motion: true,
+                ascii_only: true,
+            },
             foreground: Color::Reset,
             border: Color::Reset,
             muted: Color::Reset,

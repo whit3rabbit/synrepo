@@ -36,11 +36,6 @@ impl fmt::Display for ActiveTab {
     }
 }
 
-/// Approximate number of feed rows one PgUp/PgDn should traverse. The Live
-/// widget subtracts two rows for headroom, so this matches that intent
-/// without plumbing the actual visible-rows count down into the state.
-const PAGE_ROWS: usize = 18;
-
 impl AppState {
     /// Switch to a specific tab. Resets scroll when leaving Live so a return
     /// visit starts pinned to the bottom. Also clears the explain folder
@@ -90,13 +85,17 @@ impl AppState {
 
     /// Scroll up by one "page" (approx. visible rows minus 2).
     pub fn page_up(&mut self) {
-        self.scroll_up(PAGE_ROWS);
+        self.scroll_up(self.page_rows());
     }
 
     /// Scroll down by one page. Re-enables follow when the frame reaches the
     /// bottom.
     pub fn page_down(&mut self) {
-        self.scroll_down(PAGE_ROWS);
+        self.scroll_down(self.page_rows());
+    }
+
+    fn page_rows(&self) -> usize {
+        self.live_visible_rows.saturating_sub(2).max(1)
     }
 
     /// Pin the Live feed to the oldest entry. Disables follow mode.

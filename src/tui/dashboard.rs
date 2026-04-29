@@ -13,6 +13,8 @@ use crossterm::{
 };
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::text::Line;
+use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Terminal;
 
 use crate::bootstrap::runtime_probe::{probe, AgentIntegration};
@@ -25,10 +27,11 @@ use crate::tui::probe::{
     build_activity_vm, build_header_vm, build_health_vm, build_next_actions, build_trust_vm,
     display_repo_path, HealthRow, HealthVm, Severity,
 };
+use crate::tui::projects::GlobalAppState;
 use crate::tui::theme::Theme;
 use crate::tui::widgets::{
     ActionsTabWidget, DashboardTabsWidget, ExplainTabWidget, FooterWidget, HeaderWidget,
-    HealthWidget, LiveFeedWidget, LogEntry, TrustWidget,
+    HealthWidget, LiveFeedWidget, LogEntry, ProjectPickerWidget, TrustWidget,
 };
 
 /// Terminal alias used by the render loop.
@@ -61,6 +64,20 @@ pub fn run_poll_dashboard(
     leave_tui(&mut terminal)?;
     result?;
     Ok(state.exit_intent())
+}
+
+/// Enter the global registry-backed project dashboard.
+pub fn run_global_dashboard(
+    cwd: &Path,
+    theme: Theme,
+    open_picker: bool,
+) -> anyhow::Result<DashboardExit> {
+    let mut terminal = enter_tui()?;
+    let mut state = GlobalAppState::new(cwd, theme, open_picker)?;
+    let result = render_global_loop(&mut terminal, &mut state);
+    leave_tui(&mut terminal)?;
+    result?;
+    Ok(DashboardExit::Quit)
 }
 
 /// Set up crossterm: raw mode, alt screen, hide cursor.
@@ -99,7 +116,81 @@ fn render_loop(terminal: &mut DashboardTerminal, state: &mut AppState) -> anyhow
     Ok(())
 }
 
-fn draw_dashboard(frame: &mut ratatui::Frame, state: &AppState) {
+fn render_global_loop(
+    terminal: &mut DashboardTerminal,
+    state: &mut GlobalAppState,
+) -> anyhow::Result<()> {
+    while !state.should_exit {
+        state.tick();
+        terminal.draw(|frame| draw_global_dashboard(frame, state))?;
+        let timeout = state
+            .active_state()
+            .map(|active| active.poll_timeout)
+            .unwrap_or(std::time::Duration::from_millis(125));
+        if let Some((code, mods)) = poll_key(timeout)? {
+            state.handle_key(code, mods);
+        }
+        if let Some(active) = state.active_state_mut() {
+            if let Some(pending) = active.take_pending_explain() {
+                run_explain_in_dashboard(terminal, active, pending)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn draw_global_dashboard(frame: &mut ratatui::Frame, state: &mut GlobalAppState) {
+    if state.help_visible {
+        draw_help(frame, state.theme);
+        return;
+    }
+    if state.command_palette {
+        draw_command_palette(frame, state.theme);
+        return;
+    }
+    if state.picker.is_some() || state.active_state().is_none() {
+        let picker = ProjectPickerWidget {
+            state,
+            theme: &state.theme,
+        };
+        frame.render_widget(picker, frame.area());
+        return;
+    }
+    if let Some(active) = state.active_state_mut() {
+        draw_dashboard(frame, active);
+    }
+}
+
+fn draw_help(frame: &mut ratatui::Frame, theme: Theme) {
+    let block = Block::default()
+        .title(" help ")
+        .borders(Borders::ALL)
+        .border_style(theme.border_style());
+    let lines = vec![
+        Line::from("[p] projects    [?] help    [:] commands    [q] quit"),
+        Line::from("[Tab/1-5] tabs  [r] refresh  [w] watch for active project"),
+        Line::from("Project picker: filter, Enter switch, r rename, a add cwd, d detach, w watch"),
+    ];
+    let paragraph = Paragraph::new(lines).block(block).style(theme.base_style());
+    frame.render_widget(paragraph, frame.area());
+}
+
+fn draw_command_palette(frame: &mut ratatui::Frame, theme: Theme) {
+    let block = Block::default()
+        .title(" commands ")
+        .borders(Borders::ALL)
+        .border_style(theme.border_style());
+    let lines = vec![
+        Line::from("project switch"),
+        Line::from("project add current directory"),
+        Line::from("project detach selected"),
+        Line::from("watch start/stop selected project"),
+    ];
+    let paragraph = Paragraph::new(lines).block(block).style(theme.base_style());
+    frame.render_widget(paragraph, frame.area());
+}
+
+fn draw_dashboard(frame: &mut ratatui::Frame, state: &mut AppState) {
     let size = frame.area();
     let outer = Layout::default()
         .direction(Direction::Vertical)
@@ -112,7 +203,12 @@ fn draw_dashboard(frame: &mut ratatui::Frame, state: &AppState) {
         .split(size);
 
     // Header with spinner.
-    let repo_display = display_repo_path(&state.repo_root);
+    let repo_path = display_repo_path(&state.repo_root);
+    let repo_display = state
+        .project_name
+        .as_ref()
+        .map(|name| format!("{name}  {repo_path}"))
+        .unwrap_or(repo_path);
     let header_vm = build_header_vm(
         repo_display,
         &state.snapshot,
@@ -138,6 +234,7 @@ fn draw_dashboard(frame: &mut ratatui::Frame, state: &AppState) {
     let content_area = outer[2];
     match state.active_tab {
         ActiveTab::Live => {
+            state.live_visible_rows = content_area.height.saturating_sub(2).max(1) as usize;
             let activity_vm = build_activity_vm(&state.snapshot);
             let live = LiveFeedWidget {
                 log: state.log.as_slice(),

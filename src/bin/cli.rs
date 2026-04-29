@@ -4,8 +4,6 @@
 //! the user to the dashboard, guided setup, or guided repair wizard based on
 //! classification. All explicit subcommands (`init`, `status`, `watch`,
 //! `sync`, `export`, `mcp`, and friends) behave exactly as before.
-//!
-//! All non-trivial logic lives in the library crate or local support modules.
 
 mod cli_support;
 
@@ -29,9 +27,10 @@ use cli_support::commands::{
     doctor, explain_alias, export, findings, graph_query, graph_stats, handoffs, impact_alias,
     init, links_accept, links_list, links_reject, links_review, node, notes_add, notes_audit,
     notes_forget, notes_link, notes_list, notes_supersede, notes_verify, project_add,
-    project_inspect, project_list, project_remove, reconcile, remove, resolve_tool_resolution,
-    risks_alias, run_mcp_server, search, server, setup_many_resolved, stats_context, status, sync,
-    tests_alias, uninstall, upgrade, watch, watch_internal, watch_status, watch_stop, StatFormat,
+    project_inspect, project_list, project_remove, project_rename, project_use, reconcile, remove,
+    resolve_tool_resolution, risks_alias, run_mcp_server, search, server, setup_many_resolved,
+    stats_context, status, sync, tests_alias, uninstall, upgrade, watch, watch_internal,
+    watch_status, watch_stop, StatFormat,
 };
 // Re-exported for `cli_support::tests::agent_setup` via `crate::agent_setup`.
 // cli.rs dispatches through `agent_setup_many` but the test binary compiles
@@ -61,7 +60,7 @@ fn main() -> anyhow::Result<()> {
     };
 
     match cli.command {
-        None => run_bare_entrypoint(&repo_root, tui_opts),
+        None => run_bare_entrypoint(&repo_root, tui_opts, explicit_repo),
         Some(cmd) => dispatch(cmd, &repo_root, tui_opts, explicit_repo),
     }
 }
@@ -83,6 +82,10 @@ fn dispatch(
             project_inspect(repo_root, path, json)
         }
         Command::Project(ProjectCommand::Remove { path }) => project_remove(repo_root, path),
+        Command::Project(ProjectCommand::Use { selector }) => project_use(&selector),
+        Command::Project(ProjectCommand::Rename { selector, name }) => {
+            project_rename(&selector, &name)
+        }
         Command::AgentSetup(AgentSetupArgs {
             tool,
             only,
@@ -391,22 +394,5 @@ fn dispatch(
             delete_data,
             keep_binary,
         }) => uninstall(repo_root, apply, json, force, delete_data, keep_binary),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use tempfile::tempdir;
-
-    use super::cli_support::entry::bare_ready_summary;
-
-    #[test]
-    fn bare_ready_summary_returns_error_when_synrepo_is_missing() {
-        let dir = tempdir().unwrap();
-        let err = bare_ready_summary(dir.path());
-        assert!(
-            err.is_err(),
-            "status summary must surface the missing .synrepo error"
-        );
     }
 }

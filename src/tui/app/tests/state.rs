@@ -205,3 +205,14 @@ fn page_down_at_bottom_reenables_follow() {
     assert_eq!(state.scroll_offset, 0);
     assert!(state.follow_mode);
 }
+
+#[test]
+fn page_keys_use_recorded_live_visible_rows() {
+    let mut state = make_poll_state();
+    state.live_visible_rows = 6;
+
+    state.handle_key(KeyCode::PageUp, KeyModifiers::NONE);
+
+    assert_eq!(state.scroll_offset, 4);
+    assert!(!state.follow_mode);
+}

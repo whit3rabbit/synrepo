@@ -18,10 +18,18 @@ pub fn record_hooks(project: &Path, hooks: Vec<HookEntry>) -> anyhow::Result<()>
     registry.schema_version = SCHEMA_VERSION;
     let canonical = canonicalize(project);
     let entry = match registry.projects.iter_mut().find(|p| p.path == canonical) {
-        Some(e) => e,
+        Some(e) => {
+            if e.id.is_empty() {
+                e.id = super::derive_project_id(&e.path);
+            }
+            e
+        }
         None => {
             registry.projects.push(ProjectEntry {
+                id: super::derive_project_id(&canonical),
                 path: canonical,
+                name: None,
+                last_opened_at: None,
                 initialized_at: now_rfc3339(),
                 synrepo_dir: default_synrepo_dir(),
                 root_gitignore_entry_added: false,

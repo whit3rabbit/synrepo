@@ -132,6 +132,21 @@ fn confirm_modal_n_cancels_without_stopping_watch() {
 }
 
 #[test]
+fn confirm_modal_5_switches_to_actions_and_clears_modal() {
+    let (_repo, mut state) = make_ready_poll_state();
+    state.confirm_stop_watch = Some(ConfirmStopWatchState {
+        pending_mode: ExplainMode::AllStale,
+    });
+
+    let consumed = state.handle_key(KeyCode::Char('5'), KeyModifiers::NONE);
+
+    assert!(consumed);
+    assert_eq!(state.active_tab, ActiveTab::Actions);
+    assert!(state.confirm_stop_watch.is_none());
+    assert!(state.pending_explain.is_none());
+}
+
+#[test]
 fn explain_tab_docs_export_does_not_queue_model_run() {
     let (_repo, mut state) = make_ready_poll_state();
     state.set_tab(ActiveTab::Explain);
@@ -173,6 +188,14 @@ fn explain_tab_docs_clean_previews_before_apply() {
     assert!(index_path.exists(), "clean preview must preserve index");
 
     assert!(state.handle_key(KeyCode::Char('X'), KeyModifiers::NONE));
+    assert_eq!(
+        state.pending_quick_confirm,
+        Some(PendingQuickConfirm::DocsCleanApply)
+    );
+    assert!(doc_path.exists(), "clean apply must wait for confirm");
+    assert!(index_path.exists(), "clean apply must wait for confirm");
+
+    assert!(state.handle_key(KeyCode::Enter, KeyModifiers::NONE));
     assert!(!doc_path.exists(), "clean apply must remove docs");
     assert!(!index_path.exists(), "clean apply must remove index");
 }

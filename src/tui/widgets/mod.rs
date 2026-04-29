@@ -14,6 +14,7 @@ pub mod footer;
 pub mod header;
 pub mod health;
 pub mod live;
+pub(crate) mod projects;
 pub mod tabs;
 pub mod trust;
 
@@ -23,6 +24,7 @@ pub use footer::FooterWidget;
 pub use header::HeaderWidget;
 pub use health::HealthWidget;
 pub use live::LiveFeedWidget;
+pub(crate) use projects::ProjectPickerWidget;
 pub use tabs::DashboardTabsWidget;
 pub use trust::TrustWidget;
 
@@ -51,6 +53,14 @@ pub struct QuickAction {
     /// True when the action is disabled in the current context (e.g. "stop
     /// watch" when nothing is running).
     pub disabled: bool,
+    /// True when invoking the action should open a confirmation prompt first.
+    pub requires_confirm: bool,
+    /// True when the action can remove files or durable state.
+    pub destructive: bool,
+    /// True when the action can take noticeable time or trigger heavy work.
+    pub expensive: bool,
+    /// Optional command-palette name for the same action.
+    pub command_label: Option<String>,
 }
 
 /// Render a text span colored by severity. On plain-theme terminals a glyph
@@ -63,9 +73,9 @@ pub(crate) fn severity_span(text: &str, sev: Severity, theme: &Theme) -> Span<'s
     };
     let prefix = match theme.variant {
         crate::tui::theme::ThemeVariant::Plain => match sev {
-            Severity::Healthy => "",
-            Severity::Stale => "! ",
-            Severity::Blocked => "!! ",
+            Severity::Healthy => "[ok] ",
+            Severity::Stale => "[warn] ",
+            Severity::Blocked => "[blocked] ",
         },
         crate::tui::theme::ThemeVariant::Dark => "",
     };

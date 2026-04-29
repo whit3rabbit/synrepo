@@ -14,8 +14,8 @@ use super::{sqlite_values::row_usize, SqliteOverlayStore};
 mod entries;
 mod freshness;
 
-pub use freshness::derive_freshness;
 use freshness::has_complete_provenance;
+pub use freshness::{derive_freshness, is_legacy_commentary_pass_id};
 
 impl OverlayStore for SqliteOverlayStore {
     fn insert_link(&mut self, link: crate::overlay::OverlayLink) -> crate::Result<()> {

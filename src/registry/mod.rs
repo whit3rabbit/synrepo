@@ -11,15 +11,20 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::config::home_dir;
-use crate::pipeline::writer::now_rfc3339;
-
 mod install_records;
 pub mod io;
+mod project_meta;
 
 pub use install_records::{
     record_binary, record_binary_uninstall, record_hooks, record_hooks_uninstall,
     record_uninstall_progress,
 };
+pub use project_meta::{
+    default_project_name, derive_project_id, mark_project_opened, rename_project, resolve_project,
+    ProjectResolutionError,
+};
+
+use project_meta::{ensure_project_identity, new_project_entry};
 
 #[cfg(test)]
 mod tests;
@@ -45,8 +50,18 @@ pub struct Registry {
 /// One project's install record.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct ProjectEntry {
+    /// Stable project identity. Older registries may omit this; callers should
+    /// use [`ProjectEntry::effective_id`] when they need an ID.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub id: String,
     /// Canonicalized absolute path to the repo root.
     pub path: PathBuf,
+    /// Optional user-facing display alias. Defaults to the repo folder name.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Latest time this project was selected through project manager UI.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_opened_at: Option<String>,
     /// ISO 8601 UTC timestamp of the first-seen install.
     pub initialized_at: String,
     /// Relative path to the synrepo dir inside the project. Always ".synrepo"
@@ -189,20 +204,13 @@ pub fn record_project(project: &Path) -> anyhow::Result<ProjectEntry> {
     registry.schema_version = SCHEMA_VERSION;
     let canonical = canonicalize(project);
     if let Some(existing) = find_project_mut(&mut registry, &canonical) {
+        ensure_project_identity(existing);
         let entry = existing.clone();
         io::save_to(&path, &registry)?;
         return Ok(entry);
     }
 
-    let entry = ProjectEntry {
-        path: canonical,
-        initialized_at: now_rfc3339(),
-        synrepo_dir: default_synrepo_dir(),
-        root_gitignore_entry_added: false,
-        export_gitignore_entry_added: false,
-        agents: Vec::new(),
-        hooks: Vec::new(),
-    };
+    let entry = new_project_entry(canonical, false);
     registry.projects.push(entry.clone());
     io::save_to(&path, &registry)?;
     Ok(entry)
@@ -223,18 +231,13 @@ pub fn record_install(project: &Path, root_gitignore_added: bool) -> anyhow::Res
     let canonical = canonicalize(project);
     match find_project_mut(&mut registry, &canonical) {
         Some(entry) => {
+            ensure_project_identity(entry);
             entry.root_gitignore_entry_added |= root_gitignore_added;
         }
         None => {
-            registry.projects.push(ProjectEntry {
-                path: canonical,
-                initialized_at: now_rfc3339(),
-                synrepo_dir: default_synrepo_dir(),
-                root_gitignore_entry_added: root_gitignore_added,
-                export_gitignore_entry_added: false,
-                agents: Vec::new(),
-                hooks: Vec::new(),
-            });
+            registry
+                .projects
+                .push(new_project_entry(canonical, root_gitignore_added));
         }
     }
     io::save_to(&path, &registry)
@@ -252,17 +255,12 @@ pub fn record_agent(project: &Path, agent: AgentEntry) -> anyhow::Result<()> {
     registry.schema_version = SCHEMA_VERSION;
     let canonical = canonicalize(project);
     let entry = match registry.projects.iter_mut().find(|p| p.path == canonical) {
-        Some(e) => e,
+        Some(e) => {
+            ensure_project_identity(e);
+            e
+        }
         None => {
-            registry.projects.push(ProjectEntry {
-                path: canonical,
-                initialized_at: now_rfc3339(),
-                synrepo_dir: default_synrepo_dir(),
-                root_gitignore_entry_added: false,
-                export_gitignore_entry_added: false,
-                agents: Vec::new(),
-                hooks: Vec::new(),
-            });
+            registry.projects.push(new_project_entry(canonical, false));
             registry
                 .projects
                 .last_mut()
@@ -285,6 +283,7 @@ pub fn record_export_gitignore(project: &Path) -> anyhow::Result<()> {
     let mut registry = io::load_from(&path)?;
     let canonical = canonicalize(project);
     if let Some(entry) = find_project_mut(&mut registry, &canonical) {
+        ensure_project_identity(entry);
         entry.export_gitignore_entry_added = true;
         io::save_to(&path, &registry)?;
     }
@@ -299,6 +298,7 @@ pub fn record_agent_uninstall(project: &Path, tool: &str) -> anyhow::Result<()> 
     let mut registry = io::load_from(&path)?;
     let canonical = canonicalize(project);
     if let Some(entry) = find_project_mut(&mut registry, &canonical) {
+        ensure_project_identity(entry);
         entry.agents.retain(|a| a.tool != tool);
         io::save_to(&path, &registry)?;
     }

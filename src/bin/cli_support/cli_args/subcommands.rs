@@ -126,6 +126,10 @@ pub(crate) enum ProjectCommand {
         /// Repository path. Defaults to the current repo root.
         path: Option<PathBuf>,
     },
+    /// Resolve and mark a managed project as recently used.
+    Use { selector: String },
+    /// Rename a managed project's display alias.
+    Rename { selector: String, name: String },
 }
 
 #[derive(Subcommand)]

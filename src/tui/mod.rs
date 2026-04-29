@@ -39,6 +39,7 @@ pub mod dashboard;
 mod explain_run;
 pub(crate) mod materializer;
 pub mod probe;
+pub mod projects;
 pub mod theme;
 mod watcher;
 pub mod widgets;
@@ -125,6 +126,21 @@ pub fn run_dashboard(
         app::DashboardExit::LaunchIntegration => Ok(TuiOutcome::LaunchIntegrationRequested),
         app::DashboardExit::LaunchExplainSetup => Ok(TuiOutcome::LaunchExplainSetupRequested),
     }
+}
+
+/// Open the registry-backed global project dashboard.
+pub fn run_global_dashboard(
+    cwd: &Path,
+    opts: impl Into<DashboardOptions>,
+    open_picker: bool,
+) -> anyhow::Result<TuiOutcome> {
+    if !stdout_is_tty() {
+        return Ok(TuiOutcome::NonTtyFallback);
+    }
+    let opts = opts.into();
+    let theme = theme::Theme::from_no_color(opts.no_color);
+    let _ = dashboard::run_global_dashboard(cwd, theme, open_picker)?;
+    Ok(TuiOutcome::Exited)
 }
 
 fn ensure_watch_daemon_for_dashboard(repo_root: &Path) -> Vec<LogEntry> {

@@ -57,6 +57,7 @@ impl AppState {
                 | KeyCode::Char('2')
                 | KeyCode::Char('3')
                 | KeyCode::Char('4')
+                | KeyCode::Char('5')
         ) {
             self.confirm_stop_watch = None;
             return None;

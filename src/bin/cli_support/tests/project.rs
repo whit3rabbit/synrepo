@@ -5,7 +5,7 @@ use tempfile::tempdir;
 use crate::cli_support::agent_shims::AgentTool;
 use crate::cli_support::commands::{
     project_add_output, project_inspect_output, project_list_output, project_remove_output,
-    resolve_tool_resolution, setup_many_resolved,
+    project_rename_output, project_use_output, resolve_tool_resolution, setup_many_resolved,
 };
 
 fn home_guard() -> (
@@ -44,10 +44,60 @@ fn project_list_and_inspect_json_include_health() {
     let list = project_list_output(true).unwrap();
     assert!(list.contains("\"projects\""), "{list}");
     assert!(list.contains("\"health\""), "{list}");
+    assert!(list.contains("\"id\""), "{list}");
 
     let inspect = project_inspect_output(repo.path(), None, true).unwrap();
     assert!(inspect.contains("\"managed\": true"), "{inspect}");
     assert!(inspect.contains("\"uninitialized\""), "{inspect}");
+}
+
+#[test]
+fn project_use_updates_last_opened_and_reports_identity() {
+    let (_lock, _home, _guard) = home_guard();
+    let repo = tempdir().unwrap();
+    let entry = synrepo::registry::record_project(repo.path()).unwrap();
+
+    let out = project_use_output(&entry.id).unwrap();
+
+    assert!(out.contains("Project selected"), "{out}");
+    assert!(out.contains(&entry.id), "{out}");
+    let updated = synrepo::registry::get(repo.path()).unwrap().unwrap();
+    assert!(updated.last_opened_at.is_some());
+}
+
+#[test]
+fn project_rename_changes_display_name_only() {
+    let (_lock, _home, _guard) = home_guard();
+    let repo = tempdir().unwrap();
+    let entry = synrepo::registry::record_project(repo.path()).unwrap();
+
+    let out = project_rename_output(&entry.id, "agent-config").unwrap();
+
+    assert!(out.contains("Project renamed"), "{out}");
+    assert!(out.contains("agent-config"), "{out}");
+    let updated = synrepo::registry::get(repo.path()).unwrap().unwrap();
+    assert_eq!(updated.id, entry.id);
+    assert_eq!(updated.path, entry.path);
+    assert_eq!(updated.name.as_deref(), Some("agent-config"));
+}
+
+#[test]
+fn project_use_ambiguous_name_lists_matching_ids() {
+    let (_lock, _home, _guard) = home_guard();
+    let root = tempdir().unwrap();
+    let left = root.path().join("left").join("synrepo");
+    let right = root.path().join("right").join("synrepo");
+    fs::create_dir_all(&left).unwrap();
+    fs::create_dir_all(&right).unwrap();
+    let first = synrepo::registry::record_project(&left).unwrap();
+    let second = synrepo::registry::record_project(&right).unwrap();
+
+    let err = project_use_output("synrepo").unwrap_err();
+    let msg = format!("{err:#}");
+
+    assert!(msg.contains("multiple projects match"), "{msg}");
+    assert!(msg.contains(&first.id), "{msg}");
+    assert!(msg.contains(&second.id), "{msg}");
 }
 
 #[test]

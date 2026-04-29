@@ -10,6 +10,8 @@ use anyhow::anyhow;
 use rusqlite::{Connection, OpenFlags};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use time::format_description::well_known::Rfc3339;
+use time::OffsetDateTime;
 
 use crate::config::Config;
 use crate::pipeline::{
@@ -112,6 +114,9 @@ pub fn read_reconcile_event(synrepo_dir: &Path) -> Option<ActivityEntry> {
 }
 
 /// Read recent repair events from `repair-log.jsonl`, most recent first.
+///
+/// Malformed JSONL lines are skipped, but a single warning is emitted per scan
+/// containing the count so corruption is visible without flooding traces.
 pub fn read_repair_events(
     synrepo_dir: &Path,
     limit: usize,
@@ -125,27 +130,46 @@ pub fn read_repair_events(
         Ok(c) => c,
         Err(_) => return vec![],
     };
-    content
-        .lines()
-        .rev()
-        .filter(|line| !line.trim().is_empty())
-        .filter_map(|line| {
-            let entry: ResolutionLogEntry = serde_json::from_str(line).ok()?;
-            let timestamp = entry.synced_at.clone();
-            if let Some(since) = since {
-                if timestamp.as_str() < since {
-                    return None;
-                }
+    let mut parse_errors: usize = 0;
+    let mut entries: Vec<ActivityEntry> = Vec::new();
+    for line in content.lines().rev().filter(|line| !line.trim().is_empty()) {
+        if entries.len() >= limit {
+            break;
+        }
+        let entry: ResolutionLogEntry = match serde_json::from_str(line) {
+            Ok(e) => e,
+            Err(_) => {
+                parse_errors += 1;
+                continue;
             }
-            let payload = serde_json::to_value(&entry).ok()?;
-            Some(ActivityEntry {
-                kind: "repair".to_string(),
-                timestamp,
-                payload,
-            })
-        })
-        .take(limit)
-        .collect()
+        };
+        let timestamp = entry.synced_at.clone();
+        if let Some(since) = since {
+            if timestamp.as_str() < since {
+                continue;
+            }
+        }
+        let payload = match serde_json::to_value(&entry) {
+            Ok(p) => p,
+            Err(_) => {
+                parse_errors += 1;
+                continue;
+            }
+        };
+        entries.push(ActivityEntry {
+            kind: "repair".to_string(),
+            timestamp,
+            payload,
+        });
+    }
+    if parse_errors > 0 {
+        tracing::warn!(
+            log_path = %log_path.display(),
+            parse_errors,
+            "repair-log contained malformed JSONL lines; skipped during recent_activity scan"
+        );
+    }
+    entries
 }
 
 /// Read recent cross-link audit events from the overlay DB, most recent first.
@@ -321,6 +345,17 @@ pub fn read_recent_activity(
             MAX_ACTIVITY_LIMIT
         )
         .into());
+    }
+
+    if let Some(since_value) = query.since.as_deref() {
+        // The downstream readers do lexicographic string comparison against
+        // stored RFC 3339 timestamps. Reject malformed `since` at the boundary
+        // so callers don't get silent no-filter behavior from a typo.
+        if OffsetDateTime::parse(since_value, &Rfc3339).is_err() {
+            return Err(
+                anyhow!("since value {since_value:?} is not a valid RFC 3339 timestamp").into(),
+            );
+        }
     }
 
     let kinds = query.kinds.unwrap_or_else(RecentActivityKind::all);

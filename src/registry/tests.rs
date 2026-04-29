@@ -10,7 +10,10 @@ use super::{io, AgentEntry, HookEntry, ProjectEntry, Registry, SCHEMA_VERSION};
 
 fn sample_project(path: &Path) -> ProjectEntry {
     ProjectEntry {
+        id: String::new(),
         path: path.to_path_buf(),
+        name: None,
+        last_opened_at: None,
         initialized_at: "2026-04-19T00:00:00Z".to_string(),
         synrepo_dir: ".synrepo".to_string(),
         root_gitignore_entry_added: true,
@@ -119,7 +122,10 @@ fn agent_entry_omits_optional_fields_when_none() {
     let path = dir.path().join("projects.toml");
     let mut registry = Registry::default();
     registry.projects.push(ProjectEntry {
+        id: String::new(),
         path: dir.path().to_path_buf(),
+        name: None,
+        last_opened_at: None,
         initialized_at: "2026-04-19T00:00:00Z".to_string(),
         synrepo_dir: ".synrepo".to_string(),
         root_gitignore_entry_added: false,
@@ -202,6 +208,90 @@ fn load_project_entry_with_missing_defaulted_fields() {
     let registry = io::load_from(&path).unwrap();
     let project = &registry.projects[0];
     assert_eq!(project.synrepo_dir, ".synrepo");
+    assert!(project.id.is_empty());
+    assert!(project.effective_id().starts_with("proj_"));
+    assert_eq!(
+        project.display_name(),
+        super::default_project_name(dir.path())
+    );
     assert!(!project.root_gitignore_entry_added);
     assert!(project.agents.is_empty());
+}
+
+#[test]
+fn record_project_sets_id_and_default_display_name() {
+    let _lock = crate::test_support::global_test_lock(crate::config::test_home::HOME_ENV_TEST_LOCK);
+    let home = tempdir().unwrap();
+    let _guard = crate::config::test_home::HomeEnvGuard::redirect_to(home.path());
+    let project = tempdir().unwrap();
+
+    let entry = super::record_project(project.path()).unwrap();
+
+    assert!(entry.id.starts_with("proj_"));
+    assert_eq!(
+        entry.display_name(),
+        project.path().file_name().unwrap().to_string_lossy()
+    );
+    assert_eq!(entry.effective_id(), entry.id);
+}
+
+#[test]
+fn rename_project_preserves_identity_path_and_install_metadata() {
+    let _lock = crate::test_support::global_test_lock(crate::config::test_home::HOME_ENV_TEST_LOCK);
+    let home = tempdir().unwrap();
+    let _guard = crate::config::test_home::HomeEnvGuard::redirect_to(home.path());
+    let project = tempdir().unwrap();
+    let agent = AgentEntry {
+        tool: "codex".to_string(),
+        scope: "global".to_string(),
+        shim_path: "/tmp/synrepo-skill.md".to_string(),
+        mcp_config_path: Some("/tmp/config.toml".to_string()),
+        mcp_backup_path: None,
+        installed_at: "2026-04-19T00:00:05Z".to_string(),
+    };
+    super::record_agent(project.path(), agent.clone()).unwrap();
+    let before = super::record_project(project.path()).unwrap();
+
+    let renamed = super::rename_project(&before.id, "agent-config").unwrap();
+
+    assert_eq!(renamed.id, before.id);
+    assert_eq!(renamed.path, before.path);
+    assert_eq!(renamed.initialized_at, before.initialized_at);
+    assert_eq!(renamed.agents, vec![agent]);
+    assert_eq!(renamed.name.as_deref(), Some("agent-config"));
+}
+
+#[test]
+fn duplicate_display_names_require_id_or_path_selection() {
+    let _lock = crate::test_support::global_test_lock(crate::config::test_home::HOME_ENV_TEST_LOCK);
+    let home = tempdir().unwrap();
+    let _guard = crate::config::test_home::HomeEnvGuard::redirect_to(home.path());
+    let root = tempdir().unwrap();
+    let left = root.path().join("left").join("synrepo");
+    let right = root.path().join("right").join("synrepo");
+    fs::create_dir_all(&left).unwrap();
+    fs::create_dir_all(&right).unwrap();
+    let first = super::record_project(&left).unwrap();
+    let second = super::record_project(&right).unwrap();
+
+    let err = super::resolve_project("synrepo").unwrap_err();
+    let msg = format!("{err:#}");
+
+    assert!(msg.contains("multiple projects match"), "{msg}");
+    assert!(msg.contains(&first.id), "{msg}");
+    assert!(msg.contains(&second.id), "{msg}");
+}
+
+#[test]
+fn mark_project_opened_updates_last_opened() {
+    let _lock = crate::test_support::global_test_lock(crate::config::test_home::HOME_ENV_TEST_LOCK);
+    let home = tempdir().unwrap();
+    let _guard = crate::config::test_home::HomeEnvGuard::redirect_to(home.path());
+    let project = tempdir().unwrap();
+    let entry = super::record_project(project.path()).unwrap();
+
+    let opened = super::mark_project_opened(&entry.id).unwrap();
+
+    assert_eq!(opened.id, entry.id);
+    assert!(opened.last_opened_at.is_some());
 }

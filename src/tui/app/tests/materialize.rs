@@ -122,9 +122,14 @@ fn manual_m_press_dispatches_even_after_auto_attempted() {
 
     let consumed = state.handle_key(KeyCode::Char('M'), KeyModifiers::NONE);
     assert!(consumed, "M must consume the key event");
+    assert_eq!(
+        state.pending_quick_confirm,
+        Some(PendingQuickConfirm::MaterializeGraph)
+    );
+    assert!(state.handle_key(KeyCode::Enter, KeyModifiers::NONE));
     assert!(
         state.log.as_slice().len() > log_len_before,
-        "manual M must record a log entry"
+        "confirmed M must record a log entry"
     );
     let entry = state.log.as_slice().last().unwrap();
     assert_eq!(entry.tag, "materialize");

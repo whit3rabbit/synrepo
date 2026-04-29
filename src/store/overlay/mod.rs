@@ -19,7 +19,7 @@ mod findings_tests;
 mod tests;
 
 pub use agent_notes::current_drifted_note_ids;
-pub use commentary::derive_freshness;
+pub use commentary::{derive_freshness, is_legacy_commentary_pass_id};
 pub use cross_link_audit::AuditRow;
 pub use cross_links::{CrossLinkHashRow, CrossLinkStateCounts, PendingPromotionRow};
 pub use findings::{

@@ -1,16 +1,38 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use synrepo::bootstrap::runtime_probe::{probe, Missing, RoutingDecision};
 use synrepo::config::Config;
+use synrepo::registry;
 use synrepo::tui::{
-    run_repair_wizard, stdout_is_tty, DashboardOptions, RepairWizardOutcome, TuiOptions,
+    run_global_dashboard, run_repair_wizard, stdout_is_tty, DashboardOptions, RepairWizardOutcome,
+    TuiOptions,
 };
 
 use super::repair_cmd::{execute_repair_plan, run_dashboard_with_sub_wizards};
 use super::setup_cmd::run_wizard_and_apply;
 
 /// Bare `synrepo`: probe, route, and run the appropriate TUI entrypoint.
-pub(crate) fn run_bare_entrypoint(repo_root: &Path, opts: TuiOptions) -> anyhow::Result<()> {
+pub(crate) fn run_bare_entrypoint(
+    repo_root: &Path,
+    opts: TuiOptions,
+    explicit_repo: bool,
+) -> anyhow::Result<()> {
+    let resolved_root = if explicit_repo {
+        repo_root.to_path_buf()
+    } else if let Some(root) = find_initialized_project_root(repo_root) {
+        root
+    } else if stdout_is_tty() && !has_git_ancestor(repo_root) && registry_has_projects()? {
+        match run_global_dashboard(repo_root, DashboardOptions::from(opts), true)? {
+            synrepo::tui::TuiOutcome::Exited | synrepo::tui::TuiOutcome::NonTtyFallback => {
+                return Ok(());
+            }
+            _ => return Ok(()),
+        }
+    } else {
+        repo_root.to_path_buf()
+    };
+
+    let repo_root = resolved_root.as_path();
     let report = probe(repo_root);
     let decision = RoutingDecision::from_report(&report);
     let is_tty = stdout_is_tty();
@@ -48,6 +70,23 @@ pub(crate) fn run_bare_entrypoint(repo_root: &Path, opts: TuiOptions) -> anyhow:
             }
         }
     }
+}
+
+fn find_initialized_project_root(start: &Path) -> Option<PathBuf> {
+    for dir in start.ancestors() {
+        if Config::synrepo_dir(dir).join("config.toml").exists() {
+            return Some(dir.to_path_buf());
+        }
+    }
+    None
+}
+
+fn has_git_ancestor(start: &Path) -> bool {
+    start.ancestors().any(|dir| dir.join(".git").exists())
+}
+
+fn registry_has_projects() -> anyhow::Result<bool> {
+    Ok(!registry::load()?.projects.is_empty())
 }
 
 /// Non-TTY plain-text summary printed when bare `synrepo` runs on a ready

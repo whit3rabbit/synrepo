@@ -22,7 +22,7 @@ mod watch;
 
 pub use auto_sync::set_auto_sync;
 pub(crate) use helpers::now_rfc3339;
-pub use helpers::{outcome_to_log, writer_lock_hint};
+pub use helpers::{outcome_to_log, outcome_to_project_log, writer_lock_hint};
 pub use materialize::materialize_now;
 pub use reconcile::reconcile_now;
 pub use sync::sync_now;
@@ -44,6 +44,48 @@ impl ActionContext {
         Self {
             repo_root: repo_root.to_path_buf(),
             synrepo_dir: Config::synrepo_dir(repo_root),
+        }
+    }
+}
+
+/// Project-explicit context for global dashboard actions.
+#[derive(Clone, Debug)]
+pub struct ProjectActionContext {
+    /// Stable project ID from the user-level registry.
+    pub project_id: String,
+    /// User-facing project name used in global logs.
+    pub project_name: String,
+    /// Repo root for this project.
+    pub repo_root: PathBuf,
+    /// Resolved `.synrepo/` directory for this project.
+    pub synrepo_dir: PathBuf,
+}
+
+impl ProjectActionContext {
+    /// Build a project-aware context from explicit identity and root path.
+    pub fn new(
+        project_id: impl Into<String>,
+        project_name: impl Into<String>,
+        repo_root: &Path,
+    ) -> Self {
+        Self {
+            project_id: project_id.into(),
+            project_name: project_name.into(),
+            repo_root: repo_root.to_path_buf(),
+            synrepo_dir: Config::synrepo_dir(repo_root),
+        }
+    }
+
+    /// Build a project-aware context from a registry entry.
+    pub fn from_entry(entry: &crate::registry::ProjectEntry) -> Self {
+        Self::new(entry.effective_id(), entry.display_name(), &entry.path)
+    }
+
+    /// Return the single-project action context used by existing dispatchers.
+    pub fn action_context(&self) -> ActionContext {
+        ActionContext {
+            repo_root: self.repo_root.clone(),
+            synrepo_dir: self.synrepo_dir.clone(),
         }
     }
 }

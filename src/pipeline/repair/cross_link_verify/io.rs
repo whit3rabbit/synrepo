@@ -61,7 +61,20 @@ pub fn load_endpoint_text(
             if let Some(slice) = source.get(start..end) {
                 return Ok(Some(slice.to_string()));
             }
-            Ok(Some(source))
+            // Recorded byte range is outside the current file. The file likely
+            // changed since the graph compile that produced this symbol; we
+            // cannot verify against fresh source. Surface the staleness so the
+            // verifier handles it instead of silently matching against the
+            // entire file (which would mask drift).
+            tracing::warn!(
+                symbol_id = %symbol_id,
+                file_path = %file.path,
+                recorded_start = start,
+                recorded_end = end,
+                source_len = source.len(),
+                "symbol body byte range out of bounds; treating as unverifiable"
+            );
+            Ok(None)
         }
         NodeId::Concept(concept_id) => {
             let Some(concept) = graph.get_concept(concept_id)? else {

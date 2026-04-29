@@ -1,5 +1,7 @@
 use super::*;
-use crate::pipeline::repair::{append_resolution_log, ResolutionLogEntry, SyncOutcome};
+use crate::pipeline::repair::{
+    append_resolution_log, repair_log_path, ResolutionLogEntry, SyncOutcome,
+};
 use tempfile::tempdir;
 
 // 5.1: read_repair_events returns entries in reverse-chronological order and respects limit
@@ -88,6 +90,68 @@ fn recent_activity_no_git_returns_unavailable_hotspot() {
     assert_eq!(events.len(), 1, "expected exactly one unavailable entry");
     assert_eq!(events[0].payload["state"], "unavailable");
     assert_eq!(events[0].kind, "hotspot");
+}
+
+// 5.4b: read_recent_activity rejects malformed `since`
+#[test]
+fn recent_activity_rejects_malformed_since() {
+    let dir = tempdir().unwrap();
+    let synrepo_dir = dir.path().join(".synrepo");
+    let config = crate::config::Config::default();
+    let query = RecentActivityQuery {
+        kinds: None,
+        limit: 10,
+        since: Some("yesterday".to_string()),
+    };
+    let result = read_recent_activity(&synrepo_dir, dir.path(), &config, query);
+    assert!(result.is_err());
+    let msg = result.unwrap_err().to_string();
+    assert!(
+        msg.contains("RFC 3339"),
+        "error should mention RFC 3339: {msg}"
+    );
+}
+
+// 5.4c: read_repair_events skips malformed JSONL lines instead of returning empty
+#[test]
+fn repair_events_skips_malformed_lines() {
+    let dir = tempdir().unwrap();
+    let synrepo_dir = dir.path().join(".synrepo");
+
+    // Append a real entry, then a malformed line, then another real entry.
+    let entry1 = ResolutionLogEntry {
+        synced_at: "2026-01-01T00:00:00Z".to_string(),
+        source_revision: None,
+        requested_scope: vec![],
+        findings_considered: vec![],
+        actions_taken: vec!["first".to_string()],
+        outcome: SyncOutcome::Completed,
+    };
+    append_resolution_log(&synrepo_dir, &entry1);
+
+    let log_path = repair_log_path(&synrepo_dir);
+    use std::io::Write;
+    let mut f = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&log_path)
+        .unwrap();
+    writeln!(f, "{{ this is not valid json").unwrap();
+    drop(f);
+
+    let entry2 = ResolutionLogEntry {
+        synced_at: "2026-01-02T00:00:00Z".to_string(),
+        source_revision: None,
+        requested_scope: vec![],
+        findings_considered: vec![],
+        actions_taken: vec!["second".to_string()],
+        outcome: SyncOutcome::Completed,
+    };
+    append_resolution_log(&synrepo_dir, &entry2);
+
+    let events = read_repair_events(&synrepo_dir, 10, None);
+    assert_eq!(events.len(), 2, "malformed line skipped, real entries kept");
+    assert_eq!(events[0].timestamp, "2026-01-02T00:00:00Z");
+    assert_eq!(events[1].timestamp, "2026-01-01T00:00:00Z");
 }
 
 // 5.5: kinds filter includes only the requested event kinds
