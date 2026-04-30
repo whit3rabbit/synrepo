@@ -90,6 +90,15 @@ fn stop_bridge_acknowledges_without_waiting_for_loop_reply() {
 fn watch_service_records_lock_conflict_when_writer_lock_is_held() {
     let _guard = watch_service_guard();
     let (_dir, repo, config, synrepo_dir) = setup_test_repo();
+    // Disable auto-sync so the post-startup-reconcile auto-sync hook does not
+    // race with this test for the writer flock. Without this, on slow runners
+    // the watch service can re-enter `maybe_run_post_reconcile_auto_sync`
+    // (acquiring the writer lock) between `load_reconcile_state` becoming
+    // readable and the test taking the flock, causing
+    // `hold_writer_flock_with_ownership` to panic with
+    // "flock must be free (nothing else holds it)".
+    let mut config = config;
+    config.auto_sync_enabled = false;
     let service_repo = repo.clone();
     let service_config = config.clone();
     let service_synrepo = synrepo_dir.clone();

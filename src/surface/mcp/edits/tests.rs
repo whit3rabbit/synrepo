@@ -11,9 +11,10 @@ use crate::{
         control_endpoint_reachable, request_watch_control, run_watch_service, watch_service_status,
         WatchConfig, WatchControlRequest, WatchServiceMode, WatchServiceStatus,
     },
-    pipeline::writer::{hold_writer_flock_with_ownership, writer_lock_path, WriterOwnership},
     surface::mcp::SynrepoState,
 };
+#[cfg(unix)]
+use crate::pipeline::writer::{hold_writer_flock_with_ownership, writer_lock_path, WriterOwnership};
 
 fn state_with_files(files: &[(&str, &str)]) -> (tempfile::TempDir, SynrepoState) {
     let dir = tempdir().unwrap();
@@ -290,6 +291,7 @@ fn multi_file_request_reports_partial_outcomes() {
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn writer_lock_conflict_rejects_without_writing() {
     let (dir, state) = state_with_files(&[("src/lib.rs", "one\ntwo\n")]);
