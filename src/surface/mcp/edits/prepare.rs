@@ -101,7 +101,7 @@ fn prepare_edit_context(
         "task_id": task_id,
         "anchor_state_version": anchor_state_version,
         "repo_root": state.repo_root,
-        "graph_epoch": graph_epoch(),
+        "graph_epoch": graph_epoch(&state.repo_root),
         "path": target.path,
         "file_id": target.file_id,
         "symbol_id": target.symbol_id,
@@ -246,7 +246,7 @@ pub(crate) fn hash_bytes(bytes: &[u8]) -> String {
     blake3::hash(bytes).to_hex().to_string()
 }
 
-fn graph_epoch() -> Option<u64> {
-    let epoch = snapshot::current().snapshot_epoch;
+fn graph_epoch(repo_root: &Path) -> Option<u64> {
+    let epoch = snapshot::current(repo_root)?.snapshot_epoch;
     (epoch > 0).then_some(epoch)
 }

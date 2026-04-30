@@ -23,8 +23,17 @@ use super::{
     StatusOptions, StatusSnapshot,
 };
 
-pub(super) fn current_graph_snapshot_status() -> GraphSnapshotStatus {
-    let graph = snapshot::current();
+pub(super) fn current_graph_snapshot_status(repo_root: &Path) -> GraphSnapshotStatus {
+    let Some(graph) = snapshot::current(repo_root) else {
+        return GraphSnapshotStatus {
+            epoch: 0,
+            age_ms: 0,
+            size_bytes: 0,
+            file_count: 0,
+            symbol_count: 0,
+            edge_count: 0,
+        };
+    };
     let age_ms = graph
         .published_at
         .duration_since(std::time::SystemTime::UNIX_EPOCH)
@@ -203,7 +212,7 @@ pub fn build_status_snapshot(repo_root: &Path, opts: StatusOptions) -> StatusSna
                 config: None,
                 diagnostics: None,
                 graph_stats: None,
-                graph_snapshot: current_graph_snapshot_status(),
+                graph_snapshot: current_graph_snapshot_status(repo_root),
                 export_freshness: String::new(),
                 overlay_cost_summary: String::new(),
                 commentary_coverage: CommentaryCoverage::unavailable("not initialized"),
@@ -231,7 +240,7 @@ pub fn build_status_snapshot(repo_root: &Path, opts: StatusOptions) -> StatusSna
     };
 
     let export_freshness = export_freshness_summary(repo_root, &synrepo_dir, config_ref);
-    let graph_snapshot = current_graph_snapshot_status();
+    let graph_snapshot = current_graph_snapshot_status(repo_root);
     let overlay = open_status_overlay(&synrepo_dir);
     let overlay_cost_summary = overlay_cost_summary(&overlay);
     let commentary_coverage = commentary_coverage(&synrepo_dir, opts.full, &overlay);

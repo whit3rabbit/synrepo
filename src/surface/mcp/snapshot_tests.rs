@@ -61,7 +61,12 @@ Use the add helper.
     .unwrap();
 
     bootstrap::bootstrap(repo.path(), None, false).unwrap();
-    assert!(snapshot::current().snapshot_epoch > 0);
+    assert!(
+        snapshot::current(repo.path())
+            .map(|g| g.snapshot_epoch)
+            .unwrap_or(0)
+            > 0
+    );
 
     let state = SynrepoState {
         config: Config::load(repo.path()).unwrap(),

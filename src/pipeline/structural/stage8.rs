@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::SystemTime;
 
@@ -7,6 +8,7 @@ use crate::structure::graph::{snapshot, with_graph_read_snapshot, Graph, GraphRe
 static SNAPSHOT_DISABLED_LOGGED: AtomicBool = AtomicBool::new(false);
 
 pub fn run_graph_snapshot_commit(
+    repo_root: &Path,
     config: &Config,
     graph: &dyn GraphStore,
     snapshot_epoch: u64,
@@ -35,6 +37,6 @@ pub fn run_graph_snapshot_commit(
         );
     }
 
-    snapshot::publish(snapshot_graph);
+    snapshot::publish(repo_root, snapshot_graph);
     Ok(())
 }

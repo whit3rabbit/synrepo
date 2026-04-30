@@ -151,8 +151,14 @@ pub fn run_watch_service(
     let auto_sync_enabled = Arc::new(AtomicBool::new(config.auto_sync_enabled));
     let auto_sync_blocked = Arc::new(AtomicBool::new(false));
     let (tx, rx) = mpsc::channel::<LoopMessage>();
+    // Pin the control endpoint to the value persisted at lease acquisition.
+    // Clients read the same value out of `watch-daemon.json` via
+    // `resolve_control_endpoint`, so bind path and request path can never
+    // diverge — even if `$HOME` (read by `user_socket_dir`) shifts between
+    // acquire and listener spawn.
+    let control_endpoint = state_handle.snapshot().control_endpoint;
     let socket_thread = spawn_control_listener(
-        synrepo_dir,
+        control_endpoint,
         state_handle.clone(),
         tx.clone(),
         stop_flag.clone(),

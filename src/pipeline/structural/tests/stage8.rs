@@ -54,13 +54,13 @@ fn structural_compile_publishes_graph_snapshot() {
     fs::create_dir_all(repo.path().join("src")).unwrap();
     fs::write(repo.path().join("src/lib.rs"), "pub fn publish_me() {}\n").unwrap();
 
-    snapshot::publish(Graph::empty());
+    snapshot::publish(repo.path(), Graph::empty());
 
     let config = Config::default();
     let mut graph = open_graph(&repo);
     run_structural_compile(repo.path(), &config, &mut graph).unwrap();
 
-    let published = snapshot::current();
+    let published = snapshot::current(repo.path()).expect("snapshot should be published");
     assert!(published.snapshot_epoch > 0);
     assert_eq!(published.files.len(), 1);
     assert!(published.file_by_path("src/lib.rs").unwrap().is_some());
@@ -72,7 +72,7 @@ fn structural_compile_warns_when_snapshot_exceeds_memory_ceiling() {
     fs::create_dir_all(repo.path().join("src")).unwrap();
     fs::write(repo.path().join("src/lib.rs"), "pub fn too_big() {}\n").unwrap();
 
-    snapshot::publish(Graph::empty());
+    snapshot::publish(repo.path(), Graph::empty());
 
     let logs = TestLogBuffer::default();
     let subscriber = tracing_subscriber::fmt()
@@ -89,7 +89,7 @@ fn structural_compile_warns_when_snapshot_exceeds_memory_ceiling() {
     let mut graph = open_graph(&repo);
     run_structural_compile(repo.path(), &config, &mut graph).unwrap();
 
-    let published = snapshot::current();
+    let published = snapshot::current(repo.path()).expect("snapshot should be published");
     assert!(published.snapshot_epoch > 0);
     assert!(published.files.len() >= 1);
     assert!(logs

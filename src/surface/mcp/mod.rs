@@ -96,7 +96,13 @@ impl SynrepoState {
             return self.create_sqlite_compiler();
         }
 
-        let graph = snapshot::current();
+        // Per-repo snapshot lookup. `None` = nobody has bootstrapped this
+        // repo in this process yet, so fall back to the on-disk store. The
+        // singleton was the source of cross-test contamination: the latest
+        // bootstrap's graph leaked into every reader regardless of repo.
+        let Some(graph) = snapshot::current(&self.repo_root) else {
+            return self.create_sqlite_compiler();
+        };
         if graph.snapshot_epoch == 0 {
             return self.create_sqlite_compiler();
         }

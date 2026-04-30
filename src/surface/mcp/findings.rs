@@ -62,17 +62,19 @@ pub(crate) fn render_findings(
         })?;
         with_graph_read_snapshot(&graph, |reader| overlay.findings(reader, &filter))?
     } else {
-        let graph = snapshot::current();
-        if graph.snapshot_epoch == 0 {
-            let sqlite = SqliteGraphStore::open_existing(&graph_dir).with_context(|| {
-                format!(
-                    "Graph store not found at {} — run `synrepo init` first",
-                    graph_dir.display()
-                )
-            })?;
-            with_graph_read_snapshot(&sqlite, |reader| overlay.findings(reader, &filter))?
-        } else {
-            overlay.findings(graph.as_ref(), &filter)?
+        match snapshot::current(repo_root) {
+            Some(graph) if graph.snapshot_epoch != 0 => {
+                overlay.findings(graph.as_ref(), &filter)?
+            }
+            _ => {
+                let sqlite = SqliteGraphStore::open_existing(&graph_dir).with_context(|| {
+                    format!(
+                        "Graph store not found at {} — run `synrepo init` first",
+                        graph_dir.display()
+                    )
+                })?;
+                with_graph_read_snapshot(&sqlite, |reader| overlay.findings(reader, &filter))?
+            }
         }
     };
 

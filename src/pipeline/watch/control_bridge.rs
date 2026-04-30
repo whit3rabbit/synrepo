@@ -4,7 +4,6 @@
 use std::fs;
 use std::{
     io::BufReader,
-    path::Path,
     sync::{
         atomic::{AtomicBool, Ordering},
         mpsc, Arc,
@@ -22,21 +21,26 @@ use super::{
     control::{
         read_control_request, write_control_response, WatchControlRequest, WatchControlResponse,
     },
-    lease::{watch_control_endpoint, watch_control_socket_name, WatchStateHandle},
+    lease::{watch_control_socket_name, WatchStateHandle},
     service::LoopMessage,
 };
 use crate::pipeline::repair::SyncOptions;
 
+/// Bind the watch control socket using `endpoint` as the canonical path.
+///
+/// `endpoint` MUST be the same string the daemon persisted in
+/// `WatchDaemonState::control_endpoint` at lease acquisition; recomputing it
+/// here would re-read `$HOME` (via `user_socket_dir`) and risk diverging from
+/// the path clients read out of the state file. The caller — `run_watch_service`
+/// — owns that canonical value and passes it through.
 pub(super) fn spawn_control_listener(
-    synrepo_dir: &Path,
+    endpoint: String,
     state_handle: WatchStateHandle,
     tx: mpsc::Sender<LoopMessage>,
     stop_flag: Arc<AtomicBool>,
     auto_sync_enabled: Arc<AtomicBool>,
     sync_timeout_seconds: u32,
 ) -> crate::Result<thread::JoinHandle<()>> {
-    let endpoint = watch_control_endpoint(synrepo_dir);
-
     // Unix sockets are filesystem paths. A prior dead daemon may have left a
     // stale socket file behind, which makes `bind()` fail with EADDRINUSE.
     #[cfg(unix)]

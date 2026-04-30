@@ -54,3 +54,20 @@ impl Drop for HomeEnvGuard {
         }
     }
 }
+
+/// Acquire the in-process HOME-env lock without mutating `HOME`.
+///
+/// Use this in tests that *read* `$HOME` (directly or via helpers like
+/// `user_socket_dir`) while another test in the same process might be
+/// mutating it via [`HomeEnvGuard::redirect_to`]. The cross-process flock
+/// ([`HOME_ENV_TEST_LOCK`]) only serializes against tests in *other*
+/// binaries; same-process serialization goes through this `Mutex`. Without
+/// it, a watch-service test can capture `$HOME` at lease time and observe
+/// a different value at request time, causing the control socket path to
+/// diverge between bind and connect.
+#[doc(hidden)]
+pub fn lock_home_env_read() -> std::sync::MutexGuard<'static, ()> {
+    HOME_ENV_MUTEX
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}

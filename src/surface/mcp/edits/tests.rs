@@ -327,7 +327,16 @@ fn writer_lock_conflict_rejects_without_writing() {
 
 #[test]
 fn watch_active_apply_delegates_reconcile() {
-    let _guard = crate::test_support::global_test_lock("mcp-edit-watch-delegation");
+    // Serialize with the watch-service tests (which spawn a `run_watch_service`
+    // and own the per-process control-socket directory) and with HOME-mutating
+    // tests (whose `set_var("HOME", ...)` would shift `user_socket_dir` for
+    // any concurrent watch service in this process). The HOME mutex covers
+    // same-process `HomeEnvGuard::redirect_to` callers; the flock covers
+    // cross-binary contention.
+    let _watch_lock = crate::test_support::global_test_lock("watch-service");
+    let _home_flock =
+        crate::test_support::global_test_lock(crate::config::test_home::HOME_ENV_TEST_LOCK);
+    let _home_mutex = crate::config::test_home::lock_home_env_read();
     let (dir, state) = state_with_files(&[("src/lib.rs", "one\ntwo\n")]);
     let synrepo_dir = Config::synrepo_dir(dir.path());
     let repo_root = dir.path().to_path_buf();

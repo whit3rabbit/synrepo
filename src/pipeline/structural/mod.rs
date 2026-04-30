@@ -156,7 +156,8 @@ fn run_structural_compile_scoped(
     };
 
     if let Some(snapshot_epoch) = compile_rev {
-        if let Err(e) = stage8::run_graph_snapshot_commit(config, graph, snapshot_epoch) {
+        if let Err(e) = stage8::run_graph_snapshot_commit(repo_root, config, graph, snapshot_epoch)
+        {
             tracing::warn!(error = %e, "stage 8 graph snapshot publish failed; continuing");
         }
     }

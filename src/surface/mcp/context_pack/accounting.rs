@@ -62,7 +62,9 @@ pub(super) fn context_state(
         }
     }
     json!({
-        "graph_epoch": crate::structure::graph::snapshot::current().snapshot_epoch,
+        "graph_epoch": crate::structure::graph::snapshot::current(&state.repo_root)
+            .map(|g| g.snapshot_epoch)
+            .unwrap_or(0),
         "repo_root": state.repo_root,
         "source_hashes": source_hashes.into_iter().collect::<Vec<_>>(),
         "stale": accountings.iter().any(|a| a.stale),

@@ -12,6 +12,7 @@ use super::lease::{
     watch_control_endpoint, watch_control_socket_name, WatchDaemonError, WatchDaemonState,
 };
 use super::reconcile::ReconcileOutcome;
+use super::status::load_watch_state;
 
 /// Control message sent over the per-repo watch control endpoint.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -84,7 +85,7 @@ pub fn request_watch_control(
     synrepo_dir: &Path,
     request: WatchControlRequest,
 ) -> Result<WatchControlResponse, WatchDaemonError> {
-    let endpoint = watch_control_endpoint(synrepo_dir);
+    let endpoint = resolve_control_endpoint(synrepo_dir);
     let io_err = |source| WatchDaemonError::Io {
         path: PathBuf::from(&endpoint),
         source,
@@ -161,12 +162,30 @@ fn io_err(endpoint: &str, source: std::io::Error) -> WatchDaemonError {
 /// [`crate::tui::actions::stop_watch`]) should gate on this probe instead of
 /// on status alone.
 pub fn control_endpoint_reachable(synrepo_dir: &Path) -> bool {
-    let endpoint = watch_control_endpoint(synrepo_dir);
+    let endpoint = resolve_control_endpoint(synrepo_dir);
     let name = match watch_control_socket_name(&endpoint) {
         Ok(name) => name,
         Err(_) => return false,
     };
     Stream::connect(name).is_ok()
+}
+
+/// Prefer the bind-time endpoint persisted in `watch-daemon.json`; fall back
+/// to recomputing only if the state file is missing or its `control_endpoint`
+/// is empty (legacy state files written before the field was populated).
+///
+/// Why: `watch_control_endpoint` reads `$HOME` (and `$XDG_RUNTIME_DIR`,
+/// `$USER`) via `user_socket_dir`. If the env changes between the daemon's
+/// bind and a later client request — common in tests that mutate `$HOME`
+/// concurrently with a watch service — recomputing produces a different
+/// socket path and the request goes to the wrong (or non-existent) endpoint.
+/// The state file holds the path the daemon actually bound, which is the
+/// canonical answer.
+fn resolve_control_endpoint(synrepo_dir: &Path) -> String {
+    match load_watch_state(synrepo_dir) {
+        Ok(state) if !state.control_endpoint.is_empty() => state.control_endpoint,
+        _ => watch_control_endpoint(synrepo_dir),
+    }
 }
 
 #[cfg(test)]
