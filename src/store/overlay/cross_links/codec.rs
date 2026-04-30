@@ -8,8 +8,7 @@ use time::OffsetDateTime;
 
 use crate::core::ids::NodeId;
 use crate::overlay::{
-    CitedSpan, ConfidenceTier, CrossLinkProvenance, CrossLinkState, OverlayEdgeKind,
-    OverlayEpistemic, OverlayLink,
+    CitedSpan, ConfidenceTier, CrossLinkProvenance, OverlayEdgeKind, OverlayEpistemic, OverlayLink,
 };
 
 pub(super) fn row_to_overlay_link(
@@ -135,19 +134,6 @@ pub(super) fn parse_confidence_tier(s: &str) -> crate::Result<ConfidenceTier> {
         "below_threshold" => Ok(ConfidenceTier::BelowThreshold),
         other => Err(crate::Error::Other(anyhow::anyhow!(
             "invalid confidence tier: {other}"
-        ))),
-    }
-}
-
-#[allow(dead_code)]
-pub(super) fn parse_state(s: &str) -> crate::Result<CrossLinkState> {
-    match s {
-        "active" => Ok(CrossLinkState::Active),
-        "promoted" => Ok(CrossLinkState::Promoted),
-        "rejected" => Ok(CrossLinkState::Rejected),
-        "pending_promotion" => Ok(CrossLinkState::PendingPromotion),
-        other => Err(crate::Error::Other(anyhow::anyhow!(
-            "invalid cross-link state: {other}"
         ))),
     }
 }

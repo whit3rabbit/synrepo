@@ -1,8 +1,14 @@
+use std::collections::HashMap;
+
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::{core::ids::NodeId, overlay::OverlayStore, structure::graph::EdgeKind};
+use crate::{
+    core::ids::{EdgeId, NodeId},
+    overlay::OverlayStore,
+    structure::graph::EdgeKind,
+};
 
 use super::helpers::{render_result, with_mcp_compiler};
 use super::SynrepoState;
@@ -193,13 +199,17 @@ pub fn handle_edges(
             _ => compiler.reader().outbound(node_id, store_filter)?,
         };
 
+        let drift_scores = current_drift_scores(compiler);
         let filtered: Vec<serde_json::Value> = match parsed_kinds.as_deref() {
             Some(kinds) if kinds.len() > 1 => edges
                 .into_iter()
                 .filter(|e| kinds.contains(&e.kind))
-                .map(|e| serialize_edge(&e))
+                .map(|e| serialize_edge(&e, &drift_scores))
                 .collect(),
-            _ => edges.into_iter().map(|e| serialize_edge(&e)).collect(),
+            _ => edges
+                .into_iter()
+                .map(|e| serialize_edge(&e, &drift_scores))
+                .collect(),
         };
 
         Ok(json!({
@@ -222,8 +232,11 @@ pub fn handle_query(state: &SynrepoState, query: String) -> String {
             QueryDirection::Inbound => compiler.reader().inbound(node_id, edge_kind)?,
         };
 
-        let rendered: Vec<serde_json::Value> =
-            edges.into_iter().map(|e| serialize_edge(&e)).collect();
+        let drift_scores = current_drift_scores(compiler);
+        let rendered: Vec<serde_json::Value> = edges
+            .into_iter()
+            .map(|e| serialize_edge(&e, &drift_scores))
+            .collect();
 
         let dir_str = match direction {
             QueryDirection::Outbound => "outbound",
@@ -337,14 +350,32 @@ fn node_exists(
     Ok(())
 }
 
-fn serialize_edge(edge: &crate::structure::graph::Edge) -> serde_json::Value {
+fn serialize_edge(
+    edge: &crate::structure::graph::Edge,
+    drift_scores: &HashMap<EdgeId, f32>,
+) -> serde_json::Value {
     json!({
         "id": edge.id.to_string(),
         "from": edge.from.to_string(),
         "to": edge.to.to_string(),
         "kind": edge.kind.as_str(),
         "epistemic": edge.epistemic,
-        "drift_score": edge.drift_score,
+        "drift_score": drift_scores.get(&edge.id).copied().unwrap_or(0.0),
         "provenance": edge.provenance,
     })
+}
+
+/// Build a `(EdgeId -> drift_score)` map for the latest drift revision, or
+/// an empty map when no drift scores are present yet.
+fn current_drift_scores(
+    compiler: &crate::surface::card::compiler::GraphCardCompiler,
+) -> HashMap<EdgeId, f32> {
+    let revision = match compiler.latest_drift_revision() {
+        Ok(Some(rev)) => rev,
+        _ => return HashMap::new(),
+    };
+    compiler
+        .read_drift_scores(&revision)
+        .map(|pairs| pairs.into_iter().collect())
+        .unwrap_or_default()
 }

@@ -108,6 +108,11 @@ pub fn derive_edge_id(from: NodeId, to: NodeId, kind: EdgeKind) -> EdgeId {
 }
 
 /// A graph edge.
+///
+/// Drift scores are not stored on the edge. The canonical source is the
+/// `edge_drift` sidecar table keyed by `(edge_id, revision)`; consumers that
+/// need a score for serialization fetch it via
+/// `GraphReader::read_drift_scores(revision)` and look up by `edge.id`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Edge {
     /// Stable identifier.
@@ -120,11 +125,6 @@ pub struct Edge {
     pub kind: EdgeKind,
     /// Epistemic origin.
     pub epistemic: Epistemic,
-    /// Drift score in [0.0, 1.0]. Always 0.0 at edge creation time.
-    /// The canonical drift score is stored in the sidecar `edge_drift` table,
-    /// keyed by `(edge_id, revision)`. This field exists for serialization
-    /// compatibility but is not kept current in memory.
-    pub drift_score: f32,
     /// The file whose parse pass produced this edge. `None` for human-declared
     /// edges and pre-migration rows.
     #[serde(default)]

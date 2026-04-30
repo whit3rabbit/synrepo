@@ -1,4 +1,5 @@
 use crate::pipeline::repair::{DriftClass, RepairAction, RepairFinding, RepairSurface, Severity};
+use crate::structure::graph::GraphReader;
 
 use super::{RepairContext, SurfaceCheck};
 
@@ -48,7 +49,6 @@ impl SurfaceCheck for RetiredObservationsCheck {
 
 fn edge_drift_findings(synrepo_dir: &std::path::Path) -> crate::Result<Vec<RepairFinding>> {
     use crate::store::sqlite::SqliteGraphStore;
-    use crate::structure::graph::GraphStore;
 
     let graph_dir = synrepo_dir.join("graph");
     let graph_db = graph_dir.join("nodes.db");

@@ -3,7 +3,7 @@ use std::path::Path;
 
 use crate::core::ids::{EdgeId, NodeId};
 use crate::pipeline::repair::{DriftClass, RepairAction, RepairFinding, RepairSurface, Severity};
-use crate::structure::graph::{EdgeKind, GraphStore};
+use crate::structure::graph::{EdgeKind, GraphReader};
 
 use super::{RepairContext, SurfaceCheck};
 

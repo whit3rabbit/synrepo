@@ -101,8 +101,9 @@ pub fn evaluate_runtime(
                 set_action(
                     &mut entries,
                     StoreId::Graph,
-                    CompatAction::MigrateRequired,
-                    "history-sensitive config changed (`git_commit_depth`)".to_string(),
+                    CompatAction::Block,
+                    "history-sensitive config changed (`git_commit_depth`); reset `.synrepo/` and re-init"
+                        .to_string(),
                 );
             } else {
                 warnings.push(
@@ -144,7 +145,7 @@ pub fn apply_runtime_actions(
 
     for entry in &report.entries {
         match entry.action {
-            CompatAction::Continue | CompatAction::MigrateRequired | CompatAction::Block => {}
+            CompatAction::Continue | CompatAction::Block => {}
             CompatAction::Rebuild | CompatAction::Invalidate | CompatAction::ClearAndRecreate => {
                 clear_store_contents(synrepo_dir, entry.store_id)?;
                 changed = true;
@@ -197,25 +198,6 @@ fn evaluate_store(
         .unwrap_or_default();
     let expected_version = store_id.expected_format_version();
 
-    // Backward compat: older binaries wrote the same global version (2)
-    // for all stores. If the stored version matches the legacy global and
-    // the per-store expected version is lower, treat as Continue. The
-    // next reconcile will rewrite the snapshot with correct per-store
-    // versions.
-    if stored_version == super::LEGACY_GLOBAL_FORMAT_VERSION
-        && expected_version < super::LEGACY_GLOBAL_FORMAT_VERSION
-    {
-        return CompatibilityEntry {
-            store_id,
-            class: store_id.class(),
-            action: CompatAction::Continue,
-            reason: format!(
-                "stored format version {} matches legacy global; will be corrected on next snapshot write",
-                stored_version
-            ),
-        };
-    }
-
     let action = if stored_version == expected_version {
         CompatAction::Continue
     } else if stored_version == 0 {
@@ -261,7 +243,7 @@ fn default_action_without_snapshot(store_id: StoreId) -> CompatAction {
 
 fn default_action_for_older_store(store_id: StoreId) -> CompatAction {
     match store_id.class() {
-        StoreClass::Canonical => CompatAction::MigrateRequired,
+        StoreClass::Canonical => CompatAction::Block,
         StoreClass::Supplemental | StoreClass::Disposable => CompatAction::Invalidate,
         StoreClass::Rebuildable => CompatAction::Rebuild,
         StoreClass::Ephemeral => CompatAction::ClearAndRecreate,

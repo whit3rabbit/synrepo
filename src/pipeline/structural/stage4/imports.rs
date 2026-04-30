@@ -83,7 +83,6 @@ pub(super) fn emit_imports_for_file(
                 last_observed_rev: None,
                 retired_at_rev: None,
                 epistemic: Epistemic::ParserObserved,
-                drift_score: 0.0,
                 provenance: make_provenance("stage4_imports", revision, &item.file_path, ""),
             };
             graph.insert_edge(edge)?;

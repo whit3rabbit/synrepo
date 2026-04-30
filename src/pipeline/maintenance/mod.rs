@@ -8,9 +8,9 @@
 //! ## Design
 //!
 //! `plan_maintenance` queries the current compatibility state and maps each
-//! store's `CompatAction` to a `MaintenanceAction`. Blocking actions
-//! (`Block`, `MigrateRequired`) are surfaced as informational guidance but
-//! never executed automatically; they require explicit operator intervention.
+//! store's `CompatAction` to a `MaintenanceAction`. Blocking actions (`Block`)
+//! are surfaced as informational guidance but never executed automatically;
+//! they require explicit operator intervention.
 //!
 //! `execute_maintenance` applies the plan: clearing or rebuilding stores
 //! whose compatibility actions indicate stale or incompatible contents.
@@ -69,10 +69,9 @@ pub fn plan_maintenance(synrepo_dir: &Path, config: &Config) -> crate::Result<Ma
 
 /// Execute the maintenance plan, applying non-blocking actions to disk.
 ///
-/// Blocking actions (`Block`, `MigrateRequired`) are not executed here and
-/// do not contribute to `stores_cleared`; they require explicit operator
-/// intervention such as removing or migrating the affected store before
-/// re-running `synrepo init`.
+/// Blocking actions (`Block`) are not executed here and do not contribute to
+/// `stores_cleared`; they require explicit operator intervention such as
+/// removing or re-initializing the affected store.
 pub fn execute_maintenance(
     synrepo_dir: &Path,
     plan: &MaintenancePlan,
@@ -102,7 +101,7 @@ fn compat_action_to_maintenance(action: CompatAction) -> MaintenanceAction {
         CompatAction::Invalidate => MaintenanceAction::Clear,
         // Blocking actions require explicit operator intervention and are
         // intentionally not executed by the maintenance runner.
-        CompatAction::MigrateRequired | CompatAction::Block => MaintenanceAction::Skip,
+        CompatAction::Block => MaintenanceAction::Skip,
     }
 }
 

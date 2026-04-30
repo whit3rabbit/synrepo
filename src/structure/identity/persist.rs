@@ -44,7 +44,6 @@ pub fn persist_resolutions(
                             last_observed_rev: None,
                             retired_at_rev: None,
                             epistemic: Epistemic::ParserObserved,
-                            drift_score: 0.0,
                             provenance: crate::core::provenance::Provenance::structural(
                                 "identity_split",
                                 revision,
@@ -76,7 +75,6 @@ pub fn persist_resolutions(
                             last_observed_rev: None,
                             retired_at_rev: None,
                             epistemic: Epistemic::ParserObserved,
-                            drift_score: 0.0,
                             provenance: crate::core::provenance::Provenance::structural(
                                 "identity_merge",
                                 revision,

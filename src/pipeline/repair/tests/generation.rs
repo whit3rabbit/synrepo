@@ -228,7 +228,6 @@ fn seed_fixture_graph(graph: &mut SqliteGraphStore, with_second_pair: bool, code
             last_observed_rev: None,
             retired_at_rev: None,
             epistemic: Epistemic::ParserObserved,
-            drift_score: 0.0,
             provenance: provenance("src/lib.rs", "code-hash"),
         })
         .unwrap();
@@ -242,7 +241,6 @@ fn seed_fixture_graph(graph: &mut SqliteGraphStore, with_second_pair: bool, code
             last_observed_rev: None,
             retired_at_rev: None,
             epistemic: Epistemic::HumanDeclared,
-            drift_score: 0.0,
             provenance: provenance("docs/adr/0001-auth.md", "doc-hash-1"),
         })
         .unwrap();
@@ -307,7 +305,6 @@ fn seed_fixture_graph(graph: &mut SqliteGraphStore, with_second_pair: bool, code
                 last_observed_rev: None,
                 retired_at_rev: None,
                 epistemic: Epistemic::ParserObserved,
-                drift_score: 0.0,
                 provenance: provenance("src/lib.rs", "code-hash"),
             })
             .unwrap();
@@ -321,7 +318,6 @@ fn seed_fixture_graph(graph: &mut SqliteGraphStore, with_second_pair: bool, code
                 last_observed_rev: None,
                 retired_at_rev: None,
                 epistemic: Epistemic::HumanDeclared,
-                drift_score: 0.0,
                 provenance: provenance("docs/adr/0002-authorize.md", "doc-hash-2"),
             })
             .unwrap();

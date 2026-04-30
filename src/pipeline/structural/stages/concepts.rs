@@ -80,7 +80,6 @@ pub(super) fn process_markdown_concepts(
                         last_observed_rev: None,
                         retired_at_rev: None,
                         epistemic: Epistemic::HumanDeclared,
-                        drift_score: 0.0,
                         provenance: make_provenance(
                             "parse_prose",
                             revision,

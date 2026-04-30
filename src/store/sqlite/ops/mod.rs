@@ -132,6 +132,17 @@ impl GraphReader for SqliteGraphStore {
     fn active_edges(&self) -> crate::Result<Vec<crate::structure::graph::Edge>> {
         self.active_edges_impl()
     }
+
+    fn latest_drift_revision(&self) -> crate::Result<Option<String>> {
+        drift::latest_drift_revision(self)
+    }
+
+    fn read_drift_scores(
+        &self,
+        revision: &str,
+    ) -> crate::Result<Vec<(crate::core::ids::EdgeId, f32)>> {
+        drift::read_drift_scores(self, revision)
+    }
 }
 
 impl GraphStore for SqliteGraphStore {
@@ -183,23 +194,12 @@ impl GraphStore for SqliteGraphStore {
         transactions::end_read_snapshot(self)
     }
 
-    fn latest_drift_revision(&self) -> crate::Result<Option<String>> {
-        drift::latest_drift_revision(self)
-    }
-
     fn write_drift_scores(
         &mut self,
         scores: &[(crate::core::ids::EdgeId, f32)],
         revision: &str,
     ) -> crate::Result<()> {
         drift::write_drift_scores(self, scores, revision)
-    }
-
-    fn read_drift_scores(
-        &self,
-        revision: &str,
-    ) -> crate::Result<Vec<(crate::core::ids::EdgeId, f32)>> {
-        drift::read_drift_scores(self, revision)
     }
 
     fn truncate_drift_scores(&self, older_than_revision: &str) -> crate::Result<usize> {

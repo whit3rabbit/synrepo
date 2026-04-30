@@ -7,7 +7,6 @@ use crate::{
         Visibility,
     },
 };
-use rusqlite::Connection;
 use std::collections::BTreeMap;
 use tempfile::tempdir;
 
@@ -69,7 +68,6 @@ fn graph_store_round_trips_nodes_edges_and_provenance() {
         last_observed_rev: None,
         retired_at_rev: None,
         epistemic: Epistemic::ParserObserved,
-        drift_score: 0.0,
         provenance: sample_provenance("resolve_edges", "src/lib.rs"),
     };
 
@@ -111,63 +109,6 @@ fn open_existing_requires_materialized_graph_store() {
         .to_string();
 
     assert!(error.contains("graph store is not materialized"));
-}
-
-#[test]
-fn open_existing_migrates_legacy_files_table_before_root_path_index() {
-    let repo = tempdir().unwrap();
-    let graph_dir = repo.path().join(".synrepo/graph");
-    std::fs::create_dir_all(&graph_dir).unwrap();
-    let db_path = SqliteGraphStore::db_path(&graph_dir);
-    let conn = Connection::open(&db_path).unwrap();
-    conn.execute_batch(
-        r#"
-        CREATE TABLE files (
-            id TEXT PRIMARY KEY,
-            path TEXT NOT NULL,
-            data TEXT NOT NULL
-        ) WITHOUT ROWID;
-        "#,
-    )
-    .unwrap();
-    let legacy_file = FileNode {
-        id: FileNodeId(0x42),
-        root_id: "primary".to_string(),
-        path: "src/lib.rs".to_string(),
-        path_history: Vec::new(),
-        content_hash: "abc123".to_string(),
-        size_bytes: 7,
-        language: Some("rust".to_string()),
-        inline_decisions: Vec::new(),
-        last_observed_rev: None,
-        epistemic: Epistemic::ParserObserved,
-        provenance: sample_provenance("legacy", "src/lib.rs"),
-    };
-    let mut legacy_data = serde_json::to_value(legacy_file).unwrap();
-    legacy_data.as_object_mut().unwrap().remove("root_id");
-    conn.execute(
-        "INSERT INTO files (id, path, data) VALUES (?1, ?2, ?3)",
-        (
-            FileNodeId(0x42).to_string(),
-            "src/lib.rs",
-            legacy_data.to_string(),
-        ),
-    )
-    .unwrap();
-    drop(conn);
-
-    let store = SqliteGraphStore::open_existing(&graph_dir).unwrap();
-    let rows = store.all_file_paths().unwrap();
-
-    assert_eq!(rows, vec![("src/lib.rs".to_string(), FileNodeId(0x42))]);
-    assert_eq!(
-        store
-            .file_by_root_path("primary", "src/lib.rs")
-            .unwrap()
-            .unwrap()
-            .id,
-        FileNodeId(0x42)
-    );
 }
 
 #[test]
@@ -233,7 +174,6 @@ fn persisted_stats_count_nodes_and_edges_by_kind() {
             last_observed_rev: None,
             retired_at_rev: None,
             epistemic: Epistemic::ParserObserved,
-            drift_score: 0.0,
             provenance: sample_provenance("resolve_edges", "src/lib.rs"),
         })
         .unwrap();
@@ -247,7 +187,6 @@ fn persisted_stats_count_nodes_and_edges_by_kind() {
             last_observed_rev: None,
             retired_at_rev: None,
             epistemic: Epistemic::ParserObserved,
-            drift_score: 0.0,
             provenance: sample_provenance("resolve_edges", "src/lib.rs"),
         })
         .unwrap();

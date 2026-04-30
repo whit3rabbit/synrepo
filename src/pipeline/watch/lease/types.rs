@@ -38,9 +38,7 @@ pub struct WatchDaemonState {
     /// Whether the service is foreground or detached.
     pub mode: WatchServiceMode,
     /// Platform-specific control endpoint identifier (socket filesystem path
-    /// on Unix, named-pipe name on Windows). The serde alias accepts the
-    /// legacy `socket_path` field name written by older daemons.
-    #[serde(alias = "socket_path")]
+    /// on Unix, named-pipe name on Windows).
     pub control_endpoint: String,
     /// Most recent filesystem event burst seen outside `.synrepo/`.
     pub last_event_at: Option<String>,

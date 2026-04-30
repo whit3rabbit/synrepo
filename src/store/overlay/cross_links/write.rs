@@ -65,9 +65,7 @@ pub(crate) fn insert_candidate(conn: &Connection, link: &OverlayLink) -> crate::
                  model_identity = excluded.model_identity,
                  generated_at = excluded.generated_at,
                  state = 'active',
-                 reviewer = NULL,
-                 promoted_at = NULL,
-                 graph_edge_id = NULL",
+                 reviewer = NULL",
             params![
                 from_key,
                 to_key,

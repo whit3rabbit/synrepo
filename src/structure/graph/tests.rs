@@ -93,7 +93,6 @@ fn graph_from_store_matches_sqlite_reader_results() {
         to: NodeId::Symbol(symbol.id),
         kind: EdgeKind::Defines,
         epistemic: Epistemic::ParserObserved,
-        drift_score: 0.0,
         owner_file_id: Some(file.id),
         last_observed_rev: Some(1),
         retired_at_rev: None,

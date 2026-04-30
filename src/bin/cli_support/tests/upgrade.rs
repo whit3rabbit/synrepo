@@ -7,7 +7,6 @@ use synrepo::config::Config;
 use synrepo::store::compatibility::snapshot_path;
 
 use super::support::git;
-// upgrade is re-exported at binary root scope via `use cli_support::commands::upgrade`
 use crate::upgrade;
 
 /// Minimal repo with a git init, a source file, and a completed bootstrap.
@@ -49,41 +48,6 @@ fn upgrade_dry_run_does_not_mutate_stores() {
 fn upgrade_apply_on_current_runtime_exits_zero() {
     let (dir, repo) = setup_bootstrapped_repo();
     upgrade(&repo, true).expect("apply on current runtime must succeed with no changes");
-    drop(dir);
-}
-
-#[test]
-fn upgrade_apply_adopts_legacy_unowned_mcp_install() {
-    let (dir, repo) = setup_bootstrapped_repo();
-    let legacy = serde_json::json!({
-        "mcpServers": {
-            "synrepo": {
-                "command": "synrepo",
-                "args": ["mcp", "--repo", "."]
-            }
-        }
-    });
-    fs::write(
-        repo.join(".mcp.json"),
-        serde_json::to_string_pretty(&legacy).unwrap(),
-    )
-    .unwrap();
-
-    upgrade(&repo, true).expect("upgrade apply should adopt legacy MCP entries");
-
-    let scope = agent_config::Scope::Local(repo.clone());
-    let status = agent_config::mcp_by_id("claude")
-        .unwrap()
-        .mcp_status(&scope, "synrepo", "synrepo")
-        .unwrap();
-    assert!(
-        matches!(
-            status.status,
-            agent_config::InstallStatus::InstalledOwned { ref owner } if owner == "synrepo"
-        ),
-        "legacy MCP entry should now be owned by synrepo, got {:?}",
-        status.status
-    );
     drop(dir);
 }
 

@@ -11,9 +11,6 @@ const SNAPSHOT_VERSION: u32 = 1;
 pub const GRAPH_FORMAT_VERSION: u32 = 2;
 /// Default format version for non-graph stores.
 pub const DEFAULT_FORMAT_VERSION: u32 = 1;
-/// Legacy global format version that was written for all stores before
-/// per-store versioning. Used for backward compatibility in evaluate_store.
-pub const LEGACY_GLOBAL_FORMAT_VERSION: u32 = 2;
 const SNAPSHOT_FILENAME: &str = "storage-compat.json";
 
 pub(crate) use evaluate::clear_store_contents;

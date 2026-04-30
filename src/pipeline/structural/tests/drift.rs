@@ -4,7 +4,7 @@ use crate::{
     core::ids::NodeId,
     structure::{
         drift::{fingerprint_for_file, StructuralFingerprint},
-        graph::{EdgeKind, GraphStore},
+        graph::{EdgeKind, GraphReader, GraphStore},
     },
 };
 use std::fs;

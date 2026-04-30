@@ -18,10 +18,7 @@ use crate::{
         },
         repair::commentary::{resolve_commentary_node, CommentaryNodeSnapshot},
     },
-    store::{
-        overlay::{is_legacy_commentary_pass_id, SqliteOverlayStore},
-        sqlite::SqliteGraphStore,
-    },
+    store::{overlay::SqliteOverlayStore, sqlite::SqliteGraphStore},
 };
 
 use super::commentary_context::build_context_text;
@@ -78,15 +75,10 @@ fn commentary_rows_for_refresh(
         .all_commentary_entries()?
         .into_iter()
         .map(|entry| {
-            // Legacy passes signal "always stale" by returning an empty hash;
-            // current-generation entries fall through to source_content_hash
-            // comparison. Legacy list lives in store::overlay::commentary.
-            let hash = if is_legacy_commentary_pass_id(&entry.provenance.pass_id) {
-                String::new()
-            } else {
-                entry.provenance.source_content_hash
-            };
-            Ok((entry.node_id.to_string(), hash))
+            Ok((
+                entry.node_id.to_string(),
+                entry.provenance.source_content_hash,
+            ))
         })
         .collect()
 }

@@ -32,11 +32,11 @@ pub struct Config {
     pub roots: Vec<String>,
 
     /// Include linked git worktrees as additional discovery roots.
-    #[serde(default = "default_include_worktrees", alias = "discover_worktrees")]
+    #[serde(default = "default_include_worktrees")]
     pub include_worktrees: bool,
 
     /// Include initialized git submodules as additional discovery roots.
-    #[serde(default = "default_include_submodules", alias = "discover_submodules")]
+    #[serde(default = "default_include_submodules")]
     pub include_submodules: bool,
 
     /// Directories that contain human-authored concept/decision files.

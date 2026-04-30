@@ -16,7 +16,7 @@ use crate::{
         },
     },
     store::sqlite::SqliteGraphStore,
-    structure::graph::GraphStore,
+    structure::graph::{GraphReader, GraphStore},
 };
 
 use crate::pipeline::repair::{

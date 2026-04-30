@@ -144,6 +144,16 @@ pub trait GraphReader: Send + Sync {
         }
         Ok(concepts)
     }
+
+    /// Latest revision in `edge_drift`, or `None` when empty / unsupported.
+    fn latest_drift_revision(&self) -> crate::Result<Option<String>> {
+        Ok(None)
+    }
+
+    /// Drift scores for a revision. Empty default for in-memory/test stores.
+    fn read_drift_scores(&self, _revision: &str) -> crate::Result<Vec<(EdgeId, f32)>> {
+        Ok(Vec::new())
+    }
 }
 
 /// Trait for the canonical graph store.
@@ -243,14 +253,6 @@ pub trait GraphStore: GraphReader {
         Ok(())
     }
 
-    /// Return the latest revision string stored in the `edge_drift` table, or
-    /// `None` when the table is empty or the store does not support drift.
-    ///
-    /// Default returns `None` so in-memory/test stores need no implementation.
-    fn latest_drift_revision(&self) -> crate::Result<Option<String>> {
-        Ok(None)
-    }
-
     /// Batch-write drift scores for edges in the given revision.
     /// Default no-op so in-memory/test stores need no implementation.
     fn write_drift_scores(
@@ -259,12 +261,6 @@ pub trait GraphStore: GraphReader {
         _revision: &str,
     ) -> crate::Result<()> {
         Ok(())
-    }
-
-    /// Read all drift scores for a given revision.
-    /// Default returns empty so in-memory/test stores need no implementation.
-    fn read_drift_scores(&self, _revision: &str) -> crate::Result<Vec<(EdgeId, f32)>> {
-        Ok(Vec::new())
     }
 
     /// Delete drift scores older than the given revision.

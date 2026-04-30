@@ -59,7 +59,6 @@ fn check_declared_links_detects_dangling_governs_target() {
             last_observed_rev: None,
             retired_at_rev: None,
             epistemic: Epistemic::HumanDeclared,
-            drift_score: 0.0,
             provenance,
         })
         .unwrap();

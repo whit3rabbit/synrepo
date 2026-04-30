@@ -249,7 +249,6 @@ fn build_curated_edge(args: &CommitArgs<'_>) -> Edge {
         last_observed_rev: None,
         retired_at_rev: None,
         epistemic: Epistemic::HumanDeclared,
-        drift_score: 0.0,
         provenance: synrepo::core::provenance::Provenance {
             created_at: time::OffsetDateTime::now_utc(),
             source_revision: "curated_workflow".to_string(),

@@ -60,7 +60,6 @@ pub fn emit_cochange_edges(
             last_observed_rev: None,
             retired_at_rev: None,
             epistemic: Epistemic::GitObserved,
-            drift_score: 0.0,
             provenance: Provenance {
                 created_at: time::OffsetDateTime::now_utc(),
                 source_revision: revision.to_string(),

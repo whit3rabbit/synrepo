@@ -98,8 +98,6 @@ pub enum CompatAction {
     Invalidate,
     /// Store should be cleared and recreated immediately.
     ClearAndRecreate,
-    /// Store requires an explicit migration path.
-    MigrateRequired,
     /// Store state is incompatible and usage must be blocked.
     Block,
 }
@@ -112,7 +110,6 @@ impl CompatAction {
             CompatAction::Rebuild => "rebuild",
             CompatAction::Invalidate => "invalidate",
             CompatAction::ClearAndRecreate => "clear-and-recreate",
-            CompatAction::MigrateRequired => "migrate-required",
             CompatAction::Block => "block",
         }
     }
@@ -157,12 +154,9 @@ impl CompatibilityReport {
 
     /// Return true when a canonical incompatibility blocks safe progress.
     pub fn has_blocking_actions(&self) -> bool {
-        self.entries.iter().any(|entry| {
-            matches!(
-                entry.action,
-                CompatAction::MigrateRequired | CompatAction::Block
-            )
-        })
+        self.entries
+            .iter()
+            .any(|entry| entry.action == CompatAction::Block)
     }
 
     /// Render user-facing guidance lines for non-trivial compatibility outcomes.
@@ -208,14 +202,7 @@ pub struct ConfigFingerprints {
     /// Inputs that surface as advisories only; never trigger rebuild or
     /// invalidate. Cross-link confidence thresholds live here: changing them
     /// is a classifier retune, handled by `revalidate_links`.
-    #[serde(default = "default_advisory_inputs")]
     pub advisory_inputs: String,
-}
-
-fn default_advisory_inputs() -> String {
-    // Empty fingerprint so snapshots written before the field existed still
-    // round-trip; the first reconcile rewrites them with the real value.
-    String::new()
 }
 
 impl ConfigFingerprints {

@@ -2,8 +2,6 @@
 //! crash-recovery rollback. Each path records an audit event.
 
 use rusqlite::{params, Connection, OptionalExtension};
-use time::format_description::well_known::Rfc3339;
-use time::OffsetDateTime;
 
 use crate::core::ids::NodeId;
 use crate::overlay::OverlayEdgeKind;
@@ -161,16 +159,12 @@ pub(crate) fn mark_promoted(
         )));
     };
 
-    let now = OffsetDateTime::now_utc()
-        .format(&Rfc3339)
-        .map_err(|e| crate::Error::Other(anyhow::anyhow!("invalid timestamp: {e}")))?;
-
     with_write_transaction(conn, |conn| {
         conn.execute(
             "UPDATE cross_links
-             SET state = 'promoted', reviewer = ?1, promoted_at = ?2, graph_edge_id = ?3
-             WHERE from_node = ?4 AND to_node = ?5 AND kind = ?6",
-            params![reviewer, now, graph_edge_id, from_key, to_key, kind_str],
+             SET state = 'promoted', reviewer = ?1
+             WHERE from_node = ?2 AND to_node = ?3 AND kind = ?4",
+            params![reviewer, from_key, to_key, kind_str],
         )?;
 
         append_event(
@@ -227,7 +221,7 @@ pub(crate) fn reset_pending_to_active(
     with_write_transaction(conn, |conn| {
         conn.execute(
             "UPDATE cross_links
-             SET state = 'active', reviewer = NULL, promoted_at = NULL, graph_edge_id = NULL
+             SET state = 'active', reviewer = NULL
              WHERE from_node = ?1 AND to_node = ?2 AND kind = ?3",
             params![from_key, to_key, kind_str],
         )?;

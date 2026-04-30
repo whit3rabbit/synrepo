@@ -275,7 +275,6 @@ mod tests {
             last_observed_rev: None,
             retired_at_rev: None,
             epistemic: Epistemic::ParserObserved,
-            drift_score: 0.0,
             provenance: test_provenance(),
         }
     }

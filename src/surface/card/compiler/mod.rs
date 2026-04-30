@@ -173,6 +173,24 @@ impl GraphCardCompiler {
         }
     }
 
+    /// Latest revision stored in the `edge_drift` sidecar, or `None` if no
+    /// drift scoring has run yet.
+    pub(crate) fn latest_drift_revision(&self) -> crate::Result<Option<String>> {
+        match &self.backend {
+            GraphBackend::Sqlite(graph) => graph.latest_drift_revision(),
+            GraphBackend::Snapshot(_) => {
+                let repo_root = self.repo_root.as_ref().ok_or_else(|| {
+                    crate::Error::Other(anyhow::anyhow!(
+                        "snapshot-backed compiler requires repo_root for drift-score reads"
+                    ))
+                })?;
+                let graph_dir = Config::synrepo_dir(repo_root).join("graph");
+                let graph = SqliteGraphStore::open_existing(&graph_dir)?;
+                graph.latest_drift_revision()
+            }
+        }
+    }
+
     /// Resolve (and cache) git-intelligence for a repo-relative path.
     ///
     /// Returns `None` when the compiler was not configured with both a

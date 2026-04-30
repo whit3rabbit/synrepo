@@ -63,7 +63,6 @@ fn make_defines_edge(file_id: u64, sym_id: u64) -> Edge {
         last_observed_rev: Some(1),
         retired_at_rev: None,
         epistemic: Epistemic::ParserObserved,
-        drift_score: 0.0,
         provenance: sample_provenance("parse_code", "test.rs"),
     }
 }

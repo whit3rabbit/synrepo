@@ -147,7 +147,6 @@ pub(super) fn process_supported_code_files(
                         last_observed_rev: compile_rev,
                         retired_at_rev: None,
                         epistemic: Epistemic::ParserObserved,
-                        drift_score: 0.0,
                         provenance,
                     })?;
 

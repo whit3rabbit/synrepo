@@ -25,34 +25,9 @@ Overlay store is in a sibling module (`src/store/overlay/`) and a physically sep
 
 ## Schema
 
-PRAGMAs set once at open time (see `schema.rs`):
+The full DDL (every column, every index, PRAGMAs, JSON blob layout) is in `docs/SCHEMA.md`. Schema changes go there and to `schema.rs` in the same commit.
 
-- `journal_mode = WAL`
-- `synchronous = NORMAL`
-- `foreign_keys = ON`
-- `busy_timeout = 5000` (load-bearing: readers can hold a snapshot across a writer commit; this keeps transient WAL checkpoint contention from surfacing `SQLITE_BUSY`)
-
-Base tables:
-
-| Table | Key columns | Notes |
-|-------|-------------|-------|
-| `files` | `id PK`, `root_id`, `path`, `last_observed_rev`, `data`; unique `(root_id, path)` | `data` is the JSON-encoded `FileNode`. |
-| `symbols` | `id PK`, `file_id`, `qualified_name`, `kind`, `first_seen_rev`, `last_modified_rev`, `last_observed_rev`, `retired_at_rev`, `data` | `idx_symbols_file_id` on `file_id`. |
-| `concepts` | `id PK`, `path UNIQUE`, `last_observed_rev`, `data` | Only populated from human-authored markdown (invariant 7). |
-| `edges` | `id PK`, `from_node_id`, `to_node_id`, `kind`, `owner_file_id`, `last_observed_rev`, `retired_at_rev`, `data` | Indexes on `(from_node_id, kind)` and `(to_node_id, kind)`. |
-| `edge_drift` | `(edge_id, revision) PK`, `drift_score` | `WITHOUT ROWID`. |
-| `file_fingerprints` | `(file_node_id, revision) PK`, `fingerprint` | `WITHOUT ROWID`. |
-| `compile_revisions` | `revision_id PK`, `created_at`, `file_count`, `symbol_count` | Monotonic counter for the observation window. |
-
-Node and edge identifiers are stored twice: as typed integer columns for fast lookup and inside the JSON `data` blob for round-trip serde. `from_node_id` / `to_node_id` are stored as display strings (`file_0000...`, `sym_0000...`, `concept_0000...`) to support heterogeneous edge endpoints in one column.
-
-The JSON blob is the source of truth for structured node/edge content; scalar columns exist only for filtering, joins, and indexing.
-
-## Migrations
-
-Schema changes are append-only. New columns are added via `ALTER TABLE ... ADD COLUMN` in the `migratables` list in `schema.rs`; duplicate-column errors are swallowed so the list is idempotent on repeat opens.
-
-Breaking shape changes go through `src/store/compatibility/` (version gate + `synrepo upgrade`). Do not rewrite base-table DDL in place.
+This module owns the canonical sqlite implementation: `schema.rs` ships one `CREATE TABLE` per table and one `CREATE INDEX` per index, all in a single `execute_batch`. There are no migrations; schema bumps require `synrepo init` against a fresh `.synrepo/` (gated by `GRAPH_FORMAT_VERSION` in `src/store/compatibility/`).
 
 ## Observation lifecycle
 

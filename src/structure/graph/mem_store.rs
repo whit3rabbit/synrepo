@@ -163,6 +163,14 @@ impl GraphReader for MemGraphStore {
     fn all_edges(&self) -> crate::Result<Vec<Edge>> {
         self.graph.all_edges()
     }
+
+    fn latest_drift_revision(&self) -> crate::Result<Option<String>> {
+        Ok(self.drift_scores.keys().max().cloned())
+    }
+
+    fn read_drift_scores(&self, revision: &str) -> crate::Result<Vec<(EdgeId, f32)>> {
+        Ok(self.drift_scores.get(revision).cloned().unwrap_or_default())
+    }
 }
 
 impl GraphStore for MemGraphStore {
@@ -277,10 +285,6 @@ impl GraphStore for MemGraphStore {
         Ok(())
     }
 
-    fn latest_drift_revision(&self) -> crate::Result<Option<String>> {
-        Ok(self.drift_scores.keys().max().cloned())
-    }
-
     fn write_drift_scores(
         &mut self,
         scores: &[(EdgeId, f32)],
@@ -289,10 +293,6 @@ impl GraphStore for MemGraphStore {
         self.drift_scores
             .insert(revision.to_string(), scores.to_vec());
         Ok(())
-    }
-
-    fn read_drift_scores(&self, revision: &str) -> crate::Result<Vec<(EdgeId, f32)>> {
-        Ok(self.drift_scores.get(revision).cloned().unwrap_or_default())
     }
 
     fn truncate_drift_scores(&self, _older_than_revision: &str) -> crate::Result<usize> {

@@ -1,0 +1,489 @@
+# SCHEMA.md
+
+Authoritative reference for the on-disk shape of `.synrepo/`, the user-wide
+registry, the compatibility snapshot, and the serialized state files.
+
+When a schema changes, this document changes in the same commit. If the two
+disagree, the source of truth is whatever `init_schema` writes; fix this
+document.
+
+## Storage layout
+
+```
+.synrepo/
+  graph/nodes.db                  canonical graph (SQLite)
+  overlay/overlay.db              overlay store (SQLite, separate database)
+  index/                          syntext-backed lexical index (binary)
+  embeddings/                     flat-vec embedding index (binary, optional)
+  cache/llm-responses/            disposable LLM response cache
+  state/                          ephemeral JSON / JSONL state files
+  config.toml                     operator config (see docs/CONFIG.md)
+  explain-docs/                   advisory commentary docs (advisory)
+  explain-index/                  syntext index over explain-docs (advisory)
+~/.synrepo/projects.toml          user-wide install registry
+```
+
+## Versioning policy
+
+| Constant | Where | What it gates |
+|---|---|---|
+| `GRAPH_FORMAT_VERSION = 2` | `src/store/compatibility/mod.rs` | Graph nodes.db shape. `synrepo init` blocks when on-disk version exceeds the runtime constant (hard invariant; tested at `src/bootstrap/init/tests.rs`). |
+| `SNAPSHOT_VERSION = 1` | `src/store/compatibility/mod.rs` | `state/storage-compat.json` envelope shape. |
+| `DEFAULT_FORMAT_VERSION = 1` | `src/store/compatibility/mod.rs` | Per-store version for non-graph stores in the snapshot. |
+| `INDEX_FORMAT_VERSION = 3` | `src/substrate/embedding/index/persistence.rs` | Embedding-index binary header. |
+| Registry `SCHEMA_VERSION = 2` | `src/registry/mod.rs` | `~/.synrepo/projects.toml` shape. User-wide; survives per-repo re-init. |
+| MCP `context_pack.SCHEMA_VERSION = 1` | `src/surface/mcp/context_pack.rs` | Public MCP response contract. Never reuse for storage. |
+| Bench `SCHEMA_VERSION = 1` | `src/bin/cli_support/commands/context/bench.rs` | `synrepo context bench` JSON contract. |
+
+The overlay store carries no in-DB version stamp; schema changes ship as a
+fresh `CREATE TABLE` and require a `synrepo init` re-bootstrap. The compat
+evaluator emits `Continue` / `Rebuild` / `Invalidate` / `ClearAndRecreate` /
+`Block`; there is no `MigrateRequired` action and no legacy-global-version
+fallback.
+
+**Schema change procedure**: edit `src/store/sqlite/schema.rs` or
+`src/store/overlay/schema.rs`, bump `GRAPH_FORMAT_VERSION` (graph) or accept
+re-init (overlay), update SCHEMA.md in the same commit, adjust
+`src/bootstrap/init/tests.rs` if the block path changed, then `rm -rf .synrepo
+&& synrepo init`. There are no migrations.
+
+## Graph store: `.synrepo/graph/nodes.db`
+
+PRAGMAs (set in `init_schema` at `src/store/sqlite/schema.rs`):
+
+```
+journal_mode = WAL
+synchronous  = NORMAL
+foreign_keys = ON
+busy_timeout = 5000
+```
+
+`busy_timeout` is load-bearing: WAL checkpoint contention waits up to 5 s rather
+than surfacing `SQLITE_BUSY` to readers holding snapshots across writer commits.
+
+### Tables
+
+The `data TEXT NOT NULL` column on each node table is a serialized JSON blob
+of the corresponding Rust struct. Dedicated columns next to `data` are either
+indexed or read directly by SQL; everything else lives in `data`.
+
+#### `files` (struct `FileNode`, `src/structure/graph/node.rs:116`)
+
+```sql
+CREATE TABLE files (
+    id                 TEXT PRIMARY KEY,                           -- FileNodeId hex
+    root_id            TEXT NOT NULL DEFAULT 'primary',            -- discovery root
+    path               TEXT NOT NULL,                              -- repo-relative
+    last_observed_rev  INTEGER,                                    -- Option<u64>
+    data               TEXT NOT NULL                               -- FileNode JSON
+) WITHOUT ROWID;
+CREATE UNIQUE INDEX idx_files_root_path ON files(root_id, path);
+```
+
+JSON `data` carries: `path_history`, `content_hash`, `size_bytes`, `language`,
+`inline_decisions`, `epistemic` (always `parser_observed`), `provenance`. The
+`id`, `root_id`, `path`, and `last_observed_rev` fields are duplicated in
+columns for indexing; the column is the read source.
+
+#### `symbols` (struct `SymbolNode`, `src/structure/graph/node.rs:152`)
+
+```sql
+CREATE TABLE symbols (
+    id                 TEXT PRIMARY KEY,                           -- SymbolNodeId hex
+    file_id            TEXT NOT NULL,                              -- owning FileNodeId
+    qualified_name     TEXT NOT NULL,
+    kind               TEXT NOT NULL,                              -- snake_case label
+    body_hash          TEXT,                                       -- blake3 of body
+    first_seen_rev     TEXT,                                       -- git SHA, oldest sample
+    last_modified_rev  TEXT,                                       -- git SHA, newest body change
+    last_observed_rev  INTEGER,                                    -- compile rev last seen
+    retired_at_rev     INTEGER,                                    -- compile rev when retired
+    data               TEXT NOT NULL                               -- SymbolNode JSON
+) WITHOUT ROWID;
+CREATE INDEX idx_symbols_file_id   ON symbols(file_id);
+CREATE INDEX idx_symbols_body_hash ON symbols(body_hash);
+```
+
+JSON `data` carries: `display_name`, `visibility`, `body_byte_range`,
+`signature`, `doc_comment`, `epistemic`, `provenance`. Column-stored fields
+above are also serialized into `data` for round-tripping.
+
+#### `concepts` (struct `ConceptNode`, `src/structure/graph/node.rs:198`)
+
+```sql
+CREATE TABLE concepts (
+    id                 TEXT PRIMARY KEY,                           -- ConceptNodeId hex
+    path               TEXT NOT NULL UNIQUE,                       -- repo-relative .md
+    last_observed_rev  INTEGER,
+    data               TEXT NOT NULL                               -- ConceptNode JSON
+) WITHOUT ROWID;
+```
+
+JSON `data` carries: `title`, `aliases`, `summary`, `status`, `decision_body`,
+`epistemic` (always `human_declared`), `provenance`.
+
+Concept nodes are only created from human-authored markdown in directories
+listed by config `concept_directories` (default `docs/concepts/`,
+`docs/adr/`, `docs/decisions/`).
+
+#### `edges` (struct `Edge`, `src/structure/graph/edge.rs:111`)
+
+```sql
+CREATE TABLE edges (
+    id                 TEXT PRIMARY KEY,                           -- EdgeId hex
+    from_node_id       TEXT NOT NULL,
+    to_node_id         TEXT NOT NULL,
+    kind               TEXT NOT NULL,                              -- snake_case label
+    owner_file_id      TEXT,                                       -- file whose pass produced it
+    last_observed_rev  INTEGER,
+    retired_at_rev     INTEGER,
+    data               TEXT NOT NULL                               -- Edge JSON
+) WITHOUT ROWID;
+CREATE INDEX idx_edges_from_kind ON edges(from_node_id, kind);
+CREATE INDEX idx_edges_to_kind   ON edges(to_node_id,   kind);
+```
+
+`id`, `from_node_id`, `to_node_id`, and `kind` are NOT mirrored into the
+JSON blob; they live only in columns. JSON `data` carries: `epistemic`,
+`provenance`.
+
+`owner_file_id` is read by `edges_owned_by_impl`
+(`src/store/sqlite/lifecycle.rs`); used by structural retirement and
+`synrepo links` workflows.
+
+The `Edge` Rust struct has no `drift_score` field. MCP and CLI consumers fetch
+the score from the `edge_drift` sidecar via
+`GraphReader::read_drift_scores(revision)` (`src/store/sqlite/ops/drift.rs`).
+
+#### `edge_drift` (sidecar)
+
+```sql
+CREATE TABLE edge_drift (
+    edge_id      TEXT NOT NULL,
+    revision     TEXT NOT NULL,
+    drift_score  REAL NOT NULL,
+    PRIMARY KEY (edge_id, revision)
+) WITHOUT ROWID;
+```
+
+Revision-keyed Jaccard scores. This is the canonical drift source.
+
+#### `file_fingerprints` (sidecar)
+
+```sql
+CREATE TABLE file_fingerprints (
+    file_node_id  TEXT NOT NULL,
+    revision      TEXT NOT NULL,
+    fingerprint   TEXT NOT NULL,                                   -- StructuralFingerprint JSON
+    PRIMARY KEY (file_node_id, revision)
+) WITHOUT ROWID;
+```
+
+Per-revision structural fingerprints used for cross-window drift detection.
+
+#### `compile_revisions` (lifecycle)
+
+```sql
+CREATE TABLE compile_revisions (
+    revision_id  INTEGER PRIMARY KEY,                              -- monotonic
+    created_at   TEXT NOT NULL                                     -- datetime('now')
+);
+```
+
+### Identifier encoding
+
+`FileNodeId`, `SymbolNodeId`, `ConceptNodeId`, `EdgeId` are `u128` blake3
+hashes serialized as 32-character hex strings. They are stored as `TEXT
+PRIMARY KEY` and never cast to integer. Display formats prefix them
+(`file_<hex>`, `sym_<hex>`, `concept_<hex>`, `edge_<hex>`) for routing through
+MCP and CLI.
+
+`FileNodeId` is derived from `(root_discriminant, first_seen_content_hash)`
+when a file is first seen (`derive_file_id` at
+`src/pipeline/structural/ids.rs`). Identity is stable across content edits and
+across renames within a single discovery root; identical bytes in two different
+roots produce distinct ids.
+
+`SymbolNodeId` is keyed on `(file_node_id, qualified_name, kind, body_hash)`.
+A body rewrite changes the hash and updates the stored slot via upsert; the
+column-level `body_hash` is also refreshed.
+
+`ConceptNodeId` is path-derived (`derive_concept_id` at
+`src/structure/prose.rs`). Stable across content edits, not across renames.
+
+`EdgeId` is `blake3(from + to + kind)` (`derive_edge_id` at
+`src/structure/graph/edge.rs:98`). Same edge always has the same id.
+
+### Observation lifecycle
+
+`last_observed_rev` advances on every re-emission. When a structural compile
+runs and an observation is missing, its `retired_at_rev` is set to the current
+revision; if the observation re-appears the column is cleared. List traversals
+filter `WHERE retired_at_rev IS NULL`. Compaction physically deletes retired
+rows older than `retain_retired_revisions` revisions (default 10) via
+`compact_retired(older_than_rev)` in `src/store/sqlite/lifecycle.rs`.
+
+The `compile_revisions` table is the source for the monotonic counter.
+`active_edges()` and `all_edges()` exclude retired rows; `synrepo upgrade
+--apply` and `synrepo sync` are what physically delete them.
+
+### Read invariants
+
+Every list / traversal read filters `retired_at_rev IS NULL`. Multi-query
+reads must run inside `with_graph_read_snapshot` (re-entrant; nested reads
+share one epoch). The writer lane is `&mut self` and must not interleave with
+a read snapshot on the same handle.
+
+## Overlay store: `.synrepo/overlay/overlay.db`
+
+Physically separate from the graph database. Holds advisory machine-authored
+material plus advisory human-authored notes. Never the source of truth for any
+graph fact.
+
+PRAGMAs are identical to the graph store. There is no version stamp:
+`CREATE TABLE IF NOT EXISTS` runs unconditionally.
+
+### Tables
+
+#### `commentary`
+
+```sql
+CREATE TABLE commentary (
+    id                   INTEGER PRIMARY KEY,
+    node_id              TEXT NOT NULL UNIQUE,                     -- e.g. file_<hex>
+    text                 TEXT NOT NULL,
+    source_content_hash  TEXT NOT NULL,                            -- freshness anchor
+    pass_id              TEXT NOT NULL,                            -- e.g. commentary-v4
+    model_identity       TEXT NOT NULL,
+    generated_at         TEXT NOT NULL                             -- RFC 3339 UTC
+);
+CREATE INDEX idx_commentary_node_id      ON commentary(node_id);
+CREATE INDEX idx_commentary_generated_at ON commentary(generated_at);
+```
+
+Freshness via `derive_freshness` in
+`src/store/overlay/commentary/freshness.rs`: hash mismatch yields `Stale`,
+missing required provenance yields `Invalid`. There is no per-generation
+force-stale handling; if a generator version bump should obsolete prior rows,
+clear them explicitly.
+
+#### `cross_links`
+
+```sql
+CREATE TABLE cross_links (
+    id                  INTEGER PRIMARY KEY,
+    from_node           TEXT NOT NULL,
+    to_node             TEXT NOT NULL,
+    kind                TEXT NOT NULL,                             -- references|governs|...
+    epistemic           TEXT NOT NULL,                             -- machine_authored_*
+    source_spans_json   TEXT NOT NULL,                             -- Vec<CitedSpan>
+    target_spans_json   TEXT NOT NULL,
+    from_content_hash   TEXT NOT NULL,
+    to_content_hash     TEXT NOT NULL,
+    confidence_score    REAL NOT NULL,                             -- [0.0, 1.0]
+    confidence_tier     TEXT NOT NULL,                             -- high|review_queue|below_threshold
+    rationale           TEXT,
+    pass_id             TEXT NOT NULL,
+    model_identity      TEXT NOT NULL,
+    generated_at        TEXT NOT NULL,
+    state               TEXT NOT NULL DEFAULT 'active',            -- active|pending_promotion|promoted|rejected
+    reviewer            TEXT,
+    UNIQUE(from_node, to_node, kind)
+);
+CREATE INDEX idx_cross_links_from_node ON cross_links(from_node);
+CREATE INDEX idx_cross_links_to_node   ON cross_links(to_node);
+CREATE INDEX idx_cross_links_tier      ON cross_links(confidence_tier);
+CREATE INDEX idx_cross_links_state     ON cross_links(state);
+```
+
+The `cross_link_audit` row appended on promotion records `graph_edge_id` via
+its `reason` field; no separate column on `cross_links` mirrors it.
+
+#### `cross_link_audit`
+
+```sql
+CREATE TABLE cross_link_audit (
+    id              INTEGER PRIMARY KEY,
+    from_node       TEXT NOT NULL,
+    to_node         TEXT NOT NULL,
+    kind            TEXT NOT NULL,
+    event_kind      TEXT NOT NULL,                                 -- generated|promoted|...
+    reviewer        TEXT,
+    previous_tier   TEXT,
+    new_tier        TEXT,
+    reason          TEXT,                                          -- free-form (e.g. graph_edge_id)
+    pass_id         TEXT NOT NULL,
+    model_identity  TEXT NOT NULL,
+    event_at        TEXT NOT NULL
+);
+CREATE INDEX idx_cross_link_audit_endpoints ON cross_link_audit(from_node, to_node, kind);
+```
+
+Append-only. No UPDATE or DELETE outside of compaction.
+
+#### `agent_notes`
+
+```sql
+CREATE TABLE agent_notes (
+    note_id             TEXT PRIMARY KEY,                          -- note_<24 hex>
+    target_kind         TEXT NOT NULL,                             -- path|file|symbol|...
+    target_id           TEXT NOT NULL,
+    claim               TEXT NOT NULL,
+    evidence_json       TEXT NOT NULL,                             -- Vec<AgentNoteEvidence>
+    created_by          TEXT NOT NULL,
+    created_at          TEXT NOT NULL,
+    updated_at          TEXT NOT NULL,
+    confidence          TEXT NOT NULL,                             -- low|medium|high
+    status              TEXT NOT NULL,                             -- active|stale|superseded|...
+    source_hashes_json  TEXT NOT NULL,                             -- drift anchors
+    graph_revision      INTEGER,
+    expires_on_drift    INTEGER NOT NULL,                          -- 0|1
+    supersedes_json     TEXT NOT NULL,
+    superseded_by       TEXT,
+    verified_at         TEXT,
+    verified_by         TEXT,
+    invalidated_by      TEXT,
+    source_store        TEXT NOT NULL DEFAULT 'overlay',
+    advisory            INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX idx_agent_notes_target     ON agent_notes(target_kind, target_id);
+CREATE INDEX idx_agent_notes_status     ON agent_notes(status);
+CREATE INDEX idx_agent_notes_updated_at ON agent_notes(updated_at);
+```
+
+`source_store` is always `"overlay"` and `advisory` is always `1` for rows in
+this table. The columns exist for future cross-store handling.
+
+#### `agent_note_transitions`
+
+```sql
+CREATE TABLE agent_note_transitions (
+    id              INTEGER PRIMARY KEY,
+    note_id         TEXT NOT NULL,
+    action          TEXT NOT NULL,                                 -- Add|Link|Supersede|...
+    previous_status TEXT,
+    new_status      TEXT NOT NULL,
+    actor           TEXT NOT NULL,
+    reason          TEXT,
+    related_note    TEXT,
+    happened_at     TEXT NOT NULL
+);
+CREATE INDEX idx_agent_note_transitions_note ON agent_note_transitions(note_id);
+```
+
+#### `agent_note_links`
+
+```sql
+CREATE TABLE agent_note_links (
+    id          INTEGER PRIMARY KEY,
+    from_note   TEXT NOT NULL,
+    to_note     TEXT NOT NULL,
+    actor       TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    UNIQUE(from_note, to_note)
+);
+CREATE INDEX idx_agent_note_links_from ON agent_note_links(from_note);
+CREATE INDEX idx_agent_note_links_to   ON agent_note_links(to_note);
+```
+
+### Compaction
+
+Compaction implementations live in `src/store/overlay/commentary/mod.rs`:
+
+- `compact_commentary(policy)` deletes commentary entries older than the
+  configured retention window.
+- `compact_cross_links(policy)` deletes `promoted` / `rejected` candidates and
+  their audit rows older than the audit retention window.
+
+TODO: `agent_notes` and `agent_note_transitions` have no compaction
+implementation. The rules (eligible states, supersede chains, transition
+independence) are unresolved; rows accumulate indefinitely until that is
+designed.
+
+## Snapshot: `state/storage-compat.json`
+
+Envelope: `RuntimeCompatibilitySnapshot`
+(`src/store/compatibility/types.rs:189`).
+
+```text
+RuntimeCompatibilitySnapshot {
+    snapshot_version: u32,                          // SNAPSHOT_VERSION = 1
+    store_format_versions: BTreeMap<String, u32>,   // "graph"=>2, "overlay"=>1, ...
+    config_fingerprints: ConfigFingerprints {
+        index_inputs:    String,                    // blake3 hex of index-relevant config
+        graph_inputs:    String,
+        history_inputs:  String,
+        advisory_inputs: String,
+    },
+}
+```
+
+`store_format_versions` keys are `StoreId::as_str()` values: `graph`,
+`overlay`, `index`, `embeddings`, `cache/llm-responses`, `state`. The
+graph entry is the only one currently using a value other than
+`DEFAULT_FORMAT_VERSION`.
+
+The compat evaluator (`src/store/compatibility/evaluate/mod.rs`) reads the
+snapshot at every command start, compares per-store recorded versions plus
+config fingerprints against the current binary, and returns one of:
+`Continue`, `Rebuild`, `Invalidate`, `ClearAndRecreate`, `Block`. Every
+non-`Continue` action either rebuilds deterministically or blocks waiting for
+the user.
+
+## State files: `.synrepo/state/`
+
+| File | Struct (file:line) | Lifecycle |
+|---|---|---|
+| `writer.lock` | `WriterOwnership` (`src/pipeline/writer/mod.rs:53`) | Kernel advisory flock; JSON body records pid + RFC 3339 acquired_at; held only during mutating operations. |
+| `watch-daemon.json` | `WatchDaemonState` (`src/pipeline/watch/lease/types.rs:32`) | Long-lived watch ownership (pid, mode, last events). |
+| `watch-daemon.lock` | (no struct) | Kernel flock on a separate fd; companion to `watch-daemon.json`. Unix only. |
+| `reconcile-state.json` | `ReconcileState` (`src/pipeline/watch/reconcile.rs`) | Last reconcile outcome and triggering events. |
+| `compact-state.json` | `CompactState` (`src/pipeline/compact/ops.rs`) | Last compaction timestamp. |
+| `repair-log.jsonl` | `ResolutionLogRecord` per line (`src/pipeline/repair/types/models.rs`) | Append-only; rotated by age via `repair_log_retention_days`. |
+| `storage-compat.json` | `RuntimeCompatibilitySnapshot` | See snapshot section above. |
+| `explain-log.jsonl` | (per-line LLM call records) | Append-only; explain telemetry. |
+| `explain-totals.json` | (running cost totals) | Updated after each explain run. |
+| `explain-scope.json` | (active scope filter) | Set by `synrepo explain --scope`. |
+
+State-file structs have no legacy serde aliases; `config.toml` field names
+must match the current Rust struct fields exactly.
+
+## Registry: `~/.synrepo/projects.toml`
+
+Shape: `Registry` (`src/registry/mod.rs`). User-wide ledger of registered
+projects and their managed agent installs. Versioned by
+`SCHEMA_VERSION = 2`; orthogonal to `.synrepo/` state and not affected by the
+per-repo cleanup.
+
+## Cross-cutting invariants
+
+1. `Epistemic` (graph) and `OverlayEpistemic` (overlay) are distinct types.
+   Machine-authored content never appears on `Epistemic`; the type system
+   enforces the boundary.
+2. `FileNodeId` is stable across content edits and across renames within one
+   discovery root. Identical bytes in two different roots produce distinct
+   ids.
+3. `ConceptNodeId` is path-derived: stable across content edits, not across
+   renames.
+4. `SymbolNodeId` is keyed on `(file_node_id, qualified_name, kind,
+   body_hash)`.
+5. `EdgeKind::Governs` is only created from human-authored frontmatter or
+   inline `# DECISION:` markers, never inferred.
+6. `ConceptNode` is only created from human-authored markdown in
+   directories listed by `concept_directories`.
+7. Every list / traversal read filters `retired_at_rev IS NULL`.
+8. Reader snapshots are re-entrant (depth counter; `BEGIN DEFERRED` only on
+   the outermost call).
+9. The writer lock at `state/writer.lock` is a kernel advisory flock
+   (`fs2`), not file existence. Stamped JSON inside the file is metadata,
+   not the lock.
+10. `synrepo init` blocks when the on-disk graph version exceeds
+    `GRAPH_FORMAT_VERSION`.
+
+## See also
+
+- `docs/ARCHITECTURE.md` — layer boundaries, pipeline stages.
+- `docs/CONFIG.md` — operator-facing config fields.
+- `src/store/sqlite/README.md` — graph store internals (module organization).
+- `src/store/overlay/` — overlay store internals (module organization).
+- `AGENTS.md` — invariants index; links here for storage shape detail.

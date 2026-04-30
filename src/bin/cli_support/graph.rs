@@ -1,16 +1,18 @@
+use std::collections::HashMap;
 use std::path::Path;
 
 use serde::Serialize;
 use serde_json::json;
 use synrepo::{
     config::Config,
+    core::ids::EdgeId,
     core::provenance::Provenance,
     pipeline::{git::GitIntelligenceContext, git_intelligence::analyze_path_history},
     store::{
         compatibility::{self, CompatAction, StoreId},
         sqlite::SqliteGraphStore,
     },
-    structure::graph::{with_graph_read_snapshot, EdgeKind, Epistemic},
+    structure::graph::{with_graph_read_snapshot, EdgeKind, Epistemic, GraphReader},
     surface::card::{resolve_target, FileGitIntelligence},
     NodeId,
 };
@@ -29,17 +31,34 @@ pub(crate) fn graph_query_output(repo_root: &Path, query: &str) -> anyhow::Resul
             .ok_or_else(|| anyhow::anyhow!("target not found: {}", parsed.target))?
     };
 
-    let edges = with_graph_read_snapshot(&store, |graph| match parsed.direction {
-        QueryDirection::Outbound => graph.outbound(node_id, parsed.edge_kind),
-        QueryDirection::Inbound => graph.inbound(node_id, parsed.edge_kind),
+    let (edges, drift_scores) = with_graph_read_snapshot(&store, |graph| {
+        let edges = match parsed.direction {
+            QueryDirection::Outbound => graph.outbound(node_id, parsed.edge_kind)?,
+            QueryDirection::Inbound => graph.inbound(node_id, parsed.edge_kind)?,
+        };
+        Ok((edges, current_drift_scores(graph)))
     })?;
 
     render_json(&GraphQueryOutput {
         direction: parsed.direction.as_str(),
         node_id: node_id.to_string(),
         edge_kind: parsed.edge_kind.map(|kind| kind.as_str().to_string()),
-        edges: edges.into_iter().map(RenderedEdge::from).collect(),
+        edges: edges
+            .into_iter()
+            .map(|edge| RenderedEdge::from_edge(edge, &drift_scores))
+            .collect(),
     })
+}
+
+fn current_drift_scores(graph: &dyn GraphReader) -> HashMap<EdgeId, f32> {
+    let revision = match graph.latest_drift_revision() {
+        Ok(Some(rev)) => rev,
+        _ => return HashMap::new(),
+    };
+    graph
+        .read_drift_scores(&revision)
+        .map(|pairs| pairs.into_iter().collect())
+        .unwrap_or_default()
 }
 
 /// Retrieve statistics for the currently persisted graph store.
@@ -122,9 +141,7 @@ pub(crate) fn check_store_ready(
     if let Some(entry) = report.entry_for(store) {
         if entry.action != CompatAction::Continue {
             let hint = match entry.action {
-                CompatAction::Block | CompatAction::MigrateRequired => {
-                    "Run `synrepo upgrade` to see recovery steps."
-                }
+                CompatAction::Block => "Run `synrepo upgrade` to see recovery steps.",
                 _ => "Run `synrepo upgrade --apply` to resolve, or `synrepo init` to reinitialize.",
             };
             anyhow::bail!(
@@ -200,15 +217,18 @@ struct RenderedEdge {
     provenance: Provenance,
 }
 
-impl From<synrepo::structure::graph::Edge> for RenderedEdge {
-    fn from(edge: synrepo::structure::graph::Edge) -> Self {
+impl RenderedEdge {
+    fn from_edge(
+        edge: synrepo::structure::graph::Edge,
+        drift_scores: &HashMap<EdgeId, f32>,
+    ) -> Self {
         Self {
+            drift_score: drift_scores.get(&edge.id).copied().unwrap_or(0.0),
             id: edge.id.to_string(),
             from: edge.from.to_string(),
             to: edge.to.to_string(),
             kind: edge.kind.as_str().to_string(),
             epistemic: edge.epistemic,
-            drift_score: edge.drift_score,
             provenance: edge.provenance,
         }
     }

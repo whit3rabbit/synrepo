@@ -195,7 +195,6 @@ fn seed_revalidation_fixture(
             last_observed_rev: None,
             retired_at_rev: None,
             epistemic: Epistemic::ParserObserved,
-            drift_score: 0.0,
             provenance: Provenance {
                 created_at: OffsetDateTime::UNIX_EPOCH,
                 source_revision: "rev".to_string(),

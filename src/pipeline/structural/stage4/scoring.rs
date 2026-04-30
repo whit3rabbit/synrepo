@@ -240,7 +240,6 @@ fn build_calls_edge(
         last_observed_rev: None,
         retired_at_rev: None,
         epistemic: Epistemic::ParserObserved,
-        drift_score: 0.0,
         provenance: make_provenance("stage4_calls", revision, file_path, ""),
     }
 }
@@ -265,7 +264,6 @@ fn build_symbol_calls_edge(
         last_observed_rev: None,
         retired_at_rev: None,
         epistemic: Epistemic::ParserObserved,
-        drift_score: 0.0,
         provenance: make_provenance("stage4_calls", revision, file_path, ""),
     }
 }

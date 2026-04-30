@@ -4,6 +4,10 @@ use serde_json::json;
 use tempfile::tempdir;
 
 use super::{handle_apply_anchor_edits, handle_prepare_edit_context};
+#[cfg(unix)]
+use crate::pipeline::writer::{
+    hold_writer_flock_with_ownership, writer_lock_path, WriterOwnership,
+};
 use crate::{
     bootstrap,
     config::Config,
@@ -13,8 +17,6 @@ use crate::{
     },
     surface::mcp::SynrepoState,
 };
-#[cfg(unix)]
-use crate::pipeline::writer::{hold_writer_flock_with_ownership, writer_lock_path, WriterOwnership};
 
 fn state_with_files(files: &[(&str, &str)]) -> (tempfile::TempDir, SynrepoState) {
     let dir = tempdir().unwrap();

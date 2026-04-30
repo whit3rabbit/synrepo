@@ -51,7 +51,6 @@ fn seed_concept_with_governs_edge(
             last_observed_rev: None,
             retired_at_rev: None,
             epistemic: Epistemic::HumanDeclared,
-            drift_score: 0.0,
             provenance,
         })
         .unwrap();

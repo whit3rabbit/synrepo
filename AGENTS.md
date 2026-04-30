@@ -9,6 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) and other coding age
 | Topic | Read |
 |-------|------|
 | Layer architecture, pipeline stages, storage layout, snapshot rules | `docs/ARCHITECTURE.md` |
+| On-disk data model: tables, columns, format versions, storage invariants | `docs/SCHEMA.md` |
 | Config fields and defaults | `docs/CONFIG.md` |
 | MCP workflow, tool surface, resources, agent integration behavior | `docs/MCP.md` |
 | Explain providers, API keys, telemetry | `docs/EXPLAIN.md` |
@@ -102,6 +103,7 @@ These must hold across all changes:
 6. `EdgeKind::Governs` is only created from human-authored frontmatter or inline `# DECISION:` markers, never inferred.
 7. `ConceptNode` is only created from human-authored markdown in configured directories (`docs/concepts/`, `docs/adr/`, `docs/decisions/` by default). The explain pipeline cannot mint concept nodes in any mode.
 8. Any multi-query read through a `GraphStore` or `OverlayStore` must run under `with_graph_read_snapshot` / `with_overlay_read_snapshot` (or the trait's `begin_read_snapshot`/`end_read_snapshot` pair). Without a snapshot, a writer commit between queries leaves the reader observing two committed epochs in one operation, which is how cards end up citing nodes and edges from different generations.
+9. Schema changes require `rm -rf .synrepo/ && synrepo init` against a fresh state. There are no migrations; `src/store/sqlite/schema.rs` and `src/store/overlay/schema.rs` ship one `CREATE TABLE` per table. `synrepo upgrade` rebuilds or invalidates per `CompatAction` but never migrates DDL. See `docs/SCHEMA.md` for the column-level reference.
 
 ## Gotchas
 

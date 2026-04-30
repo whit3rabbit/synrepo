@@ -54,7 +54,6 @@ fn deleting_a_file_removes_child_symbols_and_incident_edges() {
         last_observed_rev: None,
         retired_at_rev: None,
         epistemic: Epistemic::ParserObserved,
-        drift_score: 0.0,
         provenance: sample_provenance("resolve_edges", "src/main.rs"),
     };
 
@@ -144,7 +143,6 @@ fn deleting_a_file_removes_edges_for_all_symbols_in_one_pass() {
             last_observed_rev: None,
             retired_at_rev: None,
             epistemic: Epistemic::ParserObserved,
-            drift_score: 0.0,
             provenance: sample_provenance("resolve_edges", "src/main.rs"),
         })
         .unwrap();
@@ -158,7 +156,6 @@ fn deleting_a_file_removes_edges_for_all_symbols_in_one_pass() {
             last_observed_rev: None,
             retired_at_rev: None,
             epistemic: Epistemic::ParserObserved,
-            drift_score: 0.0,
             provenance: sample_provenance("resolve_edges", "src/main.rs"),
         })
         .unwrap();
@@ -172,7 +169,6 @@ fn deleting_a_file_removes_edges_for_all_symbols_in_one_pass() {
             last_observed_rev: None,
             retired_at_rev: None,
             epistemic: Epistemic::ParserObserved,
-            drift_score: 0.0,
             provenance: sample_provenance("resolve_edges", "src/main.rs"),
         })
         .unwrap();
@@ -254,7 +250,6 @@ fn delete_edges_by_kind_removes_only_matching_edges() {
             last_observed_rev: None,
             retired_at_rev: None,
             epistemic: Epistemic::ParserObserved,
-            drift_score: 0.0,
             provenance: sample_provenance("stage4", "src/a.rs"),
         })
         .unwrap();
@@ -270,7 +265,6 @@ fn delete_edges_by_kind_removes_only_matching_edges() {
             last_observed_rev: None,
             retired_at_rev: None,
             epistemic: Epistemic::GitObserved,
-            drift_score: 0.0,
             provenance: sample_provenance("stage5_cochange", "src/a.rs"),
         })
         .unwrap();
@@ -284,7 +278,6 @@ fn delete_edges_by_kind_removes_only_matching_edges() {
             last_observed_rev: None,
             retired_at_rev: None,
             epistemic: Epistemic::GitObserved,
-            drift_score: 0.0,
             provenance: sample_provenance("stage5_cochange", "src/a.rs"),
         })
         .unwrap();

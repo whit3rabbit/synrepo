@@ -24,3 +24,5 @@ Storage layer: SQLite backends for graph and overlay.
 - Writer lock uses `fs2` (kernel advisory lock), not file existence
 - Retired observations soft-deleted until compaction (`retain_retired_revisions` config, default 10)
 - `all_edges()` excludes retired edges
+- Drift APIs are split by mutability: `latest_drift_revision` and `read_drift_scores` live on `GraphReader` (callable inside `with_graph_read_snapshot` closures, which receive `&dyn GraphReader`); `write_drift_scores` and `truncate_drift_scores` live on `GraphStore`. New read-only sidecar APIs go on `GraphReader`.
+- `with_graph_read_snapshot(graph: &dyn GraphStore, f)` passes `&dyn GraphReader` to the closure, not `GraphStore` — by design, to prevent writes inside read snapshots.

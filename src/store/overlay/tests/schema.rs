@@ -1,6 +1,6 @@
 //! Schema validation tests.
 
-use crate::store::overlay::{SqliteOverlayStore, CURRENT_SCHEMA_VERSION};
+use crate::store::overlay::SqliteOverlayStore;
 use tempfile::tempdir;
 
 #[test]
@@ -45,16 +45,16 @@ fn open_existing_requires_prior_materialization() {
 }
 
 #[test]
-fn schema_version_recorded_on_open() {
+fn schema_does_not_create_meta_table() {
     let dir = tempdir().unwrap();
     let store = SqliteOverlayStore::open(dir.path()).unwrap();
     let conn = store.conn.lock();
-    let version: String = conn
+    let count: i64 = conn
         .query_row(
-            "SELECT value FROM meta WHERE key = 'schema_version'",
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='meta'",
             [],
             |row| row.get(0),
         )
         .unwrap();
-    assert_eq!(version, CURRENT_SCHEMA_VERSION.to_string());
+    assert_eq!(count, 0, "overlay schema is unversioned; no `meta` table");
 }
