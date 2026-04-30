@@ -102,7 +102,10 @@ pub(super) fn persist_watch_state_at(
     state_path: &Path,
     state: &WatchDaemonState,
 ) -> Result<(), WatchDaemonError> {
-    let json = serde_json::to_string(state).expect("WatchDaemonState serializes");
+    let json = serde_json::to_string(state).map_err(|e| WatchDaemonError::Io {
+        path: state_path.to_path_buf(),
+        source: std::io::Error::other(format!("serialize WatchDaemonState failed: {e}")),
+    })?;
     crate::util::atomic_write(state_path, json.as_bytes()).map_err(|source| {
         WatchDaemonError::Io {
             path: state_path.to_path_buf(),
@@ -170,5 +173,23 @@ mod lease_security_tests {
         fs::create_dir_all(&dir).unwrap();
         // Must not fail -- real directory, owned by us.
         harden_fallback_socket_dir(&dir).unwrap();
+    }
+
+    #[test]
+    fn harden_enforces_mode_0700_on_existing_directory() {
+        use std::os::unix::fs::PermissionsExt;
+        let outer = tempdir().unwrap();
+        let dir = outer.path().join("synrepo-run-self");
+        fs::create_dir_all(&dir).unwrap();
+        // Simulate a pre-existing directory left in a wider mode (the
+        // AlreadyExists branch in try_create_hardened_socket_dir would skip
+        // DirBuilder::mode and rely on harden_fallback_socket_dir to retighten).
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
+        harden_fallback_socket_dir(&dir).unwrap();
+        let mode = fs::metadata(&dir).unwrap().permissions().mode() & 0o777;
+        assert_eq!(
+            mode, 0o700,
+            "harden_fallback_socket_dir must chmod the dir to 0o700, got {mode:o}"
+        );
     }
 }

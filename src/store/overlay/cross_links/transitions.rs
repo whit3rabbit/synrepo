@@ -9,6 +9,7 @@ use crate::core::ids::NodeId;
 use crate::overlay::OverlayEdgeKind;
 
 use super::super::cross_link_audit::{append_event, AuditEvent};
+use super::super::with_write_transaction;
 use super::codec::overlay_edge_kind_as_str;
 
 /// Mark a candidate as rejected by a human reviewer.
@@ -42,29 +43,31 @@ pub(crate) fn mark_rejected(
         )));
     };
 
-    conn.execute(
-        "UPDATE cross_links
-         SET state = 'rejected', reviewer = ?1
-         WHERE from_node = ?2 AND to_node = ?3 AND kind = ?4",
-        params![reviewer, from_key, to_key, kind_str],
-    )?;
+    with_write_transaction(conn, |conn| {
+        conn.execute(
+            "UPDATE cross_links
+             SET state = 'rejected', reviewer = ?1
+             WHERE from_node = ?2 AND to_node = ?3 AND kind = ?4",
+            params![reviewer, from_key, to_key, kind_str],
+        )?;
 
-    append_event(
-        conn,
-        &AuditEvent {
-            from_node: &from_key,
-            to_node: &to_key,
-            kind: kind_str,
-            event_kind: "rejected",
-            reviewer: Some(reviewer),
-            previous_tier: Some(&previous_tier),
-            new_tier: Some(&previous_tier),
-            reason: None,
-            pass_id: &pass_id,
-            model_identity: &model_identity,
-        },
-    )?;
-    Ok(())
+        append_event(
+            conn,
+            &AuditEvent {
+                from_node: &from_key,
+                to_node: &to_key,
+                kind: kind_str,
+                event_kind: "rejected",
+                reviewer: Some(reviewer),
+                previous_tier: Some(&previous_tier),
+                new_tier: Some(&previous_tier),
+                reason: None,
+                pass_id: &pass_id,
+                model_identity: &model_identity,
+            },
+        )?;
+        Ok(())
+    })
 }
 
 /// Mark a candidate as pending promotion (atomicity bridge).
@@ -98,29 +101,31 @@ pub(crate) fn mark_pending(
         )));
     };
 
-    conn.execute(
-        "UPDATE cross_links
-         SET state = 'pending_promotion', reviewer = ?1
-         WHERE from_node = ?2 AND to_node = ?3 AND kind = ?4",
-        params![reviewer, from_key, to_key, kind_str],
-    )?;
+    with_write_transaction(conn, |conn| {
+        conn.execute(
+            "UPDATE cross_links
+             SET state = 'pending_promotion', reviewer = ?1
+             WHERE from_node = ?2 AND to_node = ?3 AND kind = ?4",
+            params![reviewer, from_key, to_key, kind_str],
+        )?;
 
-    append_event(
-        conn,
-        &AuditEvent {
-            from_node: &from_key,
-            to_node: &to_key,
-            kind: kind_str,
-            event_kind: "pending_promotion",
-            reviewer: Some(reviewer),
-            previous_tier: Some(&previous_tier),
-            new_tier: Some(&previous_tier),
-            reason: None,
-            pass_id: &pass_id,
-            model_identity: &model_identity,
-        },
-    )?;
-    Ok(())
+        append_event(
+            conn,
+            &AuditEvent {
+                from_node: &from_key,
+                to_node: &to_key,
+                kind: kind_str,
+                event_kind: "pending_promotion",
+                reviewer: Some(reviewer),
+                previous_tier: Some(&previous_tier),
+                new_tier: Some(&previous_tier),
+                reason: None,
+                pass_id: &pass_id,
+                model_identity: &model_identity,
+            },
+        )?;
+        Ok(())
+    })
 }
 
 /// Mark a candidate as promoted into the graph. Records the reviewer and
@@ -160,29 +165,31 @@ pub(crate) fn mark_promoted(
         .format(&Rfc3339)
         .map_err(|e| crate::Error::Other(anyhow::anyhow!("invalid timestamp: {e}")))?;
 
-    conn.execute(
-        "UPDATE cross_links
-         SET state = 'promoted', reviewer = ?1, promoted_at = ?2, graph_edge_id = ?3
-         WHERE from_node = ?4 AND to_node = ?5 AND kind = ?6",
-        params![reviewer, now, graph_edge_id, from_key, to_key, kind_str],
-    )?;
+    with_write_transaction(conn, |conn| {
+        conn.execute(
+            "UPDATE cross_links
+             SET state = 'promoted', reviewer = ?1, promoted_at = ?2, graph_edge_id = ?3
+             WHERE from_node = ?4 AND to_node = ?5 AND kind = ?6",
+            params![reviewer, now, graph_edge_id, from_key, to_key, kind_str],
+        )?;
 
-    append_event(
-        conn,
-        &AuditEvent {
-            from_node: &from_key,
-            to_node: &to_key,
-            kind: kind_str,
-            event_kind: "promoted",
-            reviewer: Some(reviewer),
-            previous_tier: Some(&previous_tier),
-            new_tier: Some(&previous_tier),
-            reason: Some(graph_edge_id),
-            pass_id: &pass_id,
-            model_identity: &model_identity,
-        },
-    )?;
-    Ok(())
+        append_event(
+            conn,
+            &AuditEvent {
+                from_node: &from_key,
+                to_node: &to_key,
+                kind: kind_str,
+                event_kind: "promoted",
+                reviewer: Some(reviewer),
+                previous_tier: Some(&previous_tier),
+                new_tier: Some(&previous_tier),
+                reason: Some(graph_edge_id),
+                pass_id: &pass_id,
+                model_identity: &model_identity,
+            },
+        )?;
+        Ok(())
+    })
 }
 
 /// Reset a `pending_promotion` row back to `active` state. Used when crash
@@ -217,27 +224,29 @@ pub(crate) fn reset_pending_to_active(
         )));
     };
 
-    conn.execute(
-        "UPDATE cross_links
-         SET state = 'active', reviewer = NULL, promoted_at = NULL, graph_edge_id = NULL
-         WHERE from_node = ?1 AND to_node = ?2 AND kind = ?3",
-        params![from_key, to_key, kind_str],
-    )?;
+    with_write_transaction(conn, |conn| {
+        conn.execute(
+            "UPDATE cross_links
+             SET state = 'active', reviewer = NULL, promoted_at = NULL, graph_edge_id = NULL
+             WHERE from_node = ?1 AND to_node = ?2 AND kind = ?3",
+            params![from_key, to_key, kind_str],
+        )?;
 
-    append_event(
-        conn,
-        &AuditEvent {
-            from_node: &from_key,
-            to_node: &to_key,
-            kind: kind_str,
-            event_kind: "promotion_rolled_back",
-            reviewer: None,
-            previous_tier: Some(&previous_tier),
-            new_tier: Some(&previous_tier),
-            reason: Some("crash_recovery_no_edge"),
-            pass_id: &pass_id,
-            model_identity: &model_identity,
-        },
-    )?;
-    Ok(())
+        append_event(
+            conn,
+            &AuditEvent {
+                from_node: &from_key,
+                to_node: &to_key,
+                kind: kind_str,
+                event_kind: "promotion_rolled_back",
+                reviewer: None,
+                previous_tier: Some(&previous_tier),
+                new_tier: Some(&previous_tier),
+                reason: Some("crash_recovery_no_edge"),
+                pass_id: &pass_id,
+                model_identity: &model_identity,
+            },
+        )?;
+        Ok(())
+    })
 }

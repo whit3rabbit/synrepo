@@ -84,7 +84,8 @@ pub fn bootstrap(
     })?;
 
     let layout_changed = compatibility::ensure_runtime_layout(&synrepo_dir)?;
-    let remediated = compatibility::apply_runtime_actions(&synrepo_dir, &compatibility_report)?;
+    let remediated =
+        compatibility::apply_runtime_actions(&_lock, &synrepo_dir, &compatibility_report)?;
 
     atomic_write_file(&config_path, toml::to_string_pretty(&config)?.as_bytes())?;
     write_synrepo_gitignore(&synrepo_dir)?;

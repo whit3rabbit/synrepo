@@ -47,7 +47,7 @@ fn newer_graph_format_blocks_canonical_runtime() {
     };
     snapshot.store_format_versions.insert(
         StoreId::Graph.as_str().to_string(),
-        super::super::STORE_FORMAT_VERSION + 1,
+        super::super::GRAPH_FORMAT_VERSION + 1,
     );
     fs::create_dir_all(synrepo_dir.join("state")).unwrap();
     fs::write(
@@ -106,4 +106,44 @@ fn graph_sensitive_config_drift_warns_before_graph_exists() {
         .warnings
         .iter()
         .any(|warning| warning.contains("concept_directories")));
+}
+
+#[test]
+fn legacy_global_version_treated_as_continue_for_non_graph_stores() {
+    let repo = tempdir().unwrap();
+    let synrepo_dir = repo.path().join(".synrepo");
+    fs::create_dir_all(synrepo_dir.join("overlay")).unwrap();
+    fs::create_dir_all(synrepo_dir.join("index")).unwrap();
+    fs::write(synrepo_dir.join("overlay/overlay.db"), "db").unwrap();
+    fs::write(synrepo_dir.join("index/manifest.json"), "{}").unwrap();
+
+    // Simulate a legacy snapshot where all stores had the global version 2.
+    let snapshot = RuntimeCompatibilitySnapshot {
+        snapshot_version: super::super::SNAPSHOT_VERSION,
+        store_format_versions: StoreId::ALL
+            .into_iter()
+            .map(|store_id| {
+                (
+                    store_id.as_str().to_string(),
+                    super::super::LEGACY_GLOBAL_FORMAT_VERSION,
+                )
+            })
+            .collect(),
+        config_fingerprints: ConfigFingerprints::from_config(&crate::config::Config::default()),
+    };
+    fs::create_dir_all(synrepo_dir.join("state")).unwrap();
+    fs::write(
+        snapshot_path(&synrepo_dir),
+        serde_json::to_vec_pretty(&snapshot).unwrap(),
+    )
+    .unwrap();
+
+    let report = evaluate_runtime(&synrepo_dir, true, &crate::config::Config::default()).unwrap();
+
+    // Graph should Continue (its expected version IS the legacy global).
+    assert_eq!(report.action_for(StoreId::Graph), CompatAction::Continue);
+    // Non-graph stores with stored=2 and expected=1 must also Continue,
+    // not Invalidate or Block.
+    assert_eq!(report.action_for(StoreId::Overlay), CompatAction::Continue);
+    assert_eq!(report.action_for(StoreId::Index), CompatAction::Continue);
 }

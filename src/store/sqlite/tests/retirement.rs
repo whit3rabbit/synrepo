@@ -77,6 +77,55 @@ fn compile_revision_increments() {
 }
 
 #[test]
+fn retire_symbols_bulk_matches_per_symbol_loop() {
+    let mut bulk = open_memory_store();
+    let mut serial = open_memory_store();
+    bulk.upsert_file(make_file(1, "a.rs")).unwrap();
+    serial.upsert_file(make_file(1, "a.rs")).unwrap();
+    let ids: Vec<SymbolNodeId> = (10..30u64)
+        .map(|i| {
+            bulk.upsert_symbol(make_symbol(i, 1, &format!("s{i}")))
+                .unwrap();
+            serial
+                .upsert_symbol(make_symbol(i, 1, &format!("s{i}")))
+                .unwrap();
+            SymbolNodeId(i as u128)
+        })
+        .collect();
+
+    // Bulk retire vs per-row retire at the same revision.
+    bulk.retire_symbols_bulk(&ids, 2).unwrap();
+    for id in &ids {
+        serial.retire_symbol(*id, 2).unwrap();
+    }
+
+    // Active symbols match.
+    let bulk_active = bulk.symbols_for_file(FileNodeId(1_u128)).unwrap();
+    let serial_active = serial.symbols_for_file(FileNodeId(1_u128)).unwrap();
+    assert_eq!(bulk_active.len(), serial_active.len());
+    assert!(bulk_active.is_empty(), "all should be retired");
+
+    // Each retired row carries the same retired_at_rev.
+    for id in &ids {
+        let b = bulk.get_symbol(*id).unwrap().unwrap();
+        let s = serial.get_symbol(*id).unwrap().unwrap();
+        assert_eq!(b.retired_at_rev, s.retired_at_rev);
+        assert_eq!(b.retired_at_rev, Some(2));
+    }
+}
+
+#[test]
+fn retire_symbols_bulk_handles_empty_input() {
+    let mut store = open_memory_store();
+    store.upsert_file(make_file(1, "a.rs")).unwrap();
+    store.upsert_symbol(make_symbol(10, 1, "foo")).unwrap();
+
+    store.retire_symbols_bulk(&[], 2).unwrap();
+    // Existing symbol unaffected.
+    assert_eq!(store.symbols_for_file(FileNodeId(1_u128)).unwrap().len(), 1);
+}
+
+#[test]
 fn retire_symbol_hides_from_symbols_for_file() {
     let mut store = open_memory_store();
     store.upsert_file(make_file(1, "a.rs")).unwrap();

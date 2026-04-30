@@ -285,6 +285,7 @@ fn fill_default_source_anchor(repo_root: &Path, note: &mut AgentNote) {
     note.source_hashes.push(AgentNoteSourceHash {
         path: file.path,
         hash: file.content_hash,
+        root_id: Some(file.root_id),
     });
 }
 

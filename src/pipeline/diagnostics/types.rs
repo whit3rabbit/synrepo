@@ -20,6 +20,15 @@ pub enum ReconcileHealth {
     Current,
     /// The last reconcile is stale.
     Stale(ReconcileStaleness),
+    /// The watch service holds the lease but its last reconcile is older than
+    /// the staleness threshold. Distinct from `Stale` because the watch
+    /// service is responsible for keeping the graph current; an old timestamp
+    /// while watch is up signals a wedged loop, not idle staleness. Mitigation
+    /// is to restart watch, not run a manual reconcile.
+    WatchStalled {
+        /// RFC 3339 UTC timestamp of the last reconcile recorded by watch.
+        last_reconcile_at: String,
+    },
     /// No reconcile state file exists; the system has never reconciled.
     Unknown,
     /// The reconcile state file exists but is malformed.
@@ -93,6 +102,11 @@ impl RuntimeDiagnostics {
             }
             ReconcileHealth::Stale(ReconcileStaleness::Age { .. }) => {
                 out.push_str("stale (over 1 hour old)\n");
+            }
+            ReconcileHealth::WatchStalled { last_reconcile_at } => {
+                out.push_str(&format!(
+                    "watch_stalled (watch is up but last reconcile {last_reconcile_at} is over 1 hour old)\n"
+                ));
             }
             ReconcileHealth::Unknown => out.push_str("unknown (no reconcile state)\n"),
             ReconcileHealth::Corrupt(e) => out.push_str(&format!("corrupt ({e})\n")),

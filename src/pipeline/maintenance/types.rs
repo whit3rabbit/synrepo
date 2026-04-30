@@ -165,6 +165,10 @@ pub struct CompactSummary {
     pub index_rebuilt: bool,
     /// Timestamp of this compaction pass.
     pub compaction_timestamp: OffsetDateTime,
+    /// Per-component failure messages. Previously dropped silently when a
+    /// step returned `Err`; the CLI exits non-zero when this is non-empty.
+    #[serde(default)]
+    pub failures: Vec<String>,
 }
 
 impl Default for CompactSummary {
@@ -176,6 +180,7 @@ impl Default for CompactSummary {
             wal_checkpoint_completed: false,
             index_rebuilt: false,
             compaction_timestamp: OffsetDateTime::now_utc(),
+            failures: Vec::new(),
         }
     }
 }
@@ -209,11 +214,20 @@ impl CompactSummary {
             parts.push("Index rebuilt".to_string());
         }
 
+        for failure in &self.failures {
+            parts.push(format!("FAILED: {failure}"));
+        }
+
         if parts.is_empty() {
             "No compaction work needed.".to_string()
         } else {
             parts.join("; ")
         }
+    }
+
+    /// Whether any component failed; callers use this to decide exit code.
+    pub fn has_failures(&self) -> bool {
+        !self.failures.is_empty()
     }
 }
 

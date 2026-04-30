@@ -1,4 +1,4 @@
-//! Schema bootstrap for the overlay SQLite database.
+//! Schema bootstrap and versioned migrations for the overlay SQLite database.
 //!
 //! The overlay database lives at `.synrepo/overlay/overlay.db` and is
 //! physically separate from the canonical graph store at
@@ -14,9 +14,9 @@
 //! - `v3`: agent notes (adds `agent_notes`, `agent_note_transitions`,
 //!   and `agent_note_links`)
 //!
-//! Migrations from v1 to v2 are additive and non-destructive: they run
-//! `CREATE TABLE IF NOT EXISTS` for the new tables and bump the stored
-//! version. No existing rows move.
+//! Migrations are additive and non-destructive: they run `CREATE TABLE IF
+//! NOT EXISTS` for new tables and bump the stored version. No existing rows
+//! move.
 
 use rusqlite::Connection;
 
@@ -30,12 +30,77 @@ pub(super) fn init_schema(conn: &Connection) -> crate::Result<()> {
         PRAGMA synchronous = NORMAL;
         PRAGMA foreign_keys = ON;
         PRAGMA busy_timeout = 5000;
+        ",
+    )?;
 
-        CREATE TABLE IF NOT EXISTS meta (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-        );
+    // Ensure the meta table exists before reading the version.
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS meta (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    )",
+    )?;
 
+    let current = read_schema_version(conn)?.unwrap_or(0);
+
+    if current > CURRENT_SCHEMA_VERSION {
+        return Err(crate::Error::Other(anyhow::anyhow!(
+            "overlay schema version {current} is newer than expected version {CURRENT_SCHEMA_VERSION}; \
+             upgrade your synrepo binary"
+        )));
+    }
+
+    // Run migrations in order. Each uses CREATE TABLE IF NOT EXISTS for
+    // idempotency and writes its target version on success.
+    if current < 1 {
+        migrate_v0_to_v1(conn)?;
+    }
+    if current < 2 {
+        migrate_v1_to_v2(conn)?;
+    }
+    if current < 3 {
+        migrate_v2_to_v3(conn)?;
+    }
+
+    Ok(())
+}
+
+/// Read the stored overlay schema version. Returns `None` if the `meta` table
+/// is absent (fresh DB created before this module shipped).
+pub(super) fn read_schema_version(conn: &Connection) -> crate::Result<Option<u32>> {
+    let exists: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='meta'",
+        [],
+        |row| row.get(0),
+    )?;
+    if exists == 0 {
+        return Ok(None);
+    }
+    let value: Option<String> = conn
+        .query_row(
+            "SELECT value FROM meta WHERE key = 'schema_version'",
+            [],
+            |row| row.get(0),
+        )
+        .ok();
+    match value {
+        Some(s) => Ok(s.parse::<u32>().ok()),
+        None => Ok(None),
+    }
+}
+
+fn write_schema_version(conn: &Connection, version: u32) -> crate::Result<()> {
+    conn.execute(
+        "INSERT INTO meta(key, value) VALUES('schema_version', ?1)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        rusqlite::params![version.to_string()],
+    )?;
+    Ok(())
+}
+
+fn migrate_v0_to_v1(conn: &Connection) -> crate::Result<()> {
+    conn.execute_batch(
+        "
         CREATE TABLE IF NOT EXISTS commentary (
             id INTEGER PRIMARY KEY,
             node_id TEXT NOT NULL UNIQUE,
@@ -48,10 +113,14 @@ pub(super) fn init_schema(conn: &Connection) -> crate::Result<()> {
 
         CREATE INDEX IF NOT EXISTS idx_commentary_node_id ON commentary(node_id);
         CREATE INDEX IF NOT EXISTS idx_commentary_generated_at ON commentary(generated_at);
+        ",
+    )?;
+    write_schema_version(conn, 1)
+}
 
-        -- Cross-link candidates. Keyed on (from_node, to_node, kind) so a
-        -- single (source, target, relationship) triple has at most one active
-        -- candidate row. Audit history lives in `cross_link_audit`.
+fn migrate_v1_to_v2(conn: &Connection) -> crate::Result<()> {
+    conn.execute_batch(
+        "
         CREATE TABLE IF NOT EXISTS cross_links (
             id INTEGER PRIMARY KEY,
             from_node TEXT NOT NULL,
@@ -80,9 +149,6 @@ pub(super) fn init_schema(conn: &Connection) -> crate::Result<()> {
         CREATE INDEX IF NOT EXISTS idx_cross_links_tier ON cross_links(confidence_tier);
         CREATE INDEX IF NOT EXISTS idx_cross_links_state ON cross_links(state);
 
-        -- Immutable audit log. One row per lifecycle event. Rows are never
-        -- updated or deleted — deletion of a candidate from `cross_links`
-        -- leaves its audit rows intact.
         CREATE TABLE IF NOT EXISTS cross_link_audit (
             id INTEGER PRIMARY KEY,
             from_node TEXT NOT NULL,
@@ -100,7 +166,14 @@ pub(super) fn init_schema(conn: &Connection) -> crate::Result<()> {
 
         CREATE INDEX IF NOT EXISTS idx_cross_link_audit_endpoints
             ON cross_link_audit(from_node, to_node, kind);
+        ",
+    )?;
+    write_schema_version(conn, 2)
+}
 
+fn migrate_v2_to_v3(conn: &Connection) -> crate::Result<()> {
+    conn.execute_batch(
+        "
         CREATE TABLE IF NOT EXISTS agent_notes (
             note_id TEXT PRIMARY KEY,
             target_kind TEXT NOT NULL,
@@ -161,39 +234,5 @@ pub(super) fn init_schema(conn: &Connection) -> crate::Result<()> {
             ON agent_note_links(to_note);
         ",
     )?;
-
-    // Record the current schema version after tables exist so a freshly
-    // created DB and a v1→v2 migration both land at v2.
-    conn.execute(
-        "INSERT INTO meta(key, value) VALUES('schema_version', ?1)
-         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-        rusqlite::params![CURRENT_SCHEMA_VERSION.to_string()],
-    )?;
-
-    Ok(())
-}
-
-/// Read the stored overlay schema version. Returns `None` if the `meta` table
-/// is absent (fresh DB created before this module shipped).
-#[allow(dead_code)]
-pub(super) fn read_schema_version(conn: &Connection) -> crate::Result<Option<u32>> {
-    let exists: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='meta'",
-        [],
-        |row| row.get(0),
-    )?;
-    if exists == 0 {
-        return Ok(None);
-    }
-    let value: Option<String> = conn
-        .query_row(
-            "SELECT value FROM meta WHERE key = 'schema_version'",
-            [],
-            |row| row.get(0),
-        )
-        .ok();
-    match value {
-        Some(s) => Ok(s.parse::<u32>().ok()),
-        None => Ok(None),
-    }
+    write_schema_version(conn, 3)
 }

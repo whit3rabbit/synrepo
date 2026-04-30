@@ -141,6 +141,14 @@ pub struct Config {
     /// set, the post-reconcile hook then runs the cheap auto-sync surfaces.
     #[serde(default = "default_reconcile_keepalive_seconds")]
     pub reconcile_keepalive_seconds: u32,
+
+    /// Maximum time in seconds the watch control bridge waits for a sync
+    /// request to return a response from the watch loop before reporting
+    /// failure. Commentary refresh on large repos can legitimately exceed
+    /// the default; raise this if you see "watch loop did not answer the
+    /// sync request in time" without a real wedge.
+    #[serde(default = "default_watch_sync_timeout_seconds")]
+    pub watch_sync_timeout_seconds: u32,
 }
 
 fn default_roots() -> Vec<String> {
@@ -219,6 +227,10 @@ fn default_reconcile_keepalive_seconds() -> u32 {
     1800
 }
 
+fn default_watch_sync_timeout_seconds() -> u32 {
+    600
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -243,6 +255,7 @@ impl Default for Config {
             explain: ExplainConfig::default(),
             auto_sync_enabled: default_auto_sync_enabled(),
             reconcile_keepalive_seconds: default_reconcile_keepalive_seconds(),
+            watch_sync_timeout_seconds: default_watch_sync_timeout_seconds(),
         }
     }
 }

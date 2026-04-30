@@ -7,8 +7,13 @@ mod types;
 // Constants shared across sub-modules. Private here; child modules
 // access them via `super::CONST`.
 const SNAPSHOT_VERSION: u32 = 1;
-/// Current store format version expected by this binary.
-pub const STORE_FORMAT_VERSION: u32 = 2;
+/// Format version for the graph store (root-discriminated files).
+pub const GRAPH_FORMAT_VERSION: u32 = 2;
+/// Default format version for non-graph stores.
+pub const DEFAULT_FORMAT_VERSION: u32 = 1;
+/// Legacy global format version that was written for all stores before
+/// per-store versioning. Used for backward compatibility in evaluate_store.
+pub const LEGACY_GLOBAL_FORMAT_VERSION: u32 = 2;
 const SNAPSHOT_FILENAME: &str = "storage-compat.json";
 
 pub(crate) use evaluate::clear_store_contents;

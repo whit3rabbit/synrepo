@@ -186,3 +186,25 @@ fn go_kind_map_is_pinned() {
         ]
     );
 }
+
+// ── Task 3: call-mode map coverage ──────────────────────────────────────────
+
+/// The call-mode map's length must equal the compiled call query's pattern
+/// count for every language, so every pattern index the query emits has an
+/// explicit `CallMode` slot.
+#[test]
+fn call_mode_map_covers_every_call_query_pattern() {
+    for &lang in Language::supported() {
+        let query = compile_query(lang, QueryRole::Call);
+        let map = lang.call_mode_map();
+        assert_eq!(
+            map.len(),
+            query.pattern_count(),
+            "{lang}: call_mode_map len ({map_len}) does not match call_query pattern_count ({qp}). \
+             Either the query gained/lost a pattern or the mode table was not updated.",
+            lang = lang.display_name(),
+            map_len = map.len(),
+            qp = query.pattern_count(),
+        );
+    }
+}

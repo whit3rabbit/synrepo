@@ -29,24 +29,27 @@ pub(super) fn compute_reconcile_health(
         Err(ReconcileStateError::NotFound) => ReconcileHealth::Unknown,
         Err(ReconcileStateError::Malformed(e)) => ReconcileHealth::Corrupt(e.clone()),
         Ok(s) if s.last_outcome == "completed" => {
-            if watch_running {
-                // If the watch service is running, it is responsible for
-                // observing changes. We trust it to keep the graph current
-                // and skip the age-based "stale" nudge.
-                return ReconcileHealth::Current;
-            }
-
             let last_ts = OffsetDateTime::parse(&s.last_reconcile_at, &Rfc3339).ok();
             let is_old = last_ts
                 .map(|ts| (now - ts).whole_seconds().abs() >= RECONCILE_STALENESS_THRESHOLD_SECONDS)
                 .unwrap_or(false);
 
-            if is_old {
+            if !is_old {
+                return ReconcileHealth::Current;
+            }
+
+            // The reconcile is older than the staleness threshold. If watch is
+            // running it's responsible for keeping the graph current — an old
+            // timestamp is a wedged loop, not idle staleness. Surface that as
+            // a distinct variant so the user gets the right mitigation.
+            if watch_running {
+                ReconcileHealth::WatchStalled {
+                    last_reconcile_at: s.last_reconcile_at.clone(),
+                }
+            } else {
                 ReconcileHealth::Stale(ReconcileStaleness::Age {
                     last_reconcile_at: s.last_reconcile_at.clone(),
                 })
-            } else {
-                ReconcileHealth::Current
             }
         }
         Ok(s) => ReconcileHealth::Stale(ReconcileStaleness::Outcome(s.last_outcome.clone())),
@@ -156,7 +159,7 @@ mod tests {
     }
 
     #[test]
-    fn compute_reconcile_health_skips_age_check_when_watch_is_running() {
+    fn compute_reconcile_health_returns_watch_stalled_when_watch_running_but_old() {
         let state = ReconcileState {
             last_reconcile_at: "2024-01-01T12:00:00Z".to_string(),
             last_outcome: "completed".to_string(),
@@ -166,8 +169,31 @@ mod tests {
             symbols_extracted: Some(50),
         };
 
-        // 2 hours later, but watch is running
+        // 2 hours later with watch running — should surface WatchStalled, not Current.
         let now = OffsetDateTime::parse("2024-01-01T14:00:00Z", &Rfc3339).unwrap();
+        let health = compute_reconcile_health(&Ok(state), now, true);
+
+        assert_eq!(
+            health,
+            ReconcileHealth::WatchStalled {
+                last_reconcile_at: "2024-01-01T12:00:00Z".to_string()
+            }
+        );
+    }
+
+    #[test]
+    fn compute_reconcile_health_remains_current_when_watch_running_and_recent() {
+        let state = ReconcileState {
+            last_reconcile_at: "2024-01-01T12:00:00Z".to_string(),
+            last_outcome: "completed".to_string(),
+            last_error: None,
+            triggering_events: 0,
+            files_discovered: Some(10),
+            symbols_extracted: Some(50),
+        };
+
+        // 30 minutes later with watch running — under threshold, stays Current.
+        let now = OffsetDateTime::parse("2024-01-01T12:30:00Z", &Rfc3339).unwrap();
         let health = compute_reconcile_health(&Ok(state), now, true);
 
         assert_eq!(health, ReconcileHealth::Current);

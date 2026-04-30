@@ -121,6 +121,7 @@ fn source_hash_drift_marks_note_stale() {
     anchored.source_hashes.push(AgentNoteSourceHash {
         path: "src/lib.rs".to_string(),
         hash: "hash-then".to_string(),
+        root_id: None,
     });
     let inserted = overlay.insert_note(anchored).unwrap();
 

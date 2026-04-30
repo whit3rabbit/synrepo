@@ -330,6 +330,24 @@ pub trait GraphStore: GraphReader {
         Ok(())
     }
 
+    /// Mark many symbols retired in one batch. Default impl loops over
+    /// `retire_symbol` so non-SQLite backends still work; the SQLite impl
+    /// overrides with a single chunked `UPDATE ... WHERE id IN (...)`.
+    fn retire_symbols_bulk(&mut self, ids: &[SymbolNodeId], revision: u64) -> crate::Result<()> {
+        for id in ids {
+            self.retire_symbol(*id, revision)?;
+        }
+        Ok(())
+    }
+
+    /// Mark many edges retired in one batch. See `retire_symbols_bulk`.
+    fn retire_edges_bulk(&mut self, ids: &[EdgeId], revision: u64) -> crate::Result<()> {
+        for id in ids {
+            self.retire_edge(*id, revision)?;
+        }
+        Ok(())
+    }
+
     /// Clear retirement on a symbol and set its last_observed_rev.
     fn unretire_symbol(&mut self, _id: SymbolNodeId, _revision: u64) -> crate::Result<()> {
         Ok(())

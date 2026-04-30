@@ -168,23 +168,30 @@ pub(super) fn process_supported_code_files(
             }
         }
 
-        // Retire symbols that were previously active for this file but
-        // not re-emitted in the current parse pass.
+        // Retire symbols and parser-owned edges that were previously active
+        // for this file but not re-emitted in the current parse pass. Bulk
+        // calls collapse what used to be N+1 UPDATEs per file into one
+        // chunked statement; on a 10K-symbol churn this measurably reduces
+        // SQLite roundtrips.
         if is_content_change {
             if let Some(rev) = compile_rev {
-                for prior in &prior_symbols {
-                    if !emitted_symbol_ids.contains(&prior.id) {
-                        graph.retire_symbol(prior.id, rev)?;
-                    }
-                }
-                // Retire parser-owned edges from this file that were not re-emitted.
-                for prior_edge in &graph.edges_owned_by(file_id)? {
-                    if prior_edge.epistemic == Epistemic::ParserObserved
-                        && !emitted_edge_ids.contains(&prior_edge.id)
-                    {
-                        graph.retire_edge(prior_edge.id, rev)?;
-                    }
-                }
+                let retire_symbols: Vec<_> = prior_symbols
+                    .iter()
+                    .filter(|p| !emitted_symbol_ids.contains(&p.id))
+                    .map(|p| p.id)
+                    .collect();
+                graph.retire_symbols_bulk(&retire_symbols, rev)?;
+
+                let retire_edges: Vec<_> = graph
+                    .edges_owned_by(file_id)?
+                    .iter()
+                    .filter(|e| {
+                        e.epistemic == Epistemic::ParserObserved
+                            && !emitted_edge_ids.contains(&e.id)
+                    })
+                    .map(|e| e.id)
+                    .collect();
+                graph.retire_edges_bulk(&retire_edges, rev)?;
             }
         }
     }

@@ -16,7 +16,7 @@ use crate::{
             WatchServiceStatus,
         },
     },
-    store::compatibility::STORE_FORMAT_VERSION,
+    store::compatibility::GRAPH_FORMAT_VERSION,
 };
 
 use super::{setup_test_repo, wait_for, watch_service_guard};
@@ -181,7 +181,7 @@ fn write_stale_export_manifest(repo: &std::path::Path, config: &Config) {
     let export_dir = repo.join(&config.export_dir);
     fs::create_dir_all(&export_dir).expect("create export dir");
     let manifest = ExportManifest {
-        graph_schema_version: STORE_FORMAT_VERSION,
+        graph_schema_version: GRAPH_FORMAT_VERSION,
         last_reconcile_at: "stale-epoch".to_string(),
         format: ExportFormat::Markdown,
         budget: "normal".to_string(),

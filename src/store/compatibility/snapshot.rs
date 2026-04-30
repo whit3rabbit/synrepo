@@ -99,7 +99,7 @@ mod tests {
         assert_eq!(snapshot.snapshot_version, super::super::SNAPSHOT_VERSION);
         assert_eq!(
             snapshot.store_format_versions.get(StoreId::Index.as_str()),
-            Some(&super::super::STORE_FORMAT_VERSION)
+            Some(&super::super::DEFAULT_FORMAT_VERSION)
         );
         assert!(snapshot_path(&synrepo_dir).exists());
     }

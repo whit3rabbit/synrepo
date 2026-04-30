@@ -205,7 +205,7 @@ pub fn write_exports(
         .unwrap_or_default();
 
     let manifest = ExportManifest {
-        graph_schema_version: crate::store::compatibility::STORE_FORMAT_VERSION,
+        graph_schema_version: crate::store::compatibility::GRAPH_FORMAT_VERSION,
         last_reconcile_at,
         format,
         budget: format.budget_str(budget),

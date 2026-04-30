@@ -134,10 +134,9 @@ pub fn evaluate_runtime(
 
 /// Apply non-blocking compatibility actions to the on-disk runtime.
 ///
-/// ANY caller of this function MUST hold the exclusive `WriterLock` for the
-/// duration of the call to prevent data races with concurrent writers or
-/// the watch daemon.
+/// Requires an exclusive `WriterLock` guard, enforced by the type system.
 pub fn apply_runtime_actions(
+    _lock: &crate::pipeline::writer::WriterLock,
     synrepo_dir: &Path,
     report: &CompatibilityReport,
 ) -> crate::Result<bool> {
@@ -197,6 +196,26 @@ fn evaluate_store(
         .copied()
         .unwrap_or_default();
     let expected_version = store_id.expected_format_version();
+
+    // Backward compat: older binaries wrote the same global version (2)
+    // for all stores. If the stored version matches the legacy global and
+    // the per-store expected version is lower, treat as Continue. The
+    // next reconcile will rewrite the snapshot with correct per-store
+    // versions.
+    if stored_version == super::LEGACY_GLOBAL_FORMAT_VERSION
+        && expected_version < super::LEGACY_GLOBAL_FORMAT_VERSION
+    {
+        return CompatibilityEntry {
+            store_id,
+            class: store_id.class(),
+            action: CompatAction::Continue,
+            reason: format!(
+                "stored format version {} matches legacy global; will be corrected on next snapshot write",
+                stored_version
+            ),
+        };
+    }
+
     let action = if stored_version == expected_version {
         CompatAction::Continue
     } else if stored_version == 0 {
@@ -288,9 +307,41 @@ pub(crate) fn clear_store_contents(synrepo_dir: &Path, store_id: StoreId) -> cra
     let store_path = synrepo_dir.join(store_id.relative_path());
     fs::create_dir_all(&store_path)?;
 
+    let canonical_store = store_path.canonicalize().map_err(|e| {
+        crate::Error::Other(anyhow::anyhow!("failed to canonicalize store path: {e}"))
+    })?;
+
     for entry in fs::read_dir(&store_path)? {
         let entry = entry?;
         let path = entry.path();
+
+        let meta = std::fs::symlink_metadata(&path).map_err(|e| {
+            crate::Error::Other(anyhow::anyhow!(
+                "failed to read metadata for {}: {e}",
+                path.display()
+            ))
+        })?;
+        if meta.file_type().is_symlink() {
+            return Err(crate::Error::Other(anyhow::anyhow!(
+                "refusing to follow symlink at {}",
+                path.display()
+            )));
+        }
+
+        let canonical_child = path.canonicalize().map_err(|e| {
+            crate::Error::Other(anyhow::anyhow!(
+                "failed to canonicalize child path {}: {e}",
+                path.display()
+            ))
+        })?;
+        if !canonical_child.starts_with(&canonical_store) {
+            return Err(crate::Error::Other(anyhow::anyhow!(
+                "path escape detected: {} is not under {}",
+                path.display(),
+                store_path.display()
+            )));
+        }
+
         if path.is_dir() {
             fs::remove_dir_all(path)?;
         } else {

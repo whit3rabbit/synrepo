@@ -10,6 +10,7 @@ use crate::core::ids::NodeId;
 use crate::overlay::{CitedSpan, ConfidenceTier, OverlayEdgeKind, OverlayLink};
 
 use super::super::cross_link_audit::{append_event, AuditEvent};
+use super::super::with_write_transaction;
 use super::codec::{anyhow_err, overlay_edge_kind_as_str, overlay_epistemic_as_str, validate_link};
 
 /// Insert or refresh a cross-link candidate.
@@ -42,70 +43,72 @@ pub(crate) fn insert_candidate(conn: &Connection, link: &OverlayLink) -> crate::
         )
         .optional()?;
 
-    conn.execute(
-        "INSERT INTO cross_links
-            (from_node, to_node, kind, epistemic,
-             source_spans_json, target_spans_json,
-             from_content_hash, to_content_hash,
-             confidence_score, confidence_tier, rationale,
-             pass_id, model_identity, generated_at, state)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, 'active')
-         ON CONFLICT(from_node, to_node, kind) DO UPDATE SET
-             epistemic = excluded.epistemic,
-             source_spans_json = excluded.source_spans_json,
-             target_spans_json = excluded.target_spans_json,
-             from_content_hash = excluded.from_content_hash,
-             to_content_hash = excluded.to_content_hash,
-             confidence_score = excluded.confidence_score,
-             confidence_tier = excluded.confidence_tier,
-             rationale = excluded.rationale,
-             pass_id = excluded.pass_id,
-             model_identity = excluded.model_identity,
-             generated_at = excluded.generated_at,
-             state = 'active',
-             reviewer = NULL,
-             promoted_at = NULL,
-             graph_edge_id = NULL",
-        params![
-            from_key,
-            to_key,
-            kind,
-            epistemic,
-            source_spans,
-            target_spans,
-            link.from_content_hash,
-            link.to_content_hash,
-            link.confidence_score,
-            tier,
-            link.rationale,
-            link.provenance.pass_id,
-            link.provenance.model_identity,
-            generated_at,
-        ],
-    )?;
+    with_write_transaction(conn, |conn| {
+        conn.execute(
+            "INSERT INTO cross_links
+                (from_node, to_node, kind, epistemic,
+                 source_spans_json, target_spans_json,
+                 from_content_hash, to_content_hash,
+                 confidence_score, confidence_tier, rationale,
+                 pass_id, model_identity, generated_at, state)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, 'active')
+             ON CONFLICT(from_node, to_node, kind) DO UPDATE SET
+                 epistemic = excluded.epistemic,
+                 source_spans_json = excluded.source_spans_json,
+                 target_spans_json = excluded.target_spans_json,
+                 from_content_hash = excluded.from_content_hash,
+                 to_content_hash = excluded.to_content_hash,
+                 confidence_score = excluded.confidence_score,
+                 confidence_tier = excluded.confidence_tier,
+                 rationale = excluded.rationale,
+                 pass_id = excluded.pass_id,
+                 model_identity = excluded.model_identity,
+                 generated_at = excluded.generated_at,
+                 state = 'active',
+                 reviewer = NULL,
+                 promoted_at = NULL,
+                 graph_edge_id = NULL",
+            params![
+                from_key,
+                to_key,
+                kind,
+                epistemic,
+                source_spans,
+                target_spans,
+                link.from_content_hash,
+                link.to_content_hash,
+                link.confidence_score,
+                tier,
+                link.rationale,
+                link.provenance.pass_id,
+                link.provenance.model_identity,
+                generated_at,
+            ],
+        )?;
 
-    let event_kind = if existing_tier.is_some() {
-        "regenerated"
-    } else {
-        "generated"
-    };
-    append_event(
-        conn,
-        &AuditEvent {
-            from_node: &from_key,
-            to_node: &to_key,
-            kind,
-            event_kind,
-            reviewer: None,
-            previous_tier: existing_tier.as_deref(),
-            new_tier: Some(tier),
-            reason: None,
-            pass_id: &link.provenance.pass_id,
-            model_identity: &link.provenance.model_identity,
-        },
-    )?;
+        let event_kind = if existing_tier.is_some() {
+            "regenerated"
+        } else {
+            "generated"
+        };
+        append_event(
+            conn,
+            &AuditEvent {
+                from_node: &from_key,
+                to_node: &to_key,
+                kind,
+                event_kind,
+                reviewer: None,
+                previous_tier: existing_tier.as_deref(),
+                new_tier: Some(tier),
+                reason: None,
+                pass_id: &link.provenance.pass_id,
+                model_identity: &link.provenance.model_identity,
+            },
+        )?;
 
-    Ok(())
+        Ok(())
+    })
 }
 
 /// Delete every candidate whose either endpoint is absent from `live`.
@@ -132,31 +135,34 @@ pub(crate) fn prune_orphans(conn: &Connection, live: &HashSet<String>) -> crate:
     drop(stmt);
 
     let mut removed = 0usize;
-    for (from_node, to_node, kind, tier, pass_id, model_identity) in rows {
-        if !live.contains(&from_node) || !live.contains(&to_node) {
-            conn.execute(
-                "DELETE FROM cross_links
-                 WHERE from_node = ?1 AND to_node = ?2 AND kind = ?3",
-                params![from_node, to_node, kind],
-            )?;
-            append_event(
-                conn,
-                &AuditEvent {
-                    from_node: &from_node,
-                    to_node: &to_node,
-                    kind: &kind,
-                    event_kind: "pruned",
-                    reviewer: None,
-                    previous_tier: Some(&tier),
-                    new_tier: None,
-                    reason: Some("source_deleted"),
-                    pass_id: &pass_id,
-                    model_identity: &model_identity,
-                },
-            )?;
-            removed += 1;
+    with_write_transaction(conn, |conn| {
+        for (from_node, to_node, kind, tier, pass_id, model_identity) in &rows {
+            if !live.contains(from_node) || !live.contains(to_node) {
+                conn.execute(
+                    "DELETE FROM cross_links
+                     WHERE from_node = ?1 AND to_node = ?2 AND kind = ?3",
+                    params![from_node, to_node, kind],
+                )?;
+                append_event(
+                    conn,
+                    &AuditEvent {
+                        from_node,
+                        to_node,
+                        kind,
+                        event_kind: "pruned",
+                        reviewer: None,
+                        previous_tier: Some(tier),
+                        new_tier: None,
+                        reason: Some("source_deleted"),
+                        pass_id,
+                        model_identity,
+                    },
+                )?;
+                removed += 1;
+            }
         }
-    }
+        Ok(())
+    })?;
     Ok(removed)
 }
 
@@ -196,29 +202,31 @@ pub(crate) fn update_tier(
     };
     let previous_tier = Some(previous_tier);
 
-    conn.execute(
-        "UPDATE cross_links
-         SET confidence_tier = ?1, confidence_score = ?2
-         WHERE from_node = ?3 AND to_node = ?4 AND kind = ?5",
-        params![new_tier.as_str(), new_score, from_key, to_key, kind_str],
-    )?;
+    with_write_transaction(conn, |conn| {
+        conn.execute(
+            "UPDATE cross_links
+             SET confidence_tier = ?1, confidence_score = ?2
+             WHERE from_node = ?3 AND to_node = ?4 AND kind = ?5",
+            params![new_tier.as_str(), new_score, from_key, to_key, kind_str],
+        )?;
 
-    append_event(
-        conn,
-        &AuditEvent {
-            from_node: &from_key,
-            to_node: &to_key,
-            kind: kind_str,
-            event_kind: "tier_changed",
-            reviewer: None,
-            previous_tier: previous_tier.as_deref(),
-            new_tier: Some(new_tier.as_str()),
-            reason: Some(reason),
-            pass_id: &pass_id,
-            model_identity: &model_identity,
-        },
-    )?;
-    Ok(())
+        append_event(
+            conn,
+            &AuditEvent {
+                from_node: &from_key,
+                to_node: &to_key,
+                kind: kind_str,
+                event_kind: "tier_changed",
+                reviewer: None,
+                previous_tier: previous_tier.as_deref(),
+                new_tier: Some(new_tier.as_str()),
+                reason: Some(reason),
+                pass_id: &pass_id,
+                model_identity: &model_identity,
+            },
+        )?;
+        Ok(())
+    })
 }
 
 /// Refresh a candidate's stored endpoint hashes and verified spans after a
@@ -267,36 +275,38 @@ pub(crate) fn refresh_hashes(
         )));
     };
 
-    conn.execute(
-        "UPDATE cross_links
-         SET from_content_hash = ?1, to_content_hash = ?2,
-             source_spans_json = ?3, target_spans_json = ?4
-         WHERE from_node = ?5 AND to_node = ?6 AND kind = ?7",
-        params![
-            new_from_hash,
-            new_to_hash,
-            source_spans_json,
-            target_spans_json,
-            from_key,
-            to_key,
-            kind_str
-        ],
-    )?;
+    with_write_transaction(conn, |conn| {
+        conn.execute(
+            "UPDATE cross_links
+             SET from_content_hash = ?1, to_content_hash = ?2,
+                 source_spans_json = ?3, target_spans_json = ?4
+             WHERE from_node = ?5 AND to_node = ?6 AND kind = ?7",
+            params![
+                new_from_hash,
+                new_to_hash,
+                source_spans_json,
+                target_spans_json,
+                from_key,
+                to_key,
+                kind_str
+            ],
+        )?;
 
-    append_event(
-        conn,
-        &AuditEvent {
-            from_node: &from_key,
-            to_node: &to_key,
-            kind: kind_str,
-            event_kind: "revalidated",
-            reviewer: None,
-            previous_tier: Some(&tier),
-            new_tier: Some(&tier),
-            reason: Some("spans_reverified"),
-            pass_id: &pass_id,
-            model_identity: &model_identity,
-        },
-    )?;
-    Ok(())
+        append_event(
+            conn,
+            &AuditEvent {
+                from_node: &from_key,
+                to_node: &to_key,
+                kind: kind_str,
+                event_kind: "revalidated",
+                reviewer: None,
+                previous_tier: Some(&tier),
+                new_tier: Some(&tier),
+                reason: Some("spans_reverified"),
+                pass_id: &pass_id,
+                model_identity: &model_identity,
+            },
+        )?;
+        Ok(())
+    })
 }

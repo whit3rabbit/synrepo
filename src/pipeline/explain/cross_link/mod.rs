@@ -108,6 +108,19 @@ pub const HIGH_TIER_MIN_SPANS: usize = 2;
 /// tier. Matches the triage cutoff.
 pub const HIGH_TIER_MAX_DISTANCE: u32 = 2;
 
+// Score weights. The doc on `score()` documents how these combine; if you
+// change a value here, update the shape description there too.
+const BASE_LCS_WEIGHT: f32 = 0.7;
+const MULTI_SPAN_BONUS: f32 = 0.2;
+const SINGLE_SPAN_BONUS: f32 = 0.1;
+const LENGTH_BONUS: f32 = 0.1;
+const OVER_DISTANCE_PENALTY: f32 = 0.1;
+/// Span length (chars of normalized text) at which the length bonus
+/// saturates: above this value every additional char adds zero.
+const LENGTH_BONUS_CAP_CHARS: usize = 64;
+/// Saturation cap on the over-distance penalty in hops.
+const OVER_DISTANCE_HOP_CAP: u32 = 3;
+
 /// Deterministic confidence scoring.
 ///
 /// Combines span count, LCS ratio per span, average span length, and graph
@@ -146,26 +159,26 @@ pub fn score(
     }
 
     let mean_lcs: f32 = spans.iter().map(|s| s.lcs_ratio).sum::<f32>() / (spans.len() as f32);
-    let base = mean_lcs * 0.7;
+    let base = mean_lcs * BASE_LCS_WEIGHT;
 
     let span_bonus = if spans.len() >= HIGH_TIER_MIN_SPANS {
-        0.2
+        MULTI_SPAN_BONUS
     } else {
-        0.1
+        SINGLE_SPAN_BONUS
     };
 
     let mean_len: f32 = spans
         .iter()
-        .map(|s| s.normalized_text.len().min(64) as f32)
+        .map(|s| s.normalized_text.len().min(LENGTH_BONUS_CAP_CHARS) as f32)
         .sum::<f32>()
         / (spans.len() as f32);
-    let length_bonus = (mean_len / 64.0) * 0.1;
+    let length_bonus = (mean_len / LENGTH_BONUS_CAP_CHARS as f32) * LENGTH_BONUS;
 
     let distance_penalty = if graph_distance <= HIGH_TIER_MAX_DISTANCE {
         0.0
     } else {
-        let over = (graph_distance - HIGH_TIER_MAX_DISTANCE).min(3) as f32;
-        -over * 0.1
+        let over = (graph_distance - HIGH_TIER_MAX_DISTANCE).min(OVER_DISTANCE_HOP_CAP) as f32;
+        -over * OVER_DISTANCE_PENALTY
     };
 
     let raw = (base + span_bonus + length_bonus + distance_penalty).clamp(0.0, 1.0);

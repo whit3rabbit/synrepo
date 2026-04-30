@@ -157,6 +157,7 @@ pub fn run_watch_service(
         tx.clone(),
         stop_flag.clone(),
         auto_sync_enabled.clone(),
+        config.watch_sync_timeout_seconds,
     )?;
 
     emit_event(&events, |now| WatchEvent::ReconcileStarted {

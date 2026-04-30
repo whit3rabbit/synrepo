@@ -44,6 +44,7 @@ pub fn build_header_vm(
         Some(d) => match &d.reconcile_health {
             ReconcileHealth::Current => ("current".to_string(), Severity::Healthy),
             ReconcileHealth::Stale(_) => ("stale".to_string(), Severity::Stale),
+            ReconcileHealth::WatchStalled { .. } => ("watch_stalled".to_string(), Severity::Stale),
             ReconcileHealth::Unknown => ("unknown".to_string(), Severity::Stale),
             ReconcileHealth::Corrupt(_) => ("corrupt".to_string(), Severity::Blocked),
         },
@@ -291,6 +292,13 @@ pub fn build_next_actions(
             ReconcileHealth::Stale(_) | ReconcileHealth::Unknown => {
                 out.push(NextAction {
                     label: "Reconcile is stale — refresh with `synrepo reconcile` (press R / S)"
+                        .to_string(),
+                    severity: Severity::Stale,
+                });
+            }
+            ReconcileHealth::WatchStalled { .. } => {
+                out.push(NextAction {
+                    label: "Watch loop appears wedged — restart with `synrepo watch stop` then `synrepo watch`"
                         .to_string(),
                     severity: Severity::Stale,
                 });

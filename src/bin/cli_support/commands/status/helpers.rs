@@ -51,6 +51,9 @@ pub fn next_step(diag: &RuntimeDiagnostics, graph_missing: bool) -> &'static str
         (_, _, WatchServiceStatus::Starting) => {
             "watch service is starting — wait for it to become ready or use `synrepo watch status`"
         }
+        (ReconcileHealth::WatchStalled { .. }, _, _) => {
+            "watch service is up but the graph reconcile is over an hour old — run `synrepo watch stop` then `synrepo watch` to restart it"
+        }
         (_, _, WatchServiceStatus::Running(_)) => {
             "watch service is active — use `synrepo watch status` for runtime details"
         }

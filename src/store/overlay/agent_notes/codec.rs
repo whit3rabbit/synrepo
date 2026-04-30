@@ -7,7 +7,7 @@ use time::OffsetDateTime;
 
 use crate::overlay::{
     AgentNote, AgentNoteConfidence, AgentNoteStatus, AgentNoteTarget, AgentNoteTargetKind,
-    AgentNoteTransition, AGENT_NOTE_SOURCE_STORE,
+    AgentNoteTransition,
 };
 use crate::store::overlay::sqlite_values::{optional_u64_to_i64, row_optional_u64};
 
@@ -163,8 +163,8 @@ pub(super) fn upsert_note(conn: &Connection, note: &AgentNote) -> crate::Result<
             note.verified_at.map(format_time).transpose()?,
             note.verified_by,
             note.invalidated_by,
-            AGENT_NOTE_SOURCE_STORE,
-            1i64,
+            &note.source_store,
+            i64::from(note.advisory),
         ],
     )?;
     Ok(())

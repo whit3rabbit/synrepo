@@ -185,6 +185,10 @@ pub struct AgentNoteSourceHash {
     pub path: String,
     /// Content hash observed when the note was written or verified.
     pub hash: String,
+    /// Optional root discriminator for multi-root repos. When present,
+    /// drift detection uses `file_by_root_path` instead of `file_by_path`.
+    #[serde(default)]
+    pub root_id: Option<String>,
 }
 
 /// Advisory agent-authored note.

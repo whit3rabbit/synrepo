@@ -1,7 +1,7 @@
 use super::{atomic_write_file, bootstrap};
 use crate::bootstrap::BootstrapHealth;
 use crate::config::{Config, Mode};
-use crate::store::compatibility::{self, StoreId, STORE_FORMAT_VERSION};
+use crate::store::compatibility::{self, StoreId, GRAPH_FORMAT_VERSION};
 use crate::store::sqlite::SqliteGraphStore;
 use tempfile::tempdir;
 
@@ -211,7 +211,7 @@ fn bootstrap_blocks_on_newer_graph_store_version() {
             .unwrap();
     snapshot.store_format_versions.insert(
         StoreId::Graph.as_str().to_string(),
-        STORE_FORMAT_VERSION + 1,
+        GRAPH_FORMAT_VERSION + 1,
     );
     std::fs::write(
         compatibility::snapshot_path(&synrepo_dir),

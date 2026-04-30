@@ -13,7 +13,7 @@ use crate::overlay::{
 };
 use crate::structure::graph::GraphReader;
 
-use super::{sqlite_values::row_usize, SqliteOverlayStore};
+use super::{sqlite_values::row_usize, with_write_transaction, SqliteOverlayStore};
 
 impl SqliteOverlayStore {
     /// Insert an advisory agent note and append its creation transition.
@@ -21,20 +21,22 @@ impl SqliteOverlayStore {
         note.normalize_for_insert()?;
         note.updated_at = OffsetDateTime::now_utc();
         let conn = self.conn.lock();
-        upsert_note(&conn, &note)?;
-        insert_transition(
-            &conn,
-            &AgentNoteTransition {
-                note_id: note.note_id.clone(),
-                action: AgentNoteTransitionAction::Add,
-                previous_status: None,
-                new_status: note.status,
-                actor: note.created_by.clone(),
-                reason: None,
-                related_note: None,
-                happened_at: note.updated_at,
-            },
-        )?;
+        with_write_transaction(&conn, |conn| {
+            upsert_note(conn, &note)?;
+            insert_transition(
+                conn,
+                &AgentNoteTransition {
+                    note_id: note.note_id.clone(),
+                    action: AgentNoteTransitionAction::Add,
+                    previous_status: None,
+                    new_status: note.status,
+                    actor: note.created_by.clone(),
+                    reason: None,
+                    related_note: None,
+                    happened_at: note.updated_at,
+                },
+            )
+        })?;
         Ok(note)
     }
 
@@ -68,24 +70,26 @@ impl SqliteOverlayStore {
             )));
         }
         let now = OffsetDateTime::now_utc();
-        conn.execute(
-            "INSERT OR IGNORE INTO agent_note_links (from_note, to_note, actor, created_at)
-             VALUES (?1, ?2, ?3, ?4)",
-            params![from_note, to_note, actor, format_time(now)?],
-        )?;
-        insert_transition(
-            &conn,
-            &AgentNoteTransition {
-                note_id: from.note_id,
-                action: AgentNoteTransitionAction::Link,
-                previous_status: Some(from.status),
-                new_status: from.status,
-                actor: actor.to_string(),
-                reason: None,
-                related_note: Some(to_note.to_string()),
-                happened_at: now,
-            },
-        )
+        with_write_transaction(&conn, |conn| {
+            conn.execute(
+                "INSERT OR IGNORE INTO agent_note_links (from_note, to_note, actor, created_at)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![from_note, to_note, actor, format_time(now)?],
+            )?;
+            insert_transition(
+                conn,
+                &AgentNoteTransition {
+                    note_id: from.note_id,
+                    action: AgentNoteTransitionAction::Link,
+                    previous_status: Some(from.status),
+                    new_status: from.status,
+                    actor: actor.to_string(),
+                    reason: None,
+                    related_note: Some(to_note.to_string()),
+                    happened_at: now,
+                },
+            )
+        })
     }
 
     /// Supersede an existing note with a replacement note.
@@ -112,34 +116,36 @@ impl SqliteOverlayStore {
         if replacement.evidence.is_empty() && replacement.status == AgentNoteStatus::Active {
             replacement.status = AgentNoteStatus::Unverified;
         }
-        upsert_note(&conn, &old)?;
-        upsert_note(&conn, &replacement)?;
-        insert_transition(
-            &conn,
-            &AgentNoteTransition {
-                note_id: old.note_id,
-                action: AgentNoteTransitionAction::Supersede,
-                previous_status: Some(previous),
-                new_status: AgentNoteStatus::Superseded,
-                actor: actor.to_string(),
-                reason: None,
-                related_note: Some(replacement.note_id.clone()),
-                happened_at: now,
-            },
-        )?;
-        insert_transition(
-            &conn,
-            &AgentNoteTransition {
-                note_id: replacement.note_id.clone(),
-                action: AgentNoteTransitionAction::Add,
-                previous_status: None,
-                new_status: replacement.status,
-                actor: actor.to_string(),
-                reason: Some("superseding replacement".to_string()),
-                related_note: Some(old_note.to_string()),
-                happened_at: now,
-            },
-        )?;
+        with_write_transaction(&conn, |conn| {
+            upsert_note(conn, &old)?;
+            upsert_note(conn, &replacement)?;
+            insert_transition(
+                conn,
+                &AgentNoteTransition {
+                    note_id: old.note_id,
+                    action: AgentNoteTransitionAction::Supersede,
+                    previous_status: Some(previous),
+                    new_status: AgentNoteStatus::Superseded,
+                    actor: actor.to_string(),
+                    reason: None,
+                    related_note: Some(replacement.note_id.clone()),
+                    happened_at: now,
+                },
+            )?;
+            insert_transition(
+                conn,
+                &AgentNoteTransition {
+                    note_id: replacement.note_id.clone(),
+                    action: AgentNoteTransitionAction::Add,
+                    previous_status: None,
+                    new_status: replacement.status,
+                    actor: actor.to_string(),
+                    reason: Some("superseding replacement".to_string()),
+                    related_note: Some(old_note.to_string()),
+                    happened_at: now,
+                },
+            )
+        })?;
         Ok(replacement)
     }
 
@@ -160,20 +166,22 @@ impl SqliteOverlayStore {
         let now = OffsetDateTime::now_utc();
         note.status = AgentNoteStatus::Forgotten;
         note.updated_at = now;
-        upsert_note(&conn, &note)?;
-        insert_transition(
-            &conn,
-            &AgentNoteTransition {
-                note_id: note_id.to_string(),
-                action: AgentNoteTransitionAction::Forget,
-                previous_status: Some(previous),
-                new_status: AgentNoteStatus::Forgotten,
-                actor: actor.to_string(),
-                reason: reason.map(ToOwned::to_owned),
-                related_note: None,
-                happened_at: now,
-            },
-        )
+        with_write_transaction(&conn, |conn| {
+            upsert_note(conn, &note)?;
+            insert_transition(
+                conn,
+                &AgentNoteTransition {
+                    note_id: note_id.to_string(),
+                    action: AgentNoteTransitionAction::Forget,
+                    previous_status: Some(previous),
+                    new_status: AgentNoteStatus::Forgotten,
+                    actor: actor.to_string(),
+                    reason: reason.map(ToOwned::to_owned),
+                    related_note: None,
+                    happened_at: now,
+                },
+            )
+        })
     }
 
     /// Verify a note against current source-derived facts.
@@ -198,20 +206,22 @@ impl SqliteOverlayStore {
         if let Some(rev) = graph_revision {
             note.graph_revision = Some(rev);
         }
-        upsert_note(&conn, &note)?;
-        insert_transition(
-            &conn,
-            &AgentNoteTransition {
-                note_id: note_id.to_string(),
-                action: AgentNoteTransitionAction::Verify,
-                previous_status: Some(previous),
-                new_status: AgentNoteStatus::Active,
-                actor: actor.to_string(),
-                reason: None,
-                related_note: None,
-                happened_at: now,
-            },
-        )?;
+        with_write_transaction(&conn, |conn| {
+            upsert_note(conn, &note)?;
+            insert_transition(
+                conn,
+                &AgentNoteTransition {
+                    note_id: note_id.to_string(),
+                    action: AgentNoteTransitionAction::Verify,
+                    previous_status: Some(previous),
+                    new_status: AgentNoteStatus::Active,
+                    actor: actor.to_string(),
+                    reason: None,
+                    related_note: None,
+                    happened_at: now,
+                },
+            )
+        })?;
         Ok(note)
     }
 
@@ -224,39 +234,42 @@ impl SqliteOverlayStore {
         let conn = self.conn.lock();
         let now = OffsetDateTime::now_utc();
         let mut changed = 0usize;
-        for note_id in stale_note_ids {
-            let Some(mut note) = note_by_id_conn(&conn, note_id)? else {
-                continue;
-            };
-            if matches!(
-                note.status,
-                AgentNoteStatus::Forgotten
-                    | AgentNoteStatus::Superseded
-                    | AgentNoteStatus::Invalid
-                    | AgentNoteStatus::Stale
-            ) {
-                continue;
+        with_write_transaction(&conn, |conn| {
+            for note_id in stale_note_ids {
+                let Some(mut note) = note_by_id_conn(conn, note_id)? else {
+                    continue;
+                };
+                if matches!(
+                    note.status,
+                    AgentNoteStatus::Forgotten
+                        | AgentNoteStatus::Superseded
+                        | AgentNoteStatus::Invalid
+                        | AgentNoteStatus::Stale
+                ) {
+                    continue;
+                }
+                let previous = note.status;
+                note.status = AgentNoteStatus::Stale;
+                note.updated_at = now;
+                note.invalidated_by = Some(actor.to_string());
+                upsert_note(conn, &note)?;
+                insert_transition(
+                    conn,
+                    &AgentNoteTransition {
+                        note_id: note_id.clone(),
+                        action: AgentNoteTransitionAction::Invalidate,
+                        previous_status: Some(previous),
+                        new_status: AgentNoteStatus::Stale,
+                        actor: actor.to_string(),
+                        reason: Some("drift anchor mismatch".to_string()),
+                        related_note: None,
+                        happened_at: now,
+                    },
+                )?;
+                changed += 1;
             }
-            let previous = note.status;
-            note.status = AgentNoteStatus::Stale;
-            note.updated_at = now;
-            note.invalidated_by = Some(actor.to_string());
-            upsert_note(&conn, &note)?;
-            insert_transition(
-                &conn,
-                &AgentNoteTransition {
-                    note_id: note_id.clone(),
-                    action: AgentNoteTransitionAction::Invalidate,
-                    previous_status: Some(previous),
-                    new_status: AgentNoteStatus::Stale,
-                    actor: actor.to_string(),
-                    reason: Some("drift anchor mismatch".to_string()),
-                    related_note: None,
-                    happened_at: now,
-                },
-            )?;
-            changed += 1;
-        }
+            Ok(())
+        })?;
         Ok(changed)
     }
 
@@ -283,32 +296,48 @@ impl SqliteOverlayStore {
 }
 
 impl SqliteOverlayStore {
-    /// Query advisory notes with normal retrieval filtering.
+    /// Query advisory notes with normal retrieval filtering pushed to SQL.
     pub fn query_notes_impl(&self, query: AgentNoteQuery) -> crate::Result<Vec<AgentNote>> {
-        let mut notes = self.all_notes()?;
-        if let Some(kind) = query.target_kind {
-            notes.retain(|note| note.target.kind == kind);
+        let conn = self.conn.lock();
+        let mut sql = "SELECT note_id, target_kind, target_id, claim, evidence_json, created_by, created_at,
+                              updated_at, confidence, status, source_hashes_json, graph_revision,
+                              expires_on_drift, supersedes_json, superseded_by, verified_at, verified_by,
+                              invalidated_by, source_store, advisory
+                       FROM agent_notes WHERE 1=1"
+            .to_string();
+        let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+
+        if let Some(kind) = &query.target_kind {
+            sql.push_str(" AND target_kind = ?");
+            param_values.push(Box::new(kind.as_str().to_string()));
         }
         if let Some(target_id) = &query.target_id {
-            notes.retain(|note| note.target.id == *target_id);
+            sql.push_str(" AND target_id = ?");
+            param_values.push(Box::new(target_id.clone()));
         }
         if !query.include_forgotten {
-            notes.retain(|note| note.status != AgentNoteStatus::Forgotten);
+            sql.push_str(" AND status != 'forgotten'");
         }
         if !query.include_superseded {
-            notes.retain(|note| note.status != AgentNoteStatus::Superseded);
+            sql.push_str(" AND status != 'superseded'");
         }
         if !query.include_invalid {
-            notes.retain(|note| note.status != AgentNoteStatus::Invalid);
+            sql.push_str(" AND status != 'invalid'");
         }
-        notes.sort_by(|a, b| {
-            b.updated_at
-                .cmp(&a.updated_at)
-                .then(a.note_id.cmp(&b.note_id))
-        });
+        sql.push_str(" ORDER BY updated_at DESC, note_id ASC");
+
         let limit = query.limit.max(1);
-        notes.truncate(limit);
-        Ok(notes)
+        sql.push_str(" LIMIT ?");
+        param_values.push(Box::new(limit as i64));
+
+        let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+            param_values.iter().map(|p| p.as_ref()).collect();
+
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt
+            .query_map(params_refs.as_slice(), note_from_row)?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
     }
 
     /// Return every stored note for audit and repair scanning.
@@ -352,8 +381,12 @@ pub fn current_drifted_note_ids(
             }
         }
         for anchor in &note.source_hashes {
-            match graph.file_by_path(&anchor.path)? {
-                Some(file) if file.content_hash == anchor.hash => {}
+            let file = match &anchor.root_id {
+                Some(root_id) => graph.file_by_root_path(root_id, &anchor.path)?,
+                None => graph.file_by_path(&anchor.path)?,
+            };
+            match file {
+                Some(f) if f.content_hash == anchor.hash => {}
                 _ => {
                     stale.insert(note.note_id.clone());
                     break;

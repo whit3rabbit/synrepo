@@ -117,7 +117,21 @@ fn user_socket_dir() -> PathBuf {
     // 3. Fallback: temp_dir() with a user-bound name and 0700 permissions.
     let username = std::env::var("USER")
         .or_else(|_| std::env::var("LOGNAME"))
-        .unwrap_or_else(|_| "unknown".to_string());
+        .unwrap_or_else(|_| {
+            // Container shells often have neither USER nor LOGNAME set. Fall
+            // back to UID so two distinct users do not collide on
+            // `synrepo-run-unknown` and pay the salted-retry cost.
+            #[cfg(unix)]
+            {
+                current_uid_via_shell()
+                    .map(|uid| format!("uid-{uid}"))
+                    .unwrap_or_else(|| "unknown".to_string())
+            }
+            #[cfg(not(unix))]
+            {
+                "unknown".to_string()
+            }
+        });
 
     let base_dir = std::env::temp_dir().join(format!("synrepo-run-{}", username));
 
@@ -147,6 +161,20 @@ fn user_socket_dir() -> PathBuf {
     }
 
     base_dir
+}
+
+/// Read the effective UID by invoking `id -u`. Used for both the username
+/// fallback and the owner check in `harden_fallback_socket_dir`. Returns
+/// `None` if the command can't be invoked or the output is unparseable.
+///
+/// We shell out instead of calling `libc::geteuid` to keep the crate
+/// `#![deny(unsafe_code)]`-clean; the call happens at most twice per process
+/// lifetime so the cost is negligible.
+#[cfg(unix)]
+fn current_uid_via_shell() -> Option<u32> {
+    let output = std::process::Command::new("id").arg("-u").output().ok()?;
+    let stdout = std::str::from_utf8(&output.stdout).ok()?.trim();
+    stdout.parse::<u32>().ok()
 }
 
 #[cfg(unix)]
@@ -197,19 +225,31 @@ pub(crate) fn harden_fallback_socket_dir(dir: &Path) -> Result<(), WatchDaemonEr
     }
 
     if let Ok(meta) = fs::metadata(dir) {
-        let get_current_uid = || -> Option<u32> {
-            let output = std::process::Command::new("id").arg("-u").output().ok()?;
-            let stdout = std::str::from_utf8(&output.stdout).ok()?.trim();
-            stdout.parse::<u32>().ok()
-        };
-
-        if Some(meta.uid()) != get_current_uid() {
+        if Some(meta.uid()) != current_uid_via_shell() {
             return Err(WatchDaemonError::Security(format!(
                 "watch socket directory {} exists but is owned by UID {}; potential privilege escalation",
                 dir.display(),
                 meta.uid()
             )));
         }
+    }
+
+    // Enforce 0o700. `try_create_hardened_socket_dir` sets this on first create
+    // via DirBuilder::mode, but a pre-existing dir (AlreadyExists branch) keeps
+    // whatever permissions it had. Reapply here so we never rely on a symlink-
+    // verified, owner-verified directory still being mode 0700.
+    //
+    // There is a residual TOCTOU between the checks above and this chmod
+    // (set_permissions follows symlinks); a stricter fix would open the
+    // directory with O_NOFOLLOW | O_DIRECTORY and call fchmod. Deferred —
+    // the immediate gap was the missing chmod entirely.
+    use std::os::unix::fs::PermissionsExt;
+    let perms = fs::Permissions::from_mode(0o700);
+    if let Err(e) = fs::set_permissions(dir, perms) {
+        return Err(WatchDaemonError::Io {
+            path: dir.to_path_buf(),
+            source: e,
+        });
     }
 
     Ok(())

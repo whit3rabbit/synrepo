@@ -56,6 +56,12 @@ pub(crate) fn compact(repo_root: &Path, apply: bool, policy: CompactPolicy) -> a
         .map_err(|e| anyhow::anyhow!("compact: failed to execute: {e}"))?;
 
     println!("\n{}", summary.render());
+    if summary.has_failures() {
+        return Err(anyhow::anyhow!(
+            "compact: {} component(s) failed; see warnings above",
+            summary.failures.len()
+        ));
+    }
     println!("Compaction complete.");
     Ok(())
 }

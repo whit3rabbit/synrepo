@@ -145,7 +145,12 @@ pub(super) fn resolve_import_ref(
             return vec![];
         };
         let joined = dir.join(module_ref);
-        let normalized = normalize_path(&joined);
+        // `..` underflow returns None (escape outside the project root); drop
+        // the import rather than emitting a candidate that could re-escape via
+        // string concatenation downstream.
+        let Some(normalized) = normalize_path(&joined) else {
+            return vec![];
+        };
         let base_owned;
         // Graph paths use forward slashes on all platforms; Path::join uses the
         // OS separator on Windows, so normalize before matching.
@@ -165,17 +170,11 @@ pub(super) fn resolve_import_ref(
         let mut candidates = Vec::new();
         // Try bare path + common extensions
         for ext in &["ts", "tsx", "js", "jsx", "mts", "cts"] {
-            let candidate = format!("{base}.{ext}");
-            if !candidate.contains("..") {
-                candidates.push(candidate);
-            }
+            candidates.push(format!("{base}.{ext}"));
         }
         // Try index file inside the directory
         for ext in &["ts", "tsx", "js"] {
-            let candidate = format!("{base}/index.{ext}");
-            if !candidate.contains("..") {
-                candidates.push(candidate);
-            }
+            candidates.push(format!("{base}/index.{ext}"));
         }
         return candidates;
     }
@@ -243,16 +242,23 @@ fn resolve_go_import(module_ref: &str, root_id: &str, ctx: &ResolverContext) -> 
 }
 
 /// Resolve `..` and `.` components in `path` without touching the filesystem.
-fn normalize_path(path: &Path) -> PathBuf {
+///
+/// Returns `None` when a `..` would pop above the root (i.e. underflow). The
+/// caller treats `None` as "this import escapes the project root, drop it".
+/// Previously we silently dropped underflowing `..` components and relied on a
+/// downstream `candidate.contains("..")` check to catch the leftover marker;
+/// returning `None` makes the escape signal type-level and removes the need
+/// for that string-level paranoia.
+fn normalize_path(path: &Path) -> Option<PathBuf> {
     let mut parts: Vec<Component> = Vec::new();
     for component in path.components() {
         match component {
             Component::ParentDir => {
-                parts.pop();
+                parts.pop()?;
             }
             Component::CurDir => {}
             other => parts.push(other),
         }
     }
-    parts.iter().collect()
+    Some(parts.iter().collect())
 }

@@ -52,6 +52,15 @@ pub(super) fn parser_row(snapshot: &StatusSnapshot) -> ReadinessRow {
             detail: format!("last reconcile {outcome}"),
             next_action: Some("run `synrepo check` then `synrepo sync`".to_string()),
         },
+        ReconcileHealth::WatchStalled { last_reconcile_at } => ReadinessRow {
+            capability: Capability::Parser,
+            state: ReadinessState::Degraded,
+            detail: format!("watch up but last reconcile {last_reconcile_at} > 1h"),
+            next_action: Some(
+                "run `synrepo watch stop` then `synrepo watch` to restart the watch loop"
+                    .to_string(),
+            ),
+        },
         ReconcileHealth::Unknown => ReadinessRow {
             capability: Capability::Parser,
             state: ReadinessState::Stale,
@@ -233,6 +242,15 @@ pub(super) fn index_freshness_row(snapshot: &StatusSnapshot) -> ReadinessRow {
             state: ReadinessState::Stale,
             detail: format!("last outcome {outcome}"),
             next_action: Some("run `synrepo reconcile`".to_string()),
+        },
+        ReconcileHealth::WatchStalled { last_reconcile_at } => ReadinessRow {
+            capability: Capability::IndexFreshness,
+            state: ReadinessState::Stale,
+            detail: format!("watch up but last reconcile {last_reconcile_at} > 1h"),
+            next_action: Some(
+                "run `synrepo watch stop` then `synrepo watch` to restart the watch loop"
+                    .to_string(),
+            ),
         },
         ReconcileHealth::Unknown => ReadinessRow {
             capability: Capability::IndexFreshness,

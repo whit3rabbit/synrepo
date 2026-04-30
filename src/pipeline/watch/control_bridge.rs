@@ -33,6 +33,7 @@ pub(super) fn spawn_control_listener(
     tx: mpsc::Sender<LoopMessage>,
     stop_flag: Arc<AtomicBool>,
     auto_sync_enabled: Arc<AtomicBool>,
+    sync_timeout_seconds: u32,
 ) -> crate::Result<thread::JoinHandle<()>> {
     let endpoint = watch_control_endpoint(synrepo_dir);
 
@@ -72,6 +73,7 @@ pub(super) fn spawn_control_listener(
                     let auto_sync_enabled = auto_sync_enabled.clone();
                     let endpoint = endpoint.clone();
 
+                    let sync_timeout = Duration::from_secs(sync_timeout_seconds as u64);
                     thread::spawn(move || {
                         let mut reader = BufReader::new(&stream);
                         let request_result = read_control_request(&mut reader, &endpoint);
@@ -84,7 +86,7 @@ pub(super) fn spawn_control_listener(
                                 bridge_reconcile_request(&tx, fast)
                             }
                             Ok(WatchControlRequest::SyncNow { options }) => {
-                                bridge_sync_request(&tx, options)
+                                bridge_sync_request(&tx, options, sync_timeout)
                             }
                             Ok(WatchControlRequest::SetAutoSync { enabled }) => {
                                 auto_sync_enabled.store(enabled, Ordering::Relaxed);
@@ -158,6 +160,7 @@ fn bridge_reconcile_request(tx: &mpsc::Sender<LoopMessage>, fast: bool) -> Watch
 fn bridge_sync_request(
     tx: &mpsc::Sender<LoopMessage>,
     options: SyncOptions,
+    timeout: Duration,
 ) -> WatchControlResponse {
     let (respond_to, recv_from_loop) = mpsc::channel();
     if tx
@@ -172,10 +175,11 @@ fn bridge_sync_request(
         };
     }
 
-    // Sync may invoke LLM-backed commentary refresh; allow a longer wait than
-    // reconcile's 30 seconds. A wedged loop still surfaces eventually.
+    // Sync may invoke LLM-backed commentary refresh; the timeout is sourced
+    // from `Config::watch_sync_timeout_seconds` so big-repo refreshes can be
+    // tuned without recompiling. A wedged loop still surfaces eventually.
     recv_from_loop
-        .recv_timeout(Duration::from_secs(600))
+        .recv_timeout(timeout)
         .unwrap_or_else(|_| WatchControlResponse::Error {
             message: "watch loop did not answer the sync request in time".to_string(),
         })

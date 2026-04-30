@@ -105,7 +105,7 @@ pub(crate) fn upgrade(repo_root: &Path, apply: bool) -> anyhow::Result<()> {
         .map_err(|err| map_lock_error("upgrade", err))?;
 
     if !ordered.is_empty() {
-        apply_runtime_actions(&synrepo_dir, &report)
+        apply_runtime_actions(&_lock, &synrepo_dir, &report)
             .map_err(|e| anyhow::anyhow!("upgrade: failed to apply actions: {e}"))?;
     }
 

@@ -122,15 +122,27 @@ pub fn execute_compact(
         match comp.component {
             CompactComponent::Commentary => {
                 if let Some(ref mut store) = overlay_store {
-                    if let Ok(count) = store.compact_commentary(&policy) {
-                        summary.commentary_compacted = count;
+                    match store.compact_commentary(&policy) {
+                        Ok(count) => summary.commentary_compacted = count,
+                        Err(err) => {
+                            tracing::warn!(error = %err, "commentary compaction failed");
+                            summary
+                                .failures
+                                .push(format!("commentary compaction failed: {err}"));
+                        }
                     }
                 }
             }
             CompactComponent::CrossLinks => {
                 if let Some(ref mut store) = overlay_store {
-                    if let Ok(count) = store.compact_cross_links(&policy) {
-                        summary.cross_links_compacted = count;
+                    match store.compact_cross_links(&policy) {
+                        Ok(count) => summary.cross_links_compacted = count,
+                        Err(err) => {
+                            tracing::warn!(error = %err, "cross-link compaction failed");
+                            summary
+                                .failures
+                                .push(format!("cross-link compaction failed: {err}"));
+                        }
                     }
                 }
             }

@@ -63,7 +63,10 @@ impl StoreId {
 
     /// Expected format version for this store.
     pub(crate) fn expected_format_version(self) -> u32 {
-        super::STORE_FORMAT_VERSION
+        match self {
+            StoreId::Graph => super::GRAPH_FORMAT_VERSION,
+            _ => super::DEFAULT_FORMAT_VERSION,
+        }
     }
 }
 

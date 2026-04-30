@@ -20,9 +20,16 @@ pub fn normalize_scope_prefixes(paths: &[PathBuf]) -> Vec<String> {
 
 /// True if `file_path` (stored as recorded in the graph, possibly with
 /// backslashes on Windows) starts with any of the normalized prefixes.
+///
+/// Allocates only when `file_path` actually contains a backslash; on Unix and
+/// for normal forward-slash Windows paths the fast path borrows the input.
 pub fn path_matches_any_prefix(file_path: &str, prefixes: &[String]) -> bool {
-    let normalized = file_path.replace('\\', "/");
-    prefixes.iter().any(|p| normalized.starts_with(p.as_str()))
+    if file_path.contains('\\') {
+        let normalized = file_path.replace('\\', "/");
+        prefixes.iter().any(|p| normalized.starts_with(p.as_str()))
+    } else {
+        prefixes.iter().any(|p| file_path.starts_with(p.as_str()))
+    }
 }
 
 pub(super) fn in_scope(path: &str, prefixes: Option<&[String]>) -> bool {

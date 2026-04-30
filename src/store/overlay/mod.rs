@@ -43,6 +43,26 @@ use sqlite_values::row_usize;
 
 const OVERLAY_DB_FILENAME: &str = "overlay.db";
 
+/// Execute a closure inside a `BEGIN IMMEDIATE` transaction.
+/// Commits on `Ok`, rolls back on `Err`. The caller must already
+/// hold the connection mutex.
+pub(super) fn with_write_transaction<F, R>(conn: &Connection, f: F) -> crate::Result<R>
+where
+    F: FnOnce(&Connection) -> crate::Result<R>,
+{
+    conn.execute_batch("BEGIN IMMEDIATE")?;
+    match f(conn) {
+        Ok(result) => {
+            conn.execute_batch("COMMIT")?;
+            Ok(result)
+        }
+        Err(err) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            Err(err)
+        }
+    }
+}
+
 /// Sqlite-backed overlay store rooted at `.synrepo/overlay/`.
 pub struct SqliteOverlayStore {
     pub(super) conn: Mutex<Connection>,

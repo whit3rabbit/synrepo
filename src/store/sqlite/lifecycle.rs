@@ -55,6 +55,59 @@ impl SqliteGraphStore {
         Ok(())
     }
 
+    /// Conservative cap on the number of bound parameters per chunked UPDATE.
+    /// SQLite's default `SQLITE_MAX_VARIABLE_NUMBER` is 999 on older builds;
+    /// 500 leaves headroom for the trailing revision parameter and any
+    /// future additions to the SET clause.
+    const RETIRE_BULK_CHUNK: usize = 500;
+
+    /// Mark many symbols retired at `revision` in a single chunked UPDATE.
+    pub fn retire_symbols_bulk_impl(
+        &mut self,
+        ids: &[SymbolNodeId],
+        revision: u64,
+    ) -> crate::Result<()> {
+        self.retire_bulk_impl("symbols", ids, revision)
+    }
+
+    /// Mark many edges retired at `revision` in a single chunked UPDATE.
+    pub fn retire_edges_bulk_impl(&mut self, ids: &[EdgeId], revision: u64) -> crate::Result<()> {
+        self.retire_bulk_impl("edges", ids, revision)
+    }
+
+    /// Shared chunked UPDATE for retire-bulk on either `symbols` or `edges`.
+    /// `table` is a `&'static str` so callers can only pass hardcoded table
+    /// names; SQLite cannot bind identifiers, so injection is the trade-off.
+    fn retire_bulk_impl<I: ToString>(
+        &mut self,
+        table: &'static str,
+        ids: &[I],
+        revision: u64,
+    ) -> crate::Result<()> {
+        if ids.is_empty() {
+            return Ok(());
+        }
+        let conn = self.conn.lock();
+        let rev = revision as i64;
+        for chunk in ids.chunks(Self::RETIRE_BULK_CHUNK) {
+            let placeholders: String = std::iter::repeat_n("?", chunk.len())
+                .collect::<Vec<_>>()
+                .join(",");
+            let id_strings: Vec<String> = chunk.iter().map(|id| id.to_string()).collect();
+            let sql = format!(
+                "UPDATE {table} SET retired_at_rev = ?, \
+                  data = json_set(data, '$.retired_at_rev', ?) \
+                  WHERE id IN ({placeholders})"
+            );
+            let mut params_vec: Vec<rusqlite::types::Value> = vec![rev.into(), rev.into()];
+            for id_string in &id_strings {
+                params_vec.push(id_string.clone().into());
+            }
+            conn.execute(&sql, rusqlite::params_from_iter(params_vec.iter()))?;
+        }
+        Ok(())
+    }
+
     /// Clear retirement on a symbol and advance its last_observed_rev.
     pub fn unretire_symbol_impl(&mut self, id: SymbolNodeId, revision: u64) -> crate::Result<()> {
         let conn = self.conn.lock();

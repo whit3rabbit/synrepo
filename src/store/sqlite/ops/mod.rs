@@ -257,6 +257,22 @@ impl GraphStore for SqliteGraphStore {
         self.retire_edge_impl(id, revision)
     }
 
+    fn retire_symbols_bulk(
+        &mut self,
+        ids: &[crate::core::ids::SymbolNodeId],
+        revision: u64,
+    ) -> crate::Result<()> {
+        self.retire_symbols_bulk_impl(ids, revision)
+    }
+
+    fn retire_edges_bulk(
+        &mut self,
+        ids: &[crate::core::ids::EdgeId],
+        revision: u64,
+    ) -> crate::Result<()> {
+        self.retire_edges_bulk_impl(ids, revision)
+    }
+
     fn unretire_symbol(
         &mut self,
         id: crate::core::ids::SymbolNodeId,

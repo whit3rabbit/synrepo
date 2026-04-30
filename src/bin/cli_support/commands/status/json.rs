@@ -47,6 +47,10 @@ pub(super) fn write_status_json(
         ReconcileHealth::Stale(synrepo::pipeline::diagnostics::ReconcileStaleness::Age {
             ..
         }) => ("stale", Some("age".to_string())),
+        ReconcileHealth::WatchStalled { .. } => (
+            "watch_stalled",
+            Some("watch_running_old_reconcile".to_string()),
+        ),
         ReconcileHealth::Unknown => ("unknown", None),
         ReconcileHealth::Corrupt(_) => ("corrupt", None),
     };

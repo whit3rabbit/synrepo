@@ -163,6 +163,20 @@ fn compact_plan_fills_estimates() {
 }
 
 #[test]
+fn compact_summary_renders_failures_with_failed_marker() {
+    let mut summary = crate::pipeline::maintenance::CompactSummary::default();
+    summary.commentary_compacted = 5;
+    summary
+        .failures
+        .push("commentary compaction failed: db locked".to_string());
+
+    assert!(summary.has_failures());
+    let rendered = summary.render();
+    assert!(rendered.contains("5 commentary entries compacted"));
+    assert!(rendered.contains("FAILED: commentary compaction failed: db locked"));
+}
+
+#[test]
 fn execute_compact_full_pass() {
     let dir = tempdir().unwrap();
     let synrepo_dir = dir.path().join(".synrepo");

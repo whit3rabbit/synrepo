@@ -506,10 +506,12 @@ const KOTLIN_KIND_MAP: &[SymbolKind] =
     &[SymbolKind::Class, SymbolKind::Function, SymbolKind::Class];
 const KOTLIN_CALL_QUERY: &str = r#"
 (call_expression (identifier) @callee)
+(call_expression (navigation_expression (identifier) @callee))
 "#;
 const KOTLIN_CALL_MODE_MAP: &[super::CallMode] = &[super::CallMode::Free, super::CallMode::Method];
 const KOTLIN_IMPORT_QUERY: &str = r#"
 (import (identifier) @import_ref)
+(import (qualified_identifier) @import_ref)
 "#;
 
 // --- C# queries ---
@@ -536,6 +538,7 @@ const CSHARP_CALL_QUERY: &str = r#"
 const CSHARP_CALL_MODE_MAP: &[super::CallMode] = &[super::CallMode::Free, super::CallMode::Method];
 const CSHARP_IMPORT_QUERY: &str = r#"
 (using_directive (identifier) @import_ref)
+(using_directive (qualified_name) @import_ref)
 "#;
 
 // --- PHP queries ---
@@ -660,9 +663,10 @@ const DART_KIND_MAP: &[SymbolKind] = &[
     SymbolKind::Class,
 ];
 const DART_CALL_QUERY: &str = r#"
-(identifier) @callee
+(unconditional_assignable_selector (identifier) @callee)
+(assignable_expression (identifier) @callee)
 "#;
-const DART_CALL_MODE_MAP: &[super::CallMode] = &[super::CallMode::Free];
+const DART_CALL_MODE_MAP: &[super::CallMode] = &[super::CallMode::Method, super::CallMode::Free];
 const DART_IMPORT_QUERY: &str = r#"
 (uri) @import_ref
 "#;

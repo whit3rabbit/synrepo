@@ -55,6 +55,11 @@ pub(super) fn write_status_text(
         ReconcileHealth::Stale(synrepo::pipeline::diagnostics::ReconcileStaleness::Age {
             ..
         }) => writeln!(out, "  reconcile:    stale (over 1 hour old)").unwrap(),
+        ReconcileHealth::WatchStalled { last_reconcile_at } => writeln!(
+            out,
+            "  reconcile:    watch_stalled (watch up but last reconcile {last_reconcile_at} > 1h)"
+        )
+        .unwrap(),
         ReconcileHealth::Unknown => writeln!(out, "  reconcile:    unknown (never run)").unwrap(),
         ReconcileHealth::Corrupt(e) => writeln!(out, "  reconcile:    corrupt ({e})").unwrap(),
     }
