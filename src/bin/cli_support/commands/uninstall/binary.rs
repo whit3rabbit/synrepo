@@ -7,6 +7,10 @@ use serde::Serialize;
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum BinaryTeardown {
+    // `classify` only constructs this variant under `cfg(not(windows))`, but
+    // the matching arm in `plan.rs` is cross-platform and the dead-code lint
+    // does not consider matches as "construction".
+    #[cfg_attr(windows, allow(dead_code))]
     DeleteDirect {
         path: PathBuf,
     },
@@ -65,10 +69,10 @@ pub(crate) fn classify(repo_root: &Path, path: &Path) -> BinaryTeardown {
 
     #[cfg(windows)]
     {
-        return BinaryTeardown::ManualCommand {
+        BinaryTeardown::ManualCommand {
             command: format!("Remove-Item -LiteralPath '{}' -Force", path.display()),
             reason: "Windows cannot reliably delete the running executable".to_string(),
-        };
+        }
     }
 
     #[cfg(not(windows))]
@@ -78,12 +82,12 @@ pub(crate) fn classify(repo_root: &Path, path: &Path) -> BinaryTeardown {
                 path: path.to_path_buf(),
             };
         }
-    }
 
-    BinaryTeardown::Skipped {
-        path: Some(path.to_path_buf()),
-        reason: "binary install method is unknown; remove it manually after reviewing the path"
-            .to_string(),
+        BinaryTeardown::Skipped {
+            path: Some(path.to_path_buf()),
+            reason: "binary install method is unknown; remove it manually after reviewing the path"
+                .to_string(),
+        }
     }
 }
 
