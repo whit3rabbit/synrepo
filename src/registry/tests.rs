@@ -196,10 +196,13 @@ fn record_project_preserves_existing_metadata() {
 fn load_project_entry_with_missing_defaulted_fields() {
     let dir = tempdir().unwrap();
     let path = dir.path().join("projects.toml");
+    // Use TOML literal-string syntax (single quotes) for the path so Windows
+    // backslashes (`\R`, `\U`, etc.) are not interpreted as escape sequences
+    // by the basic-string parser. Tempdir paths never contain single quotes.
     fs::write(
         &path,
         format!(
-            "schema_version = 1\n\n[[project]]\npath = \"{}\"\ninitialized_at = \"2026-04-19T00:00:00Z\"\n",
+            "schema_version = 1\n\n[[project]]\npath = '{}'\ninitialized_at = \"2026-04-19T00:00:00Z\"\n",
             dir.path().display()
         ),
     )

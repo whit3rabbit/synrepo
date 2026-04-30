@@ -188,7 +188,18 @@ mod tests {
 
         let rendered = report.render();
         assert!(rendered.contains("Agent doctrine: tiny → normal → deep."));
-        assert!(rendered.contains(".claude/skills/synrepo/SKILL.md"));
+        // `Path::display()` uses the platform separator (`/` on Unix, `\` on
+        // Windows), so build the expected substring the same way rather than
+        // hardcoding forward slashes.
+        let expected = std::path::PathBuf::from(".claude")
+            .join("skills")
+            .join("synrepo")
+            .join("SKILL.md");
+        let expected_display = expected.display().to_string();
+        assert!(
+            rendered.contains(&expected_display),
+            "expected rendered output to contain {expected_display:?}, got {rendered:?}"
+        );
         assert!(!rendered.contains("Run `synrepo agent-setup"));
     }
 

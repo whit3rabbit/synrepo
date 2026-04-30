@@ -342,7 +342,14 @@ fn watch_active_apply_delegates_reconcile() {
     let (dir, state) = state_with_files(&[("src/lib.rs", "one\ntwo\n")]);
     let synrepo_dir = Config::synrepo_dir(dir.path());
     let repo_root = dir.path().to_path_buf();
-    let config = Config::load(dir.path()).unwrap();
+    let mut config = Config::load(dir.path()).unwrap();
+    // Disable auto-sync so the watch service does not re-acquire the writer
+    // lock on its own thread immediately after startup reconcile. With
+    // auto-sync on (the default), the apply call below races the watch
+    // thread's lock and surfaces `LockError::WrongThread` as
+    // `writer_lock_conflict`. The test exercises reconcile delegation, not
+    // auto-sync, so disabling it does not weaken coverage.
+    config.auto_sync_enabled = false;
     let watch_synrepo_dir = synrepo_dir.clone();
     let watch_repo_root = repo_root.clone();
     let watch_config = config.clone();
@@ -357,6 +364,16 @@ fn watch_active_apply_delegates_reconcile() {
         )
     });
     wait_for_watch(&synrepo_dir);
+    // Wait for the startup reconcile to finish (and its writer lock to be
+    // released) before calling apply on this thread; otherwise the apply
+    // path's `acquire_writer_lock` returns `WrongThread` because the watch
+    // thread still owns the in-process re-entrancy slot.
+    for _ in 0..200 {
+        if crate::pipeline::watch::load_reconcile_state(&synrepo_dir).is_ok() {
+            break;
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
 
     let prepared = prepare(
         &state,
