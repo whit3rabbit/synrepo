@@ -228,7 +228,7 @@ fn codex_rejects_non_table_mcp() {
 #[test]
 fn codex_global_uses_codex_home_without_repo_flag() {
     let home = tempdir().unwrap();
-    let codex_home = home.path().canonicalize().unwrap();
+    let codex_home = crate::cli_support::tests::support::canonicalize_no_verbatim(home.path());
     let _lock =
         synrepo::test_support::global_test_lock(synrepo::config::test_home::HOME_ENV_TEST_LOCK);
     let _guard = EnvGuard::set("CODEX_HOME", &codex_home);

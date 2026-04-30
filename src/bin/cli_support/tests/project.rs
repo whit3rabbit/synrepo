@@ -16,7 +16,7 @@ fn home_guard() -> (
     let lock =
         synrepo::test_support::global_test_lock(synrepo::config::test_home::HOME_ENV_TEST_LOCK);
     let home = tempdir().unwrap();
-    let canonical_home = std::fs::canonicalize(home.path()).unwrap();
+    let canonical_home = super::support::canonicalize_no_verbatim(home.path());
     let guard = synrepo::config::test_home::HomeEnvGuard::redirect_to(&canonical_home);
     (lock, home, guard)
 }

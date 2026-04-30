@@ -77,7 +77,7 @@ fn opencode_global_uses_user_config_without_repo_flag() {
     let _home_lock =
         synrepo::test_support::global_test_lock(synrepo::config::test_home::HOME_ENV_TEST_LOCK);
     let home = tempdir().unwrap();
-    let canonical_home = home.path().canonicalize().unwrap();
+    let canonical_home = crate::cli_support::tests::support::canonicalize_no_verbatim(home.path());
     let _home_guard = synrepo::config::test_home::HomeEnvGuard::redirect_to(&canonical_home);
     let dir = tempdir().unwrap();
 

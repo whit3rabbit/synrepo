@@ -16,6 +16,25 @@ use synrepo::structure::graph::{
 use synrepo::NodeId;
 use time::OffsetDateTime;
 
+/// Canonicalize `path` and strip the Windows verbatim (`\\?\`) prefix.
+///
+/// `std::fs::canonicalize` returns paths prefixed with `\\?\` on Windows.
+/// `agent-config` 0.1 walks parent directories during HOME-relative MCP
+/// installs and fails on `\\?\C:` (the bare verbatim drive root) with
+/// "Incorrect function (os error 1)". Stripping the prefix yields a
+/// drive-letter path that the crate handles correctly. No-op on other OSes.
+pub(crate) fn canonicalize_no_verbatim(path: &std::path::Path) -> std::path::PathBuf {
+    let canonical = std::fs::canonicalize(path).expect("canonicalize tempdir path");
+    #[cfg(windows)]
+    {
+        let s = canonical.as_os_str().to_string_lossy().into_owned();
+        if let Some(rest) = s.strip_prefix(r"\\?\") {
+            return std::path::PathBuf::from(rest);
+        }
+    }
+    canonical
+}
+
 pub(super) fn git(repo: &tempfile::TempDir, args: &[&str]) {
     let output = Command::new("git")
         .args(args)

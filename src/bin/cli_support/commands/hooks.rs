@@ -190,7 +190,13 @@ mod tests {
                 .find(|hook| hook.name == *hook_name)
                 .expect("hook record should exist");
             assert_eq!(hook.mode, "full_file");
-            assert_eq!(hook.path, format!(".git/hooks/{hook_name}"));
+            // `registry_path_string` returns the platform-native path string
+            // (forward slash on Unix, backslash on Windows), so build the
+            // expected value via `PathBuf::join` to match either separator.
+            let expected = std::path::PathBuf::from(".git")
+                .join("hooks")
+                .join(hook_name);
+            assert_eq!(hook.path, expected.to_string_lossy());
         }
     }
 }

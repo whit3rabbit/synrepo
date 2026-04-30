@@ -115,10 +115,14 @@ mod tests {
     #[test]
     fn cargo_binary_uses_manual_cargo_uninstall() {
         let home = std::path::Path::new("/tmp/home");
-        let out = classify(
-            std::path::Path::new("/repo"),
-            &home.join(".cargo/bin/synrepo"),
-        );
+        // `classify` matches Cargo-installed binaries against
+        // `/.cargo/bin/synrepo` (Unix) or `\.cargo\bin\synrepo.exe` (Windows),
+        // so the test path must match the platform layout.
+        #[cfg(not(windows))]
+        let cargo_bin = home.join(".cargo/bin/synrepo");
+        #[cfg(windows)]
+        let cargo_bin = std::path::PathBuf::from(r"C:\Users\u\.cargo\bin\synrepo.exe");
+        let out = classify(std::path::Path::new("/repo"), &cargo_bin);
         assert!(matches!(
             out,
             BinaryTeardown::ManualCommand { ref command, .. } if command == "cargo uninstall synrepo"

@@ -6,6 +6,7 @@ use agent_config::Scope;
 
 use crate::cli_support::agent_shims::AgentTool;
 use crate::cli_support::commands::step_register_mcp;
+use crate::cli_support::tests::support::canonicalize_no_verbatim;
 
 fn redirect_home() -> (
     synrepo::test_support::GlobalTestLock,
@@ -15,7 +16,7 @@ fn redirect_home() -> (
     let lock =
         synrepo::test_support::global_test_lock(synrepo::config::test_home::HOME_ENV_TEST_LOCK);
     let home = tempdir().unwrap();
-    let canonical_home = home.path().canonicalize().unwrap();
+    let canonical_home = canonicalize_no_verbatim(home.path());
     let guard = synrepo::config::test_home::HomeEnvGuard::redirect_to(&canonical_home);
     (lock, home, guard)
 }
@@ -31,7 +32,7 @@ fn claude_global_uses_user_config_without_repo_flag() {
 
     step_register_mcp(repo.path(), AgentTool::Claude, &Scope::Global).unwrap();
 
-    let path = claude_global_config_path(&home.path().canonicalize().unwrap());
+    let path = claude_global_config_path(&canonicalize_no_verbatim(home.path()));
     let parsed: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
     assert_eq!(parsed["mcpServers"]["synrepo"]["command"], "synrepo");
@@ -54,10 +55,7 @@ fn cursor_global_uses_user_config_without_repo_flag() {
 
     step_register_mcp(repo.path(), AgentTool::Cursor, &Scope::Global).unwrap();
 
-    let path = home
-        .path()
-        .canonicalize()
-        .unwrap()
+    let path = canonicalize_no_verbatim(home.path())
         .join(".cursor")
         .join("mcp.json");
     let parsed: serde_json::Value =
