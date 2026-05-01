@@ -87,17 +87,17 @@ fn draw(frame: &mut ratatui::Frame, state: &SetupWizardState, theme: &Theme) {
 
     let title = Paragraph::new(Line::from(Span::styled(
         match state.step {
-            SetupStep::Splash => " synrepo setup — step 1/5: welcome ",
-            SetupStep::SelectMode => " synrepo setup — step 2/5: graph mode ",
-            SetupStep::SelectTarget => " synrepo setup — step 3/5: agent integration ",
-            SetupStep::ExplainExplain => " synrepo setup — step 4/5: what explain does ",
-            SetupStep::SelectExplain => " synrepo setup — step 4/5: LLM explain ",
-            SetupStep::EditCloudApiKey => " synrepo setup — step 4a: cloud API key ",
-            SetupStep::SelectLocalPreset => " synrepo setup — step 4a: local LLM preset ",
-            SetupStep::EditLocalEndpoint => " synrepo setup — step 4b: local endpoint ",
-            SetupStep::ReviewExplainPlan => " synrepo setup — step 4c: review explain plan ",
-            SetupStep::Confirm => " synrepo setup — step 5/5: confirm ",
-            SetupStep::Complete => " synrepo setup — done ",
+            SetupStep::Splash => " synrepo setup: step 1/5 welcome ",
+            SetupStep::SelectMode => " synrepo setup: step 2/5 graph mode ",
+            SetupStep::SelectTarget => " synrepo setup: step 3/5 agent integration ",
+            SetupStep::ExplainExplain => " synrepo setup: step 4/5 what explain does ",
+            SetupStep::SelectExplain => " synrepo setup: step 4/5 LLM explain ",
+            SetupStep::EditCloudApiKey => " synrepo setup: step 4a cloud API key ",
+            SetupStep::SelectLocalPreset => " synrepo setup: step 4a local LLM preset ",
+            SetupStep::EditLocalEndpoint => " synrepo setup: step 4b local endpoint ",
+            SetupStep::ReviewExplainPlan => " synrepo setup: step 4c review explain plan ",
+            SetupStep::Confirm => " synrepo setup: step 5/5 confirm ",
+            SetupStep::Complete => " synrepo setup: done ",
         },
         theme.agent_style(),
     )))
@@ -195,8 +195,8 @@ fn draw_splash_step(frame: &mut ratatui::Frame, area: Rect, theme: &Theme) {
 
 fn draw_mode_step(frame: &mut ratatui::Frame, area: Rect, state: &SetupWizardState, theme: &Theme) {
     let rows = [
-        "Auto — index everything observable (recommended for new repos).",
-        "Curated — index only the paths you configure (recommended when docs/ is large).",
+        "Auto: index everything observable (recommended for new repos).",
+        "Curated: index only the paths you configure (recommended when docs/ is large).",
     ];
     let items: Vec<ListItem> = rows
         .iter()
@@ -237,7 +237,7 @@ fn draw_target_step(
             (label, detected)
         })
         .collect();
-    rows.push(("Skip — I'll set up integration later".to_string(), false));
+    rows.push(("Skip: set up integration later".to_string(), false));
 
     let items: Vec<ListItem> = rows
         .iter()

@@ -117,6 +117,25 @@ impl FooterWidget<'_> {
                 ],
             });
         }
+        if matches!(self.active, ActiveTab::Explain) {
+            // Tab-scoped: surface the explain run + folder picker keys so an
+            // operator on the Explain tab can see the available actions
+            // without having to read the in-pane help text.
+            groups.push(HintGroup {
+                priority: 4,
+                spans: vec![
+                    Span::styled("  explain ", self.theme.muted_style()),
+                    Span::styled("[r/c/f]", self.theme.agent_style()),
+                ],
+            });
+            groups.push(HintGroup {
+                priority: 5,
+                spans: vec![
+                    Span::styled("  docs ", self.theme.muted_style()),
+                    Span::styled("[d/D/x/X]", self.theme.agent_style()),
+                ],
+            });
+        }
         groups.push(HintGroup {
             priority: 3,
             spans: vec![
@@ -325,13 +344,47 @@ mod tests {
     }
 
     #[test]
+    fn explain_tab_shows_explain_and_docs_hints_when_wide() {
+        let (groups, _) = footer(ActiveTab::Explain, false, None);
+        let spans = fit_groups(groups, 200);
+        let text = rendered_text(&spans);
+        assert!(text.contains("[r/c/f]"), "missing explain hint: {text:?}");
+        assert!(text.contains("[d/D/x/X]"), "missing docs hint: {text:?}");
+    }
+
+    #[test]
+    fn explain_tab_drops_explain_hints_on_narrow_terminal() {
+        let (groups, _) = footer(ActiveTab::Explain, false, None);
+        let spans = fit_groups(groups, 50);
+        let text = rendered_text(&spans);
+        assert!(text.contains("[p]") && text.contains("[?]") && text.contains("[q]"));
+        assert!(
+            !text.contains("[d/D/x/X]"),
+            "docs hint should drop first on narrow: {text:?}"
+        );
+    }
+
+    #[test]
+    fn other_tabs_do_not_show_explain_hints() {
+        for active in [ActiveTab::Live, ActiveTab::Health, ActiveTab::Actions] {
+            let (groups, _) = footer(active, false, None);
+            let spans = fit_groups(groups, 200);
+            let text = rendered_text(&spans);
+            assert!(
+                !text.contains("[r/c/f]") && !text.contains("[d/D/x/X]"),
+                "tab={active:?} leaked explain hint: {text:?}"
+            );
+        }
+    }
+
+    #[test]
     fn toast_keeps_essential_hints_when_set() {
         let theme = Theme::plain();
         let widget = FooterWidget {
             active: ActiveTab::Live,
             follow_mode: false,
             theme: &theme,
-            toast: Some("Refreshed: 12 files, 34 symbols"),
+            toast: Some("refreshed: 12 files, 34 symbols"),
             watch_toggle_label: Some("stop"),
             materialize_hint_visible: false,
         };
@@ -340,7 +393,7 @@ mod tests {
         widget.render(area, &mut buf);
         let row: String = (0..area.width).map(|x| buf[(x, 0)].symbol()).collect();
         assert!(
-            row.contains("Refreshed: 12 files, 34 symbols"),
+            row.contains("refreshed: 12 files, 34 symbols"),
             "toast text must appear in footer row: {row:?}"
         );
         assert!(

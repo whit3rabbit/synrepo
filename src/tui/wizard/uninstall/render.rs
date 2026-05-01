@@ -57,9 +57,9 @@ fn draw(frame: &mut ratatui::Frame, state: &UninstallWizardState, theme: &Theme)
 
     let title = Paragraph::new(Line::from(Span::styled(
         match state.step {
-            UninstallStep::Select => " synrepo remove — select artifacts ",
-            UninstallStep::Confirm => " synrepo remove — confirm ",
-            UninstallStep::Complete => " synrepo remove — done ",
+            UninstallStep::Select => " synrepo remove: select artifacts ",
+            UninstallStep::Confirm => " synrepo remove: confirm ",
+            UninstallStep::Complete => " synrepo remove: done ",
         },
         theme.agent_style(),
     )))

@@ -137,7 +137,7 @@ impl ExplainRow {
     /// Label rendered in the list.
     pub fn label(&self) -> &'static str {
         match self {
-            ExplainRow::Skip => "Skip — leave explain disabled (recommended default)",
+            ExplainRow::Skip => "Skip: leave explain disabled (recommended default)",
             ExplainRow::Cloud(p) => p.label(),
             ExplainRow::Local => "Local LLM (Ollama, llama.cpp, LM Studio, vLLM)",
         }

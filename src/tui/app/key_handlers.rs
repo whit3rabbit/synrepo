@@ -167,7 +167,7 @@ impl AppState {
                     Some(g) => format!("{} files, {} symbols", g.file_nodes, g.symbol_nodes),
                     None => "no graph data".to_string(),
                 };
-                self.set_toast(format!("Refreshed: {counts}"));
+                self.set_toast(format!("refreshed: {counts}"));
                 true
             }
             KeyCode::Char('R') => self.handle_reconcile_now(),

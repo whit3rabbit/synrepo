@@ -60,10 +60,10 @@ fn draw(frame: &mut ratatui::Frame, state: &IntegrationWizardState, theme: &Them
 
     let title = Paragraph::new(Line::from(Span::styled(
         match state.step {
-            IntegrationStep::SelectTarget => " synrepo integrate — step 1/3: target ",
-            IntegrationStep::SelectActions => " synrepo integrate — step 2/3: actions ",
-            IntegrationStep::Confirm => " synrepo integrate — step 3/3: confirm ",
-            IntegrationStep::Complete => " synrepo integrate — done ",
+            IntegrationStep::SelectTarget => " synrepo integrate: step 1/3 target ",
+            IntegrationStep::SelectActions => " synrepo integrate: step 2/3 actions ",
+            IntegrationStep::Confirm => " synrepo integrate: step 3/3 confirm ",
+            IntegrationStep::Complete => " synrepo integrate: done ",
         },
         theme.agent_style(),
     )))

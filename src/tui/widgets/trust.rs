@@ -19,13 +19,13 @@ pub struct TrustWidget<'a> {
 
 impl Widget for TrustWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
+        // Floors picked so each section can render its title row + borders +
+        // ~3 content rows at 80x14. Min over Length lets ratatui distribute
+        // the remaining space proportionally rather than silently truncating
+        // the remediation pane on small terminals.
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(9),
-                Constraint::Length(8),
-                Constraint::Min(7),
-            ])
+            .constraints([Constraint::Min(7), Constraint::Min(6), Constraint::Min(5)])
             .split(area);
 
         render_group(

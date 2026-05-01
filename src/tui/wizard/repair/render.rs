@@ -58,9 +58,9 @@ fn draw(frame: &mut ratatui::Frame, state: &RepairWizardState, theme: &Theme) {
 
     let title = Paragraph::new(Line::from(Span::styled(
         match state.step {
-            RepairStep::Select => " synrepo repair — select actions ",
-            RepairStep::Confirm => " synrepo repair — confirm ",
-            RepairStep::Complete => " synrepo repair — done ",
+            RepairStep::Select => " synrepo repair: select actions ",
+            RepairStep::Confirm => " synrepo repair: confirm ",
+            RepairStep::Complete => " synrepo repair: done ",
         },
         theme.agent_style(),
     )))

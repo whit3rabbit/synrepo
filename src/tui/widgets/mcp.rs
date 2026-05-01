@@ -3,7 +3,7 @@
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem, Widget};
+use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph, Widget};
 
 use crate::tui::mcp_status::McpStatusRow;
 use crate::tui::theme::Theme;
@@ -23,6 +23,20 @@ impl Widget for McpTabWidget<'_> {
             .title(" mcp ")
             .borders(Borders::ALL)
             .border_style(self.theme.border_style());
+        if self.rows.is_empty() {
+            let lines = vec![
+                Line::from(""),
+                Line::from("  no MCP integrations detected."),
+                Line::from(""),
+                Line::from("  press [i] to launch the integration wizard,"),
+                Line::from("  or run: synrepo agent-setup <tool>"),
+            ];
+            Paragraph::new(lines)
+                .block(block)
+                .style(self.theme.muted_style())
+                .render(area, buf);
+            return;
+        }
         let items: Vec<ListItem> = self
             .rows
             .iter()

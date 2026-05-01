@@ -208,7 +208,7 @@ pub(super) fn draw_explain_explain_step(frame: &mut ratatui::Frame, area: Rect, 
         )),
         Line::from(Span::raw("")),
         Line::from(Span::styled(
-            "  1. Commentary — a short paragraph describing what a file or symbol",
+            "  1. Commentary: a short paragraph describing what a file or symbol",
             theme.base_style(),
         )),
         Line::from(Span::styled("     does. Example:", theme.base_style())),
@@ -218,7 +218,7 @@ pub(super) fn draw_explain_explain_step(frame: &mut ratatui::Frame, area: Rect, 
         )),
         Line::from(Span::raw("")),
         Line::from(Span::styled(
-            "  2. Cross-link candidates — proposed links between human-authored",
+            "  2. Cross-link candidates: proposed links between human-authored",
             theme.base_style(),
         )),
         Line::from(Span::styled(
@@ -243,7 +243,7 @@ pub(super) fn draw_explain_explain_step(frame: &mut ratatui::Frame, area: Rect, 
             theme.base_style(),
         )),
         Line::from(Span::styled(
-            "`synrepo_refresh_commentary` MCP tool — nothing runs in the background.",
+            "`synrepo_refresh_commentary` MCP tool. Nothing runs in the background.",
             theme.base_style(),
         )),
     ];
@@ -332,7 +332,7 @@ pub(super) fn draw_review_explain_plan_step(
             // explain is None. Render a terse fallback so a future bug does
             // not leave a blank screen.
             lines.push(Line::from(Span::styled(
-                "No provider selected — press b to go back and pick one.",
+                "No provider selected. Press b to go back and pick one.",
                 theme.muted_style(),
             )));
         }
@@ -365,7 +365,7 @@ pub(super) fn draw_review_explain_plan_step(
         theme.muted_style(),
     )));
     lines.push(Line::from(Span::styled(
-        "  • overwrite structural graph edges — candidates are curated",
+        "  • overwrite structural graph edges; candidates are curated",
         theme.muted_style(),
     )));
     lines.push(Line::from(Span::styled(

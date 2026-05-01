@@ -2,7 +2,8 @@
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
-use ratatui::widgets::{Block, Borders, List, Widget};
+use ratatui::text::Line;
+use ratatui::widgets::{Block, Borders, List, Paragraph, Widget};
 
 use crate::tui::projects::ProjectRef;
 use crate::tui::theme::Theme;
@@ -28,6 +29,20 @@ impl Widget for ExploreTabWidget<'_> {
             .title(" explore ")
             .borders(Borders::ALL)
             .border_style(self.theme.border_style());
+        if self.projects.is_empty() {
+            let lines = vec![
+                Line::from(""),
+                Line::from("  no projects registered yet."),
+                Line::from(""),
+                Line::from("  add the current directory: synrepo project add ."),
+                Line::from("  add a specific path:       synrepo project add <path>"),
+            ];
+            Paragraph::new(lines)
+                .block(block)
+                .style(self.theme.muted_style())
+                .render(area, buf);
+            return;
+        }
         let selected = self.selected.min(self.projects.len().saturating_sub(1));
         let items = self
             .projects

@@ -22,7 +22,7 @@ use crate::tui::widgets::LogEntry;
 
 use super::quick_actions_for;
 
-const TOAST_TTL: Duration = Duration::from_millis(2000);
+const TOAST_TTL: Duration = Duration::from_millis(4000);
 
 impl AppState {
     /// Build a new poll-mode app state for `repo_root`.

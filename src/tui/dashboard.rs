@@ -142,6 +142,9 @@ fn render_global_loop(
 }
 
 fn draw_global_dashboard(frame: &mut ratatui::Frame, state: &mut GlobalAppState) {
+    if draw_too_small_warning(frame, &state.theme) {
+        return;
+    }
     if state.help_visible {
         draw_help(frame, state.theme);
         return;
@@ -200,7 +203,39 @@ fn draw_command_palette(frame: &mut ratatui::Frame, theme: Theme) {
     frame.render_widget(paragraph, frame.area());
 }
 
+/// Minimum terminal size where the dashboard layout still produces at least
+/// one usable content row: header (5) + tabs (3) + content (>=5) + footer (1)
+/// = 14 rows; 60 columns keeps the footer hint compaction logic working.
+const MIN_TERMINAL_WIDTH: u16 = 60;
+const MIN_TERMINAL_HEIGHT: u16 = 14;
+
+/// Render a centered "terminal too small" warning when the frame is below
+/// the documented minimum. Returns true when the warning was rendered, in
+/// which case the caller should skip the rest of the dashboard render.
+fn draw_too_small_warning(frame: &mut ratatui::Frame, theme: &Theme) -> bool {
+    let size = frame.area();
+    if size.width >= MIN_TERMINAL_WIDTH && size.height >= MIN_TERMINAL_HEIGHT {
+        return false;
+    }
+    let lines = vec![
+        Line::from(format!(
+            "terminal too small: {}x{}",
+            size.width, size.height
+        )),
+        Line::from(format!(
+            "synrepo dashboard needs at least {MIN_TERMINAL_WIDTH}x{MIN_TERMINAL_HEIGHT}."
+        )),
+        Line::from("resize and the view will redraw automatically."),
+    ];
+    let paragraph = Paragraph::new(lines).style(theme.stale_style());
+    frame.render_widget(paragraph, size);
+    true
+}
+
 fn draw_dashboard(frame: &mut ratatui::Frame, state: &mut AppState) {
+    if draw_too_small_warning(frame, &state.theme) {
+        return;
+    }
     let size = frame.area();
     let outer = Layout::default()
         .direction(Direction::Vertical)
@@ -367,7 +402,7 @@ fn append_readiness_rows(
     for row in &matrix.rows {
         vm.rows.push(HealthRow {
             label: format!("readiness:{}", row.capability.as_str()),
-            value: format!("{} — {}", row.state.as_str(), row.detail),
+            value: format!("{}: {}", row.state.as_str(), row.detail),
             severity: row.state.severity(),
         });
     }

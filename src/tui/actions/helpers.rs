@@ -13,7 +13,7 @@ pub(super) fn load_repo_config(ctx: &ActionContext, action: &str) -> Result<Conf
     let local_config = ctx.synrepo_dir.join("config.toml");
     if !local_config.exists() {
         return Err(ActionOutcome::Error {
-            message: format!("{action}: not initialized — run `synrepo init` first"),
+            message: format!("{action}: not initialized, run `synrepo init` first"),
         });
     }
     Config::load(&ctx.repo_root).map_err(|err| ActionOutcome::Error {

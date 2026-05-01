@@ -15,7 +15,7 @@ fn pressing_r_sets_refresh_toast() {
     assert!(consumed, "'r' should consume the key event");
     let toast = state.active_toast().expect("toast must be set after 'r'");
     assert!(
-        toast.starts_with("Refreshed"),
+        toast.starts_with("refreshed"),
         "toast should announce a refresh: {toast:?}"
     );
 }

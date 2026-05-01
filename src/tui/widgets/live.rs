@@ -122,7 +122,7 @@ impl Widget for LiveFeedWidget<'_> {
 
         let entries = self.merged();
         if entries.is_empty() {
-            Paragraph::new("(no events yet — watcher idle)")
+            Paragraph::new("(no events yet: watcher idle)")
                 .style(self.theme.muted_style())
                 .render(inner, buf);
             return;
