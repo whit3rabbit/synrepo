@@ -12,6 +12,7 @@ Git intelligence pipeline: symbol revision tracking, co-change analysis, ownersh
 - `emit.rs` — `CoChangesWith` edge emission
 - `index.rs` — per-symbol first/last seen rev tracking
 - `symbol_revisions/` — body-hash diffing for symbol history
+- `tests/` — module-local tests
 
 ## Hard invariants
 

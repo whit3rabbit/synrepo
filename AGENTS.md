@@ -109,24 +109,24 @@ These must hold across all changes:
 
 ### File size and module structure
 
-- **Every `.rs` file must stay under 400 lines** (test files count too; a few `tests/*.rs` are also over and want a split). Split into a sub-module directory before exceeding the cap. **Currently over-limit (non-test, split before adding):**
-  - `src/pipeline/watch/service.rs` (658) — far over; split the reconcile/control/event surfaces.
-  - `src/bin/cli_support/commands/mcp.rs` (503) — tool registration and overview blurb dominate; tool definitions could split out.
-  - `src/pipeline/repair/sync/handlers.rs` (462) — already over; do not extend the dispatch match in place. Land new handlers in their own files (see `revalidate_links.rs`).
-  - `src/pipeline/explain/providers/openai_compat.rs` (424) — provider-specific request/response shaping is separable.
-  - `src/structure/parse/extract/mod.rs` (415) — already a sub-module dir, but `mod.rs` itself is now over the cap; split further (`qualname.rs` and `visibility.rs` already pulled out, `docs.rs` next candidate).
-  - `src/config/mod.rs` (407) — defaults, parsing, and validation could separate.
+- **Every `.rs` file must stay under 400 lines** (test files count too). Split into a sub-module directory before exceeding the cap. To see the current over-cap set, run:
 
-  **Approaching the cap (370-399, watchlist, non-test):** `src/pipeline/explain/providers/local.rs` (397), `src/pipeline/explain/providers/gemini.rs` (396), `src/store/overlay/agent_notes.rs` (394), `src/pipeline/repair/sync/commentary.rs` (393), `src/store/overlay/commentary/mod.rs` (392), `src/pipeline/explain/docs/corpus.rs` (391), `src/tui/app/explain_picker.rs` (390), `src/pipeline/writer/helpers.rs` (390), `src/bin/cli_support/commands/setup/report.rs` (387), `src/pipeline/git/mod.rs` (382), `src/tui/wizard/setup/render/explain.rs` (381), `src/tui/widgets/explain.rs` (380), `src/bin/cli.rs` (379), `src/surface/mcp/cards.rs` (378), `src/bin/cli_support/commands/watch.rs` (378), `src/bin/cli_support/cli_args/mod.rs` (378), `src/tui/watcher.rs` (377), `src/substrate/incremental.rs` (377), `src/substrate/index.rs` (374), `src/bin/cli_support/commands/context/bench.rs` (373).
+  ```bash
+  find src -name '*.rs' -exec wc -l {} \; | awk '$1 > 400 {print $1, $2}' | sort -rn
+  ```
 
-  **Easy splits below the cap (think first before adding):** `src/tui/mod.rs` (366), `src/overlay/mod.rs` (339).
+  Persistent guidance for files that have repeatedly drifted over the cap:
+  - `src/pipeline/repair/sync/handlers.rs` — the dispatch match is the body. Do not extend it in place; land new handlers in their own sibling files (see `revalidate_links.rs`).
+  - `src/structure/parse/language.rs` — language registry; new languages should grow under `parse/extract/` and helpers, not the registry file.
+  - `src/pipeline/explain/providers/*.rs` — request/response shaping is separable per provider.
+  - `src/store/overlay/agent_notes.rs` and `src/store/overlay/commentary/mod.rs` — split read/write surfaces before adding fields.
+  - `src/config/mod.rs` — defaults, parsing, and validation can each separate.
 
-- **`src/structure/parse/extract/` is already a sub-module directory** but `mod.rs` is over the 400-line cap (415 lines). Do not add more code to `mod.rs`; split into another sibling file (`qualname.rs` and `visibility.rs` already pulled out).
 - **`src/tui/app/` sub-modules can own `impl AppState` blocks** for feature-specific state and handlers (see `explain_picker.rs` for the folder-picker modal). Keep `AppState` fields on the struct in `mod.rs`; put feature methods, helpers, and tests in the submodule.
 
 ### Agent shims and MCP
 
-- **Agent-doctrine text lives in `src/bin/cli_support/agent_shims/doctrine.rs`** as a `doctrine_block!()` macro. Every shim under `agent_shims/shims/` (sub-module directory: `basic_targets.rs`, `markdown_targets.rs`, `skill_targets.rs`, `shared.rs`) embeds it via `concat!`. Edits touching escalation rules, do-not rules, or the product-boundary paragraph MUST go through `doctrine_block!`; the byte-identical test (`every_shim_embeds_doctrine_block` in `agent_shims/tests/doctrine.rs`) enforces this. The escalation-line source-scan test reads `src/bin/cli_support/commands/mcp.rs` — do not move the MCP tool registration out of that file without updating the test path. Edit target-specific sections (tool list framing, CLI fallback examples, file paths) directly in the relevant `shims/*.rs` file.
+- **Agent-doctrine text lives in `src/bin/cli_support/agent_shims/doctrine.rs`** as a `doctrine_block!()` macro. Every shim under `agent_shims/shims/` (sub-module directory: `basic_targets.rs`, `markdown_targets.rs`, `skill_targets.rs`, `shared.rs`) embeds it via `concat!`. Edits touching escalation rules, do-not rules, or the product-boundary paragraph MUST go through `doctrine_block!`; the byte-identical test (`every_shim_embeds_doctrine_block` in `agent_shims/tests/doctrine.rs`) enforces this. The escalation-line source-scan test reads `src/bin/cli_support/commands/mcp/tools.rs` (tool registrations) — do not move the MCP tool registration out of that file without updating the test path. Edit target-specific sections (tool list framing, CLI fallback examples, file paths) directly in the relevant `shims/*.rs` file.
 - **Agent install ownership goes through `agent-config`.** MCP, skill, and instruction installs use `agent-config = "0.1"` with owner/name `synrepo`; remove must call the matching uninstall API before any path-based fallback. `synrepo upgrade --apply` adopts legacy unowned installs into the ledger. `AgentTool::output_path()` is now a local-scope status probe with a legacy fallback; keep new path logic in the installer/status layer rather than adding another hard-coded table.
 
 ### Links, repair, explain
@@ -135,7 +135,7 @@ These must hold across all changes:
 - **`repair/types/` has dual string mappings**: `RepairSurface`, `DriftClass`, `Severity`, and `RepairAction` each have `#[serde(rename_all = "snake_case")]` AND a manual `as_str()` in `src/pipeline/repair/types/stable.rs`. Adding a new variant requires updating both. `RepairSurface::ProposedLinksOverlay`, `RepairSurface::ExportSurface`, `RepairAction::RevalidateLinks`, and `RepairAction::RegenerateExports` follow the same rule. The stable-identifier tests in `src/pipeline/repair/types/tests.rs` catch `as_str()` divergence from literals but do not cross-check serde output.
 - **Commentary freshness is computed in two places**: the status command surfaces it from `src/bin/cli_support/commands/status/text.rs` and `status/json.rs` (the `status` command is a sub-module directory, not a single file), and the repair surface computes it in `src/pipeline/repair/report/surfaces/commentary.rs::scan_commentary_staleness`. Both walk `commentary_hashes()` against `resolve_commentary_node`. The repair version is `pub(super) struct CommentaryScan { total, stale }`; unifying requires promoting it to `pub` in the repair module.
 - **Explain docs are advisory overlay output only.** Materialized commentary docs live under `.synrepo/explain-docs/` with a dedicated syntext index at `.synrepo/explain-index/`. They are searchable through `synrepo_docs_search`, but they are never canonical graph facts and never used as explain input.
-- **`RepairAction::RevalidateLinks` runs the fuzzy-LCS verifier (`cross_link_verify::verify_candidate_payload`) and, on success, updates the candidate's stored hashes and spans in place via `OverlayStore::revalidate_link`.** Mismatches stay in `report_only` — never auto-rejected; rejection is a human call. Handler implementation lives in `src/pipeline/repair/sync/revalidate_links.rs`. `sync/handlers.rs` is already over the 400-line cap (462 lines); land any new repair-action handler in its own sibling file, do not grow the dispatch match in place.
+- **`RepairAction::RevalidateLinks` runs the fuzzy-LCS verifier (`cross_link_verify::verify_candidate_payload`) and, on success, updates the candidate's stored hashes and spans in place via `OverlayStore::revalidate_link`.** Mismatches stay in `report_only` — never auto-rejected; rejection is a human call. Handler implementation lives in `src/pipeline/repair/sync/revalidate_links.rs`. `sync/handlers.rs` is over the 400-line cap; land any new repair-action handler in its own sibling file, do not grow the dispatch match in place.
 
 ### Graph semantics
 

@@ -12,6 +12,8 @@ Storage layer: SQLite backends for graph and overlay.
 - `sqlite/ops/` — CRUD operations split across `drift.rs`, `edges.rs`, `helpers.rs`, `lists.rs`, `mod.rs`, `nodes.rs`, `transactions.rs`
 - `sqlite/codec.rs` — row (de)serialization helpers
 - `sqlite/lifecycle.rs` — retirement, compaction
+- `sqlite/values.rs` — typed value helpers
+- `sqlite/README.md` — submodule notes
 - `overlay/mod.rs` — overlay store, cross-link audit
 - `overlay/schema.rs` — overlay schema
 - `compatibility/` — version checks, migration policy
