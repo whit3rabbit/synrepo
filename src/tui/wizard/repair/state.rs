@@ -6,16 +6,17 @@ use crate::bootstrap::runtime_probe::{AgentIntegration, AgentTargetKind, Missing
 
 /// Plan produced by a completed repair wizard. Each field is an independent
 /// toggle; the bin-side dispatcher executes the actions in a fixed order
-/// (config → upgrade-apply → reconcile → shim) and re-runs the probe between
-/// steps so a later action can observe the result of an earlier one.
+/// (config → recreate-runtime → reconcile → shim) and re-runs the probe
+/// between steps so a later action can observe the result of an earlier one.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct RepairPlan {
     /// Write the default `.synrepo/config.toml`. Runs `synrepo init` when
     /// `.synrepo/` exists but config.toml is missing.
     pub write_config: bool,
-    /// Run `synrepo upgrade --apply`. Destructive (may migrate the graph
-    /// store); the wizard never enables this by default.
-    pub run_upgrade_apply: bool,
+    /// Run `synrepo init --force` to recreate `.synrepo/` in place. Used when
+    /// the canonical graph store is incompatible with this binary and cannot
+    /// be migrated. Destructive; the wizard never enables this by default.
+    pub recreate_runtime: bool,
     /// Run a reconcile pass to populate the graph store.
     pub run_reconcile: bool,
     /// Write the agent shim for the given target. `None` means no shim write.
@@ -27,7 +28,7 @@ impl RepairPlan {
     /// can print "nothing to do" instead of silently doing nothing.
     pub fn is_empty(&self) -> bool {
         !self.write_config
-            && !self.run_upgrade_apply
+            && !self.recreate_runtime
             && !self.run_reconcile
             && self.write_shim_for.is_none()
     }
@@ -78,13 +79,16 @@ pub struct ActionRow {
 
 /// Kinds of repair actions the wizard can propose. Distinct from `Missing`
 /// because one missing component can map to multiple actions (e.g.
-/// `CompatBlocked` can map to `RunUpgradeApply` *and* `RunReconcile`).
+/// `CompatBlocked` can map to `RecreateRuntime` *and* `RunReconcile`).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RepairActionKind {
     /// Write default config.toml.
     WriteConfig,
-    /// Run `synrepo upgrade --apply`.
-    RunUpgradeApply,
+    /// Recreate `.synrepo/` in place via `synrepo init --force`. Replaces the
+    /// previous `RunUpgradeApply` action: `synrepo upgrade` cannot migrate a
+    /// canonical-store `Block`, so the wizard now offers the destructive
+    /// recreate path instead.
+    RecreateRuntime,
     /// Run reconcile pass.
     RunReconcile,
     /// Write agent integration shim for the selected target.
@@ -156,8 +160,8 @@ impl RepairWizardState {
         }
         if has_compat_blocked {
             rows.push(ActionRow {
-                kind: RepairActionKind::RunUpgradeApply,
-                label: "Run `synrepo upgrade --apply` (destructive)".to_string(),
+                kind: RepairActionKind::RecreateRuntime,
+                label: "Recreate .synrepo/ via `init --force` (destructive)".to_string(),
                 enabled: false,
                 destructive: true,
             });
@@ -271,7 +275,7 @@ impl RepairWizardState {
             }
             match row.kind {
                 RepairActionKind::WriteConfig => plan.write_config = true,
-                RepairActionKind::RunUpgradeApply => plan.run_upgrade_apply = true,
+                RepairActionKind::RecreateRuntime => plan.recreate_runtime = true,
                 RepairActionKind::RunReconcile => plan.run_reconcile = true,
                 RepairActionKind::WriteShim => plan.write_shim_for = self.shim_target,
             }

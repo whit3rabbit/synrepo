@@ -45,6 +45,13 @@ pub(crate) enum Command {
         /// Add .synrepo/ to the root .gitignore file.
         #[arg(long)]
         gitignore: bool,
+        /// Recreate `.synrepo/` in place when the canonical graph store is
+        /// blocked by an incompatible storage snapshot (typically after a
+        /// breaking schema change). Destructive: clears the graph, overlay,
+        /// index, and state directories before re-initializing. The writer
+        /// lock and active-watch gates are still enforced.
+        #[arg(long)]
+        force: bool,
     },
 
     /// Verify repo health, freshness, and readiness for agent use.
@@ -355,4 +362,25 @@ pub(crate) enum Command {
 
     /// Guided full uninstall across projects, integrations, data, and binary.
     Uninstall(UninstallArgs),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Cli, Command};
+    use clap::Parser;
+
+    #[test]
+    fn init_force_flag_defaults_off_and_sets_on_request() {
+        let default = Cli::try_parse_from(["synrepo", "init"]).unwrap();
+        assert!(matches!(
+            default.command,
+            Some(Command::Init { force: false, .. })
+        ));
+
+        let forced = Cli::try_parse_from(["synrepo", "init", "--force"]).unwrap();
+        assert!(matches!(
+            forced.command,
+            Some(Command::Init { force: true, .. })
+        ));
+    }
 }

@@ -14,6 +14,7 @@ mod notes;
 mod overlay_scale;
 mod project;
 mod reconcile;
+mod repair;
 mod search;
 mod setup;
 mod status;

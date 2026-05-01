@@ -156,6 +156,40 @@ pub fn apply_runtime_actions(
     Ok(changed)
 }
 
+/// Clear every store that the report flagged as `Block`, plus the state
+/// directory that holds the compatibility snapshot. Used by force-init to
+/// recover from a runtime whose canonical store cannot be migrated. The
+/// caller must hold the exclusive writer lock and must re-evaluate the
+/// runtime afterwards before continuing.
+pub fn clear_blocked_stores(
+    _lock: &crate::pipeline::writer::WriterLock,
+    synrepo_dir: &Path,
+    report: &CompatibilityReport,
+) -> crate::Result<bool> {
+    let mut changed = false;
+    let mut cleared_state = false;
+
+    for entry in &report.entries {
+        if entry.action == CompatAction::Block {
+            clear_store_contents(synrepo_dir, entry.store_id)?;
+            changed = true;
+            if entry.store_id == StoreId::State {
+                cleared_state = true;
+            }
+        }
+    }
+
+    // The compatibility snapshot lives under `.synrepo/state/`. Always purge
+    // it on force-init so the next evaluation does not key off a stale or
+    // partially-written snapshot belonging to the cleared canonical store.
+    if !cleared_state {
+        clear_store_contents(synrepo_dir, StoreId::State)?;
+        changed = true;
+    }
+
+    Ok(changed)
+}
+
 fn evaluate_store(
     store_id: StoreId,
     materialized: bool,

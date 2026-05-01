@@ -25,7 +25,7 @@ mod tests {
     }
 
     #[test]
-    fn upgrade_apply_is_never_enabled_by_default() {
+    fn recreate_runtime_is_never_enabled_by_default() {
         let s = RepairWizardState::new(
             &[Missing::CompatBlocked {
                 guidance: vec!["migrate".into()],
@@ -36,8 +36,8 @@ mod tests {
         let row = s
             .rows
             .iter()
-            .find(|r| r.kind == RepairActionKind::RunUpgradeApply)
-            .expect("upgrade row");
+            .find(|r| r.kind == RepairActionKind::RecreateRuntime)
+            .expect("recreate row");
         assert!(!row.enabled, "destructive row must default off");
         assert!(row.destructive);
     }
@@ -97,12 +97,12 @@ mod tests {
         let plan = s.finalize().expect("plan");
         assert!(plan.write_config);
         assert!(plan.run_reconcile);
-        assert!(!plan.run_upgrade_apply);
+        assert!(!plan.recreate_runtime);
         assert_eq!(plan.write_shim_for, None);
     }
 
     #[test]
-    fn space_toggles_enable_upgrade_apply() {
+    fn space_toggles_enable_recreate_runtime() {
         let mut s = RepairWizardState::new(
             &[Missing::CompatBlocked {
                 guidance: vec!["migrate".into()],
@@ -110,14 +110,35 @@ mod tests {
             &AgentIntegration::Absent,
             &[],
         );
-        // First row is the upgrade-apply destructive row (config wasn't missing).
+        // First row is the recreate-runtime destructive row (config wasn't missing).
         assert!(!s.rows[0].enabled);
         press(&mut s, KeyCode::Char(' '));
         assert!(s.rows[0].enabled);
         press(&mut s, KeyCode::Enter);
         press(&mut s, KeyCode::Enter);
         let plan = s.finalize().expect("plan");
-        assert!(plan.run_upgrade_apply);
+        assert!(plan.recreate_runtime);
+    }
+
+    #[test]
+    fn compat_blocked_never_proposes_upgrade_apply_row() {
+        // Regression: upgrade --apply cannot migrate a canonical-store Block,
+        // so the wizard must not propose it. The dead-end where bare-`synrepo`
+        // dispatched `upgrade --apply` for a CompatBlocked probe was the
+        // motivation for the `RecreateRuntime` action; this test pins the
+        // wiring in place.
+        let s = RepairWizardState::new(
+            &[Missing::CompatBlocked {
+                guidance: vec!["migrate".into()],
+            }],
+            &AgentIntegration::Absent,
+            &[],
+        );
+        let recreate = s
+            .rows
+            .iter()
+            .find(|r| r.kind == RepairActionKind::RecreateRuntime);
+        assert!(recreate.is_some(), "recreate row must be present");
     }
 
     #[test]

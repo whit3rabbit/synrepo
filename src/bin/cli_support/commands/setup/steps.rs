@@ -114,6 +114,11 @@ pub(crate) fn resolve_setup_scope(repo_root: &Path, tool: AgentTool, project: bo
 
 /// Initialize `.synrepo/` if not present (or always with `force`). Returns
 /// `AlreadyCurrent` when the directory is present and `force` is false.
+///
+/// When `force = true` the call is forwarded to `init(force=true)`, which
+/// also unblocks a runtime whose canonical graph store is incompatible with
+/// the current binary. This is the path the repair wizard's
+/// `RecreateRuntime` action takes.
 pub(crate) fn step_init(
     repo_root: &Path,
     mode: Option<Mode>,
@@ -123,7 +128,7 @@ pub(crate) fn step_init(
     let synrepo_dir = repo_root.join(".synrepo");
     if !synrepo_dir.exists() || force {
         println!("  Initializing .synrepo/...");
-        init(repo_root, mode, gitignore)?;
+        init(repo_root, mode, gitignore, force)?;
         Ok(StepOutcome::Applied)
     } else {
         println!("  .synrepo/ already initialized.");

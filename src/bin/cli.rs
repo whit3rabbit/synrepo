@@ -6,7 +6,6 @@
 //! `sync`, `export`, `mcp`, and friends) behave exactly as before.
 
 mod cli_support;
-
 use std::path::Path;
 
 use clap::Parser;
@@ -18,10 +17,6 @@ use cli_support::cli_args::{
     AgentSetupArgs, BenchCommand, Cli, Command, GraphCommand, LinksCommand, NotesCommand,
     ProjectCommand, SetupArgs, StatsCommand, UninstallArgs, WatchCommand,
 };
-#[cfg(test)]
-use cli_support::commands::prepare_mcp_state;
-#[cfg(test)]
-use cli_support::commands::report_reconcile_outcome;
 use cli_support::commands::{
     agent_setup_many_resolved, bench_context, cards_alias, change_risk, check, compact, docs,
     doctor, explain_alias, export, findings, graph_query, graph_stats, handoffs, impact_alias,
@@ -32,6 +27,8 @@ use cli_support::commands::{
     stats_context, status, sync, tests_alias, uninstall, upgrade, watch, watch_internal,
     watch_status, watch_stop, StatFormat,
 };
+#[cfg(test)]
+use cli_support::commands::{prepare_mcp_state, report_reconcile_outcome};
 // Re-exported for `cli_support::tests::agent_setup` via `crate::agent_setup`.
 // cli.rs dispatches through `agent_setup_many` but the test binary compiles
 // without `cfg(test)`, so this import must be unconditional.
@@ -74,7 +71,11 @@ fn dispatch(
     explicit_repo: bool,
 ) -> anyhow::Result<()> {
     match command {
-        Command::Init { mode, gitignore } => init(repo_root, mode.map(Into::into), gitignore),
+        Command::Init {
+            mode,
+            gitignore,
+            force,
+        } => init(repo_root, mode.map(Into::into), gitignore, force),
         Command::Status { json, recent, full } => status(repo_root, json, recent, full),
         Command::Project(ProjectCommand::Add { path }) => project_add(repo_root, path),
         Command::Project(ProjectCommand::List { json }) => project_list(json),

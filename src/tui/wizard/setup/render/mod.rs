@@ -5,6 +5,8 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
 
 mod explain;
+#[cfg(test)]
+mod tests;
 
 use super::explain::{CloudCredentialSource, ExplainChoice, ExplainWizardSupport};
 use super::state::{SetupStep, SetupWizardState, WIZARD_TARGETS};

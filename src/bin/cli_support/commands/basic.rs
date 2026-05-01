@@ -12,15 +12,22 @@ use crate::cli_support::agent_shims::{
 use super::watch::ensure_watch_not_running;
 
 /// Initialize the repository with the specified mode.
+///
+/// `force = true` recreates the runtime in place when the canonical graph
+/// store is blocked by an incompatible storage snapshot, replacing the legacy
+/// "rm -rf .synrepo/ && synrepo init" recipe. The watch and writer-lock gates
+/// are still enforced; force never bypasses a live mutator.
 pub(crate) fn init(
     repo_root: &Path,
     requested_mode: Option<Mode>,
     gitignore: bool,
+    force: bool,
 ) -> anyhow::Result<()> {
     let synrepo_dir = Config::synrepo_dir(repo_root);
     ensure_watch_not_running(&synrepo_dir, "init")?;
 
-    let report = synrepo::bootstrap::bootstrap(repo_root, requested_mode, gitignore)?;
+    let report =
+        synrepo::bootstrap::bootstrap_with_force(repo_root, requested_mode, gitignore, force)?;
     print!("{}", report.render());
     Ok(())
 }

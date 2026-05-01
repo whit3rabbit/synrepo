@@ -19,6 +19,8 @@ use crate::surface::readiness::ReadinessMatrix;
 use crate::surface::status_snapshot::{build_status_snapshot, StatusOptions};
 
 #[cfg(test)]
+mod force_tests;
+#[cfg(test)]
 mod tests;
 
 /// Run bootstrap for the given repository root, optionally forcing a mode.
@@ -26,6 +28,20 @@ pub fn bootstrap(
     repo_root: &Path,
     requested_mode: Option<Mode>,
     update_gitignore: bool,
+) -> anyhow::Result<BootstrapReport> {
+    bootstrap_with_force(repo_root, requested_mode, update_gitignore, false)
+}
+
+/// Like [`bootstrap`], but with `force = true` clears any blocked canonical
+/// stores in place before continuing. Use only when the operator has
+/// explicitly opted into a destructive recreate (e.g. `synrepo init --force`
+/// or the repair wizard's `RecreateRuntime` action). The writer-lock and
+/// watch-active gates are still enforced.
+pub fn bootstrap_with_force(
+    repo_root: &Path,
+    requested_mode: Option<Mode>,
+    update_gitignore: bool,
+    force: bool,
 ) -> anyhow::Result<BootstrapReport> {
     let synrepo_dir = Config::synrepo_dir(repo_root);
     let runtime_already_existed = synrepo_dir.exists();
@@ -47,7 +63,7 @@ pub fn bootstrap(
     let config = Config { mode, ..config };
     let compatibility_report =
         compatibility::evaluate_runtime(&synrepo_dir, runtime_already_existed, &config)?;
-    if compatibility_report.has_blocking_actions() {
+    if compatibility_report.has_blocking_actions() && !force {
         return Err(blocked_by_compatibility(
             &synrepo_dir,
             &compatibility_report,
@@ -56,7 +72,9 @@ pub fn bootstrap(
 
     // Acquire the exclusive writer lock before any state mutation. Held until
     // the end of `bootstrap()` via RAII drop. Fails fast if another live
-    // process already holds the lock.
+    // process already holds the lock. `--force` does NOT bypass this gate:
+    // recreating the runtime while another process is mutating it would
+    // corrupt the live writer's view.
     let _lock = acquire_writer_lock(&synrepo_dir).map_err(|err| match err {
         LockError::HeldByOther { pid, .. } => anyhow::anyhow!(
             "Bootstrap blocked: writer lock held by pid {pid}. \
@@ -82,6 +100,21 @@ pub fn bootstrap(
             path.display()
         ),
     })?;
+
+    // Force path: clear any blocked canonical stores under the writer lock,
+    // then re-evaluate so the rest of bootstrap sees a clean report. The
+    // re-evaluation must come back blocking-free; if it does not, the
+    // runtime is in a state we cannot recover from automatically.
+    let compatibility_report = if force && compatibility_report.has_blocking_actions() {
+        compatibility::clear_blocked_stores(&_lock, &synrepo_dir, &compatibility_report)?;
+        let report = compatibility::evaluate_runtime(&synrepo_dir, synrepo_dir.exists(), &config)?;
+        if report.has_blocking_actions() {
+            return Err(blocked_by_compatibility(&synrepo_dir, &report));
+        }
+        report
+    } else {
+        compatibility_report
+    };
 
     let layout_changed = compatibility::ensure_runtime_layout(&synrepo_dir)?;
     let remediated =

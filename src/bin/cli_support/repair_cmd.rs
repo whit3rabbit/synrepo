@@ -9,7 +9,7 @@ use synrepo::tui::{
 use super::agent_shims::{registry as shim_registry, AgentTool, AutomationTier};
 use super::commands::{
     reconcile, resolve_setup_scope, step_apply_integration, step_backup_mcp_config, step_init,
-    step_register_mcp, step_write_shim, upgrade,
+    step_register_mcp, step_write_shim,
 };
 use super::setup_cmd::run_explain_step;
 
@@ -67,10 +67,10 @@ pub(crate) fn run_dashboard_with_sub_wizards(
 }
 
 /// Execute a completed [`RepairPlan`] after the TUI alt-screen has been torn
-/// down. Actions run in order: write config, upgrade-apply, reconcile, shim.
-/// The probe is re-run between mutating steps so later steps see fresh state
-/// and a transient success transitions cleanly to the dashboard on the next
-/// bare-`synrepo` run.
+/// down. Actions run in order: write config, recreate runtime, reconcile,
+/// shim. The probe is re-run between mutating steps so later steps see fresh
+/// state and a transient success transitions cleanly to the dashboard on the
+/// next bare-`synrepo` run.
 pub(crate) fn execute_repair_plan(repo_root: &Path, plan: RepairPlan) -> anyhow::Result<()> {
     if plan.is_empty() {
         println!("synrepo repair: plan empty, nothing to do.");
@@ -85,9 +85,12 @@ pub(crate) fn execute_repair_plan(repo_root: &Path, plan: RepairPlan) -> anyhow:
         step_init(repo_root, None, false, false)?;
         let _ = probe(repo_root);
     }
-    if plan.run_upgrade_apply {
-        println!("  Running `synrepo upgrade --apply`...");
-        upgrade(repo_root, true)?;
+    if plan.recreate_runtime {
+        println!("  Recreating .synrepo/ via `init --force`...");
+        // `synrepo upgrade --apply` cannot migrate a canonical-store Block;
+        // `init --force` clears the blocked stores under the writer lock and
+        // re-runs bootstrap.
+        step_init(repo_root, None, true, false)?;
         let _ = probe(repo_root);
     }
     if plan.run_reconcile {
