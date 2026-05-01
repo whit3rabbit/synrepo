@@ -31,6 +31,7 @@ repomix-output.xml
 # Local command output
 /mcp_stderr.log
 /test_output.txt
+/artifacts/tui-test/
 
 /tmp/synrepo-context/
 /tmp/synrepo-context-json/

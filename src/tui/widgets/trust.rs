@@ -19,13 +19,12 @@ pub struct TrustWidget<'a> {
 
 impl Widget for TrustWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        // Floors picked so each section can render its title row + borders +
-        // ~3 content rows at 80x14. Min over Length lets ratatui distribute
-        // the remaining space proportionally rather than silently truncating
-        // the remediation pane on small terminals.
+        // Floors are 2 borders + 1+ content row each, so the three panes still
+        // render their data when the dashboard hits its 11-row content
+        // minimum. Above that floor ratatui grows the panes proportionally.
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Min(7), Constraint::Min(6), Constraint::Min(5)])
+            .constraints([Constraint::Min(4), Constraint::Min(4), Constraint::Min(3)])
             .split(area);
 
         render_group(

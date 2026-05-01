@@ -118,19 +118,15 @@ impl FooterWidget<'_> {
             });
         }
         if matches!(self.active, ActiveTab::Explain) {
-            // Tab-scoped: surface the explain run + folder picker keys so an
-            // operator on the Explain tab can see the available actions
-            // without having to read the in-pane help text.
+            // Tab-scoped: surface the explain run + docs keys so an operator
+            // on the Explain tab can see the available actions without having
+            // to read the in-pane help text. Bundled into one group so the
+            // pair survives or drops together at common widths.
             groups.push(HintGroup {
                 priority: 4,
                 spans: vec![
                     Span::styled("  explain ", self.theme.muted_style()),
                     Span::styled("[r/c/f]", self.theme.agent_style()),
-                ],
-            });
-            groups.push(HintGroup {
-                priority: 5,
-                spans: vec![
                     Span::styled("  docs ", self.theme.muted_style()),
                     Span::styled("[d/D/x/X]", self.theme.agent_style()),
                 ],
@@ -359,8 +355,22 @@ mod tests {
         let text = rendered_text(&spans);
         assert!(text.contains("[p]") && text.contains("[?]") && text.contains("[q]"));
         assert!(
-            !text.contains("[d/D/x/X]"),
-            "docs hint should drop first on narrow: {text:?}"
+            !text.contains("[r/c/f]") && !text.contains("[d/D/x/X]"),
+            "explain+docs hints should drop together on narrow: {text:?}"
+        );
+    }
+
+    #[test]
+    fn explain_hints_survive_together_at_120_cols() {
+        let (groups, _) = footer(ActiveTab::Explain, false, Some("stop"));
+        let spans = fit_groups(groups, 120);
+        let text = rendered_text(&spans);
+        // Either both explain hints render, or neither, but they never split.
+        let has_run = text.contains("[r/c/f]");
+        let has_docs = text.contains("[d/D/x/X]");
+        assert_eq!(
+            has_run, has_docs,
+            "explain run and docs hints must drop together: {text:?}"
         );
     }
 

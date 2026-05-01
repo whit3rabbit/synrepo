@@ -77,6 +77,20 @@ impl AppState {
         self.set_tab(next);
     }
 
+    /// Reverse of `cycle_tab`. Used by Shift-Tab and Left arrow.
+    pub fn cycle_tab_back(&mut self) {
+        let prev = match self.active_tab {
+            ActiveTab::Live => ActiveTab::Explore,
+            ActiveTab::Health => ActiveTab::Live,
+            ActiveTab::Trust => ActiveTab::Health,
+            ActiveTab::Explain => ActiveTab::Trust,
+            ActiveTab::Actions => ActiveTab::Explain,
+            ActiveTab::Mcp => ActiveTab::Actions,
+            ActiveTab::Explore => ActiveTab::Mcp,
+        };
+        self.set_tab(prev);
+    }
+
     /// Scroll the Live feed up by `rows` entries. Disables follow so new
     /// entries no longer snap the frame back to the bottom.
     pub fn scroll_up(&mut self, rows: usize) {

@@ -112,6 +112,26 @@ fn handle_key_switches_tabs() {
 }
 
 #[test]
+fn arrow_keys_cycle_tabs_in_both_directions() {
+    let mut state = make_poll_state();
+    assert_eq!(state.active_tab, ActiveTab::Live);
+    state.handle_key(KeyCode::Right, KeyModifiers::NONE);
+    assert_eq!(state.active_tab, ActiveTab::Health);
+    state.handle_key(KeyCode::Right, KeyModifiers::NONE);
+    assert_eq!(state.active_tab, ActiveTab::Trust);
+    state.handle_key(KeyCode::Left, KeyModifiers::NONE);
+    assert_eq!(state.active_tab, ActiveTab::Health);
+    state.handle_key(KeyCode::Left, KeyModifiers::NONE);
+    assert_eq!(state.active_tab, ActiveTab::Live);
+    // Wrap around backwards: Live -> Explore.
+    state.handle_key(KeyCode::Left, KeyModifiers::NONE);
+    assert_eq!(state.active_tab, ActiveTab::Explore);
+    // BackTab (Shift-Tab) shares the backward path.
+    state.handle_key(KeyCode::BackTab, KeyModifiers::NONE);
+    assert_eq!(state.active_tab, ActiveTab::Mcp);
+}
+
+#[test]
 fn explore_enter_sets_switch_intent_without_mutating_repo_root() {
     let _lock = crate::test_support::global_test_lock(crate::config::test_home::HOME_ENV_TEST_LOCK);
     let (home, _guard) = isolated_home();

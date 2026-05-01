@@ -42,10 +42,17 @@ impl AppState {
             self.should_exit = true;
             return true;
         }
-        // Tab switching.
+        // Tab switching. `Tab` and `Right` cycle forward; `BackTab`
+        // (Shift+Tab) and `Left` cycle backward. The Live tab consumes
+        // `Up`/`Down` for scrolling further down, but `Left`/`Right` are
+        // unused on every tab so they are safe to bind globally here.
         match code {
-            KeyCode::Tab => {
+            KeyCode::Tab | KeyCode::Right => {
                 self.cycle_tab();
+                return true;
+            }
+            KeyCode::BackTab | KeyCode::Left => {
+                self.cycle_tab_back();
                 return true;
             }
             KeyCode::Char('1') => {
