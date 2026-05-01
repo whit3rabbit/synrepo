@@ -68,7 +68,19 @@ impl AppState {
                 self.set_tab(ActiveTab::Actions);
                 return true;
             }
+            KeyCode::Char('6') => {
+                self.set_tab(ActiveTab::Mcp);
+                return true;
+            }
+            KeyCode::Char('7') => {
+                self.set_tab(ActiveTab::Explore);
+                return true;
+            }
             _ => {}
+        }
+        if matches!(self.active_tab, ActiveTab::Explore) && self.handle_explore_key(code, modifiers)
+        {
+            return true;
         }
         // Explain-tab key dispatch. Plan-specified bindings:
         //   s — launch explain setup sub-wizard
@@ -167,6 +179,10 @@ impl AppState {
                 self.open_quick_confirm(PendingQuickConfirm::MaterializeGraph)
             }
             KeyCode::Char('w') => self.handle_watch_toggle(),
+            KeyCode::Char('p') => {
+                self.set_tab(ActiveTab::Explore);
+                true
+            }
             KeyCode::Char('i') => {
                 self.launch_integration = true;
                 self.should_exit = true;

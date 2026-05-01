@@ -3,9 +3,11 @@
 //! widgets don't import ratatui types into the probe modules.
 
 mod activity;
+mod next_actions;
 mod trust;
 mod vm;
 pub use activity::build_activity_vm;
+pub use next_actions::{build_next_actions, build_next_actions_with_context, NextActionRuntime};
 pub use trust::build_trust_vm;
 pub use vm::*;
 
@@ -14,7 +16,7 @@ mod tests;
 #[cfg(test)]
 mod trust_tests;
 
-use crate::bootstrap::runtime_probe::{AgentIntegration, AgentTargetKind};
+use crate::bootstrap::runtime_probe::AgentIntegration;
 use crate::config::home_dir;
 use crate::pipeline::diagnostics::{ReconcileHealth, WriterStatus};
 use crate::pipeline::explain::ExplainStatus;
@@ -279,99 +281,6 @@ pub fn build_health_vm(snapshot: &StatusSnapshot) -> HealthVm {
     }
 
     HealthVm { rows }
-}
-
-/// Derive next-actions from a snapshot + integration signal.
-pub fn build_next_actions(
-    snapshot: &StatusSnapshot,
-    integration: &AgentIntegration,
-) -> Vec<NextAction> {
-    let mut out: Vec<NextAction> = Vec::new();
-
-    if !snapshot.initialized {
-        out.push(NextAction {
-            label: "Run `synrepo init` to set up this repo".to_string(),
-            severity: Severity::Blocked,
-        });
-        return out;
-    }
-
-    if snapshot.graph_stats.is_none() {
-        out.push(NextAction {
-            label: "Graph not materialized — run `synrepo reconcile`".to_string(),
-            severity: Severity::Blocked,
-        });
-    }
-
-    if let Some(d) = &snapshot.diagnostics {
-        match &d.reconcile_health {
-            ReconcileHealth::Stale(_) | ReconcileHealth::Unknown => {
-                out.push(NextAction {
-                    label: "Reconcile is stale — refresh with `synrepo reconcile` (press R / S)"
-                        .to_string(),
-                    severity: Severity::Stale,
-                });
-            }
-            ReconcileHealth::WatchStalled { .. } => {
-                out.push(NextAction {
-                    label: "Watch loop appears wedged — restart with `synrepo watch stop` then `synrepo watch`"
-                        .to_string(),
-                    severity: Severity::Stale,
-                });
-            }
-            ReconcileHealth::Corrupt(_) => {
-                out.push(NextAction {
-                    label: "Reconcile state corrupt — run `synrepo watch stop`".to_string(),
-                    severity: Severity::Blocked,
-                });
-            }
-            ReconcileHealth::Current => {}
-        }
-        if !d.store_guidance.is_empty() {
-            out.push(NextAction {
-                label: format!("Store compat action: {}", d.store_guidance[0]),
-                severity: Severity::Blocked,
-            });
-        }
-    }
-
-    if !snapshot.export_freshness.starts_with("current") {
-        out.push(NextAction {
-            label: "Export is stale — run `synrepo export` (press R / S)".to_string(),
-            severity: Severity::Stale,
-        });
-    }
-
-    match integration {
-        AgentIntegration::Absent => {
-            out.push(NextAction {
-                label: "Agent integration absent — open integration flow".to_string(),
-                severity: Severity::Stale,
-            });
-        }
-        AgentIntegration::Partial { target } => {
-            out.push(NextAction {
-                label: format!(
-                    "Complete MCP registration for {}",
-                    integration_target_label(*target)
-                ),
-                severity: Severity::Stale,
-            });
-        }
-        AgentIntegration::Complete { .. } => {}
-    }
-
-    if out.is_empty() {
-        out.push(NextAction {
-            label: "All systems healthy. Connect an agent via MCP.".to_string(),
-            severity: Severity::Healthy,
-        });
-    }
-    out
-}
-
-fn integration_target_label(target: AgentTargetKind) -> &'static str {
-    target.as_str()
 }
 
 /// View model for the resolved repo path, used by the header.

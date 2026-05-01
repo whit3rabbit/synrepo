@@ -11,9 +11,10 @@ use crate::{
         export::{load_manifest, ExportFormat, ExportManifest, MANIFEST_FILENAME},
         repair::RepairSurface,
         watch::{
-            request_watch_control, run_watch_service, watch_service_status, SyncTrigger,
-            WatchConfig, WatchControlRequest, WatchControlResponse, WatchEvent, WatchServiceMode,
-            WatchServiceStatus,
+            lease::WatchStateHandle, request_watch_control, run_watch_service,
+            watch_daemon_state_path, watch_service_status, SyncTrigger, WatchConfig,
+            WatchControlRequest, WatchControlResponse, WatchDaemonState, WatchEvent,
+            WatchServiceMode, WatchServiceStatus,
         },
     },
     store::compatibility::GRAPH_FORMAT_VERSION,
@@ -50,6 +51,11 @@ fn watch_auto_sync_repairs_stale_export_after_startup_reconcile() {
 
     let manifest = load_manifest(&repo, &config).expect("export manifest should exist");
     assert_ne!(manifest.last_reconcile_at, "stale-epoch");
+    let state = request_watch_status(&synrepo_dir);
+    assert!(state.auto_sync_enabled);
+    assert!(!state.auto_sync_running);
+    assert!(!state.auto_sync_paused);
+    assert_eq!(state.auto_sync_last_outcome.as_deref(), Some("completed"));
 
     let _ = request_watch_control(&synrepo_dir, WatchControlRequest::Stop);
     handle.join().unwrap();
@@ -96,6 +102,9 @@ fn watch_auto_sync_repairs_only_cheap_surfaces_after_manual_reconcile() {
 
     let manifest = load_manifest(&repo, &config).expect("export manifest should exist");
     assert_ne!(manifest.last_reconcile_at, "stale-epoch");
+    let state = request_watch_status(&synrepo_dir);
+    assert!(state.auto_sync_enabled);
+    assert_eq!(state.auto_sync_last_outcome.as_deref(), Some("completed"));
 
     let _ = request_watch_control(&synrepo_dir, WatchControlRequest::Stop);
     handle.join().unwrap();
@@ -148,9 +157,42 @@ fn watch_auto_sync_disabled_skips() {
     assert_no_auto_sync_event(&event_rx, Duration::from_millis(500));
     let manifest = load_manifest(&repo, &config).expect("export manifest should exist");
     assert_eq!(manifest.last_reconcile_at, "stale-epoch");
+    assert!(!request_watch_status(&synrepo_dir).auto_sync_enabled);
 
     let _ = request_watch_control(&synrepo_dir, WatchControlRequest::Stop);
     handle.join().unwrap();
+}
+
+#[test]
+fn watch_state_tracks_blocked_auto_sync_and_manual_recovery() {
+    let (_dir, _repo, _config, synrepo_dir) = setup_test_repo();
+    let state_path = watch_daemon_state_path(&synrepo_dir);
+    let handle = WatchStateHandle::new(
+        state_path,
+        WatchDaemonState::new(&synrepo_dir, WatchServiceMode::Foreground),
+    );
+
+    handle.note_auto_sync_enabled(true);
+    handle.note_auto_sync_started();
+    let running = handle.snapshot();
+    assert!(running.auto_sync_enabled);
+    assert!(running.auto_sync_running);
+    assert!(!running.auto_sync_paused);
+    assert_eq!(running.auto_sync_last_outcome.as_deref(), Some("running"));
+
+    handle.note_auto_sync_finished(true);
+    let paused = handle.snapshot();
+    assert!(!paused.auto_sync_running);
+    assert!(paused.auto_sync_paused);
+    assert_eq!(paused.auto_sync_last_outcome.as_deref(), Some("blocked"));
+
+    handle.note_manual_sync_finished(false);
+    let recovered = handle.snapshot();
+    assert!(!recovered.auto_sync_paused);
+    assert_eq!(
+        recovered.auto_sync_last_outcome.as_deref(),
+        Some("manual_sync_completed")
+    );
 }
 
 fn wait_for_service(synrepo_dir: &std::path::Path) {
@@ -175,6 +217,13 @@ fn request_reconcile(synrepo_dir: &std::path::Path) {
         matches!(response, WatchControlResponse::Reconcile { .. }),
         "expected reconcile response, got {response:?}"
     );
+}
+
+fn request_watch_status(synrepo_dir: &std::path::Path) -> WatchDaemonState {
+    match request_watch_control(synrepo_dir, WatchControlRequest::Status).expect("watch status") {
+        WatchControlResponse::Status { snapshot } => snapshot,
+        other => panic!("expected status response, got {other:?}"),
+    }
 }
 
 fn write_stale_export_manifest(repo: &std::path::Path, config: &Config) {

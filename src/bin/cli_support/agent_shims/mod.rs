@@ -30,13 +30,12 @@ pub(crate) fn scope_label(scope: &agent_config::Scope) -> &'static str {
     }
 }
 
-/// Two-tier support matrix. `Automated` agents get the project-scoped MCP
-/// server entry written into their config (`.mcp.json`, `.codex/config.toml`,
-/// or `opencode.json`) by `synrepo setup`. `ShimOnly` agents get their
-/// instruction file written; MCP registration is documented but left to the
-/// operator, either because the agent has no documented project-scoped MCP
-/// config path or because the agent is a second-wave target not worth
-/// automating yet.
+/// Two-tier support matrix. `Automated` agents get the MCP server entry
+/// written into their agent config by `synrepo setup` (global by default,
+/// repo-local with `--project`). `ShimOnly` agents get their instruction file
+/// written; MCP registration is documented but left to the operator, either
+/// because the agent has no documented MCP config path or because the agent is
+/// a second-wave target not worth automating yet.
 ///
 /// The dispatch in `step_register_mcp` must agree with this tier assignment;
 /// the `automation_tier_matches_step_register_mcp_dispatch` test is the
@@ -225,7 +224,7 @@ impl AgentTool {
                 "Claude Code auto-discovers `.claude/skills/synrepo/SKILL.md` on startup; no further action required."
             }
             AgentTool::Cursor => {
-                "Cursor 2.4+ auto-discovers `.cursor/skills/synrepo/SKILL.md`; MCP server is registered in .cursor/mcp.json."
+                "Cursor 2.4+ auto-discovers the synrepo skill on startup."
             }
             AgentTool::Copilot => {
                 "Paste the contents of `synrepo-copilot-instructions.md` into \
@@ -235,10 +234,10 @@ impl AgentTool {
                 "Paste the contents of `synrepo-agents.md` into your `AGENTS.md` file."
             }
             AgentTool::Codex => {
-                "Codex CLI auto-discovers `.agents/skills/synrepo/SKILL.md`; MCP server is registered in project .codex/config.toml for trusted projects."
+                "Codex CLI auto-discovers the synrepo skill on startup."
             }
             AgentTool::Windsurf => {
-                "Windsurf auto-discovers `.windsurf/skills/synrepo/SKILL.md`; MCP server is registered in .windsurf/mcp.json."
+                "Windsurf auto-discovers the synrepo skill on startup."
             }
             AgentTool::OpenCode => "OpenCode loads `AGENTS.md` as a project rule automatically.",
             AgentTool::Gemini => {
@@ -255,7 +254,7 @@ impl AgentTool {
                 "Write the synrepo config manually: create `.junie/commands/synrepo.md`."
             }
             AgentTool::Roo => {
-                "Roo Code loads .roo/commands/synrepo.md automatically. The MCP server is registered in .roo/mcp.json."
+                "Roo Code loads .roo/commands/synrepo.md automatically."
             }
             AgentTool::Tabnine => {
                 "Write the synrepo config manually: create `.tabnine/agent/commands/synrepo.toml`."

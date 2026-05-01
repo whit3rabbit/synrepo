@@ -84,7 +84,7 @@ impl FooterWidget<'_> {
             priority: 1,
             spans: vec![
                 Span::styled(" tabs ", self.theme.muted_style()),
-                Span::styled("[Tab/1-5]", self.theme.agent_style()),
+                Span::styled("[Tab/1-7]", self.theme.agent_style()),
             ],
         });
         if matches!(self.active, ActiveTab::Live) {

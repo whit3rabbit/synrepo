@@ -29,7 +29,9 @@ use super::{
         persist_reconcile_state, run_reconcile_pass, run_reconcile_pass_with_touched_paths,
         ReconcileOutcome,
     },
-    sync::{emit_event, maybe_run_post_reconcile_auto_sync, run_sync_under_watch_lock},
+    sync::{
+        emit_event, maybe_run_post_reconcile_auto_sync, run_sync_under_watch_lock, WatchSyncContext,
+    },
 };
 
 /// Why a sync pass is running inside the watch service.
@@ -132,10 +134,6 @@ pub(super) enum LoopMessage {
 }
 
 /// Run the watch service in the current process.
-///
-/// `events` is an optional best-effort event stream. The live-mode dashboard
-/// subscribes here; foreground and daemon callers pass `None`. A dropped
-/// receiver does not stop the loop — sends are best-effort.
 pub fn run_watch_service(
     repo_root: &Path,
     config: &Config,
@@ -150,12 +148,10 @@ pub fn run_watch_service(
     let stop_flag = Arc::new(AtomicBool::new(false));
     let auto_sync_enabled = Arc::new(AtomicBool::new(config.auto_sync_enabled));
     let auto_sync_blocked = Arc::new(AtomicBool::new(false));
+    state_handle.note_auto_sync_enabled(config.auto_sync_enabled);
     let (tx, rx) = mpsc::channel::<LoopMessage>();
-    // Pin the control endpoint to the value persisted at lease acquisition.
-    // Clients read the same value out of `watch-daemon.json` via
-    // `resolve_control_endpoint`, so bind path and request path can never
-    // diverge — even if `$HOME` (read by `user_socket_dir`) shifts between
-    // acquire and listener spawn.
+    // Pin the bind path to the persisted endpoint so env changes cannot
+    // diverge client and server socket paths.
     let control_endpoint = state_handle.snapshot().control_endpoint;
     let socket_thread = spawn_control_listener(
         control_endpoint,
@@ -163,6 +159,7 @@ pub fn run_watch_service(
         tx.clone(),
         stop_flag.clone(),
         auto_sync_enabled.clone(),
+        auto_sync_blocked.clone(),
         config.watch_sync_timeout_seconds,
     )?;
 
@@ -248,14 +245,19 @@ pub fn run_watch_service(
             })?;
     }
 
-    maybe_run_post_reconcile_auto_sync(
+    let sync_context = WatchSyncContext {
         repo_root,
         config,
         synrepo_dir,
+        events: &events,
+        state_handle: &state_handle,
+    };
+
+    maybe_run_post_reconcile_auto_sync(
+        &sync_context,
         &startup,
         &auto_sync_enabled,
         &auto_sync_blocked,
-        &events,
     );
 
     let mut last_reconcile_at = std::time::Instant::now();
@@ -293,9 +295,7 @@ pub fn run_watch_service(
                     at: now,
                     triggering_events: event_count,
                 });
-                // Keepalive runs fast (skip git-history passes) since FS state
-                // is already being observed by the debouncer; the goal is to
-                // refresh the timestamp and auto-sync hook, not re-mine git.
+                // Keepalive is fast: refresh the timestamp and auto-sync hook.
                 let outcome = run_reconcile_pass_with_touched_paths(
                     repo_root,
                     config,
@@ -317,13 +317,10 @@ pub fn run_watch_service(
                     triggering_events: event_count,
                 });
                 maybe_run_post_reconcile_auto_sync(
-                    repo_root,
-                    config,
-                    synrepo_dir,
+                    &sync_context,
                     &outcome,
                     &auto_sync_enabled,
                     &auto_sync_blocked,
-                    &events,
                 );
             }
             Ok(LoopMessage::Stop) => {
@@ -349,28 +346,18 @@ pub fn run_watch_service(
                     triggering_events: 0,
                 });
                 maybe_run_post_reconcile_auto_sync(
-                    repo_root,
-                    config,
-                    synrepo_dir,
+                    &sync_context,
                     &outcome,
                     &auto_sync_enabled,
                     &auto_sync_blocked,
-                    &events,
                 );
             }
             Ok(LoopMessage::SyncNow {
                 respond_to,
                 options,
             }) => {
-                let response = run_sync_under_watch_lock(
-                    repo_root,
-                    config,
-                    synrepo_dir,
-                    options,
-                    None,
-                    SyncTrigger::Manual,
-                    &events,
-                );
+                let response =
+                    run_sync_under_watch_lock(&sync_context, options, None, SyncTrigger::Manual);
                 let _ = respond_to.send(response);
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => break,

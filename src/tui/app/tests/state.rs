@@ -1,5 +1,5 @@
 use super::super::*;
-use super::support::{make_live_state, make_poll_state};
+use super::support::{isolated_home, make_live_state, make_poll_state};
 use crate::pipeline::watch::{ReconcileOutcome, WatchEvent};
 use crate::tui::probe::Severity;
 use crossterm::event::{KeyCode, KeyModifiers};
@@ -87,6 +87,10 @@ fn handle_key_switches_tabs() {
     );
     state.handle_key(KeyCode::Char('5'), KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Actions);
+    state.handle_key(KeyCode::Char('6'), KeyModifiers::NONE);
+    assert_eq!(state.active_tab, ActiveTab::Mcp);
+    state.handle_key(KeyCode::Char('7'), KeyModifiers::NONE);
+    assert_eq!(state.active_tab, ActiveTab::Explore);
     state.handle_key(KeyCode::Char('1'), KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Live);
     state.handle_key(KeyCode::Tab, KeyModifiers::NONE);
@@ -97,6 +101,45 @@ fn handle_key_switches_tabs() {
     assert_eq!(state.active_tab, ActiveTab::Explain);
     state.handle_key(KeyCode::Tab, KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Actions);
+    state.handle_key(KeyCode::Tab, KeyModifiers::NONE);
+    assert_eq!(state.active_tab, ActiveTab::Mcp);
+    state.handle_key(KeyCode::Tab, KeyModifiers::NONE);
+    assert_eq!(state.active_tab, ActiveTab::Explore);
+    state.handle_key(KeyCode::Tab, KeyModifiers::NONE);
+    assert_eq!(state.active_tab, ActiveTab::Live);
+    state.handle_key(KeyCode::Char('p'), KeyModifiers::NONE);
+    assert_eq!(state.active_tab, ActiveTab::Explore);
+}
+
+#[test]
+fn explore_enter_sets_switch_intent_without_mutating_repo_root() {
+    let _lock = crate::test_support::global_test_lock(crate::config::test_home::HOME_ENV_TEST_LOCK);
+    let (home, _guard) = isolated_home();
+    let current = home.path().join("current");
+    let next = home.path().join("next");
+    std::fs::create_dir_all(&current).unwrap();
+    std::fs::create_dir_all(&next).unwrap();
+    crate::registry::record_project(&current).unwrap();
+    let next_entry = crate::registry::record_project(&next).unwrap();
+    let mut state = AppState::new_poll(
+        &current,
+        crate::tui::theme::Theme::plain(),
+        crate::bootstrap::runtime_probe::AgentIntegration::Absent,
+    );
+
+    state.set_tab(ActiveTab::Explore);
+    state.explore_selected = state
+        .explore_projects
+        .iter()
+        .position(|project| project.id == next_entry.id)
+        .unwrap();
+    assert!(state.handle_key(KeyCode::Enter, KeyModifiers::NONE));
+
+    assert_eq!(state.repo_root, current);
+    assert_eq!(
+        state.exit_intent(),
+        DashboardExit::SwitchProject(next.canonicalize().unwrap())
+    );
 }
 
 #[test]

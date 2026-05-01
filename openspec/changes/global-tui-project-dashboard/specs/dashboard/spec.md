@@ -43,6 +43,19 @@ The dashboard SHALL provide a project picker opened by `[p]`. The picker SHALL l
 - **THEN** the registry entry is removed
 - **AND** repository-local state is left untouched
 
+### Requirement: Provide persistent MCP and Explore tabs
+The dashboard SHALL include dedicated MCP and Explore tabs after Actions while preserving the existing first five tab numbers. The MCP tab SHALL report active-project MCP enablement across known agent targets, including scope, source trigger, and config path. The Explore tab SHALL list registry-managed projects only and allow switching the active project.
+
+#### Scenario: MCP tab reports active project registration
+- **WHEN** the dashboard renders the MCP tab for an active project
+- **THEN** each row shows agent, status, scope, trigger/source, and config path when known
+- **AND** the dashboard does not launch or host the MCP stdio server
+
+#### Scenario: Explore tab switches projects
+- **WHEN** the dashboard renders the Explore tab
+- **THEN** rows come from the managed-project registry with health, watch, lock, integration, and path
+- **AND** Enter switches to the selected project without scanning unrelated filesystem paths
+
 ### Requirement: Scope dashboard actions to projects
 Every dashboard action that reads or mutates repository-scoped synrepo state SHALL be dispatched with an explicit project context containing project ID, display name, repo root, and `.synrepo/` path.
 

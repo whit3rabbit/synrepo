@@ -7,6 +7,7 @@ mod confirm_stop_watch;
 mod explain_events;
 mod explain_picker;
 mod explain_preview;
+mod explore;
 mod key_handlers;
 mod state_impl;
 mod view_state;
@@ -31,6 +32,8 @@ use crossbeam_channel::Receiver;
 use crate::bootstrap::runtime_probe::AgentIntegration;
 use crate::pipeline::explain::telemetry::ExplainEvent;
 use crate::pipeline::watch::WatchEvent;
+use crate::tui::mcp_status::McpStatusRow;
+use crate::tui::projects::ProjectRef;
 use crate::tui::theme::Theme;
 
 /// Which high-level mode the app is currently in.
@@ -113,6 +116,14 @@ pub struct AppState {
     pub log: EventLog,
     /// Quick actions for the current mode.
     pub quick_actions: Vec<QuickAction>,
+    /// Active-project MCP status rows shown by the MCP tab.
+    pub mcp_rows: Vec<McpStatusRow>,
+    /// Registry-backed project rows shown by the Explore tab.
+    pub(crate) explore_projects: Vec<ProjectRef>,
+    /// Selected Explore-tab row.
+    pub(crate) explore_selected: usize,
+    /// Explicit dashboard restart target requested from the Explore tab.
+    pub(crate) switch_project_root: Option<PathBuf>,
     /// When set, render loop should exit after the current draw.
     pub should_exit: bool,
     /// When set, the caller should launch the integration sub-wizard after the
@@ -221,6 +232,8 @@ pub enum DashboardExit {
     LaunchIntegration,
     /// Operator asked for the explain setup sub-wizard.
     LaunchExplainSetup,
+    /// Operator selected another registry project from Explore.
+    SwitchProject(PathBuf),
 }
 
 #[cfg(test)]

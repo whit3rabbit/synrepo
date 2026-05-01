@@ -4,8 +4,9 @@ use tempfile::tempdir;
 
 use crate::cli_support::agent_shims::AgentTool;
 use crate::cli_support::commands::{
-    project_add_output, project_inspect_output, project_list_output, project_remove_output,
-    project_rename_output, project_use_output, resolve_tool_resolution, setup_many_resolved,
+    project_add_output, project_inspect_output, project_list_output, project_prune_missing_output,
+    project_remove_output, project_rename_output, project_use_output, resolve_tool_resolution,
+    setup_many_resolved,
 };
 
 fn home_guard() -> (
@@ -123,6 +124,60 @@ fn project_remove_only_unregisters_registry_entry() {
     assert!(out.contains("Project unmanaged"), "{out}");
     assert!(repo.path().join(".synrepo").exists());
     assert!(synrepo::registry::get(repo.path()).unwrap().is_none());
+}
+
+#[test]
+fn project_prune_missing_dry_run_reports_candidates_without_removing() {
+    let (_lock, _home, _guard) = home_guard();
+    let root = tempdir().unwrap();
+    let missing = root.path().join("missing-repo");
+    let missing_entry = synrepo::registry::record_project(&missing).unwrap();
+
+    let out = project_prune_missing_output(false, false).unwrap();
+
+    assert!(out.contains("Missing managed projects (1):"), "{out}");
+    assert!(out.contains(&missing_entry.id), "{out}");
+    assert!(out.contains("Dry run"), "{out}");
+    assert!(synrepo::registry::get(&missing).unwrap().is_some());
+}
+
+#[test]
+fn project_prune_missing_apply_removes_only_missing_projects() {
+    let (_lock, _home, _guard) = home_guard();
+    let live = tempdir().unwrap();
+    let root = tempdir().unwrap();
+    let missing = root.path().join("missing-repo");
+    synrepo::registry::record_project(live.path()).unwrap();
+    synrepo::registry::record_project(&missing).unwrap();
+
+    let out = project_prune_missing_output(true, false).unwrap();
+
+    assert!(
+        out.contains("Pruned missing managed projects (1):"),
+        "{out}"
+    );
+    assert!(
+        out.contains("No repository state, .synrepo/, global config, or agent files were deleted."),
+        "{out}"
+    );
+    assert!(synrepo::registry::get(&missing).unwrap().is_none());
+    assert!(synrepo::registry::get(live.path()).unwrap().is_some());
+}
+
+#[test]
+fn project_prune_missing_json_reports_apply_state() {
+    let (_lock, _home, _guard) = home_guard();
+    let root = tempdir().unwrap();
+    let missing = root.path().join("missing-repo");
+    synrepo::registry::record_project(&missing).unwrap();
+
+    let out = project_prune_missing_output(false, true).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&out).unwrap();
+
+    assert_eq!(parsed["applied"], false);
+    assert_eq!(parsed["missing_count"], 1);
+    assert_eq!(parsed["missing_projects"][0]["health"]["state"], "missing");
+    assert!(synrepo::registry::get(&missing).unwrap().is_some());
 }
 
 #[test]

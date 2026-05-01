@@ -22,6 +22,10 @@ pub enum ActiveTab {
     Explain,
     /// Next-actions + quick-actions.
     Actions,
+    /// Active-project MCP registration status.
+    Mcp,
+    /// Registry-managed project exploration and switching.
+    Explore,
 }
 
 impl fmt::Display for ActiveTab {
@@ -32,6 +36,8 @@ impl fmt::Display for ActiveTab {
             ActiveTab::Trust => write!(f, "Trust"),
             ActiveTab::Explain => write!(f, "Explain"),
             ActiveTab::Actions => write!(f, "Actions"),
+            ActiveTab::Mcp => write!(f, "MCP"),
+            ActiveTab::Explore => write!(f, "Explore"),
         }
     }
 }
@@ -46,6 +52,8 @@ impl AppState {
             self.picker = None;
             if matches!(tab, ActiveTab::Explain) {
                 self.refresh_explain_preview(false);
+            } else if matches!(tab, ActiveTab::Explore) {
+                self.refresh_explore_projects();
             } else if matches!(tab, ActiveTab::Live) {
                 // Re-enter Live pinned to the tail so operators always see
                 // the most recent entries on tab switch.
@@ -55,14 +63,16 @@ impl AppState {
         }
     }
 
-    /// Advance to the next tab in Live → Health → Trust → Explain → Actions → Live order.
+    /// Advance to the next tab in Live → Health → Trust → Explain → Actions → MCP → Explore order.
     pub fn cycle_tab(&mut self) {
         let next = match self.active_tab {
             ActiveTab::Live => ActiveTab::Health,
             ActiveTab::Health => ActiveTab::Trust,
             ActiveTab::Trust => ActiveTab::Explain,
             ActiveTab::Explain => ActiveTab::Actions,
-            ActiveTab::Actions => ActiveTab::Live,
+            ActiveTab::Actions => ActiveTab::Mcp,
+            ActiveTab::Mcp => ActiveTab::Explore,
+            ActiveTab::Explore => ActiveTab::Live,
         };
         self.set_tab(next);
     }

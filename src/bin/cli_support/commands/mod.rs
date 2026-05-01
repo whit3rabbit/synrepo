@@ -18,6 +18,7 @@ pub(crate) mod mcp;
 mod mcp_runtime;
 mod notes;
 mod project;
+mod project_prune;
 mod remove;
 mod repair;
 mod server;
@@ -71,6 +72,9 @@ pub(crate) use project::{
     project_add_output, project_inspect_output, project_list_output, project_remove_output,
     project_rename_output, project_use_output,
 };
+pub(crate) use project_prune::project_prune_missing;
+#[cfg(test)]
+pub(crate) use project_prune::project_prune_missing_output;
 pub(crate) use remove::remove;
 pub(crate) use repair::{check, reconcile, sync};
 pub(crate) use server::server;

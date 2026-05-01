@@ -15,6 +15,7 @@ use crate::pipeline::watch::{watch_service_status, WatchEvent, WatchServiceStatu
 use crate::surface::status_snapshot::{build_status_snapshot, StatusOptions};
 use crate::tui::actions::{materialize_now, now_rfc3339, ActionContext};
 use crate::tui::materializer::{MaterializeOutcome, MaterializeState, MaterializerSupervisor};
+use crate::tui::mcp_status::build_mcp_status_rows;
 use crate::tui::probe::Severity;
 use crate::tui::theme::Theme;
 use crate::tui::widgets::LogEntry;
@@ -88,6 +89,7 @@ impl AppState {
             },
         );
         let quick_actions = quick_actions_for(&mode, &snapshot);
+        let mcp_rows = build_mcp_status_rows(repo_root);
         let mut log = EventLog::default();
         for entry in startup_logs {
             log.push(entry);
@@ -102,6 +104,10 @@ impl AppState {
             snapshot,
             log,
             quick_actions,
+            mcp_rows,
+            explore_projects: Vec::new(),
+            explore_selected: 0,
+            switch_project_root: None,
             should_exit: false,
             launch_integration: false,
             launch_explain_setup: false,
@@ -150,6 +156,9 @@ impl AppState {
 
     /// Compute the post-loop exit intent. Called after the render loop unwinds.
     pub fn exit_intent(&self) -> DashboardExit {
+        if let Some(repo_root) = &self.switch_project_root {
+            return DashboardExit::SwitchProject(repo_root.clone());
+        }
         if self.launch_explain_setup {
             return DashboardExit::LaunchExplainSetup;
         }
@@ -362,6 +371,7 @@ impl AppState {
             },
         );
         self.quick_actions = quick_actions_for(&self.mode, &self.snapshot);
+        self.mcp_rows = build_mcp_status_rows(&self.repo_root);
         if matches!(self.active_tab, ActiveTab::Explain) {
             self.refresh_explain_preview(false);
         }

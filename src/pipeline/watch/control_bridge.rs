@@ -39,6 +39,7 @@ pub(super) fn spawn_control_listener(
     tx: mpsc::Sender<LoopMessage>,
     stop_flag: Arc<AtomicBool>,
     auto_sync_enabled: Arc<AtomicBool>,
+    auto_sync_blocked: Arc<AtomicBool>,
     sync_timeout_seconds: u32,
 ) -> crate::Result<thread::JoinHandle<()>> {
     // Unix sockets are filesystem paths. A prior dead daemon may have left a
@@ -75,6 +76,7 @@ pub(super) fn spawn_control_listener(
                     let tx = tx.clone();
                     let stop_flag = stop_flag.clone();
                     let auto_sync_enabled = auto_sync_enabled.clone();
+                    let auto_sync_blocked = auto_sync_blocked.clone();
                     let endpoint = endpoint.clone();
 
                     let sync_timeout = Duration::from_secs(sync_timeout_seconds as u64);
@@ -94,6 +96,10 @@ pub(super) fn spawn_control_listener(
                             }
                             Ok(WatchControlRequest::SetAutoSync { enabled }) => {
                                 auto_sync_enabled.store(enabled, Ordering::Relaxed);
+                                if enabled {
+                                    auto_sync_blocked.store(false, Ordering::Relaxed);
+                                }
+                                state_handle.note_auto_sync_enabled(enabled);
                                 WatchControlResponse::Ack {
                                     message: format!(
                                         "auto-sync {}",

@@ -76,3 +76,121 @@ fn picker_rename_updates_alias_only() {
     assert_eq!(renamed.path, entry.path);
     assert_eq!(renamed.name.as_deref(), Some("agent-config"));
 }
+
+#[test]
+fn p_key_opens_explore_tab_for_active_project() {
+    let (_lock, _home, _guard) = home_guard();
+    let project = tempdir().unwrap();
+    registry::record_project(project.path()).unwrap();
+    let mut state = GlobalAppState::new(project.path(), Theme::plain(), false).unwrap();
+
+    assert!(state.handle_key(KeyCode::Char('p'), KeyModifiers::NONE));
+
+    assert_eq!(
+        state.active_state().unwrap().active_tab,
+        crate::tui::app::ActiveTab::Explore
+    );
+    assert!(state.picker.is_none());
+}
+
+#[test]
+fn explore_enter_switches_selected_project() {
+    let (_lock, home, _guard) = home_guard();
+    let alpha = home.path().join("alpha");
+    let beta = home.path().join("beta");
+    std::fs::create_dir_all(&alpha).unwrap();
+    std::fs::create_dir_all(&beta).unwrap();
+    let alpha_entry = registry::record_project(&alpha).unwrap();
+    let beta_entry = registry::record_project(&beta).unwrap();
+    registry::rename_project(&alpha_entry.id, "alpha").unwrap();
+    registry::rename_project(&beta_entry.id, "beta").unwrap();
+    let mut state = GlobalAppState::new(home.path(), Theme::plain(), false).unwrap();
+
+    state.open_explore_tab();
+    assert_eq!(state.explore_selected_index(), 0);
+    assert!(state.handle_key(KeyCode::Down, KeyModifiers::NONE));
+    assert_eq!(state.explore_selected_index(), 1);
+    assert!(state.handle_key(KeyCode::Enter, KeyModifiers::NONE));
+
+    assert_eq!(
+        state.active_project_id.as_deref(),
+        Some(beta_entry.id.as_str())
+    );
+    assert_eq!(
+        state.active_state().unwrap().repo_root,
+        beta.canonicalize().unwrap()
+    );
+}
+
+#[test]
+fn explore_refresh_preserves_selected_project() {
+    let (_lock, home, _guard) = home_guard();
+    let alpha = home.path().join("alpha");
+    let beta = home.path().join("beta");
+    std::fs::create_dir_all(&alpha).unwrap();
+    std::fs::create_dir_all(&beta).unwrap();
+    let alpha_entry = registry::record_project(&alpha).unwrap();
+    let beta_entry = registry::record_project(&beta).unwrap();
+    registry::rename_project(&alpha_entry.id, "alpha").unwrap();
+    registry::rename_project(&beta_entry.id, "beta").unwrap();
+    let mut state = GlobalAppState::new(home.path(), Theme::plain(), false).unwrap();
+
+    state.open_explore_tab();
+    state.handle_key(KeyCode::Down, KeyModifiers::NONE);
+    assert_eq!(
+        state.projects[state.explore_selected_index()].id.as_str(),
+        beta_entry.id.as_str()
+    );
+    assert!(state.handle_key(KeyCode::Char('r'), KeyModifiers::NONE));
+
+    assert_eq!(
+        state.projects[state.explore_selected_index()].id.as_str(),
+        beta_entry.id.as_str()
+    );
+}
+
+#[test]
+fn explore_watch_toggle_scopes_to_selected_project() {
+    let (_lock, home, _guard) = home_guard();
+    let alpha = home.path().join("alpha");
+    let beta = home.path().join("beta");
+    std::fs::create_dir_all(&alpha).unwrap();
+    std::fs::create_dir_all(&beta).unwrap();
+    let alpha_entry = registry::record_project(&alpha).unwrap();
+    let beta_entry = registry::record_project(&beta).unwrap();
+    registry::rename_project(&alpha_entry.id, "alpha").unwrap();
+    registry::rename_project(&beta_entry.id, "beta").unwrap();
+
+    let alpha_state = crate::pipeline::watch::watch_daemon_state_path(
+        &crate::config::Config::synrepo_dir(&alpha),
+    );
+    let beta_state =
+        crate::pipeline::watch::watch_daemon_state_path(&crate::config::Config::synrepo_dir(&beta));
+    std::fs::create_dir_all(alpha_state.parent().unwrap()).unwrap();
+    std::fs::create_dir_all(beta_state.parent().unwrap()).unwrap();
+    std::fs::write(&alpha_state, b"{not json").unwrap();
+    std::fs::write(&beta_state, b"{not json").unwrap();
+
+    let mut state = GlobalAppState::new(home.path(), Theme::plain(), false).unwrap();
+    state.open_explore_tab();
+    state.explore_selected = state
+        .projects
+        .iter()
+        .position(|project| project.id == beta_entry.id)
+        .unwrap();
+
+    assert!(state.handle_key(KeyCode::Char('w'), KeyModifiers::NONE));
+
+    assert!(
+        alpha_state.exists(),
+        "watch toggle must not clean the non-selected project"
+    );
+    assert!(
+        !beta_state.exists(),
+        "watch toggle should clean only the selected project's corrupt artifact"
+    );
+    assert_eq!(
+        state.projects[state.explore_selected_index()].id.as_str(),
+        beta_entry.id.as_str()
+    );
+}

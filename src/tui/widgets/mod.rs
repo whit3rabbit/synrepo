@@ -10,20 +10,24 @@ use crate::tui::theme::Theme;
 
 pub mod actions;
 pub mod explain;
+pub(crate) mod explore;
 pub mod footer;
 pub mod header;
 pub mod health;
 pub mod live;
+pub mod mcp;
 pub(crate) mod projects;
 pub mod tabs;
 pub mod trust;
 
 pub use actions::ActionsTabWidget;
 pub use explain::ExplainTabWidget;
+pub(crate) use explore::ExploreTabWidget;
 pub use footer::FooterWidget;
 pub use header::HeaderWidget;
 pub use health::HealthWidget;
 pub use live::LiveFeedWidget;
+pub use mcp::McpTabWidget;
 pub(crate) use projects::ProjectPickerWidget;
 pub use tabs::DashboardTabsWidget;
 pub use trust::TrustWidget;

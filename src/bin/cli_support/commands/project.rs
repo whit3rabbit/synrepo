@@ -8,7 +8,7 @@ use synrepo::registry::{self, ProjectEntry};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-enum ProjectHealthState {
+pub(super) enum ProjectHealthState {
     Ready,
     Missing,
     Unusable,
@@ -35,7 +35,7 @@ impl std::fmt::Display for ProjectHealthState {
 }
 
 #[derive(Clone, Debug, Serialize)]
-struct ProjectHealth {
+pub(super) struct ProjectHealth {
     state: ProjectHealthState,
     detail: String,
 }
@@ -286,7 +286,7 @@ fn resolve_project_path(repo_root: &Path, path: Option<PathBuf>) -> anyhow::Resu
     Ok(registry::canonicalize_path(&target))
 }
 
-fn project_health(path: &Path) -> ProjectHealth {
+pub(super) fn project_health(path: &Path) -> ProjectHealth {
     if !path.exists() {
         return ProjectHealth {
             state: ProjectHealthState::Missing,

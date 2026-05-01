@@ -37,3 +37,10 @@
 - [x] 6.2 Add TUI switching/action-scope/project-picker/widget accessibility tests.
 - [x] 6.3 Run targeted test commands from the plan and `make ci-lint`.
 - [x] 6.4 Run `openspec status --change global-tui-project-dashboard --json` and confirm the change is apply-ready.
+
+## 7. MCP And Explore Tabs
+
+- [x] 7.1 Add MCP and Explore tab states, key bindings, footer/help text, and tab rendering.
+- [x] 7.2 Add active-project MCP status resolution with scope, trigger/source, config path, and tests.
+- [x] 7.3 Add registry-backed Explore tab selection, switching, refresh, watch toggle, and tests.
+- [x] 7.4 Run targeted TUI/registry tests and lint verification.

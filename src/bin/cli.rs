@@ -1,6 +1,4 @@
-//! synrepo CLI entry point.
-//!
-//! Bare `synrepo` routes to dashboard/setup/repair; no-flag TTY `init` enters guided setup.
+//! synrepo CLI entry point. Bare `synrepo` routes to dashboard/setup/repair.
 
 mod cli_support;
 use std::path::Path;
@@ -19,10 +17,10 @@ use cli_support::commands::{
     doctor, explain_alias, export, findings, graph_query, graph_stats, handoffs, impact_alias,
     links_accept, links_list, links_reject, links_review, node, notes_add, notes_audit,
     notes_forget, notes_link, notes_list, notes_supersede, notes_verify, project_add,
-    project_inspect, project_list, project_remove, project_rename, project_use, reconcile, remove,
-    resolve_tool_resolution, risks_alias, run_mcp_server, search, server, setup_many_resolved,
-    stats_context, status, sync, tests_alias, uninstall, upgrade, watch, watch_internal,
-    watch_status, watch_stop, StatFormat,
+    project_inspect, project_list, project_prune_missing, project_remove, project_rename,
+    project_use, reconcile, remove, resolve_tool_resolution, risks_alias, run_mcp_server, search,
+    server, setup_many_resolved, stats_context, status, sync, tests_alias, uninstall, upgrade,
+    watch, watch_internal, watch_status, watch_stop, StatFormat,
 };
 #[cfg(test)]
 use cli_support::commands::{prepare_mcp_state, report_reconcile_outcome};
@@ -59,8 +57,6 @@ fn main() -> anyhow::Result<()> {
     }
 }
 
-/// Dispatch an explicit subcommand. Behavior for each branch is unchanged
-/// from prior releases.
 fn dispatch(
     command: Command,
     repo_root: &Path,
@@ -83,6 +79,9 @@ fn dispatch(
             project_inspect(repo_root, path, json)
         }
         Command::Project(ProjectCommand::Remove { path }) => project_remove(repo_root, path),
+        Command::Project(ProjectCommand::PruneMissing { apply, json }) => {
+            project_prune_missing(apply, json)
+        }
         Command::Project(ProjectCommand::Use { selector }) => project_use(&selector),
         Command::Project(ProjectCommand::Rename { selector, name }) => {
             project_rename(&selector, &name)

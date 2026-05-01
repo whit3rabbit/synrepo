@@ -21,17 +21,19 @@ use crate::bootstrap::runtime_probe::{probe, AgentIntegration};
 use crate::pipeline::watch::WatchEvent;
 use crate::surface::readiness::ReadinessMatrix;
 use crate::tui::app::{poll_key, ActiveTab, AppState, DashboardExit};
+use crate::tui::dashboard_tabs::draw_global_explore_dashboard;
 use crate::tui::explain_run::run_explain_in_dashboard;
 use crate::tui::materializer::MaterializeState;
 use crate::tui::probe::{
-    build_activity_vm, build_header_vm, build_health_vm, build_next_actions, build_trust_vm,
-    display_repo_path, HealthRow, HealthVm, Severity,
+    build_activity_vm, build_header_vm, build_health_vm, build_next_actions_with_context,
+    build_trust_vm, display_repo_path, HealthRow, HealthVm, NextActionRuntime, Severity,
 };
 use crate::tui::projects::GlobalAppState;
 use crate::tui::theme::Theme;
 use crate::tui::widgets::{
-    ActionsTabWidget, DashboardTabsWidget, ExplainTabWidget, FooterWidget, HeaderWidget,
-    HealthWidget, LiveFeedWidget, LogEntry, ProjectPickerWidget, TrustWidget,
+    ActionsTabWidget, DashboardTabsWidget, ExplainTabWidget, ExploreTabWidget, FooterWidget,
+    HeaderWidget, HealthWidget, LiveFeedWidget, LogEntry, McpTabWidget, ProjectPickerWidget,
+    TrustWidget,
 };
 
 /// Terminal alias used by the render loop.
@@ -156,6 +158,14 @@ fn draw_global_dashboard(frame: &mut ratatui::Frame, state: &mut GlobalAppState)
         frame.render_widget(picker, frame.area());
         return;
     }
+    if state
+        .active_state()
+        .map(|active| matches!(active.active_tab, ActiveTab::Explore))
+        .unwrap_or(false)
+    {
+        draw_global_explore_dashboard(frame, state);
+        return;
+    }
     if let Some(active) = state.active_state_mut() {
         draw_dashboard(frame, active);
     }
@@ -168,7 +178,7 @@ fn draw_help(frame: &mut ratatui::Frame, theme: Theme) {
         .border_style(theme.border_style());
     let lines = vec![
         Line::from("[p] projects    [?] help    [:] commands    [q] quit"),
-        Line::from("[Tab/1-5] tabs  [r] refresh  [w] watch for active project"),
+        Line::from("[Tab/1-7] tabs  [r] refresh  [w] watch for active project"),
         Line::from("Project picker: filter, Enter switch, r rename, a add cwd, d detach, w watch"),
     ];
     let paragraph = Paragraph::new(lines).block(block).style(theme.base_style());
@@ -274,13 +284,41 @@ fn draw_dashboard(frame: &mut ratatui::Frame, state: &mut AppState) {
             frame.render_widget(explain, content_area);
         }
         ActiveTab::Actions => {
-            let next_actions = build_next_actions(&state.snapshot, &state.integration);
+            let next_actions = build_next_actions_with_context(
+                &state.snapshot,
+                &state.integration,
+                NextActionRuntime {
+                    snapshot_refresh_due_in: state
+                        .snapshot_refresh_interval
+                        .saturating_sub(state.last_refresh.elapsed()),
+                    auto_sync_enabled: Some(state.auto_sync_enabled),
+                    materialize_state: Some(&state.materialize_state),
+                    ..NextActionRuntime::default()
+                },
+            );
             let actions = ActionsTabWidget {
                 next_actions: &next_actions,
                 quick_actions: &state.quick_actions,
                 theme: &state.theme,
             };
             frame.render_widget(actions, content_area);
+        }
+        ActiveTab::Mcp => {
+            let mcp = McpTabWidget {
+                rows: &state.mcp_rows,
+                theme: &state.theme,
+            };
+            frame.render_widget(mcp, content_area);
+        }
+        ActiveTab::Explore => {
+            let explore = ExploreTabWidget {
+                projects: &state.explore_projects,
+                selected: state.explore_selected_index(),
+                active_project_id: state.project_id.as_deref(),
+                active_root: Some(state.repo_root.as_path()),
+                theme: &state.theme,
+            };
+            frame.render_widget(explore, content_area);
         }
     }
 

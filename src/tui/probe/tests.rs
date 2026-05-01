@@ -1,13 +1,19 @@
 //! Unit tests for probe view models.
 
-use std::path::PathBuf;
+use std::{collections::BTreeMap, path::PathBuf, time::Duration};
 
+use crate::bootstrap::runtime_probe::{AgentIntegration, AgentTargetKind};
 use crate::pipeline::context_metrics::ContextMetrics;
+use crate::pipeline::diagnostics::{
+    EmbeddingHealth, ReconcileHealth, ReconcileStaleness, RuntimeDiagnostics, WriterStatus,
+};
+use crate::pipeline::watch::{WatchDaemonState, WatchServiceMode, WatchServiceStatus};
+use crate::store::sqlite::PersistedGraphStats;
 use crate::surface::status_snapshot::{
     CommentaryCoverage, GraphSnapshotStatus, RepairAuditState, StatusSnapshot,
 };
 
-use super::{build_health_vm, Severity};
+use super::{build_health_vm, build_next_actions_with_context, NextActionRuntime, Severity};
 
 fn snapshot_with_metrics(metrics: Option<ContextMetrics>) -> StatusSnapshot {
     StatusSnapshot {
@@ -38,6 +44,71 @@ fn snapshot_with_metrics(metrics: Option<ContextMetrics>) -> StatusSnapshot {
         repair_audit: RepairAuditState::Ok,
         recent_activity: None,
         synrepo_dir: PathBuf::from("/tmp/probe-test"),
+    }
+}
+
+fn snapshot_for_actions(
+    export_freshness: &str,
+    reconcile_health: ReconcileHealth,
+    watch_status: WatchServiceStatus,
+    writer_status: WriterStatus,
+) -> StatusSnapshot {
+    let mut snapshot = snapshot_with_metrics(None);
+    snapshot.graph_stats = Some(PersistedGraphStats {
+        file_nodes: 1,
+        symbol_nodes: 1,
+        concept_nodes: 0,
+        total_edges: 0,
+        edge_counts_by_kind: BTreeMap::new(),
+    });
+    snapshot.export_freshness = export_freshness.to_string();
+    snapshot.diagnostics = Some(RuntimeDiagnostics {
+        reconcile_health,
+        watch_status,
+        writer_status,
+        store_guidance: Vec::new(),
+        last_reconcile: None,
+        embedding_health: EmbeddingHealth::Disabled,
+    });
+    snapshot
+}
+
+fn watch_state() -> WatchDaemonState {
+    WatchDaemonState {
+        pid: 42,
+        started_at: "2026-05-01T00:00:00Z".to_string(),
+        mode: WatchServiceMode::Daemon,
+        control_endpoint: "/tmp/synrepo-test.sock".to_string(),
+        last_event_at: None,
+        last_reconcile_at: None,
+        last_reconcile_outcome: None,
+        last_error: None,
+        last_triggering_events: None,
+        auto_sync_enabled: true,
+        auto_sync_running: false,
+        auto_sync_paused: false,
+        auto_sync_last_started_at: None,
+        auto_sync_last_finished_at: None,
+        auto_sync_last_outcome: None,
+    }
+}
+
+fn complete_integration() -> AgentIntegration {
+    AgentIntegration::Complete {
+        target: AgentTargetKind::Codex,
+    }
+}
+
+fn runtime(due_in: Duration) -> NextActionRuntime<'static> {
+    NextActionRuntime {
+        snapshot_refresh_due_in: due_in,
+        auto_sync_enabled: None,
+        materialize_state: None,
+        now: time::OffsetDateTime::parse(
+            "2026-05-01T00:00:05Z",
+            &time::format_description::well_known::Rfc3339,
+        )
+        .unwrap(),
     }
 }
 
@@ -121,4 +192,118 @@ fn health_rows_surface_mcp_request_metrics() {
         .expect("MCP row must be present when request metrics exist");
     assert_eq!(mcp_row.value, "3 req, 1 resource, 1 error");
     assert_eq!(mcp_row.severity, Severity::Stale);
+}
+
+#[test]
+fn export_stale_with_watch_auto_sync_shows_automatic_wait() {
+    let snapshot = snapshot_for_actions(
+        "stale (generated at old, current epoch new)",
+        ReconcileHealth::Current,
+        WatchServiceStatus::Running(watch_state()),
+        WriterStatus::Free,
+    );
+
+    let actions = build_next_actions_with_context(
+        &snapshot,
+        &complete_integration(),
+        runtime(Duration::from_millis(1500)),
+    );
+    let labels: Vec<_> = actions.iter().map(|a| a.label.as_str()).collect();
+
+    assert!(labels.contains(&"Export refresh is automatic, checking again in 2s"));
+    assert!(!labels.iter().any(|label| label.contains("synrepo export")));
+}
+
+#[test]
+fn export_stale_with_running_auto_sync_shows_running_timer() {
+    let mut state = watch_state();
+    state.auto_sync_running = true;
+    state.auto_sync_last_started_at = Some("2026-05-01T00:00:00Z".to_string());
+    let snapshot = snapshot_for_actions(
+        "stale (generated at old, current epoch new)",
+        ReconcileHealth::Current,
+        WatchServiceStatus::Running(state),
+        WriterStatus::Free,
+    );
+
+    let actions = build_next_actions_with_context(
+        &snapshot,
+        &complete_integration(),
+        runtime(Duration::from_secs(2)),
+    );
+
+    assert!(actions
+        .iter()
+        .any(|a| a.label == "Export refresh running, started 5s ago"));
+}
+
+#[test]
+fn export_stale_with_paused_auto_sync_points_to_sync() {
+    let mut state = watch_state();
+    state.auto_sync_paused = true;
+    let snapshot = snapshot_for_actions(
+        "stale (generated at old, current epoch new)",
+        ReconcileHealth::Current,
+        WatchServiceStatus::Running(state),
+        WriterStatus::Free,
+    );
+
+    let actions = build_next_actions_with_context(
+        &snapshot,
+        &complete_integration(),
+        runtime(Duration::from_secs(2)),
+    );
+
+    assert!(actions
+        .iter()
+        .any(|a| a.label == "Auto-sync paused after blocked repair, press S to inspect"));
+}
+
+#[test]
+fn export_stale_without_auto_sync_uses_manual_sync_hint() {
+    let inactive = snapshot_for_actions(
+        "stale (generated at old, current epoch new)",
+        ReconcileHealth::Current,
+        WatchServiceStatus::Inactive,
+        WriterStatus::Free,
+    );
+    let mut disabled_state = watch_state();
+    disabled_state.auto_sync_enabled = false;
+    let disabled = snapshot_for_actions(
+        "stale (generated at old, current epoch new)",
+        ReconcileHealth::Current,
+        WatchServiceStatus::Running(disabled_state),
+        WriterStatus::Free,
+    );
+
+    for snapshot in [inactive, disabled] {
+        let actions = build_next_actions_with_context(
+            &snapshot,
+            &complete_integration(),
+            runtime(Duration::ZERO),
+        );
+        assert!(actions
+            .iter()
+            .any(|a| a.label == "Export stale, press S to sync"));
+    }
+}
+
+#[test]
+fn stale_reconcile_with_active_watch_waits_for_poll() {
+    let snapshot = snapshot_for_actions(
+        "current",
+        ReconcileHealth::Stale(ReconcileStaleness::Outcome("lock-conflict".to_string())),
+        WatchServiceStatus::Running(watch_state()),
+        WriterStatus::HeldByOther { pid: 99 },
+    );
+
+    let actions = build_next_actions_with_context(
+        &snapshot,
+        &complete_integration(),
+        runtime(Duration::from_secs(2)),
+    );
+
+    assert!(actions.iter().any(|a| {
+        a.label == "Watch reconcile waiting on writer lock held by pid 99, checking again in 2s"
+    }));
 }

@@ -1,5 +1,6 @@
 //! Global project dashboard state and registry-backed project picker.
 
+mod explore;
 mod rename;
 mod watch;
 
@@ -13,7 +14,7 @@ use crate::config::Config;
 use crate::pipeline::watch::{watch_service_status, WatchServiceStatus};
 use crate::pipeline::writer::live_owner_pid;
 use crate::registry::{self, ProjectEntry};
-use crate::tui::app::AppState;
+use crate::tui::app::{ActiveTab, AppState};
 use crate::tui::theme::Theme;
 
 /// One registry project as shown in the global picker.
@@ -77,6 +78,7 @@ pub(crate) struct GlobalAppState {
     pub(crate) active_project_id: Option<String>,
     pub(crate) project_states: HashMap<String, AppState>,
     pub(crate) picker: Option<ProjectPickerState>,
+    pub(crate) explore_selected: usize,
     pub(crate) help_visible: bool,
     pub(crate) command_palette: bool,
     pub(crate) cwd: PathBuf,
@@ -92,6 +94,7 @@ impl GlobalAppState {
             active_project_id: None,
             project_states: HashMap::new(),
             picker: open_picker.then(ProjectPickerState::default),
+            explore_selected: 0,
             help_visible: false,
             command_palette: false,
             cwd: cwd.to_path_buf(),
@@ -183,8 +186,12 @@ impl GlobalAppState {
         }
         match code {
             KeyCode::Char('p') => {
-                let _ = self.refresh_projects();
-                self.picker = Some(ProjectPickerState::default());
+                if self.active_state().is_some() {
+                    self.open_explore_tab();
+                } else {
+                    let _ = self.refresh_projects();
+                    self.picker = Some(ProjectPickerState::default());
+                }
                 true
             }
             KeyCode::Char('?') => {
@@ -200,6 +207,19 @@ impl GlobalAppState {
                     active.set_toast("Open this project directly to run integration setup");
                 }
                 true
+            }
+            _ if self
+                .active_state()
+                .map(|active| matches!(active.active_tab, ActiveTab::Explore))
+                .unwrap_or(false) =>
+            {
+                if self.handle_explore_key(code, modifiers) {
+                    true
+                } else {
+                    self.active_state_mut()
+                        .map(|active| active.handle_key(code, modifiers))
+                        .unwrap_or(false)
+                }
             }
             _ => self
                 .active_state_mut()
@@ -326,7 +346,7 @@ impl GlobalAppState {
             .collect()
     }
 
-    fn selected_project(&self) -> Option<&ProjectRef> {
+    pub(super) fn selected_project(&self) -> Option<&ProjectRef> {
         let selected = self.picker.as_ref().map(|p| p.selected).unwrap_or(0);
         self.filtered_projects().get(selected).copied()
     }
@@ -335,7 +355,7 @@ impl GlobalAppState {
 #[cfg(test)]
 mod tests;
 
-fn load_project_refs() -> anyhow::Result<Vec<ProjectRef>> {
+pub(crate) fn load_project_refs() -> anyhow::Result<Vec<ProjectRef>> {
     let mut projects: Vec<ProjectRef> = registry::load()?
         .projects
         .iter()

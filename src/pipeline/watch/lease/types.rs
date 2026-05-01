@@ -50,6 +50,24 @@ pub struct WatchDaemonState {
     pub last_error: Option<String>,
     /// Number of triggering events in the last reconcile burst.
     pub last_triggering_events: Option<usize>,
+    /// Runtime auto-sync flag currently honored by the watch service.
+    #[serde(default)]
+    pub auto_sync_enabled: bool,
+    /// True while the watch loop is running the post-reconcile sync hook.
+    #[serde(default)]
+    pub auto_sync_running: bool,
+    /// True after auto-sync hits a blocked cheap-surface repair.
+    #[serde(default)]
+    pub auto_sync_paused: bool,
+    /// RFC 3339 UTC timestamp of the last auto-sync start.
+    #[serde(default)]
+    pub auto_sync_last_started_at: Option<String>,
+    /// RFC 3339 UTC timestamp of the last auto-sync finish.
+    #[serde(default)]
+    pub auto_sync_last_finished_at: Option<String>,
+    /// Stable outcome string for the last auto-sync or recovery sync.
+    #[serde(default)]
+    pub auto_sync_last_outcome: Option<String>,
 }
 
 impl WatchDaemonState {
@@ -64,6 +82,12 @@ impl WatchDaemonState {
             last_reconcile_outcome: None,
             last_error: None,
             last_triggering_events: None,
+            auto_sync_enabled: false,
+            auto_sync_running: false,
+            auto_sync_paused: false,
+            auto_sync_last_started_at: None,
+            auto_sync_last_finished_at: None,
+            auto_sync_last_outcome: None,
         }
     }
 
@@ -124,6 +148,70 @@ impl WatchStateHandle {
     /// Return the latest in-memory snapshot.
     pub fn snapshot(&self) -> WatchDaemonState {
         self.state.lock().clone()
+    }
+
+    pub fn note_auto_sync_enabled(&self, enabled: bool) {
+        let snapshot = {
+            let mut state = self.state.lock();
+            state.auto_sync_enabled = enabled;
+            if enabled {
+                state.auto_sync_paused = false;
+            } else {
+                state.auto_sync_running = false;
+            }
+            state.clone()
+        };
+        let _ = super::persist_watch_state_at(&self.state_path, &snapshot);
+    }
+
+    pub fn note_auto_sync_started(&self) {
+        let snapshot = {
+            let mut state = self.state.lock();
+            state.auto_sync_running = true;
+            state.auto_sync_paused = false;
+            state.auto_sync_last_started_at = Some(now_rfc3339());
+            state.auto_sync_last_outcome = Some("running".to_string());
+            state.clone()
+        };
+        let _ = super::persist_watch_state_at(&self.state_path, &snapshot);
+    }
+
+    pub fn note_auto_sync_finished(&self, blocked: bool) {
+        let snapshot = {
+            let mut state = self.state.lock();
+            state.auto_sync_running = false;
+            state.auto_sync_paused = blocked;
+            state.auto_sync_last_finished_at = Some(now_rfc3339());
+            state.auto_sync_last_outcome =
+                Some(if blocked { "blocked" } else { "completed" }.to_string());
+            state.clone()
+        };
+        let _ = super::persist_watch_state_at(&self.state_path, &snapshot);
+    }
+
+    pub fn note_auto_sync_error(&self, message: impl Into<String>) {
+        let snapshot = {
+            let mut state = self.state.lock();
+            state.auto_sync_running = false;
+            state.auto_sync_last_finished_at = Some(now_rfc3339());
+            state.auto_sync_last_outcome = Some(format!("error: {}", message.into()));
+            state.clone()
+        };
+        let _ = super::persist_watch_state_at(&self.state_path, &snapshot);
+    }
+
+    pub fn note_manual_sync_finished(&self, blocked: bool) {
+        if blocked {
+            return;
+        }
+        let snapshot = {
+            let mut state = self.state.lock();
+            state.auto_sync_paused = false;
+            state.auto_sync_last_finished_at = Some(now_rfc3339());
+            state.auto_sync_last_outcome = Some("manual_sync_completed".to_string());
+            state.clone()
+        };
+        let _ = super::persist_watch_state_at(&self.state_path, &snapshot);
     }
 
     /// Record that a filesystem burst outside `.synrepo/` was observed.

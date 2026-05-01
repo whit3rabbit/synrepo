@@ -36,26 +36,47 @@ Run `synrepo uninstall` for the guided teardown. It removes synrepo-owned agent 
 
 ### First Run
 
-In your repository root:
+Install `synrepo` once per machine. Then run setup from the first repository you want your agent to use:
 
 ```bash
-synrepo setup
-synrepo setup <tool>
+cd /path/to/repo
+synrepo setup claude   # or: synrepo setup codex
 ```
 
-Then, on a ready repo:
+`synrepo setup <tool>` initializes `.synrepo/`, writes the agent skill or instructions, records the repo in `~/.synrepo/projects.toml`, runs the first reconcile, and registers MCP globally when the integration supports it. Global MCP launches `synrepo mcp`, without a repo flag, so the agent can serve any managed repo when the current workspace is passed as `repo_root`.
+
+For another repo on the same machine:
+
+```bash
+cd /path/to/another-repo
+synrepo project add .
+```
+
+If you want to refresh the agent integration too, rerun `synrepo setup <tool>` instead. Setup is idempotent when the files are already current.
+
+For repo-local MCP config, opt in explicitly:
+
+```bash
+synrepo setup claude --project   # or: synrepo setup codex --project
+```
+
+Repo-local setup launches MCP as `synrepo mcp --repo .`, so agent calls can omit `repo_root`. Use it when you want config committed to, or isolated inside, a single repo.
+
+On a ready repo:
 
 ```bash
 synrepo
 ```
 
-- `synrepo setup` initializes `.synrepo/`, writes the agent instructions or skill file, and registers MCP globally where that integration is automated. Use `synrepo setup <tool> --project` for repo-local MCP config instead.
+- `synrepo setup` without a tool opens the interactive wizard in a TTY.
 - `synrepo` probes the repo and routes to setup, repair, or the dashboard based on current state.
 - `synrepo watch --daemon` is the normal follow-up if you want the repo model to stay fresh while you edit.
+- `synrepo project prune-missing` reports stale global registry entries for repos that no longer exist; add `--apply` to unregister only those entries.
 
 ## How It Fits Together
 
-- `synrepo setup <tool>`: install synrepo into the repo and wire your agent.
+- `synrepo setup <tool>`: initialize the repo and wire your agent globally by default.
+- `synrepo project add <path>`: register another repo for an already configured global MCP integration.
 - `synrepo`: open the guided operator UI. On a ready repo, this lands in the dashboard.
 - `synrepo watch --daemon`: keep the local repo model fresh as files change. Cheap repair surfaces (export regeneration, retired-observation compaction) auto-run after each drift-producing reconcile when `auto_sync_enabled = true` (the default in `.synrepo/config.toml`).
 - `synrepo status`: verify health, freshness, and whether anything needs attention.
@@ -88,10 +109,12 @@ synrepo
 
 | Tier | Tools | What synrepo does | What you do |
 |---|---|---|---|
-| Automated | `claude`, `codex`, `copilot`, `cursor`, `gemini`, `junie`, `open-code`, `qwen`, `roo`, `tabnine`, `windsurf` | Initializes `.synrepo/`, writes the skill or instruction file through `agent-config`, and registers the MCP server in the agent's global config by default | Start the agent in the repo |
+| Automated | `claude`, `codex`, `copilot`, `cursor`, `gemini`, `junie`, `open-code`, `qwen`, `roo`, `tabnine`, `windsurf` | Initializes `.synrepo/`, writes the skill or instruction file through `agent-config`, and registers the MCP server in global agent config by default when supported | Start the agent in the repo |
 | Shim-only | `generic`, `goose`, `kiro`, `trae` | Initializes `.synrepo/` and writes the repo-local skill or instruction file | Point the agent at `synrepo mcp --repo .` in that tool's own MCP config |
 
-`synrepo setup <tool>` now prefers the agent's global config when `agent-config` supports it. Pass `--project` to write repo-local MCP config and launch the server as `synrepo mcp --repo .`. Legacy unowned setup artifacts can be adopted into the new ownership ledger with `synrepo upgrade --apply`.
+`synrepo setup <tool>` now prefers the agent's global config when `agent-config` supports it. Global MCP entries launch `synrepo mcp`; repo-local entries launch `synrepo mcp --repo .`. Pass `--project` when you want repo-local MCP config. Legacy unowned setup artifacts can be adopted into the new ownership ledger with `synrepo upgrade --apply`.
+
+Global MCP serves managed projects only. `synrepo setup <tool>` records the current repo automatically. Later, use `synrepo project add <path>` for additional repos and `synrepo project prune-missing --apply` to clean registry entries for paths that no longer exist.
 
 MCP usage details, including resources, advisory overlay tools, and edit-gated tools, live in [docs/MCP.md](docs/MCP.md).
 
@@ -102,6 +125,8 @@ Use `synrepo agent-setup <tool>` if you only want to regenerate the instruction 
 | Command | What it is for |
 |---|---|
 | `synrepo setup <tool>` | First-time install for a repo and agent |
+| `synrepo project add <path>` | Register another repo for global MCP |
+| `synrepo project prune-missing [--apply]` | Dry-run or apply cleanup for missing managed repos |
 | `synrepo` | Guided entrypoint that routes to setup, repair, or dashboard |
 | `synrepo watch --daemon` | Keep the repo model fresh in the background |
 | `synrepo status` | Quick operational health check |

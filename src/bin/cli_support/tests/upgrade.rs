@@ -132,6 +132,12 @@ fn upgrade_apply_blocked_when_watch_running() {
         last_reconcile_outcome: None,
         last_error: None,
         last_triggering_events: None,
+        auto_sync_enabled: false,
+        auto_sync_running: false,
+        auto_sync_paused: false,
+        auto_sync_last_started_at: None,
+        auto_sync_last_finished_at: None,
+        auto_sync_last_outcome: None,
     };
     let _watch = synrepo::pipeline::watch::hold_watch_flock_with_state(&synrepo_dir, &state);
 

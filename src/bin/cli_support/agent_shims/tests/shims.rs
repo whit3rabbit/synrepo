@@ -126,7 +126,7 @@ fn test_include_instruction() {
         .contains(".claude/skills/synrepo/SKILL.md"));
     assert!(AgentTool::Cursor
         .include_instruction()
-        .contains(".cursor/skills/synrepo/SKILL.md"));
+        .contains("auto-discovers the synrepo skill"));
     assert!(AgentTool::Copilot
         .include_instruction()
         .contains("synrepo-copilot-instructions.md"));
@@ -135,10 +135,10 @@ fn test_include_instruction() {
         .contains("synrepo-agents.md"));
     assert!(AgentTool::Codex
         .include_instruction()
-        .contains(".agents/skills/synrepo/SKILL.md"));
+        .contains("auto-discovers the synrepo skill"));
     assert!(AgentTool::Windsurf
         .include_instruction()
-        .contains(".windsurf/skills/synrepo/SKILL.md"));
+        .contains("auto-discovers the synrepo skill"));
     assert!(AgentTool::OpenCode
         .include_instruction()
         .contains("AGENTS.md"));
@@ -151,6 +151,26 @@ fn test_include_instruction() {
     assert!(AgentTool::Trae
         .include_instruction()
         .contains(".trae/skills/synrepo/SKILL.md"));
+}
+
+#[test]
+fn automated_include_instructions_do_not_claim_project_scoped_mcp_paths() {
+    for tool in [
+        AgentTool::Cursor,
+        AgentTool::Codex,
+        AgentTool::Windsurf,
+        AgentTool::Roo,
+    ] {
+        let instruction = tool.include_instruction();
+        assert!(
+            !instruction.contains(".codex/config.toml")
+                && !instruction.contains(".cursor/mcp.json")
+                && !instruction.contains(".windsurf/")
+                && !instruction.contains(".roo/mcp.json"),
+            "{} instruction should not hard-code project-scoped MCP config paths: {instruction}",
+            tool.display_name()
+        );
+    }
 }
 
 #[test]

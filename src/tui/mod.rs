@@ -36,8 +36,10 @@ pub use self::wizard::{
 pub mod actions;
 pub mod app;
 pub mod dashboard;
+mod dashboard_tabs;
 mod explain_run;
 pub(crate) mod materializer;
+pub mod mcp_status;
 pub mod probe;
 pub mod projects;
 pub mod theme;
@@ -94,6 +96,8 @@ pub enum TuiOutcome {
     /// The caller should run `run_explain_only_wizard` and then re-open the
     /// dashboard.
     LaunchExplainSetupRequested,
+    /// Dashboard exited with a request to re-open on another registry project.
+    SwitchProjectRequested(std::path::PathBuf),
 }
 
 /// Open the poll-mode dashboard on a ready repo. See `run_live_watch_dashboard`
@@ -125,6 +129,9 @@ pub fn run_dashboard(
         app::DashboardExit::Quit => Ok(TuiOutcome::Exited),
         app::DashboardExit::LaunchIntegration => Ok(TuiOutcome::LaunchIntegrationRequested),
         app::DashboardExit::LaunchExplainSetup => Ok(TuiOutcome::LaunchExplainSetupRequested),
+        app::DashboardExit::SwitchProject(repo_root) => {
+            Ok(TuiOutcome::SwitchProjectRequested(repo_root))
+        }
     }
 }
 
@@ -331,6 +338,9 @@ mod live {
             DashboardExit::Quit => Ok(TuiOutcome::Exited),
             DashboardExit::LaunchIntegration => Ok(TuiOutcome::LaunchIntegrationRequested),
             DashboardExit::LaunchExplainSetup => Ok(TuiOutcome::LaunchExplainSetupRequested),
+            DashboardExit::SwitchProject(repo_root) => {
+                Ok(TuiOutcome::SwitchProjectRequested(repo_root))
+            }
         }
     }
 }

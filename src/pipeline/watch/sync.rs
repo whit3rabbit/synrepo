@@ -18,9 +18,19 @@ use crate::{
 
 use super::{
     control::WatchControlResponse,
+    lease::WatchStateHandle,
     reconcile::ReconcileOutcome,
     service::{SyncTrigger, WatchEvent},
 };
+
+/// Shared inputs for a sync pass run by the watch service.
+pub(super) struct WatchSyncContext<'a> {
+    pub(super) repo_root: &'a Path,
+    pub(super) config: &'a Config,
+    pub(super) synrepo_dir: &'a Path,
+    pub(super) events: &'a Option<crossbeam_channel::Sender<WatchEvent>>,
+    pub(super) state_handle: &'a WatchStateHandle,
+}
 
 /// Best-effort send on the optional event channel. A dropped receiver must
 /// not kill the watch loop, so failures are swallowed.
@@ -38,22 +48,26 @@ where
 /// watch main-loop thread. Emits `SyncStarted`/`SyncProgress`/`SyncFinished`
 /// events and returns the appropriate `WatchControlResponse`.
 pub(super) fn run_sync_under_watch_lock(
-    repo_root: &Path,
-    config: &Config,
-    synrepo_dir: &Path,
+    context: &WatchSyncContext<'_>,
     options: SyncOptions,
     surface_filter: Option<&'static [RepairSurface]>,
     trigger: SyncTrigger,
-    events: &Option<crossbeam_channel::Sender<WatchEvent>>,
 ) -> WatchControlResponse {
-    emit_event(events, |now| WatchEvent::SyncStarted { at: now, trigger });
+    if matches!(trigger, SyncTrigger::AutoPostReconcile) {
+        context.state_handle.note_auto_sync_started();
+    }
+    emit_event(context.events, |now| WatchEvent::SyncStarted {
+        at: now,
+        trigger,
+    });
 
-    let _lock: WriterLock = match acquire_writer_lock(synrepo_dir) {
+    let _lock: WriterLock = match acquire_writer_lock(context.synrepo_dir) {
         Ok(lock) => lock,
         Err(LockError::HeldByOther { pid, .. }) => {
             let msg =
                 format!("sync: writer lock held by pid {pid}; watch main loop could not acquire");
-            emit_event(events, |now| WatchEvent::SyncFinished {
+            note_sync_error(trigger, context.state_handle, &msg);
+            emit_event(context.events, |now| WatchEvent::SyncFinished {
                 at: now,
                 trigger,
                 summary: empty_sync_summary(),
@@ -61,18 +75,18 @@ pub(super) fn run_sync_under_watch_lock(
             return WatchControlResponse::Error { message: msg };
         }
         Err(err) => {
-            emit_event(events, |now| WatchEvent::SyncFinished {
+            let msg = format!("sync: could not acquire writer lock: {err}");
+            note_sync_error(trigger, context.state_handle, &msg);
+            emit_event(context.events, |now| WatchEvent::SyncFinished {
                 at: now,
                 trigger,
                 summary: empty_sync_summary(),
             });
-            return WatchControlResponse::Error {
-                message: format!("sync: could not acquire writer lock: {err}"),
-            };
+            return WatchControlResponse::Error { message: msg };
         }
     };
 
-    let events_for_cb = events.clone();
+    let events_for_cb = context.events.clone();
     let mut progress_cb = move |progress: SyncProgress| {
         emit_event(&events_for_cb, |now| WatchEvent::SyncProgress {
             at: now,
@@ -83,33 +97,47 @@ pub(super) fn run_sync_under_watch_lock(
     let mut progress: Option<&mut dyn FnMut(SyncProgress)> = Some(&mut progress_cb);
 
     let summary = match execute_sync_locked(
-        repo_root,
-        synrepo_dir,
-        config,
+        context.repo_root,
+        context.synrepo_dir,
+        context.config,
         options,
         &mut progress,
         surface_filter,
     ) {
         Ok(summary) => summary,
         Err(err) => {
-            emit_event(events, |now| WatchEvent::SyncFinished {
+            let msg = format!("sync failed: {err}");
+            note_sync_error(trigger, context.state_handle, &msg);
+            emit_event(context.events, |now| WatchEvent::SyncFinished {
                 at: now,
                 trigger,
                 summary: empty_sync_summary(),
             });
-            return WatchControlResponse::Error {
-                message: format!("sync failed: {err}"),
-            };
+            return WatchControlResponse::Error { message: msg };
         }
     };
 
-    emit_event(events, |now| WatchEvent::SyncFinished {
+    note_sync_finished(trigger, context.state_handle, !summary.blocked.is_empty());
+    emit_event(context.events, |now| WatchEvent::SyncFinished {
         at: now,
         trigger,
         summary: summary.clone(),
     });
 
     WatchControlResponse::Sync { summary }
+}
+
+fn note_sync_finished(trigger: SyncTrigger, state_handle: &WatchStateHandle, blocked: bool) {
+    match trigger {
+        SyncTrigger::AutoPostReconcile => state_handle.note_auto_sync_finished(blocked),
+        SyncTrigger::Manual => state_handle.note_manual_sync_finished(blocked),
+    }
+}
+
+fn note_sync_error(trigger: SyncTrigger, state_handle: &WatchStateHandle, message: &str) {
+    if matches!(trigger, SyncTrigger::AutoPostReconcile) {
+        state_handle.note_auto_sync_error(message);
+    }
 }
 
 fn empty_sync_summary() -> SyncSummary {
@@ -125,13 +153,10 @@ fn empty_sync_summary() -> SyncSummary {
 /// non-failure outcome. Skips on prior-pass blocked findings to avoid tight
 /// retry loops.
 pub(super) fn maybe_run_post_reconcile_auto_sync(
-    repo_root: &Path,
-    config: &Config,
-    synrepo_dir: &Path,
+    context: &WatchSyncContext<'_>,
     outcome: &ReconcileOutcome,
     auto_sync_enabled: &AtomicBool,
     auto_sync_blocked: &AtomicBool,
-    events: &Option<crossbeam_channel::Sender<WatchEvent>>,
 ) {
     if !auto_sync_enabled.load(Ordering::Relaxed) {
         return;
@@ -147,13 +172,10 @@ pub(super) fn maybe_run_post_reconcile_auto_sync(
     }
 
     let response = run_sync_under_watch_lock(
-        repo_root,
-        config,
-        synrepo_dir,
+        context,
         SyncOptions::default(),
         Some(CHEAP_AUTO_SYNC_SURFACES),
         SyncTrigger::AutoPostReconcile,
-        events,
     );
 
     if let WatchControlResponse::Sync { summary } = response {

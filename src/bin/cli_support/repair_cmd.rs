@@ -22,19 +22,26 @@ pub(crate) fn run_dashboard_with_sub_wizards(
     mut integration: AgentIntegration,
     mut opts: DashboardOptions,
 ) -> anyhow::Result<()> {
+    let mut current_root = repo_root.to_path_buf();
     loop {
         // Exhaustive match flags future TuiOutcome additions at compile time.
-        match run_dashboard(repo_root, integration.clone(), opts)? {
+        match run_dashboard(&current_root, integration.clone(), opts)? {
             TuiOutcome::Exited | TuiOutcome::NonTtyFallback => return Ok(()),
+            TuiOutcome::SwitchProjectRequested(next_root) => {
+                current_root = next_root;
+                let report = probe(&current_root);
+                integration = report.agent_integration;
+                opts.welcome_banner = false;
+            }
             TuiOutcome::LaunchIntegrationRequested => {
                 // Tear-down of the alt-screen has already happened inside
                 // `run_dashboard`; safe to print and prompt now.
                 let tui_opts = TuiOptions {
                     no_color: opts.no_color,
                 };
-                match run_integration_wizard(repo_root, integration.clone(), tui_opts)? {
+                match run_integration_wizard(&current_root, integration.clone(), tui_opts)? {
                     IntegrationWizardOutcome::Completed { plan } => {
-                        execute_integration_plan(repo_root, plan)?;
+                        execute_integration_plan(&current_root, plan)?;
                     }
                     IntegrationWizardOutcome::Cancelled => {
                         println!("integration wizard cancelled; no changes applied.");
@@ -44,7 +51,7 @@ pub(crate) fn run_dashboard_with_sub_wizards(
                 // Re-probe so the dashboard reflects the new integration
                 // state on re-open. Suppress the welcome banner on re-open —
                 // the banner is a first-run-only affordance.
-                let report = probe(repo_root);
+                let report = probe(&current_root);
                 integration = report.agent_integration;
                 opts.welcome_banner = false;
             }
@@ -52,7 +59,7 @@ pub(crate) fn run_dashboard_with_sub_wizards(
                 let tui_opts = TuiOptions {
                     no_color: opts.no_color,
                 };
-                run_explain_step(repo_root, tui_opts)?;
+                run_explain_step(&current_root, tui_opts)?;
                 opts.welcome_banner = false;
             }
             outcome @ (TuiOutcome::WizardCompleted | TuiOutcome::WizardCancelled) => {

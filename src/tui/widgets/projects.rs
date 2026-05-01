@@ -40,14 +40,31 @@ impl Widget for ProjectPickerWidget<'_> {
         let items: Vec<ListItem> = rows
             .iter()
             .enumerate()
-            .map(|(idx, project)| project_row(project, idx == selected, self.theme))
+            .map(|(idx, project)| {
+                project_row(
+                    project,
+                    idx == selected,
+                    self.state.active_project_id.as_deref() == Some(project.id.as_str()),
+                    self.theme,
+                )
+            })
             .collect();
         List::new(items).block(block).render(area, buf);
     }
 }
 
-fn project_row(project: &ProjectRef, selected: bool, theme: &Theme) -> ListItem<'static> {
-    let marker = if selected { ">" } else { " " };
+pub(crate) fn project_row(
+    project: &ProjectRef,
+    selected: bool,
+    active: bool,
+    theme: &Theme,
+) -> ListItem<'static> {
+    let marker = match (selected, active) {
+        (true, true) => "*",
+        (true, false) => ">",
+        (false, true) => "+",
+        (false, false) => " ",
+    };
     let style = if selected {
         theme.selected_style()
     } else {

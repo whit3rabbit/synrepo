@@ -68,17 +68,17 @@ pub(crate) fn setup(
         }
         AgentTool::Cursor => {
             println!(
-                "  Cursor will automatically load the synrepo MCP server from .cursor/mcp.json."
+                "  Open Cursor in this repo and it will load the configured synrepo MCP server."
             )
         }
         AgentTool::Windsurf => {
             println!(
-                "  Windsurf will automatically load the synrepo MCP server from .windsurf/mcp.json."
+                "  Open Windsurf in this repo and it will load the configured synrepo MCP server."
             )
         }
         AgentTool::Roo => {
             println!(
-                "  Roo Code will automatically load the synrepo MCP server from .roo/mcp.json."
+                "  Open Roo Code in this repo and it will load the configured synrepo MCP server."
             )
         }
         other => {

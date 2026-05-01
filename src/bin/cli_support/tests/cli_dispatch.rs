@@ -88,6 +88,15 @@ fn project_subcommands_parse() {
         Some(Command::Project(ProjectCommand::Remove { .. }))
     ));
 
+    let prune = parse(&["project", "prune-missing", "--apply", "--json"]);
+    assert!(matches!(
+        prune.command,
+        Some(Command::Project(ProjectCommand::PruneMissing {
+            apply: true,
+            json: true,
+        }))
+    ));
+
     let use_cmd = parse(&["project", "use", "proj_abc"]);
     assert!(matches!(
         use_cmd.command,

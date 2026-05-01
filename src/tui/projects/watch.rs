@@ -10,6 +10,13 @@ impl GlobalAppState {
         let Some(project) = self.selected_project().cloned() else {
             return;
         };
+        self.toggle_project_watch(&project.id);
+    }
+
+    pub(super) fn toggle_project_watch(&mut self, project_id: &str) {
+        let Some(project) = self.projects.iter().find(|p| p.id == project_id).cloned() else {
+            return;
+        };
         let ctx = ProjectActionContext::new(&project.id, &project.name, &project.root);
         let action_ctx = ctx.action_context();
         let outcome = match watch_service_status(&ctx.synrepo_dir) {

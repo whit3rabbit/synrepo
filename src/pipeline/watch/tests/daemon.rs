@@ -45,6 +45,12 @@ fn watch_lease_replaces_stale_owner() {
         last_reconcile_outcome: None,
         last_error: None,
         last_triggering_events: None,
+        auto_sync_enabled: false,
+        auto_sync_running: false,
+        auto_sync_paused: false,
+        auto_sync_last_started_at: None,
+        auto_sync_last_finished_at: None,
+        auto_sync_last_outcome: None,
     };
     fs::write(&state_path, serde_json::to_string(&stale).unwrap()).unwrap();
 
@@ -75,6 +81,12 @@ fn cleanup_stale_watch_artifacts_removes_dead_state_and_socket() {
         last_reconcile_outcome: None,
         last_error: None,
         last_triggering_events: None,
+        auto_sync_enabled: false,
+        auto_sync_running: false,
+        auto_sync_paused: false,
+        auto_sync_last_started_at: None,
+        auto_sync_last_finished_at: None,
+        auto_sync_last_outcome: None,
     };
     fs::write(&state_path, serde_json::to_string(&stale).unwrap()).unwrap();
     fs::write(&socket_path, b"stale socket").unwrap();

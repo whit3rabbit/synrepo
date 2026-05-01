@@ -20,6 +20,12 @@ fn synthetic_state(pid: u32, started_at: &str, endpoint: &str) -> WatchDaemonSta
         last_reconcile_outcome: None,
         last_error: None,
         last_triggering_events: None,
+        auto_sync_enabled: false,
+        auto_sync_running: false,
+        auto_sync_paused: false,
+        auto_sync_last_started_at: None,
+        auto_sync_last_finished_at: None,
+        auto_sync_last_outcome: None,
     }
 }
 

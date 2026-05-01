@@ -126,6 +126,13 @@ pub(crate) enum ProjectCommand {
         /// Repository path. Defaults to the current repo root.
         path: Option<PathBuf>,
     },
+    /// Report stale managed projects. Dry-run unless --apply is passed.
+    PruneMissing {
+        #[arg(long, help = "Unregister missing projects from the global registry")]
+        apply: bool,
+        #[arg(long, help = "Emit a machine-readable cleanup report")]
+        json: bool,
+    },
     /// Resolve and mark a managed project as recently used.
     Use { selector: String },
     /// Rename a managed project's display alias.
