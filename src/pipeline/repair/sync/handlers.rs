@@ -211,10 +211,21 @@ fn commentary_event_to_sync_progress(event: &CommentaryProgressEvent) -> Option<
             symbol_seed_candidates: *symbol_seed_candidates,
         }),
         CommentaryProgressEvent::TargetFinished {
-            current, generated, ..
+            item,
+            current,
+            generated,
+            skip_reason,
+            skip_message,
+            retry_attempts,
+            queued_for_next_run,
         } => Some(SyncProgress::CommentaryItem {
+            target: Some(item.path.clone()),
             current: *current,
             generated: *generated,
+            reason: skip_reason.map(|reason| reason.as_str().to_string()),
+            message: skip_message.clone(),
+            retry_attempts: *retry_attempts,
+            queued_for_next_run: *queued_for_next_run,
         }),
         CommentaryProgressEvent::RunSummary {
             refreshed,
@@ -222,12 +233,16 @@ fn commentary_event_to_sync_progress(event: &CommentaryProgressEvent) -> Option<
             not_generated,
             attempted,
             stopped,
+            queued_for_next_run,
+            skip_reasons,
         } => Some(SyncProgress::CommentarySummary {
             refreshed: *refreshed,
             seeded: *seeded,
             not_generated: *not_generated,
             attempted: *attempted,
             stopped: *stopped,
+            queued_for_next_run: *queued_for_next_run,
+            skip_reasons: skip_reasons.clone(),
         }),
         CommentaryProgressEvent::ScanProgress { .. }
         | CommentaryProgressEvent::TargetStarted { .. }

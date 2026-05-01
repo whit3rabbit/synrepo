@@ -1,30 +1,27 @@
 //! Commentary refresh helpers for repair sync.
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use crate::{
     core::ids::NodeId,
-    overlay::{CommentaryProvenance, OverlayStore},
-    pipeline::{
-        explain::{
-            build_commentary_generator,
-            docs::{
-                docs_root, index_dir, reconcile_commentary_docs, sync_commentary_index,
-                CommentaryIndexSyncMode,
-            },
-            CommentaryGenerator,
-        },
-        repair::commentary::{resolve_commentary_node, CommentaryNodeSnapshot},
+    pipeline::explain::{
+        build_commentary_generator,
+        docs::{docs_root, index_dir, reconcile_commentary_docs, sync_commentary_index},
+        CommentaryGenerator,
     },
     store::{overlay::SqliteOverlayStore, sqlite::SqliteGraphStore},
 };
 
-use super::commentary_context::build_context_text;
+use super::commentary_generate::execute_item;
 use super::commentary_plan::{
-    build_commentary_work_plan_with_progress, CommentaryProgressEvent, CommentaryWorkItem,
-    CommentaryWorkPhase, CommentaryWorkPlan,
+    build_commentary_work_plan_with_progress, CommentaryProgressEvent, CommentaryWorkPhase,
+    CommentaryWorkPlan,
+};
+use super::commentary_progress::{
+    emit, emit_docs_events, emit_index_events, emit_target_started, record_item_outcome,
+    skip_reason_summary,
 };
 use super::handlers::ActionContext;
 
@@ -126,6 +123,10 @@ fn refresh_commentary_with_generator(
     let mut seed_attempted = 0usize;
     let mut seed_generated = 0usize;
     let mut stopped = false;
+    let mut halted_for_rate_limit = false;
+    let mut queued_for_next_run = 0usize;
+    let mut skip_reasons = BTreeMap::new();
+    let max_targets = plan.max_target_count();
 
     for item in &plan.refresh {
         if stop_requested(&mut should_stop) {
@@ -135,14 +136,25 @@ fn refresh_commentary_with_generator(
         attempted += 1;
         refresh_attempted += 1;
         emit_target_started(&mut progress, item, attempted);
-        let generated = execute_item(repo_root, graph, overlay, generator, item)?;
+        let (generated, halted) = record_item_outcome(
+            &mut progress,
+            item,
+            attempted,
+            max_targets,
+            execute_item(repo_root, graph, overlay, generator, item)?,
+            &mut queued_for_next_run,
+            &mut skip_reasons,
+        );
         if generated {
             refreshed += 1;
             refresh_generated += 1;
         } else {
             not_generated += 1;
         }
-        emit_target_finished(&mut progress, item, attempted, generated);
+        if halted {
+            halted_for_rate_limit = true;
+            break;
+        }
     }
 
     emit(
@@ -155,48 +167,74 @@ fn refresh_commentary_with_generator(
         },
     );
 
-    for item in &plan.file_seeds {
-        if stop_requested(&mut should_stop) {
-            stopped = true;
-            break;
+    if !stopped && !halted_for_rate_limit {
+        for item in &plan.file_seeds {
+            if stop_requested(&mut should_stop) {
+                stopped = true;
+                break;
+            }
+            if commented.contains(&item.node_id) {
+                continue;
+            }
+            attempted += 1;
+            seed_attempted += 1;
+            emit_target_started(&mut progress, item, attempted);
+            let (generated, halted) = record_item_outcome(
+                &mut progress,
+                item,
+                attempted,
+                max_targets,
+                execute_item(repo_root, graph, overlay, generator, item)?,
+                &mut queued_for_next_run,
+                &mut skip_reasons,
+            );
+            if generated {
+                commented.insert(item.node_id);
+                seeded += 1;
+                seed_generated += 1;
+            } else {
+                not_generated += 1;
+            }
+            if halted {
+                halted_for_rate_limit = true;
+                break;
+            }
         }
-        if commented.contains(&item.node_id) {
-            continue;
-        }
-        attempted += 1;
-        seed_attempted += 1;
-        emit_target_started(&mut progress, item, attempted);
-        let generated = execute_item(repo_root, graph, overlay, generator, item)?;
-        if generated {
-            commented.insert(item.node_id);
-            seeded += 1;
-            seed_generated += 1;
-        } else {
-            not_generated += 1;
-        }
-        emit_target_finished(&mut progress, item, attempted, generated);
     }
 
-    for item in &plan.symbol_seed_candidates {
-        if stop_requested(&mut should_stop) {
-            stopped = true;
-            break;
+    if !stopped && !halted_for_rate_limit {
+        for item in &plan.symbol_seed_candidates {
+            if stop_requested(&mut should_stop) {
+                stopped = true;
+                break;
+            }
+            if commented.contains(&item.node_id) || commented.contains(&NodeId::File(item.file_id))
+            {
+                continue;
+            }
+            attempted += 1;
+            seed_attempted += 1;
+            emit_target_started(&mut progress, item, attempted);
+            let (generated, halted) = record_item_outcome(
+                &mut progress,
+                item,
+                attempted,
+                max_targets,
+                execute_item(repo_root, graph, overlay, generator, item)?,
+                &mut queued_for_next_run,
+                &mut skip_reasons,
+            );
+            if generated {
+                commented.insert(item.node_id);
+                seeded += 1;
+                seed_generated += 1;
+            } else {
+                not_generated += 1;
+            }
+            if halted {
+                break;
+            }
         }
-        if commented.contains(&item.node_id) || commented.contains(&NodeId::File(item.file_id)) {
-            continue;
-        }
-        attempted += 1;
-        seed_attempted += 1;
-        emit_target_started(&mut progress, item, attempted);
-        let generated = execute_item(repo_root, graph, overlay, generator, item)?;
-        if generated {
-            commented.insert(item.node_id);
-            seeded += 1;
-            seed_generated += 1;
-        } else {
-            not_generated += 1;
-        }
-        emit_target_finished(&mut progress, item, attempted, generated);
     }
 
     emit(
@@ -230,6 +268,8 @@ fn refresh_commentary_with_generator(
             not_generated,
             attempted,
             stopped,
+            queued_for_next_run,
+            skip_reasons: skip_reason_summary(&skip_reasons),
         },
     );
     let stop_suffix = if stopped {
@@ -237,8 +277,13 @@ fn refresh_commentary_with_generator(
     } else {
         ""
     };
+    let queue_suffix = if queued_for_next_run > 0 {
+        format!("; {queued_for_next_run} queued for next run")
+    } else {
+        String::new()
+    };
     actions_taken.push(format!(
-        "commentary: {seeded} seeded, {refreshed} refreshed, {not_generated} not generated{stop_suffix}"
+        "commentary: {seeded} seeded, {refreshed} refreshed, {not_generated} not generated{queue_suffix}{stop_suffix}"
     ));
     actions_taken.push(format!(
         "commentary docs: {docs_written} written, {docs_removed} removed, {} indexed",
@@ -252,136 +297,4 @@ fn stop_requested(should_stop: &mut Option<&mut dyn FnMut() -> bool>) -> bool {
         Some(should_stop) => should_stop(),
         None => false,
     }
-}
-
-fn execute_item(
-    repo_root: &Path,
-    graph: &SqliteGraphStore,
-    overlay: &mut SqliteOverlayStore,
-    generator: &dyn CommentaryGenerator,
-    item: &CommentaryWorkItem,
-) -> crate::Result<bool> {
-    let Some(snap) = resolve_commentary_node(graph, item.node_id)? else {
-        return Ok(false);
-    };
-    generate_and_insert(repo_root, graph, generator, overlay, item.node_id, &snap)
-}
-
-fn emit(
-    progress: &mut Option<&mut dyn FnMut(CommentaryProgressEvent)>,
-    event: CommentaryProgressEvent,
-) {
-    if let Some(progress) = progress.as_mut() {
-        progress(event);
-    }
-}
-
-fn emit_target_started(
-    progress: &mut Option<&mut dyn FnMut(CommentaryProgressEvent)>,
-    item: &CommentaryWorkItem,
-    current: usize,
-) {
-    emit(
-        progress,
-        CommentaryProgressEvent::TargetStarted {
-            item: item.clone(),
-            current,
-        },
-    );
-}
-
-fn emit_target_finished(
-    progress: &mut Option<&mut dyn FnMut(CommentaryProgressEvent)>,
-    item: &CommentaryWorkItem,
-    current: usize,
-    generated: bool,
-) {
-    emit(
-        progress,
-        CommentaryProgressEvent::TargetFinished {
-            item: item.clone(),
-            current,
-            generated,
-        },
-    );
-}
-
-fn emit_docs_events(
-    progress: &mut Option<&mut dyn FnMut(CommentaryProgressEvent)>,
-    docs_root_path: &Path,
-    docs_root_existed: bool,
-    touched: &[PathBuf],
-) {
-    if !docs_root_existed && docs_root_path.exists() {
-        emit(
-            progress,
-            CommentaryProgressEvent::DocsDirCreated {
-                path: docs_root_path.to_path_buf(),
-            },
-        );
-    }
-    let mut touched_sorted = touched.to_vec();
-    touched_sorted.sort();
-    for path in touched_sorted {
-        let event = if path.exists() {
-            CommentaryProgressEvent::DocWritten { path }
-        } else {
-            CommentaryProgressEvent::DocDeleted { path }
-        };
-        emit(progress, event);
-    }
-}
-
-fn emit_index_events(
-    progress: &mut Option<&mut dyn FnMut(CommentaryProgressEvent)>,
-    index_dir_path: &Path,
-    index_dir_existed: bool,
-    mode: CommentaryIndexSyncMode,
-    touched_paths: usize,
-) {
-    if !index_dir_existed && index_dir_path.exists() {
-        emit(
-            progress,
-            CommentaryProgressEvent::IndexDirCreated {
-                path: index_dir_path.to_path_buf(),
-            },
-        );
-    }
-    match mode {
-        CommentaryIndexSyncMode::NoChange => {}
-        CommentaryIndexSyncMode::Updated => emit(
-            progress,
-            CommentaryProgressEvent::IndexUpdated {
-                path: index_dir_path.to_path_buf(),
-                touched_paths,
-            },
-        ),
-        CommentaryIndexSyncMode::Rebuilt => emit(
-            progress,
-            CommentaryProgressEvent::IndexRebuilt {
-                path: index_dir_path.to_path_buf(),
-                touched_paths,
-            },
-        ),
-    }
-}
-
-fn generate_and_insert(
-    repo_root: &Path,
-    graph: &SqliteGraphStore,
-    generator: &dyn CommentaryGenerator,
-    overlay: &mut SqliteOverlayStore,
-    node_id: NodeId,
-    snap: &CommentaryNodeSnapshot,
-) -> crate::Result<bool> {
-    let ctx_text = build_context_text(repo_root, graph, snap);
-    let Some(mut entry) = generator.generate(node_id, &ctx_text)? else {
-        return Ok(false);
-    };
-    entry.provenance = CommentaryProvenance {
-        source_content_hash: snap.content_hash.clone(),
-        ..entry.provenance
-    };
-    overlay.insert_commentary(entry)?;
-    Ok(true)
 }

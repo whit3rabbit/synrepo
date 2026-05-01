@@ -1,9 +1,6 @@
 //! synrepo CLI entry point.
 //!
-//! Bare `synrepo` (no subcommand) runs a read-only runtime probe and routes
-//! the user to the dashboard, guided setup, or guided repair wizard based on
-//! classification. All explicit subcommands (`init`, `status`, `watch`,
-//! `sync`, `export`, `mcp`, and friends) behave exactly as before.
+//! Bare `synrepo` routes to dashboard/setup/repair; no-flag TTY `init` enters guided setup.
 
 mod cli_support;
 use std::path::Path;
@@ -20,7 +17,7 @@ use cli_support::cli_args::{
 use cli_support::commands::{
     agent_setup_many_resolved, bench_context, cards_alias, change_risk, check, compact, docs,
     doctor, explain_alias, export, findings, graph_query, graph_stats, handoffs, impact_alias,
-    init, links_accept, links_list, links_reject, links_review, node, notes_add, notes_audit,
+    links_accept, links_list, links_reject, links_review, node, notes_add, notes_audit,
     notes_forget, notes_link, notes_list, notes_supersede, notes_verify, project_add,
     project_inspect, project_list, project_remove, project_rename, project_use, reconcile, remove,
     resolve_tool_resolution, risks_alias, run_mcp_server, search, server, setup_many_resolved,
@@ -75,7 +72,10 @@ fn dispatch(
             mode,
             gitignore,
             force,
-        } => init(repo_root, mode.map(Into::into), gitignore, force),
+        } => {
+            let mode = mode.map(Into::into);
+            cli_support::setup_cmd::run_init_or_setup(repo_root, mode, gitignore, force, tui_opts)
+        }
         Command::Status { json, recent, full } => status(repo_root, json, recent, full),
         Command::Project(ProjectCommand::Add { path }) => project_add(repo_root, path),
         Command::Project(ProjectCommand::List { json }) => project_list(json),

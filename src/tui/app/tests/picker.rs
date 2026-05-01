@@ -31,7 +31,7 @@ fn picker_esc_clears_without_exit() {
     assert!(consumed);
     assert!(state.picker.is_none());
     assert!(!state.should_exit, "Esc in picker must not exit the loop");
-    assert!(state.pending_explain.is_none());
+    assert!(state.pending_explain.is_empty());
 }
 
 #[test]
@@ -42,7 +42,7 @@ fn picker_enter_with_selection_queues_paths_mode() {
     let consumed = state.handle_key(KeyCode::Enter, KeyModifiers::NONE);
     assert!(consumed);
     assert!(!state.should_exit);
-    match &state.pending_explain {
+    match state.pending_explain.front() {
         Some(PendingExplainRun {
             mode: ExplainMode::Paths(paths),
             stopped_watch: false,
@@ -71,7 +71,7 @@ fn picker_enter_with_empty_selection_stays_open() {
         "empty-selection Enter must keep picker open"
     );
     assert!(!state.should_exit);
-    assert!(state.pending_explain.is_none());
+    assert!(state.pending_explain.is_empty());
 }
 
 #[test]

@@ -26,7 +26,7 @@ pub struct CommentaryProvenance {
 }
 
 /// A single commentary entry persisted in the overlay store.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CommentaryEntry {
     /// The node this commentary annotates.
     pub node_id: NodeId,

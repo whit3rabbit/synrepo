@@ -10,6 +10,7 @@ mod graph;
 mod links;
 mod mcp;
 mod mcp_edits;
+mod mcp_schema;
 mod notes;
 mod overlay_scale;
 mod project;

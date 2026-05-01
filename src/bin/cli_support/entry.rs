@@ -117,7 +117,7 @@ pub(crate) fn run_dashboard_command(repo_root: &Path, opts: TuiOptions) -> anyho
         }
         RoutingDecision::OpenSetup => {
             eprintln!(
-                "synrepo dashboard: repository is uninitialized. Run `synrepo` (bare) or `synrepo init` to set up."
+                "synrepo dashboard: repository is uninitialized. Run bare `synrepo` for guided setup, or `synrepo init --mode auto` for runtime-only bootstrap."
             );
             std::process::exit(2);
         }
@@ -136,7 +136,9 @@ pub(crate) fn run_dashboard_command(repo_root: &Path, opts: TuiOptions) -> anyho
 pub(crate) fn bare_uninitialized_fallback() -> String {
     "\
 synrepo: this repository is not initialized.
-Run `synrepo init` to create .synrepo/ and populate the graph.
+Run bare `synrepo` in a TTY for guided setup.
+For scripted setup, run `synrepo setup <tool>`.
+For runtime-only bootstrap, run `synrepo init --mode auto`.
 "
     .to_string()
 }

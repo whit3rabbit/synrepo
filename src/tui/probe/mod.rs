@@ -187,6 +187,22 @@ pub fn build_health_vm(snapshot: &StatusSnapshot) -> HealthVm {
             value: metrics.stale_responses_total.to_string(),
             severity: stale_severity,
         });
+        if metrics.mcp_requests_total > 0 {
+            let tool_errors: u64 = metrics.mcp_tool_errors_total.values().sum();
+            let mcp_severity = if tool_errors > 0 {
+                Severity::Stale
+            } else {
+                Severity::Healthy
+            };
+            rows.push(HealthRow {
+                label: "mcp".to_string(),
+                value: format!(
+                    "{} req, {} resource, {} error",
+                    metrics.mcp_requests_total, metrics.mcp_resource_reads_total, tool_errors
+                ),
+                severity: mcp_severity,
+            });
+        }
     }
 
     // Explain row: expected-off is Healthy; a detected but unused key

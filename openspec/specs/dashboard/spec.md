@@ -89,17 +89,22 @@ synrepo's dashboard process SHALL NOT launch the stdio MCP server in-process. Th
 - **AND** the dashboard does not bind stdin or stdout to an MCP transport while it is rendering
 
 ### Requirement: Provide a guided setup wizard
-synrepo SHALL provide a guided setup wizard that runs when the runtime probe classifies the repo as `uninitialized`. The wizard SHALL follow a defined arc (splash, mode, agent target, confirm, run, land-in-dashboard), SHALL call decomposed setup steps (initialize runtime, write agent shim, register MCP, apply integration), and SHALL NOT write any file-system state before the explicit "Confirm + run" step. Bare `synrepo` on a fresh repo SHALL enter the wizard directly without an intermediate "Do you want to set up?" confirmation.
+synrepo SHALL provide a guided setup wizard that runs when the runtime probe classifies the repo as `uninitialized`. The wizard SHALL follow a defined arc (splash, mode, agent target, optional explain setup, confirm, run, land-in-dashboard), SHALL call decomposed setup steps (initialize runtime, write agent shim, register MCP, apply integration, apply explain config when selected), and SHALL NOT write any file-system state before the explicit "Confirm + run" step. Bare `synrepo` on a fresh repo and interactive no-flag `synrepo init` on a fresh repo SHALL enter the wizard directly without an intermediate "Do you want to set up?" confirmation.
 
 #### Scenario: Enter the wizard from bare invocation on a fresh repo
 - **WHEN** a user runs bare `synrepo` in a directory the probe classifies as `uninitialized` and stdout is a TTY
 - **THEN** the wizard opens directly at the splash step
 - **AND** the user is not shown a separate "Do you want to set up synrepo?" prompt before the wizard begins
 
+#### Scenario: Enter the wizard from no-flag init on a fresh repo
+- **WHEN** a user runs `synrepo init` with no flags in a directory the probe classifies as `uninitialized` and stdout is a TTY
+- **THEN** the same guided setup wizard opens
+- **AND** flagged or non-TTY init invocations keep the low-level bootstrap behavior
+
 #### Scenario: Complete a fresh setup
 - **WHEN** the wizard opens on an uninitialized repository
-- **THEN** the user proceeds through splash, mode selection, agent-target selection (including a first-class "Skip" option), and a plan-confirmation step before any writes occur
-- **AND** the wizard runs init, writes the chosen shim if any, registers MCP for the chosen target if any, performs a first reconcile, and transitions to the dashboard with a one-shot welcome message
+- **THEN** the user proceeds through splash, mode selection, agent-target selection (including a first-class "Skip" option), optional explain setup, and a plan-confirmation step before any writes occur
+- **AND** the wizard runs init, writes the chosen shim if any, registers MCP for the chosen target if any, writes explain config if selected, performs a first reconcile, records the project, and transitions to the dashboard with a one-shot welcome message
 
 #### Scenario: Cancel setup before any writes
 - **WHEN** the user cancels the setup wizard at or before the "Confirm + run" step
@@ -121,7 +126,7 @@ synrepo SHALL NOT enter the interactive setup wizard when bare `synrepo` is invo
 
 #### Scenario: Bare invocation on a fresh repo with piped output
 - **WHEN** a user runs `synrepo | tee log` in a directory the probe classifies as `uninitialized`
-- **THEN** the binary prints a message directing the user to run `synrepo init` explicitly
+- **THEN** the binary prints a message directing the user to run bare `synrepo` in a TTY for guided setup, `synrepo setup <tool>` for scripted setup, or `synrepo init --mode auto` for runtime-only bootstrap
 - **AND** it exits non-zero without entering the TUI alternate screen
 
 #### Scenario: Bare invocation on a partial repo with piped output
@@ -159,6 +164,18 @@ synrepo SHALL surface an agent-integration completion flow when the runtime prob
 - **WHEN** the dashboard opens and a shim exists but MCP registration is missing
 - **THEN** the integration flow offers to complete MCP registration only
 - **AND** the existing shim file is not overwritten
+
+### Requirement: Provide explain setup from the dashboard
+synrepo SHALL surface explain setup from a ready repository dashboard without requiring the user to exit and run a separate setup command.
+
+#### Scenario: Ready repo configures explain in place
+- **WHEN** the dashboard is open on a ready repository
+- **THEN** a quick action labeled `configure explain` is available
+- **AND** activating it opens the explain setup sub-wizard, applies the selected config, and returns to the dashboard
+
+#### Scenario: Explain tab setup alias remains available
+- **WHEN** the user is on the Explain tab
+- **THEN** pressing `s` opens the same explain setup sub-wizard
 
 ### Requirement: Ship one built-in dark theme with a plain-terminal escape
 synrepo's dashboard SHALL ship exactly one built-in dark palette in v1, with a single `--no-color` escape that disables all styling for plain or non-ANSI terminals.
@@ -271,4 +288,3 @@ The dashboard's `NextAction` rendering SHALL, when a stale surface is present th
 #### Scenario: Stale reconcile with fresh bindings
 - **WHEN** the snapshot reports reconcile is stale and the dashboard has an `R` binding
 - **THEN** the rendered next-action line includes `(press R)` next to the reconcile suggestion
-

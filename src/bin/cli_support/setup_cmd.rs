@@ -1,6 +1,7 @@
 use std::path::Path;
 
-use synrepo::bootstrap::runtime_probe::{probe, RoutingDecision};
+use synrepo::bootstrap::runtime_probe::{probe, RoutingDecision, RuntimeClassification};
+use synrepo::config::Mode;
 use synrepo::tui::{
     run_explain_only_wizard, run_setup_wizard, stdout_is_tty, DashboardOptions, SetupPlan,
     SetupWizardOutcome, TuiOptions,
@@ -14,6 +15,51 @@ use super::commands::{
 use super::entry::{bare_ready_summary, bare_uninitialized_fallback};
 use super::explain_cmd::print_explain_discovery_hint;
 use super::repair_cmd::run_dashboard_with_sub_wizards;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum InitEntryMode {
+    GuidedSetup,
+    RawInit,
+}
+
+/// Dispatch explicit `synrepo init`.
+///
+/// Interactive no-flag init on a fresh repo is treated as an operator entry
+/// into the full setup wizard. Flagged, scripted, ready, and partial cases
+/// keep the raw bootstrap behavior.
+pub(crate) fn run_init_or_setup(
+    repo_root: &Path,
+    mode: Option<Mode>,
+    gitignore: bool,
+    force: bool,
+    opts: TuiOptions,
+) -> anyhow::Result<()> {
+    match init_entry_mode(repo_root, mode.is_some(), gitignore, force, stdout_is_tty()) {
+        InitEntryMode::GuidedSetup => run_wizard_and_apply(repo_root, opts),
+        InitEntryMode::RawInit => super::commands::init(repo_root, mode, gitignore, force),
+    }
+}
+
+pub(crate) fn init_entry_mode(
+    repo_root: &Path,
+    has_mode_flag: bool,
+    gitignore: bool,
+    force: bool,
+    is_tty: bool,
+) -> InitEntryMode {
+    let has_init_flags = has_mode_flag || gitignore || force;
+    if !has_init_flags
+        && is_tty
+        && matches!(
+            probe(repo_root).classification,
+            RuntimeClassification::Uninitialized
+        )
+    {
+        InitEntryMode::GuidedSetup
+    } else {
+        InitEntryMode::RawInit
+    }
+}
 
 /// Run the TUI setup wizard and apply its [`SetupPlan`] outcome. Shared by the
 /// bare-entrypoint OpenSetup arm and the explicit `synrepo setup` command when
@@ -64,6 +110,7 @@ pub(crate) fn execute_setup_plan(repo_root: &Path, plan: SetupPlan) -> anyhow::R
         // reconcile-state file is still missing.
         step_ensure_ready(repo_root)?;
     }
+    synrepo::registry::record_project(repo_root)?;
     println!("Setup complete. Repo is ready.");
     Ok(())
 }

@@ -22,6 +22,7 @@ pub use watch_events::watch_event_to_log_entry;
 
 use key_handlers::quick_actions_for;
 
+use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -121,7 +122,7 @@ pub struct AppState {
     pub launch_explain_setup: bool,
     /// When set, the dashboard loop should run explain in-place after the
     /// current key event is handled.
-    pub pending_explain: Option<PendingExplainRun>,
+    pub pending_explain: VecDeque<PendingExplainRun>,
     /// Confirm-stop-watch modal state. `Some` when the operator asked to run
     /// explain while watch was still active; holds the pending mode until
     /// the operator answers yes (stop watch + launch) or no (cancel).

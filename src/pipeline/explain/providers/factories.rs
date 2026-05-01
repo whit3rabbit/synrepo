@@ -15,7 +15,7 @@ pub fn build_commentary_generator(
     max_tokens_per_call: u32,
 ) -> Box<dyn CommentaryGenerator> {
     if !explain_opted_in(config) {
-        return Box::new(NoOpGenerator);
+        return Box::new(NoOpGenerator::provider_disabled());
     }
 
     let provider = ProviderKind::resolve(config);
@@ -34,7 +34,7 @@ pub fn build_commentary_generator(
                     max_tokens_per_call,
                 ))
             } else {
-                Box::new(NoOpGenerator)
+                Box::new(NoOpGenerator::missing_api_key())
             }
         }
         ProviderKind::OpenAi => {
@@ -45,7 +45,7 @@ pub fn build_commentary_generator(
                 tracing::debug!("explain: openai (model: {})", model);
                 super::openai::new_commentary(key, model, max_tokens_per_call)
             } else {
-                Box::new(NoOpGenerator)
+                Box::new(NoOpGenerator::missing_api_key())
             }
         }
         ProviderKind::Gemini => {
@@ -60,7 +60,7 @@ pub fn build_commentary_generator(
                     max_tokens_per_call,
                 ))
             } else {
-                Box::new(NoOpGenerator)
+                Box::new(NoOpGenerator::missing_api_key())
             }
         }
         ProviderKind::OpenRouter => {
@@ -71,7 +71,7 @@ pub fn build_commentary_generator(
                 tracing::debug!("explain: openrouter (model: {})", model);
                 super::openrouter::new_commentary(key, model, max_tokens_per_call)
             } else {
-                Box::new(NoOpGenerator)
+                Box::new(NoOpGenerator::missing_api_key())
             }
         }
         ProviderKind::Zai => {
@@ -82,7 +82,7 @@ pub fn build_commentary_generator(
                 tracing::debug!("explain: zai (model: {})", model);
                 super::zai::new_commentary(key, model, max_tokens_per_call)
             } else {
-                Box::new(NoOpGenerator)
+                Box::new(NoOpGenerator::missing_api_key())
             }
         }
         ProviderKind::Minimax => {
@@ -93,7 +93,7 @@ pub fn build_commentary_generator(
                 tracing::debug!("explain: minimax (model: {})", model);
                 super::minimax::new_commentary(key, model, max_tokens_per_call)
             } else {
-                Box::new(NoOpGenerator)
+                Box::new(NoOpGenerator::missing_api_key())
             }
         }
         ProviderKind::Local => {
@@ -118,7 +118,7 @@ pub fn build_commentary_generator(
                 }
             }
         }
-        ProviderKind::None => Box::new(NoOpGenerator),
+        ProviderKind::None => Box::new(NoOpGenerator::provider_disabled()),
     }
 }
 

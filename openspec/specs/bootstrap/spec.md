@@ -4,10 +4,15 @@ Define first-run initialization, generated assistant-facing setup, and post-init
 ### Requirement: Define first-run initialization flow
 synrepo SHALL define a first-run bootstrap flow that initializes project state, inspects the repository, selects the appropriate mode, and guides the user to the first useful output.
 
-#### Scenario: Run `synrepo init` on a fresh clone
-- **WHEN** a user initializes synrepo in a repository with no prior setup
-- **THEN** the bootstrap contract defines the setup steps and expected first-run outputs
-- **AND** the flow does not require manual authoring before structural value appears
+#### Scenario: Run guided setup on a fresh clone
+- **WHEN** a user runs bare `synrepo` or interactive no-flag `synrepo init` in a repository with no prior setup
+- **THEN** synrepo opens the guided setup flow that initializes runtime state, offers agent integration, offers explain configuration, and lands in the dashboard
+- **AND** the flow does not require manual authoring or a second command before structural value appears
+
+#### Scenario: Run runtime-only init on a fresh clone
+- **WHEN** a user runs `synrepo init --mode auto`, `synrepo init --mode curated`, `synrepo init --gitignore`, or non-TTY `synrepo init`
+- **THEN** synrepo runs the low-level bootstrap path without entering the setup wizard
+- **AND** scripted callers keep deterministic init behavior
 
 ### Requirement: Define mode selection semantics
 synrepo SHALL define how auto mode and curated mode are selected, overridden, and revisited based on repository signals and explicit user intent.
@@ -34,12 +39,17 @@ synrepo SHALL define post-initialization health checks and refresh behavior so t
 - **AND** the contract identifies when follow-up refresh or repair is required
 
 ### Requirement: Define init idempotence and failure states
-synrepo SHALL define whether bootstrap is one-shot, re-runnable, or partially recoverable, including how existing `.synrepo/` state and degraded setup outcomes are reported. When a user invokes the smart entry experience (bare `synrepo`) on a partial install, the routing contract SHALL direct them to the repair path defined in the runtime-probe contract rather than to first-run initialization, and `synrepo init` itself SHALL continue to honor its existing idempotence semantics when invoked explicitly.
+synrepo SHALL define whether bootstrap is one-shot, re-runnable, or partially recoverable, including how existing `.synrepo/` state and degraded setup outcomes are reported. When a user invokes the smart entry experience (bare `synrepo`) on a partial install, the routing contract SHALL direct them to the repair path defined in the runtime-probe contract rather than to first-run initialization. Interactive no-flag `synrepo init` SHALL route to guided setup only for a fresh uninitialized repository; ready, partial, flagged, and non-TTY init invocations SHALL continue to honor low-level init idempotence semantics.
 
 #### Scenario: Re-run init in an already initialized repository
 - **WHEN** a user runs `synrepo init` after `.synrepo/` already exists or a prior bootstrap only partially completed
 - **THEN** the contract defines whether synrepo refuses, repairs, refreshes, or redirects to another command
 - **AND** the result includes a clear health or failure state rather than ambiguous partial setup
+
+#### Scenario: No-flag init on a fresh TTY repo
+- **WHEN** a user runs `synrepo init` with no flags in an uninitialized repository and stdout is a TTY
+- **THEN** synrepo opens the guided setup wizard instead of stopping after runtime bootstrap
+- **AND** selecting explain in that wizard writes the same `[explain]` config as the explain-only setup path
 
 #### Scenario: Bare entry on a partial install
 - **WHEN** a user runs bare `synrepo` in a repository whose runtime probe returns `partial`

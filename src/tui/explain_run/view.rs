@@ -107,10 +107,19 @@ impl ExplainRunUi {
                 item,
                 current,
                 generated,
+                skip_message,
+                retry_attempts,
+                queued_for_next_run,
+                ..
             } => {
                 self.attempted = current;
-                let verb = if generated { "Generated" } else { "Skipped" };
-                self.current = format!("{verb} {}", item.path);
+                self.current = target_finished_line(
+                    generated,
+                    &item.path,
+                    skip_message.as_deref(),
+                    retry_attempts,
+                    queued_for_next_run,
+                );
                 self.push_recent(self.current.clone());
             }
             CommentaryProgressEvent::DocsDirCreated { path }
@@ -143,18 +152,25 @@ impl ExplainRunUi {
                 refreshed,
                 seeded,
                 not_generated,
+                queued_for_next_run,
+                skip_reasons,
             } => {
                 self.attempted = attempted;
                 self.finished = true;
                 self.step = "4/4 Done".to_string();
                 self.current = if stopped {
                     "Stop requested. Wrote completed commentary before returning.".to_string()
+                } else if queued_for_next_run > 0 {
+                    format!(
+                        "Rate limit hit. {queued_for_next_run} target(s) remain queued for the next explain run."
+                    )
                 } else {
                     "Explain complete. Commentary docs were exported to .synrepo/explain-docs."
                         .to_string()
                 };
                 self.push_recent(format!(
-                    "Finished: refreshed {refreshed}, generated {seeded}, not generated {not_generated}."
+                    "Finished: refreshed {refreshed}, generated {seeded}, not generated {not_generated}{}.",
+                    reason_suffix(&skip_reasons)
                 ));
             }
         }
@@ -177,6 +193,71 @@ impl ExplainRunUi {
             self.recent.pop_front();
         }
         self.recent.push_back(line);
+    }
+}
+
+fn target_finished_line(
+    generated: bool,
+    path: &str,
+    skip_message: Option<&str>,
+    retry_attempts: usize,
+    queued_for_next_run: bool,
+) -> String {
+    if generated {
+        return format!("Generated {path}");
+    }
+    let retry = if retry_attempts > 0 {
+        format!(" after {retry_attempts} retry")
+    } else {
+        String::new()
+    };
+    let queued = if queued_for_next_run { " (queued)" } else { "" };
+    match skip_message {
+        Some(message) => format!("Skipped {path}{retry}: {message}{queued}"),
+        None => format!("Skipped {path}{retry}{queued}"),
+    }
+}
+
+fn reason_suffix(skip_reasons: &[(String, usize)]) -> String {
+    if skip_reasons.is_empty() {
+        return String::new();
+    }
+    let joined = skip_reasons
+        .iter()
+        .map(|(reason, count)| format!("{reason}={count}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(" ({joined})")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::target_finished_line;
+
+    #[test]
+    fn skipped_line_includes_budget_reason() {
+        let line = target_finished_line(
+            false,
+            "src/lib.rs",
+            Some("5888 est. tokens > 5000 budget"),
+            0,
+            false,
+        );
+        assert_eq!(line, "Skipped src/lib.rs: 5888 est. tokens > 5000 budget");
+    }
+
+    #[test]
+    fn skipped_line_includes_retry_and_queue_state() {
+        let line = target_finished_line(
+            false,
+            "src/lib.rs",
+            Some("non-success status: 429 Too Many Requests"),
+            2,
+            true,
+        );
+        assert!(line.contains("after 2 retry"));
+        assert!(line.contains("429 Too Many Requests"));
+        assert!(line.contains("(queued)"));
     }
 }
 

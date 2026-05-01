@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -37,10 +36,6 @@ impl StateResolver {
             prepare_locks: Arc::new(Mutex::new(HashMap::new())),
             default_repo_root,
         }
-    }
-
-    pub(crate) fn default_repo_root(&self) -> Option<PathBuf> {
-        self.default_repo_root.clone()
     }
 
     pub(crate) fn resolve(&self, param_root: Option<PathBuf>) -> anyhow::Result<Arc<SynrepoState>> {
@@ -122,7 +117,6 @@ impl Clone for SynrepoServer {
     fn clone(&self) -> Self {
         Self {
             resolver: self.resolver.clone(),
-            auto_started_roots: Arc::clone(&self.auto_started_roots),
             tool_router: self.tool_router.clone(),
             allow_edits: self.allow_edits,
         }
@@ -137,61 +131,43 @@ impl SynrepoServer {
 
     pub(crate) fn new_optional(default_state: Option<SynrepoState>, allow_edits: bool) -> Self {
         let resolver = StateResolver::new(default_state);
-        let auto_started_roots = HashSet::new();
         let mut tool_router = Self::build_tool_router();
         if !allow_edits {
             tool_router.remove_route("synrepo_prepare_edit_context");
             tool_router.remove_route("synrepo_apply_anchor_edits");
         }
-        let server = Self {
+        Self {
             resolver,
-            auto_started_roots: Arc::new(RwLock::new(auto_started_roots)),
             tool_router,
             allow_edits,
-        };
-
-        if let Some(repo_root) = server.resolver.default_repo_root() {
-            server.maybe_auto_start_watch(&repo_root);
         }
-
-        server
     }
 
     pub(super) fn resolve_state(
         &self,
         param_root: Option<PathBuf>,
     ) -> anyhow::Result<Arc<SynrepoState>> {
-        let state = self.resolver.resolve(param_root)?;
-        self.maybe_auto_start_watch(&state.repo_root);
-        Ok(state)
+        self.resolver.resolve(param_root)
     }
 
-    pub(super) fn with_state<F>(&self, param_root: Option<PathBuf>, f: F) -> String
+    pub(super) fn with_tool_state<F>(
+        &self,
+        tool: &'static str,
+        param_root: Option<PathBuf>,
+        f: F,
+    ) -> String
     where
         F: FnOnce(Arc<SynrepoState>) -> String,
     {
         match self.resolve_state(param_root) {
-            Ok(state) => f(state),
+            Ok(state) => {
+                let output = f(Arc::clone(&state));
+                let errored = response_has_error(&output);
+                let saved_context = saved_context_metric(tool, errored);
+                self.record_tool_result_for(&state, tool, errored, saved_context);
+                output
+            }
             Err(error) => render_state_error(error),
-        }
-    }
-
-    fn maybe_auto_start_watch(&self, repo_root: &Path) {
-        if self.auto_started_roots.read().contains(repo_root) {
-            return;
-        }
-        if let Ok(Some(_)) = super::super::watch::maybe_spawn_watch_daemon(repo_root) {
-            self.auto_started_roots
-                .write()
-                .insert(repo_root.to_path_buf());
-        }
-    }
-
-    /// Stop all watch daemons that were auto-started by this server instance.
-    pub(crate) fn stop_auto_started_watchers(&self) {
-        let mut roots = self.auto_started_roots.write();
-        for root in roots.drain() {
-            let _ = super::super::watch::watch_stop(&root);
         }
     }
 
@@ -204,6 +180,27 @@ impl SynrepoServer {
         synrepo::pipeline::context_metrics::record_workflow_call_best_effort(&synrepo_dir, tool);
     }
 
+    pub(super) fn record_tool_result_for(
+        &self,
+        state: &SynrepoState,
+        tool: &str,
+        errored: bool,
+        saved_context_write: Option<&str>,
+    ) {
+        let synrepo_dir = synrepo::config::Config::synrepo_dir(&state.repo_root);
+        synrepo::pipeline::context_metrics::record_mcp_tool_result_best_effort(
+            &synrepo_dir,
+            tool,
+            errored,
+            saved_context_write,
+        );
+    }
+
+    pub(super) fn record_resource_for(&self, state: &SynrepoState) {
+        let synrepo_dir = synrepo::config::Config::synrepo_dir(&state.repo_root);
+        synrepo::pipeline::context_metrics::record_mcp_resource_read_best_effort(&synrepo_dir);
+    }
+
     #[cfg(test)]
     pub(crate) fn registered_tool_names(&self) -> Vec<String> {
         self.tool_router
@@ -211,6 +208,31 @@ impl SynrepoServer {
             .into_iter()
             .map(|tool| tool.name.to_string())
             .collect()
+    }
+
+    #[cfg(test)]
+    #[allow(dead_code)]
+    pub(crate) fn stop_auto_started_watchers(&self) {}
+}
+
+fn response_has_error(output: &str) -> bool {
+    serde_json::from_str::<serde_json::Value>(output)
+        .ok()
+        .and_then(|value| value.get("error").cloned())
+        .is_some()
+}
+
+fn saved_context_metric(tool: &str, errored: bool) -> Option<&'static str> {
+    if errored {
+        return None;
+    }
+    match tool {
+        "synrepo_note_add" => Some("note_add"),
+        "synrepo_note_link" => Some("note_link"),
+        "synrepo_note_supersede" => Some("note_supersede"),
+        "synrepo_note_forget" => Some("note_forget"),
+        "synrepo_note_verify" => Some("note_verify"),
+        _ => None,
     }
 }
 
@@ -225,6 +247,7 @@ mod tests {
     use crate::cli_support::commands::mcp_runtime::prepare_state;
     use synrepo::bootstrap::bootstrap;
     use synrepo::config::{test_home, Config};
+    use synrepo::pipeline::watch::{watch_service_status, WatchServiceStatus};
     use synrepo::store::sqlite::SqliteGraphStore;
 
     struct HomeFixture {
@@ -309,6 +332,24 @@ mod tests {
             "{node_output}"
         );
         assert!(!node_output.contains("\"error\""), "{node_output}");
+    }
+
+    #[test]
+    fn mcp_resolution_does_not_auto_start_watch() {
+        let _home = home_fixture();
+        let (_default_repo, default_path) = ready_repo("pub fn default_watch_free() {}\n");
+        let (_target_repo, target_path) = ready_repo("pub fn target_watch_free() {}\n");
+        registry::record_project(&target_path).unwrap();
+        let default_state = prepare_state(&default_path).unwrap();
+        let server = SynrepoServer::new_optional(Some(default_state), false);
+
+        let default_watch = watch_service_status(&Config::synrepo_dir(&default_path));
+        assert!(matches!(default_watch, WatchServiceStatus::Inactive));
+
+        server.resolve_state(Some(target_path.clone())).unwrap();
+
+        let target_watch = watch_service_status(&Config::synrepo_dir(&target_path));
+        assert!(matches!(target_watch, WatchServiceStatus::Inactive));
     }
 
     #[test]

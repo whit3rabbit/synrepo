@@ -35,14 +35,6 @@ pub(crate) fn prepare_state(repo_root: &Path) -> anyhow::Result<SynrepoState> {
     })
 }
 
-struct CleanupGuard(SynrepoServer);
-
-impl Drop for CleanupGuard {
-    fn drop(&mut self) {
-        self.0.stop_auto_started_watchers();
-    }
-}
-
 async fn serve(repo_root: &Path, allow_edits: bool, explicit_repo: bool) -> anyhow::Result<()> {
     let default_state = match prepare_state(repo_root) {
         Ok(state) => Some(state),
@@ -57,7 +49,6 @@ async fn serve(repo_root: &Path, allow_edits: bool, explicit_repo: bool) -> anyh
         }
     };
     let server = SynrepoServer::new_optional(default_state, allow_edits);
-    let _guard = CleanupGuard(server.clone());
     let service = server.serve(stdio()).await?;
     service.waiting().await?;
     Ok(())

@@ -66,6 +66,18 @@ impl ContextMetrics {
             "Observed: number of changed files observed by synrepo_changed.",
             self.changed_files_total,
         );
+        write_counter(
+            &mut out,
+            "synrepo_mcp_requests_total",
+            "Observed: repository-scoped MCP requests that reached a prepared runtime.",
+            self.mcp_requests_total,
+        );
+        write_counter(
+            &mut out,
+            "synrepo_mcp_resource_reads_total",
+            "Observed: MCP resource reads that reached a prepared repository.",
+            self.mcp_resource_reads_total,
+        );
 
         writeln!(
             out,
@@ -82,6 +94,28 @@ impl ContextMetrics {
             )
             .unwrap();
         }
+
+        write_labeled_counter(
+            &mut out,
+            "synrepo_mcp_tool_calls_total",
+            "Observed: MCP tool calls keyed by tool name.",
+            "tool",
+            &self.mcp_tool_calls_total,
+        );
+        write_labeled_counter(
+            &mut out,
+            "synrepo_mcp_tool_errors_total",
+            "Observed: MCP tool responses with a top-level error field.",
+            "tool",
+            &self.mcp_tool_errors_total,
+        );
+        write_labeled_counter(
+            &mut out,
+            "synrepo_saved_context_writes_total",
+            "Observed: explicit advisory saved-context mutations keyed by operation.",
+            "operation",
+            &self.saved_context_writes_total,
+        );
 
         writeln!(
             out,
@@ -110,6 +144,27 @@ fn write_counter(out: &mut String, name: &str, help: &str, value: u64) {
     writeln!(out, "{name} {value}").unwrap();
 }
 
+fn write_labeled_counter(
+    out: &mut String,
+    name: &str,
+    help: &str,
+    label: &str,
+    values: &std::collections::BTreeMap<String, u64>,
+) {
+    use std::fmt::Write as _;
+    writeln!(out, "# HELP {name} {help}").unwrap();
+    writeln!(out, "# TYPE {name} counter").unwrap();
+    for (key, count) in values {
+        writeln!(
+            out,
+            "{name}{{{label}=\"{}\"}} {}",
+            escape_label_value(key),
+            count
+        )
+        .unwrap();
+    }
+}
+
 fn escape_label_value(value: &str) -> String {
     value
         .replace('\\', "\\\\")
@@ -132,8 +187,19 @@ mod tests {
         metrics.truncation_applied_total = 0;
         metrics.test_surface_hits_total = 2;
         metrics.changed_files_total = 4;
+        metrics.mcp_requests_total = 4;
+        metrics.mcp_resource_reads_total = 1;
         metrics.budget_tier_usage.insert("tiny".to_string(), 2);
         metrics.budget_tier_usage.insert("normal".to_string(), 1);
+        metrics
+            .mcp_tool_calls_total
+            .insert("synrepo_search".to_string(), 2);
+        metrics
+            .mcp_tool_errors_total
+            .insert("synrepo_search".to_string(), 1);
+        metrics
+            .saved_context_writes_total
+            .insert("note_add".to_string(), 1);
         metrics.workflow_calls_total.insert("orient".to_string(), 2);
         metrics.workflow_calls_total.insert("find".to_string(), 1);
 
@@ -159,15 +225,30 @@ synrepo_truncation_applied_total 0\n\
 # HELP synrepo_test_surface_hits_total Observed: number of test-surface responses with at least one discovered test.\n\
 # TYPE synrepo_test_surface_hits_total counter\n\
 synrepo_test_surface_hits_total 2\n\
-# HELP synrepo_changed_files_total Observed: number of changed files observed by synrepo_changed.\n\
-# TYPE synrepo_changed_files_total counter\n\
-synrepo_changed_files_total 4\n\
-# HELP synrepo_budget_tier_usage Observed: count of card responses by budget tier.\n\
-# TYPE synrepo_budget_tier_usage counter\n\
-synrepo_budget_tier_usage{tier=\"normal\"} 1\n\
-synrepo_budget_tier_usage{tier=\"tiny\"} 2\n\
-# HELP synrepo_workflow_calls_total Observed: workflow alias tool-call counts (orient, find, explain, impact, risks, tests, changed, minimum_context).\n\
-# TYPE synrepo_workflow_calls_total counter\n\
+	# HELP synrepo_changed_files_total Observed: number of changed files observed by synrepo_changed.\n\
+	# TYPE synrepo_changed_files_total counter\n\
+	synrepo_changed_files_total 4\n\
+	# HELP synrepo_mcp_requests_total Observed: repository-scoped MCP requests that reached a prepared runtime.\n\
+	# TYPE synrepo_mcp_requests_total counter\n\
+	synrepo_mcp_requests_total 4\n\
+	# HELP synrepo_mcp_resource_reads_total Observed: MCP resource reads that reached a prepared repository.\n\
+	# TYPE synrepo_mcp_resource_reads_total counter\n\
+	synrepo_mcp_resource_reads_total 1\n\
+	# HELP synrepo_budget_tier_usage Observed: count of card responses by budget tier.\n\
+	# TYPE synrepo_budget_tier_usage counter\n\
+	synrepo_budget_tier_usage{tier=\"normal\"} 1\n\
+	synrepo_budget_tier_usage{tier=\"tiny\"} 2\n\
+	# HELP synrepo_mcp_tool_calls_total Observed: MCP tool calls keyed by tool name.\n\
+	# TYPE synrepo_mcp_tool_calls_total counter\n\
+	synrepo_mcp_tool_calls_total{tool=\"synrepo_search\"} 2\n\
+	# HELP synrepo_mcp_tool_errors_total Observed: MCP tool responses with a top-level error field.\n\
+	# TYPE synrepo_mcp_tool_errors_total counter\n\
+	synrepo_mcp_tool_errors_total{tool=\"synrepo_search\"} 1\n\
+	# HELP synrepo_saved_context_writes_total Observed: explicit advisory saved-context mutations keyed by operation.\n\
+	# TYPE synrepo_saved_context_writes_total counter\n\
+	synrepo_saved_context_writes_total{operation=\"note_add\"} 1\n\
+	# HELP synrepo_workflow_calls_total Observed: workflow alias tool-call counts (orient, find, explain, impact, risks, tests, changed, minimum_context).\n\
+	# TYPE synrepo_workflow_calls_total counter\n\
 synrepo_workflow_calls_total{tool=\"find\"} 1\n\
 synrepo_workflow_calls_total{tool=\"orient\"} 2\n";
 
@@ -186,6 +267,10 @@ synrepo_workflow_calls_total{tool=\"orient\"} 2\n";
         assert!(
             !text.contains("synrepo_workflow_calls_total{"),
             "workflow calls block must emit no rows when the map is empty"
+        );
+        assert!(
+            !text.contains("synrepo_mcp_tool_calls_total{"),
+            "MCP tool calls block must emit no rows when the map is empty"
         );
     }
 }

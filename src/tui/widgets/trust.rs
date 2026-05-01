@@ -22,7 +22,7 @@ impl Widget for TrustWidget<'_> {
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(7),
+                Constraint::Length(9),
                 Constraint::Length(8),
                 Constraint::Min(7),
             ])

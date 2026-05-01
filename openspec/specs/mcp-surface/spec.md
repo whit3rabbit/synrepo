@@ -214,7 +214,7 @@ synrepo SHALL expose a `synrepo_change_risk(target?, budget?)` MCP tool that ret
 - **THEN** `synrepo_change_risk` appears in the available tools
 
 ### Requirement: Expose synrepo_context_pack as a batched read-only context tool
-synrepo SHALL expose `synrepo_context_pack(goal?, targets?, budget?, budget_tokens?, include_tests?, include_notes?, limit?)` as an MCP tool that batches read-only context artifacts into one response. Each target SHALL use `{ kind, target, budget? }`, where `kind` is one of `file`, `symbol`, `directory`, `minimum_context`, `test_surface`, `call_path`, or `search`. The response SHALL include `schema_version`, `context_state`, `artifacts`, `omitted`, and `totals`. Each artifact SHALL include `artifact_type`, `target`, `status`, `content`, and `context_accounting`. The tool SHALL NOT mutate repository files, overlays, or external process state except for existing best-effort context metrics.
+synrepo SHALL expose `synrepo_context_pack(goal?, targets?, budget?, budget_tokens?, include_tests?, include_notes?, limit?)` as an MCP tool that batches read-only context artifacts into one response. Each target SHALL be a structured object `{ kind, target, budget? }`, where `kind` is one of `file`, `symbol`, `directory`, `minimum_context`, `test_surface`, `call_path`, or `search`; raw string targets SHALL NOT be treated as the public schema. The response SHALL include `schema_version`, `context_state`, `artifacts`, `omitted`, and `totals`. Each artifact SHALL include `artifact_type`, `target`, `status`, `content`, and `context_accounting`. The tool SHALL NOT mutate repository files, overlays, or external process state except for existing best-effort context metrics.
 
 #### Scenario: Batch file and symbol context
 - **WHEN** an agent invokes `synrepo_context_pack` with file and symbol targets
@@ -440,6 +440,21 @@ The MCP server SHALL resolve repository state from an optional default repositor
 - **THEN** startup fails with the repository preparation error
 - **AND** defaultless mode is not used to hide the explicit invalid override
 
+### Requirement: MCP resolution is global-lazy and does not start watch
+The MCP server SHALL resolve repository state lazily from the default repository or a per-tool `repo_root`. Resolving a repository through MCP SHALL NOT start `synrepo watch`, install Git hooks, scan unrelated repositories, or launch any long-lived background process. Freshness remains explicit: operators use `synrepo watch`, `synrepo watch --daemon`, `synrepo install-hooks`, or reconciliation commands outside the MCP request path.
+
+#### Scenario: Default repository MCP startup leaves watch inactive
+- **WHEN** a user starts `synrepo mcp --repo /work/app`
+- **AND** `/work/app` has no active watch service
+- **THEN** MCP startup prepares repository state for reads
+- **AND** it does not start a watch daemon
+
+#### Scenario: Global MCP call resolves a registered repository lazily
+- **WHEN** a global MCP tool call supplies `repo_root = "/work/app"`
+- **AND** `/work/app` is a registered project with no active watch service
+- **THEN** the tool resolves `/work/app` for that request
+- **AND** it does not start a watch daemon
+
 ### Requirement: Accept repo_root on repo-addressable MCP tools
 Every MCP tool that reads or mutates repository-scoped synrepo state SHALL accept an optional `repo_root` parameter unless it is explicitly documented as server-default-only. Repo-addressable tools include card lookup, search, docs search, context pack, graph primitives, where-to-edit, impact/risk, entrypoints, notes, module/public API cards, workflow aliases, findings, recent activity, and edit-capable tools.
 
@@ -469,6 +484,19 @@ The synrepo CLI SHALL register the `synrepo` MCP server in agent harness configu
 - **THEN** the installer writes an entry with `command = "synrepo"` and `args = ["mcp", "--repo", "."]` under `mcp_servers.synrepo`
 - **AND** the install is owned by tag `"synrepo"`
 
+### Requirement: Track MCP usage as operational counters only
+For repository-scoped MCP calls that reach a prepared synrepo runtime, synrepo SHALL maintain best-effort context metrics for total MCP requests, per-tool calls, per-tool errors, resource reads, workflow alias calls, card accounting, and explicit advisory saved-context note mutations. These counters SHALL be exposed through `synrepo status --json`, human-readable status, and dashboard view models. Metrics SHALL NOT store prompt content, query strings, note claims, evidence bodies, caller identity, or session history.
+
+#### Scenario: MCP tool call updates per-repo counters
+- **WHEN** an agent invokes `synrepo_search` with `repo_root = "/work/app"`
+- **THEN** `/work/app/.synrepo/state/context-metrics.json` records an MCP request and increments the `synrepo_search` tool-call counter
+- **AND** the stored metrics do not contain the search query text
+
+#### Scenario: Advisory note write is counted as saved context
+- **WHEN** an agent successfully invokes `synrepo_note_add`
+- **THEN** synrepo increments an explicit saved-context note-write counter
+- **AND** the note claim text is stored only in the advisory overlay note, not in context metrics
+
 #### Scenario: Repeated registration is idempotent
 - **WHEN** synrepo registers the MCP server twice with the same scope and content
 - **THEN** the second call reports `already_installed = true`
@@ -494,4 +522,3 @@ If a future synrepo MCP spec ever supplies an environment value to the installer
 - **WHEN** an MCP install would write an inline secret refused by the installer
 - **THEN** `synrepo setup` aborts with the integration ID and env-key name
 - **AND** no partial config is left on disk
-

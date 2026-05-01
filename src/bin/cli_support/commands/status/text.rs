@@ -216,6 +216,24 @@ pub(super) fn write_status_text(
             )
             .unwrap();
         }
+        if metrics.mcp_requests_total > 0 {
+            let tool_errors: u64 = metrics.mcp_tool_errors_total.values().sum();
+            writeln!(
+                out,
+                "  mcp:        {} request(s), {} resource read(s), {} tool error(s)",
+                metrics.mcp_requests_total, metrics.mcp_resource_reads_total, tool_errors
+            )
+            .unwrap();
+            let saved_context_writes: u64 = metrics.saved_context_writes_total.values().sum();
+            if saved_context_writes > 0 {
+                writeln!(
+                    out,
+                    "  saved ctx:  {} explicit advisory note mutation(s)",
+                    saved_context_writes
+                )
+                .unwrap();
+            }
+        }
     }
 
     writeln!(

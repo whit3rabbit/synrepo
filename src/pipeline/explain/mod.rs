@@ -18,6 +18,7 @@ pub mod accounting;
 pub mod commentary_template;
 pub mod cross_link;
 pub mod docs;
+pub mod outcome;
 pub mod pricing;
 pub mod providers;
 /// Shared queued-work preview used by `synrepo explain status` and the TUI.
@@ -28,6 +29,7 @@ pub mod telemetry;
 pub use cross_link::{
     score, CandidatePair, CandidateScope, CrossLinkGenerator, NoOpCrossLinkGenerator,
 };
+pub use outcome::{CommentaryGeneration, CommentarySkip, CommentarySkipReason};
 pub use providers::{
     build_commentary_generator, build_cross_link_generator, describe_active_provider,
     ActiveProvider, ExplainStatus, ProviderConfig, ProviderKind,
@@ -64,4 +66,14 @@ use crate::overlay::CommentaryEntry;
 pub trait CommentaryGenerator: Send + Sync {
     /// Produce a commentary entry for a node.
     fn generate(&self, node: NodeId, context: &str) -> crate::Result<Option<CommentaryEntry>>;
+
+    /// Produce commentary or a structured skip reason for one node.
+    fn generate_with_outcome(
+        &self,
+        node: NodeId,
+        context: &str,
+    ) -> crate::Result<CommentaryGeneration> {
+        self.generate(node, context)
+            .map(|entry| CommentaryGeneration::from_optional(entry, CommentarySkipReason::Unknown))
+    }
 }

@@ -125,23 +125,81 @@ fn sync_progress_message(progress: &SyncProgress) -> String {
         } => format!(
             "commentary plan: {refresh} refresh, {file_seeds} file seeds, {symbol_seed_candidates} symbol seeds"
         ),
-        SyncProgress::CommentaryItem { current, generated } => {
-            format!(
-                "commentary target {current}: {}",
-                if *generated { "generated" } else { "skipped" }
-            )
-        }
+        SyncProgress::CommentaryItem {
+            current,
+            generated,
+            target,
+            message,
+            retry_attempts,
+            queued_for_next_run,
+            ..
+        } => commentary_item_message(
+            *current,
+            *generated,
+            target.as_deref(),
+            message.as_deref(),
+            *retry_attempts,
+            *queued_for_next_run,
+        ),
         SyncProgress::CommentarySummary {
             refreshed,
             seeded,
             not_generated,
             attempted,
             stopped,
+            queued_for_next_run,
+            skip_reasons,
         } => format!(
-            "commentary done: {refreshed} refreshed, {seeded} seeded, {not_generated} not-generated / {attempted}{}",
+            "commentary done: {refreshed} refreshed, {seeded} seeded, {not_generated} not-generated / {attempted}{}{}{}",
+            if *queued_for_next_run > 0 {
+                format!(", {queued_for_next_run} queued")
+            } else {
+                String::new()
+            },
+            reason_suffix(skip_reasons),
             if *stopped { " (stopped)" } else { "" }
         ),
     }
+}
+
+fn commentary_item_message(
+    current: usize,
+    generated: bool,
+    target: Option<&str>,
+    message: Option<&str>,
+    retry_attempts: usize,
+    queued_for_next_run: bool,
+) -> String {
+    let target = target
+        .map(|target| format!(" {target}"))
+        .unwrap_or_default();
+    if generated {
+        return format!("commentary target {current}{target}: generated");
+    }
+    let retry = if retry_attempts > 0 {
+        format!(" after {retry_attempts} retry")
+    } else {
+        String::new()
+    };
+    let queued = if queued_for_next_run { " (queued)" } else { "" };
+    match message {
+        Some(message) => {
+            format!("commentary target {current}{target}: skipped{retry}: {message}{queued}")
+        }
+        None => format!("commentary target {current}{target}: skipped{retry}{queued}"),
+    }
+}
+
+fn reason_suffix(skip_reasons: &[(String, usize)]) -> String {
+    if skip_reasons.is_empty() {
+        return String::new();
+    }
+    let joined = skip_reasons
+        .iter()
+        .map(|(reason, count)| format!("{reason}={count}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!(" [{joined}]")
 }
 
 #[cfg(test)]

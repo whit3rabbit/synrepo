@@ -37,7 +37,7 @@ pub(crate) struct Cli {
 
 #[derive(Subcommand)]
 pub(crate) enum Command {
-    /// Initialize a `.synrepo/` directory in the current repo.
+    /// Guided setup on fresh TTY repos; flagged/non-TTY runs do runtime init.
     Init {
         /// Operational mode.
         #[arg(long, value_enum)]

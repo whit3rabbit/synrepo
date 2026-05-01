@@ -66,6 +66,7 @@ pub(super) fn record_for_event(event: &ExplainEvent) -> Option<ExplainCallRecord
             target,
             duration_ms,
             error,
+            ..
         } => Some(ExplainCallRecord {
             timestamp: now,
             call_id: *call_id,

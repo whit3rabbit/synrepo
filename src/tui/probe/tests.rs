@@ -102,3 +102,23 @@ fn stale_responses_escalates_to_stale_when_nonzero() {
         "non-zero stale responses must escalate severity"
     );
 }
+
+#[test]
+fn health_rows_surface_mcp_request_metrics() {
+    let mut metrics = ContextMetrics::default();
+    metrics.mcp_requests_total = 3;
+    metrics.mcp_resource_reads_total = 1;
+    metrics
+        .mcp_tool_errors_total
+        .insert("synrepo_search".to_string(), 1);
+    let snapshot = snapshot_with_metrics(Some(metrics));
+
+    let vm = build_health_vm(&snapshot);
+    let mcp_row = vm
+        .rows
+        .iter()
+        .find(|r| r.label == "mcp")
+        .expect("MCP row must be present when request metrics exist");
+    assert_eq!(mcp_row.value, "3 req, 1 resource, 1 error");
+    assert_eq!(mcp_row.severity, Severity::Stale);
+}

@@ -47,6 +47,8 @@ fn context_rows(snapshot: &StatusSnapshot) -> Vec<TrustRow> {
     } else {
         Severity::Healthy
     };
+    let tool_errors: u64 = metrics.mcp_tool_errors_total.values().sum();
+    let saved_context_writes: u64 = metrics.saved_context_writes_total.values().sum();
     vec![
         TrustRow {
             label: "cards served".to_string(),
@@ -70,6 +72,29 @@ fn context_rows(snapshot: &StatusSnapshot) -> Vec<TrustRow> {
             hint: Some("vs raw-file reads".to_string()),
             amount: Some(metrics.estimated_tokens_saved_total.min(20_000)),
             total: Some(20_000),
+            severity: Severity::Healthy,
+        },
+        TrustRow {
+            label: "mcp requests".to_string(),
+            value: metrics.mcp_requests_total.to_string(),
+            hint: Some(format!(
+                "{} resource reads",
+                metrics.mcp_resource_reads_total
+            )),
+            amount: Some(metrics.mcp_requests_total.min(SAMPLE_CAP)),
+            total: Some(SAMPLE_CAP),
+            severity: if tool_errors > 0 {
+                Severity::Stale
+            } else {
+                Severity::Healthy
+            },
+        },
+        TrustRow {
+            label: "saved context".to_string(),
+            value: format!("{} note writes", saved_context_writes),
+            hint: Some("explicit advisory note mutations only".to_string()),
+            amount: Some(saved_context_writes.min(SAMPLE_CAP)),
+            total: Some(SAMPLE_CAP),
             severity: Severity::Healthy,
         },
         TrustRow {

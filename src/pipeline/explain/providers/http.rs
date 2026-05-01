@@ -5,10 +5,11 @@
 
 use std::time::Duration;
 
+use reqwest::StatusCode;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
-use crate::pipeline::explain::telemetry::TokenUsage;
+use crate::pipeline::explain::telemetry::{ExplainFailure, TokenUsage};
 
 /// Default timeout for explain API calls (30 seconds).
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -79,6 +80,70 @@ pub fn cap_output_bytes(text: &str) -> u32 {
     text.len().min(u32::MAX as usize) as u32
 }
 
+/// Typed JSON request failure used by explain providers.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum HttpJsonError {
+    /// The request could not be sent or completed.
+    Transport(String),
+    /// The provider returned a non-success HTTP status.
+    Status {
+        /// HTTP status code.
+        status: StatusCode,
+        /// Parsed Retry-After delay, when the provider supplied seconds.
+        retry_after: Option<Duration>,
+    },
+    /// Response JSON could not be parsed.
+    Parse(String),
+}
+
+impl HttpJsonError {
+    /// True when the provider explicitly rate-limited the request.
+    pub fn is_rate_limited(&self) -> bool {
+        matches!(
+            self,
+            Self::Status {
+                status: StatusCode::TOO_MANY_REQUESTS,
+                ..
+            }
+        )
+    }
+
+    /// Provider-advised retry delay, if present and parseable.
+    pub fn retry_after(&self) -> Option<Duration> {
+        match self {
+            Self::Status { retry_after, .. } => *retry_after,
+            _ => None,
+        }
+    }
+}
+
+impl std::fmt::Display for HttpJsonError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Transport(error) => write!(f, "transport error: {error}"),
+            Self::Status { status, .. } => write!(f, "non-success status: {status}"),
+            Self::Parse(error) => write!(f, "response parse error: {error}"),
+        }
+    }
+}
+
+impl std::error::Error for HttpJsonError {}
+
+impl From<HttpJsonError> for ExplainFailure {
+    fn from(error: HttpJsonError) -> Self {
+        Self {
+            error: error.to_string(),
+            http_status: match &error {
+                HttpJsonError::Status { status, .. } => Some(status.as_u16()),
+                _ => None,
+            },
+            retry_after_ms: error
+                .retry_after()
+                .map(|duration| duration.as_millis().min(u64::MAX as u128) as u64),
+        }
+    }
+}
+
 /// JSON POST variant that returns a descriptive failure string instead of
 /// collapsing all failure modes to `Ok(None)`. Used by telemetry-instrumented
 /// providers so `CallCtx::fail` gets a meaningful error tail.
@@ -91,7 +156,7 @@ pub fn post_json_strict<Req, Res>(
     url: &str,
     headers: &[(&str, &str)],
     body: &Req,
-) -> Result<Res, String>
+) -> Result<Res, HttpJsonError>
 where
     Req: Serialize,
     Res: DeserializeOwned,
@@ -104,16 +169,19 @@ where
     let response = request
         .json(body)
         .send()
-        .map_err(|e| format!("transport error: {e}"))?;
+        .map_err(|e| HttpJsonError::Transport(e.to_string()))?;
 
     let status = response.status();
     if !status.is_success() {
-        return Err(format!("non-success status: {status}"));
+        return Err(HttpJsonError::Status {
+            status,
+            retry_after: parse_retry_after(&response),
+        });
     }
 
     response
         .json::<Res>()
-        .map_err(|e| format!("response parse error: {e}"))
+        .map_err(|e| HttpJsonError::Parse(e.to_string()))
 }
 
 /// JSON GET variant that returns a descriptive failure string rather than
@@ -122,7 +190,7 @@ pub fn get_json_strict<Res>(
     client: &reqwest::blocking::Client,
     url: &str,
     headers: &[(&str, &str)],
-) -> Result<Res, String>
+) -> Result<Res, HttpJsonError>
 where
     Res: DeserializeOwned,
 {
@@ -133,22 +201,34 @@ where
 
     let response = request
         .send()
-        .map_err(|e| format!("transport error: {e}"))?;
+        .map_err(|e| HttpJsonError::Transport(e.to_string()))?;
 
     let status = response.status();
     if !status.is_success() {
-        return Err(format!("non-success status: {status}"));
+        return Err(HttpJsonError::Status {
+            status,
+            retry_after: parse_retry_after(&response),
+        });
     }
 
     response
         .json::<Res>()
-        .map_err(|e| format!("response parse error: {e}"))
+        .map_err(|e| HttpJsonError::Parse(e.to_string()))
+}
+
+fn parse_retry_after(response: &reqwest::blocking::Response) -> Option<Duration> {
+    let value = response.headers().get(reqwest::header::RETRY_AFTER)?;
+    let seconds = value.to_str().ok()?.trim().parse::<u64>().ok()?;
+    Some(Duration::from_secs(seconds))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::pipeline::explain::telemetry::UsageSource;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+    use std::thread;
 
     #[test]
     fn estimated_completion_tokens_follow_output_text() {
@@ -168,5 +248,93 @@ mod tests {
         assert_eq!(usage.input_tokens, 11);
         assert_eq!(usage.output_tokens, 7);
         assert_eq!(usage.source, UsageSource::Reported);
+    }
+
+    #[test]
+    fn status_error_formats_like_previous_string() {
+        let error = HttpJsonError::Status {
+            status: StatusCode::TOO_MANY_REQUESTS,
+            retry_after: Some(Duration::from_secs(3)),
+        };
+        assert!(error.is_rate_limited());
+        assert_eq!(error.retry_after(), Some(Duration::from_secs(3)));
+        assert_eq!(
+            error.to_string(),
+            "non-success status: 429 Too Many Requests"
+        );
+    }
+
+    #[test]
+    fn transport_and_parse_errors_keep_reason_prefixes() {
+        assert_eq!(
+            HttpJsonError::Transport("reset".to_string()).to_string(),
+            "transport error: reset"
+        );
+        assert_eq!(
+            HttpJsonError::Parse("bad json".to_string()).to_string(),
+            "response parse error: bad json"
+        );
+    }
+
+    #[test]
+    fn post_json_strict_captures_429_retry_after() {
+        let url = serve_once(
+            "HTTP/1.1 429 Too Many Requests\r\nRetry-After: 2\r\nContent-Length: 0\r\n\r\n",
+        );
+        let err = post_json_strict::<_, serde_json::Value>(
+            &build_client(),
+            &url,
+            &[("Content-Type", "application/json")],
+            &serde_json::json!({"x": 1}),
+        )
+        .unwrap_err();
+
+        assert!(err.is_rate_limited());
+        assert_eq!(err.retry_after(), Some(Duration::from_secs(2)));
+        assert_eq!(err.to_string(), "non-success status: 429 Too Many Requests");
+    }
+
+    #[test]
+    fn post_json_strict_reports_status_and_parse_failures() {
+        let status_url =
+            serve_once("HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n");
+        let status_err = post_json_strict::<_, serde_json::Value>(
+            &build_client(),
+            &status_url,
+            &[("Content-Type", "application/json")],
+            &serde_json::json!({"x": 1}),
+        )
+        .unwrap_err();
+        assert!(matches!(
+            status_err,
+            HttpJsonError::Status {
+                status: StatusCode::INTERNAL_SERVER_ERROR,
+                ..
+            }
+        ));
+
+        let parse_url = serve_once(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 8\r\n\r\nnot-json",
+        );
+        let parse_err = post_json_strict::<_, serde_json::Value>(
+            &build_client(),
+            &parse_url,
+            &[("Content-Type", "application/json")],
+            &serde_json::json!({"x": 1}),
+        )
+        .unwrap_err();
+        assert!(matches!(parse_err, HttpJsonError::Parse(_)));
+    }
+
+    fn serve_once(response: &'static str) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = [0; 1024];
+            let _ = stream.read(&mut buf);
+            stream.write_all(response.as_bytes()).unwrap();
+        });
+        format!("http://{addr}")
     }
 }

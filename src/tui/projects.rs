@@ -119,7 +119,7 @@ impl GlobalAppState {
     /// Switch active project and lazily create its project-scoped app state.
     pub(crate) fn switch_project(&mut self, project_id: &str) -> anyhow::Result<()> {
         if let Some(active) = self.active_state_mut() {
-            active.pending_explain = None;
+            active.pending_explain.clear();
             active.confirm_stop_watch = None;
             active.picker = None;
         }
@@ -140,7 +140,7 @@ impl GlobalAppState {
         self.help_visible = false;
         self.command_palette = false;
         if let Some(active) = self.active_state_mut() {
-            active.pending_explain = None;
+            active.pending_explain.clear();
             active.confirm_stop_watch = None;
             active.picker = None;
             active.set_toast(format!("Switched to {}", project.name));

@@ -15,8 +15,9 @@ pub(crate) fn export(
     commit: bool,
     out: Option<String>,
 ) -> anyhow::Result<()> {
-    let mut config = Config::load(repo_root)
-        .map_err(|e| anyhow::anyhow!("export: not initialized — run `synrepo init` first ({e})"))?;
+    let mut config = Config::load(repo_root).map_err(|e| {
+        anyhow::anyhow!("export: not initialized, run `synrepo init --mode auto` first ({e})")
+    })?;
     let synrepo_dir = Config::synrepo_dir(repo_root);
 
     // Hold the writer lock for the full duration: prevents the graph epoch

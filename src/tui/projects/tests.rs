@@ -27,7 +27,7 @@ fn switch_project_clears_transients_and_preserves_project_states() {
     state.switch_project(&first_entry.id).unwrap();
     {
         let active = state.active_state_mut().unwrap();
-        active.pending_explain = Some(PendingExplainRun {
+        active.pending_explain.push_back(PendingExplainRun {
             mode: ExplainMode::AllStale,
             stopped_watch: false,
         });
@@ -39,7 +39,7 @@ fn switch_project_clears_transients_and_preserves_project_states() {
     state.switch_project(&second_entry.id).unwrap();
 
     let first_state = state.project_states.get(&first_entry.id).unwrap();
-    assert!(first_state.pending_explain.is_none());
+    assert!(first_state.pending_explain.is_empty());
     assert!(first_state.confirm_stop_watch.is_none());
     assert!(state.project_states.contains_key(&second_entry.id));
     assert_eq!(

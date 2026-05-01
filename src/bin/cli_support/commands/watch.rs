@@ -22,7 +22,7 @@ use super::status::render_watch_summary;
 /// Start the watch service in the foreground or daemon mode.
 pub(crate) fn watch(repo_root: &Path, daemon: bool) -> anyhow::Result<()> {
     let config = Config::load(repo_root).map_err(|error| {
-        anyhow::anyhow!("watch: not initialized — run `synrepo init` first ({error})")
+        anyhow::anyhow!("watch: not initialized, run `synrepo init --mode auto` first ({error})")
     })?;
     let synrepo_dir = Config::synrepo_dir(repo_root);
 
@@ -280,22 +280,6 @@ fn wait_for_watch_startup_settle(synrepo_dir: &Path) -> anyhow::Result<()> {
         thread::sleep(Duration::from_millis(50));
     }
     anyhow::bail!("watch service did not finish starting in time")
-}
-
-pub(crate) fn maybe_spawn_watch_daemon(repo_root: &Path) -> anyhow::Result<Option<u32>> {
-    let synrepo_dir = Config::synrepo_dir(repo_root);
-    match watch_service_status(&synrepo_dir) {
-        WatchServiceStatus::Inactive => {
-            let pid = spawn_watch_daemon(repo_root)?;
-            Ok(Some(pid))
-        }
-        WatchServiceStatus::Stale(_) | WatchServiceStatus::Corrupt(_) => {
-            cleanup_stale_watch_artifacts(&synrepo_dir)?;
-            let pid = spawn_watch_daemon(repo_root)?;
-            Ok(Some(pid))
-        }
-        WatchServiceStatus::Starting | WatchServiceStatus::Running(_) => Ok(None),
-    }
 }
 
 pub(crate) fn spawn_watch_daemon(repo_root: &Path) -> anyhow::Result<u32> {

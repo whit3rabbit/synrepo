@@ -3,11 +3,7 @@
 mod state;
 mod tools;
 
-use parking_lot::RwLock;
-use std::collections::HashSet;
 use std::future::Future;
-use std::path::PathBuf;
-use std::sync::Arc;
 
 use rmcp::{
     handler::server::router::tool::ToolRouter,
@@ -25,7 +21,6 @@ use state::StateResolver;
 
 pub(crate) struct SynrepoServer {
     resolver: StateResolver,
-    auto_started_roots: Arc<RwLock<HashSet<PathBuf>>>,
     tool_router: ToolRouter<Self>,
     allow_edits: bool,
 }
@@ -103,10 +98,13 @@ impl ServerHandler for SynrepoServer {
             }
         };
         let result = match context_pack::read_resource(&state, &uri) {
-            Ok(text) => Ok(ReadResourceResult::new(vec![ResourceContents::text(
-                text, uri,
-            )
-            .with_mime_type("application/json")])),
+            Ok(text) => {
+                self.record_resource_for(&state);
+                Ok(ReadResourceResult::new(vec![ResourceContents::text(
+                    text, uri,
+                )
+                .with_mime_type("application/json")]))
+            }
             Err(message) => Err(McpError::resource_not_found(message, None)),
         };
         std::future::ready(result)

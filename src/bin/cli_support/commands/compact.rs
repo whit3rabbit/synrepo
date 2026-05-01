@@ -12,7 +12,7 @@ use synrepo::pipeline::{
 /// Print a dry-run compaction plan or execute it with `--apply`.
 pub(crate) fn compact(repo_root: &Path, apply: bool, policy: CompactPolicy) -> anyhow::Result<()> {
     let config = Config::load(repo_root).map_err(|e| {
-        anyhow::anyhow!("compact: not initialized — run `synrepo init` first ({e})")
+        anyhow::anyhow!("compact: not initialized, run `synrepo init --mode auto` first ({e})")
     })?;
     let synrepo_dir = Config::synrepo_dir(repo_root);
 

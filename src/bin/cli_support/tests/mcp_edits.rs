@@ -36,7 +36,14 @@ fn mcp_edit_tools_are_hidden_until_allow_edits() {
         tools.iter().any(|tool| tool == "synrepo_context_pack"),
         "read-first tools must remain available"
     );
-    server.stop_auto_started_watchers();
+    assert!(
+        tools.iter().any(|tool| tool == "synrepo_note_add"),
+        "explicit advisory note writes stay available in default MCP"
+    );
+    assert!(
+        tools.iter().any(|tool| tool == "synrepo_notes"),
+        "advisory note reads stay available in default MCP"
+    );
     drop(dir);
 }
 
@@ -58,6 +65,5 @@ fn mcp_edit_tools_are_registered_when_allow_edits() {
             .any(|tool| tool == "synrepo_apply_anchor_edits"),
         "edit-enabled MCP must advertise apply edit tool"
     );
-    server.stop_auto_started_watchers();
     drop(dir);
 }

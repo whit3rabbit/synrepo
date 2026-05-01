@@ -88,6 +88,8 @@ fn failed_event_records_error_and_bumps_failures() {
         target: file_target(1),
         duration_ms: 250,
         error: "HTTP 500: upstream down".to_string(),
+        http_status: None,
+        retry_after_ms: None,
     };
     record_event(dir.path(), &event).unwrap();
     let totals = load_totals(dir.path()).unwrap().unwrap();

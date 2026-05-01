@@ -65,8 +65,28 @@ fn healthy_metrics_include_context_and_overlay_rows() {
 
     let vm = build_trust_vm(&snapshot(Some(metrics), Some(notes)));
     assert!(vm.context_rows.iter().any(|r| r.label == "cards served"));
+    assert!(vm.context_rows.iter().any(|r| r.label == "mcp requests"));
+    assert!(vm.context_rows.iter().any(|r| r.label == "saved context"));
     assert!(vm.overlay_rows.iter().any(|r| r.label == "active"));
     assert!(vm.change_rows.iter().any(|r| r.label == "changed files"));
+}
+
+#[test]
+fn saved_context_row_counts_explicit_note_writes() {
+    let mut metrics = ContextMetrics::default();
+    metrics
+        .saved_context_writes_total
+        .insert("note_add".to_string(), 2);
+
+    let vm = build_trust_vm(&snapshot(Some(metrics), None));
+    let saved_row = vm
+        .context_rows
+        .iter()
+        .find(|r| r.label == "saved context")
+        .expect("saved context row must be present with metrics");
+
+    assert_eq!(saved_row.value, "2 note writes");
+    assert_eq!(saved_row.severity, Severity::Healthy);
 }
 
 #[test]

@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 
 use crate::core::ids::{FileNodeId, NodeId};
+use crate::pipeline::explain::CommentarySkipReason;
 
 /// Fixed phases for commentary work.
 #[allow(missing_docs)]
@@ -91,6 +92,10 @@ pub enum CommentaryProgressEvent {
         item: CommentaryWorkItem,
         current: usize,
         generated: bool,
+        skip_reason: Option<CommentarySkipReason>,
+        skip_message: Option<String>,
+        retry_attempts: usize,
+        queued_for_next_run: bool,
     },
     DocsDirCreated {
         path: PathBuf,
@@ -124,5 +129,7 @@ pub enum CommentaryProgressEvent {
         not_generated: usize,
         attempted: usize,
         stopped: bool,
+        queued_for_next_run: usize,
+        skip_reasons: Vec<(String, usize)>,
     },
 }

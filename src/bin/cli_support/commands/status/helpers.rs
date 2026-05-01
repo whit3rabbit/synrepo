@@ -41,7 +41,7 @@ pub fn next_step(diag: &RuntimeDiagnostics, graph_missing: bool) -> &'static str
     use synrepo::pipeline::diagnostics::{ReconcileHealth, WriterStatus};
 
     if graph_missing {
-        return "run `synrepo init` to materialize the graph";
+        return "run `synrepo init --mode auto` to materialize the graph";
     }
     match (
         &diag.reconcile_health,

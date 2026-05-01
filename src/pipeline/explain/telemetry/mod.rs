@@ -33,7 +33,7 @@ pub use publish::{
     dropped_event_count, next_call_id, now_ms, publish, publish_budget_blocked, set_synrepo_dir,
     subscribe, synrepo_dir, CallCtx,
 };
-pub use types::{ExplainEvent, ExplainTarget, Outcome, TokenUsage, UsageSource};
+pub use types::{ExplainEvent, ExplainFailure, ExplainTarget, Outcome, TokenUsage, UsageSource};
 
 #[cfg(test)]
 mod tests {

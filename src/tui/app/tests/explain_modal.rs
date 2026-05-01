@@ -15,13 +15,45 @@ fn queue_explain_without_watch_sets_pending_run() {
         "no watch running, modal must not open"
     );
     assert!(matches!(
-        state.pending_explain,
+        state.pending_explain.front(),
         Some(PendingExplainRun {
             mode: ExplainMode::AllStale,
             stopped_watch: false,
         })
     ));
     assert!(!state.should_exit, "explain runs inside the dashboard");
+}
+
+#[test]
+fn queue_explain_preserves_fifo_for_distinct_modes() {
+    let (_repo, mut state) = make_ready_poll_state();
+    state.queue_explain(ExplainMode::AllStale);
+    state.queue_explain(ExplainMode::Changed);
+
+    assert_eq!(state.pending_explain.len(), 2);
+    assert!(matches!(
+        state.take_pending_explain(),
+        Some(PendingExplainRun {
+            mode: ExplainMode::AllStale,
+            stopped_watch: false,
+        })
+    ));
+    assert!(matches!(
+        state.take_pending_explain(),
+        Some(PendingExplainRun {
+            mode: ExplainMode::Changed,
+            stopped_watch: false,
+        })
+    ));
+}
+
+#[test]
+fn queue_explain_dedupes_identical_modes() {
+    let (_repo, mut state) = make_ready_poll_state();
+    state.queue_explain(ExplainMode::AllStale);
+    state.queue_explain(ExplainMode::AllStale);
+
+    assert_eq!(state.pending_explain.len(), 1);
 }
 
 #[test]
@@ -44,7 +76,7 @@ fn queue_explain_with_watch_opens_confirm_modal() {
         "watch running must open confirm modal"
     );
     assert!(
-        state.pending_explain.is_none(),
+        state.pending_explain.is_empty(),
         "launch must be gated on confirm modal"
     );
     assert!(!state.should_exit, "modal open, must not exit yet");
@@ -83,7 +115,7 @@ fn confirm_modal_y_stops_watch_and_queues_explain() {
     assert!(consumed);
     assert!(!state.should_exit, "explain runs inside the dashboard");
     assert!(matches!(
-        state.pending_explain,
+        state.pending_explain.front(),
         Some(PendingExplainRun {
             mode: ExplainMode::AllStale,
             stopped_watch: true,
@@ -113,7 +145,7 @@ fn confirm_modal_n_cancels_without_stopping_watch() {
     assert!(consumed);
     assert!(state.confirm_stop_watch.is_none(), "n clears the modal");
     assert!(!state.should_exit);
-    assert!(state.pending_explain.is_none());
+    assert!(state.pending_explain.is_empty());
 
     // Watch must still be running; n is a pure cancel.
     assert!(matches!(
@@ -143,7 +175,7 @@ fn confirm_modal_5_switches_to_actions_and_clears_modal() {
     assert!(consumed);
     assert_eq!(state.active_tab, ActiveTab::Actions);
     assert!(state.confirm_stop_watch.is_none());
-    assert!(state.pending_explain.is_none());
+    assert!(state.pending_explain.is_empty());
 }
 
 #[test]
@@ -154,7 +186,7 @@ fn explain_tab_docs_export_does_not_queue_model_run() {
     let consumed = state.handle_key(KeyCode::Char('d'), KeyModifiers::NONE);
 
     assert!(consumed);
-    assert!(state.pending_explain.is_none());
+    assert!(state.pending_explain.is_empty());
     assert!(state.confirm_stop_watch.is_none());
     assert!(
         state

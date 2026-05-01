@@ -2,6 +2,7 @@
 //! tab switching, scroll/follow handling, and spinner frame advancement.
 
 mod explain_modal;
+mod explain_setup;
 mod materialize;
 mod picker;
 mod state;

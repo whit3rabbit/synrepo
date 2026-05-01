@@ -4,7 +4,9 @@
 
 mod commentary;
 mod commentary_context;
+mod commentary_generate;
 mod commentary_plan;
+mod commentary_progress;
 pub mod handlers;
 mod revalidate_links;
 

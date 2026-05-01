@@ -67,17 +67,45 @@ pub fn explain_event_to_log_entry(event: ExplainEvent) -> Option<LogEntry> {
             target,
             duration_ms,
             error,
+            http_status,
+            retry_after_ms,
         } => LogEntry {
             timestamp: ts,
             tag,
-            message: format!(
-                "#{call_id} {provider} {target} failed ({duration_ms}ms): {error}",
-                target = target_label(&target),
+            message: failure_message(
+                call_id,
+                provider,
+                &target,
+                duration_ms,
+                &error,
+                http_status,
+                retry_after_ms,
             ),
             severity: Severity::Blocked,
         },
     };
     Some(entry)
+}
+
+fn failure_message(
+    call_id: u64,
+    provider: &str,
+    target: &ExplainTarget,
+    duration_ms: u64,
+    error: &str,
+    http_status: Option<u16>,
+    retry_after_ms: Option<u64>,
+) -> String {
+    let target = target_label(target);
+    if http_status == Some(429) {
+        let retry = retry_after_ms
+            .map(|ms| format!(", retry after {}ms", ms))
+            .unwrap_or_default();
+        return format!(
+            "#{call_id} {provider} {target} rate limited ({duration_ms}ms{retry}): {error}"
+        );
+    }
+    format!("#{call_id} {provider} {target} failed ({duration_ms}ms): {error}")
 }
 
 fn target_label(target: &ExplainTarget) -> String {
@@ -183,10 +211,32 @@ mod tests {
             },
             duration_ms: 42,
             error: "transport error: connect refused".to_string(),
+            http_status: None,
+            retry_after_ms: None,
         })
         .expect("entry");
         assert!(entry.message.contains("failed"));
         assert!(entry.message.contains("transport error"));
+        assert!(matches!(entry.severity, Severity::Blocked));
+    }
+
+    #[test]
+    fn call_failed_429_is_labeled_rate_limited() {
+        let entry = explain_event_to_log_entry(ExplainEvent::CallFailed {
+            call_id: 11,
+            provider: "zai",
+            model: "glm-4.6".to_string(),
+            target: ExplainTarget::Commentary {
+                node: sample_node(),
+            },
+            duration_ms: 42,
+            error: "non-success status: 429 Too Many Requests".to_string(),
+            http_status: Some(429),
+            retry_after_ms: Some(2000),
+        })
+        .expect("entry");
+        assert!(entry.message.contains("rate limited"));
+        assert!(entry.message.contains("retry after 2000ms"));
         assert!(matches!(entry.severity, Severity::Blocked));
     }
 }

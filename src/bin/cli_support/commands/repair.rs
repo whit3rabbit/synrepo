@@ -15,7 +15,7 @@ use synrepo::{
 /// Report drift across all repair surfaces. Read-only; never mutates state.
 pub(crate) fn check(repo_root: &Path, json_output: bool) -> anyhow::Result<()> {
     let config = Config::load(repo_root).map_err(|error| {
-        anyhow::anyhow!("check: not initialized — run `synrepo init` first ({error})")
+        anyhow::anyhow!("check: not initialized, run `synrepo init --mode auto` first ({error})")
     })?;
     let synrepo_dir = Config::synrepo_dir(repo_root);
     let report = build_repair_report(&synrepo_dir, &config);
@@ -48,7 +48,7 @@ pub(crate) fn sync(
     reset_explain_totals: bool,
 ) -> anyhow::Result<()> {
     let config = Config::load(repo_root).map_err(|error| {
-        anyhow::anyhow!("sync: not initialized — run `synrepo init` first ({error})")
+        anyhow::anyhow!("sync: not initialized, run `synrepo init --mode auto` first ({error})")
     })?;
     let synrepo_dir = Config::synrepo_dir(repo_root);
     telemetry::set_synrepo_dir(&synrepo_dir);
@@ -170,7 +170,9 @@ fn print_progress_to_stderr(progress: &SyncProgress) {
                 "sync: commentary plan ({refresh} refresh, {file_seeds} file seeds, {symbol_seed_candidates} symbol seeds)"
             );
         }
-        SyncProgress::CommentaryItem { current, generated } => {
+        SyncProgress::CommentaryItem {
+            current, generated, ..
+        } => {
             let tag = if *generated { "+" } else { "." };
             eprint!("{tag}");
             if current % 40 == 0 {

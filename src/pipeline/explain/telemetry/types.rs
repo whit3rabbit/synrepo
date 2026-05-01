@@ -6,6 +6,40 @@
 use crate::core::ids::NodeId;
 use crate::overlay::OverlayEdgeKind;
 
+/// Structured failure metadata for one explain call.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExplainFailure {
+    /// Short error tail; no PII, no raw response body.
+    pub error: String,
+    /// HTTP status when the failure came from a provider response.
+    pub http_status: Option<u16>,
+    /// Retry delay in milliseconds when the provider supplied one.
+    pub retry_after_ms: Option<u64>,
+}
+
+impl ExplainFailure {
+    /// Build a failure from displayable error text.
+    pub fn new(error: impl Into<String>) -> Self {
+        Self {
+            error: error.into(),
+            http_status: None,
+            retry_after_ms: None,
+        }
+    }
+}
+
+impl From<String> for ExplainFailure {
+    fn from(error: String) -> Self {
+        Self::new(error)
+    }
+}
+
+impl From<&str> for ExplainFailure {
+    fn from(error: &str) -> Self {
+        Self::new(error)
+    }
+}
+
 /// Source of a reported token count.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum UsageSource {
@@ -181,6 +215,10 @@ pub enum ExplainEvent {
         duration_ms: u64,
         /// Short error tail; no PII, no raw response body.
         error: String,
+        /// HTTP status when the failure came from a provider response.
+        http_status: Option<u16>,
+        /// Retry delay in milliseconds when the provider supplied one.
+        retry_after_ms: Option<u64>,
     },
 }
 

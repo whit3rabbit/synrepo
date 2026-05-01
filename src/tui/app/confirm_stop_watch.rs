@@ -33,7 +33,7 @@ impl AppState {
                 self.confirm_stop_watch = Some(ConfirmStopWatchState { pending_mode: mode });
             }
             _ => {
-                self.pending_explain = Some(PendingExplainRun {
+                self.enqueue_pending_explain(PendingExplainRun {
                     mode,
                     stopped_watch: false,
                 });
@@ -77,7 +77,7 @@ impl AppState {
                 self.log.push(outcome_to_log("watch", &outcome));
                 match &outcome {
                     ActionOutcome::Ack { .. } | ActionOutcome::Completed { .. } => {
-                        self.pending_explain = Some(PendingExplainRun {
+                        self.enqueue_pending_explain(PendingExplainRun {
                             mode: pending.pending_mode,
                             stopped_watch: true,
                         });

@@ -9,7 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crossbeam_channel::{bounded, Receiver, Sender, TrySendError};
 
-use super::types::{ExplainEvent, ExplainTarget, TokenUsage};
+use super::types::{ExplainEvent, ExplainFailure, ExplainTarget, TokenUsage};
 use crate::pipeline::explain::accounting;
 
 /// Bounded buffer size per subscriber. Events are dropped on full rather
@@ -180,15 +180,18 @@ impl CallCtx {
     }
 
     /// Mark this call as failed. `error` should be a short, non-sensitive tail.
-    pub fn fail(mut self, error: impl Into<String>) {
+    pub fn fail(mut self, error: impl Into<ExplainFailure>) {
         self.finished = true;
+        let failure = error.into();
         publish(ExplainEvent::CallFailed {
             call_id: self.call_id,
             provider: self.provider,
             model: self.model.clone(),
             target: self.target.clone(),
             duration_ms: self.duration_ms(),
-            error: truncate(&error.into(), 200),
+            error: truncate(&failure.error, 200),
+            http_status: failure.http_status,
+            retry_after_ms: failure.retry_after_ms,
         });
     }
 }
@@ -206,6 +209,8 @@ impl Drop for CallCtx {
                 target: self.target.clone(),
                 duration_ms: self.duration_ms(),
                 error: "call context dropped without explicit completion".to_string(),
+                http_status: None,
+                retry_after_ms: None,
             });
         }
     }

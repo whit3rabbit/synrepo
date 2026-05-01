@@ -58,6 +58,27 @@ pub struct ContextMetrics {
     /// aliases through the MCP surface.
     #[serde(default)]
     pub workflow_calls_total: BTreeMap<String, u64>,
+    /// **Observed**: total repository-scoped MCP requests that reached a
+    /// prepared synrepo runtime. Missing or unregistered `repo_root` failures
+    /// are intentionally not recorded because they have no trusted repo bucket.
+    #[serde(default)]
+    pub mcp_requests_total: u64,
+    /// **Observed**: MCP tool calls keyed by MCP tool name. Does not store
+    /// prompts, queries, claims, caller identity, or response bodies.
+    #[serde(default)]
+    pub mcp_tool_calls_total: BTreeMap<String, u64>,
+    /// **Observed**: MCP tool responses that returned a top-level `error` field,
+    /// keyed by MCP tool name.
+    #[serde(default)]
+    pub mcp_tool_errors_total: BTreeMap<String, u64>,
+    /// **Observed**: MCP resource reads that reached a prepared repository.
+    #[serde(default)]
+    pub mcp_resource_reads_total: u64,
+    /// **Observed**: explicit advisory saved-context mutations, keyed by stable
+    /// operation (`note_add`, `note_link`, etc.). This is a count only, never
+    /// note text or evidence content.
+    #[serde(default)]
+    pub saved_context_writes_total: BTreeMap<String, u64>,
 }
 
 impl ContextMetrics {
@@ -120,6 +141,43 @@ impl ContextMetrics {
         *self
             .workflow_calls_total
             .entry(tool.to_string())
+            .or_default() += 1;
+    }
+
+    /// Record an MCP tool request and its coarse outcome.
+    pub fn record_mcp_tool_result(
+        &mut self,
+        tool: &str,
+        errored: bool,
+        saved_context_write: Option<&str>,
+    ) {
+        self.mcp_requests_total += 1;
+        *self
+            .mcp_tool_calls_total
+            .entry(tool.to_string())
+            .or_default() += 1;
+        if errored {
+            *self
+                .mcp_tool_errors_total
+                .entry(tool.to_string())
+                .or_default() += 1;
+        }
+        if let Some(operation) = saved_context_write {
+            self.record_saved_context_write(operation);
+        }
+    }
+
+    /// Record an MCP resource read for a prepared repository.
+    pub fn record_mcp_resource_read(&mut self) {
+        self.mcp_requests_total += 1;
+        self.mcp_resource_reads_total += 1;
+    }
+
+    /// Record an explicit saved-context mutation without storing content.
+    pub fn record_saved_context_write(&mut self, operation: &str) {
+        *self
+            .saved_context_writes_total
+            .entry(operation.to_string())
             .or_default() += 1;
     }
 }
@@ -221,6 +279,33 @@ pub fn record_workflow_call_best_effort(synrepo_dir: &Path, tool: &str) {
     }
 }
 
+/// Best-effort recording of a repository-scoped MCP tool request.
+pub fn record_mcp_tool_result_best_effort(
+    synrepo_dir: &Path,
+    tool: &str,
+    errored: bool,
+    saved_context_write: Option<&str>,
+) {
+    if let Err(error) = (|| -> anyhow::Result<()> {
+        let mut metrics = load(synrepo_dir)?;
+        metrics.record_mcp_tool_result(tool, errored, saved_context_write);
+        save(synrepo_dir, &metrics)
+    })() {
+        tracing::debug!(%error, tool, "context MCP tool metrics record failed");
+    }
+}
+
+/// Best-effort recording of a repository-scoped MCP resource read.
+pub fn record_mcp_resource_read_best_effort(synrepo_dir: &Path) {
+    if let Err(error) = (|| -> anyhow::Result<()> {
+        let mut metrics = load(synrepo_dir)?;
+        metrics.record_mcp_resource_read();
+        save(synrepo_dir, &metrics)
+    })() {
+        tracing::debug!(%error, "context MCP resource metrics record failed");
+    }
+}
+
 fn metrics_path(synrepo_dir: &Path) -> std::path::PathBuf {
     synrepo_dir.join("state").join(METRICS_FILE)
 }
@@ -234,34 +319,4 @@ fn budget_label(budget: Budget) -> &'static str {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn record_card_updates_token_and_budget_totals() {
-        let accounting = ContextAccounting::new(Budget::Tiny, 100, 1_000, vec!["hash".to_string()]);
-        let mut metrics = ContextMetrics::default();
-        metrics.record_card(&accounting, 25);
-
-        assert_eq!(metrics.cards_served_total, 1);
-        assert_eq!(metrics.card_tokens_total, 100);
-        assert_eq!(metrics.raw_file_tokens_total, 1_000);
-        assert_eq!(metrics.estimated_tokens_saved_total, 900);
-        assert_eq!(metrics.budget_tier_usage.get("tiny"), Some(&1));
-        assert_eq!(metrics.context_query_latency_ms_avg(), 25.0);
-    }
-
-    #[test]
-    fn record_workflow_call_increments_per_tool() {
-        let mut metrics = ContextMetrics::default();
-        metrics.record_workflow_call("orient");
-        metrics.record_workflow_call("orient");
-        metrics.record_workflow_call("minimum_context");
-
-        assert_eq!(metrics.workflow_calls_total.get("orient"), Some(&2));
-        assert_eq!(
-            metrics.workflow_calls_total.get("minimum_context"),
-            Some(&1)
-        );
-    }
-}
+mod tests;

@@ -1,8 +1,8 @@
 # MCP
 
-`synrepo mcp` serves repository context to MCP-compatible coding agents over stdio. It is the agent-facing surface for cards, search, impact analysis, test discovery, advisory overlay data, and optional anchored edits.
+`synrepo mcp` serves repository context to MCP-compatible coding agents over stdio. It is the agent-facing surface for cards, search, impact analysis, test discovery, advisory overlay data, explicit saved-context notes, and optional anchored edits.
 
-MCP is read-first by default. Edit-capable tools are hidden unless the server process starts with `synrepo mcp --allow-edits`.
+MCP is source-read-first by default. Source edit tools are hidden unless the server process starts with `synrepo mcp --allow-edits`. Advisory note tools can mutate only the overlay store and are explicit saved-context actions, not automatic session memory.
 
 ## Run
 
@@ -12,7 +12,9 @@ synrepo mcp --repo <path>      # stdio server for a specific repo
 synrepo mcp --allow-edits      # explicitly expose anchored edit tools
 ```
 
-Most users should prefer `synrepo setup <tool>`, which writes the agent instructions or skill and registers MCP through `agent-config` for supported integrations. The default is global agent config with `synrepo mcp`; pass `--project` to write repo-local MCP config that launches `synrepo mcp --repo .`. Shim-only integrations still need their own MCP config pointed at `synrepo mcp --repo .`.
+Most users should prefer `synrepo setup <tool>`, which writes the agent instructions or skill and registers MCP through `agent-config` for supported integrations. The default is global agent config with `synrepo mcp`; pass `--project` to write repo-local MCP config that launches `synrepo mcp --repo .`. Global MCP is lazy: each tool call must supply a registered repository via `repo_root` unless the server has a default repository. Shim-only integrations still need their own MCP config pointed at `synrepo mcp --repo .`.
+
+`synrepo mcp` does not start `synrepo watch`, install Git hooks, scan every repository, or keep state fresh in the background. Use `synrepo watch`, `synrepo watch --daemon`, or `synrepo install-hooks` explicitly when you want those behaviors.
 
 ## Default Agent Workflow
 
@@ -26,7 +28,7 @@ The default path is deliberately small first:
 6. `synrepo_tests` before claiming done.
 7. `synrepo_changed` after edits to review changed context and validation commands.
 
-Use `tiny` budgets to route, `normal` budgets to understand a neighborhood, and `deep` budgets only before implementation or when exact source details matter. Use `synrepo_context_pack` when batching several read-only context artifacts is cheaper than serial tool calls.
+Use `tiny` budgets to route, `normal` budgets to understand a neighborhood, and `deep` budgets only before implementation or when exact source details matter. Use `synrepo_context_pack` when batching several read-only context artifacts is cheaper than serial tool calls. Its `targets` parameter is an array of structured objects: `{ "kind": "file|symbol|directory|minimum_context|test_surface|call_path|search", "target": "...", "budget": "tiny|normal|deep" }`.
 
 ## Tool Groups
 
@@ -94,6 +96,8 @@ Overlay content is advisory. Commentary, explained docs, proposed cross-links, a
 Freshness is explicit. A stale label is information, not an error, and synrepo does not silently refresh commentary just because an API key exists. Use `synrepo_refresh_commentary` only when fresh advisory prose is required.
 
 Prepared edit anchors are short-lived operational state. They are not graph facts, overlay content, commentary, agent notes, canonical source truth, or agent memory.
+
+Context metrics are operational counters only. They track totals such as MCP requests, per-tool calls, per-tool errors, resource reads, card tokens, and explicit note mutations. They never store prompts, queries, note claims, caller identity, or session history.
 
 ## Edit-Enabled Workflow
 

@@ -105,7 +105,7 @@ impl AppState {
             should_exit: false,
             launch_integration: false,
             launch_explain_setup: false,
-            pending_explain: None,
+            pending_explain: std::collections::VecDeque::new(),
             confirm_stop_watch: None,
             pending_quick_confirm: None,
             picker: None,
@@ -162,7 +162,21 @@ impl AppState {
     /// Take a queued explain run so the dashboard loop can execute it without
     /// leaving the alternate screen.
     pub fn take_pending_explain(&mut self) -> Option<PendingExplainRun> {
-        self.pending_explain.take()
+        self.pending_explain.pop_front()
+    }
+
+    /// Queue a dashboard explain run, deduping by mode so rapid repeat
+    /// keypresses do not silently replace already scheduled work.
+    pub(super) fn enqueue_pending_explain(&mut self, run: PendingExplainRun) {
+        if self
+            .pending_explain
+            .iter()
+            .any(|pending| pending.mode == run.mode)
+        {
+            self.set_toast("explain run already queued");
+            return;
+        }
+        self.pending_explain.push_back(run);
     }
 
     /// Refresh the snapshot if the snapshot-refresh interval has elapsed. In

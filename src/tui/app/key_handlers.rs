@@ -172,6 +172,11 @@ impl AppState {
                 self.should_exit = true;
                 true
             }
+            KeyCode::Char('e') => {
+                self.launch_explain_setup = true;
+                self.should_exit = true;
+                true
+            }
             _ => false,
         }
     }
@@ -256,6 +261,15 @@ pub(super) fn quick_actions_for(mode: &AppMode, snapshot: &StatusSnapshot) -> Ve
             destructive: false,
             expensive: false,
             command_label: Some("agent integration".to_string()),
+        },
+        QuickAction {
+            key: "e".to_string(),
+            label: "configure explain".to_string(),
+            disabled: false,
+            requires_confirm: false,
+            destructive: false,
+            expensive: false,
+            command_label: Some("configure explain".to_string()),
         },
         QuickAction {
             key: "q".to_string(),

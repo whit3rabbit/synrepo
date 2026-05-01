@@ -187,10 +187,25 @@ pub enum SyncProgress {
     },
     /// Commentary refresh is making per-target progress.
     CommentaryItem {
+        /// Repo-relative target path, when available.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        target: Option<String>,
         /// Current target index (1-based).
         current: usize,
         /// Whether the generator produced content for this target.
         generated: bool,
+        /// Stable reason code when generation did not produce content.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+        /// Human-readable reason when generation did not produce content.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        message: Option<String>,
+        /// Number of retries attempted before this item finished.
+        #[serde(default)]
+        retry_attempts: usize,
+        /// True when this target remains queued for a later explain run.
+        #[serde(default)]
+        queued_for_next_run: bool,
     },
     /// Commentary refresh completed. Counts mirror the internal summary.
     CommentarySummary {
@@ -204,6 +219,12 @@ pub enum SyncProgress {
         attempted: usize,
         /// True if the operator requested a stop partway through.
         stopped: bool,
+        /// Planned targets left queued because this run stopped early.
+        #[serde(default)]
+        queued_for_next_run: usize,
+        /// Counts by stable skip reason.
+        #[serde(default)]
+        skip_reasons: Vec<(String, usize)>,
     },
 }
 
