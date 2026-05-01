@@ -163,7 +163,7 @@ fn draw_global_dashboard(frame: &mut ratatui::Frame, state: &mut GlobalAppState)
     }
     if state
         .active_state()
-        .map(|active| matches!(active.active_tab, ActiveTab::Explore))
+        .map(|active| matches!(active.active_tab, ActiveTab::Repos))
         .unwrap_or(false)
     {
         draw_global_explore_dashboard(frame, state);
@@ -347,7 +347,7 @@ fn draw_dashboard(frame: &mut ratatui::Frame, state: &mut AppState) {
             };
             frame.render_widget(mcp, content_area);
         }
-        ActiveTab::Explore => {
+        ActiveTab::Repos => {
             let explore = ExploreTabWidget {
                 projects: &state.explore_projects,
                 selected: state.explore_selected_index(),

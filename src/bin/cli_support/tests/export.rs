@@ -6,7 +6,6 @@
 
 use std::fs;
 
-use synrepo::bootstrap::bootstrap;
 use synrepo::config::Config;
 use synrepo::pipeline::export::ExportFormat;
 use synrepo::pipeline::watch::{
@@ -22,6 +21,8 @@ use tempfile::tempdir;
 use crate::export;
 #[cfg(unix)]
 use crate::sync;
+
+use super::support::bootstrap_isolated as bootstrap;
 
 fn hold_live_watch(synrepo_dir: &std::path::Path, pid: u32) -> TestWatchFlockHolder {
     let state = WatchDaemonState {

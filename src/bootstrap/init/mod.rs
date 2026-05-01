@@ -224,6 +224,7 @@ pub fn bootstrap_with_force(
 
     Ok(BootstrapReport {
         health,
+        action,
         mode,
         mode_guidance,
         compatibility_guidance: compatibility_report.guidance_lines(),

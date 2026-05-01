@@ -1,11 +1,10 @@
-use synrepo::bootstrap::bootstrap;
 use synrepo::config::{Config, Mode};
 use synrepo::core::ids::NodeId;
 use synrepo::overlay::{OverlayEdgeKind, OverlayStore};
 use synrepo::store::overlay::{format_candidate_id, SqliteOverlayStore};
 use tempfile::tempdir;
 
-use super::support::seed_graph;
+use super::support::{bootstrap_isolated as bootstrap, seed_graph};
 use super::{commands, sample_link, write_curated_mode};
 
 #[test]

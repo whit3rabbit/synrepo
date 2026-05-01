@@ -41,6 +41,7 @@ pub(super) fn execute_item(
     overlay: &mut SqliteOverlayStore,
     generator: &dyn CommentaryGenerator,
     item: &CommentaryWorkItem,
+    max_input_tokens: u32,
 ) -> crate::Result<ItemOutcome> {
     let Some(snap) = resolve_commentary_node(graph, item.node_id)? else {
         return Ok(ItemOutcome::Skipped {
@@ -49,7 +50,15 @@ pub(super) fn execute_item(
             queued_for_next_run: false,
         });
     };
-    generate_and_insert(repo_root, graph, generator, overlay, item.node_id, &snap)
+    generate_and_insert(
+        repo_root,
+        graph,
+        generator,
+        overlay,
+        item.node_id,
+        &snap,
+        max_input_tokens,
+    )
 }
 
 fn generate_and_insert(
@@ -59,8 +68,9 @@ fn generate_and_insert(
     overlay: &mut SqliteOverlayStore,
     node_id: NodeId,
     snap: &CommentaryNodeSnapshot,
+    max_input_tokens: u32,
 ) -> crate::Result<ItemOutcome> {
-    let ctx_text = build_context_text(repo_root, graph, snap);
+    let ctx_text = build_context_text(repo_root, graph, snap, max_input_tokens);
     let mut retry_attempts = 0usize;
     loop {
         let outcome = generate_once(generator, node_id, &ctx_text)?;
@@ -326,9 +336,16 @@ mod tests {
             symbol: None,
         };
 
-        let outcome =
-            generate_and_insert(repo.path(), &graph, &generator, &mut overlay, node(), &snap)
-                .unwrap();
+        let outcome = generate_and_insert(
+            repo.path(),
+            &graph,
+            &generator,
+            &mut overlay,
+            node(),
+            &snap,
+            5_000,
+        )
+        .unwrap();
 
         assert_eq!(
             generator.calls.load(Ordering::SeqCst),

@@ -1,4 +1,3 @@
-use synrepo::bootstrap::bootstrap;
 use synrepo::config::{Config, Mode};
 use synrepo::core::provenance::CreatedBy;
 use synrepo::overlay::{OverlayEdgeKind, OverlayStore};
@@ -8,6 +7,7 @@ use synrepo::structure::graph::{EdgeKind, Epistemic};
 use tempfile::tempdir;
 
 use super::{commands, sample_link, setup_curated_link_env};
+use crate::cli_support::tests::support::bootstrap_isolated as bootstrap;
 
 fn serial_accept_guard() -> synrepo::test_support::GlobalTestLock {
     synrepo::test_support::global_test_lock("links-accept")

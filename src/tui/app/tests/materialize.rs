@@ -3,7 +3,7 @@
 //! attempted-auto guard.
 
 use super::super::*;
-use super::support::{isolated_home, make_ready_poll_state};
+use super::support::make_ready_poll_state;
 use crate::tui::materializer::MaterializeState;
 use crossterm::event::{KeyCode, KeyModifiers};
 use std::time::Instant;
@@ -28,7 +28,6 @@ fn wait_for_materialize_finish(state: &mut AppState) -> MaterializeState {
 #[test]
 fn tick_auto_fires_materialize_when_graph_missing() {
     let _guard = crate::test_support::global_test_lock("tui-app-materialize");
-    let (_home, _home_guard) = isolated_home();
     let (repo, mut state) = make_ready_poll_state();
     // Drop the graph store so the snapshot reports `graph_stats = None`.
     let graph_dir = repo.path().join(".synrepo/graph");
@@ -66,7 +65,6 @@ fn tick_auto_fires_materialize_when_graph_missing() {
 #[test]
 fn tick_does_not_re_fire_auto_after_first_attempt() {
     let _guard = crate::test_support::global_test_lock("tui-app-materialize");
-    let (_home, _home_guard) = isolated_home();
     let (repo, mut state) = make_ready_poll_state();
     let graph_dir = repo.path().join(".synrepo/graph");
     std::fs::remove_dir_all(&graph_dir).expect("remove graph dir");
@@ -112,7 +110,6 @@ fn tick_does_not_re_fire_auto_after_first_attempt() {
 #[test]
 fn manual_m_press_dispatches_even_after_auto_attempted() {
     let _guard = crate::test_support::global_test_lock("tui-app-materialize");
-    let (_home, _home_guard) = isolated_home();
     let (_repo, mut state) = make_ready_poll_state();
 
     // Pretend an auto attempt already fired this session so the auto path
@@ -141,7 +138,6 @@ fn manual_m_press_dispatches_even_after_auto_attempted() {
 #[test]
 fn quick_actions_include_m_when_graph_missing() {
     let _guard = crate::test_support::global_test_lock("tui-app-materialize");
-    let (_home, _home_guard) = isolated_home();
     let (repo, mut state) = make_ready_poll_state();
     std::fs::remove_dir_all(repo.path().join(".synrepo/graph")).expect("remove graph dir");
     state.refresh_now();
@@ -156,7 +152,6 @@ fn quick_actions_include_m_when_graph_missing() {
 #[test]
 fn quick_actions_omit_m_when_graph_present() {
     let _guard = crate::test_support::global_test_lock("tui-app-materialize");
-    let (_home, _home_guard) = isolated_home();
     let (_repo, state) = make_ready_poll_state();
     let has_m = state.quick_actions.iter().any(|a| a.key == "M");
     assert!(!has_m, "stray M quick action: {:?}", state.quick_actions);

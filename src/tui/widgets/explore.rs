@@ -1,4 +1,4 @@
-//! Explore tab widget for registry-managed projects.
+//! Repos tab widget for registry-managed projects.
 
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
@@ -9,7 +9,7 @@ use crate::tui::projects::ProjectRef;
 use crate::tui::theme::Theme;
 use crate::tui::widgets::projects::project_row;
 
-/// Render registry-managed projects for the global dashboard.
+/// Render registry-managed repos for the global dashboard.
 pub(crate) struct ExploreTabWidget<'a> {
     /// Registry-backed project rows.
     pub(crate) projects: &'a [ProjectRef],
@@ -26,16 +26,17 @@ pub(crate) struct ExploreTabWidget<'a> {
 impl Widget for ExploreTabWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let block = Block::default()
-            .title(" explore ")
+            .title(" repos ")
             .borders(Borders::ALL)
             .border_style(self.theme.border_style());
         if self.projects.is_empty() {
             let lines = vec![
                 Line::from(""),
-                Line::from("  no projects registered yet."),
+                Line::from("  no repos registered yet."),
                 Line::from(""),
-                Line::from("  add the current directory: synrepo project add ."),
-                Line::from("  add a specific path:       synrepo project add <path>"),
+                Line::from("  initialize here:      synrepo init"),
+                Line::from("  setup with an agent:  synrepo setup <tool>"),
+                Line::from("  register a repo:      synrepo project add <path>"),
             ];
             Paragraph::new(lines)
                 .block(block)

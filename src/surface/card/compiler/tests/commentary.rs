@@ -2,13 +2,16 @@
 //! explicit refresh persistence, and read-only guarantees.
 
 use super::super::{Budget, GraphCardCompiler, SourceStore};
-use super::fixtures::{current_content_hash, fresh_symbol_fixture, make_overlay_store};
+use super::fixtures::{
+    current_content_hash, fresh_symbol_fixture, make_overlay_store, multi_file_fixture,
+};
 use crate::{
     core::ids::NodeId,
     overlay::{CommentaryEntry, CommentaryProvenance},
     pipeline::explain::CommentaryGenerator,
     surface::card::{CardCompiler, Freshness},
 };
+use std::sync::{Arc, Mutex};
 use time::OffsetDateTime;
 
 #[test]
@@ -161,6 +164,45 @@ fn refresh_commentary_persists_new_entry() {
     let card = compiler.symbol_card(sym_id, Budget::Deep).unwrap();
     assert_eq!(card.commentary_state.as_deref(), Some("fresh"));
     assert_eq!(card.overlay_commentary.unwrap().text, "Freshly generated.");
+}
+
+#[test]
+fn refresh_commentary_uses_shared_graph_context() {
+    struct CaptureContext {
+        seen: Arc<Mutex<Option<String>>>,
+    }
+    impl CommentaryGenerator for CaptureContext {
+        fn generate(&self, node: NodeId, context: &str) -> crate::Result<Option<CommentaryEntry>> {
+            *self.seen.lock().unwrap() = Some(context.to_string());
+            Ok(Some(CommentaryEntry {
+                node_id: node,
+                text: "Graph aware commentary.".to_string(),
+                provenance: CommentaryProvenance {
+                    source_content_hash: String::new(),
+                    pass_id: "test".to_string(),
+                    model_identity: "fixture".to_string(),
+                    generated_at: OffsetDateTime::now_utc(),
+                },
+            }))
+        }
+    }
+
+    let (repo, compiler, main_id) = multi_file_fixture();
+    let overlay = make_overlay_store(&repo);
+    let seen = Arc::new(Mutex::new(None));
+    let generator = CaptureContext { seen: seen.clone() };
+    let compiler = compiler.with_overlay(Some(overlay));
+
+    let text = compiler
+        .refresh_commentary(NodeId::File(main_id), &generator)
+        .unwrap();
+    assert_eq!(text.as_deref(), Some("Graph aware commentary."));
+
+    let prompt = seen.lock().unwrap().clone().expect("prompt captured");
+    assert!(prompt.contains("Target kind: file"));
+    assert!(prompt.contains("<imports>"));
+    assert!(prompt.contains("src/utils.ts"));
+    assert!(prompt.contains("<exported_symbols>"));
 }
 
 #[test]

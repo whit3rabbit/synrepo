@@ -118,11 +118,11 @@ pub struct AppState {
     pub quick_actions: Vec<QuickAction>,
     /// Active-project MCP status rows shown by the MCP tab.
     pub mcp_rows: Vec<McpStatusRow>,
-    /// Registry-backed project rows shown by the Explore tab.
+    /// Registry-backed project rows shown by the Repos tab.
     pub(crate) explore_projects: Vec<ProjectRef>,
-    /// Selected Explore-tab row.
+    /// Selected Repos-tab row.
     pub(crate) explore_selected: usize,
-    /// Explicit dashboard restart target requested from the Explore tab.
+    /// Explicit dashboard restart target requested from the Repos tab.
     pub(crate) switch_project_root: Option<PathBuf>,
     /// When set, render loop should exit after the current draw.
     pub should_exit: bool,
@@ -232,7 +232,7 @@ pub enum DashboardExit {
     LaunchIntegration,
     /// Operator asked for the explain setup sub-wizard.
     LaunchExplainSetup,
-    /// Operator selected another registry project from Explore.
+    /// Operator selected another registry project from Repos.
     SwitchProject(PathBuf),
 }
 

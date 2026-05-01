@@ -1,4 +1,4 @@
-//! Single-project Explore-tab handling.
+//! Single-project Repos-tab handling.
 
 use crossterm::event::{KeyCode, KeyModifiers};
 
@@ -49,7 +49,7 @@ impl AppState {
             }
             KeyCode::Char('r') => {
                 self.refresh_explore_projects();
-                self.set_toast("explore projects refreshed");
+                self.set_toast("repos refreshed");
                 true
             }
             KeyCode::Char('w') => {

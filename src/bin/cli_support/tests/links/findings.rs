@@ -1,4 +1,3 @@
-use synrepo::bootstrap::bootstrap;
 use synrepo::config::{Config, Mode};
 use synrepo::core::ids::{ConceptNodeId, NodeId, SymbolNodeId};
 use synrepo::overlay::{ConfidenceTier, OverlayStore};
@@ -6,7 +5,7 @@ use synrepo::store::overlay::{FindingsFilter, SqliteOverlayStore};
 use synrepo::store::sqlite::SqliteGraphStore;
 use tempfile::tempdir;
 
-use super::support::seed_graph;
+use super::support::{bootstrap_isolated as bootstrap, seed_graph};
 use super::{commands, sample_link};
 
 #[test]

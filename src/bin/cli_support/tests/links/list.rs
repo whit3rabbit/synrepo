@@ -1,10 +1,10 @@
-use synrepo::bootstrap::bootstrap;
 use synrepo::config::{Config, Mode};
 use synrepo::core::ids::{ConceptNodeId, NodeId, SymbolNodeId};
 use synrepo::overlay::OverlayStore;
 use synrepo::store::overlay::{compare_score_desc, SqliteOverlayStore};
 use tempfile::tempdir;
 
+use super::support::bootstrap_isolated as bootstrap;
 use super::{commands, sample_link};
 
 fn insert_n_candidates(overlay: &mut SqliteOverlayStore, from: NodeId, n: u64) {

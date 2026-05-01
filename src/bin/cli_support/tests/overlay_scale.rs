@@ -14,13 +14,12 @@
 
 use std::time::{Duration, Instant};
 
-use synrepo::bootstrap::bootstrap;
 use synrepo::config::Config;
 use synrepo::surface::handoffs::read_pending_candidates;
 use tempfile::tempdir;
 
 use super::super::commands::{links_list_output, status_output};
-use super::support::seed_overlay_candidates;
+use super::support::{bootstrap_isolated as bootstrap, seed_overlay_candidates};
 
 const SCALE_N: u64 = 5_000;
 

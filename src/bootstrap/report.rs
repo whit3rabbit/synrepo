@@ -61,6 +61,9 @@ pub struct DegradedCapability {
 pub struct BootstrapReport {
     /// Whether the bootstrap completed cleanly or required repair.
     pub health: BootstrapHealth,
+    /// What kind of bootstrap actually happened (created/refreshed/repaired).
+    /// Drives first-time vs re-run feedback in the rendered output.
+    pub action: BootstrapAction,
     /// The operational mode that was written to config.
     pub mode: Mode,
     /// Optional explanation of how the mode was selected or why it differs from the recommendation.
@@ -114,6 +117,20 @@ impl BootstrapReport {
                     cap.capability, cap.state, cap.detail, action,
                 ));
             }
+        } else if matches!(self.health, BootstrapHealth::Healthy) {
+            // No readiness rows are degraded and bootstrap did not need repair.
+            // Tell the user that explicitly, and distinguish first-time vs
+            // re-run so they understand whether `.synrepo/` was just created or
+            // refreshed in place.
+            rendered.push_str(match self.action {
+                BootstrapAction::Created => "All checks passed: first-time setup complete.\n",
+                BootstrapAction::Refreshed => {
+                    "All checks passed: existing setup is in good shape (re-run).\n"
+                }
+                // Repaired implies Health::Degraded, so this arm is not reached
+                // through the production path; render a sane line if it ever is.
+                BootstrapAction::Repaired => "All checks passed.\n",
+            });
         }
         if matches!(self.health, BootstrapHealth::Healthy) {
             rendered.push_str(&self.doctrine_pointer_line());
@@ -149,8 +166,13 @@ mod tests {
     use tempfile::tempdir;
 
     fn base_report(health: BootstrapHealth, synrepo_dir: PathBuf) -> BootstrapReport {
+        let action = match health {
+            BootstrapHealth::Healthy => BootstrapAction::Created,
+            BootstrapHealth::Degraded => BootstrapAction::Repaired,
+        };
         BootstrapReport {
             health,
+            action,
             mode: Mode::Auto,
             mode_guidance: None,
             compatibility_guidance: vec![],
@@ -259,5 +281,54 @@ mod tests {
             !rendered.contains("Degraded capabilities:"),
             "rendered output must not emit the degraded block when there are none"
         );
+    }
+
+    #[test]
+    fn healthy_clean_render_emits_positive_feedback_for_first_time() {
+        let repo = tempdir().unwrap();
+        let synrepo_dir = repo.path().join(".synrepo");
+        let mut report = base_report(BootstrapHealth::Healthy, synrepo_dir);
+        report.action = BootstrapAction::Created;
+
+        let rendered = report.render();
+        assert!(
+            rendered.contains("All checks passed: first-time setup complete."),
+            "first-time clean bootstrap must announce success: {rendered}"
+        );
+    }
+
+    #[test]
+    fn healthy_clean_render_emits_positive_feedback_for_rerun() {
+        let repo = tempdir().unwrap();
+        let synrepo_dir = repo.path().join(".synrepo");
+        let mut report = base_report(BootstrapHealth::Healthy, synrepo_dir);
+        report.action = BootstrapAction::Refreshed;
+
+        let rendered = report.render();
+        assert!(
+            rendered.contains("All checks passed: existing setup is in good shape (re-run)."),
+            "re-run clean bootstrap must announce success: {rendered}"
+        );
+    }
+
+    #[test]
+    fn render_omits_positive_feedback_when_degraded_capabilities_present() {
+        let repo = tempdir().unwrap();
+        let synrepo_dir = repo.path().join(".synrepo");
+        let mut report = base_report(BootstrapHealth::Healthy, synrepo_dir);
+        report.action = BootstrapAction::Refreshed;
+        report.degraded_capabilities = vec![DegradedCapability {
+            capability: "git-intelligence".to_string(),
+            state: "unavailable".to_string(),
+            detail: "no git repository".to_string(),
+            next_action: None,
+        }];
+
+        let rendered = report.render();
+        assert!(
+            !rendered.contains("All checks passed"),
+            "positive feedback must not appear when capabilities are degraded: {rendered}"
+        );
+        assert!(rendered.contains("Degraded capabilities:"));
     }
 }

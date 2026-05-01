@@ -1,5 +1,5 @@
 use super::super::commands::{search, search_output};
-use synrepo::bootstrap::bootstrap;
+use super::support::bootstrap_isolated as bootstrap;
 use synrepo::config::Config;
 #[cfg(unix)]
 use synrepo::pipeline::writer::{hold_writer_flock_with_ownership, live_foreign_pid};

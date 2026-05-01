@@ -188,7 +188,7 @@ pub(super) fn multi_file_fixture() -> (tempfile::TempDir, GraphCardCompiler, Fil
     .unwrap();
     fs::write(
         repo.path().join("src/main.ts"),
-        "import { helper } from './utils';\nhelper();\n",
+        "import { helper } from './utils';\nexport function main() { return helper(); }\n",
     )
     .unwrap();
 

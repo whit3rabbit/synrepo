@@ -31,11 +31,11 @@ pub(crate) struct ProjectRef {
 }
 
 impl ProjectRef {
-    fn from_entry(entry: &ProjectEntry) -> Self {
+    fn from_entry(entry: &ProjectEntry) -> Option<Self> {
         let report = probe(&entry.path);
         let health = match &report.classification {
             RuntimeClassification::Ready => "ready".to_string(),
-            RuntimeClassification::Uninitialized => "uninitialized".to_string(),
+            RuntimeClassification::Uninitialized => return None,
             RuntimeClassification::Partial { missing } => {
                 format!("partial: {}", missing.len())
             }
@@ -51,7 +51,7 @@ impl ProjectRef {
         let lock = live_owner_pid(&synrepo_dir)
             .map(|pid| format!("pid:{pid}"))
             .unwrap_or_else(|| "free".to_string());
-        Self {
+        Some(Self {
             id: entry.effective_id(),
             name: entry.display_name(),
             root: entry.path.clone(),
@@ -60,7 +60,7 @@ impl ProjectRef {
             lock,
             integration: format!("{:?}", report.agent_integration).to_lowercase(),
             last_opened_at: entry.last_opened_at.clone(),
-        }
+        })
     }
 }
 
@@ -210,7 +210,7 @@ impl GlobalAppState {
             }
             _ if self
                 .active_state()
-                .map(|active| matches!(active.active_tab, ActiveTab::Explore))
+                .map(|active| matches!(active.active_tab, ActiveTab::Repos))
                 .unwrap_or(false) =>
             {
                 if self.handle_explore_key(code, modifiers) {
@@ -359,7 +359,7 @@ pub(crate) fn load_project_refs() -> anyhow::Result<Vec<ProjectRef>> {
     let mut projects: Vec<ProjectRef> = registry::load()?
         .projects
         .iter()
-        .map(ProjectRef::from_entry)
+        .filter_map(ProjectRef::from_entry)
         .collect();
     projects.sort_by(|a, b| {
         b.last_opened_at

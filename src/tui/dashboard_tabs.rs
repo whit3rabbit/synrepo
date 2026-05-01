@@ -7,7 +7,7 @@ use crate::tui::probe::{build_header_vm, display_repo_path};
 use crate::tui::projects::GlobalAppState;
 use crate::tui::widgets::{DashboardTabsWidget, ExploreTabWidget, FooterWidget, HeaderWidget};
 
-/// Render the global Explore tab using the active project's dashboard chrome.
+/// Render the global Repos tab using the active project's dashboard chrome.
 pub(crate) fn draw_global_explore_dashboard(
     frame: &mut ratatui::Frame,
     state: &mut GlobalAppState,
@@ -47,7 +47,7 @@ pub(crate) fn draw_global_explore_dashboard(
     frame.render_widget(header, outer[0]);
     frame.render_widget(
         DashboardTabsWidget {
-            active: ActiveTab::Explore,
+            active: ActiveTab::Repos,
             theme: &active.theme,
         },
         outer[1],
@@ -66,7 +66,7 @@ pub(crate) fn draw_global_explore_dashboard(
     );
     frame.render_widget(
         FooterWidget {
-            active: ActiveTab::Explore,
+            active: ActiveTab::Repos,
             follow_mode: active.follow_mode,
             theme: &active.theme,
             toast: active.active_toast(),

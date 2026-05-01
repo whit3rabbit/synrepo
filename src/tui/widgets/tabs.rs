@@ -25,13 +25,13 @@ impl Widget for DashboardTabsWidget<'_> {
             .border_style(self.theme.border_style());
 
         let titles: Vec<Line<'static>> = [
-            ("1", "Live", ActiveTab::Live),
-            ("2", "Health", ActiveTab::Health),
-            ("3", "Trust", ActiveTab::Trust),
-            ("4", "Explain", ActiveTab::Explain),
-            ("5", "Actions", ActiveTab::Actions),
-            ("6", "MCP", ActiveTab::Mcp),
-            ("7", "Explore", ActiveTab::Explore),
+            ("1", "Repos", ActiveTab::Repos),
+            ("2", "Live", ActiveTab::Live),
+            ("3", "Health", ActiveTab::Health),
+            ("4", "Trust", ActiveTab::Trust),
+            ("5", "Explain", ActiveTab::Explain),
+            ("6", "Actions", ActiveTab::Actions),
+            ("7", "MCP", ActiveTab::Mcp),
         ]
         .into_iter()
         .map(|(key, label, _)| {
@@ -44,13 +44,13 @@ impl Widget for DashboardTabsWidget<'_> {
 
         Tabs::new(titles)
             .select(match self.active {
-                ActiveTab::Live => 0,
-                ActiveTab::Health => 1,
-                ActiveTab::Trust => 2,
-                ActiveTab::Explain => 3,
-                ActiveTab::Actions => 4,
-                ActiveTab::Mcp => 5,
-                ActiveTab::Explore => 6,
+                ActiveTab::Repos => 0,
+                ActiveTab::Live => 1,
+                ActiveTab::Health => 2,
+                ActiveTab::Trust => 3,
+                ActiveTab::Explain => 4,
+                ActiveTab::Actions => 5,
+                ActiveTab::Mcp => 6,
             })
             .style(self.theme.base_style())
             .highlight_style(self.theme.selected_style())

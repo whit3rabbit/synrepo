@@ -164,13 +164,13 @@ fn confirm_modal_n_cancels_without_stopping_watch() {
 }
 
 #[test]
-fn confirm_modal_5_switches_to_actions_and_clears_modal() {
+fn confirm_modal_6_switches_to_actions_and_clears_modal() {
     let (_repo, mut state) = make_ready_poll_state();
     state.confirm_stop_watch = Some(ConfirmStopWatchState {
         pending_mode: ExplainMode::AllStale,
     });
 
-    let consumed = state.handle_key(KeyCode::Char('5'), KeyModifiers::NONE);
+    let consumed = state.handle_key(KeyCode::Char('6'), KeyModifiers::NONE);
 
     assert!(consumed);
     assert_eq!(state.active_tab, ActiveTab::Actions);

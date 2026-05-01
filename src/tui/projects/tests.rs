@@ -15,11 +15,17 @@ fn home_guard() -> (
     (lock, home, guard)
 }
 
+fn make_partial_project(path: &std::path::Path) {
+    std::fs::create_dir_all(path.join(".synrepo")).unwrap();
+}
+
 #[test]
 fn switch_project_clears_transients_and_preserves_project_states() {
     let (_lock, _home, _guard) = home_guard();
     let first = tempdir().unwrap();
     let second = tempdir().unwrap();
+    make_partial_project(first.path());
+    make_partial_project(second.path());
     let first_entry = registry::record_project(first.path()).unwrap();
     let second_entry = registry::record_project(second.path()).unwrap();
     let mut state = GlobalAppState::new(first.path(), Theme::plain(), true).unwrap();
@@ -52,6 +58,7 @@ fn switch_project_clears_transients_and_preserves_project_states() {
 fn picker_enter_switches_to_selected_project() {
     let (_lock, _home, _guard) = home_guard();
     let project = tempdir().unwrap();
+    make_partial_project(project.path());
     let entry = registry::record_project(project.path()).unwrap();
     let mut state = GlobalAppState::new(project.path(), Theme::plain(), true).unwrap();
 
@@ -65,6 +72,7 @@ fn picker_enter_switches_to_selected_project() {
 fn picker_rename_updates_alias_only() {
     let (_lock, _home, _guard) = home_guard();
     let project = tempdir().unwrap();
+    make_partial_project(project.path());
     let entry = registry::record_project(project.path()).unwrap();
     let mut state = GlobalAppState::new(project.path(), Theme::plain(), true).unwrap();
 
@@ -81,6 +89,7 @@ fn picker_rename_updates_alias_only() {
 fn p_key_opens_explore_tab_for_active_project() {
     let (_lock, _home, _guard) = home_guard();
     let project = tempdir().unwrap();
+    make_partial_project(project.path());
     registry::record_project(project.path()).unwrap();
     let mut state = GlobalAppState::new(project.path(), Theme::plain(), false).unwrap();
 
@@ -88,7 +97,7 @@ fn p_key_opens_explore_tab_for_active_project() {
 
     assert_eq!(
         state.active_state().unwrap().active_tab,
-        crate::tui::app::ActiveTab::Explore
+        crate::tui::app::ActiveTab::Repos
     );
     assert!(state.picker.is_none());
 }
@@ -100,6 +109,8 @@ fn explore_enter_switches_selected_project() {
     let beta = home.path().join("beta");
     std::fs::create_dir_all(&alpha).unwrap();
     std::fs::create_dir_all(&beta).unwrap();
+    make_partial_project(&alpha);
+    make_partial_project(&beta);
     let alpha_entry = registry::record_project(&alpha).unwrap();
     let beta_entry = registry::record_project(&beta).unwrap();
     registry::rename_project(&alpha_entry.id, "alpha").unwrap();
@@ -129,6 +140,8 @@ fn explore_refresh_preserves_selected_project() {
     let beta = home.path().join("beta");
     std::fs::create_dir_all(&alpha).unwrap();
     std::fs::create_dir_all(&beta).unwrap();
+    make_partial_project(&alpha);
+    make_partial_project(&beta);
     let alpha_entry = registry::record_project(&alpha).unwrap();
     let beta_entry = registry::record_project(&beta).unwrap();
     registry::rename_project(&alpha_entry.id, "alpha").unwrap();
@@ -156,6 +169,8 @@ fn explore_watch_toggle_scopes_to_selected_project() {
     let beta = home.path().join("beta");
     std::fs::create_dir_all(&alpha).unwrap();
     std::fs::create_dir_all(&beta).unwrap();
+    make_partial_project(&alpha);
+    make_partial_project(&beta);
     let alpha_entry = registry::record_project(&alpha).unwrap();
     let beta_entry = registry::record_project(&beta).unwrap();
     registry::rename_project(&alpha_entry.id, "alpha").unwrap();
@@ -193,4 +208,31 @@ fn explore_watch_toggle_scopes_to_selected_project() {
         state.projects[state.explore_selected_index()].id.as_str(),
         beta_entry.id.as_str()
     );
+}
+
+#[test]
+fn load_project_refs_hides_uninitialized_and_keeps_ready_and_partial() {
+    let (_lock, home, _guard) = home_guard();
+    let ready = home.path().join("ready");
+    let partial = home.path().join("partial");
+    let uninitialized = home.path().join("uninitialized");
+    std::fs::create_dir_all(&ready).unwrap();
+    std::fs::create_dir_all(&partial).unwrap();
+    std::fs::create_dir_all(&uninitialized).unwrap();
+    std::fs::write(ready.join("README.md"), "ready token\n").unwrap();
+    crate::bootstrap::bootstrap(&ready, None, false).unwrap();
+    make_partial_project(&partial);
+    let ready_entry = registry::get(&ready).unwrap().unwrap();
+    let partial_entry = registry::record_project(&partial).unwrap();
+    let uninitialized_entry = registry::record_project(&uninitialized).unwrap();
+
+    let refs = load_project_refs().unwrap();
+    let ids = refs
+        .iter()
+        .map(|project| project.id.as_str())
+        .collect::<Vec<_>>();
+
+    assert!(ids.contains(&ready_entry.id.as_str()), "{ids:?}");
+    assert!(ids.contains(&partial_entry.id.as_str()), "{ids:?}");
+    assert!(!ids.contains(&uninitialized_entry.id.as_str()), "{ids:?}");
 }

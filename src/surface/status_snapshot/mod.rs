@@ -75,10 +75,13 @@ pub struct CommentaryCoverage {
 
 impl CommentaryCoverage {
     pub(super) fn not_initialized() -> Self {
+        // `overlay.db` is created lazily on the first commentary or cross-link
+        // write. An empty overlay after `synrepo init` is the expected
+        // baseline; `not initialized` would imply a setup error.
         Self {
             total: None,
             fresh: None,
-            display: "not initialized".to_string(),
+            display: "no overlay writes yet".to_string(),
         }
     }
 

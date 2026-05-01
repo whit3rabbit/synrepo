@@ -35,7 +35,13 @@ use crate::{
     config::Config,
     core::ids::{FileNodeId, NodeId, SymbolNodeId},
     overlay::{FreshnessState, OverlayStore},
-    pipeline::{explain::CommentaryGenerator, git_intelligence::GitPathHistoryInsights},
+    pipeline::{
+        explain::{
+            context::{build_context_text, resolve_context_target, CommentaryContextOptions},
+            CommentaryGenerator,
+        },
+        git_intelligence::GitPathHistoryInsights,
+    },
     store::sqlite::SqliteGraphStore,
     structure::graph::{with_graph_read_snapshot, Graph, GraphReader, GraphStore},
 };
@@ -210,9 +216,8 @@ impl GraphCardCompiler {
     /// Explicitly refresh commentary for a node using the provided generator.
     ///
     /// This is the only path that writes to the overlay for commentary. It
-    /// compiles the target card at `Deep` budget to build context, calls
-    /// the generator, and persists the result. Returns the generated text
-    /// on success.
+    /// builds shared graph-backed context, calls the generator, and persists
+    /// the result. Returns the generated text on success.
     pub fn refresh_commentary(
         &self,
         id: NodeId,
@@ -222,70 +227,65 @@ impl GraphCardCompiler {
             crate::Error::Other(anyhow::anyhow!("no overlay store configured for refresh"))
         })?;
 
-        match id {
-            NodeId::Symbol(sym_id) => {
-                // Pin a graph snapshot to read the card context safely.
-                let (prompt, content_hash, doc_metadata) = self.with_reader(|graph| {
-                    let card = symbol::symbol_card(
-                        symbol::SymbolCardContext {
-                            compiler: self,
-                            graph,
-                            repo_root: &self.repo_root,
-                            overlay: self.overlay.as_ref(),
-                        },
-                        sym_id,
-                        Budget::Deep,
-                    )?;
+        if matches!(id, NodeId::Concept(_)) {
+            tracing::debug!(node_id = %id, "commentary refresh requested for unsupported node kind");
+            return Ok(None);
+        }
 
-                    let symbol = graph.get_symbol(sym_id)?.ok_or_else(|| {
-                        crate::Error::Other(anyhow::anyhow!("symbol {sym_id} not found"))
-                    })?;
-                    let file = graph.get_file(symbol.file_id)?.ok_or_else(|| {
-                        crate::Error::Other(anyhow::anyhow!("file for symbol {sym_id} not found"))
-                    })?;
+        let repo_root = self.repo_root.as_ref().ok_or_else(|| {
+            crate::Error::Other(anyhow::anyhow!(
+                "commentary refresh requires a repository root"
+            ))
+        })?;
+        let max_input_tokens = self
+            .config
+            .as_ref()
+            .map(|config| config.commentary_cost_limit)
+            .unwrap_or_else(|| Config::default().commentary_cost_limit);
 
-                    Ok((
-                        symbol::build_generation_context(&card),
-                        file.content_hash.clone(),
-                        crate::pipeline::explain::docs::CommentaryDocSymbolMetadata {
-                            qualified_name: symbol.qualified_name.clone(),
-                            source_path: file.path.clone(),
-                        },
-                    ))
-                })?;
+        // Pin a graph snapshot to read the prompt context safely.
+        let (prompt, content_hash, doc_metadata) = self.with_reader(|graph| {
+            let target = resolve_context_target(graph, id)?
+                .ok_or_else(|| crate::Error::Other(anyhow::anyhow!("node {id} not found")))?;
+            let prompt = build_context_text(
+                repo_root,
+                graph,
+                &target,
+                CommentaryContextOptions {
+                    max_input_tokens,
+                    ..CommentaryContextOptions::default()
+                },
+            );
 
-                match generator.generate(id, &prompt)? {
-                    Some(mut entry) => {
-                        // Fill in the source content hash so the entry is immediately Fresh.
-                        entry.provenance.source_content_hash = content_hash.clone();
-                        let text = entry.text.clone();
-                        overlay.lock().insert_commentary(entry.clone())?;
-                        if let Some(repo_root) = self.repo_root.as_ref() {
-                            let synrepo_dir = Config::synrepo_dir(repo_root);
-                            if let Some(path) =
-                                crate::pipeline::explain::docs::upsert_commentary_doc(
-                                    &synrepo_dir,
-                                    id,
-                                    &entry,
-                                    FreshnessState::Fresh,
-                                    &doc_metadata,
-                                )?
-                            {
-                                crate::pipeline::explain::docs::sync_commentary_index(
-                                    &synrepo_dir,
-                                    &[path],
-                                )?;
-                            }
-                        }
-                        Ok(Some(text))
-                    }
-                    None => Ok(None),
+            Ok((
+                prompt,
+                target.content_hash.clone(),
+                crate::pipeline::explain::docs::CommentaryDocSymbolMetadata {
+                    qualified_name: target.qualified_name(),
+                    source_path: target.file.path.clone(),
+                },
+            ))
+        })?;
+
+        match generator.generate(id, &prompt)? {
+            Some(mut entry) => {
+                // Fill in the source content hash so the entry is immediately Fresh.
+                entry.provenance.source_content_hash = content_hash.clone();
+                let text = entry.text.clone();
+                overlay.lock().insert_commentary(entry.clone())?;
+                let synrepo_dir = Config::synrepo_dir(repo_root);
+                if let Some(path) = crate::pipeline::explain::docs::upsert_commentary_doc(
+                    &synrepo_dir,
+                    id,
+                    &entry,
+                    FreshnessState::Fresh,
+                    &doc_metadata,
+                )? {
+                    crate::pipeline::explain::docs::sync_commentary_index(&synrepo_dir, &[path])?;
                 }
+                Ok(Some(text))
             }
-            _ => {
-                tracing::debug!(node_id = %id, "commentary refresh requested for unsupported node kind");
-                Ok(None)
-            }
+            None => Ok(None),
         }
     }
 }

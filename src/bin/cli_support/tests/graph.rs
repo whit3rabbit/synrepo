@@ -1,6 +1,7 @@
 use super::super::graph::{graph_query_output, graph_stats_output, node_output};
-use super::support::{git, git_stdout, git_with_author, seed_graph};
-use synrepo::bootstrap::bootstrap;
+use super::support::{
+    bootstrap_isolated as bootstrap, git, git_stdout, git_with_author, seed_graph,
+};
 use synrepo::config::Config;
 use synrepo::store::sqlite::SqliteGraphStore;
 use tempfile::tempdir;

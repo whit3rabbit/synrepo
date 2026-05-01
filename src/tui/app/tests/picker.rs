@@ -98,7 +98,7 @@ fn picker_tab_switch_clears_it() {
     state.set_tab(ActiveTab::Explain);
     prime_picker(&mut state);
     state.handle_key(KeyCode::Char('1'), KeyModifiers::NONE);
-    assert_eq!(state.active_tab, ActiveTab::Live);
+    assert_eq!(state.active_tab, ActiveTab::Repos);
     assert!(state.picker.is_none());
 }
 

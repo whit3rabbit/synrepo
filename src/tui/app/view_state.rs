@@ -12,6 +12,8 @@ use super::AppState;
 /// Which dashboard tab is currently rendered.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ActiveTab {
+    /// Registry-managed repos and switching.
+    Repos,
     /// Merged watcher + recent-activity feed.
     Live,
     /// System-health pane.
@@ -24,20 +26,18 @@ pub enum ActiveTab {
     Actions,
     /// Active-project MCP registration status.
     Mcp,
-    /// Registry-managed project exploration and switching.
-    Explore,
 }
 
 impl fmt::Display for ActiveTab {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            ActiveTab::Repos => write!(f, "Repos"),
             ActiveTab::Live => write!(f, "Live"),
             ActiveTab::Health => write!(f, "Health"),
             ActiveTab::Trust => write!(f, "Trust"),
             ActiveTab::Explain => write!(f, "Explain"),
             ActiveTab::Actions => write!(f, "Actions"),
             ActiveTab::Mcp => write!(f, "MCP"),
-            ActiveTab::Explore => write!(f, "Explore"),
         }
     }
 }
@@ -52,7 +52,7 @@ impl AppState {
             self.picker = None;
             if matches!(tab, ActiveTab::Explain) {
                 self.refresh_explain_preview(false);
-            } else if matches!(tab, ActiveTab::Explore) {
+            } else if matches!(tab, ActiveTab::Repos) {
                 self.refresh_explore_projects();
             } else if matches!(tab, ActiveTab::Live) {
                 // Re-enter Live pinned to the tail so operators always see
@@ -63,16 +63,16 @@ impl AppState {
         }
     }
 
-    /// Advance to the next tab in Live → Health → Trust → Explain → Actions → MCP → Explore order.
+    /// Advance to the next tab in Repos → Live → Health → Trust → Explain → Actions → MCP order.
     pub fn cycle_tab(&mut self) {
         let next = match self.active_tab {
+            ActiveTab::Repos => ActiveTab::Live,
             ActiveTab::Live => ActiveTab::Health,
             ActiveTab::Health => ActiveTab::Trust,
             ActiveTab::Trust => ActiveTab::Explain,
             ActiveTab::Explain => ActiveTab::Actions,
             ActiveTab::Actions => ActiveTab::Mcp,
-            ActiveTab::Mcp => ActiveTab::Explore,
-            ActiveTab::Explore => ActiveTab::Live,
+            ActiveTab::Mcp => ActiveTab::Repos,
         };
         self.set_tab(next);
     }
@@ -80,13 +80,13 @@ impl AppState {
     /// Reverse of `cycle_tab`. Used by Shift-Tab and Left arrow.
     pub fn cycle_tab_back(&mut self) {
         let prev = match self.active_tab {
-            ActiveTab::Live => ActiveTab::Explore,
+            ActiveTab::Repos => ActiveTab::Mcp,
+            ActiveTab::Live => ActiveTab::Repos,
             ActiveTab::Health => ActiveTab::Live,
             ActiveTab::Trust => ActiveTab::Health,
             ActiveTab::Explain => ActiveTab::Trust,
             ActiveTab::Actions => ActiveTab::Explain,
             ActiveTab::Mcp => ActiveTab::Actions,
-            ActiveTab::Explore => ActiveTab::Mcp,
         };
         self.set_tab(prev);
     }

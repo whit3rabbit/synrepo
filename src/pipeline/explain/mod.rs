@@ -16,6 +16,7 @@
 
 pub mod accounting;
 pub mod commentary_template;
+pub mod context;
 pub mod cross_link;
 pub mod docs;
 pub mod outcome;

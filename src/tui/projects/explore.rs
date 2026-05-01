@@ -8,7 +8,7 @@ impl GlobalAppState {
     pub(crate) fn open_explore_tab(&mut self) {
         let active_id = self.active_project_id.clone();
         if let Some(active) = self.active_state_mut() {
-            active.set_tab(ActiveTab::Explore);
+            active.set_tab(ActiveTab::Repos);
         }
         if let Some(active_id) = active_id {
             self.select_explore_project(&active_id);

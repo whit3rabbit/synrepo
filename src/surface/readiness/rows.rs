@@ -276,12 +276,17 @@ pub(super) fn overlay_row(snapshot: &StatusSnapshot) -> ReadinessRow {
             detail: display.clone(),
             next_action: Some("run `synrepo check` to evaluate repair actions".to_string()),
         }
-    } else if display.starts_with("not initialized") {
+    } else if display.starts_with("not initialized") || display.starts_with("no overlay writes") {
+        // The overlay directory is created by `synrepo init`, but `overlay.db`
+        // is materialized lazily on the first commentary or cross-link write.
+        // An empty overlay is the expected post-init baseline, not a failure
+        // mode — surface it as Supported so the readiness matrix does not
+        // contradict a clean bootstrap.
         ReadinessRow {
             capability: Capability::Overlay,
-            state: ReadinessState::Unavailable,
-            detail: "overlay directory absent".to_string(),
-            next_action: Some("run `synrepo init` to create overlay".to_string()),
+            state: ReadinessState::Supported,
+            detail: "no overlay writes yet".to_string(),
+            next_action: None,
         }
     } else {
         ReadinessRow {

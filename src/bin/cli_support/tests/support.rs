@@ -1,6 +1,6 @@
 use std::process::Command;
 
-use synrepo::bootstrap::bootstrap;
+use synrepo::bootstrap::{bootstrap, BootstrapReport};
 use synrepo::config::Config;
 use synrepo::core::ids::{ConceptNodeId, EdgeId, FileNodeId, SymbolNodeId};
 use synrepo::core::provenance::{CreatedBy, Provenance, SourceRef};
@@ -85,6 +85,19 @@ pub(super) fn git_with_author(repo: &tempfile::TempDir, args: &[&str], author: &
     );
 }
 
+pub(super) fn bootstrap_isolated(
+    repo_root: &std::path::Path,
+    mode: Option<synrepo::config::Mode>,
+    update_gitignore: bool,
+) -> anyhow::Result<BootstrapReport> {
+    let _lock =
+        synrepo::test_support::global_test_lock(synrepo::config::test_home::HOME_ENV_TEST_LOCK);
+    let home = tempfile::tempdir().unwrap();
+    let canonical_home = canonicalize_no_verbatim(home.path());
+    let _guard = synrepo::config::test_home::HomeEnvGuard::redirect_to(&canonical_home);
+    bootstrap(repo_root, mode, update_gitignore)
+}
+
 pub(super) struct SeededGraphIds {
     pub(super) file_id: FileNodeId,
     pub(super) symbol_id: SymbolNodeId,
@@ -92,7 +105,7 @@ pub(super) struct SeededGraphIds {
 }
 
 pub(super) fn seed_graph(repo_root: &std::path::Path) -> SeededGraphIds {
-    bootstrap(repo_root, None, false).unwrap();
+    bootstrap_isolated(repo_root, None, false).unwrap();
 
     let graph_dir = Config::synrepo_dir(repo_root).join("graph");
     let mut store = SqliteGraphStore::open(&graph_dir).unwrap();

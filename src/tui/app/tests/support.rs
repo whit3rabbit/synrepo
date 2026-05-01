@@ -22,6 +22,8 @@ pub(super) fn make_live_state() -> (AppState, crossbeam_channel::Sender<WatchEve
 
 pub(super) fn make_ready_poll_state() -> (tempfile::TempDir, AppState) {
     let tempdir = tempfile::tempdir().unwrap();
+    let home = tempfile::tempdir().unwrap();
+    let _home_guard = crate::config::test_home::HomeEnvGuard::redirect_to(home.path());
     crate::bootstrap::bootstrap(tempdir.path(), None, false).expect("bootstrap");
     let state = AppState::new_poll(tempdir.path(), Theme::plain(), AgentIntegration::Absent);
     (tempdir, state)

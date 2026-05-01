@@ -23,7 +23,6 @@ fn pressing_r_sets_refresh_toast() {
 #[test]
 fn pressing_w_starts_watch_sets_toast_log_and_refreshes_snapshot() {
     let _guard = crate::test_support::global_test_lock("tui-app-watch-toggle");
-    let (_home, _home_guard) = isolated_home();
     let (tempdir, mut state) = make_ready_poll_state();
     assert_eq!(state.watch_toggle_label(), Some("start"));
 

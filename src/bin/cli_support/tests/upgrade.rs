@@ -2,11 +2,10 @@ use std::fs;
 
 use tempfile::tempdir;
 
-use synrepo::bootstrap::bootstrap;
 use synrepo::config::Config;
 use synrepo::store::compatibility::snapshot_path;
 
-use super::support::git;
+use super::support::{bootstrap_isolated as bootstrap, git};
 use crate::upgrade;
 
 /// Minimal repo with a git init, a source file, and a completed bootstrap.

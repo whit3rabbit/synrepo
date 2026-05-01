@@ -11,7 +11,6 @@ use std::time::Duration;
 
 use tempfile::tempdir;
 
-use synrepo::bootstrap::bootstrap;
 use synrepo::config::Config;
 use synrepo::overlay::{CommentaryEntry, CommentaryProvenance, OverlayStore};
 use synrepo::pipeline::explain::docs::{reconcile_commentary_docs, sync_commentary_index};
@@ -22,7 +21,7 @@ use synrepo::store::sqlite::SqliteGraphStore;
 use synrepo::NodeId;
 use time::OffsetDateTime;
 
-use super::support::{git, seed_graph};
+use super::support::{bootstrap_isolated as bootstrap, git, seed_graph};
 use crate::prepare_mcp_state;
 
 const EXPLAIN_ENV: &[&str] = &[

@@ -4,19 +4,21 @@
 //! handing off to a standalone command.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyModifiers};
 
 use crate::config::Config;
 use crate::pipeline::explain::{describe_active_provider, telemetry, ExplainStatus};
 use crate::pipeline::git::GitIntelligenceContext;
 use crate::pipeline::git_intelligence::analyze_recent_history;
 use crate::pipeline::maintenance::plan_maintenance;
-use crate::pipeline::repair::{refresh_commentary, ActionContext};
+use crate::pipeline::repair::{refresh_commentary, ActionContext, CommentaryProgressEvent};
 use crate::pipeline::writer::{acquire_write_admission, map_lock_error};
 use crate::tui::actions::now_rfc3339;
-use crate::tui::app::{AppState, ExplainMode, PendingExplainRun};
+use crate::tui::app::{poll_key, AppState, ExplainMode, PendingExplainRun};
 use crate::tui::dashboard::DashboardTerminal;
 use crate::tui::probe::Severity;
 use crate::tui::widgets::LogEntry;
@@ -74,26 +76,79 @@ fn run_context(
     };
 
     telemetry::set_synrepo_dir(&context.synrepo_dir);
-    let action_context = ActionContext {
-        repo_root,
-        synrepo_dir: &context.synrepo_dir,
-        config: &context.config,
-        maint_plan: &maint_plan,
-    };
 
-    let mut actions_taken = Vec::new();
-    let mut should_stop = || stop_requested();
-    let result = refresh_commentary(
-        &action_context,
-        &mut actions_taken,
-        context.scope.as_deref(),
-        Some(&mut |event| {
+    // Run refresh_commentary on a worker thread so the main thread stays free
+    // to pump key events and redraw. The provider HTTP client is blocking with
+    // a 30s default timeout, so without this the dashboard would freeze (and
+    // q / Esc / Ctrl-C would queue silently in the crossterm input buffer)
+    // for the duration of each provider call.
+    let cancel = Arc::new(AtomicBool::new(false));
+    let (event_tx, event_rx) = crossbeam_channel::unbounded::<CommentaryProgressEvent>();
+    let mut actions_taken: Vec<String> = Vec::new();
+
+    let result: crate::Result<()> = std::thread::scope(|scope_handle| {
+        let action_context = ActionContext {
+            repo_root,
+            synrepo_dir: &context.synrepo_dir,
+            config: &context.config,
+            maint_plan: &maint_plan,
+        };
+        let scope_paths = context.scope.as_deref();
+        let cancel_for_worker = Arc::clone(&cancel);
+        let event_tx_for_worker = event_tx;
+        let actions_ref = &mut actions_taken;
+
+        let worker = scope_handle.spawn(move || -> crate::Result<()> {
+            let mut should_stop = || cancel_for_worker.load(Ordering::Relaxed);
+            let mut progress = |event: CommentaryProgressEvent| {
+                let _ = event_tx_for_worker.send(event);
+            };
+            refresh_commentary(
+                &action_context,
+                actions_ref,
+                scope_paths,
+                Some(&mut progress),
+                Some(&mut should_stop),
+            )
+        });
+
+        loop {
+            let mut had_event = false;
+            while let Ok(event) = event_rx.try_recv() {
+                ui.apply_event(event);
+                had_event = true;
+            }
+            if had_event {
+                state.drain_events();
+                let _ = draw_progress(terminal, &ui);
+            }
+
+            // 50ms paces the loop so a queued keypress lands in at most 50ms
+            // even if the worker is parked in a long provider call.
+            if let Ok(Some((code, mods))) = poll_key(Duration::from_millis(50)) {
+                let cancel_now = matches!(code, KeyCode::Esc | KeyCode::Char('q'))
+                    || (matches!(code, KeyCode::Char('c')) && mods.contains(KeyModifiers::CONTROL));
+                if cancel_now && !cancel.swap(true, Ordering::Relaxed) {
+                    ui.mark_stop_requested();
+                    let _ = draw_progress(terminal, &ui);
+                }
+            }
+
+            if worker.is_finished() {
+                break;
+            }
+        }
+
+        // Drain any events the worker sent after the last try_recv pass.
+        while let Ok(event) = event_rx.try_recv() {
             ui.apply_event(event);
-            state.drain_events();
-            let _ = draw_progress(terminal, &ui);
-        }),
-        Some(&mut should_stop),
-    );
+        }
+
+        match worker.join() {
+            Ok(result) => result,
+            Err(panic) => std::panic::resume_unwind(panic),
+        }
+    });
 
     state.drain_events();
     match result {
@@ -114,18 +169,6 @@ fn run_context(
         }
     }
     Ok(ui)
-}
-
-fn stop_requested() -> bool {
-    match crate::tui::app::poll_key(Duration::from_millis(1)) {
-        Ok(Some((KeyCode::Esc | KeyCode::Char('q'), _))) => true,
-        Ok(Some((KeyCode::Char('c'), modifiers)))
-            if modifiers.contains(crossterm::event::KeyModifiers::CONTROL) =>
-        {
-            true
-        }
-        _ => false,
-    }
 }
 
 fn log_entry(tag: &str, message: String, severity: Severity) -> LogEntry {

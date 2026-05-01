@@ -1,9 +1,10 @@
 //! CLI smoke tests for the compact command.
 
-use synrepo::bootstrap::bootstrap;
 use synrepo::config::Config;
 use synrepo::pipeline::compact::{execute_compact, plan_compact};
 use synrepo::pipeline::maintenance::CompactPolicy;
+
+use super::support::bootstrap_isolated as bootstrap;
 
 /// Verify compact dry run prints plan without mutating via library API.
 #[test]

@@ -56,37 +56,36 @@ impl AppState {
                 return true;
             }
             KeyCode::Char('1') => {
-                self.set_tab(ActiveTab::Live);
+                self.set_tab(ActiveTab::Repos);
                 return true;
             }
             KeyCode::Char('2') => {
-                self.set_tab(ActiveTab::Health);
+                self.set_tab(ActiveTab::Live);
                 return true;
             }
             KeyCode::Char('3') => {
-                self.set_tab(ActiveTab::Trust);
+                self.set_tab(ActiveTab::Health);
                 return true;
             }
             KeyCode::Char('4') => {
-                self.set_tab(ActiveTab::Explain);
+                self.set_tab(ActiveTab::Trust);
                 return true;
             }
             KeyCode::Char('5') => {
-                self.set_tab(ActiveTab::Actions);
+                self.set_tab(ActiveTab::Explain);
                 return true;
             }
             KeyCode::Char('6') => {
-                self.set_tab(ActiveTab::Mcp);
+                self.set_tab(ActiveTab::Actions);
                 return true;
             }
             KeyCode::Char('7') => {
-                self.set_tab(ActiveTab::Explore);
+                self.set_tab(ActiveTab::Mcp);
                 return true;
             }
             _ => {}
         }
-        if matches!(self.active_tab, ActiveTab::Explore) && self.handle_explore_key(code, modifiers)
-        {
+        if matches!(self.active_tab, ActiveTab::Repos) && self.handle_explore_key(code, modifiers) {
             return true;
         }
         // Explain-tab key dispatch. Plan-specified bindings:
@@ -187,7 +186,7 @@ impl AppState {
             }
             KeyCode::Char('w') => self.handle_watch_toggle(),
             KeyCode::Char('p') => {
-                self.set_tab(ActiveTab::Explore);
+                self.set_tab(ActiveTab::Repos);
                 true
             }
             KeyCode::Char('i') => {

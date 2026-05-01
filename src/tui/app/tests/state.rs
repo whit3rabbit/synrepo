@@ -75,23 +75,27 @@ fn drain_events_is_noop_in_poll_mode() {
 #[test]
 fn handle_key_switches_tabs() {
     let mut state = make_poll_state();
+    state.handle_key(KeyCode::Char('1'), KeyModifiers::NONE);
+    assert_eq!(state.active_tab, ActiveTab::Repos);
     state.handle_key(KeyCode::Char('2'), KeyModifiers::NONE);
-    assert_eq!(state.active_tab, ActiveTab::Health);
+    assert_eq!(state.active_tab, ActiveTab::Live);
     state.handle_key(KeyCode::Char('3'), KeyModifiers::NONE);
-    assert_eq!(state.active_tab, ActiveTab::Trust);
+    assert_eq!(state.active_tab, ActiveTab::Health);
     state.handle_key(KeyCode::Char('4'), KeyModifiers::NONE);
+    assert_eq!(state.active_tab, ActiveTab::Trust);
+    state.handle_key(KeyCode::Char('5'), KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Explain);
     assert!(
         state.explain_preview.is_some(),
         "entering the Explain tab should load the inline preview"
     );
-    state.handle_key(KeyCode::Char('5'), KeyModifiers::NONE);
-    assert_eq!(state.active_tab, ActiveTab::Actions);
     state.handle_key(KeyCode::Char('6'), KeyModifiers::NONE);
-    assert_eq!(state.active_tab, ActiveTab::Mcp);
+    assert_eq!(state.active_tab, ActiveTab::Actions);
     state.handle_key(KeyCode::Char('7'), KeyModifiers::NONE);
-    assert_eq!(state.active_tab, ActiveTab::Explore);
-    state.handle_key(KeyCode::Char('1'), KeyModifiers::NONE);
+    assert_eq!(state.active_tab, ActiveTab::Mcp);
+    state.handle_key(KeyCode::Tab, KeyModifiers::NONE);
+    assert_eq!(state.active_tab, ActiveTab::Repos);
+    state.handle_key(KeyCode::Tab, KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Live);
     state.handle_key(KeyCode::Tab, KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Health);
@@ -103,12 +107,8 @@ fn handle_key_switches_tabs() {
     assert_eq!(state.active_tab, ActiveTab::Actions);
     state.handle_key(KeyCode::Tab, KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Mcp);
-    state.handle_key(KeyCode::Tab, KeyModifiers::NONE);
-    assert_eq!(state.active_tab, ActiveTab::Explore);
-    state.handle_key(KeyCode::Tab, KeyModifiers::NONE);
-    assert_eq!(state.active_tab, ActiveTab::Live);
     state.handle_key(KeyCode::Char('p'), KeyModifiers::NONE);
-    assert_eq!(state.active_tab, ActiveTab::Explore);
+    assert_eq!(state.active_tab, ActiveTab::Repos);
 }
 
 #[test]
@@ -123,22 +123,24 @@ fn arrow_keys_cycle_tabs_in_both_directions() {
     assert_eq!(state.active_tab, ActiveTab::Health);
     state.handle_key(KeyCode::Left, KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Live);
-    // Wrap around backwards: Live -> Explore.
+    // Wrap around backwards: Live -> Repos.
     state.handle_key(KeyCode::Left, KeyModifiers::NONE);
-    assert_eq!(state.active_tab, ActiveTab::Explore);
+    assert_eq!(state.active_tab, ActiveTab::Repos);
     // BackTab (Shift-Tab) shares the backward path.
     state.handle_key(KeyCode::BackTab, KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Mcp);
 }
 
 #[test]
-fn explore_enter_sets_switch_intent_without_mutating_repo_root() {
+fn repos_enter_sets_switch_intent_without_mutating_repo_root() {
     let _lock = crate::test_support::global_test_lock(crate::config::test_home::HOME_ENV_TEST_LOCK);
     let (home, _guard) = isolated_home();
     let current = home.path().join("current");
     let next = home.path().join("next");
     std::fs::create_dir_all(&current).unwrap();
     std::fs::create_dir_all(&next).unwrap();
+    std::fs::create_dir_all(current.join(".synrepo")).unwrap();
+    std::fs::create_dir_all(next.join(".synrepo")).unwrap();
     crate::registry::record_project(&current).unwrap();
     let next_entry = crate::registry::record_project(&next).unwrap();
     let mut state = AppState::new_poll(
@@ -147,7 +149,7 @@ fn explore_enter_sets_switch_intent_without_mutating_repo_root() {
         crate::bootstrap::runtime_probe::AgentIntegration::Absent,
     );
 
-    state.set_tab(ActiveTab::Explore);
+    state.set_tab(ActiveTab::Repos);
     state.explore_selected = state
         .explore_projects
         .iter()

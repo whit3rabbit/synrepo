@@ -141,7 +141,14 @@ fn refresh_commentary_with_generator(
             item,
             attempted,
             max_targets,
-            execute_item(repo_root, graph, overlay, generator, item)?,
+            execute_item(
+                repo_root,
+                graph,
+                overlay,
+                generator,
+                item,
+                context.config.commentary_cost_limit,
+            )?,
             &mut queued_for_next_run,
             &mut skip_reasons,
         );
@@ -184,7 +191,14 @@ fn refresh_commentary_with_generator(
                 item,
                 attempted,
                 max_targets,
-                execute_item(repo_root, graph, overlay, generator, item)?,
+                execute_item(
+                    repo_root,
+                    graph,
+                    overlay,
+                    generator,
+                    item,
+                    context.config.commentary_cost_limit,
+                )?,
                 &mut queued_for_next_run,
                 &mut skip_reasons,
             );
@@ -220,7 +234,14 @@ fn refresh_commentary_with_generator(
                 item,
                 attempted,
                 max_targets,
-                execute_item(repo_root, graph, overlay, generator, item)?,
+                execute_item(
+                    repo_root,
+                    graph,
+                    overlay,
+                    generator,
+                    item,
+                    context.config.commentary_cost_limit,
+                )?,
                 &mut queued_for_next_run,
                 &mut skip_reasons,
             );

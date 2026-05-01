@@ -21,6 +21,7 @@ pub(super) struct ExplainRunUi {
     attempted: usize,
     finished: bool,
     pub(super) finished_prompt: bool,
+    stop_requested: bool,
     error: Option<String>,
     recent: VecDeque<String>,
 }
@@ -39,6 +40,7 @@ impl ExplainRunUi {
             attempted: 0,
             finished: false,
             finished_prompt: false,
+            stop_requested: false,
             error: None,
             recent: VecDeque::new(),
         }
@@ -57,6 +59,7 @@ impl ExplainRunUi {
             attempted: 0,
             finished: true,
             finished_prompt: false,
+            stop_requested: false,
             error: None,
             recent: VecDeque::new(),
         }
@@ -188,6 +191,16 @@ impl ExplainRunUi {
         self.error = Some(message);
     }
 
+    pub(super) fn mark_stop_requested(&mut self) {
+        if self.stop_requested {
+            return;
+        }
+        self.stop_requested = true;
+        self.push_recent(
+            "Stop requested. Will halt after the in-flight provider call returns.".to_string(),
+        );
+    }
+
     pub(super) fn push_recent(&mut self, line: String) {
         if self.recent.len() >= 8 {
             self.recent.pop_front();
@@ -310,6 +323,11 @@ pub(super) fn draw_progress(
             layout[1],
         );
 
+        let stop_line = if ui.stop_requested {
+            "Stop requested. Waiting for the current provider call to return..."
+        } else {
+            "Press Esc, q, or Ctrl-C to request stop."
+        };
         let scans = vec![
             Line::from(format!(
                 "Files scanned: {} / {}",
@@ -319,7 +337,7 @@ pub(super) fn draw_progress(
                 "Symbols scanned: {} / {}",
                 ui.symbol_scan.0, ui.symbol_scan.1
             )),
-            Line::from("Press Esc, q, or Ctrl-C to request stop."),
+            Line::from(stop_line),
         ];
         frame.render_widget(
             Paragraph::new(scans).block(Block::default().borders(Borders::ALL)),
@@ -342,6 +360,8 @@ pub(super) fn draw_progress(
             "Returning to the dashboard..."
         } else if ui.error.is_some() {
             "Explain failed."
+        } else if ui.stop_requested {
+            "Stop requested. Finishing the in-flight provider call..."
         } else {
             "Explain is running."
         };

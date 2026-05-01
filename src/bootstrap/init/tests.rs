@@ -5,14 +5,26 @@ use crate::store::compatibility::{self, StoreId, GRAPH_FORMAT_VERSION};
 use crate::store::sqlite::SqliteGraphStore;
 use tempfile::tempdir;
 
-fn isolated_home() -> (tempfile::TempDir, crate::config::test_home::HomeEnvGuard) {
+struct IsolatedHome {
+    _lock: crate::test_support::GlobalTestLock,
+    _home: tempfile::TempDir,
+    _guard: crate::config::test_home::HomeEnvGuard,
+}
+
+fn isolated_home() -> IsolatedHome {
+    let lock = crate::test_support::global_test_lock(crate::config::test_home::HOME_ENV_TEST_LOCK);
     let home = tempfile::tempdir().unwrap();
     let guard = crate::config::test_home::HomeEnvGuard::redirect_to(home.path());
-    (home, guard)
+    IsolatedHome {
+        _lock: lock,
+        _home: home,
+        _guard: guard,
+    }
 }
 
 #[test]
 fn bootstrap_fresh_repo_reports_healthy_summary() {
+    let _home = isolated_home();
     let repo = tempdir().unwrap();
     std::fs::write(repo.path().join("README.md"), "fresh token\n").unwrap();
 
@@ -32,7 +44,7 @@ fn bootstrap_fresh_repo_reports_healthy_summary() {
 
 #[test]
 fn bootstrap_selects_curated_when_rationale_markdown_exists() {
-    let (_home, _home_guard) = isolated_home();
+    let _home = isolated_home();
     let repo = tempdir().unwrap();
     let adr_dir = repo.path().join("docs/adr");
     std::fs::create_dir_all(&adr_dir).unwrap();
@@ -51,7 +63,7 @@ fn bootstrap_selects_curated_when_rationale_markdown_exists() {
 
 #[test]
 fn bootstrap_rerun_refreshes_existing_runtime() {
-    let (_home, _home_guard) = isolated_home();
+    let _home = isolated_home();
     let repo = tempdir().unwrap();
     std::fs::write(repo.path().join("README.md"), "before refresh\n").unwrap();
     bootstrap(repo.path(), None, false).unwrap();
@@ -73,6 +85,7 @@ fn bootstrap_rerun_refreshes_existing_runtime() {
 
 #[test]
 fn bootstrap_repairs_partial_runtime_and_reports_degraded() {
+    let _home = isolated_home();
     let repo = tempdir().unwrap();
     let synrepo_dir = Config::synrepo_dir(repo.path());
     std::fs::create_dir_all(&synrepo_dir).unwrap();
@@ -89,7 +102,7 @@ fn bootstrap_repairs_partial_runtime_and_reports_degraded() {
 
 #[test]
 fn bootstrap_reports_graph_sensitive_config_drift_without_blocking() {
-    let (_home, _home_guard) = isolated_home();
+    let _home = isolated_home();
     let repo = tempdir().unwrap();
     std::fs::write(repo.path().join("README.md"), "compat token\n").unwrap();
     bootstrap(repo.path(), None, false).unwrap();
@@ -131,7 +144,7 @@ fn bootstrap_blocks_on_invalid_existing_config() {
 
 #[test]
 fn bootstrap_explicit_mode_overrides_existing_config_on_refresh() {
-    let (_home, _home_guard) = isolated_home();
+    let _home = isolated_home();
     let repo = tempdir().unwrap();
     std::fs::write(repo.path().join("README.md"), "mode token\n").unwrap();
     bootstrap(repo.path(), Some(Mode::Curated), false).unwrap();
@@ -145,7 +158,7 @@ fn bootstrap_explicit_mode_overrides_existing_config_on_refresh() {
 
 #[test]
 fn bootstrap_honors_explicit_auto_with_curated_recommendation() {
-    let (_home, _home_guard) = isolated_home();
+    let _home = isolated_home();
     let repo = tempdir().unwrap();
     let adr_dir = repo.path().join("docs/adr");
     std::fs::create_dir_all(&adr_dir).unwrap();
@@ -171,7 +184,7 @@ fn bootstrap_refuses_unopenable_graph_store_with_actionable_message() {
     // `synrepo init` for repair. Before this guard, init would surface a raw
     // `file is not a database` rusqlite error from `init_schema`; after, it
     // returns an actionable message naming the file and the recovery step.
-    let (_home, _home_guard) = isolated_home();
+    let _home = isolated_home();
     let repo = tempdir().unwrap();
     std::fs::write(repo.path().join("README.md"), "corrupt token\n").unwrap();
     bootstrap(repo.path(), None, false).unwrap();
@@ -199,7 +212,7 @@ fn bootstrap_refuses_unopenable_graph_store_with_actionable_message() {
 
 #[test]
 fn bootstrap_blocks_on_newer_graph_store_version() {
-    let (_home, _home_guard) = isolated_home();
+    let _home = isolated_home();
     let repo = tempdir().unwrap();
     std::fs::write(repo.path().join("README.md"), "graph token\n").unwrap();
     bootstrap(repo.path(), None, false).unwrap();
@@ -228,6 +241,7 @@ fn bootstrap_blocks_on_newer_graph_store_version() {
 
 #[test]
 fn bootstrap_fresh_init_materializes_graph_with_code_symbols() {
+    let _home = isolated_home();
     let repo = tempdir().unwrap();
     std::fs::create_dir_all(repo.path().join("src")).unwrap();
     std::fs::write(
@@ -258,6 +272,7 @@ fn bootstrap_fresh_init_materializes_graph_with_code_symbols() {
 #[test]
 fn bootstrap_rerun_refreshes_graph_on_content_change() {
     let _guard = crate::test_support::global_test_lock("bootstrap-runtime-refresh");
+    let _home = isolated_home();
     let repo = tempdir().unwrap();
     std::fs::create_dir_all(repo.path().join("src")).unwrap();
     std::fs::write(repo.path().join("src/lib.rs"), "pub fn before() {}\n").unwrap();
@@ -313,6 +328,7 @@ fn bootstrap_blocked_when_writer_lock_held() {
 
 #[test]
 fn bootstrap_writes_config_and_gitignore_without_leaving_temp_files() {
+    let _home = isolated_home();
     let repo = tempdir().unwrap();
     std::fs::write(repo.path().join("README.md"), "temp token\n").unwrap();
 
@@ -351,6 +367,7 @@ fn atomic_write_file_replaces_existing_contents() {
 
 #[test]
 fn bootstrap_gitignore_ignores_config_toml() {
+    let _home = isolated_home();
     let repo = tempdir().unwrap();
     std::fs::write(repo.path().join("README.md"), "gitignore token\n").unwrap();
 
