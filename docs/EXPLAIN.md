@@ -46,7 +46,7 @@ For `Local`, the request shape is inferred from the endpoint path: `/v1/chat/com
 
 ## API key handling
 
-API keys live in the shell environment only. `synrepo` does not write keys to `.synrepo/config.toml` or any persisted state; OS-keychain integration is explicitly out of scope today.
+API keys are resolved from provider environment variables first, then from user-global config. The setup wizard can save entered cloud keys in `~/.synrepo/config.toml` so they can be reused across repos. Repo-local `.synrepo/config.toml` stores explain provider and model settings, not cloud API keys, and explain telemetry/accounting must not persist keys. OS-keychain integration is explicitly out of scope today.
 
 The legacy `SYNREPO_ANTHROPIC_API_KEY` is also accepted as a fallback to `ANTHROPIC_API_KEY`.
 

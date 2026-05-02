@@ -179,7 +179,7 @@ Everything above works locally without any LLM. Advisory commentary and cross-li
 | MiniMax | `MINIMAX_API_KEY` | `MiniMax-M2` |
 | Local (Ollama, llama.cpp, LM Studio, vLLM) | none | `llama3` |
 
-API keys stay in your shell environment. `synrepo` does not write them into `.synrepo/config.toml` or any on-disk cache.
+API keys can come from provider environment variables or user-global config. The setup wizard saves entered cloud keys in `~/.synrepo/config.toml` so they can be reused across repos. Repo-local `.synrepo/config.toml` stores explain provider and model settings, not cloud API keys, and explain telemetry does not record keys.
 
 ### Enable It
 

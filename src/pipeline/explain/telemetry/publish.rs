@@ -53,6 +53,13 @@ pub fn synrepo_dir() -> Option<std::path::PathBuf> {
     SYNREPO_DIR.lock().ok().and_then(|g| g.clone())
 }
 
+#[cfg(test)]
+pub(super) fn clear_synrepo_dir_for_tests() {
+    if let Ok(mut guard) = SYNREPO_DIR.lock() {
+        *guard = None;
+    }
+}
+
 /// Register a new subscriber. Returns a receiver the caller drains at its
 /// own pace. Dropping the receiver disconnects the subscriber; the next
 /// publish reaps it.

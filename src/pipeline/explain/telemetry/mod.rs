@@ -39,6 +39,8 @@ pub use types::{ExplainEvent, ExplainFailure, ExplainTarget, Outcome, TokenUsage
 mod tests {
     use super::*;
     use crate::core::ids::{FileNodeId, NodeId};
+    use crate::pipeline::explain::accounting::log_path;
+    use crate::pipeline::explain::providers::http::HttpJsonError;
     use std::sync::atomic::Ordering;
 
     fn file_target(n: u128) -> ExplainTarget {
@@ -75,6 +77,14 @@ mod tests {
         out
     }
 
+    struct SynrepoDirReset;
+
+    impl Drop for SynrepoDirReset {
+        fn drop(&mut self) {
+            publish::clear_synrepo_dir_for_tests();
+        }
+    }
+
     #[test]
     fn subscribe_and_publish_roundtrip() {
         let rx = subscribe();
@@ -97,6 +107,34 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn failure_text_redacts_query_secrets_before_publish_and_log() {
+        let dir = tempfile::tempdir().unwrap();
+        let _reset = SynrepoDirReset;
+        set_synrepo_dir(dir.path());
+        let rx = subscribe();
+        let ctx = CallCtx::start("gemini", "gemini-test", file_target(5));
+        let call_id = ctx.call_id();
+        ctx.fail(HttpJsonError::Transport(
+            "failed request for url (https://example.test/v1?key=SECRET&alt=json)".to_string(),
+        ));
+
+        let events = drain_for(&rx, call_id, 2);
+        let error = events
+            .into_iter()
+            .find_map(|event| match event {
+                ExplainEvent::CallFailed { error, .. } => Some(error),
+                _ => None,
+            })
+            .expect("failed event missing");
+        assert!(!error.contains("SECRET"));
+        assert!(!error.contains("key="));
+
+        let log = std::fs::read_to_string(log_path(dir.path())).unwrap();
+        assert!(!log.contains("SECRET"));
+        assert!(!log.contains("key="));
     }
 
     #[test]

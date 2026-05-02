@@ -120,9 +120,15 @@ impl HttpJsonError {
 impl std::fmt::Display for HttpJsonError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Transport(error) => write!(f, "transport error: {error}"),
+            Self::Transport(error) => {
+                write!(f, "transport error: {}", redact_url_query_params(error))
+            }
             Self::Status { status, .. } => write!(f, "non-success status: {status}"),
-            Self::Parse(error) => write!(f, "response parse error: {error}"),
+            Self::Parse(error) => write!(
+                f,
+                "response parse error: {}",
+                redact_url_query_params(error)
+            ),
         }
     }
 }
@@ -169,7 +175,7 @@ where
     let response = request
         .json(body)
         .send()
-        .map_err(|e| HttpJsonError::Transport(e.to_string()))?;
+        .map_err(|e| HttpJsonError::Transport(sanitize_reqwest_error(e)))?;
 
     let status = response.status();
     if !status.is_success() {
@@ -181,7 +187,7 @@ where
 
     response
         .json::<Res>()
-        .map_err(|e| HttpJsonError::Parse(e.to_string()))
+        .map_err(|e| HttpJsonError::Parse(sanitize_reqwest_error(e)))
 }
 
 /// JSON GET variant that returns a descriptive failure string rather than
@@ -201,7 +207,7 @@ where
 
     let response = request
         .send()
-        .map_err(|e| HttpJsonError::Transport(e.to_string()))?;
+        .map_err(|e| HttpJsonError::Transport(sanitize_reqwest_error(e)))?;
 
     let status = response.status();
     if !status.is_success() {
@@ -213,7 +219,38 @@ where
 
     response
         .json::<Res>()
-        .map_err(|e| HttpJsonError::Parse(e.to_string()))
+        .map_err(|e| HttpJsonError::Parse(sanitize_reqwest_error(e)))
+}
+
+fn sanitize_reqwest_error(error: reqwest::Error) -> String {
+    redact_url_query_params(&error.without_url().to_string())
+}
+
+fn redact_url_query_params(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut cursor = 0;
+    while let Some(relative_query) = text[cursor..].find('?') {
+        let query = cursor + relative_query;
+        let token_start = text[..query]
+            .rfind(char::is_whitespace)
+            .map(|idx| idx + 1)
+            .unwrap_or(0);
+        if !text[token_start..query].contains("://") {
+            out.push_str(&text[cursor..query + 1]);
+            cursor = query + 1;
+            continue;
+        }
+
+        out.push_str(&text[cursor..query]);
+        let token_end = text[query..]
+            .find(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | '`' | ')' | '<' | '>'))
+            .map(|idx| query + idx)
+            .unwrap_or(text.len());
+        out.push_str("?[redacted-query]");
+        cursor = token_end;
+    }
+    out.push_str(&text[cursor..]);
+    out
 }
 
 fn parse_retry_after(response: &reqwest::blocking::Response) -> Option<Duration> {
@@ -274,6 +311,11 @@ mod tests {
             HttpJsonError::Parse("bad json".to_string()).to_string(),
             "response parse error: bad json"
         );
+        let leaked = "failed for url (https://example.test/v1?key=SECRET&alt=json)";
+        let error = HttpJsonError::Transport(leaked.to_string()).to_string();
+        assert!(error.contains("[redacted-query]"));
+        assert!(!error.contains("SECRET"));
+        assert!(!error.contains("key="));
     }
 
     #[test]
