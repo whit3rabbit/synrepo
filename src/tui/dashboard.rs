@@ -3,6 +3,8 @@
 //! is tab-switched between Live, Health, and Actions; the header carries a
 //! reconcile spinner so the operator sees liveness feedback on every tab.
 
+mod chrome;
+
 use std::io::{self, Stdout};
 use std::path::Path;
 
@@ -13,20 +15,19 @@ use crossterm::{
 };
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout};
-use ratatui::text::Line;
-use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Terminal;
 
 use crate::bootstrap::runtime_probe::{probe, AgentIntegration};
 use crate::pipeline::watch::WatchEvent;
 use crate::surface::readiness::ReadinessMatrix;
 use crate::tui::app::{poll_key, ActiveTab, AppState, DashboardExit};
+use crate::tui::dashboard::chrome::{draw_command_palette, draw_help, draw_too_small_warning};
 use crate::tui::dashboard_tabs::draw_global_explore_dashboard;
 use crate::tui::explain_run::run_explain_in_dashboard;
 use crate::tui::materializer::MaterializeState;
 use crate::tui::probe::{
-    build_activity_vm, build_header_vm, build_health_vm, build_next_actions_with_context,
-    build_trust_vm, display_repo_path, HealthRow, HealthVm, NextActionRuntime, Severity,
+    build_activity_vm, build_health_vm, build_next_actions_with_context, build_trust_vm, HealthRow,
+    HealthVm, NextActionRuntime, Severity,
 };
 use crate::tui::projects::GlobalAppState;
 use crate::tui::theme::Theme;
@@ -174,66 +175,6 @@ fn draw_global_dashboard(frame: &mut ratatui::Frame, state: &mut GlobalAppState)
     }
 }
 
-fn draw_help(frame: &mut ratatui::Frame, theme: Theme) {
-    let block = Block::default()
-        .title(" help ")
-        .borders(Borders::ALL)
-        .border_style(theme.border_style());
-    let lines = vec![
-        Line::from("[p] projects    [?] help    [:] commands    [q] quit"),
-        Line::from("[Tab/Shift-Tab/←/→/1-7] tabs  [r] refresh  [w] watch for active project"),
-        Line::from("Project picker: filter, Enter switch, r rename, a add cwd, d detach, w watch"),
-    ];
-    let paragraph = Paragraph::new(lines).block(block).style(theme.base_style());
-    frame.render_widget(paragraph, frame.area());
-}
-
-fn draw_command_palette(frame: &mut ratatui::Frame, theme: Theme) {
-    let block = Block::default()
-        .title(" commands ")
-        .borders(Borders::ALL)
-        .border_style(theme.border_style());
-    let lines = vec![
-        Line::from("project switch"),
-        Line::from("project add current directory"),
-        Line::from("project detach selected"),
-        Line::from("watch start/stop selected project"),
-    ];
-    let paragraph = Paragraph::new(lines).block(block).style(theme.base_style());
-    frame.render_widget(paragraph, frame.area());
-}
-
-/// Minimum terminal size where every tab still renders something usable.
-/// Header (5) + tabs (3) + footer (1) = 9 rows of chrome; the Trust tab is
-/// the densest at three stacked panes, so the floor is set to leave at least
-/// 11 rows of content area (20 total). Width 60 keeps footer-hint compaction
-/// working without compacting to a single `[q]`.
-const MIN_TERMINAL_WIDTH: u16 = 60;
-const MIN_TERMINAL_HEIGHT: u16 = 20;
-
-/// Render a centered "terminal too small" warning when the frame is below
-/// the documented minimum. Returns true when the warning was rendered, in
-/// which case the caller should skip the rest of the dashboard render.
-fn draw_too_small_warning(frame: &mut ratatui::Frame, theme: &Theme) -> bool {
-    let size = frame.area();
-    if size.width >= MIN_TERMINAL_WIDTH && size.height >= MIN_TERMINAL_HEIGHT {
-        return false;
-    }
-    let lines = vec![
-        Line::from(format!(
-            "terminal too small: {}x{}",
-            size.width, size.height
-        )),
-        Line::from(format!(
-            "synrepo dashboard needs at least {MIN_TERMINAL_WIDTH}x{MIN_TERMINAL_HEIGHT}."
-        )),
-        Line::from("resize and the view will redraw automatically."),
-    ];
-    let paragraph = Paragraph::new(lines).style(theme.stale_style());
-    frame.render_widget(paragraph, size);
-    true
-}
-
 fn draw_dashboard(frame: &mut ratatui::Frame, state: &mut AppState) {
     if draw_too_small_warning(frame, &state.theme) {
         return;
@@ -250,20 +191,8 @@ fn draw_dashboard(frame: &mut ratatui::Frame, state: &mut AppState) {
         .split(size);
 
     // Header with spinner.
-    let repo_path = display_repo_path(&state.repo_root);
-    let repo_display = state
-        .project_name
-        .as_ref()
-        .map(|name| format!("{name}  {repo_path}"))
-        .unwrap_or(repo_path);
-    let header_vm = build_header_vm(
-        repo_display,
-        &state.snapshot,
-        &state.integration,
-        Some(state.auto_sync_enabled),
-    );
     let header = HeaderWidget {
-        vm: &header_vm,
+        vm: &state.header_vm,
         theme: &state.theme,
         frame: state.frame,
         reconcile_active: state.reconcile_active,
@@ -342,7 +271,7 @@ fn draw_dashboard(frame: &mut ratatui::Frame, state: &mut AppState) {
         }
         ActiveTab::Mcp => {
             let mcp = McpTabWidget {
-                rows: &state.mcp_rows,
+                rows: &state.mcp_display_rows,
                 theme: &state.theme,
             };
             frame.render_widget(mcp, content_area);

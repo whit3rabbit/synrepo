@@ -5,7 +5,8 @@ use std::{fs, path::Path};
 use crate::config::{Config, Mode};
 use crate::pipeline::structural::run_structural_compile;
 use crate::pipeline::watch::{
-    emit_cochange_edges_pass, finish_runtime_surfaces, RepoIndexStrategy,
+    emit_cochange_edges_pass, finish_runtime_surfaces, persist_reconcile_state, ReconcileOutcome,
+    RepoIndexStrategy,
 };
 use crate::pipeline::writer::{acquire_writer_lock, LockError};
 use crate::store::compatibility::{self, CompatibilityReport};
@@ -170,6 +171,15 @@ pub fn bootstrap_with_force(
         &graph,
         RepoIndexStrategy::Skip,
     )?;
+
+    // Bootstrap is a reconcile pass: persist a reconcile-state record so the
+    // readiness matrix does not report `stale, no reconcile recorded`
+    // immediately after a successful first-time init.
+    persist_reconcile_state(
+        &synrepo_dir,
+        &ReconcileOutcome::Completed(compile.clone()),
+        0,
+    );
 
     compatibility::write_runtime_snapshot(&synrepo_dir, &config)?;
     let health = match action {

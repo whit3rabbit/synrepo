@@ -2,8 +2,8 @@
 
 use ratatui::layout::{Constraint, Direction, Layout};
 
-use crate::tui::app::ActiveTab;
-use crate::tui::probe::{build_header_vm, display_repo_path};
+use crate::tui::app::{repo_display, ActiveTab};
+use crate::tui::probe::build_header_vm;
 use crate::tui::projects::GlobalAppState;
 use crate::tui::widgets::{DashboardTabsWidget, ExploreTabWidget, FooterWidget, HeaderWidget};
 
@@ -26,14 +26,8 @@ pub(crate) fn draw_global_explore_dashboard(
         ])
         .split(size);
 
-    let repo_path = display_repo_path(&active.repo_root);
-    let repo_display = active
-        .project_name
-        .as_ref()
-        .map(|name| format!("{name}  {repo_path}"))
-        .unwrap_or(repo_path);
     let header_vm = build_header_vm(
-        repo_display,
+        repo_display(&active.repo_root, active.project_name.as_deref()),
         &active.snapshot,
         &active.integration,
         Some(active.auto_sync_enabled),

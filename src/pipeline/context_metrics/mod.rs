@@ -8,16 +8,18 @@
 //! format.
 
 use std::collections::BTreeMap;
-use std::fs;
-use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
 use crate::surface::card::{Budget, ContextAccounting};
 
+mod persistence;
 mod prometheus;
-
-const METRICS_FILE: &str = "context-metrics.json";
+pub use persistence::{
+    load, load_optional, record_card_best_effort, record_cards_best_effort,
+    record_changed_files_best_effort, record_mcp_resource_read_best_effort,
+    record_mcp_tool_result_best_effort, record_workflow_call_best_effort, save,
+};
 
 /// Aggregated context-serving metrics stored under `.synrepo/state/`.
 ///
@@ -180,134 +182,58 @@ impl ContextMetrics {
             .entry(operation.to_string())
             .or_default() += 1;
     }
-}
 
-/// Load context metrics. Missing files return empty metrics.
-pub fn load(synrepo_dir: &Path) -> anyhow::Result<ContextMetrics> {
-    let path = metrics_path(synrepo_dir);
-    if !path.exists() {
-        return Ok(ContextMetrics::default());
+    pub(super) fn merge_from(&mut self, delta: &Self) {
+        self.cards_served_total += delta.cards_served_total;
+        self.card_tokens_total += delta.card_tokens_total;
+        self.raw_file_tokens_total += delta.raw_file_tokens_total;
+        self.estimated_tokens_saved_total += delta.estimated_tokens_saved_total;
+        merge_map(&mut self.budget_tier_usage, &delta.budget_tier_usage);
+        self.truncation_applied_total += delta.truncation_applied_total;
+        self.stale_responses_total += delta.stale_responses_total;
+        self.test_surface_hits_total += delta.test_surface_hits_total;
+        self.changed_files_total += delta.changed_files_total;
+        self.context_query_latency_ms_total += delta.context_query_latency_ms_total;
+        self.context_query_latency_samples += delta.context_query_latency_samples;
+        merge_map(&mut self.workflow_calls_total, &delta.workflow_calls_total);
+        self.mcp_requests_total += delta.mcp_requests_total;
+        merge_map(&mut self.mcp_tool_calls_total, &delta.mcp_tool_calls_total);
+        merge_map(
+            &mut self.mcp_tool_errors_total,
+            &delta.mcp_tool_errors_total,
+        );
+        self.mcp_resource_reads_total += delta.mcp_resource_reads_total;
+        merge_map(
+            &mut self.saved_context_writes_total,
+            &delta.saved_context_writes_total,
+        );
     }
-    let bytes = fs::read(path)?;
-    Ok(serde_json::from_slice(&bytes)?)
-}
 
-/// Load context metrics only when the metrics file exists.
-pub fn load_optional(synrepo_dir: &Path) -> anyhow::Result<Option<ContextMetrics>> {
-    let path = metrics_path(synrepo_dir);
-    if !path.exists() {
-        return Ok(None);
-    }
-    let bytes = fs::read(path)?;
-    Ok(Some(serde_json::from_slice(&bytes)?))
-}
-
-/// Save context metrics.
-pub fn save(synrepo_dir: &Path, metrics: &ContextMetrics) -> anyhow::Result<()> {
-    let state_dir = synrepo_dir.join("state");
-    fs::create_dir_all(&state_dir)?;
-    let bytes = serde_json::to_vec_pretty(metrics)?;
-    crate::util::atomic_write::atomic_write(&metrics_path(synrepo_dir), &bytes)?;
-    Ok(())
-}
-
-/// Best-effort card metric recording. Failures are debug-only.
-pub fn record_card_best_effort(
-    synrepo_dir: &Path,
-    accounting: &ContextAccounting,
-    latency_ms: u64,
-    test_surface_hit: bool,
-) {
-    record_cards_best_effort(
-        synrepo_dir,
-        std::slice::from_ref(accounting),
-        latency_ms,
-        test_surface_hit,
-    );
-}
-
-/// Batched variant that loads and saves the metrics file once for a whole
-/// response. The same latency is attributed to every card in the batch.
-pub fn record_cards_best_effort(
-    synrepo_dir: &Path,
-    accountings: &[ContextAccounting],
-    latency_ms: u64,
-    test_surface_hit: bool,
-) {
-    if accountings.is_empty() {
-        return;
-    }
-    if let Err(error) = (|| -> anyhow::Result<()> {
-        let mut metrics = load(synrepo_dir)?;
-        for accounting in accountings {
-            metrics.record_card(accounting, latency_ms);
-        }
-        if test_surface_hit {
-            metrics.record_test_surface_hit();
-        }
-        save(synrepo_dir, &metrics)
-    })() {
-        tracing::debug!(%error, "context metrics record failed");
+    pub(super) fn is_empty(&self) -> bool {
+        self.cards_served_total == 0
+            && self.card_tokens_total == 0
+            && self.raw_file_tokens_total == 0
+            && self.estimated_tokens_saved_total == 0
+            && self.budget_tier_usage.is_empty()
+            && self.truncation_applied_total == 0
+            && self.stale_responses_total == 0
+            && self.test_surface_hits_total == 0
+            && self.changed_files_total == 0
+            && self.context_query_latency_ms_total == 0
+            && self.context_query_latency_samples == 0
+            && self.workflow_calls_total.is_empty()
+            && self.mcp_requests_total == 0
+            && self.mcp_tool_calls_total.is_empty()
+            && self.mcp_tool_errors_total.is_empty()
+            && self.mcp_resource_reads_total == 0
+            && self.saved_context_writes_total.is_empty()
     }
 }
 
-/// Best-effort changed-file metric recording.
-pub fn record_changed_files_best_effort(synrepo_dir: &Path, count: usize) {
-    if count == 0 {
-        return;
+fn merge_map(target: &mut BTreeMap<String, u64>, delta: &BTreeMap<String, u64>) {
+    for (key, value) in delta {
+        *target.entry(key.clone()).or_default() += value;
     }
-    if let Err(error) = (|| -> anyhow::Result<()> {
-        let mut metrics = load(synrepo_dir)?;
-        metrics.record_changed_files(count);
-        save(synrepo_dir, &metrics)
-    })() {
-        tracing::debug!(%error, "context changed-file metrics record failed");
-    }
-}
-
-/// Best-effort recording of a workflow alias call (e.g. `"orient"`,
-/// `"find"`, `"minimum_context"`). Canonical tool names are lowercase and
-/// use underscore-separated form so they remain stable across client
-/// surfaces. Failures are debug-only.
-pub fn record_workflow_call_best_effort(synrepo_dir: &Path, tool: &str) {
-    if let Err(error) = (|| -> anyhow::Result<()> {
-        let mut metrics = load(synrepo_dir)?;
-        metrics.record_workflow_call(tool);
-        save(synrepo_dir, &metrics)
-    })() {
-        tracing::debug!(%error, tool, "context workflow-call metrics record failed");
-    }
-}
-
-/// Best-effort recording of a repository-scoped MCP tool request.
-pub fn record_mcp_tool_result_best_effort(
-    synrepo_dir: &Path,
-    tool: &str,
-    errored: bool,
-    saved_context_write: Option<&str>,
-) {
-    if let Err(error) = (|| -> anyhow::Result<()> {
-        let mut metrics = load(synrepo_dir)?;
-        metrics.record_mcp_tool_result(tool, errored, saved_context_write);
-        save(synrepo_dir, &metrics)
-    })() {
-        tracing::debug!(%error, tool, "context MCP tool metrics record failed");
-    }
-}
-
-/// Best-effort recording of a repository-scoped MCP resource read.
-pub fn record_mcp_resource_read_best_effort(synrepo_dir: &Path) {
-    if let Err(error) = (|| -> anyhow::Result<()> {
-        let mut metrics = load(synrepo_dir)?;
-        metrics.record_mcp_resource_read();
-        save(synrepo_dir, &metrics)
-    })() {
-        tracing::debug!(%error, "context MCP resource metrics record failed");
-    }
-}
-
-fn metrics_path(synrepo_dir: &Path) -> std::path::PathBuf {
-    synrepo_dir.join("state").join(METRICS_FILE)
 }
 
 fn budget_label(budget: Budget) -> &'static str {

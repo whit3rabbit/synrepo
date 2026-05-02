@@ -1,5 +1,7 @@
 //! Single-project Repos-tab handling.
 
+use std::time::Duration;
+
 use crossterm::event::{KeyCode, KeyModifiers};
 
 use super::AppState;
@@ -9,13 +11,26 @@ use crate::tui::actions::{
 };
 use crate::tui::projects::{load_project_refs, ProjectRef};
 
+const EXPLORE_PROJECTS_CACHE_TTL: Duration = Duration::from_secs(5);
+
 impl AppState {
+    pub(crate) fn ensure_explore_projects_fresh(&mut self) {
+        let expired = self
+            .explore_projects_loaded_at
+            .map(|loaded_at| loaded_at.elapsed() >= EXPLORE_PROJECTS_CACHE_TTL)
+            .unwrap_or(true);
+        if self.explore_projects.is_empty() || expired {
+            self.refresh_explore_projects();
+        }
+    }
+
     pub(crate) fn refresh_explore_projects(&mut self) {
         let selected = self
             .explore_projects
             .get(self.explore_selected_index())
             .map(|project| project.id.clone());
         self.explore_projects = load_project_refs().unwrap_or_default();
+        self.explore_projects_loaded_at = Some(std::time::Instant::now());
         if let Some(selected) = selected {
             self.select_explore_project(&selected);
         } else if let Some(project_id) = self.project_id.clone() {

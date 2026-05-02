@@ -7,6 +7,7 @@ use std::time::{Duration, Instant};
 
 use crossbeam_channel::{Receiver, TryRecvError};
 
+use super::render_cache::{build_initial_header_vm, build_initial_mcp_display_rows};
 use super::{ActiveTab, AppMode, AppState, DashboardExit, EventLog, PendingExplainRun};
 use crate::bootstrap::runtime_probe::AgentIntegration;
 use crate::config::Config;
@@ -15,7 +16,6 @@ use crate::pipeline::watch::{watch_service_status, WatchEvent, WatchServiceStatu
 use crate::surface::status_snapshot::{build_status_snapshot, StatusOptions};
 use crate::tui::actions::{materialize_now, now_rfc3339, ActionContext};
 use crate::tui::materializer::{MaterializeOutcome, MaterializeState, MaterializerSupervisor};
-use crate::tui::mcp_status::build_mcp_status_rows;
 use crate::tui::probe::Severity;
 use crate::tui::theme::Theme;
 use crate::tui::widgets::LogEntry;
@@ -89,7 +89,12 @@ impl AppState {
             },
         );
         let quick_actions = quick_actions_for(&mode, &snapshot);
-        let mcp_rows = build_mcp_status_rows(repo_root);
+        let auto_sync_enabled = Config::load(repo_root)
+            .map(|c| c.auto_sync_enabled)
+            .unwrap_or(true);
+        let header_vm =
+            build_initial_header_vm(repo_root, None, &snapshot, &integration, auto_sync_enabled);
+        let mcp_display_rows = build_initial_mcp_display_rows(repo_root);
         let mut log = EventLog::default();
         for entry in startup_logs {
             log.push(entry);
@@ -102,10 +107,12 @@ impl AppState {
             mode,
             integration,
             snapshot,
+            header_vm,
             log,
             quick_actions,
-            mcp_rows,
+            mcp_display_rows,
             explore_projects: Vec::new(),
+            explore_projects_loaded_at: None,
             explore_selected: 0,
             switch_project_root: None,
             should_exit: false,
@@ -122,9 +129,7 @@ impl AppState {
             follow_mode: true,
             frame: 0,
             reconcile_active: false,
-            auto_sync_enabled: Config::load(repo_root)
-                .map(|c| c.auto_sync_enabled)
-                .unwrap_or(true),
+            auto_sync_enabled,
             poll_timeout: Duration::from_millis(125),
             snapshot_refresh_interval: Duration::from_secs(2),
             last_refresh: Instant::now(),
@@ -359,38 +364,5 @@ impl AppState {
                 }
             }
         }
-    }
-
-    /// Force a snapshot refresh right now.
-    pub fn refresh_now(&mut self) {
-        self.snapshot = build_status_snapshot(
-            &self.repo_root,
-            StatusOptions {
-                recent: true,
-                full: false,
-            },
-        );
-        self.quick_actions = quick_actions_for(&self.mode, &self.snapshot);
-        self.mcp_rows = build_mcp_status_rows(&self.repo_root);
-        if matches!(self.active_tab, ActiveTab::Explain) {
-            self.refresh_explain_preview(false);
-        }
-        self.last_refresh = Instant::now();
-    }
-
-    /// Push the one-shot welcome banner entry that appears on first transition
-    /// from the setup wizard. The caller is responsible for only invoking this
-    /// when the dashboard is being opened for the first time after a
-    /// successful wizard run; the dashboard itself has no persistent state to
-    /// enforce the "one-shot" property.
-    pub fn push_welcome_banner(&mut self) {
-        self.log.push(LogEntry {
-            timestamp: now_rfc3339(),
-            tag: "synrepo".to_string(),
-            message:
-                "Welcome to synrepo. Press q to quit, r to refresh. Run `synrepo --help` for more."
-                    .to_string(),
-            severity: Severity::Healthy,
-        });
     }
 }

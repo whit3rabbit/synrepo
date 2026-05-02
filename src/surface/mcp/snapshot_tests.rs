@@ -4,6 +4,7 @@ use std::sync::{Mutex, OnceLock};
 use super::{audit, cards, primitives, search, SynrepoState};
 use crate::{
     bootstrap,
+    config::test_home::{HomeEnvGuard, HOME_ENV_TEST_LOCK},
     config::Config,
     overlay::{
         CitedSpan, ConfidenceTier, CrossLinkProvenance, OverlayEdgeKind, OverlayEpistemic,
@@ -11,6 +12,7 @@ use crate::{
     },
     store::{overlay::SqliteOverlayStore, sqlite::SqliteGraphStore},
     structure::graph::snapshot,
+    test_support::global_test_lock,
 };
 use tempfile::tempdir;
 use time::OffsetDateTime;
@@ -24,6 +26,11 @@ fn migrated_read_tools_match_snapshot_and_sqlite_outputs() {
         .get_or_init(|| Mutex::new(()))
         .lock()
         .unwrap();
+    // Isolate `~/.synrepo/` so `bootstrap()` does not append a stale tempdir
+    // entry to the developer's real `~/.synrepo/projects.toml`.
+    let _home_lock = global_test_lock(HOME_ENV_TEST_LOCK);
+    let isolated_home = tempdir().unwrap();
+    let _home_guard = HomeEnvGuard::redirect_to(isolated_home.path());
 
     let repo = tempdir().unwrap();
     fs::create_dir_all(repo.path().join("src")).unwrap();

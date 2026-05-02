@@ -12,6 +12,17 @@ fn status_next_step_routes_to_unknown_reconcile() {
     let repo = tempdir().unwrap();
     seed_graph(repo.path());
 
+    // Bootstrap now persists reconcile-state.json itself (structural compile
+    // is the first reconcile pass). To exercise the `ReconcileHealth::Unknown`
+    // → first-reconcile next-step routing, simulate the recoverable case
+    // where the state file is absent (hand-deleted or pre-fix runtime).
+    let state_path = Config::synrepo_dir(repo.path())
+        .join("state")
+        .join("reconcile-state.json");
+    if state_path.exists() {
+        std::fs::remove_file(&state_path).unwrap();
+    }
+
     let text = status_output(repo.path(), false, false, false).unwrap();
     assert!(
         text.contains("next step:    run `synrepo reconcile` to do the first graph pass"),

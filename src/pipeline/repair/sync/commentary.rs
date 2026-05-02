@@ -16,8 +16,8 @@ use crate::{
 
 use super::commentary_generate::execute_item;
 use super::commentary_plan::{
-    build_commentary_work_plan_with_progress, CommentaryProgressEvent, CommentaryWorkPhase,
-    CommentaryWorkPlan,
+    build_commentary_work_plan_with_progress, CommentaryProgressEvent, CommentaryWorkItem,
+    CommentaryWorkPhase, CommentaryWorkPlan,
 };
 use super::commentary_progress::{
     emit, emit_docs_events, emit_index_events, emit_target_started, record_item_outcome,
@@ -80,6 +80,67 @@ fn commentary_rows_for_refresh(
         .collect()
 }
 
+struct ItemExecutor<'a> {
+    repo_root: &'a Path,
+    graph: &'a SqliteGraphStore,
+    overlay: &'a mut SqliteOverlayStore,
+    generator: &'a dyn CommentaryGenerator,
+    max_input_tokens: u32,
+    max_targets: usize,
+}
+
+impl ItemExecutor<'_> {
+    fn execute(
+        &mut self,
+        item: &CommentaryWorkItem,
+    ) -> crate::Result<super::commentary_generate::ItemOutcome> {
+        execute_item(
+            self.repo_root,
+            self.graph,
+            self.overlay,
+            self.generator,
+            item,
+            self.max_input_tokens,
+        )
+    }
+}
+
+#[derive(Default)]
+struct RunTotals {
+    attempted: usize,
+    not_generated: usize,
+    queued_for_next_run: usize,
+    skip_reasons: BTreeMap<String, usize>,
+    stopped: bool,
+    halted_for_rate_limit: bool,
+}
+
+impl RunTotals {
+    fn can_continue(&self) -> bool {
+        !self.stopped && !self.halted_for_rate_limit
+    }
+}
+
+#[derive(Default)]
+struct PhaseStats {
+    attempted: usize,
+    generated: usize,
+}
+
+impl PhaseStats {
+    fn add(&mut self, other: Self) {
+        self.attempted += other.attempted;
+        self.generated += other.generated;
+    }
+}
+
+#[derive(Clone, Copy)]
+enum RunPhase {
+    Refresh,
+    FileSeed,
+    SymbolSeed,
+}
+
 #[allow(clippy::too_many_arguments)]
 fn refresh_commentary_with_generator(
     context: &ActionContext<'_>,
@@ -114,157 +175,73 @@ fn refresh_commentary_with_generator(
         .iter()
         .filter_map(|(id, _)| NodeId::from_str(id).ok())
         .collect();
-    let mut attempted = 0usize;
-    let mut refreshed = 0usize;
-    let mut seeded = 0usize;
-    let mut not_generated = 0usize;
-    let mut refresh_attempted = 0usize;
-    let mut refresh_generated = 0usize;
-    let mut seed_attempted = 0usize;
-    let mut seed_generated = 0usize;
-    let mut stopped = false;
-    let mut halted_for_rate_limit = false;
-    let mut queued_for_next_run = 0usize;
-    let mut skip_reasons = BTreeMap::new();
     let max_targets = plan.max_target_count();
-
-    for item in &plan.refresh {
-        if stop_requested(&mut should_stop) {
-            stopped = true;
-            break;
-        }
-        attempted += 1;
-        refresh_attempted += 1;
-        emit_target_started(&mut progress, item, attempted);
-        let (generated, halted) = record_item_outcome(
-            &mut progress,
-            item,
-            attempted,
+    let mut totals = RunTotals::default();
+    let (refresh_stats, seed_stats) = {
+        let mut executor = ItemExecutor {
+            repo_root,
+            graph,
+            overlay,
+            generator,
+            max_input_tokens: context.config.commentary_cost_limit,
             max_targets,
-            execute_item(
-                repo_root,
-                graph,
-                overlay,
-                generator,
-                item,
-                context.config.commentary_cost_limit,
-            )?,
-            &mut queued_for_next_run,
-            &mut skip_reasons,
+        };
+
+        let refresh_stats = run_phase(
+            &mut executor,
+            &mut progress,
+            &mut should_stop,
+            &mut totals,
+            &plan.refresh,
+            RunPhase::Refresh,
+            &mut commented,
+        )?;
+
+        emit(
+            &mut progress,
+            CommentaryProgressEvent::PhaseSummary {
+                phase: CommentaryWorkPhase::Refresh,
+                attempted: refresh_stats.attempted,
+                generated: refresh_stats.generated,
+                not_generated: refresh_stats
+                    .attempted
+                    .saturating_sub(refresh_stats.generated),
+            },
         );
-        if generated {
-            refreshed += 1;
-            refresh_generated += 1;
-        } else {
-            not_generated += 1;
-        }
-        if halted {
-            halted_for_rate_limit = true;
-            break;
-        }
-    }
 
-    emit(
-        &mut progress,
-        CommentaryProgressEvent::PhaseSummary {
-            phase: CommentaryWorkPhase::Refresh,
-            attempted: refresh_attempted,
-            generated: refresh_generated,
-            not_generated: refresh_attempted.saturating_sub(refresh_generated),
-        },
-    );
-
-    if !stopped && !halted_for_rate_limit {
-        for item in &plan.file_seeds {
-            if stop_requested(&mut should_stop) {
-                stopped = true;
-                break;
-            }
-            if commented.contains(&item.node_id) {
-                continue;
-            }
-            attempted += 1;
-            seed_attempted += 1;
-            emit_target_started(&mut progress, item, attempted);
-            let (generated, halted) = record_item_outcome(
+        let mut seed_stats = PhaseStats::default();
+        if totals.can_continue() {
+            seed_stats.add(run_phase(
+                &mut executor,
                 &mut progress,
-                item,
-                attempted,
-                max_targets,
-                execute_item(
-                    repo_root,
-                    graph,
-                    overlay,
-                    generator,
-                    item,
-                    context.config.commentary_cost_limit,
-                )?,
-                &mut queued_for_next_run,
-                &mut skip_reasons,
-            );
-            if generated {
-                commented.insert(item.node_id);
-                seeded += 1;
-                seed_generated += 1;
-            } else {
-                not_generated += 1;
-            }
-            if halted {
-                halted_for_rate_limit = true;
-                break;
-            }
+                &mut should_stop,
+                &mut totals,
+                &plan.file_seeds,
+                RunPhase::FileSeed,
+                &mut commented,
+            )?);
         }
-    }
-
-    if !stopped && !halted_for_rate_limit {
-        for item in &plan.symbol_seed_candidates {
-            if stop_requested(&mut should_stop) {
-                stopped = true;
-                break;
-            }
-            if commented.contains(&item.node_id) || commented.contains(&NodeId::File(item.file_id))
-            {
-                continue;
-            }
-            attempted += 1;
-            seed_attempted += 1;
-            emit_target_started(&mut progress, item, attempted);
-            let (generated, halted) = record_item_outcome(
+        if totals.can_continue() {
+            seed_stats.add(run_phase(
+                &mut executor,
                 &mut progress,
-                item,
-                attempted,
-                max_targets,
-                execute_item(
-                    repo_root,
-                    graph,
-                    overlay,
-                    generator,
-                    item,
-                    context.config.commentary_cost_limit,
-                )?,
-                &mut queued_for_next_run,
-                &mut skip_reasons,
-            );
-            if generated {
-                commented.insert(item.node_id);
-                seeded += 1;
-                seed_generated += 1;
-            } else {
-                not_generated += 1;
-            }
-            if halted {
-                break;
-            }
+                &mut should_stop,
+                &mut totals,
+                &plan.symbol_seed_candidates,
+                RunPhase::SymbolSeed,
+                &mut commented,
+            )?);
         }
-    }
+        (refresh_stats, seed_stats)
+    };
 
     emit(
         &mut progress,
         CommentaryProgressEvent::PhaseSummary {
             phase: CommentaryWorkPhase::Seed,
-            attempted: seed_attempted,
-            generated: seed_generated,
-            not_generated: seed_attempted.saturating_sub(seed_generated),
+            attempted: seed_stats.attempted,
+            generated: seed_stats.generated,
+            not_generated: seed_stats.attempted.saturating_sub(seed_stats.generated),
         },
     );
 
@@ -284,33 +261,98 @@ fn refresh_commentary_with_generator(
     emit(
         &mut progress,
         CommentaryProgressEvent::RunSummary {
-            refreshed,
-            seeded,
-            not_generated,
-            attempted,
-            stopped,
-            queued_for_next_run,
-            skip_reasons: skip_reason_summary(&skip_reasons),
+            refreshed: refresh_stats.generated,
+            seeded: seed_stats.generated,
+            not_generated: totals.not_generated,
+            attempted: totals.attempted,
+            stopped: totals.stopped,
+            queued_for_next_run: totals.queued_for_next_run,
+            skip_reasons: skip_reason_summary(&totals.skip_reasons),
         },
     );
-    let stop_suffix = if stopped {
+    let stop_suffix = if totals.stopped {
         " (stopped by operator)"
     } else {
         ""
     };
-    let queue_suffix = if queued_for_next_run > 0 {
-        format!("; {queued_for_next_run} queued for next run")
+    let queue_suffix = if totals.queued_for_next_run > 0 {
+        format!("; {} queued for next run", totals.queued_for_next_run)
     } else {
         String::new()
     };
     actions_taken.push(format!(
-        "commentary: {seeded} seeded, {refreshed} refreshed, {not_generated} not generated{queue_suffix}{stop_suffix}"
+        "commentary: {} seeded, {} refreshed, {} not generated{queue_suffix}{stop_suffix}",
+        seed_stats.generated, refresh_stats.generated, totals.not_generated
     ));
     actions_taken.push(format!(
         "commentary docs: {docs_written} written, {docs_removed} removed, {} indexed",
         index_summary.touched_paths
     ));
     Ok(())
+}
+
+fn run_phase(
+    executor: &mut ItemExecutor<'_>,
+    progress: &mut Option<&mut dyn FnMut(CommentaryProgressEvent)>,
+    should_stop: &mut Option<&mut dyn FnMut() -> bool>,
+    totals: &mut RunTotals,
+    items: &[CommentaryWorkItem],
+    phase: RunPhase,
+    commented: &mut HashSet<NodeId>,
+) -> crate::Result<PhaseStats> {
+    let mut stats = PhaseStats::default();
+    for item in items {
+        if stop_requested(should_stop) {
+            totals.stopped = true;
+            break;
+        }
+        if should_skip_item(phase, item, commented) {
+            continue;
+        }
+        totals.attempted += 1;
+        stats.attempted += 1;
+        emit_target_started(progress, item, totals.attempted);
+        let outcome = record_item_outcome(
+            progress,
+            item,
+            totals.attempted,
+            executor.max_targets,
+            executor.execute(item)?,
+            &mut totals.queued_for_next_run,
+            &mut totals.skip_reasons,
+        );
+        if outcome.generated {
+            stats.generated += 1;
+            mark_generated(phase, item, commented);
+        } else {
+            totals.not_generated += 1;
+        }
+        if outcome.halted {
+            totals.halted_for_rate_limit = true;
+            break;
+        }
+    }
+    Ok(stats)
+}
+
+fn should_skip_item(
+    phase: RunPhase,
+    item: &CommentaryWorkItem,
+    commented: &HashSet<NodeId>,
+) -> bool {
+    match phase {
+        RunPhase::Refresh => false,
+        RunPhase::FileSeed => commented.contains(&item.node_id),
+        RunPhase::SymbolSeed => {
+            commented.contains(&item.node_id) || commented.contains(&NodeId::File(item.file_id))
+        }
+    }
+}
+
+fn mark_generated(phase: RunPhase, item: &CommentaryWorkItem, commented: &mut HashSet<NodeId>) {
+    if matches!(phase, RunPhase::FileSeed | RunPhase::SymbolSeed) {
+        commented.insert(item.node_id);
+    }
 }
 
 fn stop_requested(should_stop: &mut Option<&mut dyn FnMut() -> bool>) -> bool {

@@ -187,13 +187,22 @@ fn step_ensure_ready_runs_first_reconcile_when_state_is_missing() {
     fs::write(dir.path().join("README.md"), "ready token\n").unwrap();
     step_init(dir.path(), None, false, false).unwrap();
 
+    // `step_init` (via bootstrap) now persists reconcile-state.json on its own
+    // because the structural compile is functionally a reconcile pass. Remove
+    // the file to simulate a runtime that is missing the state file (e.g., a
+    // hand-deleted file or an upgrade from a pre-fix binary) so this test
+    // still exercises the recovery branch in `step_ensure_ready`.
+    let state_path = dir.path().join(".synrepo/state/reconcile-state.json");
+    assert!(
+        state_path.exists(),
+        "bootstrap must persist reconcile state"
+    );
+    fs::remove_file(&state_path).unwrap();
+
     let outcome = step_ensure_ready(dir.path()).unwrap();
 
     assert_eq!(outcome, StepOutcome::Applied);
-    assert!(dir
-        .path()
-        .join(".synrepo/state/reconcile-state.json")
-        .exists());
+    assert!(state_path.exists());
 }
 
 #[test]

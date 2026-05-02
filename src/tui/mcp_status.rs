@@ -41,6 +41,46 @@ impl McpStatusRow {
     }
 }
 
+/// Preformatted MCP row cells used by the dashboard render path.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct McpDisplayRow {
+    /// Fixed-width agent/tool display cell.
+    pub agent_cell: String,
+    /// Stable registration status label.
+    pub status_label: &'static str,
+    /// Severity for the status label.
+    pub status_severity: Severity,
+    /// Fixed-width scope cell, including its label prefix.
+    pub scope_cell: String,
+    /// Fixed-width source cell, including its label prefix.
+    pub source_cell: String,
+    /// Config path cell, or `-` when none is known.
+    pub path_cell: String,
+}
+
+impl McpDisplayRow {
+    fn from_status_row(row: &McpStatusRow) -> Self {
+        let path = row
+            .config_path
+            .as_ref()
+            .map(|path| path.display().to_string())
+            .unwrap_or_else(|| "-".to_string());
+        Self {
+            agent_cell: format!("{:<18}", row.agent),
+            status_label: row.status.as_str(),
+            status_severity: row.severity(),
+            scope_cell: format!(" scope:{:<11}", row.scope.as_str()),
+            source_cell: format!(" source:{:<18}", row.source),
+            path_cell: format!(" {path}"),
+        }
+    }
+}
+
+/// Preformat MCP rows once per status refresh instead of on every frame.
+pub fn build_mcp_display_rows(rows: &[McpStatusRow]) -> Vec<McpDisplayRow> {
+    rows.iter().map(McpDisplayRow::from_status_row).collect()
+}
+
 /// MCP registration status.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum McpStatus {

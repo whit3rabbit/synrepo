@@ -1,11 +1,14 @@
 //! Optional graph context blocks for commentary prompts.
 
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::core::ids::NodeId;
+use crate::core::ids::{FileNodeId, NodeId};
 use crate::structure::graph::{EdgeKind, GraphReader, SymbolKind, Visibility};
+use crate::util::test_paths;
 
+use super::describe::NodeDescriptions;
 use super::{truncate_chars, CommentaryContextTarget};
 
 const MAX_RELATED_FILES: usize = 5;
@@ -22,9 +25,50 @@ pub(super) fn optional_blocks(
     graph: &dyn GraphReader,
     target: &CommentaryContextTarget,
 ) -> Vec<String> {
+    let file_node = NodeId::File(target.file.id);
+    let imports_out = graph
+        .outbound(file_node, Some(EdgeKind::Imports))
+        .unwrap_or_default();
+    let imports_in = graph
+        .inbound(file_node, Some(EdgeKind::Imports))
+        .unwrap_or_default();
+    let calls_out = graph
+        .outbound(target.node_id(), Some(EdgeKind::Calls))
+        .unwrap_or_default();
+    let calls_in = graph
+        .inbound(target.node_id(), Some(EdgeKind::Calls))
+        .unwrap_or_default();
+    let cochange_out = graph
+        .outbound(file_node, Some(EdgeKind::CoChangesWith))
+        .unwrap_or_default();
+    let cochange_in = graph
+        .inbound(file_node, Some(EdgeKind::CoChangesWith))
+        .unwrap_or_default();
+
+    // One bulk description fetch covers neighbors across imports, calls, and
+    // co-change blocks.
+    let descriptions = NodeDescriptions::load(
+        graph,
+        neighbor_endpoints(file_node, &imports_out, &imports_in)
+            .chain(neighbor_endpoints(target.node_id(), &calls_out, &calls_in))
+            .chain(neighbor_endpoints(file_node, &cochange_out, &cochange_in)),
+    );
+
     let mut blocks = Vec::new();
-    push_if_some(&mut blocks, import_block(graph, target));
-    push_if_some(&mut blocks, call_block(graph, target.node_id()));
+    push_if_some(
+        &mut blocks,
+        edges_block(
+            "imports",
+            "imported_by",
+            &imports_out,
+            &imports_in,
+            &descriptions,
+        ),
+    );
+    push_if_some(
+        &mut blocks,
+        edges_block("calls", "called_by", &calls_out, &calls_in, &descriptions),
+    );
     push_if_some(&mut blocks, exported_symbols_block(graph, target));
     push_if_some(
         &mut blocks,
@@ -34,7 +78,10 @@ pub(super) fn optional_blocks(
         &mut blocks,
         governing_decisions_block(graph, target.node_id()),
     );
-    push_if_some(&mut blocks, co_change_block(graph, target));
+    push_if_some(
+        &mut blocks,
+        co_change_block(file_node, &cochange_out, &cochange_in, &descriptions),
+    );
     if let Some(source) = read_limited(repo_root, &target.file.path, super::MAX_SOURCE_CHARS) {
         push_if_some(&mut blocks, open_markers_block(&source));
     }
@@ -58,51 +105,52 @@ fn push_if_some(blocks: &mut Vec<String>, block: Option<String>) {
     }
 }
 
-fn import_block(graph: &dyn GraphReader, target: &CommentaryContextTarget) -> Option<String> {
-    let file_node = NodeId::File(target.file.id);
-    let outbound = graph
-        .outbound(file_node, Some(EdgeKind::Imports))
-        .unwrap_or_default();
-    let inbound = graph
-        .inbound(file_node, Some(EdgeKind::Imports))
-        .unwrap_or_default();
+fn neighbor_endpoints<'a>(
+    anchor: NodeId,
+    outbound: &'a [crate::structure::graph::Edge],
+    inbound: &'a [crate::structure::graph::Edge],
+) -> impl Iterator<Item = NodeId> + 'a {
+    outbound
+        .iter()
+        .take(MAX_NEIGHBORS)
+        .map(move |edge| {
+            if edge.from == anchor {
+                edge.to
+            } else {
+                edge.from
+            }
+        })
+        .chain(inbound.iter().take(MAX_NEIGHBORS).map(move |edge| {
+            if edge.from == anchor {
+                edge.to
+            } else {
+                edge.from
+            }
+        }))
+}
+
+fn edges_block(
+    out_label: &str,
+    in_label: &str,
+    outbound: &[crate::structure::graph::Edge],
+    inbound: &[crate::structure::graph::Edge],
+    descriptions: &NodeDescriptions,
+) -> Option<String> {
     if outbound.is_empty() && inbound.is_empty() {
         return None;
     }
-
-    let mut out = String::from("<imports>\n");
+    let tag = out_label;
+    let mut out = format!("<{tag}>\n");
     for edge in outbound.iter().take(MAX_NEIGHBORS) {
-        out.push_str(&format!("imports {}\n", describe_node(graph, edge.to)));
+        out.push_str(&format!("{out_label} {}\n", descriptions.describe(edge.to)));
     }
     for edge in inbound.iter().take(MAX_NEIGHBORS) {
         out.push_str(&format!(
-            "imported_by {}\n",
-            describe_node(graph, edge.from)
+            "{in_label} {}\n",
+            descriptions.describe(edge.from)
         ));
     }
-    out.push_str("</imports>\n");
-    Some(out)
-}
-
-fn call_block(graph: &dyn GraphReader, node: NodeId) -> Option<String> {
-    let outbound = graph
-        .outbound(node, Some(EdgeKind::Calls))
-        .unwrap_or_default();
-    let inbound = graph
-        .inbound(node, Some(EdgeKind::Calls))
-        .unwrap_or_default();
-    if outbound.is_empty() && inbound.is_empty() {
-        return None;
-    }
-
-    let mut out = String::from("<calls>\n");
-    for edge in outbound.iter().take(MAX_NEIGHBORS) {
-        out.push_str(&format!("calls {}\n", describe_node(graph, edge.to)));
-    }
-    for edge in inbound.iter().take(MAX_NEIGHBORS) {
-        out.push_str(&format!("called_by {}\n", describe_node(graph, edge.from)));
-    }
-    out.push_str("</calls>\n");
+    out.push_str(&format!("</{tag}>\n"));
     Some(out)
 }
 
@@ -145,7 +193,7 @@ fn associated_tests_block(graph: &dyn GraphReader, source_path: &str) -> Option<
     let mut matches = paths
         .into_iter()
         .map(|(path, _id)| path)
-        .filter(|path| looks_like_associated_test(path, source_path))
+        .filter(|path| test_paths::matches_path_convention(path, source_path))
         .take(MAX_ASSOCIATED_TESTS)
         .collect::<Vec<_>>();
     if matches.is_empty() {
@@ -180,14 +228,12 @@ fn governing_decisions_block(graph: &dyn GraphReader, node: NodeId) -> Option<St
     Some(out)
 }
 
-fn co_change_block(graph: &dyn GraphReader, target: &CommentaryContextTarget) -> Option<String> {
-    let file_node = NodeId::File(target.file.id);
-    let outbound = graph
-        .outbound(file_node, Some(EdgeKind::CoChangesWith))
-        .unwrap_or_default();
-    let inbound = graph
-        .inbound(file_node, Some(EdgeKind::CoChangesWith))
-        .unwrap_or_default();
+fn co_change_block(
+    file_node: NodeId,
+    outbound: &[crate::structure::graph::Edge],
+    inbound: &[crate::structure::graph::Edge],
+    descriptions: &NodeDescriptions,
+) -> Option<String> {
     if outbound.is_empty() && inbound.is_empty() {
         return None;
     }
@@ -198,7 +244,7 @@ fn co_change_block(graph: &dyn GraphReader, target: &CommentaryContextTarget) ->
         } else {
             edge.from
         };
-        out.push_str(&format!("{}\n", describe_node(graph, other)));
+        out.push_str(&format!("{}\n", descriptions.describe(other)));
     }
     out.push_str("</co_change_partners>\n");
     Some(out)
@@ -240,6 +286,19 @@ fn dependency_sources_block(
     let imports = graph
         .outbound(NodeId::File(target.file.id), Some(EdgeKind::Imports))
         .ok()?;
+    let file_ids = imports
+        .iter()
+        .filter_map(|edge| match edge.to {
+            NodeId::File(file_id) => Some(file_id),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let files_by_id: HashMap<FileNodeId, _> = graph
+        .get_files(&file_ids)
+        .ok()?
+        .into_iter()
+        .map(|file| (file.id, file))
+        .collect();
     let mut out = String::new();
     let mut added = 0usize;
     for edge in imports {
@@ -249,7 +308,7 @@ fn dependency_sources_block(
         let NodeId::File(file_id) = edge.to else {
             continue;
         };
-        let Ok(Some(file)) = graph.get_file(file_id) else {
+        let Some(file) = files_by_id.get(&file_id) else {
             continue;
         };
         let Some(source) = read_limited(repo_root, &file.path, MAX_RELATED_CHARS) else {
@@ -325,45 +384,6 @@ fn module_peer_sources_block(repo_root: &Path, source_path: &str) -> Option<Stri
     }
 }
 
-fn describe_node(graph: &dyn GraphReader, node: NodeId) -> String {
-    match node {
-        NodeId::File(file_id) => graph
-            .get_file(file_id)
-            .ok()
-            .flatten()
-            .map(|file| format!("file {} ({})", file.path, file_id))
-            .unwrap_or_else(|| format!("file {file_id}")),
-        NodeId::Symbol(symbol_id) => graph
-            .get_symbol(symbol_id)
-            .ok()
-            .flatten()
-            .map(|symbol| {
-                let path = graph
-                    .get_file(symbol.file_id)
-                    .ok()
-                    .flatten()
-                    .map(|file| file.path)
-                    .unwrap_or_else(|| "unknown".to_string());
-                format!(
-                    "symbol {} kind={} visibility={} at {}:{} ({})",
-                    symbol.qualified_name,
-                    symbol.kind.as_str(),
-                    symbol.visibility.as_str(),
-                    path,
-                    symbol.body_byte_range.0,
-                    symbol_id
-                )
-            })
-            .unwrap_or_else(|| format!("symbol {symbol_id}")),
-        NodeId::Concept(concept_id) => graph
-            .get_concept(concept_id)
-            .ok()
-            .flatten()
-            .map(|concept| format!("concept {} at {}", concept.title, concept.path))
-            .unwrap_or_else(|| format!("concept {concept_id}")),
-    }
-}
-
 fn read_limited(repo_root: &Path, repo_relative: &str, limit: usize) -> Option<String> {
     let text = fs::read_to_string(repo_root.join(repo_relative)).ok()?;
     Some(truncate_chars(&text, limit))
@@ -371,24 +391,4 @@ fn read_limited(repo_root: &Path, repo_relative: &str, limit: usize) -> Option<S
 
 fn is_module_root(path: &str) -> bool {
     path.ends_with("/mod.rs") || path.ends_with("/lib.rs") || path == "lib.rs"
-}
-
-fn looks_like_associated_test(path: &str, source_path: &str) -> bool {
-    let Some((source_dir, source_name)) = source_path.rsplit_once('/') else {
-        return false;
-    };
-    let source_stem = source_name
-        .rsplit_once('.')
-        .map(|(stem, _)| stem)
-        .unwrap_or(source_name);
-    let test_name = path.rsplit_once('/').map(|(_, name)| name).unwrap_or(path);
-    let same_dir_test = path.starts_with(&format!("{source_dir}/tests/"))
-        || path.starts_with(&format!("{source_dir}/__tests__/"));
-    same_dir_test
-        || test_name.starts_with(&format!("{source_stem}_test"))
-        || test_name.starts_with(&format!("test_{source_stem}"))
-        || test_name.starts_with(&format!("{source_stem}.test"))
-        || test_name.starts_with(&format!("{source_stem}.spec"))
-        || path == format!("tests/{source_stem}.rs")
-        || path == format!("tests/{source_stem}.py")
 }

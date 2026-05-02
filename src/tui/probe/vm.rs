@@ -93,9 +93,9 @@ pub struct TrustRow {
     pub value: String,
     /// Optional operator action or provenance hint.
     pub hint: Option<String>,
-    /// Numerator for compact bar rendering.
+    /// Optional count used to classify the compact trust indicator.
     pub amount: Option<u64>,
-    /// Denominator for compact bar rendering.
+    /// Optional comparison denominator, retained for ratio-aware trust rows.
     pub total: Option<u64>,
     /// Severity driving color.
     pub severity: Severity,

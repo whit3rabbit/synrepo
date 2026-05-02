@@ -1,4 +1,4 @@
-use std::{fs, thread, time::Duration};
+use std::fs;
 
 use serde_json::json;
 use tempfile::tempdir;
@@ -8,15 +8,9 @@ use super::{handle_apply_anchor_edits, handle_prepare_edit_context};
 use crate::pipeline::writer::{
     hold_writer_flock_with_ownership, writer_lock_path, WriterOwnership,
 };
-use crate::{
-    bootstrap,
-    config::Config,
-    pipeline::watch::{
-        control_endpoint_reachable, request_watch_control, run_watch_service, watch_service_status,
-        WatchConfig, WatchControlRequest, WatchServiceMode, WatchServiceStatus,
-    },
-    surface::mcp::SynrepoState,
-};
+use crate::{bootstrap, config::Config, surface::mcp::SynrepoState};
+
+mod watch;
 
 fn state_with_files(files: &[(&str, &str)]) -> (tempfile::TempDir, SynrepoState) {
     let dir = tempdir().unwrap();
@@ -327,95 +321,6 @@ fn writer_lock_conflict_rejects_without_writing() {
         fs::read_to_string(dir.path().join("src/lib.rs")).unwrap(),
         "one\ntwo\n"
     );
-}
-
-#[test]
-fn watch_active_apply_delegates_reconcile() {
-    // Serialize with the watch-service tests (which spawn a `run_watch_service`
-    // and own the per-process control-socket directory) and with HOME-mutating
-    // tests (whose `set_var("HOME", ...)` would shift `user_socket_dir` for
-    // any concurrent watch service in this process). The HOME mutex covers
-    // same-process `HomeEnvGuard::redirect_to` callers; the flock covers
-    // cross-binary contention.
-    let _watch_lock = crate::test_support::global_test_lock("watch-service");
-    let _home_flock =
-        crate::test_support::global_test_lock(crate::config::test_home::HOME_ENV_TEST_LOCK);
-    let _home_mutex = crate::config::test_home::lock_home_env_read();
-    let (dir, state) = state_with_files(&[("src/lib.rs", "one\ntwo\n")]);
-    let synrepo_dir = Config::synrepo_dir(dir.path());
-    let repo_root = dir.path().to_path_buf();
-    let mut config = Config::load(dir.path()).unwrap();
-    // Disable auto-sync so the watch service does not re-acquire the writer
-    // lock on its own thread immediately after startup reconcile. With
-    // auto-sync on (the default), the apply call below races the watch
-    // thread's lock and surfaces `LockError::WrongThread` as
-    // `writer_lock_conflict`. The test exercises reconcile delegation, not
-    // auto-sync, so disabling it does not weaken coverage.
-    config.auto_sync_enabled = false;
-    let watch_synrepo_dir = synrepo_dir.clone();
-    let watch_repo_root = repo_root.clone();
-    let watch_config = config.clone();
-    let handle = thread::spawn(move || {
-        run_watch_service(
-            &watch_repo_root,
-            &watch_config,
-            &WatchConfig::default(),
-            &watch_synrepo_dir,
-            WatchServiceMode::Foreground,
-            None,
-        )
-    });
-    wait_for_watch(&synrepo_dir);
-    // Wait for the startup reconcile to finish (and its writer lock to be
-    // released) before calling apply on this thread; otherwise the apply
-    // path's `acquire_writer_lock` returns `WrongThread` because the watch
-    // thread still owns the in-process re-entrancy slot.
-    for _ in 0..200 {
-        if crate::pipeline::watch::load_reconcile_state(&synrepo_dir).is_ok() {
-            break;
-        }
-        thread::sleep(Duration::from_millis(25));
-    }
-
-    let prepared = prepare(
-        &state,
-        json!({ "target": "src/lib.rs", "target_kind": "file", "task_id": "task-watch" }),
-    );
-    let result = apply(
-        &state,
-        json!({ "edits": [{
-            "task_id": "task-watch",
-            "anchor_state_version": prepared["anchor_state_version"],
-            "path": "src/lib.rs",
-            "content_hash": prepared["content_hash"],
-            "anchor": "L000002",
-            "edit_type": "replace",
-            "text": "TWO"
-        }] }),
-    );
-
-    assert_eq!(result["status"], "completed", "{result}");
-    assert_eq!(result["diagnostics"]["reconcile"]["status"], "delegated");
-    let _ = request_watch_control(&synrepo_dir, WatchControlRequest::Stop);
-    let joined = handle.join().expect("watch thread should not panic");
-    assert!(
-        joined.is_ok(),
-        "watch service should stop cleanly: {joined:?}"
-    );
-}
-
-fn wait_for_watch(synrepo_dir: &std::path::Path) {
-    for _ in 0..100 {
-        if matches!(
-            watch_service_status(synrepo_dir),
-            WatchServiceStatus::Running(_)
-        ) && control_endpoint_reachable(synrepo_dir)
-        {
-            return;
-        }
-        thread::sleep(Duration::from_millis(50));
-    }
-    panic!("watch service did not become ready");
 }
 
 #[test]

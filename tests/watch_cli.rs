@@ -10,10 +10,33 @@ use std::{
     time::{Duration, Instant},
 };
 
+use synrepo::config::test_home::{HomeEnvGuard, HOME_ENV_TEST_LOCK};
+use synrepo::test_support::{global_test_lock, GlobalTestLock};
 use tempfile::TempDir;
 
 fn bin() -> &'static str {
     env!("CARGO_BIN_EXE_synrepo")
+}
+
+// Held across the test lifetime so each `synrepo` subprocess inherits
+// `HOME` / `USERPROFILE` pointing at an isolated tempdir. Without this, every
+// `synrepo init` subprocess appends a stale entry to the developer's real
+// `~/.synrepo/projects.toml`.
+//
+// Field-drop order matters: env guard first (releases the in-process Mutex
+// and restores prior `HOME`), then the home tempdir, then the cross-process
+// flock.
+struct IsolatedRepo {
+    repo: TempDir,
+    _home_guard: HomeEnvGuard,
+    _home: TempDir,
+    _lock: GlobalTestLock,
+}
+
+impl IsolatedRepo {
+    fn path(&self) -> &Path {
+        self.repo.path()
+    }
 }
 
 fn command(repo: &Path) -> Command {
@@ -59,12 +82,20 @@ fn wait_for_output(repo: &Path, args: &[&str], needle: &str) {
     );
 }
 
-fn init_repo() -> TempDir {
+fn init_repo() -> IsolatedRepo {
+    let lock = global_test_lock(HOME_ENV_TEST_LOCK);
+    let home = tempfile::tempdir().unwrap();
+    let home_guard = HomeEnvGuard::redirect_to(home.path());
     let repo = tempfile::tempdir().unwrap();
     fs::create_dir_all(repo.path().join("src")).unwrap();
     fs::write(repo.path().join("src/lib.rs"), "pub fn hello() {}\n").unwrap();
     run_ok(repo.path(), &["init"]);
-    repo
+    IsolatedRepo {
+        repo,
+        _home_guard: home_guard,
+        _home: home,
+        _lock: lock,
+    }
 }
 
 struct WatchGuard {

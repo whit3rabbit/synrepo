@@ -6,6 +6,7 @@ use std::{
 };
 
 use synrepo::bootstrap::bootstrap;
+use synrepo::config::test_home::{HomeEnvGuard, HOME_ENV_TEST_LOCK};
 use synrepo::config::{Config, Mode};
 use synrepo::core::ids::{ConceptNodeId, FileNodeId, SymbolNodeId};
 use synrepo::core::provenance::{CreatedBy, Provenance, SourceRef};
@@ -22,9 +23,30 @@ use synrepo::store::sqlite::SqliteGraphStore;
 use synrepo::structure::graph::{
     ConceptNode, EdgeKind, Epistemic, FileNode, GraphStore, SymbolKind, SymbolNode, Visibility,
 };
+use synrepo::test_support::{global_test_lock, GlobalTestLock};
 use synrepo::NodeId;
 use tempfile::{tempdir, TempDir};
 use time::OffsetDateTime;
+
+// Held across the test lifetime so spawned `synrepo` subprocesses inherit
+// `HOME` / `USERPROFILE` pointing at an isolated tempdir. Without this, every
+// `bootstrap()` (in-process) and every `synrepo init` (subprocess) appends a
+// stale entry to the developer's real `~/.synrepo/projects.toml`.
+//
+// Field-drop order matters: the env guard must release before the home tempdir
+// is removed and before the cross-process flock is released.
+pub(crate) struct IsolatedRepo {
+    pub(crate) repo: TempDir,
+    _home_guard: HomeEnvGuard,
+    _home: TempDir,
+    _lock: GlobalTestLock,
+}
+
+impl IsolatedRepo {
+    pub(crate) fn path(&self) -> &Path {
+        self.repo.path()
+    }
+}
 
 pub(crate) struct SeededLinkRepo {
     pub(crate) _dir: TempDir,
@@ -32,17 +54,33 @@ pub(crate) struct SeededLinkRepo {
     pub(crate) from: NodeId,
     pub(crate) to: NodeId,
     pub(crate) candidate_id: String,
+    // Same drop-order rules as `IsolatedRepo`: env guard before home tempdir
+    // before cross-process flock. Kept private; tests only need `repo`.
+    _home_guard: HomeEnvGuard,
+    _home: TempDir,
+    _lock: GlobalTestLock,
 }
 
-pub(crate) fn init_repo() -> TempDir {
+pub(crate) fn init_repo() -> IsolatedRepo {
+    let lock = global_test_lock(HOME_ENV_TEST_LOCK);
+    let home = tempdir().expect("home tempdir");
+    let home_guard = HomeEnvGuard::redirect_to(home.path());
     let repo = tempdir().expect("tempdir");
     fs::create_dir_all(repo.path().join("src")).expect("create src");
     fs::write(repo.path().join("src/lib.rs"), "pub fn hello() {}\n").expect("write src/lib.rs");
     bootstrap(repo.path(), None, false).expect("bootstrap repo");
-    repo
+    IsolatedRepo {
+        repo,
+        _home_guard: home_guard,
+        _home: home,
+        _lock: lock,
+    }
 }
 
 pub(crate) fn setup_curated_link_repo(pass_id: &str) -> SeededLinkRepo {
+    let lock = global_test_lock(HOME_ENV_TEST_LOCK);
+    let home = tempdir().expect("home tempdir");
+    let home_guard = HomeEnvGuard::redirect_to(home.path());
     let dir = tempdir().expect("tempdir");
     let repo = dir.path().to_path_buf();
     fs::create_dir_all(repo.join("src")).expect("create src");
@@ -151,6 +189,9 @@ pub(crate) fn setup_curated_link_repo(pass_id: &str) -> SeededLinkRepo {
         from,
         to,
         candidate_id: format_candidate_id(from, to, OverlayEdgeKind::References, pass_id),
+        _home_guard: home_guard,
+        _home: home,
+        _lock: lock,
     }
 }
 

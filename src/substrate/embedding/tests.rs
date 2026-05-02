@@ -6,14 +6,22 @@
 //! and that the loaded index returns at least one positive-scoring hit.
 
 use crate::bootstrap::bootstrap;
+use crate::config::test_home::{HomeEnvGuard, HOME_ENV_TEST_LOCK};
 use crate::config::Config;
 use crate::store::sqlite::SqliteGraphStore;
 use crate::substrate::embedding::chunk::extract_chunks;
 use crate::substrate::embedding::{load_embedding_index, EmbeddingChunkSource};
+use crate::test_support::global_test_lock;
 use tempfile::tempdir;
 
 #[test]
 fn bootstrap_extract_chunks_load_v3_index_and_query() {
+    // Hold both locks so `bootstrap()` writes to an isolated
+    // `~/.synrepo/projects.toml` rather than the developer's real registry.
+    let _home_lock = global_test_lock(HOME_ENV_TEST_LOCK);
+    let isolated_home = tempdir().expect("home tempdir");
+    let _home_guard = HomeEnvGuard::redirect_to(isolated_home.path());
+
     let repo = tempdir().expect("tempdir");
     let repo_path = repo.path();
 

@@ -7,6 +7,7 @@ mod epistemic;
 mod in_memory;
 mod mem_store;
 mod node;
+mod reader;
 /// Process-global in-memory graph snapshot accessors.
 pub mod snapshot;
 mod store;
@@ -21,4 +22,5 @@ pub use mem_store::MemGraphStore;
 pub use node::{
     concept_source_path_allowed, ConceptNode, FileNode, SymbolKind, SymbolNode, Visibility,
 };
-pub use store::{with_graph_read_snapshot, CompactionSummary, GraphReader, GraphStore};
+pub use reader::GraphReader;
+pub use store::{with_graph_read_snapshot, CompactionSummary, GraphStore};

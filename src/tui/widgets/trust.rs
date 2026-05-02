@@ -98,7 +98,7 @@ fn row_line(row: &TrustRow, theme: &Theme, width: usize) -> Line<'static> {
             format!("{:<17}", truncate(&row.label, 16)),
             theme.muted_style(),
         ),
-        bar_span(row, theme),
+        indicator_span(row, theme),
         Span::raw(" "),
         severity_span(&truncate(&row.value, 20), row.severity, theme),
     ];
@@ -113,27 +113,32 @@ fn row_line(row: &TrustRow, theme: &Theme, width: usize) -> Line<'static> {
     Line::from(spans)
 }
 
-fn bar_span(row: &TrustRow, theme: &Theme) -> Span<'static> {
-    const WIDTH: u64 = 10;
-    let filled = match (row.amount, row.total) {
-        (Some(amount), Some(total)) if total > 0 => {
-            amount.saturating_mul(WIDTH).checked_div(total).unwrap_or(0)
-        }
-        _ => 0,
-    }
-    .min(WIDTH);
-    let empty = WIDTH - filled;
-    let text = format!(
-        "[{}{}]",
-        "|".repeat(filled as usize),
-        ".".repeat(empty as usize)
-    );
+fn indicator_span(row: &TrustRow, theme: &Theme) -> Span<'static> {
+    let label = match row.severity {
+        Severity::Blocked => "blocked",
+        Severity::Stale if row.amount.is_none() => "gap",
+        Severity::Stale => "watch",
+        Severity::Healthy if is_clear_zero(row) => "clear",
+        Severity::Healthy if row.amount == Some(0) => "idle",
+        Severity::Healthy if row.amount.is_some() => "observed",
+        Severity::Healthy => "ok",
+    };
+    let indicator = format!("[{label}]");
+    let text = format!("{indicator:<12}");
     let style = match row.severity {
         Severity::Healthy => theme.healthy_style(),
         Severity::Stale => theme.stale_style(),
         Severity::Blocked => theme.blocked_style(),
     };
     Span::styled(text, style)
+}
+
+fn is_clear_zero(row: &TrustRow) -> bool {
+    row.amount == Some(0)
+        && matches!(
+            row.label.as_str(),
+            "stale responses" | "truncated" | "stale" | "unverified" | "invalid"
+        )
 }
 
 fn truncate(value: &str, max: usize) -> String {
@@ -163,5 +168,41 @@ mod tests {
         let line = row_line(&row, &theme, 42);
         let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
         assert!(!text.contains("shared snapshot"));
+    }
+
+    #[test]
+    fn row_line_uses_semantic_indicator_instead_of_progress_bar() {
+        let theme = Theme::plain();
+        let row = TrustRow {
+            label: "cards served".to_string(),
+            value: "6".to_string(),
+            hint: Some("source: status context metrics".to_string()),
+            amount: Some(5),
+            total: Some(5),
+            severity: Severity::Healthy,
+        };
+        let line = row_line(&row, &theme, 80);
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+
+        assert!(text.contains("[observed]"));
+        assert!(!text.contains("||||"));
+        assert!(!text.contains("...."));
+    }
+
+    #[test]
+    fn row_line_marks_unavailable_rows_as_gaps() {
+        let theme = Theme::plain();
+        let row = TrustRow {
+            label: "affected symbols".to_string(),
+            value: "unavailable".to_string(),
+            hint: Some("not present in shared snapshot yet".to_string()),
+            amount: None,
+            total: None,
+            severity: Severity::Stale,
+        };
+        let line = row_line(&row, &theme, 80);
+        let text: String = line.spans.iter().map(|s| s.content.as_ref()).collect();
+
+        assert!(text.contains("[gap]"));
     }
 }

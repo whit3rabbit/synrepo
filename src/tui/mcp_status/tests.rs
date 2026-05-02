@@ -1,9 +1,12 @@
+use std::path::PathBuf;
+
 use tempfile::tempdir;
 
 use super::*;
 use crate::config::test_home::HomeEnvGuard;
 use crate::pipeline::writer::now_rfc3339;
 use crate::registry::AgentEntry;
+use crate::tui::probe::Severity;
 
 fn home_guard() -> (
     crate::test_support::GlobalTestLock,
@@ -115,4 +118,25 @@ fn legacy_claude_config_falls_back_to_project_scope() {
     assert_eq!(row.status, McpStatus::Registered);
     assert_eq!(row.scope, McpScope::Project);
     assert_eq!(row.source, "legacy config");
+}
+
+#[test]
+fn display_rows_preformat_path_and_fixed_cells() {
+    let row = McpStatusRow {
+        agent: "Codex CLI".to_string(),
+        tool: "codex".to_string(),
+        status: McpStatus::Registered,
+        scope: McpScope::Project,
+        source: "legacy config".to_string(),
+        config_path: Some(PathBuf::from(".codex/config.toml")),
+    };
+
+    let rows = build_mcp_display_rows(&[row]);
+
+    assert_eq!(rows[0].agent_cell, "Codex CLI         ");
+    assert_eq!(rows[0].status_label, "registered");
+    assert_eq!(rows[0].status_severity, Severity::Healthy);
+    assert_eq!(rows[0].scope_cell, " scope:project    ");
+    assert_eq!(rows[0].source_cell, " source:legacy config     ");
+    assert_eq!(rows[0].path_cell, " .codex/config.toml");
 }

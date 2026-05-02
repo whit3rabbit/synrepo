@@ -9,6 +9,12 @@ use crate::pipeline::explain::{CommentarySkip, CommentarySkipReason};
 use super::commentary_generate::ItemOutcome;
 use super::commentary_plan::{CommentaryProgressEvent, CommentaryWorkItem};
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct RecordedItemOutcome {
+    pub(super) generated: bool,
+    pub(super) halted: bool,
+}
+
 pub(super) fn emit(
     progress: &mut Option<&mut dyn FnMut(CommentaryProgressEvent)>,
     event: CommentaryProgressEvent,
@@ -40,11 +46,14 @@ pub(super) fn record_item_outcome(
     outcome: ItemOutcome,
     queued_for_next_run: &mut usize,
     skip_reasons: &mut BTreeMap<String, usize>,
-) -> (bool, bool) {
+) -> RecordedItemOutcome {
     match outcome {
         ItemOutcome::Generated => {
             emit_target_finished(progress, item, current, true, None, 0, false);
-            (true, false)
+            RecordedItemOutcome {
+                generated: true,
+                halted: false,
+            }
         }
         ItemOutcome::Skipped {
             skip,
@@ -69,7 +78,10 @@ pub(super) fn record_item_outcome(
                 retry_attempts,
                 queued,
             );
-            (false, halted)
+            RecordedItemOutcome {
+                generated: false,
+                halted,
+            }
         }
     }
 }

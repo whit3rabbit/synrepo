@@ -2,6 +2,7 @@ use super::super::*;
 use super::support::{isolated_home, make_live_state, make_poll_state};
 use crate::pipeline::watch::{ReconcileOutcome, WatchEvent};
 use crate::tui::probe::Severity;
+use crate::tui::projects::ProjectRef;
 use crossterm::event::{KeyCode, KeyModifiers};
 
 #[test]
@@ -129,6 +130,27 @@ fn arrow_keys_cycle_tabs_in_both_directions() {
     // BackTab (Shift-Tab) shares the backward path.
     state.handle_key(KeyCode::BackTab, KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Mcp);
+}
+
+#[test]
+fn repos_tab_reuses_recent_project_cache() {
+    let mut state = make_poll_state();
+    state.explore_projects = vec![ProjectRef {
+        id: "cached".to_string(),
+        name: "cached".to_string(),
+        root: std::path::PathBuf::from("/tmp/cached"),
+        health: "ready".to_string(),
+        watch: "off".to_string(),
+        lock: "free".to_string(),
+        integration: "absent".to_string(),
+        last_opened_at: None,
+    }];
+    state.explore_projects_loaded_at = Some(std::time::Instant::now());
+
+    state.set_tab(ActiveTab::Repos);
+
+    assert_eq!(state.explore_projects.len(), 1);
+    assert_eq!(state.explore_projects[0].id, "cached");
 }
 
 #[test]

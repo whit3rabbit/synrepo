@@ -10,6 +10,7 @@ use crate::{
         types::{TestAssociation, TestEntry, TestSurfaceCard},
         Budget, SourceStore,
     },
+    util::test_paths,
 };
 
 /// Compile a TestSurfaceCard by discovering test files related to a scope.
@@ -145,54 +146,13 @@ fn find_associated_test_files(
     source_path: &str,
     path_map: &HashMap<String, FileNodeId>,
 ) -> Vec<String> {
-    let mut test_files = Vec::new();
-
-    // Get directory and stem of source file.
-    let (dir, stem) = match source_path.rsplit_once('/') {
-        Some((d, s)) => (d.to_string(), s),
-        None => return vec![],
-    };
-
-    // Remove extension to get stem.
-    let stem = stem.rsplit_once('.').map(|(s, _)| s).unwrap_or(stem);
-
-    for path in path_map.keys() {
-        // 1. Sibling test file patterns.
-        let sibling_patterns = vec![
-            // Rust: stem_test.rs, tests/stem.rs
-            format!("{}/{}_test.rs", dir, stem),
-            format!("{}/tests/{}.rs", dir, stem),
-            format!("{}/test_{}.rs", dir, stem),
-            // Python: test_stem.py
-            format!("{}/test_{}.py", dir, stem),
-            format!("{}/tests/test_{}.py", dir, stem),
-            // TypeScript/TSX: stem.test.ts, stem.spec.ts
-            format!("{}/{}.test.ts", dir, stem),
-            format!("{}/{}.spec.ts", dir, stem),
-            format!("{}/{}.test.tsx", dir, stem),
-            format!("{}/{}.spec.tsx", dir, stem),
-            // Go: stem_test.go
-            format!("{}/{}_test.go", dir, stem),
-            // Parallel test directory patterns.
-            format!("tests/{}.rs", stem),
-            format!("tests/{}.py", stem),
-        ];
-
-        for pattern in &sibling_patterns {
-            if path.as_str() == pattern.as_str() && !test_files.contains(path) {
-                test_files.push(path.clone());
-            }
-        }
-
-        // 2. Nested test module: <source_dir>/tests/ or <source_dir>/__tests__/
-        if (path.starts_with(&format!("{}/tests/", dir))
-            || path.starts_with(&format!("{}/__tests__/", dir)))
-            && !test_files.contains(path)
-        {
-            test_files.push(path.clone());
-        }
-    }
-
+    let mut test_files = path_map
+        .keys()
+        .filter(|path| test_paths::matches_path_convention(path, source_path))
+        .cloned()
+        .collect::<Vec<_>>();
+    test_files.sort();
+    test_files.dedup();
     test_files
 }
 
@@ -212,58 +172,11 @@ fn find_test_symbols(
 
 /// Compute the association field.
 fn compute_association(_kind: &SymbolKind, test_path: &str, source_path: &str) -> TestAssociation {
-    // For now, path convention is the primary signal since SymbolKind::Test doesn't exist.
-    // We check if the test file path matches path conventions.
-    let has_path_convention = test_matches_path_convention(test_path, source_path);
-
-    if has_path_convention {
+    if test_paths::matches_path_convention(test_path, source_path) {
         TestAssociation::PathConvention
     } else {
         TestAssociation::SymbolKind
     }
-}
-
-/// Check if a test file matches path convention for a source file.
-fn test_matches_path_convention(test_path: &str, source_path: &str) -> bool {
-    // Extract stem from source path.
-    let source_stem = source_path
-        .rsplit_once('/')
-        .map(|(_, s)| s)
-        .unwrap_or(source_path);
-    let source_stem = source_stem
-        .rsplit_once('.')
-        .map(|(s, _)| s)
-        .unwrap_or(source_stem);
-
-    // Check if test path matches any convention.
-    let test_name = test_path
-        .rsplit_once('/')
-        .map(|(_, n)| n)
-        .unwrap_or(test_path);
-
-    // Check patterns.
-    let patterns = [
-        format!("{}_test", source_stem),
-        format!("test_{}", source_stem),
-        format!("{}.test", source_stem),
-        format!("{}.spec", source_stem),
-    ];
-
-    for pattern in &patterns {
-        if test_name.starts_with(pattern) || test_name.contains(pattern) {
-            return true;
-        }
-    }
-
-    // Check nested test directory.
-    let source_dir = source_path.rsplit_once('/').map(|(d, _)| d).unwrap_or("");
-    if test_path.starts_with(&format!("{}/tests/", source_dir))
-        || test_path.starts_with(&format!("{}/__tests__/", source_dir))
-    {
-        return true;
-    }
-
-    false
 }
 
 /// Estimate token count for test surface.

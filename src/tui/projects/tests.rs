@@ -52,6 +52,13 @@ fn switch_project_clears_transients_and_preserves_project_states() {
         state.active_project_id.as_deref(),
         Some(second_entry.id.as_str())
     );
+    let active = state.active_state().unwrap();
+    let active_name = active.project_name.as_ref().unwrap();
+    assert!(
+        active.header_vm.repo_display.starts_with(active_name),
+        "cached header should include active project name: {:?}",
+        active.header_vm.repo_display
+    );
 }
 
 #[test]

@@ -137,6 +137,7 @@ impl GlobalAppState {
                 AppState::new_poll(&project.root, self.theme, report.agent_integration.clone());
             app.project_id = Some(project.id.clone());
             app.project_name = Some(project.name.clone());
+            app.rebuild_header_vm();
             self.project_states.insert(project.id.clone(), app);
         }
         self.picker = None;

@@ -53,7 +53,7 @@ impl AppState {
             if matches!(tab, ActiveTab::Explain) {
                 self.refresh_explain_preview(false);
             } else if matches!(tab, ActiveTab::Repos) {
-                self.refresh_explore_projects();
+                self.ensure_explore_projects_fresh();
             } else if matches!(tab, ActiveTab::Live) {
                 // Re-enter Live pinned to the tail so operators always see
                 // the most recent entries on tab switch.

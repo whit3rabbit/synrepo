@@ -350,8 +350,13 @@ impl OverlayStore for SqliteOverlayStore {
             crate::pipeline::maintenance::retention_cutoff(policy.audit_retention_days())?;
 
         let conn = self.conn.lock();
+        // `cross_link_audit` records lifecycle events; the column that captures
+        // terminal state is `event_kind` ('promoted' / 'rejected'), not `state`
+        // (which lives on `cross_links`, not on the audit table — see
+        // docs/SCHEMA.md).
         let count: usize = conn.query_row(
-            "SELECT COUNT(*) FROM cross_link_audit WHERE state IN ('promoted', 'rejected') AND event_at < ?1",
+            "SELECT COUNT(*) FROM cross_link_audit \
+             WHERE event_kind IN ('promoted', 'rejected') AND event_at < ?1",
             params![cutoff_str],
             |row| row_usize(row, 0),
         )?;
@@ -372,9 +377,11 @@ impl OverlayStore for SqliteOverlayStore {
             crate::pipeline::maintenance::retention_cutoff(policy.audit_retention_days())?;
 
         let conn = self.conn.lock();
-        // Delete old audit rows that are promoted or rejected.
+        // See `compactable_cross_link_stats` for the `event_kind` vs `state`
+        // column note.
         let deleted = conn.execute(
-            "DELETE FROM cross_link_audit WHERE state IN ('promoted', 'rejected') AND event_at < ?1",
+            "DELETE FROM cross_link_audit \
+             WHERE event_kind IN ('promoted', 'rejected') AND event_at < ?1",
             params![cutoff_str],
         )?;
 

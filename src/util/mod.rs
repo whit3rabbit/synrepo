@@ -5,5 +5,6 @@
 //! than a one-file helper belongs in its own top-level module instead.
 
 pub mod atomic_write;
+pub(crate) mod test_paths;
 
 pub use atomic_write::atomic_write;

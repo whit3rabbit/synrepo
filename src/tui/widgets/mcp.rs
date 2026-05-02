@@ -5,14 +5,14 @@ use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph, Widget};
 
-use crate::tui::mcp_status::McpStatusRow;
+use crate::tui::mcp_status::McpDisplayRow;
 use crate::tui::theme::Theme;
 use crate::tui::widgets::severity_span;
 
 /// Render active-project MCP registration status.
 pub struct McpTabWidget<'a> {
     /// Rows resolved for the active project.
-    pub rows: &'a [McpStatusRow],
+    pub rows: &'a [McpDisplayRow],
     /// Active theme.
     pub theme: &'a Theme,
 }
@@ -49,22 +49,14 @@ impl Widget for McpTabWidget<'_> {
     }
 }
 
-fn row_item(row: &McpStatusRow, theme: &Theme) -> ListItem<'static> {
-    let status = severity_span(row.status.as_str(), row.severity(), theme);
-    let path = row
-        .config_path
-        .as_ref()
-        .map(|path| path.display().to_string())
-        .unwrap_or_else(|| "-".to_string());
+fn row_item(row: &McpDisplayRow, theme: &Theme) -> ListItem<'static> {
+    let status = severity_span(row.status_label, row.status_severity, theme);
     ListItem::new(Line::from(vec![
-        Span::styled(format!("{:<18}", row.agent), theme.base_style()),
+        Span::styled(row.agent_cell.clone(), theme.base_style()),
         Span::styled(" status:", theme.muted_style()),
         status,
-        Span::styled(
-            format!(" scope:{:<11}", row.scope.as_str()),
-            theme.muted_style(),
-        ),
-        Span::styled(format!(" source:{:<18}", row.source), theme.muted_style()),
-        Span::styled(format!(" {path}"), theme.muted_style()),
+        Span::styled(row.scope_cell.clone(), theme.muted_style()),
+        Span::styled(row.source_cell.clone(), theme.muted_style()),
+        Span::styled(row.path_cell.clone(), theme.muted_style()),
     ]))
 }

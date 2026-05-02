@@ -298,3 +298,63 @@ fn mark_project_opened_updates_last_opened() {
     assert_eq!(opened.id, entry.id);
     assert!(opened.last_opened_at.is_some());
 }
+
+// Regression guard for the test-tempdir leaks that previously accumulated in
+// the developer's real `~/.synrepo/projects.toml` (1168 stale entries before
+// the leak was plugged). Exercises the canonical isolation pattern end-to-end:
+//   1. Snapshot the user's real registry while no `HomeEnvGuard` is active.
+//   2. Run a `record_install` under `HomeEnvGuard` against an isolated home.
+//   3. After the guard drops, the real registry must be byte-identical and
+//      the entry must have landed in the isolated home.
+// If a future change bypasses `HomeEnvGuard` (e.g. resolving the registry
+// path before the guard takes effect), this test catches it.
+#[test]
+fn record_install_under_home_env_guard_does_not_touch_user_registry() {
+    fn block_count(path: &Path) -> usize {
+        std::fs::read_to_string(path)
+            .map(|s| s.lines().filter(|line| *line == "[[project]]").count())
+            .unwrap_or(0)
+    }
+
+    // Cross-process flock + in-process read lock: while we hold both, no
+    // concurrent test can be inside a `HomeEnvGuard`, so `home_dir()` returns
+    // the user's real HOME.
+    let _flock =
+        crate::test_support::global_test_lock(crate::config::test_home::HOME_ENV_TEST_LOCK);
+    let read_lock = crate::config::test_home::lock_home_env_read();
+    let real_registry = crate::config::home_dir()
+        .expect("test machine has HOME")
+        .join(".synrepo")
+        .join("projects.toml");
+    let pre_count = block_count(&real_registry);
+    drop(read_lock);
+
+    let isolated_home = tempdir().unwrap();
+    let project = tempdir().unwrap();
+    {
+        let _guard = crate::config::test_home::HomeEnvGuard::redirect_to(isolated_home.path());
+        super::record_install(project.path(), false).unwrap();
+    }
+
+    // Positive: entry landed in the isolated home registry.
+    let isolated_registry = isolated_home.path().join(".synrepo").join("projects.toml");
+    assert!(
+        isolated_registry.exists(),
+        "record_install must write the redirected home; HomeEnvGuard may be broken"
+    );
+    let isolated_content = std::fs::read_to_string(&isolated_registry).unwrap();
+    assert!(
+        isolated_content.contains(project.path().to_str().unwrap()),
+        "isolated registry must contain the project path; got: {isolated_content}"
+    );
+
+    // Negative: real registry is untouched (no new [[project]] block).
+    let _read_lock2 = crate::config::test_home::lock_home_env_read();
+    let post_count = block_count(&real_registry);
+    assert_eq!(
+        pre_count,
+        post_count,
+        "record_install under HomeEnvGuard leaked into the user's real registry at {}",
+        real_registry.display()
+    );
+}

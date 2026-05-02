@@ -78,3 +78,57 @@ fn mcp_metrics_default_when_loading_older_json() {
     assert!(metrics.mcp_tool_calls_total.is_empty());
     assert!(metrics.saved_context_writes_total.is_empty());
 }
+
+#[test]
+fn best_effort_record_is_visible_before_flush() {
+    let repo = tempfile::tempdir().unwrap();
+    let synrepo_dir = repo.path().join(".synrepo");
+
+    record_mcp_tool_result_best_effort(&synrepo_dir, "synrepo_search", false, None);
+
+    assert!(!synrepo_dir.join("state/context-metrics.json").exists());
+    let metrics = load(&synrepo_dir).unwrap();
+    assert_eq!(metrics.mcp_requests_total, 1);
+    assert_eq!(metrics.mcp_tool_calls_total.get("synrepo_search"), Some(&1));
+
+    persistence::flush_for_tests(&synrepo_dir).unwrap();
+    assert!(synrepo_dir.join("state/context-metrics.json").exists());
+}
+
+#[test]
+fn rapid_records_flush_after_bounded_updates() {
+    let repo = tempfile::tempdir().unwrap();
+    let synrepo_dir = repo.path().join(".synrepo");
+
+    for _ in 0..16 {
+        record_mcp_resource_read_best_effort(&synrepo_dir);
+    }
+
+    assert!(synrepo_dir.join("state/context-metrics.json").exists());
+    let metrics = load(&synrepo_dir).unwrap();
+    assert_eq!(metrics.mcp_requests_total, 16);
+    assert_eq!(metrics.mcp_resource_reads_total, 16);
+}
+
+#[test]
+fn flush_merges_pending_delta_with_current_disk_metrics() {
+    let repo = tempfile::tempdir().unwrap();
+    let synrepo_dir = repo.path().join(".synrepo");
+    record_workflow_call_best_effort(&synrepo_dir, "orient");
+
+    let mut external = ContextMetrics::default();
+    external.record_mcp_resource_read();
+    std::fs::create_dir_all(synrepo_dir.join("state")).unwrap();
+    std::fs::write(
+        synrepo_dir.join("state/context-metrics.json"),
+        serde_json::to_vec_pretty(&external).unwrap(),
+    )
+    .unwrap();
+
+    persistence::flush_for_tests(&synrepo_dir).unwrap();
+
+    let metrics = load(&synrepo_dir).unwrap();
+    assert_eq!(metrics.mcp_requests_total, 1);
+    assert_eq!(metrics.mcp_resource_reads_total, 1);
+    assert_eq!(metrics.workflow_calls_total.get("orient"), Some(&1));
+}

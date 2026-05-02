@@ -9,6 +9,7 @@ mod explain_picker;
 mod explain_preview;
 mod explore;
 mod key_handlers;
+mod render_cache;
 mod state_impl;
 mod view_state;
 mod watch_events;
@@ -18,6 +19,7 @@ pub use explain_events::explain_event_to_log_entry;
 pub use explain_picker::{FolderEntry, FolderPickerState};
 pub use explain_preview::{ExplainPreviewPanel, ExplainPreviewState};
 pub use key_handlers::poll_key;
+pub(crate) use render_cache::repo_display;
 pub use view_state::ActiveTab;
 pub use watch_events::watch_event_to_log_entry;
 
@@ -32,7 +34,8 @@ use crossbeam_channel::Receiver;
 use crate::bootstrap::runtime_probe::AgentIntegration;
 use crate::pipeline::explain::telemetry::ExplainEvent;
 use crate::pipeline::watch::WatchEvent;
-use crate::tui::mcp_status::McpStatusRow;
+use crate::tui::mcp_status::McpDisplayRow;
+use crate::tui::probe::HeaderVm;
 use crate::tui::projects::ProjectRef;
 use crate::tui::theme::Theme;
 
@@ -112,14 +115,19 @@ pub struct AppState {
     pub integration: AgentIntegration,
     /// Most recent status snapshot; refreshed every poll tick.
     pub snapshot: StatusSnapshot,
+    /// Cached header labels rebuilt when the snapshot or project identity
+    /// changes.
+    pub header_vm: HeaderVm,
     /// Bounded event log.
     pub log: EventLog,
     /// Quick actions for the current mode.
     pub quick_actions: Vec<QuickAction>,
-    /// Active-project MCP status rows shown by the MCP tab.
-    pub mcp_rows: Vec<McpStatusRow>,
+    /// Preformatted active-project MCP rows for render-time display.
+    pub mcp_display_rows: Vec<McpDisplayRow>,
     /// Registry-backed project rows shown by the Repos tab.
     pub(crate) explore_projects: Vec<ProjectRef>,
+    /// Last time Repos-tab project metadata was probed.
+    pub(crate) explore_projects_loaded_at: Option<Instant>,
     /// Selected Repos-tab row.
     pub(crate) explore_selected: usize,
     /// Explicit dashboard restart target requested from the Repos tab.

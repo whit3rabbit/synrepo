@@ -6,11 +6,11 @@ use crate::{
 };
 
 use super::super::{
-    codec::{encode_json, encode_label, load_row},
+    codec::{encode_json, encode_label, load_row, load_rows},
     SqliteGraphStore,
 };
 
-use rusqlite::params;
+use rusqlite::{params, params_from_iter};
 
 /// Upsert a file node.
 pub fn upsert_file(store: &mut SqliteGraphStore, node: FileNode) -> crate::Result<()> {
@@ -102,6 +102,20 @@ pub fn get_file(store: &SqliteGraphStore, id: FileNodeId) -> crate::Result<Optio
     )
 }
 
+/// Get file nodes by ID.
+pub fn get_files(store: &SqliteGraphStore, ids: &[FileNodeId]) -> crate::Result<Vec<FileNode>> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let sql = format!(
+        "SELECT data FROM files WHERE id IN ({}) ORDER BY id",
+        placeholders(ids.len())
+    );
+    let params = ids.iter().map(ToString::to_string).collect::<Vec<_>>();
+    let conn = store.conn.lock();
+    load_rows(&conn, &sql, params_from_iter(params))
+}
+
 /// Get a symbol node by ID.
 pub fn get_symbol(store: &SqliteGraphStore, id: SymbolNodeId) -> crate::Result<Option<SymbolNode>> {
     let conn = store.conn.lock();
@@ -110,6 +124,23 @@ pub fn get_symbol(store: &SqliteGraphStore, id: SymbolNodeId) -> crate::Result<O
         "SELECT data FROM symbols WHERE id = ?1",
         params![id.to_string()],
     )
+}
+
+/// Get symbol nodes by ID.
+pub fn get_symbols(
+    store: &SqliteGraphStore,
+    ids: &[SymbolNodeId],
+) -> crate::Result<Vec<SymbolNode>> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let sql = format!(
+        "SELECT data FROM symbols WHERE id IN ({}) ORDER BY id",
+        placeholders(ids.len())
+    );
+    let params = ids.iter().map(ToString::to_string).collect::<Vec<_>>();
+    let conn = store.conn.lock();
+    load_rows(&conn, &sql, params_from_iter(params))
 }
 
 /// Get a concept node by ID.
@@ -125,6 +156,23 @@ pub fn get_concept(
     )
 }
 
+/// Get concept nodes by ID.
+pub fn get_concepts(
+    store: &SqliteGraphStore,
+    ids: &[ConceptNodeId],
+) -> crate::Result<Vec<ConceptNode>> {
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let sql = format!(
+        "SELECT data FROM concepts WHERE id IN ({}) ORDER BY id",
+        placeholders(ids.len())
+    );
+    let params = ids.iter().map(ToString::to_string).collect::<Vec<_>>();
+    let conn = store.conn.lock();
+    load_rows(&conn, &sql, params_from_iter(params))
+}
+
 /// Get a file node by path.
 pub fn file_by_path(store: &SqliteGraphStore, path: &str) -> crate::Result<Option<FileNode>> {
     let conn = store.conn.lock();
@@ -133,6 +181,10 @@ pub fn file_by_path(store: &SqliteGraphStore, path: &str) -> crate::Result<Optio
         "SELECT data FROM files WHERE path = ?1 ORDER BY root_id, id LIMIT 1",
         params![path],
     )
+}
+
+fn placeholders(count: usize) -> String {
+    vec!["?"; count].join(",")
 }
 
 /// Get a file node by root and path.

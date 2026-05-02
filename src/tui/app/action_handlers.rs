@@ -85,6 +85,7 @@ impl AppState {
         let outcome = set_auto_sync(&ctx, desired);
         if matches!(outcome, ActionOutcome::Ack { .. }) {
             self.auto_sync_enabled = desired;
+            self.rebuild_header_vm();
         }
         self.set_toast(self.action_toast("auto-sync", &outcome));
         self.log_action_outcome("auto-sync", &outcome);

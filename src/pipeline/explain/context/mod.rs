@@ -10,6 +10,7 @@ use crate::pipeline::explain::commentary_template::{
 use crate::structure::graph::{FileNode, GraphReader, SymbolNode};
 
 mod blocks;
+mod describe;
 #[cfg(test)]
 mod tests;
 
@@ -125,12 +126,21 @@ fn build_budgeted_context(
 ) -> String {
     let budget = options.max_input_tokens.max(1);
     let source_limits = [MAX_SOURCE_CHARS, 8_000, 4_000, 2_000, 1_000, 0];
+    // Read once and re-truncate per iteration. The fitting loop walks up to
+    // 6 source-limit tiers, each with up to N optional-block reductions, so
+    // re-reading the file each time would issue ~50+ identical fs reads.
+    let source_full = read_target_source_raw(repo_root, target);
     let mut included = optional.len();
     let mut last_prompt = String::new();
 
     for source_limit in source_limits {
         loop {
-            let evidence = evidence_context(repo_root, target, source_limit, &optional[..included]);
+            let evidence = evidence_context(
+                target,
+                source_full.as_deref(),
+                source_limit,
+                &optional[..included],
+            );
             let prompt = build_commentary_context(target_summary, &evidence);
             if estimate_context_tokens(&prompt) <= budget {
                 return prompt;
@@ -175,8 +185,8 @@ fn target_summary(target: &CommentaryContextTarget) -> String {
 }
 
 fn evidence_context(
-    repo_root: &Path,
     target: &CommentaryContextTarget,
+    source_full: Option<&str>,
     source_limit: usize,
     optional: &[String],
 ) -> String {
@@ -188,10 +198,11 @@ fn evidence_context(
     }
 
     if source_limit > 0 {
-        match read_target_source(repo_root, target, source_limit) {
+        match source_full {
             Some(source) => out.push_str(&format!(
                 "<source_code path=\"{}\">\n{}\n</source_code>\n",
-                target.file.path, source
+                target.file.path,
+                truncate_chars(source, source_limit)
             )),
             None => out.push_str(&format!(
                 "<source_code path=\"{}\">\nunavailable\n</source_code>\n",
@@ -206,11 +217,7 @@ fn evidence_context(
     out
 }
 
-fn read_target_source(
-    repo_root: &Path,
-    target: &CommentaryContextTarget,
-    limit: usize,
-) -> Option<String> {
+fn read_target_source_raw(repo_root: &Path, target: &CommentaryContextTarget) -> Option<String> {
     let text = fs::read_to_string(repo_root.join(&target.file.path)).ok()?;
     let raw = match &target.symbol {
         Some(symbol) => {
@@ -223,7 +230,7 @@ fn read_target_source(
         }
         None => text,
     };
-    Some(truncate_chars(&raw, limit))
+    Some(raw)
 }
 
 pub(super) fn truncate_chars(text: &str, limit: usize) -> String {

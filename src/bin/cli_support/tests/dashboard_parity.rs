@@ -77,11 +77,12 @@ fn cli_text_and_dashboard_vm_agree_on_key_fields() {
     );
 
     // Reconcile health: both surfaces derive from the same diagnostics enum.
-    // Bare-seeded repo has not run reconcile, so it should be Unknown on both.
-    assert_eq!(header.reconcile_label, "unknown");
+    // Bootstrap persists a `Completed` reconcile state for the structural
+    // compile, so a freshly seeded repo reports `current` on both surfaces.
+    assert_eq!(header.reconcile_label, "current");
     assert!(
-        cli_text.contains("reconcile:    unknown"),
-        "CLI output missing reconcile unknown line: {cli_text}"
+        cli_text.contains("reconcile:    current"),
+        "CLI output missing reconcile current line: {cli_text}"
     );
 }
 

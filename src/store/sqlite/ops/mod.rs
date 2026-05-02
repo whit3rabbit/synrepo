@@ -20,6 +20,13 @@ impl GraphReader for SqliteGraphStore {
         nodes::get_file(self, id)
     }
 
+    fn get_files(
+        &self,
+        ids: &[crate::core::ids::FileNodeId],
+    ) -> crate::Result<Vec<crate::structure::graph::FileNode>> {
+        nodes::get_files(self, ids)
+    }
+
     fn get_symbol(
         &self,
         id: crate::core::ids::SymbolNodeId,
@@ -27,11 +34,25 @@ impl GraphReader for SqliteGraphStore {
         nodes::get_symbol(self, id)
     }
 
+    fn get_symbols(
+        &self,
+        ids: &[crate::core::ids::SymbolNodeId],
+    ) -> crate::Result<Vec<crate::structure::graph::SymbolNode>> {
+        nodes::get_symbols(self, ids)
+    }
+
     fn get_concept(
         &self,
         id: crate::core::ids::ConceptNodeId,
     ) -> crate::Result<Option<crate::structure::graph::ConceptNode>> {
         nodes::get_concept(self, id)
+    }
+
+    fn get_concepts(
+        &self,
+        ids: &[crate::core::ids::ConceptNodeId],
+    ) -> crate::Result<Vec<crate::structure::graph::ConceptNode>> {
+        nodes::get_concepts(self, ids)
     }
 
     fn file_by_path(&self, path: &str) -> crate::Result<Option<crate::structure::graph::FileNode>> {
