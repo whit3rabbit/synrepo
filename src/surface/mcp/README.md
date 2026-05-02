@@ -38,6 +38,8 @@ Current registrations (see `mcp.rs` for schemas):
 **Task-first read tools:**
 `synrepo_overview`, `synrepo_card`, `synrepo_context_pack`, `synrepo_search`, `synrepo_where_to_edit`, `synrepo_change_impact`, `synrepo_change_risk`, `synrepo_entrypoints`, `synrepo_test_surface`, `synrepo_module_card`, `synrepo_public_api`, `synrepo_minimum_context`, `synrepo_call_path`, `synrepo_next_actions`
 
+`synrepo_search` is backed by the syntext substrate index and accepts `query`, optional `limit`, `path_filter`, `file_type`, `exclude_type`, and `case_insensitive` (`ignore_case` alias). It returns exact lexical results with syntext/source-store metadata and never mutates or refreshes the index during the search call.
+
 **Advisory overlay and audit tools:**
 `synrepo_docs_search`, `synrepo_refresh_commentary`, `synrepo_findings`, `synrepo_recent_activity`
 

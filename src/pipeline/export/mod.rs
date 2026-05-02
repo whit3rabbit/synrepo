@@ -3,13 +3,15 @@
 //! Exports are convenience surfaces produced by `synrepo export`. They are
 //! never used as explain input (invariant 2). The export directory
 //! (`synrepo-context/` by default) contains:
-//! - `symbols.md` / `files.md` / `decisions.md` (markdown format)
-//! - `index.json` (JSON format, all card types in one file)
+//! - `symbols.md` / `files.md` / `decisions.md` (markdown card format)
+//! - `index.json` (JSON card format, all card types in one file)
+//! - `graph.json` / `graph.html` (canonical graph export formats)
 //! - `.export-manifest.json` (metadata: format, budget, timestamp)
 //!
 //! The manifest is consumed by the repair loop (`ExportSurface`) to detect
 //! stale exports.
 
+mod graph;
 pub mod render;
 
 #[cfg(test)]
@@ -33,12 +35,19 @@ pub const MANIFEST_FILENAME: &str = ".export-manifest.json";
 
 /// Format of generated export files.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
 pub enum ExportFormat {
     /// One markdown file per card type.
+    #[serde(rename = "markdown")]
     Markdown,
     /// Single `index.json` file with all card types.
+    #[serde(rename = "json")]
     Json,
+    /// Single `graph.json` file with canonical graph nodes and edges.
+    #[serde(rename = "graph-json")]
+    GraphJson,
+    /// Self-contained `graph.html` plus `graph.json`.
+    #[serde(rename = "graph-html")]
+    GraphHtml,
 }
 
 impl ExportFormat {
@@ -47,6 +56,8 @@ impl ExportFormat {
         match self {
             ExportFormat::Markdown => "markdown",
             ExportFormat::Json => "json",
+            ExportFormat::GraphJson => "graph-json",
+            ExportFormat::GraphHtml => "graph-html",
         }
     }
 }
@@ -93,6 +104,10 @@ pub struct ExportResult {
     pub symbol_count: usize,
     /// Number of decision records written.
     pub decision_count: usize,
+    /// Number of graph nodes written for graph export formats.
+    pub graph_node_count: usize,
+    /// Number of graph edges written for graph export formats.
+    pub graph_edge_count: usize,
     /// Path of the export directory.
     pub export_dir: std::path::PathBuf,
 }
@@ -115,22 +130,6 @@ pub fn write_exports(
     let compiler =
         GraphCardCompiler::new(Box::new(graph), Some(repo_root)).with_config(config.clone());
 
-    // Collect all node IDs under a single snapshot epoch.
-    let (file_ids, symbol_ids, concept_ids) = compiler.with_reader(|g| {
-        let file_ids: Vec<_> = g.all_file_paths()?.into_iter().map(|(_, id)| id).collect();
-        let symbol_ids: Vec<_> = g
-            .all_symbol_names()?
-            .into_iter()
-            .map(|(id, _, _)| id)
-            .collect();
-        let concept_ids: Vec<_> = g
-            .all_concept_paths()?
-            .into_iter()
-            .map(|(_, id)| id)
-            .collect();
-        Ok((file_ids, symbol_ids, concept_ids))
-    })?;
-
     // `config.export_dir` travels inside the repo and is attacker-controlled;
     // reject absolute paths and `..` traversal so `create_dir_all` and the
     // subsequent writes cannot escape the repo.
@@ -142,58 +141,96 @@ pub fn write_exports(
     };
     std::fs::create_dir_all(&export_dir)?;
 
-    // Build lazy iterators. Each card is compiled under its own snapshot and
-    // dropped once rendered, so peak memory scales with a single card rather
-    // than the whole repo. Failures log a warning and are skipped.
-    let file_stream = file_ids.iter().filter_map(|id| {
-        compiler
-            .file_card(*id, budget)
-            .inspect_err(|err| {
-                tracing::warn!(
-                    id = ?id,
-                    error = %err,
-                    "export: skipping unreadable file card"
-                );
-            })
-            .ok()
-    });
-    let symbol_stream = symbol_ids.iter().filter_map(|id| {
-        compiler
-            .symbol_card(*id, budget)
-            .inspect_err(|err| {
-                tracing::warn!(
-                    id = ?id,
-                    error = %err,
-                    "export: skipping unreadable symbol card"
-                );
-            })
-            .ok()
-    });
+    let (file_count, symbol_count, decision_count, graph_node_count, graph_edge_count) =
+        match format {
+            ExportFormat::Markdown | ExportFormat::Json => {
+                let (file_ids, symbol_ids, concept_ids) = compiler.with_reader(|g| {
+                    let file_ids: Vec<_> =
+                        g.all_file_paths()?.into_iter().map(|(_, id)| id).collect();
+                    let symbol_ids: Vec<_> = g
+                        .all_symbol_names()?
+                        .into_iter()
+                        .map(|(id, _, _)| id)
+                        .collect();
+                    let concept_ids: Vec<_> = g
+                        .all_concept_paths()?
+                        .into_iter()
+                        .map(|(_, id)| id)
+                        .collect();
+                    Ok((file_ids, symbol_ids, concept_ids))
+                })?;
 
-    // Decision records need a concept lookup; reuse a single store handle for
-    // all iterations rather than re-opening per concept.
-    let concept_graph = SqliteGraphStore::open_existing(&synrepo_dir.join("graph"))?;
-    let decision_stream = concept_ids.iter().filter_map(|id| {
-        with_graph_read_snapshot(&concept_graph, |g| g.get_concept(*id))
-            .ok()
-            .flatten()
-            .map(|concept| ExportDecision {
-                path: concept.path.clone(),
-                title: concept.title.clone(),
-                status: concept.status.clone(),
-                summary: concept.summary.clone(),
-                decision_body: concept.decision_body.clone(),
-            })
-    });
+                // Build lazy iterators. Each card is compiled under its own snapshot
+                // and dropped once rendered, so peak memory scales with one card.
+                let file_stream = file_ids.iter().filter_map(|id| {
+                    compiler
+                        .file_card(*id, budget)
+                        .inspect_err(|err| {
+                            tracing::warn!(
+                                id = ?id,
+                                error = %err,
+                                "export: skipping unreadable file card"
+                            );
+                        })
+                        .ok()
+                });
+                let symbol_stream = symbol_ids.iter().filter_map(|id| {
+                    compiler
+                        .symbol_card(*id, budget)
+                        .inspect_err(|err| {
+                            tracing::warn!(
+                                id = ?id,
+                                error = %err,
+                                "export: skipping unreadable symbol card"
+                            );
+                        })
+                        .ok()
+                });
 
-    let (file_count, symbol_count, decision_count) = match format {
-        ExportFormat::Markdown => {
-            render::write_markdown(&export_dir, file_stream, symbol_stream, decision_stream)?
-        }
-        ExportFormat::Json => {
-            render::write_json(&export_dir, file_stream, symbol_stream, decision_stream)?
-        }
-    };
+                // Decision records need a concept lookup; reuse one store handle
+                // instead of re-opening per concept.
+                let concept_graph = SqliteGraphStore::open_existing(&synrepo_dir.join("graph"))?;
+                let decision_stream = concept_ids.iter().filter_map(|id| {
+                    with_graph_read_snapshot(&concept_graph, |g| g.get_concept(*id))
+                        .ok()
+                        .flatten()
+                        .map(|concept| ExportDecision {
+                            path: concept.path.clone(),
+                            title: concept.title.clone(),
+                            status: concept.status.clone(),
+                            summary: concept.summary.clone(),
+                            decision_body: concept.decision_body.clone(),
+                        })
+                });
+
+                let (files, symbols, decisions) = match format {
+                    ExportFormat::Markdown => render::write_markdown(
+                        &export_dir,
+                        file_stream,
+                        symbol_stream,
+                        decision_stream,
+                    )?,
+                    ExportFormat::Json => render::write_json(
+                        &export_dir,
+                        file_stream,
+                        symbol_stream,
+                        decision_stream,
+                    )?,
+                    ExportFormat::GraphJson | ExportFormat::GraphHtml => unreachable!(),
+                };
+                (files, symbols, decisions, 0, 0)
+            }
+            ExportFormat::GraphJson => {
+                let stats =
+                    compiler.with_reader(|g| graph::write_graph_json(&export_dir, g, budget))?;
+                (0, 0, 0, stats.node_count, stats.edge_count)
+            }
+            ExportFormat::GraphHtml => {
+                let stats =
+                    compiler.with_reader(|g| graph::write_graph_html(&export_dir, g, budget))?;
+                (0, 0, 0, stats.node_count, stats.edge_count)
+            }
+        };
 
     // Manage .gitignore: append <export_dir>/ unless --commit is set.
     if !commit {
@@ -222,6 +259,8 @@ pub fn write_exports(
         file_count,
         symbol_count,
         decision_count,
+        graph_node_count,
+        graph_edge_count,
         export_dir,
     })
 }

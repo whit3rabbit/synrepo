@@ -41,6 +41,17 @@ synrepo SHALL provide a `synrepo export` command that produces human-readable an
 - **THEN** synrepo writes a single `synrepo-context/index.json` with the same card content at `Normal` budget
 - **AND** the manifest is updated to record the format and timestamp
 
+#### Scenario: Run export with graph JSON format
+- **WHEN** a user runs `synrepo export --format graph-json`
+- **THEN** synrepo writes `synrepo-context/graph.json` with active canonical graph nodes and edges
+- **AND** exported records include provenance, epistemic labels, edge kinds, degree counts, and drift scores when available
+- **AND** no explain provider, API key, or overlay read is required
+
+#### Scenario: Run export with graph HTML format
+- **WHEN** a user runs `synrepo export --format graph-html`
+- **THEN** synrepo writes a self-contained `synrepo-context/graph.html` and a matching `synrepo-context/graph.json`
+- **AND** the HTML view supports search, node-type filtering, edge-kind filtering, degree filtering, node inspection, and neighborhood expansion without loading external assets
+
 #### Scenario: Run export with deep budget
 - **WHEN** a user runs `synrepo export --deep`
 - **THEN** synrepo uses `Deep` budget for each card, including commentary and cross-link fields where available

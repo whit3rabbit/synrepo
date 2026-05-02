@@ -313,11 +313,9 @@ mod tests {
         let resolver = StateResolver::new(Some(default_state));
 
         let resolved = resolver.resolve(Some(target_path.clone())).unwrap();
-        let search_output = synrepo::surface::mcp::search::handle_search(
-            &resolved,
-            "target_needle_unique".into(),
-            5,
-        );
+        let params =
+            serde_json::from_value(json!({ "query": "target_needle_unique", "limit": 5 })).unwrap();
+        let search_output = synrepo::surface::mcp::search::handle_search(&resolved, params);
         assert!(
             search_output.contains("target_needle_unique"),
             "{search_output}"

@@ -104,6 +104,47 @@ fn export_succeeds_after_stale_watch_cleanup() {
     );
 }
 
+#[test]
+fn export_graph_json_writes_graph_file_to_custom_out_dir() {
+    let dir = tempdir().unwrap();
+    let repo = dir.path();
+    bootstrap(repo, None, false).unwrap();
+
+    export(
+        repo,
+        ExportFormat::GraphJson,
+        false,
+        true,
+        Some("graph-out".to_string()),
+    )
+    .expect("graph-json export must succeed");
+
+    assert!(
+        repo.join("graph-out/graph.json").exists(),
+        "graph-json export must write graph.json"
+    );
+}
+
+#[test]
+fn export_graph_html_writes_html_and_graph_json() {
+    let dir = tempdir().unwrap();
+    let repo = dir.path();
+    bootstrap(repo, None, false).unwrap();
+
+    export(repo, ExportFormat::GraphHtml, false, true, None)
+        .expect("graph-html export must succeed");
+
+    let export_dir = repo.join("synrepo-context");
+    assert!(
+        export_dir.join("graph.html").exists(),
+        "graph-html export must write graph.html"
+    );
+    assert!(
+        export_dir.join("graph.json").exists(),
+        "graph-html export must also write graph.json"
+    );
+}
+
 /// Both `export` and `sync` funnel through `acquire_write_admission`. If a
 /// foreign writer holds the flock (simulating a concurrent `sync` in flight),
 /// export must reject immediately with the lock-held error and must not

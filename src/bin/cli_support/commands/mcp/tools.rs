@@ -14,7 +14,8 @@ impl SynrepoServer {
 
     #[tool(name = "synrepo_search", description = "Search the repository using lexical queries.")]
     async fn synrepo_search(&self, Parameters(params): Parameters<search::SearchParams>) -> String {
-        self.with_tool_state("synrepo_search", params.repo_root.clone(), |state| search::handle_search(&state, params.query, params.limit))
+        let repo_root = params.repo_root.clone();
+        self.with_tool_state("synrepo_search", repo_root, |state| search::handle_search(&state, params))
     }
 
     #[tool(name = "synrepo_docs_search", description = "Search advisory explained commentary docs materialized under .synrepo/. Results are overlay-backed, freshness-labeled, and never canonical graph facts.")]

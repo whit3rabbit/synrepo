@@ -30,6 +30,10 @@ The default path is deliberately small first:
 
 Use `tiny` budgets to route, `normal` budgets to understand a neighborhood, and `deep` budgets only before implementation or when exact source details matter. Use `synrepo_context_pack` when batching several read-only context artifacts is cheaper than serial tool calls. Its `targets` parameter is an array of structured objects: `{ "kind": "file|symbol|directory|minimum_context|test_surface|call_path|search", "target": "...", "budget": "tiny|normal|deep" }`.
 
+`synrepo_search` is the exact lexical search fallback backed by the syntext substrate index. It accepts `query`, optional `limit` (default `20`), optional `path_filter`, optional `file_type`, optional `exclude_type`, and optional `case_insensitive` (`ignore_case` is accepted as an alias). Responses preserve `query` and `results: [{ path, line, content }]`, and include `engine: "syntext"`, `source_store: "substrate_index"`, `limit`, `filters`, and `result_count`.
+
+MCP search is read-only. It searches the persisted substrate index as-is and does not reconcile, rebuild the index, start watch, or silently refresh state. Use `synrepo watch`, `synrepo reconcile`, `synrepo sync`, or initialization flows when you want the index updated after source changes.
+
 ## Tool Groups
 
 Workflow aliases:

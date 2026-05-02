@@ -14,6 +14,10 @@ pub(crate) enum ModeArg {
 pub(crate) enum ExportFormatArg {
     Markdown,
     Json,
+    #[value(name = "graph-json")]
+    GraphJson,
+    #[value(name = "graph-html")]
+    GraphHtml,
 }
 
 impl From<ExportFormatArg> for ExportFormat {
@@ -21,6 +25,8 @@ impl From<ExportFormatArg> for ExportFormat {
         match arg {
             ExportFormatArg::Markdown => ExportFormat::Markdown,
             ExportFormatArg::Json => ExportFormat::Json,
+            ExportFormatArg::GraphJson => ExportFormat::GraphJson,
+            ExportFormatArg::GraphHtml => ExportFormat::GraphHtml,
         }
     }
 }
@@ -31,6 +37,23 @@ impl From<ModeArg> for Mode {
             ModeArg::Auto => Mode::Auto,
             ModeArg::Curated => Mode::Curated,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::ValueEnum;
+
+    use super::ExportFormatArg;
+    use synrepo::pipeline::export::ExportFormat;
+
+    #[test]
+    fn export_format_arg_accepts_graph_formats() {
+        let graph_json = ExportFormatArg::from_str("graph-json", true).unwrap();
+        let graph_html = ExportFormatArg::from_str("graph-html", true).unwrap();
+
+        assert_eq!(ExportFormat::from(graph_json), ExportFormat::GraphJson);
+        assert_eq!(ExportFormat::from(graph_html), ExportFormat::GraphHtml);
     }
 }
 

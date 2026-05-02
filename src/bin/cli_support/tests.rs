@@ -11,6 +11,7 @@ mod links;
 mod mcp;
 mod mcp_edits;
 mod mcp_schema;
+mod mcp_search;
 mod notes;
 mod overlay_scale;
 mod project;

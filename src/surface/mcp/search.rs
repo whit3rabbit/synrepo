@@ -4,7 +4,8 @@ use std::time::Instant;
 
 use schemars::JsonSchema;
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{json, Value};
+use syntext::SearchOptions;
 
 use crate::{
     core::ids::NodeId,
@@ -24,10 +25,43 @@ pub struct SearchParams {
     /// Maximum number of results to return. Defaults to 20.
     #[serde(default = "default_limit")]
     pub limit: u32,
+    /// Optional path prefix or glob filter.
+    #[serde(default)]
+    pub path_filter: Option<String>,
+    /// Optional file extension/type to include (for example: "rs").
+    #[serde(default)]
+    pub file_type: Option<String>,
+    /// Optional file extension/type to exclude (for example: "md").
+    #[serde(default)]
+    pub exclude_type: Option<String>,
+    /// Whether matching should ignore ASCII case.
+    #[serde(default, alias = "ignore_case")]
+    pub case_insensitive: bool,
 }
 
 pub fn default_limit() -> u32 {
     20
+}
+
+impl SearchParams {
+    fn search_options(&self) -> SearchOptions {
+        SearchOptions {
+            path_filter: self.path_filter.clone(),
+            file_type: self.file_type.clone(),
+            exclude_type: self.exclude_type.clone(),
+            max_results: Some(self.limit as usize),
+            case_insensitive: self.case_insensitive,
+        }
+    }
+
+    fn filters_json(&self) -> Value {
+        json!({
+            "path_filter": self.path_filter.clone(),
+            "file_type": self.file_type.clone(),
+            "exclude_type": self.exclude_type.clone(),
+            "case_insensitive": self.case_insensitive,
+        })
+    }
 }
 
 /// Parameters for the `synrepo_where_to_edit` tool.
@@ -62,13 +96,18 @@ pub struct RepoRootParams {
     pub repo_root: Option<std::path::PathBuf>,
 }
 
-pub fn handle_search(state: &SynrepoState, query: String, limit: u32) -> String {
+pub fn handle_search(state: &SynrepoState, params: SearchParams) -> String {
     let result: anyhow::Result<serde_json::Value> = (|| {
-        let matches = crate::substrate::search(&state.config, &state.repo_root, &query)?;
+        let options = params.search_options();
+        let matches = crate::substrate::search_with_options(
+            &state.config,
+            &state.repo_root,
+            &params.query,
+            &options,
+        )?;
 
         let items: Vec<serde_json::Value> = matches
             .into_iter()
-            .take(limit as usize)
             .map(|m| {
                 json!({
                     "path": m.path.to_string_lossy(),
@@ -77,8 +116,17 @@ pub fn handle_search(state: &SynrepoState, query: String, limit: u32) -> String 
                 })
             })
             .collect();
+        let result_count = items.len();
 
-        Ok(json!({ "query": query, "results": items }))
+        Ok(json!({
+            "query": params.query,
+            "results": items,
+            "engine": "syntext",
+            "source_store": "substrate_index",
+            "limit": params.limit,
+            "filters": params.filters_json(),
+            "result_count": result_count,
+        }))
     })();
     render_result(result)
 }

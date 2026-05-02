@@ -36,10 +36,20 @@ pub(crate) fn export(
     let result = write_exports(repo_root, &synrepo_dir, &config, format, budget, commit)
         .map_err(|e| anyhow::anyhow!("export failed: {e}"))?;
 
-    println!(
-        "Export complete: {} files, {} symbols, {} decisions",
-        result.file_count, result.symbol_count, result.decision_count
-    );
+    if matches!(
+        result.manifest.format,
+        ExportFormat::GraphJson | ExportFormat::GraphHtml
+    ) {
+        println!(
+            "Export complete: {} graph nodes, {} graph edges",
+            result.graph_node_count, result.graph_edge_count
+        );
+    } else {
+        println!(
+            "Export complete: {} files, {} symbols, {} decisions",
+            result.file_count, result.symbol_count, result.decision_count
+        );
+    }
     println!("  Directory: {}", result.export_dir.display());
     println!("  Format:    {}", result.manifest.format.as_str());
     println!("  Budget:    {}", result.manifest.budget);

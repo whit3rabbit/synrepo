@@ -39,6 +39,8 @@ The required sequence is orient, find, impact or risks, edit, tests, changed.
 
 Graph-backed structural facts (files, symbols, edges) remain the authoritative source of truth. Overlay commentary, explain docs, and proposed cross-links are advisory, labeled machine-authored, and freshness-sensitive. Treat stale labels as information, not as errors. **Refresh is explicit**: every tool returns what is currently in the overlay. To get fresh commentary after a code change, you must call `synrepo_refresh_commentary(target)`.
 
+Graph export is native to synrepo, not skill-owned. When a user asks for a visual graph of the repository, run `synrepo export --format graph-html`. When they ask for machine-readable graph data, run `synrepo export --format graph-json`. These exports are deterministic convenience outputs from the canonical graph DB; they do not require an API key and are not explain input.
+
 ### Do not
 
 - Do not open large files first. Start at `tiny` and escalate only when a specific field forces it.
@@ -77,6 +79,8 @@ synrepo node <target>                            # node metadata as JSON (accept
 synrepo graph query "inbound <target>"            # reverse dependencies
 synrepo graph query "outbound <target>"           # forward dependencies
 synrepo graph stats                              # counts by type
+synrepo export --format graph-html               # visual graph export
+synrepo export --format graph-json               # machine-readable graph export
 synrepo reconcile                                # refresh graph
 synrepo links list                               # cross-link candidates
 synrepo findings [--freshness <state>]           # findings summary
