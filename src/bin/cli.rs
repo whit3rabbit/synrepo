@@ -9,18 +9,18 @@ use syntext::SearchOptions;
 use tracing_subscriber::EnvFilter;
 
 use cli_support::cli_args::{
-    AgentSetupArgs, BenchCommand, Cli, Command, GraphCommand, LinksCommand, NotesCommand,
-    ProjectCommand, SetupArgs, StatsCommand, UninstallArgs, WatchCommand,
+    AgentSetupArgs, BenchCommand, Cli, Command, LinksCommand, NotesCommand, ProjectCommand,
+    SetupArgs, StatsCommand, UninstallArgs, WatchCommand,
 };
 use cli_support::commands::{
     agent_setup_many_resolved, bench_context, cards_alias, change_risk, check, compact, docs,
-    doctor, explain_alias, export, findings, graph_query, graph_stats, handoffs, impact_alias,
-    links_accept, links_list, links_reject, links_review, node, notes_add, notes_audit,
-    notes_forget, notes_link, notes_list, notes_supersede, notes_verify, project_add,
-    project_inspect, project_list, project_prune_missing, project_remove, project_rename,
-    project_use, reconcile, remove, resolve_tool_resolution, risks_alias, run_mcp_server, search,
-    server, setup_many_resolved, stats_context, status, sync, tests_alias, uninstall, upgrade,
-    watch, watch_internal, watch_status, watch_stop, StatFormat,
+    doctor, explain_alias, export, findings, graph, handoffs, impact_alias, links_accept,
+    links_list, links_reject, links_review, node, notes_add, notes_audit, notes_forget, notes_link,
+    notes_list, notes_supersede, notes_verify, project_add, project_inspect, project_list,
+    project_prune_missing, project_remove, project_rename, project_use, reconcile, remove,
+    resolve_tool_resolution, risks_alias, run_mcp_server, search, server, setup_many_resolved,
+    stats_context, status, sync, tests_alias, uninstall, upgrade, watch, watch_internal,
+    watch_status, watch_stop, StatFormat,
 };
 #[cfg(test)]
 use cli_support::commands::{prepare_mcp_state, report_reconcile_outcome};
@@ -199,8 +199,7 @@ fn dispatch(
         Command::Bench(BenchCommand::Context { tasks, json }) => {
             bench_context(repo_root, &tasks, json)
         }
-        Command::Graph(GraphCommand::Query { q }) => graph_query(repo_root, &q),
-        Command::Graph(GraphCommand::Stats) => graph_stats(repo_root),
+        Command::Graph(command) => graph(repo_root, command, tui_opts),
         Command::Node { id } => node(repo_root, &id),
         Command::Watch {
             daemon,

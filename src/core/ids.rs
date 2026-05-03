@@ -72,7 +72,9 @@ impl FromStr for SymbolNodeId {
     type Err = ParseIdError;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        parse_prefixed_u128(value, "sym_", "symbol").map(Self)
+        parse_prefixed_u128(value, "sym_", "symbol")
+            .or_else(|_| parse_prefixed_u128(value, "symbol_", "symbol"))
+            .map(Self)
     }
 }
 
@@ -215,6 +217,22 @@ mod tests {
         assert_eq!(
             concept.to_string().parse::<NodeId>().unwrap(),
             NodeId::Concept(concept)
+        );
+    }
+
+    #[test]
+    fn legacy_symbol_prefix_parses_but_display_stays_canonical() {
+        let symbol = "symbol_00000000000000000000000000000024"
+            .parse::<SymbolNodeId>()
+            .unwrap();
+
+        assert_eq!(symbol, SymbolNodeId(0x24));
+        assert_eq!(symbol.to_string(), "sym_00000000000000000000000000000024");
+        assert_eq!(
+            "symbol_00000000000000000000000000000024"
+                .parse::<NodeId>()
+                .unwrap(),
+            NodeId::Symbol(symbol)
         );
     }
 

@@ -48,7 +48,7 @@ synrepo SHALL derive co-change partners from the per-file git-intelligence cache
 - **AND** the response includes `co_change_state: "missing"` rather than an absent field
 
 ### Requirement: Target resolution supports node IDs and qualified paths
-synrepo SHALL accept the focal target as either a node ID string (e.g., `symbol_0000000000000024`, `file_0000000000000042`) or a qualified path (e.g., `src/surface/card/compiler/mod.rs::GraphCardCompiler::symbol_card`). The tool SHALL return an explicit error if the target does not resolve to an existing node.
+synrepo SHALL accept the focal target as either a node ID string (e.g., `sym_0000000000000024`, `file_0000000000000042`) or a qualified path (e.g., `src/surface/card/compiler/mod.rs::GraphCardCompiler::symbol_card`). The tool SHALL return an explicit error if the target does not resolve to an existing node.
 
 #### Scenario: Resolve by node ID
 - **WHEN** an agent passes a valid node ID string

@@ -1,9 +1,13 @@
-use super::super::graph::{graph_query_output, graph_stats_output, node_output};
+use super::super::graph::{
+    graph_query_output, graph_stats_output, graph_view_json_output, node_output,
+};
 use super::support::{
     bootstrap_isolated as bootstrap, git, git_stdout, git_with_author, seed_graph,
 };
 use synrepo::config::Config;
 use synrepo::store::sqlite::SqliteGraphStore;
+use synrepo::structure::graph::EdgeKind;
+use synrepo::surface::graph_view::{GraphNeighborhoodRequest, GraphViewDirection};
 use tempfile::tempdir;
 
 #[test]
@@ -75,6 +79,45 @@ fn graph_query_output_traverses_edges_with_optional_kind_filter() {
     assert_eq!(inbound_json["edge_kind"], "governs");
     assert_eq!(inbound_json["edges"].as_array().unwrap().len(), 1);
     assert_eq!(inbound_json["edges"][0]["from"], ids.concept_id.to_string());
+}
+
+#[test]
+fn graph_query_output_resolves_symbol_name_targets() {
+    let repo = tempdir().unwrap();
+    let ids = seed_graph(repo.path());
+
+    let output = graph_query_output(repo.path(), "inbound lib defines").unwrap();
+    let json = serde_json::from_str::<serde_json::Value>(&output).unwrap();
+
+    assert_eq!(json["direction"], "inbound");
+    assert_eq!(json["node_id"], ids.symbol_id.to_string());
+    assert_eq!(json["edges"].as_array().unwrap().len(), 1);
+    assert_eq!(json["edges"][0]["from"], ids.file_id.to_string());
+}
+
+#[test]
+fn graph_view_json_output_returns_bounded_model_without_tty() {
+    let repo = tempdir().unwrap();
+    let ids = seed_graph(repo.path());
+
+    let output = graph_view_json_output(
+        repo.path(),
+        GraphNeighborhoodRequest {
+            target: Some("src/lib.rs".to_string()),
+            direction: GraphViewDirection::Outbound,
+            edge_types: vec![EdgeKind::Defines],
+            depth: 1,
+            limit: 100,
+        },
+    )
+    .unwrap();
+    let json = serde_json::from_str::<serde_json::Value>(&output).unwrap();
+
+    assert_eq!(json["source_store"], "graph");
+    assert_eq!(json["focal_node_id"], ids.file_id.to_string());
+    assert_eq!(json["counts"]["nodes"], 2);
+    assert_eq!(json["counts"]["edges"], 1);
+    assert_eq!(json["edges"][0]["kind"], "defines");
 }
 
 #[test]

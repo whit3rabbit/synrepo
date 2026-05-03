@@ -3,6 +3,7 @@
 //! Declarative clap derives; runtime dispatch lives in `cli.rs`.
 
 mod convert;
+mod graph;
 mod subcommands;
 
 use clap::{Parser, Subcommand};
@@ -11,6 +12,7 @@ use std::path::PathBuf;
 use super::agent_shims::AgentTool;
 
 pub(crate) use convert::*;
+pub(crate) use graph::*;
 pub(crate) use subcommands::*;
 
 #[derive(Parser)]

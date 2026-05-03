@@ -2,7 +2,7 @@ use std::path::Path;
 
 use synrepo::{config::Config, store::compatibility::StoreId};
 
-use super::graph::{check_store_ready, graph_query_output, graph_stats_output, node_output};
+use super::graph::{check_store_ready, node_output};
 
 mod basic;
 mod ci_run;
@@ -11,6 +11,7 @@ mod context;
 mod docs;
 mod doctor;
 mod export;
+mod graph_cmd;
 mod handoffs;
 mod hooks;
 mod links;
@@ -48,6 +49,7 @@ pub(crate) use docs::{
 };
 pub(crate) use doctor::doctor;
 pub(crate) use export::export;
+pub(crate) use graph_cmd::graph;
 pub(crate) use handoffs::handoffs;
 pub(crate) use hooks::install_hooks;
 pub(crate) use links::{findings, links_accept, links_list, links_reject, links_review};
@@ -144,18 +146,6 @@ pub(crate) fn search_output(
         writeln!(out, "Found {} matches.", matches.len()).unwrap();
     }
     Ok(out)
-}
-
-/// Execute a graph query and format the output.
-pub(crate) fn graph_query(repo_root: &Path, query: &str) -> anyhow::Result<()> {
-    println!("{}", graph_query_output(repo_root, query)?);
-    Ok(())
-}
-
-/// Output graph statistics.
-pub(crate) fn graph_stats(repo_root: &Path) -> anyhow::Result<()> {
-    println!("{}", graph_stats_output(repo_root)?);
-    Ok(())
 }
 
 /// Output a specific node's data.

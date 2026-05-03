@@ -357,19 +357,6 @@ pub(crate) enum NotesCommand {
 }
 
 #[derive(Subcommand)]
-pub(crate) enum GraphCommand {
-    /// Run a narrow traversal query against the graph store.
-    Query {
-        /// Query syntax: `<direction> <target> [edge_kind]`.
-        /// `<target>` accepts a file path, qualified symbol name, or node ID.
-        q: String,
-    },
-
-    /// Print graph statistics (node count by type, edge count by kind).
-    Stats,
-}
-
-#[derive(Subcommand)]
 pub(crate) enum StatsCommand {
     /// Context-serving metrics.
     Context {

@@ -8,6 +8,10 @@ use crate::{
     core::ids::{EdgeId, NodeId},
     overlay::OverlayStore,
     structure::graph::EdgeKind,
+    surface::{
+        card::compiler::resolve_target,
+        graph_view::{parse_edge_kind_filter, parse_edge_kind_filters},
+    },
 };
 
 use super::helpers::{render_result, with_mcp_compiler};
@@ -18,7 +22,7 @@ use super::SynrepoState;
 pub struct NodeParams {
     pub repo_root: Option<std::path::PathBuf>,
     /// Node ID in display form (e.g. "file_0000000000000042",
-    /// "symbol_0000000000000024", "concept_0000000000000099").
+    /// "sym_0000000000000024", "concept_0000000000000099").
     pub id: String,
 }
 
@@ -43,7 +47,7 @@ fn default_direction() -> String {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct QueryParams {
     pub repo_root: Option<std::path::PathBuf>,
-    /// Query string: "outbound <node_id> \[edge_kind]" or "inbound <node_id> \[edge_kind]".
+    /// Query string: "outbound <target> \[edge_kind]" or "inbound <target> \[edge_kind]".
     pub query: String,
 }
 
@@ -67,42 +71,17 @@ fn parse_node_id(id: &str) -> anyhow::Result<NodeId> {
     id.parse::<NodeId>().map_err(|e| {
         anyhow::anyhow!(
             "invalid node ID `{id}`: {e}. \
-             Valid prefixes: file_, symbol_, concept_"
+             Valid prefixes: file_, sym_, concept_"
         )
     })
 }
 
-fn parse_edge_kind_list(edge_types: &[String]) -> anyhow::Result<Vec<EdgeKind>> {
-    edge_types
-        .iter()
-        .map(|s| {
-            if let Ok(kind) = s.parse::<EdgeKind>() {
-                return Ok(kind);
-            }
-
-            let mut snake = String::new();
-            for (i, c) in s.chars().enumerate() {
-                if c.is_uppercase() && i > 0 && !s.chars().nth(i - 1).unwrap_or('_').is_uppercase()
-                {
-                    snake.push('_');
-                }
-                snake.push(c.to_ascii_lowercase());
-            }
-
-            snake
-                .parse::<EdgeKind>()
-                .or_else(|_| s.to_lowercase().parse::<EdgeKind>())
-                .map_err(|e| anyhow::anyhow!("invalid edge type `{s}`: {e}"))
-        })
-        .collect()
-}
-
-/// Inline graph query parser. Accepts: `<direction> <node_id> [edge_kind]`.
-fn parse_graph_query(query: &str) -> anyhow::Result<(QueryDirection, NodeId, Option<EdgeKind>)> {
+/// Inline graph query parser. Accepts: `<direction> <target> [edge_kind]`.
+fn parse_graph_query(query: &str) -> anyhow::Result<(QueryDirection, String, Option<EdgeKind>)> {
     let parts: Vec<&str> = query.split_whitespace().collect();
     if parts.len() < 2 || parts.len() > 3 {
         anyhow::bail!(
-            "invalid query: expected `outbound|inbound <node_id> [edge_kind]`, got `{query}`"
+            "invalid query: expected `outbound|inbound <target> [edge_kind]`, got `{query}`"
         );
     }
 
@@ -112,13 +91,13 @@ fn parse_graph_query(query: &str) -> anyhow::Result<(QueryDirection, NodeId, Opt
         other => anyhow::bail!("invalid direction `{other}`: expected `outbound` or `inbound`"),
     };
 
-    let node_id = parts[1].parse::<NodeId>()?;
+    let target = parts[1].to_string();
     let edge_kind = parts
         .get(2)
-        .map(|k| k.to_lowercase().parse::<EdgeKind>())
+        .map(|kind| parse_edge_kind_filter(kind).map_err(anyhow::Error::from))
         .transpose()?;
 
-    Ok((direction, node_id, edge_kind))
+    Ok((direction, target, edge_kind))
 }
 
 #[derive(Clone, Copy)]
@@ -132,6 +111,7 @@ pub fn handle_node(state: &SynrepoState, id: String) -> String {
         Ok(id) => id,
         Err(e) => return render_result(Err(e)),
     };
+    let canonical_id = node_id.to_string();
 
     with_mcp_compiler(state, |compiler| match node_id {
         NodeId::File(file_id) => {
@@ -140,7 +120,7 @@ pub fn handle_node(state: &SynrepoState, id: String) -> String {
                 .get_file(file_id)?
                 .ok_or_else(|| anyhow::anyhow!("node not found: {id}"))?;
             Ok(json!({
-                "node_id": id,
+                "node_id": canonical_id,
                 "node_type": "file",
                 "node": node,
             }))
@@ -151,7 +131,7 @@ pub fn handle_node(state: &SynrepoState, id: String) -> String {
                 .get_symbol(symbol_id)?
                 .ok_or_else(|| anyhow::anyhow!("node not found: {id}"))?;
             Ok(json!({
-                "node_id": id,
+                "node_id": canonical_id,
                 "node_type": "symbol",
                 "node": node,
             }))
@@ -162,7 +142,7 @@ pub fn handle_node(state: &SynrepoState, id: String) -> String {
                 .get_concept(concept_id)?
                 .ok_or_else(|| anyhow::anyhow!("node not found: {id}"))?;
             Ok(json!({
-                "node_id": id,
+                "node_id": canonical_id,
                 "node_type": "concept",
                 "node": node,
             }))
@@ -186,7 +166,7 @@ pub fn handle_edges(
 
         let parsed_kinds = edge_types
             .as_deref()
-            .map(parse_edge_kind_list)
+            .map(parse_edge_kind_filters)
             .transpose()?;
 
         let store_filter = parsed_kinds.as_deref().and_then(|k| match k {
@@ -221,12 +201,14 @@ pub fn handle_edges(
 }
 
 pub fn handle_query(state: &SynrepoState, query: String) -> String {
-    let (direction, node_id, edge_kind) = match parse_graph_query(&query) {
+    let (direction, target, edge_kind) = match parse_graph_query(&query) {
         Ok(res) => res,
         Err(e) => return render_result(Err(e)),
     };
 
     with_mcp_compiler(state, |compiler| {
+        let node_id = resolve_target(compiler.reader(), &target)?
+            .ok_or_else(|| anyhow::anyhow!("target not found: {target}"))?;
         let edges = match direction {
             QueryDirection::Outbound => compiler.reader().outbound(node_id, edge_kind)?,
             QueryDirection::Inbound => compiler.reader().inbound(node_id, edge_kind)?,

@@ -8,7 +8,8 @@ use crate::{core::ids::NodeId, structure::graph::GraphReader};
 /// (3) exact symbol name match (qualified or short), (4) substring match on
 /// qualified name. Returns `Ok(None)` when no candidate matches.
 pub fn resolve_target(graph: &dyn GraphReader, target: &str) -> crate::Result<Option<NodeId>> {
-    // 0. Try node ID parse (e.g. "symbol_0000000000000024", "file_0000000000000042").
+    // 0. Try node ID parse (e.g. "sym_0000000000000024", "file_0000000000000042").
+    // Legacy "symbol_" IDs are accepted by NodeId parsing as input aliases.
     if let Ok(node_id) = NodeId::from_str(target) {
         let exists = match &node_id {
             NodeId::File(id) => graph.get_file(*id)?.is_some(),

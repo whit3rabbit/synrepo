@@ -3,6 +3,7 @@
 use synrepo::config::Mode;
 use synrepo::pipeline::export::ExportFormat;
 use synrepo::pipeline::maintenance::CompactPolicy;
+use synrepo::surface::graph_view::GraphViewDirection;
 
 #[derive(Clone, Copy, Debug, clap::ValueEnum)]
 pub(crate) enum ModeArg {
@@ -36,6 +37,23 @@ impl From<ModeArg> for Mode {
         match mode {
             ModeArg::Auto => Mode::Auto,
             ModeArg::Curated => Mode::Curated,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+pub(crate) enum GraphDirectionArg {
+    Both,
+    Inbound,
+    Outbound,
+}
+
+impl From<GraphDirectionArg> for GraphViewDirection {
+    fn from(arg: GraphDirectionArg) -> Self {
+        match arg {
+            GraphDirectionArg::Both => GraphViewDirection::Both,
+            GraphDirectionArg::Inbound => GraphViewDirection::Inbound,
+            GraphDirectionArg::Outbound => GraphViewDirection::Outbound,
         }
     }
 }

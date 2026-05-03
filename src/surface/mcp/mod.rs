@@ -33,6 +33,8 @@ pub mod docs;
 #[doc(hidden)]
 pub mod edits;
 #[doc(hidden)]
+pub mod graph;
+#[doc(hidden)]
 pub mod helpers;
 #[doc(hidden)]
 pub mod notes;

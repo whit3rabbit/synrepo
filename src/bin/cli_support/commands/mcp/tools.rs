@@ -1,6 +1,8 @@
 use rmcp::{handler::server::wrapper::Parameters, tool, tool_router};
 use synrepo::surface::handoffs::{collect_handoffs, to_json as handoffs_to_json, HandoffsRequest};
-use synrepo::surface::mcp::{audit, cards, context_pack, docs, edits, notes, primitives, search};
+use synrepo::surface::mcp::{
+    audit, cards, context_pack, docs, edits, graph, notes, primitives, search,
+};
 
 use super::SynrepoServer;
 
@@ -44,9 +46,15 @@ impl SynrepoServer {
         self.with_tool_state("synrepo_edges", params.repo_root.clone(), |state| primitives::handle_edges(&state, params.id, params.direction, params.edge_types))
     }
 
-    #[tool(name = "synrepo_query", description = "Structured graph query: 'outbound <node_id> [edge_kind]' or 'inbound <node_id> [edge_kind]'.")]
+    #[tool(name = "synrepo_query", description = "Structured graph query: 'outbound <target> [edge_kind]' or 'inbound <target> [edge_kind]'. Target accepts node IDs, file paths, and symbol names.")]
     async fn synrepo_query(&self, Parameters(params): Parameters<primitives::QueryParams>) -> String {
         self.with_tool_state("synrepo_query", params.repo_root.clone(), |state| primitives::handle_query(&state, params.query))
+    }
+
+    #[tool(name = "synrepo_graph_neighborhood", description = "Return a bounded graph-backed neighborhood model for a target, or a top-degree overview when target is omitted.")]
+    async fn synrepo_graph_neighborhood(&self, Parameters(params): Parameters<graph::GraphNeighborhoodParams>) -> String {
+        let repo_root = params.repo_root.clone();
+        self.with_tool_state("synrepo_graph_neighborhood", repo_root, |state| graph::handle_graph_neighborhood(&state, params))
     }
 
     #[tool(name = "synrepo_overlay", description = "Inspect overlay data for a node: commentary and proposed cross-links. Returns {overlay: null} when none exists.")]

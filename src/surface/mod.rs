@@ -2,6 +2,7 @@
 
 pub mod agent_doctrine;
 pub mod card;
+pub mod graph_view;
 pub mod handoffs;
 pub mod mcp;
 pub mod readiness;

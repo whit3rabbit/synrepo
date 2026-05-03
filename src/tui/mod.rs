@@ -38,6 +38,7 @@ pub mod app;
 pub mod dashboard;
 mod dashboard_tabs;
 mod explain_run;
+mod graph_view;
 pub(crate) mod materializer;
 pub mod mcp_status;
 pub mod probe;
@@ -46,6 +47,8 @@ pub mod theme;
 mod watcher;
 pub mod widgets;
 pub mod wizard;
+
+pub use graph_view::run_graph_view;
 
 /// Options controlling how a TUI entry point renders and exits.
 #[derive(Clone, Copy, Debug, Default)]

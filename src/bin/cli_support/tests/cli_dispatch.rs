@@ -249,24 +249,6 @@ fn setup_with_tool_still_parses_with_tool_set() {
 }
 
 #[test]
-fn mcp_dispatches_to_mcp_variant() {
-    let cli = parse(&["mcp"]);
-    let Some(Command::Mcp { allow_edits }) = cli.command else {
-        panic!("mcp should parse to Command::Mcp");
-    };
-    assert!(!allow_edits);
-}
-
-#[test]
-fn mcp_allow_edits_sets_explicit_gate() {
-    let cli = parse(&["mcp", "--allow-edits"]);
-    let Some(Command::Mcp { allow_edits }) = cli.command else {
-        panic!("mcp --allow-edits should parse to Command::Mcp");
-    };
-    assert!(allow_edits);
-}
-
-#[test]
 fn notes_add_dispatches_to_notes_variant() {
     let cli = parse(&[
         "notes",

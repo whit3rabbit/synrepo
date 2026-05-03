@@ -190,6 +190,9 @@ pub(super) fn seed_graph(repo_root: &std::path::Path) -> SeededGraphIds {
         })
         .unwrap();
     store.commit().unwrap();
+    let mut snapshot_graph = synrepo::structure::graph::Graph::from_store(&store).unwrap();
+    snapshot_graph.snapshot_epoch = 1;
+    synrepo::structure::graph::snapshot::publish(repo_root, snapshot_graph);
 
     SeededGraphIds {
         file_id,

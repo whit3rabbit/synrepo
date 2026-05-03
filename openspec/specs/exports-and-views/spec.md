@@ -11,6 +11,19 @@ synrepo SHALL distinguish internal runtime views from explicit exports so genera
 - **THEN** the contract identifies whether the output is a runtime view or an export
 - **AND** the output is labeled as a convenience surface rather than source-of-truth state
 
+### Requirement: Define terminal graph view as a runtime view
+synrepo SHALL classify `synrepo graph view` as an internal runtime view distinct from explicit exports. The view SHALL be derived from canonical graph state at read time and SHALL NOT write export artifacts unless the user separately runs `synrepo export`.
+
+#### Scenario: User opens terminal graph view
+- **WHEN** a user runs `synrepo graph view`
+- **THEN** synrepo renders a runtime view from current graph state
+- **AND** no `synrepo-context/` export artifact is created by the view command
+
+#### Scenario: Explain runs after terminal graph view
+- **WHEN** an explain or retrieval pipeline runs after a terminal graph view was opened
+- **THEN** the terminal graph view output is not used as explain input
+- **AND** canonical graph and human-authored source remain the only graph/source inputs
+
 ### Requirement: Define export freshness and repair behavior
 synrepo SHALL define freshness labeling, stale-state handling, and repair-loop participation for generated exports and views.
 

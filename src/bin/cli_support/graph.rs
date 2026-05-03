@@ -13,7 +13,10 @@ use synrepo::{
         sqlite::SqliteGraphStore,
     },
     structure::graph::{with_graph_read_snapshot, EdgeKind, Epistemic, GraphReader},
-    surface::card::{resolve_target, FileGitIntelligence},
+    surface::{
+        card::{resolve_target, FileGitIntelligence},
+        graph_view::{build_graph_neighborhood, GraphNeighborhood, GraphNeighborhoodRequest},
+    },
     NodeId,
 };
 
@@ -70,6 +73,25 @@ pub(crate) fn graph_stats_output(repo_root: &Path) -> anyhow::Result<String> {
     // we ignore the trait-object parameter and call through the concrete type.
     let stats = with_graph_read_snapshot(&store, |_graph| store.persisted_stats())?;
     render_json(&stats)
+}
+
+/// Build the bounded graph-view model for CLI JSON output or the TUI view.
+pub(crate) fn graph_view_model(
+    repo_root: &Path,
+    request: GraphNeighborhoodRequest,
+) -> anyhow::Result<GraphNeighborhood> {
+    let store = open_graph_store_for_read(repo_root)?;
+    Ok(with_graph_read_snapshot(&store, |graph| {
+        build_graph_neighborhood(graph, request)
+    })?)
+}
+
+/// Build and serialize the bounded graph-view model.
+pub(crate) fn graph_view_json_output(
+    repo_root: &Path,
+    request: GraphNeighborhoodRequest,
+) -> anyhow::Result<String> {
+    render_json(&graph_view_model(repo_root, request)?)
 }
 
 /// Retrieve the full JSON output of a specific node by ID or path.

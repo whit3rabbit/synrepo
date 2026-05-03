@@ -81,8 +81,13 @@ Low-level graph primitives:
 - `synrepo_node`
 - `synrepo_edges`
 - `synrepo_query`
+- `synrepo_graph_neighborhood`
 - `synrepo_overlay`
 - `synrepo_provenance`
+
+`synrepo_query` accepts the same target forms as `synrepo graph query`: node IDs (`file_...`, `sym_...`, `concept_...`), file paths, qualified symbol names, and short symbol names. `symbol_...` is accepted only as a legacy input alias; responses use canonical `sym_...` IDs.
+
+Use `synrepo_graph_neighborhood` when an agent needs a bounded graph-shaped response directly. Defaults are `direction: "both"`, `depth: 1`, and `limit: 100`; depth is clamped to `3`, limit to `500`, and `target: null` returns a deterministic top-degree overview.
 
 Read-only resources:
 - `synrepo://card/{target}`
@@ -125,6 +130,8 @@ synrepo search "term"
 synrepo node <target>
 synrepo graph query "inbound <target>"
 synrepo graph query "outbound <target>"
+synrepo graph view <target> --json
+synrepo graph view <target>          # TTY-only terminal explorer
 synrepo graph stats
 synrepo reconcile
 synrepo findings

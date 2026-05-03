@@ -77,7 +77,7 @@ pub struct PublicAPICardParams {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct MinimumContextParams {
     pub repo_root: Option<std::path::PathBuf>,
-    /// Target: node ID (e.g. "symbol_0000000000000024") or qualified path.
+    /// Target: node ID (e.g. "sym_0000000000000024") or qualified path.
     pub target: String,
     /// Budget tier: "tiny", "normal", or "deep". Defaults to "normal".
     #[serde(default = "default_budget")]
@@ -90,7 +90,7 @@ pub struct MinimumContextParams {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct CallPathParams {
     pub repo_root: Option<std::path::PathBuf>,
-    /// Target symbol: node ID (e.g. "symbol_0000000000000024") or qualified name.
+    /// Target symbol: node ID (e.g. "sym_0000000000000024") or qualified name.
     pub target: String,
     /// Budget tier: "tiny" (default), "normal", or "deep".
     #[serde(default = "default_budget")]
