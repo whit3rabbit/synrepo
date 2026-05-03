@@ -161,7 +161,11 @@ impl SynrepoServer {
     {
         match self.resolve_state(param_root) {
             Ok(state) => {
-                let output = f(Arc::clone(&state));
+                let synrepo_dir = synrepo::config::Config::synrepo_dir(&state.repo_root);
+                let output =
+                    synrepo::pipeline::explain::telemetry::with_synrepo_dir(&synrepo_dir, || {
+                        f(Arc::clone(&state))
+                    });
                 let errored = response_has_error(&output);
                 let saved_context = saved_context_metric(tool, errored);
                 self.record_tool_result_for(&state, tool, errored, saved_context);

@@ -8,7 +8,8 @@ use crate::{
         OverlayStore,
     },
     pipeline::explain::{
-        build_cross_link_generator, score, CandidatePair, CandidateScope, CrossLinkGenerator,
+        build_cross_link_generator, score, telemetry, CandidatePair, CandidateScope,
+        CrossLinkGenerator,
     },
     store::{overlay::SqliteOverlayStore, sqlite::SqliteGraphStore},
 };
@@ -98,8 +99,10 @@ pub(super) fn run_cross_link_generation_with_generator(
             )
         })
         .collect::<HashMap<_, _>>();
-    let generated = generator.generate_candidates(&CandidateScope {
-        pairs: selected_pairs,
+    let generated = telemetry::with_synrepo_dir(synrepo_dir, || {
+        generator.generate_candidates(&CandidateScope {
+            pairs: selected_pairs,
+        })
     })?;
 
     let mut inserted = 0usize;

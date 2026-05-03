@@ -3,6 +3,8 @@
 //! Provides the global fan-out, call-id allocation, and the [`CallCtx`]
 //! lifecycle wrapper providers use to emit matched start/complete/fail events.
 
+use std::cell::RefCell;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -34,23 +36,38 @@ impl Fanout {
 }
 
 pub(crate) static FANOUT: Fanout = Fanout::new();
-static SYNREPO_DIR: Mutex<Option<std::path::PathBuf>> = Mutex::new(None);
+static SYNREPO_DIR: Mutex<Option<PathBuf>> = Mutex::new(None);
 pub(crate) static CALL_ID_SEQ: AtomicU64 = AtomicU64::new(1);
 
-/// Register the `.synrepo/` directory the accounting writer should use.
-/// Idempotent; callers (CLI commands, MCP server, TUI dashboard) can all
-/// call this on startup without racing. Later calls replace the stored
-/// value — the last writer wins, which matches the single-repo-per-process
-/// invariant.
-pub fn set_synrepo_dir<P: Into<std::path::PathBuf>>(path: P) {
+thread_local! {
+    static SCOPED_SYNREPO_DIRS: RefCell<Vec<PathBuf>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Register the fallback `.synrepo/` directory the accounting writer should
+/// use when no narrower call scope is active.
+///
+/// Kept for single-repo CLI/TUI compatibility. Multi-repo surfaces should use
+/// [`with_synrepo_dir`] around the operation that can publish explain events.
+pub fn set_synrepo_dir<P: Into<PathBuf>>(path: P) {
     if let Ok(mut guard) = SYNREPO_DIR.lock() {
         *guard = Some(path.into());
     }
 }
 
-/// Snapshot of the currently-registered `.synrepo/` directory, if any.
-pub fn synrepo_dir() -> Option<std::path::PathBuf> {
-    SYNREPO_DIR.lock().ok().and_then(|g| g.clone())
+/// Run `f` with explain accounting directed to `path` on the current thread.
+///
+/// Nested scopes are supported. The scoped path overrides the process-global
+/// fallback even if another caller updates [`set_synrepo_dir`] while the scope
+/// is active.
+pub fn with_synrepo_dir<R>(path: &Path, f: impl FnOnce() -> R) -> R {
+    SCOPED_SYNREPO_DIRS.with(|stack| stack.borrow_mut().push(path.to_path_buf()));
+    let _guard = ScopedSynrepoDir;
+    f()
+}
+
+/// Snapshot of the effective `.synrepo/` directory, if any.
+pub fn synrepo_dir() -> Option<PathBuf> {
+    scoped_synrepo_dir().or_else(global_synrepo_dir)
 }
 
 #[cfg(test)]
@@ -58,6 +75,25 @@ pub(super) fn clear_synrepo_dir_for_tests() {
     if let Ok(mut guard) = SYNREPO_DIR.lock() {
         *guard = None;
     }
+    SCOPED_SYNREPO_DIRS.with(|stack| stack.borrow_mut().clear());
+}
+
+struct ScopedSynrepoDir;
+
+impl Drop for ScopedSynrepoDir {
+    fn drop(&mut self) {
+        SCOPED_SYNREPO_DIRS.with(|stack| {
+            stack.borrow_mut().pop();
+        });
+    }
+}
+
+fn scoped_synrepo_dir() -> Option<PathBuf> {
+    SCOPED_SYNREPO_DIRS.with(|stack| stack.borrow().last().cloned())
+}
+
+fn global_synrepo_dir() -> Option<PathBuf> {
+    SYNREPO_DIR.lock().ok().and_then(|g| g.clone())
 }
 
 /// Register a new subscriber. Returns a receiver the caller drains at its

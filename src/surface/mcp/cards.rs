@@ -361,10 +361,11 @@ pub fn handle_change_risk(
 }
 
 pub fn handle_refresh_commentary(state: &SynrepoState, target: String) -> String {
-    use crate::pipeline::explain::build_commentary_generator;
+    use crate::pipeline::explain::{build_commentary_generator, telemetry};
     use serde_json::json;
 
-    let result = (|| {
+    let synrepo_dir = crate::config::Config::synrepo_dir(&state.repo_root);
+    let result = telemetry::with_synrepo_dir(&synrepo_dir, || {
         let compiler = state
             .create_sqlite_compiler()
             .map_err(|e| anyhow::anyhow!(e))?;
@@ -381,7 +382,7 @@ pub fn handle_refresh_commentary(state: &SynrepoState, target: String) -> String
             "commentary": text,
             "status": if text.is_some() { "refreshed" } else { "skipped" }
         }))
-    })();
+    });
 
     super::helpers::render_result(result)
 }

@@ -288,6 +288,7 @@ If your main problem is "help the agent understand this repo without brute-forci
 - [docs/FOUNDATION.md](docs/FOUNDATION.md): product intent, trust model, and design boundaries
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): layer architecture and storage layout
 - [docs/CONFIG.md](docs/CONFIG.md): config fields and defaults
+- [docs/RUNTIME_BUDGET.md](docs/RUNTIME_BUDGET.md): runtime and storage budget review guardrails
 - [docs/MCP.md](docs/MCP.md): MCP workflow, tool groups, resources, and edit-gated behavior
 - [docs/EXPLAIN.md](docs/EXPLAIN.md): explain providers, API keys, and telemetry
 - [docs/ADDING-LANGUAGE.md](docs/ADDING-LANGUAGE.md): adding a new tree-sitter language

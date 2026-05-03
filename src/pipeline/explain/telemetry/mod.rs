@@ -20,9 +20,10 @@
 //! event on full (bounded, 256) or disconnected receivers. Drops are counted
 //! and exposed for surface-layer diagnostics.
 //!
-//! Accounting is a side effect of [`publish::publish`]: if the process-wide
-//! `.synrepo/` directory has been registered via [`set_synrepo_dir`], events
-//! are synchronously forwarded to [`crate::pipeline::explain::accounting::record_event`]. That keeps
+//! Accounting is a side effect of [`publish::publish`]: if a scoped
+//! `.synrepo/` directory is active via [`with_synrepo_dir`], or a fallback
+//! directory has been registered via [`set_synrepo_dir`], events are
+//! synchronously forwarded to [`crate::pipeline::explain::accounting::record_event`]. That keeps
 //! the JSONL + totals snapshot consistent with what the TUI observes,
 //! without needing a dedicated writer thread.
 
@@ -31,7 +32,7 @@ pub mod types;
 
 pub use publish::{
     dropped_event_count, next_call_id, now_ms, publish, publish_budget_blocked, set_synrepo_dir,
-    subscribe, synrepo_dir, CallCtx,
+    subscribe, synrepo_dir, with_synrepo_dir, CallCtx,
 };
 pub use types::{ExplainEvent, ExplainFailure, ExplainTarget, Outcome, TokenUsage, UsageSource};
 
@@ -42,6 +43,7 @@ mod tests {
     use crate::pipeline::explain::accounting::log_path;
     use crate::pipeline::explain::providers::http::HttpJsonError;
     use std::sync::atomic::Ordering;
+    use std::sync::{Mutex, MutexGuard};
 
     fn file_target(n: u128) -> ExplainTarget {
         ExplainTarget::Commentary {
@@ -77,7 +79,21 @@ mod tests {
         out
     }
 
-    struct SynrepoDirReset;
+    static SYNREPO_DIR_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    struct SynrepoDirReset {
+        _guard: MutexGuard<'static, ()>,
+    }
+
+    impl SynrepoDirReset {
+        fn new() -> Self {
+            let guard = SYNREPO_DIR_TEST_LOCK
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            publish::clear_synrepo_dir_for_tests();
+            Self { _guard: guard }
+        }
+    }
 
     impl Drop for SynrepoDirReset {
         fn drop(&mut self) {
@@ -112,7 +128,7 @@ mod tests {
     #[test]
     fn failure_text_redacts_query_secrets_before_publish_and_log() {
         let dir = tempfile::tempdir().unwrap();
-        let _reset = SynrepoDirReset;
+        let _reset = SynrepoDirReset::new();
         set_synrepo_dir(dir.path());
         let rx = subscribe();
         let ctx = CallCtx::start("gemini", "gemini-test", file_target(5));
@@ -135,6 +151,32 @@ mod tests {
         let log = std::fs::read_to_string(log_path(dir.path())).unwrap();
         assert!(!log.contains("SECRET"));
         assert!(!log.contains("key="));
+    }
+
+    #[test]
+    fn scoped_synrepo_dir_overrides_global_accounting() {
+        let global = tempfile::tempdir().unwrap();
+        let scoped = tempfile::tempdir().unwrap();
+        let _reset = SynrepoDirReset::new();
+        set_synrepo_dir(global.path());
+
+        with_synrepo_dir(scoped.path(), || {
+            set_synrepo_dir(global.path());
+            publish_budget_blocked("test", "m", file_target(6), 10, 5);
+        });
+
+        let scoped_log = std::fs::read_to_string(log_path(scoped.path()))
+            .expect("scoped accounting log should be written");
+        assert!(scoped_log.contains("\"provider\":\"test\""));
+        assert!(
+            !log_path(global.path()).exists(),
+            "global fallback should not receive scoped events"
+        );
+
+        publish_budget_blocked("fallback", "m", file_target(7), 10, 5);
+        let global_log = std::fs::read_to_string(log_path(global.path()))
+            .expect("fallback accounting log should be written after scope");
+        assert!(global_log.contains("\"provider\":\"fallback\""));
     }
 
     #[test]

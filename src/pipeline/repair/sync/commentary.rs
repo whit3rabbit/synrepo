@@ -9,7 +9,7 @@ use crate::{
     pipeline::explain::{
         build_commentary_generator,
         docs::{docs_root, index_dir, reconcile_commentary_docs, sync_commentary_index},
-        CommentaryGenerator,
+        telemetry, CommentaryGenerator,
     },
     store::{overlay::SqliteOverlayStore, sqlite::SqliteGraphStore},
 };
@@ -33,6 +33,18 @@ use super::handlers::ActionContext;
 /// considered. Prefixes are repo-root-relative; each is normalized to end in
 /// `/` so `src` cannot spuriously match `src-extra/...`.
 pub fn refresh_commentary(
+    context: &ActionContext<'_>,
+    actions_taken: &mut Vec<String>,
+    scope: Option<&[PathBuf]>,
+    progress: Option<&mut dyn FnMut(CommentaryProgressEvent)>,
+    should_stop: Option<&mut dyn FnMut() -> bool>,
+) -> crate::Result<()> {
+    telemetry::with_synrepo_dir(context.synrepo_dir, || {
+        refresh_commentary_scoped(context, actions_taken, scope, progress, should_stop)
+    })
+}
+
+fn refresh_commentary_scoped(
     context: &ActionContext<'_>,
     actions_taken: &mut Vec<String>,
     scope: Option<&[PathBuf]>,

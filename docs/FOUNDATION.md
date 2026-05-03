@@ -598,6 +598,9 @@ Real problems the design does not fully solve, listed honestly.
 
 ## Evaluation and acceptance criteria
 
+Runtime and storage regression guardrails for the evaluation and retention
+numbers below live in [docs/RUNTIME_BUDGET.md](RUNTIME_BUDGET.md).
+
 ### Structural pipeline (deterministic)
 
 | Metric | Target |

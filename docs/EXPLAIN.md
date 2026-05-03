@@ -80,7 +80,7 @@ The dashboard Explain tab exposes the same maintenance actions: `d` exports docs
 
 ## Telemetry
 
-Per-call telemetry lands in `.synrepo/state/explain-log.jsonl` and aggregates in `.synrepo/state/explain-totals.json`. Each log record carries timestamp, provider, model, duration, input/output tokens, `usage_source`, `usd_cost`, and outcome. The log rotates on `synrepo sync --reset-explain-totals`.
+Per-call telemetry lands in `.synrepo/state/explain-log.jsonl` and aggregates in `.synrepo/state/explain-totals.json`. Each log record carries timestamp, provider, model, duration, input/output tokens, `usage_source`, `usd_cost`, and outcome. Repo-scoped call paths set the accounting directory for the current operation so multi-repo MCP processes do not write explain totals to the last prepared repository. The log rotates on `synrepo sync --reset-explain-totals`.
 
 Token counts flagged `est.` came from a local OpenAI-compatible server that did not return a `usage` block; the accounting layer marks those calls `UsageSource::Estimated` end-to-end and the Health tab exposes `any_estimated: true` so estimated and reported numbers never get rolled into a single "accurate" total.
 
