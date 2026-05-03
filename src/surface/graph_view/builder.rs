@@ -18,6 +18,8 @@ const DEFAULT_LIMIT: usize = 100;
 const MAX_DEPTH: usize = 3;
 const MAX_LIMIT: usize = 500;
 
+type NeighborhoodParts = (Option<NodeId>, Vec<NodeId>, Vec<Edge>, bool);
+
 /// Build a bounded graph-neighborhood model against a reader.
 ///
 /// Callers that hold a SQLite store should wrap this in `with_graph_read_snapshot`.
@@ -113,7 +115,7 @@ fn build_target_neighborhood(
     request: &GraphNeighborhoodRequest,
     target: &str,
     all_edges: &[Edge],
-) -> crate::Result<(Option<NodeId>, Vec<NodeId>, Vec<Edge>, bool)> {
+) -> crate::Result<NeighborhoodParts> {
     let focal = resolve_target(graph, target)?
         .ok_or_else(|| crate::Error::Other(anyhow::anyhow!("target not found: {target}")))?;
 
@@ -168,7 +170,7 @@ fn build_top_degree_overview(
     request: &GraphNeighborhoodRequest,
     all_edges: &[Edge],
     degree_by_node: &HashMap<NodeId, GraphViewDegree>,
-) -> (Option<NodeId>, Vec<NodeId>, Vec<Edge>, bool) {
+) -> NeighborhoodParts {
     let mut ranked = degree_by_node.keys().copied().collect::<Vec<_>>();
     ranked.sort_by(|a, b| {
         degree_by_node

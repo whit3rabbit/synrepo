@@ -10,6 +10,7 @@ use super::SynrepoState;
 
 const MAX_LINES_PER_FILE: usize = 5;
 const PREVIEW_CHARS: usize = 160;
+const ARRAY_ITEM_OVERHEAD_TOKENS: usize = 1;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -70,23 +71,17 @@ pub fn compact_search_response(default_response: &Value, budget_tokens: Option<u
         .unwrap_or(groups.iter().map(|g| g.match_count).sum::<usize>() as u64)
         as usize;
 
-    let mut kept = groups.clone();
-    let budget_truncated = if let Some(cap) = budget_tokens {
-        loop {
-            let omitted_count = omitted_count(total_matches, &kept);
-            let candidate = compact_payload(default_response, &groups, &kept, omitted_count);
-            if estimate_json_tokens(&candidate) <= cap || kept.len() <= 1 {
-                break estimate_json_tokens(&candidate) > cap;
-            }
-            kept.pop();
-        }
+    let (kept, selection_truncated) = if let Some(cap) = budget_tokens {
+        select_groups_for_budget(default_response, &groups, total_matches, cap)
     } else {
-        false
+        (groups.clone(), false)
     };
 
     let omitted_count = omitted_count(total_matches, &kept);
     let mut payload = compact_payload(default_response, &groups, &kept, omitted_count);
     let returned_token_estimate = estimate_json_tokens(&payload);
+    let budget_truncated =
+        selection_truncated || budget_tokens.is_some_and(|cap| returned_token_estimate > cap);
     let accounting = OutputAccounting::new(
         returned_token_estimate,
         original_token_estimate,
@@ -100,6 +95,34 @@ pub fn compact_search_response(default_response: &Value, budget_tokens: Option<u
         );
     }
     payload
+}
+
+fn select_groups_for_budget(
+    original: &Value,
+    groups: &[SearchGroup],
+    total_matches: usize,
+    cap: usize,
+) -> (Vec<SearchGroup>, bool) {
+    let base_payload = compact_payload(original, groups, &[], total_matches);
+    let mut estimated_tokens = estimate_json_tokens(&base_payload);
+    let mut kept = Vec::new();
+
+    for group in groups {
+        let group_tokens = estimate_json_tokens(&group_json(group));
+        let target_tokens = estimate_json_tokens(&Value::String(group.path.clone()));
+        let next_tokens = estimated_tokens
+            .saturating_add(group_tokens)
+            .saturating_add(target_tokens)
+            .saturating_add(ARRAY_ITEM_OVERHEAD_TOKENS);
+        if next_tokens > cap && !kept.is_empty() {
+            break;
+        }
+        kept.push(group.clone());
+        estimated_tokens = next_tokens;
+    }
+
+    let truncated = kept.len() < groups.len() || estimated_tokens > cap;
+    (kept, truncated)
 }
 
 pub fn output_accounting(value: &Value) -> Option<OutputAccounting> {

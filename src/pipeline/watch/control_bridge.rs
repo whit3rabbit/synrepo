@@ -91,6 +91,9 @@ pub(super) fn spawn_control_listener(
                             Ok(WatchControlRequest::ReconcileNow { fast }) => {
                                 bridge_reconcile_request(&tx, fast)
                             }
+                            Ok(WatchControlRequest::SuppressPaths { paths, ttl_ms }) => {
+                                bridge_suppress_paths_request(&tx, paths, ttl_ms)
+                            }
                             Ok(WatchControlRequest::SyncNow { options }) => {
                                 bridge_sync_request(&tx, options, sync_timeout)
                             }
@@ -162,6 +165,32 @@ fn bridge_reconcile_request(tx: &mpsc::Sender<LoopMessage>, fast: bool) -> Watch
 
     recv_from_loop
         .recv_timeout(Duration::from_secs(30))
+        .unwrap_or_else(|_| WatchControlResponse::Error {
+            message: "watch loop did not answer the control request in time".to_string(),
+        })
+}
+
+fn bridge_suppress_paths_request(
+    tx: &mpsc::Sender<LoopMessage>,
+    paths: Vec<std::path::PathBuf>,
+    ttl_ms: u64,
+) -> WatchControlResponse {
+    let (respond_to, recv_from_loop) = mpsc::channel();
+    if tx
+        .send(LoopMessage::SuppressPaths {
+            respond_to,
+            paths,
+            ttl: Duration::from_millis(ttl_ms),
+        })
+        .is_err()
+    {
+        return WatchControlResponse::Error {
+            message: "watch loop is no longer accepting control messages".to_string(),
+        };
+    }
+
+    recv_from_loop
+        .recv_timeout(Duration::from_secs(5))
         .unwrap_or_else(|_| WatchControlResponse::Error {
             message: "watch loop did not answer the control request in time".to_string(),
         })

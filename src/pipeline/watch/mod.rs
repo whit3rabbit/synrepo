@@ -6,6 +6,7 @@
 
 mod control;
 mod control_bridge;
+mod events;
 mod filter;
 pub(crate) mod lease;
 mod pending;
@@ -13,11 +14,13 @@ mod post_compile;
 pub(crate) mod reconcile;
 mod service;
 mod status;
+mod suppression;
 mod sync;
 
 pub use control::{
     control_endpoint_reachable, request_watch_control, WatchControlRequest, WatchControlResponse,
 };
+pub use events::{SyncTrigger, WatchEvent};
 #[doc(hidden)]
 pub use lease::{hold_watch_flock_with_state, TestWatchFlockHolder};
 pub use lease::{
@@ -30,7 +33,7 @@ pub use reconcile::{
     persist_reconcile_state, reconcile_state_path, run_reconcile_pass, ReconcileOutcome,
     ReconcileState, ReconcileStateError,
 };
-pub use service::{run_watch_loop, run_watch_service, SyncTrigger, WatchConfig, WatchEvent};
+pub use service::{run_watch_loop, run_watch_service, WatchConfig};
 pub use status::{
     cleanup_stale_watch_artifacts, load_watch_state, watch_service_status, StateLoadError,
     WatchServiceStatus,

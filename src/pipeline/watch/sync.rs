@@ -18,9 +18,9 @@ use crate::{
 
 use super::{
     control::WatchControlResponse,
+    events::{SyncTrigger, WatchEvent},
     lease::WatchStateHandle,
     reconcile::ReconcileOutcome,
-    service::{SyncTrigger, WatchEvent},
 };
 
 /// Shared inputs for a sync pass run by the watch service.

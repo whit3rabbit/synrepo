@@ -67,9 +67,9 @@ impl ContextAccounting {
     }
 }
 
-/// Estimate tokens using synrepo's historical 4-bytes-per-token approximation.
+/// Estimate tokens using a conservative 3-bytes-per-token approximation.
 pub fn estimate_tokens_bytes(byte_len: usize) -> usize {
-    (byte_len / 4).max(1)
+    (byte_len / 3).max(1)
 }
 
 /// Estimate raw source tokens for a repo-relative path.
@@ -82,4 +82,15 @@ pub fn raw_file_token_estimate(repo_root: Option<&Path>, repo_relative_path: &st
     fs::metadata(repo_root.join(repo_relative_path))
         .map(|meta| estimate_tokens_bytes(meta.len() as usize))
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn byte_estimator_uses_conservative_ratio() {
+        assert_eq!(estimate_tokens_bytes(6), 2);
+        assert_eq!(estimate_tokens_bytes(1), 1);
+    }
 }

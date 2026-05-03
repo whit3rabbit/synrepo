@@ -1,4 +1,8 @@
-use std::{collections::BTreeMap, fs, path::PathBuf};
+use std::{
+    collections::BTreeMap,
+    fs,
+    path::{Path, PathBuf},
+};
 
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -6,6 +10,9 @@ use serde_json::json;
 
 use crate::{
     config::Config,
+    pipeline::watch::{
+        request_watch_control, watch_service_status, WatchControlRequest, WatchServiceStatus,
+    },
     pipeline::writer::{acquire_writer_lock, LockError},
 };
 
@@ -14,6 +21,8 @@ use super::{anchor_manager, PreparedAnchorState};
 use crate::surface::mcp::{helpers::render_result, SynrepoState};
 
 use super::prepare::{hash_bytes, normalize_rel_path};
+
+const EDIT_SUPPRESSION_TTL_MS: u64 = 15_000;
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ApplyAnchorEditsParams {
@@ -59,6 +68,7 @@ fn apply_anchor_edits(
             ..edit
         });
     }
+    let paths_to_suppress = groups.keys().cloned().collect::<Vec<_>>();
 
     let lock = match acquire_writer_lock(&synrepo_dir) {
         Ok(lock) => lock,
@@ -66,6 +76,8 @@ fn apply_anchor_edits(
             return Ok(writer_lock_conflict_json(err));
         }
     };
+
+    suppress_watch_events(state, &synrepo_dir, &paths_to_suppress);
 
     let mut file_results = Vec::new();
     let mut touched = Vec::new();
@@ -293,17 +305,43 @@ fn reject_overlaps(planned: &[PlannedEdit]) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn write_file_atomically(path: &std::path::Path, bytes: &[u8]) -> anyhow::Result<()> {
-    let tmp = path.with_extension(format!(
+fn write_file_atomically(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
+    let tmp = temp_path_for(path);
+    fs::write(&tmp, bytes)?;
+    fs::rename(&tmp, path)?;
+    Ok(())
+}
+
+fn temp_path_for(path: &Path) -> PathBuf {
+    path.with_extension(format!(
         "{}synrepo-edit-tmp",
         path.extension()
             .and_then(|ext| ext.to_str())
             .map(|ext| format!("{ext}."))
             .unwrap_or_default()
-    ));
-    fs::write(&tmp, bytes)?;
-    fs::rename(&tmp, path)?;
-    Ok(())
+    ))
+}
+
+fn suppress_watch_events(state: &SynrepoState, synrepo_dir: &Path, paths: &[String]) {
+    if !matches!(
+        watch_service_status(synrepo_dir),
+        WatchServiceStatus::Running(_)
+    ) {
+        return;
+    }
+    let mut watch_paths = Vec::with_capacity(paths.len() * 2);
+    for path in paths {
+        let abs_path = state.repo_root.join(path);
+        watch_paths.push(abs_path.clone());
+        watch_paths.push(temp_path_for(&abs_path));
+    }
+    let _ = request_watch_control(
+        synrepo_dir,
+        WatchControlRequest::SuppressPaths {
+            paths: watch_paths,
+            ttl_ms: EDIT_SUPPRESSION_TTL_MS,
+        },
+    );
 }
 
 fn writer_lock_conflict_json(err: LockError) -> serde_json::Value {

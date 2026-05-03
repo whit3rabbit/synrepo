@@ -13,94 +13,24 @@ use std::{
 
 use notify_debouncer_full::{new_debouncer, notify::RecursiveMode};
 
-use crate::{
-    config::Config,
-    pipeline::repair::{SyncOptions, SyncProgress, SyncSummary},
-};
+use crate::{config::Config, pipeline::repair::SyncOptions};
 
 pub(super) use super::filter::filter_repo_events;
 use super::{
     control::WatchControlResponse,
     control_bridge::spawn_control_listener,
+    events::{SyncTrigger, WatchEvent},
     filter::{collect_repo_paths, ignored_generated_dirs},
     lease::{acquire_watch_daemon_lease, WatchServiceMode},
     pending::PendingWatchChanges,
     reconcile::{
         persist_reconcile_state, run_reconcile_pass, run_reconcile_pass_with_touched_paths,
-        ReconcileOutcome,
     },
+    suppression::SuppressedPaths,
     sync::{
         emit_event, maybe_run_post_reconcile_auto_sync, run_sync_under_watch_lock, WatchSyncContext,
     },
 };
-
-/// Why a sync pass is running inside the watch service.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SyncTrigger {
-    /// CLI sent `SyncNow` over the control socket, or the TUI pressed `S`.
-    Manual,
-    /// The reconcile loop opted into auto-sync for cheap surfaces.
-    AutoPostReconcile,
-}
-
-/// Event emitted by the watch service for each reconcile attempt and error.
-///
-/// Used by the live-mode dashboard to stream activity into the log pane.
-/// The wire format is intentionally minimal: keep this structure close to the
-/// poll dashboard's `LogEntry` shape so mapping stays trivial.
-#[derive(Clone, Debug, serde::Serialize)]
-#[serde(tag = "event", rename_all = "snake_case")]
-pub enum WatchEvent {
-    /// Emitted immediately before `run_reconcile_pass` runs. `triggering_events`
-    /// is 0 for the startup pass and for operator-requested passes.
-    ReconcileStarted {
-        /// RFC 3339 UTC timestamp when the pass started.
-        at: String,
-        /// Number of debounced filesystem events that triggered this pass.
-        triggering_events: usize,
-    },
-    /// Emitted after a reconcile pass completes with its outcome.
-    ReconcileFinished {
-        /// RFC 3339 UTC timestamp when the pass finished.
-        at: String,
-        /// Final outcome from `run_reconcile_pass`.
-        outcome: ReconcileOutcome,
-        /// Number of debounced filesystem events that triggered this pass.
-        triggering_events: usize,
-    },
-    /// Emitted before a repair sync pass runs inside the watch service.
-    SyncStarted {
-        /// RFC 3339 UTC timestamp when the pass started.
-        at: String,
-        /// Whether this is an operator-requested or auto-triggered sync.
-        trigger: SyncTrigger,
-    },
-    /// Emitted for each surface boundary and commentary sub-event during sync.
-    SyncProgress {
-        /// RFC 3339 UTC timestamp when the progress event was emitted.
-        at: String,
-        /// The structured progress payload.
-        progress: SyncProgress,
-    },
-    /// Emitted when a sync pass finishes, with the resulting summary.
-    SyncFinished {
-        /// RFC 3339 UTC timestamp when the pass finished.
-        at: String,
-        /// Why the sync ran.
-        trigger: SyncTrigger,
-        /// Completed summary (empty vectors if no findings).
-        summary: SyncSummary,
-    },
-    /// Emitted for watcher-level errors (debouncer failures). Reconcile
-    /// failures surface as `ReconcileFinished { outcome: Failed(_) }`.
-    Error {
-        /// RFC 3339 UTC timestamp when the error was observed.
-        at: String,
-        /// Human-readable error description.
-        message: String,
-    },
-}
 
 /// Configuration for the watch and reconcile loop.
 #[derive(Clone, Debug)]
@@ -130,6 +60,11 @@ pub(super) enum LoopMessage {
     SyncNow {
         respond_to: mpsc::Sender<WatchControlResponse>,
         options: SyncOptions,
+    },
+    SuppressPaths {
+        respond_to: mpsc::Sender<WatchControlResponse>,
+        paths: Vec<std::path::PathBuf>,
+        ttl: Duration,
     },
 }
 
@@ -178,6 +113,7 @@ pub fn run_watch_service(
     });
 
     let pending_watch = Arc::new(Mutex::new(PendingWatchChanges::default()));
+    let suppressed_paths = Arc::new(Mutex::new(SuppressedPaths::default()));
     let watch_roots = crate::substrate::discover_roots(repo_root, config);
     let watch_root_paths: Vec<_> = watch_roots
         .iter()
@@ -190,6 +126,7 @@ pub fn run_watch_service(
     let callback_state_handle = state_handle.clone();
     let callback_events = events.clone();
     let pending_watch_for_callback = pending_watch.clone();
+    let suppressed_paths_for_callback = suppressed_paths.clone();
     let max_events_per_cycle = watch_config.max_events_per_cycle;
     let mut debouncer =
         new_debouncer(
@@ -207,13 +144,19 @@ pub fn run_watch_service(
                     if filtered.is_empty() {
                         return;
                     }
-                    let touched_paths = collect_repo_paths(
+                    let mut touched_paths = collect_repo_paths(
                         &filtered,
                         &callback_repo_roots,
                         &callback_repo_root,
                         &callback_synrepo_dir,
                         &callback_ignored_dirs,
                     );
+                    if let Ok(mut suppressed) = suppressed_paths_for_callback.lock() {
+                        suppressed.retain_unsuppressed(&mut touched_paths);
+                    }
+                    if touched_paths.is_empty() {
+                        return;
+                    }
                     callback_state_handle.note_event();
                     if let Ok(mut pending) = pending_watch_for_callback.lock() {
                         pending.record(filtered.len(), touched_paths, max_events_per_cycle);
@@ -325,6 +268,18 @@ pub fn run_watch_service(
             }
             Ok(LoopMessage::Stop) => {
                 break;
+            }
+            Ok(LoopMessage::SuppressPaths {
+                respond_to,
+                paths,
+                ttl,
+            }) => {
+                if let Ok(mut suppressed) = suppressed_paths.lock() {
+                    suppressed.suppress(paths, ttl);
+                }
+                let _ = respond_to.send(WatchControlResponse::Ack {
+                    message: "paths suppressed".to_string(),
+                });
             }
             Ok(LoopMessage::ReconcileNow { respond_to, fast }) => {
                 emit_event(&events, |now| WatchEvent::ReconcileStarted {

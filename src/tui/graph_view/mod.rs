@@ -143,11 +143,9 @@ impl GraphViewState {
                 self.filter.pop();
                 self.clamp_selection();
             }
-            KeyCode::Char(ch) => {
-                if !ch.is_control() {
-                    self.filter.push(ch);
-                    self.clamp_selection();
-                }
+            KeyCode::Char(ch) if !ch.is_control() => {
+                self.filter.push(ch);
+                self.clamp_selection();
             }
             _ => {}
         }

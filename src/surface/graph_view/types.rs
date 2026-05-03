@@ -3,21 +3,16 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 /// Direction used for graph-neighborhood traversal.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GraphViewDirection {
     /// Traverse inbound and outbound edges.
+    #[default]
     Both,
     /// Traverse inbound edges only.
     Inbound,
     /// Traverse outbound edges only.
     Outbound,
-}
-
-impl Default for GraphViewDirection {
-    fn default() -> Self {
-        Self::Both
-    }
 }
 
 impl GraphViewDirection {

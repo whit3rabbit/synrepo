@@ -27,6 +27,13 @@ pub enum WatchControlRequest {
         /// Skip git-intensive stages.
         fast: bool,
     },
+    /// Suppress watcher-triggered reconcile for a short list of paths.
+    SuppressPaths {
+        /// Absolute source or temporary paths to ignore while the TTL is live.
+        paths: Vec<PathBuf>,
+        /// Suppression lifetime in milliseconds.
+        ttl_ms: u64,
+    },
     /// Run one repair sync pass immediately, under the watch's writer lock.
     SyncNow {
         /// Sync-level options (cross-link generation toggles). Surface-level

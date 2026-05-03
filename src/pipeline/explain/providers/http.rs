@@ -3,7 +3,7 @@
 //! Provides common utilities for building blocking HTTP clients, estimating
 //! token counts, and making JSON requests.
 
-use std::time::Duration;
+use std::{sync::OnceLock, time::Duration};
 
 use reqwest::StatusCode;
 use serde::de::DeserializeOwned;
@@ -15,11 +15,16 @@ use crate::pipeline::explain::telemetry::{ExplainFailure, TokenUsage};
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Conservative chars-per-token ratio for budget estimation.
-pub const CHARS_PER_TOKEN: u32 = 4;
+pub const CHARS_PER_TOKEN: u32 = 3;
 
 /// Build a blocking HTTP client with the default timeout.
 /// Falls back to a default client if builder configuration fails.
 pub fn build_client() -> reqwest::blocking::Client {
+    static CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
+    CLIENT.get_or_init(build_pooled_client).clone()
+}
+
+fn build_pooled_client() -> reqwest::blocking::Client {
     reqwest::blocking::Client::builder()
         .timeout(DEFAULT_TIMEOUT)
         .build()
@@ -273,6 +278,12 @@ mod tests {
         assert_eq!(usage.input_tokens, 400);
         assert_eq!(usage.output_tokens, estimate_output_tokens("tiny"));
         assert_eq!(usage.source, UsageSource::Estimated);
+    }
+
+    #[test]
+    fn estimate_tokens_uses_conservative_ratio() {
+        assert_eq!(estimate_tokens("abcdef"), 2);
+        assert_eq!(CHARS_PER_TOKEN, 3);
     }
 
     #[test]

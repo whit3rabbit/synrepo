@@ -100,6 +100,12 @@ fn compact_search_budget_reports_omissions() {
     assert!(value["output_accounting"]["omitted_count"]
         .as_u64()
         .is_some_and(|count| count > 0));
+    assert!(value["file_groups"]
+        .as_array()
+        .is_some_and(|groups| groups.len() == 1));
+    assert!(value["suggested_card_targets"]
+        .as_array()
+        .is_some_and(|targets| targets.len() == 1));
 }
 
 #[test]

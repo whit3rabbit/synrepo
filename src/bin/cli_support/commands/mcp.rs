@@ -89,16 +89,28 @@ impl ServerHandler for SynrepoServer {
         _context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<ReadResourceResult, McpError>> + Send + '_ {
         let uri = request.uri;
+        let server = self.clone();
+        async move {
+            match tokio::task::spawn_blocking(move || server.read_resource_blocking(uri)).await {
+                Ok(result) => result,
+                Err(error) => Err(McpError::internal_error(
+                    format!("MCP resource task failed: {error}"),
+                    None,
+                )),
+            }
+        }
+    }
+}
+
+impl SynrepoServer {
+    fn read_resource_blocking(&self, uri: String) -> Result<ReadResourceResult, McpError> {
         let state = match self.resolve_state(None) {
             Ok(state) => state,
             Err(error) => {
-                return std::future::ready(Err(McpError::resource_not_found(
-                    error.to_string(),
-                    None,
-                )));
+                return Err(McpError::resource_not_found(error.to_string(), None));
             }
         };
-        let result = match context_pack::read_resource(&state, &uri) {
+        match context_pack::read_resource(&state, &uri) {
             Ok(text) => {
                 self.record_resource_for(&state);
                 Ok(ReadResourceResult::new(vec![ResourceContents::text(
@@ -107,7 +119,6 @@ impl ServerHandler for SynrepoServer {
                 .with_mime_type("application/json")]))
             }
             Err(message) => Err(McpError::resource_not_found(message, None)),
-        };
-        std::future::ready(result)
+        }
     }
 }
