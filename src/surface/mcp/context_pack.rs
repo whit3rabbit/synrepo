@@ -8,6 +8,7 @@ use crate::core::ids::{FileNodeId, NodeId};
 use crate::surface::card::accounting::{estimate_tokens_bytes, ContextAccounting};
 use crate::surface::card::{neighborhood, Budget, CardCompiler};
 
+use super::compact::OutputMode;
 use super::helpers::{parse_budget, render_result};
 use super::SynrepoState;
 
@@ -25,6 +26,8 @@ pub struct ContextPackParams {
     #[serde(default)]
     pub budget_tokens: Option<usize>,
     #[serde(default)]
+    pub output_mode: OutputMode,
+    #[serde(default)]
     pub include_tests: bool,
     #[serde(default)]
     pub include_notes: bool,
@@ -38,6 +41,14 @@ pub struct ContextPackTarget {
     pub target: String,
     #[serde(default)]
     pub budget: Option<String>,
+}
+
+#[derive(Clone, Copy)]
+struct ArtifactOptions {
+    include_notes: bool,
+    limit: usize,
+    output_mode: OutputMode,
+    budget_tokens: Option<usize>,
 }
 
 pub fn default_limit() -> usize {
@@ -61,6 +72,7 @@ pub fn handle_file_outline_resource(state: &SynrepoState, path: String, budget: 
             }],
             budget: "tiny".to_string(),
             budget_tokens: None,
+            output_mode: OutputMode::Default,
             include_tests: false,
             include_notes: false,
             limit: 1,
@@ -96,13 +108,18 @@ pub fn build_context_pack(
             .as_deref()
             .map(parse_budget)
             .unwrap_or(default_budget);
+        let options = ArtifactOptions {
+            include_notes: params.include_notes,
+            limit: params.limit,
+            output_mode: params.output_mode,
+            budget_tokens: params.budget_tokens,
+        };
         artifacts.push(build_artifact(
             state,
             &compiler,
             &target,
             target_budget,
-            params.include_notes,
-            params.limit,
+            options,
         ));
         if params.include_tests {
             if let Some(extra) = maybe_test_surface_for(&compiler, &target, default_budget) {
@@ -141,12 +158,23 @@ fn build_artifact(
     compiler: &crate::surface::card::compiler::GraphCardCompiler,
     target: &ContextPackTarget,
     budget: Budget,
-    include_notes: bool,
-    limit: usize,
+    options: ArtifactOptions,
 ) -> Value {
     let result = match target.kind.as_str() {
-        "file" => file_outline_artifact(state, compiler, &target.target, budget, include_notes),
-        "symbol" => symbol_artifact(state, compiler, &target.target, budget, include_notes),
+        "file" => file_outline_artifact(
+            state,
+            compiler,
+            &target.target,
+            budget,
+            options.include_notes,
+        ),
+        "symbol" => symbol_artifact(
+            state,
+            compiler,
+            &target.target,
+            budget,
+            options.include_notes,
+        ),
         "directory" => compiler
             .module_card(&target.target, budget)
             .and_then(|card| to_value(card).map(|value| artifact("module_card", target, value))),
@@ -158,7 +186,13 @@ fn build_artifact(
             .test_surface_card(&target.target, budget)
             .and_then(|card| to_value(card).map(|value| artifact("test_surface", target, value))),
         "call_path" => call_path_artifact(compiler, target, budget),
-        "search" => search_artifact(state, target, limit),
+        "search" => search::search_artifact(
+            state,
+            target,
+            options.limit,
+            options.output_mode,
+            options.budget_tokens,
+        ),
         other => Err(crate::Error::Other(anyhow::anyhow!(
             "unsupported context-pack target kind: {other}"
         ))),
@@ -222,28 +256,6 @@ fn call_path_artifact(
     };
     let card = compiler.call_path_card(sym_id, budget)?;
     Ok(artifact("call_path", target, to_value(card)?))
-}
-
-fn search_artifact(
-    state: &SynrepoState,
-    target: &ContextPackTarget,
-    limit: usize,
-) -> crate::Result<Value> {
-    let matches = crate::substrate::search(&state.config, &state.repo_root, &target.target)?;
-    let results: Vec<Value> = matches
-        .into_iter()
-        .take(limit)
-        .map(|m| {
-            json!({
-                "path": m.path.to_string_lossy(),
-                "line": m.line_number,
-                "content": String::from_utf8_lossy(&m.line_content).trim_end().to_string(),
-            })
-        })
-        .collect();
-    let mut content = json!({ "query": target.target, "results": results });
-    attach_estimated_accounting(&mut content, Budget::Tiny);
-    Ok(artifact("search", target, content))
 }
 
 fn resolve_file_node(
@@ -354,6 +366,7 @@ fn to_value<T: serde::Serialize>(value: T) -> crate::Result<Value> {
 mod accounting;
 mod outline;
 mod resource;
+mod search;
 #[cfg(test)]
 mod tests;
 use outline::file_outline_content;

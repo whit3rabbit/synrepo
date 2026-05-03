@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use super::{default_limit, handle_context_pack, handle_file_outline_resource, ContextPackParams};
+use crate::surface::mcp::compact::OutputMode;
 use crate::surface::mcp::SynrepoState;
 
 pub fn read_resource(state: &SynrepoState, uri: &str) -> Result<String, String> {
@@ -44,6 +45,16 @@ pub fn read_resource(state: &SynrepoState, uri: &str) -> Result<String, String> 
                 budget_tokens: params
                     .get("budget_tokens")
                     .and_then(|value| value.parse::<usize>().ok()),
+                output_mode: params
+                    .get("output_mode")
+                    .map(|value| {
+                        if value == "compact" {
+                            OutputMode::Compact
+                        } else {
+                            OutputMode::Default
+                        }
+                    })
+                    .unwrap_or_default(),
                 include_tests: false,
                 include_notes: false,
                 limit: params

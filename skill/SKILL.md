@@ -30,7 +30,7 @@ Do not use synrepo for:
 The required sequence is orient, find, impact or risks, edit, tests, changed.
 
 1. Start with `synrepo_orient` before reading the repo cold.
-2. Use `synrepo_find` or `synrepo_search` to find candidate files and symbols.
+2. Use `synrepo_find` or `synrepo_search` to find candidate files and symbols. For broad lexical searches, prefer `output_mode: "compact"` so results are grouped and token-accounted before opening files.
 3. Use `tiny` cards to route and `normal` cards to understand. Use `synrepo_minimum_context` as the bounded neighborhood step when a focal target is known but the surrounding risk is unclear.
 4. Use `synrepo_impact` (or its shorthand `synrepo_risks`) before editing.
 5. Use `synrepo_tests` before claiming done.
@@ -73,9 +73,9 @@ Rule of thumb: `tiny` to find, `normal` to understand, `deep` to write.
 - `synrepo_risks(target, budget?, budget_tokens?)` — shorthand for `synrepo_impact`
 - `synrepo_tests(scope, budget?, budget_tokens?)` — workflow alias for test discovery
 - `synrepo_changed()` — workflow alias for changed-context review
-- `synrepo_context_pack(goal?, targets?, budget?, budget_tokens?, include_tests?, include_notes?, limit?)` — batch read-only context artifacts into one token-accounted response
+- `synrepo_context_pack(goal?, targets?, budget?, budget_tokens?, output_mode?, include_tests?, include_notes?, limit?)` — batch read-only context artifacts into one token-accounted response; compact mode applies to search artifacts
 - `synrepo_card(target, budget?)` — card for a symbol or file
-- `synrepo_search(query, limit?)` — lexical search
+- `synrepo_search(query, limit?, output_mode?, budget_tokens?)` — lexical search; `output_mode: "compact"` groups matches by file and returns `output_accounting`
 - `synrepo_docs_search(query, limit?)` — advisory advisory commentary search
 - `synrepo_where_to_edit(task, limit?)` — ranked edit candidates
 - `synrepo_change_impact(target)` — first-pass dependents
@@ -97,6 +97,7 @@ Edit-enabled tools, present only under `synrepo mcp --allow-edits`:
 - Use `normal` cards to understand a neighborhood.
 - Use `deep` cards only before writing code, or when exact source or body details matter.
 - Use `synrepo_context_pack` when several known files, symbols, directories, tests, or call paths are needed together; it preserves read-only behavior and returns a shared `context_state`.
+- Cards are synrepo's native compact context format. Use compact search to route, then cards or context packs for bounded detail, then full source only when the bounded context is insufficient.
 
 Default to `tiny`.
 

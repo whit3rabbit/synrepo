@@ -138,6 +138,13 @@ pub(crate) fn stats_context(repo_root: &Path, format: StatFormat) -> anyhow::Res
                 "    cold-file tokens avoided: {}",
                 metrics.estimated_tokens_saved_total
             );
+            println!("  compact output:");
+            println!("    outputs served: {}", metrics.compact_outputs_total);
+            println!(
+                "    compact tokens avoided: {}",
+                metrics.compact_estimated_tokens_saved_total
+            );
+            println!("    omitted items: {}", metrics.compact_omitted_items_total);
         }
     }
     Ok(())

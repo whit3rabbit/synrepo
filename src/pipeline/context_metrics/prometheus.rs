@@ -78,6 +78,42 @@ impl ContextMetrics {
             "Observed: MCP resource reads that reached a prepared repository.",
             self.mcp_resource_reads_total,
         );
+        write_counter(
+            &mut out,
+            "synrepo_compact_outputs_total",
+            "Observed: compact MCP read outputs served.",
+            self.compact_outputs_total,
+        );
+        write_counter(
+            &mut out,
+            "synrepo_compact_returned_tokens_total",
+            "Estimated: sum of estimated tokens in compact outputs.",
+            self.compact_returned_tokens_total,
+        );
+        write_counter(
+            &mut out,
+            "synrepo_compact_original_tokens_total",
+            "Estimated: sum of estimated tokens in uncompact output shapes.",
+            self.compact_original_tokens_total,
+        );
+        write_counter(
+            &mut out,
+            "synrepo_compact_estimated_tokens_saved_total",
+            "Estimated: token savings from compact output comparisons.",
+            self.compact_estimated_tokens_saved_total,
+        );
+        write_counter(
+            &mut out,
+            "synrepo_compact_omitted_items_total",
+            "Observed: search rows or compactable items omitted from compact outputs.",
+            self.compact_omitted_items_total,
+        );
+        write_counter(
+            &mut out,
+            "synrepo_compact_truncation_applied_total",
+            "Observed: compact outputs that omitted content.",
+            self.compact_truncation_applied_total,
+        );
 
         writeln!(
             out,
@@ -189,6 +225,12 @@ mod tests {
         metrics.changed_files_total = 4;
         metrics.mcp_requests_total = 4;
         metrics.mcp_resource_reads_total = 1;
+        metrics.compact_outputs_total = 2;
+        metrics.compact_returned_tokens_total = 80;
+        metrics.compact_original_tokens_total = 400;
+        metrics.compact_estimated_tokens_saved_total = 320;
+        metrics.compact_omitted_items_total = 5;
+        metrics.compact_truncation_applied_total = 1;
         metrics.budget_tier_usage.insert("tiny".to_string(), 2);
         metrics.budget_tier_usage.insert("normal".to_string(), 1);
         metrics
@@ -234,6 +276,24 @@ synrepo_test_surface_hits_total 2\n\
 	# HELP synrepo_mcp_resource_reads_total Observed: MCP resource reads that reached a prepared repository.\n\
 	# TYPE synrepo_mcp_resource_reads_total counter\n\
 	synrepo_mcp_resource_reads_total 1\n\
+	# HELP synrepo_compact_outputs_total Observed: compact MCP read outputs served.\n\
+	# TYPE synrepo_compact_outputs_total counter\n\
+	synrepo_compact_outputs_total 2\n\
+	# HELP synrepo_compact_returned_tokens_total Estimated: sum of estimated tokens in compact outputs.\n\
+	# TYPE synrepo_compact_returned_tokens_total counter\n\
+	synrepo_compact_returned_tokens_total 80\n\
+	# HELP synrepo_compact_original_tokens_total Estimated: sum of estimated tokens in uncompact output shapes.\n\
+	# TYPE synrepo_compact_original_tokens_total counter\n\
+	synrepo_compact_original_tokens_total 400\n\
+	# HELP synrepo_compact_estimated_tokens_saved_total Estimated: token savings from compact output comparisons.\n\
+	# TYPE synrepo_compact_estimated_tokens_saved_total counter\n\
+	synrepo_compact_estimated_tokens_saved_total 320\n\
+	# HELP synrepo_compact_omitted_items_total Observed: search rows or compactable items omitted from compact outputs.\n\
+	# TYPE synrepo_compact_omitted_items_total counter\n\
+	synrepo_compact_omitted_items_total 5\n\
+	# HELP synrepo_compact_truncation_applied_total Observed: compact outputs that omitted content.\n\
+	# TYPE synrepo_compact_truncation_applied_total counter\n\
+	synrepo_compact_truncation_applied_total 1\n\
 	# HELP synrepo_budget_tier_usage Observed: count of card responses by budget tier.\n\
 	# TYPE synrepo_budget_tier_usage counter\n\
 	synrepo_budget_tier_usage{tier=\"normal\"} 1\n\

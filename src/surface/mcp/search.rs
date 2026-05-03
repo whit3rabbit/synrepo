@@ -13,6 +13,7 @@ use crate::{
     surface::card::{Budget, CardCompiler},
 };
 
+use super::compact::{self, OutputMode};
 use super::helpers::{render_result, with_graph_snapshot};
 use super::SynrepoState;
 
@@ -37,6 +38,12 @@ pub struct SearchParams {
     /// Whether matching should ignore ASCII case.
     #[serde(default, alias = "ignore_case")]
     pub case_insensitive: bool,
+    /// Response shape. Defaults to the existing raw result list.
+    #[serde(default)]
+    pub output_mode: OutputMode,
+    /// Optional numeric token cap for compact output.
+    #[serde(default)]
+    pub budget_tokens: Option<usize>,
 }
 
 pub fn default_limit() -> u32 {
@@ -98,6 +105,8 @@ pub struct RepoRootParams {
 
 pub fn handle_search(state: &SynrepoState, params: SearchParams) -> String {
     let result: anyhow::Result<serde_json::Value> = (|| {
+        let output_mode = params.output_mode;
+        let budget_tokens = params.budget_tokens;
         let options = params.search_options();
         let matches = crate::substrate::search_with_options(
             &state.config,
@@ -117,16 +126,26 @@ pub fn handle_search(state: &SynrepoState, params: SearchParams) -> String {
             })
             .collect();
         let result_count = items.len();
+        let filters = params.filters_json();
 
-        Ok(json!({
+        let response = json!({
             "query": params.query,
             "results": items,
             "engine": "syntext",
             "source_store": "substrate_index",
             "limit": params.limit,
-            "filters": params.filters_json(),
+            "filters": filters,
             "result_count": result_count,
-        }))
+        });
+
+        Ok(match output_mode {
+            OutputMode::Default => response,
+            OutputMode::Compact => {
+                let compacted = compact::compact_search_response(&response, budget_tokens);
+                compact::record_output_accounting(state, &compacted);
+                compacted
+            }
+        })
     })();
     render_result(result)
 }
@@ -353,3 +372,6 @@ fn git_changed_files(repo_root: &std::path::Path) -> anyhow::Result<Vec<String>>
     files.dedup();
     Ok(files)
 }
+
+#[cfg(test)]
+mod tests;

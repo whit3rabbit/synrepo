@@ -56,6 +56,19 @@ fn record_mcp_resource_read_counts_as_mcp_request() {
 }
 
 #[test]
+fn record_compact_output_updates_content_free_totals() {
+    let mut metrics = ContextMetrics::default();
+    metrics.record_compact_output(50, 200, 150, 3, true);
+
+    assert_eq!(metrics.compact_outputs_total, 1);
+    assert_eq!(metrics.compact_returned_tokens_total, 50);
+    assert_eq!(metrics.compact_original_tokens_total, 200);
+    assert_eq!(metrics.compact_estimated_tokens_saved_total, 150);
+    assert_eq!(metrics.compact_omitted_items_total, 3);
+    assert_eq!(metrics.compact_truncation_applied_total, 1);
+}
+
+#[test]
 fn mcp_metrics_default_when_loading_older_json() {
     let old_shape = serde_json::json!({
         "cards_served_total": 1,
@@ -77,6 +90,8 @@ fn mcp_metrics_default_when_loading_older_json() {
     assert_eq!(metrics.mcp_requests_total, 0);
     assert!(metrics.mcp_tool_calls_total.is_empty());
     assert!(metrics.saved_context_writes_total.is_empty());
+    assert_eq!(metrics.compact_outputs_total, 0);
+    assert_eq!(metrics.compact_estimated_tokens_saved_total, 0);
 }
 
 #[test]

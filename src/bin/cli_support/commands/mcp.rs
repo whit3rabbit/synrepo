@@ -40,6 +40,7 @@ impl ServerHandler for SynrepoServer {
              synrepo_explain for bounded details, synrepo_impact (or its shorthand synrepo_risks) before edits, \
              synrepo_tests before claiming done, and synrepo_changed after edits. \
              Use synrepo_minimum_context as the bounded neighborhood step once a focal target is known. \
+             For broad lexical searches, pass output_mode=\"compact\" to synrepo_search or synrepo_context_pack search artifacts to get grouped, token-accounted routing output. \
              Use synrepo_context_pack when batching several read-only context artifacts is cheaper than serial tool calls. \
              Global MCP configs serve registered projects by absolute path: pass the current workspace as repo_root; \
              if a repository is not managed, ask the user to run synrepo project add <path>. \

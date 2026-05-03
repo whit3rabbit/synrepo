@@ -234,6 +234,16 @@ pub(super) fn write_status_text(
                 .unwrap();
             }
         }
+        if metrics.compact_outputs_total > 0 {
+            writeln!(
+                out,
+                "  compact:    {} output(s), {} est. tokens avoided, {} omitted item(s)",
+                metrics.compact_outputs_total,
+                metrics.compact_estimated_tokens_saved_total,
+                metrics.compact_omitted_items_total
+            )
+            .unwrap();
+        }
     }
 
     writeln!(

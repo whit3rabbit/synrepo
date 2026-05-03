@@ -133,6 +133,26 @@ pub fn record_mcp_resource_read_best_effort(synrepo_dir: &Path) {
     record_delta_best_effort(synrepo_dir, ContextMetrics::record_mcp_resource_read);
 }
 
+/// Best-effort recording of a compact MCP read output.
+pub fn record_compact_output_best_effort(
+    synrepo_dir: &Path,
+    returned_token_estimate: usize,
+    original_token_estimate: usize,
+    estimated_tokens_saved: usize,
+    omitted_count: usize,
+    truncation_applied: bool,
+) {
+    record_delta_best_effort(synrepo_dir, |metrics| {
+        metrics.record_compact_output(
+            returned_token_estimate,
+            original_token_estimate,
+            estimated_tokens_saved,
+            omitted_count,
+            truncation_applied,
+        );
+    });
+}
+
 fn record_delta_best_effort<F>(synrepo_dir: &Path, record: F)
 where
     F: FnOnce(&mut ContextMetrics),

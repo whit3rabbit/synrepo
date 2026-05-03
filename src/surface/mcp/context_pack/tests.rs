@@ -4,6 +4,7 @@ use tempfile::tempdir;
 
 use crate::bootstrap::bootstrap;
 use crate::config::Config;
+use crate::surface::mcp::compact::OutputMode;
 use crate::surface::mcp::SynrepoState;
 
 use super::{build_context_pack, ContextPackParams, ContextPackTarget};
@@ -43,6 +44,7 @@ fn context_pack_returns_file_outline_and_state() {
             }],
             budget: "tiny".to_string(),
             budget_tokens: None,
+            output_mode: OutputMode::Default,
             include_tests: false,
             include_notes: false,
             limit: 8,
@@ -80,6 +82,7 @@ fn context_pack_preserves_order_and_omits_over_budget() {
             ],
             budget: "tiny".to_string(),
             budget_tokens: Some(1),
+            output_mode: OutputMode::Default,
             include_tests: false,
             include_notes: false,
             limit: 8,
@@ -110,6 +113,7 @@ fn context_pack_metrics_record_once_per_retained_artifact() {
             }],
             budget: "tiny".to_string(),
             budget_tokens: None,
+            output_mode: OutputMode::Default,
             include_tests: false,
             include_notes: false,
             limit: 8,
@@ -118,5 +122,45 @@ fn context_pack_metrics_record_once_per_retained_artifact() {
     .unwrap();
 
     let metrics = crate::pipeline::context_metrics::load(&synrepo_dir).unwrap();
+    assert_eq!(metrics.cards_served_total, 1);
+}
+
+#[test]
+fn compact_context_pack_compacts_search_artifacts() {
+    let (_dir, state) = make_state();
+    let synrepo_dir = Config::synrepo_dir(&state.repo_root);
+    let _ = fs::remove_file(synrepo_dir.join("state").join("context-metrics.json"));
+
+    let value = build_context_pack(
+        &state,
+        ContextPackParams {
+            repo_root: None,
+            goal: None,
+            targets: vec![ContextPackTarget {
+                kind: "search".to_string(),
+                target: "alpha".to_string(),
+                budget: None,
+            }],
+            budget: "tiny".to_string(),
+            budget_tokens: None,
+            output_mode: OutputMode::Compact,
+            include_tests: false,
+            include_notes: false,
+            limit: 8,
+        },
+    )
+    .unwrap();
+
+    let artifact = &value["artifacts"][0];
+    assert_eq!(artifact["artifact_type"], "search");
+    assert_eq!(artifact["content"]["output_mode"], "compact");
+    assert!(artifact["content"]["file_groups"]
+        .as_array()
+        .is_some_and(|groups| !groups.is_empty()));
+    assert!(artifact["content"]["output_accounting"].is_object());
+    assert!(artifact["context_accounting"].is_object());
+
+    let metrics = crate::pipeline::context_metrics::load(&synrepo_dir).unwrap();
+    assert_eq!(metrics.compact_outputs_total, 1);
     assert_eq!(metrics.cards_served_total, 1);
 }

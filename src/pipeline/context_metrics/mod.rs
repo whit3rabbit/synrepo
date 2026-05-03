@@ -17,8 +17,9 @@ mod persistence;
 mod prometheus;
 pub use persistence::{
     load, load_optional, record_card_best_effort, record_cards_best_effort,
-    record_changed_files_best_effort, record_mcp_resource_read_best_effort,
-    record_mcp_tool_result_best_effort, record_workflow_call_best_effort, save,
+    record_changed_files_best_effort, record_compact_output_best_effort,
+    record_mcp_resource_read_best_effort, record_mcp_tool_result_best_effort,
+    record_workflow_call_best_effort, save,
 };
 
 /// Aggregated context-serving metrics stored under `.synrepo/state/`.
@@ -81,6 +82,24 @@ pub struct ContextMetrics {
     /// note text or evidence content.
     #[serde(default)]
     pub saved_context_writes_total: BTreeMap<String, u64>,
+    /// **Observed**: number of compact MCP read outputs served.
+    #[serde(default)]
+    pub compact_outputs_total: u64,
+    /// **Estimated**: sum of estimated tokens in compact outputs.
+    #[serde(default)]
+    pub compact_returned_tokens_total: u64,
+    /// **Estimated**: sum of estimated tokens in the uncompact output shape.
+    #[serde(default)]
+    pub compact_original_tokens_total: u64,
+    /// **Estimated**: token savings from compact output comparisons.
+    #[serde(default)]
+    pub compact_estimated_tokens_saved_total: u64,
+    /// **Observed**: total omitted search rows or compactable items.
+    #[serde(default)]
+    pub compact_omitted_items_total: u64,
+    /// **Observed**: compact outputs that omitted content.
+    #[serde(default)]
+    pub compact_truncation_applied_total: u64,
 }
 
 impl ContextMetrics {
@@ -183,6 +202,25 @@ impl ContextMetrics {
             .or_default() += 1;
     }
 
+    /// Record a compact MCP read output without storing query or result text.
+    pub fn record_compact_output(
+        &mut self,
+        returned_token_estimate: usize,
+        original_token_estimate: usize,
+        estimated_tokens_saved: usize,
+        omitted_count: usize,
+        truncation_applied: bool,
+    ) {
+        self.compact_outputs_total += 1;
+        self.compact_returned_tokens_total += returned_token_estimate as u64;
+        self.compact_original_tokens_total += original_token_estimate as u64;
+        self.compact_estimated_tokens_saved_total += estimated_tokens_saved as u64;
+        self.compact_omitted_items_total += omitted_count as u64;
+        if truncation_applied {
+            self.compact_truncation_applied_total += 1;
+        }
+    }
+
     pub(super) fn merge_from(&mut self, delta: &Self) {
         self.cards_served_total += delta.cards_served_total;
         self.card_tokens_total += delta.card_tokens_total;
@@ -207,6 +245,12 @@ impl ContextMetrics {
             &mut self.saved_context_writes_total,
             &delta.saved_context_writes_total,
         );
+        self.compact_outputs_total += delta.compact_outputs_total;
+        self.compact_returned_tokens_total += delta.compact_returned_tokens_total;
+        self.compact_original_tokens_total += delta.compact_original_tokens_total;
+        self.compact_estimated_tokens_saved_total += delta.compact_estimated_tokens_saved_total;
+        self.compact_omitted_items_total += delta.compact_omitted_items_total;
+        self.compact_truncation_applied_total += delta.compact_truncation_applied_total;
     }
 
     pub(super) fn is_empty(&self) -> bool {
@@ -227,6 +271,12 @@ impl ContextMetrics {
             && self.mcp_tool_errors_total.is_empty()
             && self.mcp_resource_reads_total == 0
             && self.saved_context_writes_total.is_empty()
+            && self.compact_outputs_total == 0
+            && self.compact_returned_tokens_total == 0
+            && self.compact_original_tokens_total == 0
+            && self.compact_estimated_tokens_saved_total == 0
+            && self.compact_omitted_items_total == 0
+            && self.compact_truncation_applied_total == 0
     }
 }
 

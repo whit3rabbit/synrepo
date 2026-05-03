@@ -25,6 +25,8 @@ pub mod card_accounting;
 #[doc(hidden)]
 pub mod cards;
 #[doc(hidden)]
+pub mod compact;
+#[doc(hidden)]
 pub mod context_pack;
 #[doc(hidden)]
 pub mod docs;
