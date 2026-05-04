@@ -10,6 +10,9 @@ use crate::pipeline::writer::{
 };
 use crate::{bootstrap, config::Config, pipeline::context_metrics, surface::mcp::SynrepoState};
 
+mod budget;
+#[cfg(unix)]
+mod path_safety;
 mod watch;
 
 fn state_with_files(files: &[(&str, &str)]) -> (tempfile::TempDir, SynrepoState) {
@@ -129,6 +132,10 @@ fn apply_replace_insert_and_delete() {
     assert_eq!(result["status"], "completed", "{result}");
     let content = fs::read_to_string(dir.path().join("src/lib.rs")).unwrap();
     assert_eq!(content, "one\none-point-five\nTWO\n");
+    assert!(
+        !dir.path().join("src/lib.rs.synrepo-edit-tmp").exists(),
+        "anchored edit should not leave the old deterministic temp path behind"
+    );
     assert_eq!(result["atomicity"]["cross_file"], false);
     assert_eq!(result["diagnostics"]["command_execution"], "unavailable");
 }

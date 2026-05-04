@@ -21,9 +21,11 @@ use super::diagnostics::post_edit_diagnostics;
 use super::{anchor_manager, PreparedAnchorState};
 use crate::surface::mcp::{helpers::render_result, SynrepoState};
 
-use super::prepare::{hash_bytes, normalize_rel_path};
+use super::prepare::{hash_bytes, resolve_edit_path};
 
 const EDIT_SUPPRESSION_TTL_MS: u64 = 15_000;
+const DEFAULT_MAX_LINES: usize = 1_000;
+const HARD_MAX_LINES: usize = 5_000;
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ApplyAnchorEditsParams {
@@ -32,6 +34,8 @@ pub struct ApplyAnchorEditsParams {
     /// Optional built-in diagnostics budget. No caller-provided commands run.
     #[serde(default)]
     pub diagnostics_budget: Option<String>,
+    #[serde(default)]
+    pub max_lines: Option<usize>,
 }
 
 #[derive(Clone, Debug, Deserialize, JsonSchema)]
@@ -59,11 +63,32 @@ fn apply_anchor_edits(
     if params.edits.is_empty() {
         anyhow::bail!("edits must contain at least one edit");
     }
+    let max_lines = params.max_lines.unwrap_or(DEFAULT_MAX_LINES);
+    if !(1..=HARD_MAX_LINES).contains(&max_lines) {
+        anyhow::bail!("max_lines must be between 1 and {HARD_MAX_LINES}");
+    }
+    let submitted_lines = params
+        .edits
+        .iter()
+        .filter(|edit| edit.edit_type != "delete")
+        .filter_map(|edit| edit.text.as_deref())
+        .map(|text| text.lines().count())
+        .sum::<usize>();
+    if submitted_lines > max_lines {
+        anyhow::bail!(
+            "submitted edit text has {submitted_lines} lines, exceeding max_lines {max_lines}"
+        );
+    }
 
     let synrepo_dir = Config::synrepo_dir(&state.repo_root);
     let mut groups: BTreeMap<String, Vec<AnchorEditRequest>> = BTreeMap::new();
+    let mut resolved_paths: BTreeMap<String, PathBuf> = BTreeMap::new();
     for edit in params.edits {
-        let path = normalize_rel_path(&state.repo_root, &edit.path)?;
+        let resolved = resolve_edit_path(&state.repo_root, &edit.path)?;
+        let path = resolved.relative;
+        resolved_paths
+            .entry(path.clone())
+            .or_insert(resolved.absolute);
         groups.entry(path).or_default().push(AnchorEditRequest {
             path: edit.path,
             ..edit
@@ -91,7 +116,7 @@ fn apply_anchor_edits(
     let mut accepted_edits = 0;
     let mut rejected_edits = 0;
     for (path, edits) in groups {
-        match apply_one_file(state, &path, &edits) {
+        match apply_one_file(state, &path, &resolved_paths[&path], &edits) {
             Ok(new_hash) => {
                 touched.push(path.clone());
                 accepted_edits += edits.len() as u64;
@@ -148,9 +173,14 @@ fn apply_anchor_edits(
 fn apply_one_file(
     state: &SynrepoState,
     path: &str,
+    prepared_abs_path: &Path,
     edits: &[AnchorEditRequest],
 ) -> anyhow::Result<String> {
-    let abs_path = state.repo_root.join(path);
+    let resolved = resolve_edit_path(&state.repo_root, path)?;
+    if resolved.absolute != prepared_abs_path {
+        anyhow::bail!("resolved path changed before edit apply for {path}");
+    }
+    let abs_path = resolved.absolute;
     let content = fs::read_to_string(&abs_path)
         .map_err(|err| anyhow::anyhow!("failed to read {path}: {err}"))?;
     let current_hash = hash_bytes(content.as_bytes());
@@ -193,7 +223,7 @@ fn apply_one_file(
         next.push('\n');
     }
     let new_hash = hash_bytes(next.as_bytes());
-    write_file_atomically(&abs_path, next.as_bytes())?;
+    crate::util::atomic_write(&abs_path, next.as_bytes())?;
     Ok(new_hash)
 }
 
@@ -323,23 +353,6 @@ fn reject_overlaps(planned: &[PlannedEdit]) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn write_file_atomically(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
-    let tmp = temp_path_for(path);
-    fs::write(&tmp, bytes)?;
-    fs::rename(&tmp, path)?;
-    Ok(())
-}
-
-fn temp_path_for(path: &Path) -> PathBuf {
-    path.with_extension(format!(
-        "{}synrepo-edit-tmp",
-        path.extension()
-            .and_then(|ext| ext.to_str())
-            .map(|ext| format!("{ext}."))
-            .unwrap_or_default()
-    ))
-}
-
 fn suppress_watch_events(state: &SynrepoState, synrepo_dir: &Path, paths: &[String]) {
     if !matches!(
         watch_service_status(synrepo_dir),
@@ -351,7 +364,9 @@ fn suppress_watch_events(state: &SynrepoState, synrepo_dir: &Path, paths: &[Stri
     for path in paths {
         let abs_path = state.repo_root.join(path);
         watch_paths.push(abs_path.clone());
-        watch_paths.push(temp_path_for(&abs_path));
+        if let Some(parent) = abs_path.parent() {
+            watch_paths.push(parent.to_path_buf());
+        }
     }
     let _ = request_watch_control(
         synrepo_dir,

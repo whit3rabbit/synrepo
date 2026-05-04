@@ -1,4 +1,5 @@
 mod check;
+mod dead_edges;
 mod declared_links;
 mod generation;
 mod log;

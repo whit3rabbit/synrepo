@@ -5,7 +5,7 @@
 //! Each concept produces one chunk from its full text (truncated to 512 tokens).
 
 use crate::core::ids::{ConceptNodeId, FileNodeId, SymbolNodeId};
-use crate::structure::graph::{with_graph_read_snapshot, GraphStore};
+use crate::structure::graph::{with_graph_read_snapshot, GraphReader, GraphStore};
 
 /// Maximum tokens for prose concept text.
 const MAX_PROSE_TOKENS: usize = 512;
@@ -56,7 +56,7 @@ pub fn extract_chunks(graph: &dyn GraphStore) -> crate::Result<Vec<EmbeddingChun
     with_graph_read_snapshot(graph, extract_chunks_inner)
 }
 
-fn extract_chunks_inner(graph: &dyn GraphStore) -> crate::Result<Vec<EmbeddingChunk>> {
+fn extract_chunks_inner(graph: &dyn GraphReader) -> crate::Result<Vec<EmbeddingChunk>> {
     let mut chunks = Vec::new();
 
     // Get all symbol names and kinds

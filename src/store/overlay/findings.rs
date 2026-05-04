@@ -6,7 +6,7 @@ use crate::{
     core::ids::NodeId,
     overlay::{
         with_overlay_read_snapshot, ConfidenceTier, CrossLinkFreshness, CrossLinkProvenance,
-        OverlayEdgeKind,
+        OverlayEdgeKind, OverlayStore,
     },
     structure::graph::GraphReader,
 };

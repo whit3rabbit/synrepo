@@ -183,9 +183,9 @@ pub trait OverlayStore: Send + Sync {
 /// unwind. Why: without this, a panic in the `with_overlay_read_snapshot`
 /// closure would skip `end_read_snapshot` and leave a `BEGIN DEFERRED`
 /// transaction open on the overlay connection.
-struct OverlaySnapshotGuard<'a>(&'a dyn OverlayStore);
+struct OverlaySnapshotGuard<'a, T: OverlayStore + ?Sized>(&'a T);
 
-impl Drop for OverlaySnapshotGuard<'_> {
+impl<T: OverlayStore + ?Sized> Drop for OverlaySnapshotGuard<'_, T> {
     fn drop(&mut self) {
         if let Err(err) = self.0.end_read_snapshot() {
             tracing::warn!(error = %err, "overlay end_read_snapshot failed; ignoring");
@@ -200,9 +200,10 @@ impl Drop for OverlaySnapshotGuard<'_> {
 /// consistency hazard when writers (commentary refresh, orphan pruning)
 /// commit mid-request. Snapshot end is structural via [`OverlaySnapshotGuard`]
 /// so panic in `f` still ends the snapshot.
-pub fn with_overlay_read_snapshot<F, R>(overlay: &dyn OverlayStore, f: F) -> crate::Result<R>
+pub fn with_overlay_read_snapshot<T, F, R>(overlay: &T, f: F) -> crate::Result<R>
 where
-    F: FnOnce(&dyn OverlayStore) -> crate::Result<R>,
+    T: OverlayStore + ?Sized,
+    F: FnOnce(&T) -> crate::Result<R>,
 {
     overlay.begin_read_snapshot()?;
     let _guard = OverlaySnapshotGuard(overlay);

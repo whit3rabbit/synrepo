@@ -11,6 +11,28 @@ use crate::overlay::{CommentaryEntry, CommentaryProvenance};
 use super::super::SqliteOverlayStore;
 
 impl SqliteOverlayStore {
+    /// Stream `(node_id, source_content_hash)` pairs from commentary rows.
+    ///
+    /// This intentionally avoids loading commentary bodies for status and
+    /// repair freshness scans, where only provenance hashes matter.
+    pub fn scan_commentary_hashes<F>(&self, mut visit: F) -> crate::Result<usize>
+    where
+        F: FnMut(&str, &str) -> crate::Result<()>,
+    {
+        let conn = self.conn.lock();
+        let mut stmt =
+            conn.prepare("SELECT node_id, source_content_hash FROM commentary ORDER BY node_id")?;
+        let mut rows = stmt.query([])?;
+        let mut count = 0usize;
+        while let Some(row) = rows.next()? {
+            let node_id: String = row.get(0)?;
+            let source_content_hash: String = row.get(1)?;
+            visit(&node_id, &source_content_hash)?;
+            count += 1;
+        }
+        Ok(count)
+    }
+
     /// Return every commentary entry currently stored.
     pub fn all_commentary_entries(&self) -> crate::Result<Vec<CommentaryEntry>> {
         let conn = self.conn.lock();

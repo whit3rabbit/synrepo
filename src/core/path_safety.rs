@@ -27,7 +27,19 @@
 //! no component ever parses as `Component::Prefix`, so the function is a
 //! cheap `false`.
 
-use std::path::{Component, Path, PathBuf};
+use std::{
+    fs,
+    path::{Component, Path, PathBuf},
+};
+
+/// Canonical, existing file path proven to remain inside a repository root.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct ResolvedRepoPath {
+    /// Normalized repo-relative path using `/` separators.
+    pub relative: String,
+    /// Canonical absolute path after following symlinks.
+    pub absolute: PathBuf,
+}
 
 /// Join `relative` onto `root` only if `relative` is a well-formed
 /// in-repo relative path. Returns `None` for anything that could escape
@@ -55,6 +67,79 @@ pub(crate) fn safe_join_in_repo(root: &Path, relative: &str) -> Option<PathBuf> 
     }
 
     Some(root.join(candidate))
+}
+
+/// Resolve an existing file path, follow symlinks, and prove the resolved file
+/// still lives under `root`.
+///
+/// This is for edit/read surfaces that accept caller-provided paths. It differs
+/// from [`safe_join_in_repo`] because it intentionally canonicalizes the final
+/// path to catch symlink escapes before any file read.
+pub(crate) fn resolve_existing_path_in_repo(
+    root: &Path,
+    input: &str,
+) -> crate::Result<ResolvedRepoPath> {
+    if input.is_empty()
+        || input.as_bytes().contains(&0)
+        || input.contains('\n')
+        || input.contains('\r')
+    {
+        return Err(crate::Error::Other(anyhow::anyhow!(
+            "path is empty or contains forbidden control characters: {input:?}"
+        )));
+    }
+
+    let raw = Path::new(input);
+    if !raw.is_absolute()
+        && raw.components().any(|c| {
+            matches!(
+                c,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
+            )
+        })
+    {
+        return Err(crate::Error::Other(anyhow::anyhow!(
+            "path must stay within the repo root: {input}"
+        )));
+    }
+
+    let canonical_root = fs::canonicalize(root).map_err(|err| {
+        crate::Error::Other(anyhow::anyhow!(
+            "failed to canonicalize repo root {}: {err}",
+            root.display()
+        ))
+    })?;
+    let candidate = if raw.is_absolute() {
+        raw.to_path_buf()
+    } else {
+        canonical_root.join(raw)
+    };
+    let absolute = fs::canonicalize(&candidate).map_err(|err| {
+        crate::Error::Other(anyhow::anyhow!(
+            "failed to resolve path {}: {err}",
+            candidate.display()
+        ))
+    })?;
+    if !absolute.starts_with(&canonical_root) {
+        return Err(crate::Error::Other(anyhow::anyhow!(
+            "path is outside repo root after resolving symlinks: {input}"
+        )));
+    }
+    if !absolute.is_file() {
+        return Err(crate::Error::Other(anyhow::anyhow!(
+            "path is not a regular file: {input}"
+        )));
+    }
+    let relative = absolute.strip_prefix(&canonical_root).map_err(|_| {
+        crate::Error::Other(anyhow::anyhow!(
+            "path is outside repo root after resolving symlinks: {input}"
+        ))
+    })?;
+
+    Ok(ResolvedRepoPath {
+        relative: relative.to_string_lossy().replace('\\', "/"),
+        absolute,
+    })
 }
 
 /// Return true if `path` contains any OS-level prefix component
@@ -102,6 +187,18 @@ mod tests {
     fn safe_join_rejects_absolute_paths() {
         let root = Path::new("/tmp/repo");
         assert_eq!(safe_join_in_repo(root, "/etc/passwd"), None);
+    }
+
+    #[test]
+    fn resolve_existing_path_accepts_real_in_repo_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("src/lib.rs");
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(&file, "pub fn ok() {}\n").unwrap();
+
+        let resolved = resolve_existing_path_in_repo(dir.path(), "src/lib.rs").unwrap();
+        assert_eq!(resolved.relative, "src/lib.rs");
+        assert_eq!(resolved.absolute, file.canonicalize().unwrap());
     }
 
     #[test]

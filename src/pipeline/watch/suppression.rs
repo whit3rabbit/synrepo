@@ -43,7 +43,23 @@ impl SuppressedPaths {
 }
 
 fn paths_overlap(path: &Path, suppressed: &Path) -> bool {
-    path == suppressed || path.starts_with(suppressed) || suppressed.starts_with(path)
+    path == suppressed
+        || path.starts_with(suppressed)
+        || suppressed.starts_with(path)
+        || is_atomic_write_temp_sibling(path, suppressed)
+}
+
+fn is_atomic_write_temp_sibling(path: &Path, suppressed: &Path) -> bool {
+    if path.parent() != suppressed.parent() {
+        return false;
+    }
+    let Some(target_name) = suppressed.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    let Some(path_name) = path.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    path_name.starts_with(&format!(".{target_name}.tmp."))
 }
 
 fn canonicalize_lossy(path: &Path) -> Option<PathBuf> {
@@ -88,5 +104,22 @@ mod tests {
         suppressed.retain_unsuppressed(&mut paths);
 
         assert_eq!(paths, vec![PathBuf::from("/repo/other.rs")]);
+    }
+
+    #[test]
+    fn suppresses_atomic_write_temp_sibling() {
+        let mut suppressed = SuppressedPaths::default();
+        suppressed.suppress(
+            vec![PathBuf::from("/repo/src/a.rs")],
+            Duration::from_secs(1),
+        );
+        let mut paths = vec![
+            PathBuf::from("/repo/src/.a.rs.tmp.123.0"),
+            PathBuf::from("/repo/src/.b.rs.tmp.123.0"),
+        ];
+
+        suppressed.retain_unsuppressed(&mut paths);
+
+        assert_eq!(paths, vec![PathBuf::from("/repo/src/.b.rs.tmp.123.0")]);
     }
 }

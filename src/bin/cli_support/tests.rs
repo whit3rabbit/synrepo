@@ -13,6 +13,7 @@ mod links;
 mod mcp;
 mod mcp_edits;
 mod mcp_graph;
+mod mcp_refresh;
 mod mcp_schema;
 mod mcp_search;
 mod notes;

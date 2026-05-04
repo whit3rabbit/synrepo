@@ -1,13 +1,17 @@
 use std::{
     fs,
-    path::{Component, Path, PathBuf},
+    path::{Path, PathBuf},
 };
 
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::{core::ids::NodeId, structure::graph::snapshot, surface::card::CardCompiler};
+use crate::{
+    core::{ids::NodeId, path_safety::resolve_existing_path_in_repo},
+    structure::graph::snapshot,
+    surface::card::CardCompiler,
+};
 
 use super::{anchor_manager, AnchorLine, PreparedAnchorState};
 use crate::surface::mcp::{helpers::render_result, SynrepoState};
@@ -49,8 +53,7 @@ fn prepare_edit_context(
         .create_read_compiler()
         .map_err(|e| anyhow::anyhow!(e))?;
     let target = resolve_prepare_target(state, &compiler, &params)?;
-    let abs_path = state.repo_root.join(&target.path);
-    let content = fs::read_to_string(&abs_path)
+    let content = fs::read_to_string(&target.absolute_path)
         .map_err(|err| anyhow::anyhow!("failed to read {}: {err}", target.path))?;
     let current_content_hash = hash_bytes(content.as_bytes());
     let lines: Vec<&str> = content.lines().collect();
@@ -122,6 +125,7 @@ fn prepare_edit_context(
 
 struct PrepareTarget {
     path: String,
+    absolute_path: PathBuf,
     file_id: Option<String>,
     symbol_id: Option<String>,
     graph_content_hash: Option<String>,
@@ -140,9 +144,11 @@ fn resolve_prepare_target(
         .unwrap_or("")
         .to_ascii_lowercase();
     if kind == "range" || params.start_line.is_some() || params.end_line.is_some() {
-        let path = normalize_rel_path(&state.repo_root, &params.target)?;
+        let resolved = resolve_edit_path(&state.repo_root, &params.target)?;
+        let path = resolved.relative;
         let file = compiler.reader().file_by_path(&path)?;
         return Ok(PrepareTarget {
+            absolute_path: resolved.absolute,
             path,
             file_id: file.as_ref().map(|f| f.id.to_string()),
             symbol_id: None,
@@ -153,9 +159,11 @@ fn resolve_prepare_target(
     }
 
     if kind == "file" || kind == "path" {
-        let path = normalize_rel_path(&state.repo_root, &params.target)?;
+        let resolved = resolve_edit_path(&state.repo_root, &params.target)?;
+        let path = resolved.relative;
         let file = compiler.reader().file_by_path(&path)?;
         return Ok(PrepareTarget {
+            absolute_path: resolved.absolute,
             path,
             file_id: file.as_ref().map(|f| f.id.to_string()),
             symbol_id: None,
@@ -174,8 +182,10 @@ fn resolve_prepare_target(
                 .reader()
                 .get_file(file_id)?
                 .ok_or_else(|| anyhow::anyhow!("file not found for id {file_id}"))?;
+            let resolved = resolve_edit_path(&state.repo_root, &file.path)?;
             Ok(PrepareTarget {
-                path: file.path,
+                path: resolved.relative,
+                absolute_path: resolved.absolute,
                 file_id: Some(file.id.to_string()),
                 symbol_id: None,
                 graph_content_hash: Some(file.content_hash),
@@ -192,10 +202,12 @@ fn resolve_prepare_target(
                 .reader()
                 .get_file(symbol.file_id)?
                 .ok_or_else(|| anyhow::anyhow!("file not found for symbol {symbol_id}"))?;
-            let content = fs::read_to_string(state.repo_root.join(&file.path))?;
+            let resolved = resolve_edit_path(&state.repo_root, &file.path)?;
+            let content = fs::read_to_string(&resolved.absolute)?;
             let (start_line, end_line) = byte_range_to_lines(&content, symbol.body_byte_range);
             Ok(PrepareTarget {
-                path: file.path,
+                path: resolved.relative,
+                absolute_path: resolved.absolute,
                 file_id: Some(file.id.to_string()),
                 symbol_id: Some(symbol.id.to_string()),
                 graph_content_hash: Some(file.content_hash),
@@ -207,23 +219,11 @@ fn resolve_prepare_target(
     }
 }
 
-pub(crate) fn normalize_rel_path(repo_root: &Path, input: &str) -> anyhow::Result<String> {
-    let raw = Path::new(input);
-    let rel = if raw.is_absolute() {
-        raw.strip_prefix(repo_root)
-            .map_err(|_| anyhow::anyhow!("path is outside repo root: {input}"))?
-    } else {
-        raw
-    };
-    if rel.components().any(|c| {
-        matches!(
-            c,
-            Component::ParentDir | Component::RootDir | Component::Prefix(_)
-        )
-    }) {
-        anyhow::bail!("path must stay within the repo root: {input}");
-    }
-    Ok(rel.to_string_lossy().replace('\\', "/"))
+pub(crate) fn resolve_edit_path(
+    repo_root: &Path,
+    input: &str,
+) -> anyhow::Result<crate::core::path_safety::ResolvedRepoPath> {
+    resolve_existing_path_in_repo(repo_root, input).map_err(|err| anyhow::anyhow!(err))
 }
 
 fn byte_range_to_lines(content: &str, range: (u32, u32)) -> (usize, usize) {

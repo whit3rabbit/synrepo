@@ -304,6 +304,7 @@ pub fn prune_dead_edges(
         return Ok(());
     }
 
+    graph.begin()?;
     let mut pruned = 0usize;
     let mut failed = 0usize;
     let mut last_err: Option<crate::Error> = None;
@@ -320,10 +321,12 @@ pub fn prune_dead_edges(
 
     let total = dead.len();
     if failed == 0 {
+        graph.commit()?;
         actions_taken.push(format!("pruned {pruned} dead edges (drift 1.0)"));
         repaired.push(finding.clone());
         Ok(())
     } else if pruned > 0 {
+        graph.commit()?;
         // Why: partial success — operator needs to see the failed count, but
         // returning Err would lose the partial-progress signal. Push a noisy
         // action message and still mark repaired so the caller proceeds.
@@ -333,6 +336,7 @@ pub fn prune_dead_edges(
         repaired.push(finding.clone());
         Ok(())
     } else {
+        let _ = graph.rollback();
         // All deletes failed — surface the last error so the caller can route
         // this as a Blocked finding.
         Err(last_err.unwrap_or_else(|| {

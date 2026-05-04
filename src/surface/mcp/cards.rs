@@ -361,11 +361,16 @@ pub fn handle_change_risk(
 }
 
 pub fn handle_refresh_commentary(state: &SynrepoState, target: String) -> String {
-    use crate::pipeline::explain::{build_commentary_generator, telemetry};
+    use crate::pipeline::{
+        explain::{build_commentary_generator, telemetry},
+        writer::{acquire_write_admission, map_lock_error},
+    };
     use serde_json::json;
 
     let synrepo_dir = crate::config::Config::synrepo_dir(&state.repo_root);
     let result = telemetry::with_synrepo_dir(&synrepo_dir, || {
+        let _writer_lock = acquire_write_admission(&synrepo_dir, "refresh commentary")
+            .map_err(|err| map_lock_error("refresh commentary", err))?;
         let compiler = state
             .create_sqlite_compiler()
             .map_err(|e| anyhow::anyhow!(e))?;
