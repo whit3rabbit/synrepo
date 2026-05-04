@@ -18,7 +18,9 @@ pub(super) fn write_graph_html_file(export_dir: &Path, graph: &GraphExport) -> c
     let mut writer = BufWriter::new(File::create(export_dir.join(GRAPH_HTML_FILENAME))?);
     writer.write_all(shell::HTML_PREFIX.as_bytes())?;
     writer.write_all(json.as_bytes())?;
-    writer.write_all(script::HTML_SUFFIX.as_bytes())?;
+    for chunk in script::HTML_SUFFIX {
+        writer.write_all(chunk.as_bytes())?;
+    }
     writer.flush()?;
     Ok(())
 }

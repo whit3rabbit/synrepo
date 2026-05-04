@@ -241,8 +241,43 @@ fn graph_html_export_writes_self_contained_view_and_graph_json() {
     assert!(html.contains("<script id=\"graph-data\" type=\"application/json\">"));
     assert!(html.contains("INITIAL_NODE_LIMIT = 250"));
     assert!(html.contains("Expand neighborhood"));
+    assert!(html.contains("Path communities"));
+    assert!(html.contains("Guided walkthrough"));
+    assert!(html.contains("Show drift/change nodes only"));
     assert!(!html.contains("http://"));
     assert!(!html.contains("https://"));
+}
+
+#[test]
+fn graph_html_export_exposes_card_targets_and_incident_relationships() {
+    let repo = tempdir().unwrap();
+    let synrepo_dir = repo.path().join(".synrepo");
+    seed_graph_export_fixture(&synrepo_dir);
+
+    let config = Config {
+        export_dir: "graph-html-affordances".to_string(),
+        ..Config::default()
+    };
+
+    write_exports(
+        repo.path(),
+        &synrepo_dir,
+        &config,
+        ExportFormat::GraphHtml,
+        Budget::Deep,
+        true,
+    )
+    .unwrap();
+
+    let html =
+        std::fs::read_to_string(repo.path().join("graph-html-affordances/graph.html")).unwrap();
+    assert!(html.contains("Card targets"));
+    assert!(html.contains("Incident relationships"));
+    assert!(html.contains("synrepo_card target="));
+    assert!(html.contains("synrepo_minimum_context target="));
+    assert!(html.contains("synrepo_context_pack targets="));
+    assert!(html.contains("epistemic"));
+    assert!(html.contains("drift"));
 }
 
 #[test]

@@ -6,7 +6,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyModifiers};
 
@@ -112,13 +112,19 @@ fn run_context(
             )
         });
 
+        let mut last_frame = Instant::now();
         loop {
             let mut had_event = false;
             while let Ok(event) = event_rx.try_recv() {
                 ui.apply_event(event);
                 had_event = true;
             }
-            if had_event {
+            let animation_due = last_frame.elapsed() >= Duration::from_millis(200);
+            if animation_due {
+                ui.tick();
+                last_frame = Instant::now();
+            }
+            if had_event || animation_due {
                 state.drain_events();
                 let _ = draw_progress(terminal, &ui);
             }

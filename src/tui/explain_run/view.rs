@@ -1,10 +1,11 @@
 use std::collections::VecDeque;
 
 use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::symbols;
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Gauge, List, ListItem, Paragraph};
+use ratatui::widgets::{Block, Borders, LineGauge, List, ListItem, Paragraph};
 
-use crate::pipeline::repair::CommentaryProgressEvent;
+use crate::pipeline::repair::{CommentaryProgressEvent, CommentaryWorkItem};
 use crate::tui::dashboard::DashboardTerminal;
 
 use super::ExplainRunContext;
@@ -19,6 +20,9 @@ pub(super) struct ExplainRunUi {
     symbol_scan: (usize, usize),
     max_targets: usize,
     attempted: usize,
+    generated: usize,
+    skipped: usize,
+    frame: usize,
     finished: bool,
     pub(super) finished_prompt: bool,
     stop_requested: bool,
@@ -32,12 +36,15 @@ impl ExplainRunUi {
             scope: context.scope_label(),
             provider: context.provider_label(),
             api_line: context.api_line(),
-            step: "1/4 Scan repository".to_string(),
+            step: "Stage 1 of 4: Scan repository".to_string(),
             current: "Scanning files and symbols that need commentary.".to_string(),
             file_scan: (0, 0),
             symbol_scan: (0, 0),
             max_targets: 0,
             attempted: 0,
+            generated: 0,
+            skipped: 0,
+            frame: 0,
             finished: false,
             finished_prompt: false,
             stop_requested: false,
@@ -57,6 +64,9 @@ impl ExplainRunUi {
             symbol_scan: (0, 0),
             max_targets: 0,
             attempted: 0,
+            generated: 0,
+            skipped: 0,
+            frame: 0,
             finished: true,
             finished_prompt: false,
             stop_requested: false,
@@ -92,18 +102,19 @@ impl ExplainRunUi {
             } => {
                 self.max_targets = max_targets;
                 self.step = if max_targets == 0 {
-                    "2/4 Nothing to generate".to_string()
+                    "Stage 2 of 4: Nothing to generate".to_string()
                 } else {
-                    "2/4 Generate commentary".to_string()
+                    "Stage 2 of 4: Generate commentary".to_string()
                 };
                 self.current = format!(
-                    "{max_targets} target(s): {refresh} stale, {file_seeds} files missing, {symbol_seed_candidates} symbols missing."
+                    "{max_targets} candidate target(s): {refresh} stale, {file_seeds} files missing, {symbol_seed_candidates} symbols missing."
                 );
                 self.push_recent(self.current.clone());
             }
             CommentaryProgressEvent::TargetStarted { item, current } => {
                 self.attempted = current;
-                self.current = format!("Generating commentary for {}", item.path);
+                let target = target_label(&item);
+                self.current = format!("Generating commentary for {target}");
                 self.push_recent(self.current.clone());
             }
             CommentaryProgressEvent::TargetFinished {
@@ -116,9 +127,12 @@ impl ExplainRunUi {
                 ..
             } => {
                 self.attempted = current;
+                self.generated += usize::from(generated);
+                self.skipped += usize::from(!generated);
+                let target = target_label(&item);
                 self.current = target_finished_line(
                     generated,
-                    &item.path,
+                    &target,
                     skip_message.as_deref(),
                     retry_attempts,
                     queued_for_next_run,
@@ -127,16 +141,20 @@ impl ExplainRunUi {
             }
             CommentaryProgressEvent::DocsDirCreated { path }
             | CommentaryProgressEvent::IndexDirCreated { path } => {
+                self.step = "Stage 3 of 4: Export docs".to_string();
                 self.push_recent(format!("Created {}", path.display()));
             }
             CommentaryProgressEvent::DocWritten { path } => {
+                self.step = "Stage 3 of 4: Export docs".to_string();
                 self.push_recent(format!("Wrote {}", path.display()));
             }
             CommentaryProgressEvent::DocDeleted { path } => {
+                self.step = "Stage 3 of 4: Export docs".to_string();
                 self.push_recent(format!("Removed {}", path.display()));
             }
             CommentaryProgressEvent::IndexUpdated { path, .. }
             | CommentaryProgressEvent::IndexRebuilt { path, .. } => {
+                self.step = "Stage 3 of 4: Export docs".to_string();
                 self.push_recent(format!("Updated {}", path.display()));
             }
             CommentaryProgressEvent::PhaseSummary {
@@ -159,8 +177,10 @@ impl ExplainRunUi {
                 skip_reasons,
             } => {
                 self.attempted = attempted;
+                self.generated = refreshed + seeded;
+                self.skipped = not_generated;
                 self.finished = true;
-                self.step = "4/4 Done".to_string();
+                self.step = "Stage 4 of 4: Done".to_string();
                 self.current = if stopped {
                     "Stop requested. Wrote completed commentary before returning.".to_string()
                 } else if queued_for_next_run > 0 {
@@ -181,7 +201,7 @@ impl ExplainRunUi {
 
     pub(super) fn mark_finished(&mut self) {
         self.finished = true;
-        self.step = "4/4 Done".to_string();
+        self.step = "Stage 4 of 4: Done".to_string();
     }
 
     pub(super) fn mark_error(&mut self, message: String) {
@@ -207,6 +227,20 @@ impl ExplainRunUi {
         }
         self.recent.push_back(line);
     }
+
+    pub(super) fn tick(&mut self) {
+        if !self.finished {
+            self.frame = self.frame.wrapping_add(1);
+        }
+    }
+
+    fn current_line(&self) -> String {
+        if self.finished || self.error.is_some() {
+            return self.current.clone();
+        }
+        const FRAMES: [&str; 4] = ["-", "\\", "|", "/"];
+        format!("[{}] {}", FRAMES[self.frame % FRAMES.len()], self.current)
+    }
 }
 
 fn target_finished_line(
@@ -231,6 +265,13 @@ fn target_finished_line(
     }
 }
 
+fn target_label(item: &CommentaryWorkItem) -> String {
+    match &item.qualified_name {
+        Some(name) => format!("{}::{name}", item.path),
+        None => item.path.clone(),
+    }
+}
+
 fn reason_suffix(skip_reasons: &[(String, usize)]) -> String {
     if skip_reasons.is_empty() {
         return String::new();
@@ -244,35 +285,7 @@ fn reason_suffix(skip_reasons: &[(String, usize)]) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::target_finished_line;
-
-    #[test]
-    fn skipped_line_includes_budget_reason() {
-        let line = target_finished_line(
-            false,
-            "src/lib.rs",
-            Some("5888 est. tokens > 5000 budget"),
-            0,
-            false,
-        );
-        assert_eq!(line, "Skipped src/lib.rs: 5888 est. tokens > 5000 budget");
-    }
-
-    #[test]
-    fn skipped_line_includes_retry_and_queue_state() {
-        let line = target_finished_line(
-            false,
-            "src/lib.rs",
-            Some("non-success status: 429 Too Many Requests"),
-            2,
-            true,
-        );
-        assert!(line.contains("after 2 retry"));
-        assert!(line.contains("429 Too Many Requests"));
-        assert!(line.contains("(queued)"));
-    }
-}
+mod tests;
 
 pub(super) fn draw_progress(
     terminal: &mut DashboardTerminal,
@@ -298,7 +311,7 @@ pub(super) fn draw_progress(
                 Span::raw(ui.provider.clone()),
             ]),
             Line::from(vec![Span::raw("API: "), Span::raw(ui.api_line.clone())]),
-            Line::from(vec![Span::raw("Current: "), Span::raw(ui.current.clone())]),
+            Line::from(vec![Span::raw("Current: "), Span::raw(ui.current_line())]),
         ];
         frame.render_widget(
             Paragraph::new(summary)
@@ -311,16 +324,29 @@ pub(super) fn draw_progress(
         } else {
             (ui.attempted as f64 / ui.max_targets as f64).clamp(0.0, 1.0)
         };
+        let progress_block = Block::default()
+            .title(ui.step.as_str())
+            .borders(Borders::ALL);
+        let progress_inner = progress_block.inner(layout[1]);
+        frame.render_widget(progress_block, layout[1]);
+        let progress_layout = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Min(12), Constraint::Length(46)])
+            .split(progress_inner);
         frame.render_widget(
-            Gauge::default()
-                .block(
-                    Block::default()
-                        .title(ui.step.as_str())
-                        .borders(Borders::ALL),
-                )
-                .ratio(ratio)
-                .label(format!("{} / {}", ui.attempted, ui.max_targets)),
-            layout[1],
+            LineGauge::default()
+                .filled_symbol(symbols::line::THICK_HORIZONTAL)
+                .unfilled_symbol(" ")
+                .label("")
+                .ratio(ratio),
+            progress_layout[0],
+        );
+        frame.render_widget(
+            Paragraph::new(format!(
+                "{} / {} attempted, {} generated, {} skipped",
+                ui.attempted, ui.max_targets, ui.generated, ui.skipped
+            )),
+            progress_layout[1],
         );
 
         let stop_line = if ui.stop_requested {
