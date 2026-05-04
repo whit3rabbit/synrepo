@@ -65,15 +65,16 @@ This line exists because the code-memory product and the task-memory product hav
 
 ### Agent doctrine: one obvious way to use synrepo
 
-There is one default agent path, and every SKILL doc, MCP tool description, `agent-setup` shim, and CLI example describes it the same way.
+There is one default agent path, and every SKILL doc, MCP tool description, `agent-setup` shim, and CLI example describes it the same way. The path applies to orientation, codebase questions, file reviews, broad search, impact checks, and pre-edit context.
 
 The path is:
 
-1. search or entry-point discovery to find candidates,
+1. orient, then search or entry-point discovery to find candidates,
 2. `tiny` cards to orient and route,
 3. `normal` cards to understand a neighborhood,
-4. `deep` cards only before writing code or when exact source or body details matter,
-5. overlay commentary is optional, labeled machine-authored, and freshness-sensitive — request `require_freshness=true` explicitly when it matters.
+4. impact, risks, and tests before edits or risky reviews,
+5. `deep` cards only before writing code or when exact source or body details matter,
+6. overlay commentary is optional, labeled machine-authored, and freshness-sensitive. Request freshness explicitly when it matters.
 
 Do-not rules, asserted uniformly across surfaces:
 
@@ -81,6 +82,7 @@ Do-not rules, asserted uniformly across surfaces:
 - do not treat commentary as canonical;
 - do not trigger explain unless the task justifies it;
 - do not expect watch or background behavior unless explicitly enabled;
+- do not treat client-side nudge hooks as MCP interception or enforcement;
 - **explicit refresh required for fresh commentary**: tools return stale content with tag, never blocking for new explain.
 
 The existing context-budget protocol is the substrate for this doctrine; the doctrine makes the protocol visible at every entry point an agent can hit.

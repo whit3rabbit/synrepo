@@ -20,16 +20,16 @@ macro_rules! doctrine_block {
     () => {
 "## Agent doctrine
 
-synrepo is a code-context compiler. When `.synrepo/` exists in the repo root, prefer MCP tools (or the CLI fallback) over cold file reads for orientation and navigation.
+synrepo is a code-context compiler. When `.synrepo/` exists in the repo root, prefer MCP tools (or the CLI fallback) over cold file reads for orientation, codebase questions, file reviews, broad search, change impact, and pre-edit context.
 
 ### Default path
 
-The required sequence is orient, find, impact or risks, edit, tests, changed.
+The required sequence for codebase questions, reviews, search routing, and edits is orient, find, impact or risks, edit, tests, changed.
 
 1. Start with `synrepo_orient` before reading the repo cold.
-2. Use `synrepo_find` or `synrepo_search` to find candidate files and symbols.
-3. Use `tiny` cards to route and `normal` cards to understand. Use `synrepo_minimum_context` once a focal target is known but the surrounding neighborhood risk is unclear.
-4. Use `synrepo_impact` (or its shorthand `synrepo_risks`) before editing and `synrepo_tests` before claiming done.
+2. Use `synrepo_find` or `synrepo_search` to find candidate files and symbols. For broad lexical searches, prefer `output_mode: \"compact\"` so results are grouped and token-accounted before opening files.
+3. Use `tiny` cards to route and `normal` cards to understand. Use `synrepo_minimum_context` once a focal target is known but the surrounding neighborhood risk is unclear, especially for file reviews and codebase questions.
+4. Use `synrepo_impact` (or its shorthand `synrepo_risks`) before editing or reviewing risky files, and `synrepo_tests` before claiming done.
 5. Use `synrepo_changed` after edits to review changed context and validation commands.
 6. Read full source files or request `deep` cards only after bounded cards identify the target or when the card content is insufficient. Full-file reads are an explicit escalation, not the default first step.
 
@@ -41,6 +41,8 @@ Global MCP configs that launch `synrepo mcp` serve registered projects by absolu
 
 Graph-backed structural facts (files, symbols, edges) remain the authoritative source of truth. Overlay commentary, explain docs, and proposed cross-links are advisory, labeled machine-authored, and freshness-sensitive. Treat stale labels as information, not as errors. **Refresh is explicit**: every tool returns what is currently in the overlay. To get fresh commentary after a code change, you must call `synrepo_refresh_commentary(target)`.
 
+Client-side nudge hooks for Codex and Claude may remind agents to use synrepo before direct grep, read, review, or edit workflows. These hooks are advisory only; the MCP server remains read-first and does not intercept external tool calls.
+
 ### Do not
 
 - Do not open large files first. Start at `tiny` and escalate only when a specific field forces it.
@@ -48,6 +50,7 @@ Graph-backed structural facts (files, symbols, edges) remain the authoritative s
 - Do not treat overlay commentary, explain docs, or proposed cross-links as canonical source truth. They are advisory prose layered on structural cards.
 - Do not trigger explain (`--generate-cross-links`, deep commentary refresh) unless the task justifies the cost.
 - Do not expect watch or background behavior unless `synrepo watch` is explicitly running.
+- Do not mistake client-side hook nudges for MCP interception or enforcement. They are non-blocking reminders.
 
 ### Product boundary
 

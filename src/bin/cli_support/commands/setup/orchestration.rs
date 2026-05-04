@@ -206,6 +206,7 @@ pub(crate) fn setup_many_resolved(
     force: bool,
     gitignore: bool,
     project: bool,
+    agent_hooks: bool,
 ) -> anyhow::Result<()> {
     run_many_with_skipped(
         repo_root,
@@ -213,7 +214,7 @@ pub(crate) fn setup_many_resolved(
         &resolution.skipped,
         "setup",
         project,
-        |tool| setup(repo_root, tool, force, gitignore, project),
+        |tool| setup(repo_root, tool, force, gitignore, project, agent_hooks),
     )
 }
 

@@ -22,9 +22,9 @@ use crate::{
 use super::commentary_context::build_context_text;
 use super::commentary_plan::CommentaryWorkItem;
 
-const MAX_RATE_LIMIT_ATTEMPTS: usize = 3;
-const DEFAULT_RATE_LIMIT_BACKOFF: Duration = Duration::from_millis(750);
-const MAX_RATE_LIMIT_BACKOFF: Duration = Duration::from_secs(5);
+pub(super) const MAX_RATE_LIMIT_ATTEMPTS: usize = 3;
+pub(super) const DEFAULT_RATE_LIMIT_BACKOFF: Duration = Duration::from_millis(750);
+pub(super) const MAX_RATE_LIMIT_BACKOFF: Duration = Duration::from_secs(5);
 
 #[derive(Clone, Debug)]
 pub(super) enum ItemOutcome {
@@ -111,7 +111,7 @@ fn generate_once(
     Ok(classify_outcome(outcome, node_id, &rx))
 }
 
-fn classify_outcome(
+pub(super) fn classify_outcome(
     outcome: CommentaryGeneration,
     node_id: NodeId,
     rx: &Receiver<ExplainEvent>,
@@ -180,7 +180,7 @@ fn classify_skip(
     fallback
 }
 
-fn retry_delay(skip: &CommentarySkip, retry_attempts: usize) -> Duration {
+pub(super) fn retry_delay(skip: &CommentarySkip, retry_attempts: usize) -> Duration {
     let base = skip.retry_after.unwrap_or(DEFAULT_RATE_LIMIT_BACKOFF);
     let scaled = base.saturating_mul(retry_attempts as u32);
     scaled.min(MAX_RATE_LIMIT_BACKOFF)

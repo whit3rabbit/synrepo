@@ -7,6 +7,7 @@ use super::mcp_register;
 use crate::cli_support::agent_shims::{
     registry as shim_registry, scope_label, AgentTool, AutomationTier,
 };
+use crate::cli_support::commands::agent_hooks;
 use crate::cli_support::commands::basic::{agent_setup_with_scope, init};
 use crate::cli_support::commands::setup_mcp_backup::step_backup_mcp_config;
 
@@ -32,6 +33,7 @@ pub(crate) fn setup(
     force: bool,
     gitignore: bool,
     project: bool,
+    agent_hooks_enabled: bool,
 ) -> anyhow::Result<()> {
     let scope = resolve_setup_scope(repo_root, tool, project);
     println!(
@@ -49,6 +51,9 @@ pub(crate) fn setup(
         _ => None,
     };
     step_apply_integration(repo_root, tool, force, &scope)?;
+    if agent_hooks_enabled {
+        step_install_agent_hooks(repo_root, tool)?;
+    }
     step_ensure_ready(repo_root)?;
     synrepo::registry::record_project(repo_root)?;
 
@@ -219,6 +224,19 @@ pub(crate) fn step_apply_integration(
         (_, StepOutcome::NotAutomated) => StepOutcome::NotAutomated,
         _ => StepOutcome::AlreadyCurrent,
     })
+}
+
+pub(crate) fn step_install_agent_hooks(
+    repo_root: &Path,
+    target: AgentTool,
+) -> anyhow::Result<StepOutcome> {
+    if !agent_hooks::agent_hooks_supported(target) {
+        anyhow::bail!(
+            "{} does not support synrepo agent nudge hooks",
+            target.display_name()
+        );
+    }
+    agent_hooks::install_agent_hooks(repo_root, target)
 }
 
 /// Ensure setup leaves an operationally ready runtime by creating the first

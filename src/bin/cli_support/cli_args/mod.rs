@@ -2,6 +2,7 @@
 //!
 //! Declarative clap derives; runtime dispatch lives in `cli.rs`.
 
+mod agent_hook;
 mod convert;
 mod graph;
 mod subcommands;
@@ -11,6 +12,7 @@ use std::path::PathBuf;
 
 use super::agent_shims::AgentTool;
 
+pub(crate) use agent_hook::*;
 pub(crate) use convert::*;
 pub(crate) use graph::*;
 pub(crate) use subcommands::*;
@@ -79,6 +81,9 @@ pub(crate) enum Command {
 
     /// Set up synrepo for this repo and wire an agent.
     Setup(SetupArgs),
+
+    #[command(subcommand, hide = true)]
+    AgentHook(AgentHookCommand),
 
     /// Run a structural compile pass against the current repository state.
     Reconcile {

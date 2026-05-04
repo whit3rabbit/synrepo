@@ -6,6 +6,7 @@ pub(crate) mod explain_cmd;
 mod graph;
 pub(crate) mod repair_cmd;
 pub(crate) mod setup_cmd;
+pub(crate) mod setup_dispatch;
 
 #[cfg(test)]
 mod tests;

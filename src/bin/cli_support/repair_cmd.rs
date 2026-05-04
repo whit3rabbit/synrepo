@@ -9,7 +9,7 @@ use synrepo::tui::{
 use super::agent_shims::{registry as shim_registry, AgentTool, AutomationTier};
 use super::commands::{
     reconcile, resolve_setup_scope, step_apply_integration, step_backup_mcp_config, step_init,
-    step_register_mcp, step_write_shim,
+    step_install_agent_hooks, step_register_mcp, step_write_shim,
 };
 use super::setup_cmd::run_explain_step;
 
@@ -144,6 +144,9 @@ pub(crate) fn execute_integration_plan(
             backup = step_backup_mcp_config(repo_root, tool, &scope)?;
         }
         step_register_mcp(repo_root, tool, &scope)?;
+    }
+    if plan.install_agent_hooks {
+        step_install_agent_hooks(repo_root, tool)?;
     }
     let wrote_mcp =
         plan.register_mcp && matches!(tool.automation_tier(), AutomationTier::Automated);

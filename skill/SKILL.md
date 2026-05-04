@@ -14,6 +14,9 @@ This file is the agent operating guide: how to query synrepo safely once the rep
 
 Use synrepo for:
 - orienting on an unfamiliar repo
+- answering codebase questions
+- reviewing files or subsystems
+- broad lexical search before opening files
 - finding where to edit
 - first-pass change impact
 - entrypoint discovery
@@ -27,12 +30,12 @@ Do not use synrepo for:
 
 ## Default path
 
-The required sequence is orient, find, impact or risks, edit, tests, changed.
+The required sequence for codebase questions, reviews, search routing, and edits is orient, find, impact or risks, edit, tests, changed.
 
 1. Start with `synrepo_orient` before reading the repo cold.
 2. Use `synrepo_find` or `synrepo_search` to find candidate files and symbols. For broad lexical searches, prefer `output_mode: "compact"` so results are grouped and token-accounted before opening files.
-3. Use `tiny` cards to route and `normal` cards to understand. Use `synrepo_minimum_context` as the bounded neighborhood step when a focal target is known but the surrounding risk is unclear.
-4. Use `synrepo_impact` (or its shorthand `synrepo_risks`) before editing.
+3. Use `tiny` cards to route and `normal` cards to understand. Use `synrepo_minimum_context` as the bounded neighborhood step when a focal target is known but the surrounding risk is unclear, especially for file reviews and codebase questions.
+4. Use `synrepo_impact` (or its shorthand `synrepo_risks`) before editing or reviewing risky files.
 5. Use `synrepo_tests` before claiming done.
 6. Use `synrepo_changed` after edits to review changed context and validation commands.
 7. Read full source files or request `deep` cards only after bounded cards identify the target or when the card content is insufficient. Full-file reads are an explicit escalation, not the default first step.
@@ -44,6 +47,8 @@ Project-scoped MCP configs that launch `synrepo mcp --repo .` have a default rep
 Global MCP configs that launch `synrepo mcp` serve registered projects by absolute path. In global or defaultless contexts, pass the current workspace's absolute path as `repo_root` to repo-addressable tools. If a tool reports that a repository is not managed by synrepo, ask the user to run `synrepo project add <path>`; do not bypass registry gating.
 
 Rule of thumb: `tiny` to find, `normal` to understand, `deep` to write.
+
+Client-side nudge hooks for Codex and Claude may remind agents to use synrepo before direct grep, read, review, or edit workflows. Install them with `synrepo setup codex --agent-hooks` or `synrepo setup claude --agent-hooks`. These hooks are advisory reminders. They do not block tools, store prompt content, or make the MCP server intercept external tool calls.
 
 ## Trust model
 
@@ -62,6 +67,7 @@ Rule of thumb: `tiny` to find, `normal` to understand, `deep` to write.
 - Do not expect watch or background behavior unless `synrepo watch` is explicitly running.
 - Do not call `synrepo_apply_anchor_edits` without a fresh `synrepo_prepare_edit_context` response.
 - Do not expect synrepo MCP edit tools to run shell commands. Command execution is unavailable.
+- Do not mistake client-side hook nudges for MCP interception or enforcement. They are non-blocking reminders.
 
 ## Core tools
 

@@ -27,6 +27,7 @@ mod tests {
         assert!(s.write_shim);
         assert!(s.register_mcp);
         assert!(!s.overwrite_shim);
+        assert!(!s.install_agent_hooks);
     }
 
     #[test]
@@ -36,6 +37,7 @@ mod tests {
         assert!(!s.write_shim);
         assert!(s.register_mcp);
         assert!(!s.overwrite_shim);
+        assert!(!s.install_agent_hooks);
     }
 
     #[test]
@@ -47,6 +49,7 @@ mod tests {
         assert!(!s.write_shim);
         assert!(!s.register_mcp);
         assert!(!s.overwrite_shim);
+        assert!(!s.install_agent_hooks);
     }
 
     #[test]
@@ -110,6 +113,37 @@ mod tests {
         assert!(plan.write_shim);
         assert!(plan.register_mcp);
         assert!(!plan.overwrite_shim);
+        assert!(!plan.install_agent_hooks);
+    }
+
+    #[test]
+    fn agent_hooks_are_explicit_and_supported_for_claude_codex() {
+        let mut s = IntegrationWizardState::new(complete(AgentTargetKind::Claude), vec![]);
+        press(&mut s, KeyCode::Enter); // target → actions
+        press(&mut s, KeyCode::Down); // register_mcp
+        press(&mut s, KeyCode::Down); // overwrite
+        press(&mut s, KeyCode::Down); // install hooks
+        press(&mut s, KeyCode::Char(' '));
+        assert!(s.install_agent_hooks);
+        press(&mut s, KeyCode::Enter);
+        press(&mut s, KeyCode::Enter);
+        let plan = s.finalize().expect("hook-only plan");
+        assert!(plan.install_agent_hooks);
+        assert!(!plan.write_shim);
+        assert!(!plan.register_mcp);
+    }
+
+    #[test]
+    fn agent_hooks_do_not_toggle_for_unsupported_targets() {
+        let mut s = IntegrationWizardState::new(complete(AgentTargetKind::Cursor), vec![]);
+        press(&mut s, KeyCode::Enter); // target → actions
+        press(&mut s, KeyCode::Down);
+        press(&mut s, KeyCode::Down);
+        press(&mut s, KeyCode::Down); // install hooks
+        press(&mut s, KeyCode::Char(' '));
+        assert!(!s.install_agent_hooks);
+        press(&mut s, KeyCode::Enter);
+        assert_eq!(s.step, IntegrationStep::SelectActions);
     }
 
     #[test]

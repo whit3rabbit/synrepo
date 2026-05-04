@@ -13,7 +13,7 @@ pub(crate) const CLAUDE_SHIM: &str = concat!(
 Use these when the synrepo MCP server is running:
 
 - `synrepo_card target=<id> budget=<tiny|normal|deep>` — structured card for a file or symbol.
-- `synrepo_search query=<text>` — lexical search across indexed files.
+- `synrepo_search query=<text> [output_mode=compact]` — lexical search across indexed files.
 - `synrepo_overview` — graph counts and mode summary.
 - `synrepo_where_to_edit task=<description>` — file suggestions for a plain-language task.
 - `synrepo_change_impact target=<id>` — first-pass reverse dependencies for this file or symbol.
@@ -96,7 +96,7 @@ synrepo precomputes a structural graph of the codebase from tree-sitter parsing 
 
 This skill belongs at `.agents/skills/synrepo/SKILL.md`.
 
-Project-scoped setup writes trusted project `.codex/config.toml`. Global Codex MCP registration is not automated by `synrepo setup`; if you configure `~/.codex/config.toml` manually, launch `synrepo mcp` and pass `repo_root` to repo-addressable tools.
+Project-scoped setup writes trusted project `.codex/config.toml`. Global Codex MCP registration is not automated by `synrepo setup`; if you configure `~/.codex/config.toml` manually, launch `synrepo mcp` and pass `repo_root` to repo-addressable tools. To add local non-blocking Codex nudges, run `synrepo setup codex --agent-hooks`.
 
 For project-scoped manual setup, edit trusted project `.codex/config.toml` directly:
 
@@ -112,7 +112,7 @@ args = [\"mcp\", \"--repo\", \".\"]
 ## MCP tools (primary interface)
 
 - `synrepo_card target=<id> budget=<tiny|normal|deep>` — structured card for a file or symbol
-- `synrepo_search query=<text>` — lexical search across indexed files
+- `synrepo_search query=<text> [output_mode=compact]` — lexical search across indexed files
 - `synrepo_overview` — graph node counts and repository mode
 - `synrepo_where_to_edit task=<description>` — file suggestions for a plain-language task
 - `synrepo_change_impact target=<id>` — first-pass reverse dependencies

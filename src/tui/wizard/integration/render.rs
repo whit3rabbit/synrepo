@@ -4,7 +4,9 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
 
-use super::state::{ActionRow, IntegrationStep, IntegrationWizardState, ACTION_ROWS};
+use super::state::{
+    agent_hooks_supported, ActionRow, IntegrationStep, IntegrationWizardState, ACTION_ROWS,
+};
 use crate::tui::app::poll_key;
 use crate::tui::theme::Theme;
 use crate::tui::wizard::{
@@ -156,12 +158,19 @@ fn draw_actions_step(
                 ActionRow::WriteShim => state.write_shim,
                 ActionRow::RegisterMcp => state.register_mcp,
                 ActionRow::OverwriteShim => state.overwrite_shim,
+                ActionRow::InstallAgentHooks => state.install_agent_hooks,
             };
             let check = if checked { "[x]" } else { "[ ]" };
             let label: &str = match row {
                 ActionRow::WriteShim => write_label.as_str(),
                 ActionRow::RegisterMcp => "Register the synrepo MCP server",
                 ActionRow::OverwriteShim => overwrite_label.as_str(),
+                ActionRow::InstallAgentHooks if agent_hooks_supported(state.target) => {
+                    "Install local synrepo nudge hooks"
+                }
+                ActionRow::InstallAgentHooks => {
+                    "Install local synrepo nudge hooks (Codex/Claude only)"
+                }
             };
             let selected = i == state.action_cursor;
             let marker = if selected { "▶ " } else { "  " };
@@ -228,6 +237,13 @@ fn draw_confirm_step(
                 theme.muted_style(),
             )));
         }
+        step += 1;
+    }
+    if state.install_agent_hooks {
+        lines.push(Line::from(Span::styled(
+            format!("  {step}. Install local synrepo nudge hooks"),
+            theme.base_style(),
+        )));
     }
     lines.push(Line::from(Span::raw("")));
     lines.push(Line::from(Span::styled(

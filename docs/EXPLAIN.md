@@ -26,6 +26,7 @@ model = "claude-sonnet-4-6"
 local_endpoint = "http://localhost:11434/api/chat"
 local_preset = "ollama"   # informational only; local_endpoint is authoritative
 commentary_cost_limit = 5000
+commentary_concurrency = 4
 ```
 
 `commentary_cost_limit` is the approximate per-call input-token ceiling for
@@ -33,6 +34,10 @@ commentary generation. The default stays conservative to avoid surprise cost
 or provider failures. For long-context providers, you can raise it toward
 `150000` so explain can include more source, dependency, module, and test
 context in one structured commentary document.
+
+`commentary_concurrency` limits concurrent commentary provider calls during
+refresh. It defaults to `4` and is clamped to at least `1`; set it to `1` for
+strictly serial refreshes or providers with tight rate limits.
 
 ## Precedence (env wins)
 

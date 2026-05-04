@@ -1,6 +1,6 @@
 //! Shared HTTP primitives for explain providers.
 //!
-//! Provides common utilities for building blocking HTTP clients, estimating
+//! Provides common utilities for building HTTP clients, estimating
 //! token counts, and making JSON requests.
 
 use std::{sync::OnceLock, time::Duration};
@@ -10,6 +10,10 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 
 use crate::pipeline::explain::telemetry::{ExplainFailure, TokenUsage};
+
+mod async_io;
+
+pub use async_io::{build_async_client, get_json_strict_async, post_json_strict_async};
 
 /// Default timeout for explain API calls (30 seconds).
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
@@ -186,7 +190,7 @@ where
     if !status.is_success() {
         return Err(HttpJsonError::Status {
             status,
-            retry_after: parse_retry_after(&response),
+            retry_after: parse_retry_after(response.headers()),
         });
     }
 
@@ -218,7 +222,7 @@ where
     if !status.is_success() {
         return Err(HttpJsonError::Status {
             status,
-            retry_after: parse_retry_after(&response),
+            retry_after: parse_retry_after(response.headers()),
         });
     }
 
@@ -258,8 +262,8 @@ fn redact_url_query_params(text: &str) -> String {
     out
 }
 
-fn parse_retry_after(response: &reqwest::blocking::Response) -> Option<Duration> {
-    let value = response.headers().get(reqwest::header::RETRY_AFTER)?;
+fn parse_retry_after(headers: &reqwest::header::HeaderMap) -> Option<Duration> {
+    let value = headers.get(reqwest::header::RETRY_AFTER)?;
     let seconds = value.to_str().ok()?.trim().parse::<u64>().ok()?;
     Some(Duration::from_secs(seconds))
 }

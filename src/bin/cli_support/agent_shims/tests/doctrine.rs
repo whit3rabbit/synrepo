@@ -77,6 +77,8 @@ fn skill_md_includes_doctrine_lines_verbatim() {
         "synrepo stores code facts and bounded operational memory. It is not a task tracker, not session memory, and not cross-session agent memory.",
         "Any handoff or next-action list is a derived recommendation regenerated from repo state. External task systems own assignment, status, and collaboration.",
         "Freshness is explicit. A stale label is information, not an error; it is not silently refreshed on read.",
+        "Client-side nudge hooks for Codex and Claude may remind agents to use synrepo before direct grep, read, review, or edit workflows.",
+        "Do not mistake client-side hook nudges for MCP interception or enforcement. They are non-blocking reminders.",
         "Global MCP configs that launch `synrepo mcp` serve registered projects by absolute path.",
         "If a tool reports that a repository is not managed by synrepo, ask the user to run `synrepo project add <path>`; do not bypass registry gating.",
     ];

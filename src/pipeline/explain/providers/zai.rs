@@ -23,6 +23,7 @@ const CONFIG: OpenAiCompatConfig = OpenAiCompatConfig {
     default_model: DEFAULT_MODEL,
     extra_headers: &[],
     on_response: None,
+    on_response_async: None,
 };
 
 /// Z.ai-backed commentary generator.

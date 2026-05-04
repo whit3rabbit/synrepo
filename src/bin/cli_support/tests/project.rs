@@ -192,8 +192,8 @@ fn scripted_setup_registers_project_once() {
     .unwrap();
     let resolution = resolve_tool_resolution(Some(AgentTool::Claude), &[], &[]).unwrap();
 
-    setup_many_resolved(repo.path(), &resolution, false, false, false).unwrap();
-    setup_many_resolved(repo.path(), &resolution, false, false, false).unwrap();
+    setup_many_resolved(repo.path(), &resolution, false, false, false, false).unwrap();
+    setup_many_resolved(repo.path(), &resolution, false, false, false, false).unwrap();
 
     let registry = synrepo::registry::load().unwrap();
     let canonical = synrepo::registry::canonicalize_path(repo.path());

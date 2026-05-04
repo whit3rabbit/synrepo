@@ -14,6 +14,6 @@ pub(crate) use report::{
     render_client_setup_summary, ClientBefore, ClientSetupEntry, McpRegistration, ShimFreshness,
 };
 pub(crate) use steps::{
-    resolve_setup_scope, step_apply_integration, step_ensure_ready, step_init, step_register_mcp,
-    step_write_shim, StepOutcome,
+    resolve_setup_scope, step_apply_integration, step_ensure_ready, step_init,
+    step_install_agent_hooks, step_register_mcp, step_write_shim, StepOutcome,
 };

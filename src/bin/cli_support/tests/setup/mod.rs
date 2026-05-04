@@ -1,3 +1,4 @@
+mod agent_hooks;
 mod codex;
 mod global;
 mod mcp_clients;

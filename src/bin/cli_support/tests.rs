@@ -1,3 +1,4 @@
+mod agent_hooks;
 mod agent_setup;
 mod change_risk;
 mod ci_run;

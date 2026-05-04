@@ -11,9 +11,9 @@ use serde::Deserialize;
 use crate::overlay::ConfidenceThresholds;
 use crate::pipeline::explain::{CommentaryGenerator, CrossLinkGenerator};
 
-use super::http::get_json_strict;
+use super::http::{get_json_strict, get_json_strict_async};
 use super::openai_compat::{
-    ChatResponse, OpenAiCompatConfig, OpenAiCompatProvider, ResponseExtras,
+    ChatResponse, OpenAiCompatConfig, OpenAiCompatProvider, ResponseExtras, ResponseExtrasFuture,
 };
 
 /// Default OpenRouter model for explain (Gemma is usually free/cheap).
@@ -32,6 +32,7 @@ const CONFIG: OpenAiCompatConfig = OpenAiCompatConfig {
         ("X-Title", "synrepo"),
     ],
     on_response: Some(openrouter_response_hook),
+    on_response_async: Some(openrouter_response_hook_async),
 };
 
 /// OpenRouter-backed commentary generator.
@@ -108,6 +109,15 @@ fn fetch_generation_stats(
     get_json_strict(client, &url, headers).ok()
 }
 
+async fn fetch_generation_stats_async(
+    client: &reqwest::Client,
+    headers: &[(&str, &str)],
+    generation_id: &str,
+) -> Option<GenerationStats> {
+    let url = format!("{GENERATION_URL}?id={generation_id}");
+    get_json_strict_async(client, &url, headers).await.ok()
+}
+
 /// Post-response hook: fetch generation stats for usage/cost overrides.
 fn openrouter_response_hook(
     parsed: &ChatResponse,
@@ -134,4 +144,31 @@ fn openrouter_response_hook(
         usage_override,
         billed_cost,
     }
+}
+
+fn openrouter_response_hook_async<'a>(
+    parsed: &'a ChatResponse,
+    client: &'a reqwest::Client,
+    headers: &'a [(&'a str, &'a str)],
+) -> ResponseExtrasFuture<'a> {
+    Box::pin(async move {
+        let stats = match parsed.id.as_deref() {
+            Some(id) => fetch_generation_stats_async(client, headers, id).await,
+            None => None,
+        };
+
+        let usage_override = stats.as_ref().and_then(GenerationStats::usage_pair);
+        let billed_cost = stats.as_ref().and_then(GenerationStats::billed_cost);
+        let usage_override = parsed
+            .usage
+            .as_ref()
+            .filter(|u| u.prompt_tokens > 0 || u.completion_tokens > 0)
+            .map(|u| (u.prompt_tokens, u.completion_tokens))
+            .or(usage_override);
+
+        ResponseExtras {
+            usage_override,
+            billed_cost,
+        }
+    })
 }

@@ -1,8 +1,9 @@
 //! Commentary refresh helpers for repair sync.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
+use std::sync::Arc;
 
 use crate::{
     core::ids::NodeId,
@@ -14,15 +15,12 @@ use crate::{
     store::{overlay::SqliteOverlayStore, sqlite::SqliteGraphStore},
 };
 
-use super::commentary_generate::execute_item;
 use super::commentary_plan::{
-    build_commentary_work_plan_with_progress, CommentaryProgressEvent, CommentaryWorkItem,
-    CommentaryWorkPhase, CommentaryWorkPlan,
+    build_commentary_work_plan_with_progress, CommentaryProgressEvent, CommentaryWorkPhase,
+    CommentaryWorkPlan,
 };
-use super::commentary_progress::{
-    emit, emit_docs_events, emit_index_events, emit_target_started, record_item_outcome,
-    skip_reason_summary,
-};
+use super::commentary_progress::{emit, emit_docs_events, emit_index_events, skip_reason_summary};
+use super::commentary_run::{run_phase, ItemExecutor, PhaseStats, RunPhase, RunTotals};
 use super::handlers::ActionContext;
 
 /// Generate or refresh commentary entries.
@@ -54,8 +52,10 @@ fn refresh_commentary_scoped(
     let overlay_dir = context.synrepo_dir.join("overlay");
     let mut overlay = SqliteOverlayStore::open(&overlay_dir)?;
     let graph = SqliteGraphStore::open_existing(&context.synrepo_dir.join("graph"))?;
-    let generator: Box<dyn CommentaryGenerator> =
-        build_commentary_generator(context.config, context.config.commentary_cost_limit);
+    let generator: Arc<dyn CommentaryGenerator> = Arc::from(build_commentary_generator(
+        context.config,
+        context.config.commentary_cost_limit,
+    ));
     let rows = commentary_rows_for_refresh(&overlay)?;
     let plan = match progress.as_mut() {
         Some(progress) => {
@@ -69,7 +69,7 @@ fn refresh_commentary_scoped(
         context.repo_root,
         &graph,
         &mut overlay,
-        &*generator,
+        generator,
         rows,
         plan,
         progress,
@@ -92,67 +92,6 @@ fn commentary_rows_for_refresh(
         .collect()
 }
 
-struct ItemExecutor<'a> {
-    repo_root: &'a Path,
-    graph: &'a SqliteGraphStore,
-    overlay: &'a mut SqliteOverlayStore,
-    generator: &'a dyn CommentaryGenerator,
-    max_input_tokens: u32,
-    max_targets: usize,
-}
-
-impl ItemExecutor<'_> {
-    fn execute(
-        &mut self,
-        item: &CommentaryWorkItem,
-    ) -> crate::Result<super::commentary_generate::ItemOutcome> {
-        execute_item(
-            self.repo_root,
-            self.graph,
-            self.overlay,
-            self.generator,
-            item,
-            self.max_input_tokens,
-        )
-    }
-}
-
-#[derive(Default)]
-struct RunTotals {
-    attempted: usize,
-    not_generated: usize,
-    queued_for_next_run: usize,
-    skip_reasons: BTreeMap<String, usize>,
-    stopped: bool,
-    halted_for_rate_limit: bool,
-}
-
-impl RunTotals {
-    fn can_continue(&self) -> bool {
-        !self.stopped && !self.halted_for_rate_limit
-    }
-}
-
-#[derive(Default)]
-struct PhaseStats {
-    attempted: usize,
-    generated: usize,
-}
-
-impl PhaseStats {
-    fn add(&mut self, other: Self) {
-        self.attempted += other.attempted;
-        self.generated += other.generated;
-    }
-}
-
-#[derive(Clone, Copy)]
-enum RunPhase {
-    Refresh,
-    FileSeed,
-    SymbolSeed,
-}
-
 #[allow(clippy::too_many_arguments)]
 fn refresh_commentary_with_generator(
     context: &ActionContext<'_>,
@@ -160,7 +99,7 @@ fn refresh_commentary_with_generator(
     repo_root: &Path,
     graph: &SqliteGraphStore,
     overlay: &mut SqliteOverlayStore,
-    generator: &dyn CommentaryGenerator,
+    generator: Arc<dyn CommentaryGenerator>,
     rows: Vec<(String, String)>,
     plan: CommentaryWorkPlan,
     mut progress: Option<&mut dyn FnMut(CommentaryProgressEvent)>,
@@ -197,6 +136,7 @@ fn refresh_commentary_with_generator(
             generator,
             max_input_tokens: context.config.commentary_cost_limit,
             max_targets,
+            concurrency: context.config.explain.commentary_concurrency(),
         };
 
         let refresh_stats = run_phase(
@@ -301,75 +241,4 @@ fn refresh_commentary_with_generator(
         index_summary.touched_paths
     ));
     Ok(())
-}
-
-fn run_phase(
-    executor: &mut ItemExecutor<'_>,
-    progress: &mut Option<&mut dyn FnMut(CommentaryProgressEvent)>,
-    should_stop: &mut Option<&mut dyn FnMut() -> bool>,
-    totals: &mut RunTotals,
-    items: &[CommentaryWorkItem],
-    phase: RunPhase,
-    commented: &mut HashSet<NodeId>,
-) -> crate::Result<PhaseStats> {
-    let mut stats = PhaseStats::default();
-    for item in items {
-        if stop_requested(should_stop) {
-            totals.stopped = true;
-            break;
-        }
-        if should_skip_item(phase, item, commented) {
-            continue;
-        }
-        totals.attempted += 1;
-        stats.attempted += 1;
-        emit_target_started(progress, item, totals.attempted);
-        let outcome = record_item_outcome(
-            progress,
-            item,
-            totals.attempted,
-            executor.max_targets,
-            executor.execute(item)?,
-            &mut totals.queued_for_next_run,
-            &mut totals.skip_reasons,
-        );
-        if outcome.generated {
-            stats.generated += 1;
-            mark_generated(phase, item, commented);
-        } else {
-            totals.not_generated += 1;
-        }
-        if outcome.halted {
-            totals.halted_for_rate_limit = true;
-            break;
-        }
-    }
-    Ok(stats)
-}
-
-fn should_skip_item(
-    phase: RunPhase,
-    item: &CommentaryWorkItem,
-    commented: &HashSet<NodeId>,
-) -> bool {
-    match phase {
-        RunPhase::Refresh => false,
-        RunPhase::FileSeed => commented.contains(&item.node_id),
-        RunPhase::SymbolSeed => {
-            commented.contains(&item.node_id) || commented.contains(&NodeId::File(item.file_id))
-        }
-    }
-}
-
-fn mark_generated(phase: RunPhase, item: &CommentaryWorkItem, commented: &mut HashSet<NodeId>) {
-    if matches!(phase, RunPhase::FileSeed | RunPhase::SymbolSeed) {
-        commented.insert(item.node_id);
-    }
-}
-
-fn stop_requested(should_stop: &mut Option<&mut dyn FnMut() -> bool>) -> bool {
-    match should_stop.as_mut() {
-        Some(should_stop) => should_stop(),
-        None => false,
-    }
 }

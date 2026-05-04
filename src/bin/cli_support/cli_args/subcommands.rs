@@ -52,6 +52,9 @@ pub(crate) struct SetupArgs {
     /// Configure the MCP server in this project instead of user-global config.
     #[arg(long, conflicts_with = "global")]
     pub(crate) project: bool,
+    /// Install local nudge hooks for supported clients (Codex and Claude).
+    #[arg(long)]
+    pub(crate) agent_hooks: bool,
     /// Deprecated no-op: global setup is now the default.
     #[arg(long, hide = true, conflicts_with = "project")]
     pub(crate) global: bool,

@@ -4,21 +4,39 @@
 //! sharing the same request/response shape (OpenAI, Z.ai, MiniMax, OpenRouter)
 //! only need to supply a config struct.
 
-use time::OffsetDateTime;
+use std::future::Future;
+use std::pin::Pin;
 
-use serde::{Deserialize, Serialize};
-
-use crate::core::ids::NodeId;
 use crate::overlay::{CitedSpan, ConfidenceThresholds};
 use crate::pipeline::explain::cross_link::CandidatePair;
 use crate::pipeline::explain::telemetry::{publish_budget_blocked, CallCtx, ExplainTarget};
-use crate::pipeline::explain::{CommentaryEntry, CommentaryGenerator, CrossLinkGenerator};
+use crate::pipeline::explain::CrossLinkGenerator;
 
 use super::http::{
-    build_client, cap_output_bytes, estimate_tokens, post_json_strict, resolve_usage,
-    UsageResolution,
+    build_async_client, build_client, cap_output_bytes, estimate_tokens, post_json_strict,
+    resolve_usage, UsageResolution,
 };
 use super::shared::*;
+use wire::{ChatMessage, ChatRequest};
+
+mod commentary;
+mod wire;
+
+pub use wire::ChatResponse;
+
+/// Boxed future returned by async provider response hooks.
+pub type ResponseExtrasFuture<'a> = Pin<Box<dyn Future<Output = ResponseExtras> + Send + 'a>>;
+
+/// Optional blocking post-response hook for provider-specific accounting.
+pub type ResponseExtrasHook =
+    fn(&ChatResponse, &reqwest::blocking::Client, &[(&str, &str)]) -> ResponseExtras;
+
+/// Optional async post-response hook for provider-specific accounting.
+pub type AsyncResponseExtrasHook = for<'a> fn(
+    &'a ChatResponse,
+    &'a reqwest::Client,
+    &'a [(&'a str, &'a str)],
+) -> ResponseExtrasFuture<'a>;
 
 /// Configuration that varies per OpenAI-compatible provider.
 pub struct OpenAiCompatConfig {
@@ -35,9 +53,9 @@ pub struct OpenAiCompatConfig {
     /// Extra HTTP headers (e.g. OpenRouter Referer/X-Title).
     pub extra_headers: &'static [(&'static str, &'static str)],
     /// Optional post-response hook for usage/cost overrides (OpenRouter).
-    #[allow(clippy::type_complexity)]
-    pub on_response:
-        Option<fn(&ChatResponse, &reqwest::blocking::Client, &[(&str, &str)]) -> ResponseExtras>,
+    pub on_response: Option<ResponseExtrasHook>,
+    /// Async companion for the post-response hook.
+    pub on_response_async: Option<AsyncResponseExtrasHook>,
 }
 
 /// Extra data returned by an optional post-response hook.
@@ -57,6 +75,7 @@ pub struct OpenAiCompatProvider {
     max_tokens_per_call: u32,
     thresholds: Option<ConfidenceThresholds>,
     client: reqwest::blocking::Client,
+    async_client: reqwest::Client,
 }
 
 impl OpenAiCompatProvider {
@@ -74,6 +93,7 @@ impl OpenAiCompatProvider {
             max_tokens_per_call,
             thresholds,
             client: build_client(),
+            async_client: build_async_client(),
         }
     }
 
@@ -122,6 +142,18 @@ impl OpenAiCompatProvider {
             .on_response
             .map(|hook| hook(parsed, &self.client, headers))
             .unwrap_or_default()
+    }
+
+    /// Run the optional async post-response hook.
+    async fn resolve_extras_async(
+        &self,
+        parsed: &ChatResponse,
+        headers: &[(&str, &str)],
+    ) -> ResponseExtras {
+        match self.config.on_response_async {
+            Some(hook) => hook(parsed, &self.async_client, headers).await,
+            None => self.resolve_extras(parsed, headers),
+        }
     }
 
     /// Resolve usage from the response, applying any hook overrides.
@@ -209,99 +241,6 @@ impl OpenAiCompatProvider {
     }
 }
 
-impl CommentaryGenerator for OpenAiCompatProvider {
-    fn generate(&self, node: NodeId, context: &str) -> crate::Result<Option<CommentaryEntry>> {
-        let target = ExplainTarget::Commentary { node };
-
-        let estimated_tokens = estimate_tokens(context);
-        if estimated_tokens > self.max_tokens_per_call {
-            publish_budget_blocked(
-                self.config.provider,
-                &self.model,
-                target,
-                estimated_tokens,
-                self.max_tokens_per_call,
-            );
-            return Ok(None);
-        }
-
-        let body = ChatRequest {
-            model: &self.model,
-            max_tokens: COMMENTARY_MAX_OUTPUT_TOKENS,
-            messages: vec![
-                ChatMessage {
-                    role: "system",
-                    content: COMMENTARY_SYSTEM_PROMPT,
-                },
-                ChatMessage {
-                    role: "user",
-                    content: context,
-                },
-            ],
-        };
-
-        let auth_header = format!("Bearer {}", self.api_key);
-        let headers = self.build_headers(&auth_header);
-
-        let ctx = CallCtx::start(self.config.provider, &self.model, target);
-        let parsed: ChatResponse =
-            match post_json_strict(&self.client, self.config.api_url, &headers, &body) {
-                Ok(p) => p,
-                Err(e) => {
-                    ctx.fail(e);
-                    return Ok(None);
-                }
-            };
-
-        // Resolve extras (OpenRouter generation stats) before consuming choices.
-        let extras = self.resolve_extras(&parsed, &headers);
-        let reported_raw = parsed
-            .usage
-            .as_ref()
-            .map(|u| (u.prompt_tokens, u.completion_tokens));
-
-        let raw_text = parsed
-            .choices
-            .into_iter()
-            .next()
-            .and_then(|c| c.message.content)
-            .unwrap_or_default();
-        let Some(text) = sanitize_generated_commentary_text(&raw_text) else {
-            let reported = extras.usage_override.or(reported_raw);
-            let usage = resolve_usage(UsageResolution::from_output_text(
-                reported,
-                estimated_tokens,
-                "",
-            ));
-            ctx.complete_with_cost(usage, extras.billed_cost, 0);
-            return Ok(None);
-        };
-
-        let reported = extras.usage_override.or(reported_raw);
-        let usage = resolve_usage(UsageResolution::from_output_text(
-            reported,
-            estimated_tokens,
-            &text,
-        ));
-        ctx.complete_with_cost(usage, extras.billed_cost, cap_output_bytes(&text));
-
-        if text.is_empty() {
-            return Ok(None);
-        }
-
-        Ok(Some(CommentaryEntry {
-            node_id: node,
-            text,
-            provenance: crate::overlay::CommentaryProvenance {
-                source_content_hash: String::new(),
-                pass_id: self.config.pass_id.to_string(),
-                model_identity: self.model.clone(),
-                generated_at: OffsetDateTime::now_utc(),
-            },
-        }))
-    }
-}
-
 impl CrossLinkGenerator for OpenAiCompatProvider {
     fn generate_candidates(
         &self,
@@ -322,62 +261,6 @@ impl CrossLinkGenerator for OpenAiCompatProvider {
 
 use crate::overlay::OverlayLink;
 
-// Shared request/response types for OpenAI-compatible APIs.
-
-/// OpenAI chat completion request.
-#[derive(Serialize)]
-struct ChatRequest<'a> {
-    model: &'a str,
-    max_tokens: u32,
-    messages: Vec<ChatMessage<'a>>,
-}
-
-/// A single message in a chat completion request.
-#[derive(Serialize)]
-struct ChatMessage<'a> {
-    role: &'a str,
-    content: &'a str,
-}
-
-/// OpenAI chat completion response.
-#[derive(Deserialize)]
-pub struct ChatResponse {
-    /// Response ID (used by OpenRouter for generation stats).
-    #[serde(default)]
-    pub id: Option<String>,
-    /// Completion choices.
-    pub choices: Vec<Choice>,
-    /// Token usage, if reported.
-    #[serde(default)]
-    pub usage: Option<ChatUsage>,
-}
-
-/// Token usage reported by the API.
-#[derive(Deserialize)]
-pub struct ChatUsage {
-    /// Input/prompt tokens.
-    #[serde(default)]
-    pub prompt_tokens: u32,
-    /// Output/completion tokens.
-    #[serde(default)]
-    pub completion_tokens: u32,
-}
-
-/// A single completion choice.
-#[derive(Deserialize)]
-pub struct Choice {
-    /// The generated message.
-    pub message: MessageContent,
-}
-
-/// Message content within a choice.
-#[derive(Deserialize)]
-pub struct MessageContent {
-    /// Generated text content.
-    #[serde(default)]
-    pub content: Option<String>,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -392,6 +275,7 @@ mod tests {
         default_model: "test-model",
         extra_headers: &[],
         on_response: None,
+        on_response_async: None,
     };
 
     #[test]

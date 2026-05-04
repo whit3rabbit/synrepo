@@ -18,6 +18,9 @@ pub struct IntegrationPlan {
     /// canonical template. Mirrors `synrepo agent-setup --regen`. Never true
     /// by default; the operator must explicitly opt in.
     pub overwrite_shim: bool,
+    /// Install local client-side synrepo nudge hooks. Supported for Codex and
+    /// Claude only, and never enabled by default.
+    pub install_agent_hooks: bool,
 }
 
 /// Outcome of the integration sub-wizard.
@@ -58,6 +61,8 @@ pub enum ActionRow {
     RegisterMcp,
     /// Overwrite an existing shim file.
     OverwriteShim,
+    /// Install local client-side synrepo nudge hooks.
+    InstallAgentHooks,
 }
 
 /// Rows displayed in the action-selection step.
@@ -65,6 +70,7 @@ pub const ACTION_ROWS: &[ActionRow] = &[
     ActionRow::WriteShim,
     ActionRow::RegisterMcp,
     ActionRow::OverwriteShim,
+    ActionRow::InstallAgentHooks,
 ];
 
 /// State machine driving the sub-wizard. Tests drive this struct via
@@ -90,6 +96,8 @@ pub struct IntegrationWizardState {
     pub register_mcp: bool,
     /// Committed action flag: overwrite an existing shim rather than skipping.
     pub overwrite_shim: bool,
+    /// Committed action flag: install local nudge hooks for supported clients.
+    pub install_agent_hooks: bool,
     /// True when the operator pressed Esc / q / Ctrl-C before Confirm.
     pub cancelled: bool,
 }
@@ -119,6 +127,7 @@ impl IntegrationWizardState {
             write_shim,
             register_mcp,
             overwrite_shim: false,
+            install_agent_hooks: false,
             cancelled: false,
         }
     }
@@ -176,6 +185,7 @@ impl IntegrationWizardState {
         self.write_shim = w;
         self.register_mcp = m;
         self.overwrite_shim = false;
+        self.install_agent_hooks = false;
     }
 
     fn handle_select_actions(&mut self, code: KeyCode, modifiers: KeyModifiers) -> bool {
@@ -222,11 +232,15 @@ impl IntegrationWizardState {
             ActionRow::WriteShim => self.write_shim = !self.write_shim,
             ActionRow::RegisterMcp => self.register_mcp = !self.register_mcp,
             ActionRow::OverwriteShim => self.overwrite_shim = !self.overwrite_shim,
+            ActionRow::InstallAgentHooks if agent_hooks_supported(self.target) => {
+                self.install_agent_hooks = !self.install_agent_hooks
+            }
+            ActionRow::InstallAgentHooks => {}
         }
     }
 
     fn any_action_selected(&self) -> bool {
-        self.write_shim || self.register_mcp
+        self.write_shim || self.register_mcp || self.install_agent_hooks
     }
 
     fn handle_confirm(&mut self, code: KeyCode, modifiers: KeyModifiers) -> bool {
@@ -261,8 +275,14 @@ impl IntegrationWizardState {
             write_shim: self.write_shim,
             register_mcp: self.register_mcp,
             overwrite_shim: self.overwrite_shim,
+            install_agent_hooks: self.install_agent_hooks,
         })
     }
+}
+
+/// Return true when the selected target can install local synrepo nudge hooks.
+pub fn agent_hooks_supported(target: AgentTargetKind) -> bool {
+    matches!(target, AgentTargetKind::Claude | AgentTargetKind::Codex)
 }
 
 /// Default action flags for a given current integration state. Partial state

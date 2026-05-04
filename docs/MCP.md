@@ -14,17 +14,19 @@ synrepo mcp --allow-edits      # explicitly expose anchored edit tools
 
 Most users should prefer `synrepo setup <tool>`, which writes the agent instructions or skill and registers MCP through `agent-config` for supported integrations. The default is global agent config with `synrepo mcp`; pass `--project` to write repo-local MCP config that launches `synrepo mcp --repo .`. Global MCP is lazy: each tool call must supply a registered repository via `repo_root` unless the server has a default repository. Shim-only integrations still need their own MCP config pointed at `synrepo mcp --repo .`.
 
-`synrepo mcp` does not start `synrepo watch`, install Git hooks, scan every repository, or keep state fresh in the background. Use `synrepo watch`, `synrepo watch --daemon`, or `synrepo install-hooks` explicitly when you want those behaviors.
+Codex and Claude can also install local client-side nudges with `synrepo setup codex --agent-hooks` or `synrepo setup claude --agent-hooks`. These hooks call `synrepo agent-hook nudge`, remind the agent to use synrepo before direct grep/read/review/edit workflows, and never block tools or store prompt content.
+
+`synrepo mcp` does not start `synrepo watch`, install Git hooks, install agent nudge hooks, scan every repository, intercept external tool calls, or keep state fresh in the background. Use `synrepo watch`, `synrepo watch --daemon`, `synrepo install-hooks`, or explicit `synrepo setup <tool> --agent-hooks` when you want those behaviors.
 
 ## Default Agent Workflow
 
-The default path is deliberately small first:
+The default path for codebase questions, file reviews, broad search, impact checks, and edits is deliberately small first:
 
 1. `synrepo_orient` before reading the repo cold.
 2. `synrepo_find` or `synrepo_search` to route a task.
 3. `synrepo_explain` for bounded details on a file or symbol.
 4. `synrepo_minimum_context` when a focal target is known but surrounding risk is unclear.
-5. `synrepo_impact` or `synrepo_risks` before edits.
+5. `synrepo_impact` or `synrepo_risks` before edits or risky file reviews.
 6. `synrepo_tests` before claiming done.
 7. `synrepo_changed` after edits to review changed context and validation commands.
 

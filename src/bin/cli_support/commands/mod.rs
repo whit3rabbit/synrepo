@@ -4,6 +4,7 @@ use synrepo::{config::Config, store::compatibility::StoreId};
 
 use super::graph::{check_store_ready, node_output};
 
+pub(crate) mod agent_hooks;
 mod basic;
 mod ci_run;
 mod compact;
@@ -88,8 +89,8 @@ pub(crate) use setup::{
     StepOutcome,
 };
 pub(crate) use setup::{
-    resolve_setup_scope, step_apply_integration, step_ensure_ready, step_init, step_register_mcp,
-    step_write_shim,
+    resolve_setup_scope, step_apply_integration, step_ensure_ready, step_init,
+    step_install_agent_hooks, step_register_mcp, step_write_shim,
 };
 pub(crate) use setup_explain::step_apply_explain;
 pub(crate) use setup_mcp_backup::{mcp_config_has_synrepo, step_backup_mcp_config};

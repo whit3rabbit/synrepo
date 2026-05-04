@@ -3,10 +3,12 @@
 //! - `handlers.rs` — action handlers extracted from sync.rs
 
 mod commentary;
+mod commentary_async;
 mod commentary_context;
 mod commentary_generate;
 mod commentary_plan;
 mod commentary_progress;
+mod commentary_run;
 pub mod handlers;
 mod revalidate_links;
 

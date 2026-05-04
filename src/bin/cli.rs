@@ -9,8 +9,8 @@ use syntext::SearchOptions;
 use tracing_subscriber::EnvFilter;
 
 use cli_support::cli_args::{
-    AgentSetupArgs, BenchCommand, Cli, Command, LinksCommand, NotesCommand, ProjectCommand,
-    SetupArgs, StatsCommand, UninstallArgs, WatchCommand,
+    AgentHookCommand, AgentSetupArgs, BenchCommand, Cli, Command, LinksCommand, NotesCommand,
+    ProjectCommand, StatsCommand, UninstallArgs, WatchCommand,
 };
 use cli_support::commands::{
     agent_setup_many_resolved, bench_context, cards_alias, change_risk, check, compact, docs,
@@ -18,9 +18,9 @@ use cli_support::commands::{
     links_list, links_reject, links_review, node, notes_add, notes_audit, notes_forget, notes_link,
     notes_list, notes_supersede, notes_verify, project_add, project_inspect, project_list,
     project_prune_missing, project_remove, project_rename, project_use, reconcile, remove,
-    resolve_tool_resolution, risks_alias, run_mcp_server, search, server, setup_many_resolved,
-    stats_context, status, sync, tests_alias, uninstall, upgrade, watch, watch_internal,
-    watch_status, watch_stop, StatFormat,
+    resolve_tool_resolution, risks_alias, run_mcp_server, search, server, stats_context, status,
+    sync, tests_alias, uninstall, upgrade, watch, watch_internal, watch_status, watch_stop,
+    StatFormat,
 };
 #[cfg(test)]
 use cli_support::commands::{prepare_mcp_state, report_reconcile_outcome};
@@ -96,63 +96,11 @@ fn dispatch(
             let resolution = resolve_tool_resolution(tool, &only, &skip)?;
             agent_setup_many_resolved(repo_root, &resolution, force, regen)
         }
-        Command::Setup(SetupArgs {
-            tool,
-            only,
-            skip,
-            force,
-            explain,
-            gitignore,
-            project,
-            global,
-        }) => {
-            if global {
-                eprintln!("warning: `synrepo setup --global` is deprecated; global setup is now the default");
-            }
-            let any_target = tool.is_some() || !only.is_empty() || !skip.is_empty();
-            if any_target {
-                let resolution = resolve_tool_resolution(tool, &only, &skip)?;
-                setup_many_resolved(repo_root, &resolution, force, gitignore, project)?;
-                if explain {
-                    cli_support::setup_cmd::run_explain_step(repo_root, tui_opts)?;
-                }
-                return Ok(());
-            }
-            // Wizard mode owns its own init/explain/gitignore handling via
-            // SetupPlan, so the scripted-only flags have no clean place to
-            // land. Fail loud rather than silently dropping.
-            let mut bad_flags = Vec::new();
-            if force {
-                bad_flags.push("--force");
-            }
-            if explain {
-                bad_flags.push("--explain");
-            }
-            if gitignore {
-                bad_flags.push("--gitignore");
-            }
-            if project {
-                bad_flags.push("--project");
-            }
-            if global {
-                bad_flags.push("--global");
-            }
-            if !bad_flags.is_empty() {
-                anyhow::bail!(
-                    "`synrepo setup` without a tool launches the interactive wizard; \
-                     {} only applies when a tool is passed (e.g. `synrepo setup claude {}`).",
-                    bad_flags.join(" / "),
-                    bad_flags.join(" "),
-                );
-            }
-            if !stdout_is_tty() {
-                eprintln!(
-                    "synrepo setup: interactive wizard requires a TTY. \
-                     Pass a tool for the scripted flow (e.g. `synrepo setup claude`)."
-                );
-                std::process::exit(2);
-            }
-            cli_support::setup_cmd::run_wizard_and_apply(repo_root, tui_opts)
+        Command::AgentHook(AgentHookCommand::Nudge(args)) => {
+            cli_support::commands::agent_hooks::run_nudge(&args.client, &args.event)
+        }
+        Command::Setup(args) => {
+            cli_support::setup_dispatch::dispatch_setup(repo_root, args, tui_opts)
         }
         Command::Reconcile { fast } => reconcile(repo_root, fast),
         Command::InstallHooks => cli_support::commands::install_hooks(repo_root),

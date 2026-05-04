@@ -35,7 +35,7 @@ impl ServerHandler for SynrepoServer {
                 .build(),
         )
         .with_instructions(
-            "synrepo provides structured code-intelligence context. \
+            "synrepo provides structured code-intelligence context for codebase questions, file reviews, search routing, impact checks, and edits. \
              Required workflow: synrepo_orient to start, synrepo_find to route a task, \
              synrepo_explain for bounded details, synrepo_impact (or its shorthand synrepo_risks) before edits, \
              synrepo_tests before claiming done, and synrepo_changed after edits. \

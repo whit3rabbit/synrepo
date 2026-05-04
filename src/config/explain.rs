@@ -8,11 +8,18 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Default number of concurrent commentary provider calls during refresh.
+pub const DEFAULT_COMMENTARY_CONCURRENCY: usize = 4;
+
+fn default_commentary_concurrency() -> usize {
+    DEFAULT_COMMENTARY_CONCURRENCY
+}
+
 /// Explain provider configuration block persisted as `[explain]` in
 /// `.synrepo/config.toml`. All fields are optional with serde defaults; missing
 /// or absent block means "disabled, no preferences set". The legacy
 /// `[synthesis]` block is rejected by `Config::load`.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ExplainConfig {
     /// When false, explain is disabled regardless of env keys. Set
     /// `SYNREPO_LLM_ENABLED=1` as a one-shot env override without persisting.
@@ -71,9 +78,37 @@ pub struct ExplainConfig {
     /// display a friendly name.
     #[serde(default)]
     pub local_preset: Option<String>,
+
+    /// Maximum commentary provider calls to run at once during refresh.
+    #[serde(default = "default_commentary_concurrency")]
+    pub commentary_concurrency: usize,
+}
+
+impl Default for ExplainConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            provider: None,
+            anthropic_api_key: None,
+            openai_api_key: None,
+            gemini_api_key: None,
+            openrouter_api_key: None,
+            zai_api_key: None,
+            minimax_api_key: None,
+            model: None,
+            local_endpoint: None,
+            local_preset: None,
+            commentary_concurrency: default_commentary_concurrency(),
+        }
+    }
 }
 
 impl ExplainConfig {
+    /// Runtime commentary concurrency, clamped to at least one worker.
+    pub fn commentary_concurrency(&self) -> usize {
+        self.commentary_concurrency.max(1)
+    }
+
     /// Merge another explain config into this one. `other` wins on all fields.
     pub fn merge(&mut self, other: Self) {
         if other.enabled {
@@ -108,6 +143,9 @@ impl ExplainConfig {
         }
         if other.local_preset.is_some() {
             self.local_preset = other.local_preset;
+        }
+        if other.commentary_concurrency != default_commentary_concurrency() {
+            self.commentary_concurrency = other.commentary_concurrency;
         }
     }
 }
@@ -147,6 +185,8 @@ mod tests {
         assert!(config.explain.model.is_none());
         assert!(config.explain.local_endpoint.is_none());
         assert!(config.explain.local_preset.is_none());
+        assert_eq!(config.explain.commentary_concurrency, 4);
+        assert_eq!(config.explain.commentary_concurrency(), 4);
     }
 
     #[test]
@@ -167,6 +207,7 @@ mod tests {
             model = "llama3"
             local_endpoint = "http://localhost:11434/api/chat"
             local_preset = "ollama"
+            commentary_concurrency = 8
         "#;
         fs::write(synrepo_dir.join("config.toml"), toml).unwrap();
 
@@ -180,6 +221,7 @@ mod tests {
             Some("http://localhost:11434/api/chat")
         );
         assert_eq!(config.explain.local_preset.as_deref(), Some("ollama"));
+        assert_eq!(config.explain.commentary_concurrency, 8);
     }
 
     #[test]
@@ -201,6 +243,7 @@ mod tests {
         let config = Config::load(dir.path()).unwrap();
         assert!(config.explain.enabled);
         assert!(config.explain.provider.is_none());
+        assert_eq!(config.explain.commentary_concurrency, 4);
     }
 
     #[test]
@@ -240,6 +283,7 @@ mod tests {
             enabled: true,
             openai_api_key: Some("local-key".to_string()),
             model: Some("gpt-4".to_string()),
+            commentary_concurrency: 2,
             ..Default::default()
         };
 
@@ -250,5 +294,15 @@ mod tests {
         assert_eq!(base.anthropic_api_key.as_deref(), Some("global-key"));
         assert_eq!(base.openai_api_key.as_deref(), Some("local-key"));
         assert_eq!(base.model.as_deref(), Some("gpt-4"));
+        assert_eq!(base.commentary_concurrency, 2);
+    }
+
+    #[test]
+    fn commentary_concurrency_clamps_to_one() {
+        let config = ExplainConfig {
+            commentary_concurrency: 0,
+            ..Default::default()
+        };
+        assert_eq!(config.commentary_concurrency(), 1);
     }
 }

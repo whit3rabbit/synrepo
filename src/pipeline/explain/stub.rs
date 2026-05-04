@@ -6,7 +6,10 @@
 use crate::core::ids::NodeId;
 use crate::overlay::CommentaryEntry;
 
-use super::{CommentaryGeneration, CommentaryGenerator, CommentarySkip, CommentarySkipReason};
+use super::{
+    CommentaryFuture, CommentaryGeneration, CommentaryGenerator, CommentarySkip,
+    CommentarySkipReason,
+};
 
 /// A generator that never produces an entry.
 ///
@@ -52,5 +55,17 @@ impl CommentaryGenerator for NoOpGenerator {
         Ok(CommentaryGeneration::Skipped(CommentarySkip::new(
             self.reason,
         )))
+    }
+
+    fn generate_with_outcome_async<'a>(
+        &'a self,
+        _node: NodeId,
+        _context: &'a str,
+    ) -> CommentaryFuture<'a> {
+        Box::pin(async move {
+            Ok(CommentaryGeneration::Skipped(CommentarySkip::new(
+                self.reason,
+            )))
+        })
     }
 }

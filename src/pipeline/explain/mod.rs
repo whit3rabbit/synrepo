@@ -14,6 +14,9 @@
 //! - Provider implementations in [`providers`]: call various LLM APIs when
 //!   the appropriate API key is set via environment variables.
 
+use std::future::Future;
+use std::pin::Pin;
+
 pub mod accounting;
 pub mod commentary_template;
 pub mod context;
@@ -52,6 +55,10 @@ pub use stub::NoOpGenerator;
 use crate::core::ids::NodeId;
 use crate::overlay::CommentaryEntry;
 
+/// Boxed future returned by async commentary providers.
+pub type CommentaryFuture<'a> =
+    Pin<Box<dyn Future<Output = crate::Result<CommentaryGeneration>> + Send + 'a>>;
+
 /// Narrow boundary between the card compiler and an LLM-backed commentary
 /// producer.
 ///
@@ -76,5 +83,14 @@ pub trait CommentaryGenerator: Send + Sync {
     ) -> crate::Result<CommentaryGeneration> {
         self.generate(node, context)
             .map(|entry| CommentaryGeneration::from_optional(entry, CommentarySkipReason::Unknown))
+    }
+
+    /// Async variant used by batch refresh to overlap provider round-trips.
+    fn generate_with_outcome_async<'a>(
+        &'a self,
+        node: NodeId,
+        context: &'a str,
+    ) -> CommentaryFuture<'a> {
+        Box::pin(async move { self.generate_with_outcome(node, context) })
     }
 }
