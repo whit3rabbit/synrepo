@@ -342,10 +342,14 @@ fn record_install_under_home_env_guard_does_not_touch_user_registry() {
         isolated_registry.exists(),
         "record_install must write the redirected home; HomeEnvGuard may be broken"
     );
-    let isolated_content = std::fs::read_to_string(&isolated_registry).unwrap();
+    let isolated_registry = io::load_from(&isolated_registry).unwrap();
+    let expected_project = super::canonicalize_path(project.path());
     assert!(
-        isolated_content.contains(project.path().to_str().unwrap()),
-        "isolated registry must contain the project path; got: {isolated_content}"
+        isolated_registry
+            .projects
+            .iter()
+            .any(|entry| entry.path == expected_project),
+        "isolated registry must contain the project path; got: {isolated_registry:#?}"
     );
 
     // Negative: real registry is untouched (no new [[project]] block).
