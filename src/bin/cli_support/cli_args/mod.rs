@@ -169,6 +169,18 @@ pub(crate) enum Command {
         budget: Option<usize>,
     },
 
+    /// Classify a task into the cheapest safe synrepo route.
+    TaskRoute {
+        /// Plain-language task.
+        task: String,
+        /// Optional source path for extension-sensitive routing.
+        #[arg(long)]
+        path: Option<String>,
+        /// Emit JSON instead of human-readable output.
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Explain a file or symbol with a bounded card.
     Explain {
         /// Target file path or symbol name.
@@ -372,22 +384,4 @@ pub(crate) enum Command {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{Cli, Command};
-    use clap::Parser;
-
-    #[test]
-    fn init_force_flag_defaults_off_and_sets_on_request() {
-        let default = Cli::try_parse_from(["synrepo", "init"]).unwrap();
-        assert!(matches!(
-            default.command,
-            Some(Command::Init { force: false, .. })
-        ));
-
-        let forced = Cli::try_parse_from(["synrepo", "init", "--force"]).unwrap();
-        assert!(matches!(
-            forced.command,
-            Some(Command::Init { force: true, .. })
-        ));
-    }
-}
+mod tests;

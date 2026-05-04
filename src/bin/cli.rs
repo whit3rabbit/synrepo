@@ -19,8 +19,8 @@ use cli_support::commands::{
     notes_list, notes_supersede, notes_verify, project_add, project_inspect, project_list,
     project_prune_missing, project_remove, project_rename, project_use, reconcile, remove,
     resolve_tool_resolution, risks_alias, run_mcp_server, search, server, stats_context, status,
-    sync, tests_alias, uninstall, upgrade, watch, watch_internal, watch_status, watch_stop,
-    StatFormat,
+    sync, task_route, tests_alias, uninstall, upgrade, watch, watch_internal, watch_status,
+    watch_stop, StatFormat,
 };
 #[cfg(test)]
 use cli_support::commands::{prepare_mcp_state, report_reconcile_outcome};
@@ -136,6 +136,9 @@ fn dispatch(
             },
         ),
         Command::Cards { query, budget } => cards_alias(repo_root, &query, budget),
+        Command::TaskRoute { task, path, json } => {
+            task_route(repo_root, &task, path.as_deref(), json)
+        }
         Command::Docs(command) => docs(repo_root, command),
         Command::Explain { target, budget } => explain_alias(repo_root, &target, budget),
         Command::Impact { target, budget } => impact_alias(repo_root, &target, budget),

@@ -360,6 +360,7 @@ pub(crate) fn load_project_refs() -> anyhow::Result<Vec<ProjectRef>> {
     let mut projects: Vec<ProjectRef> = registry::load()?
         .projects
         .iter()
+        .filter(|entry| entry.is_explicitly_registered())
         .filter_map(ProjectRef::from_entry)
         .collect();
     projects.sort_by(|a, b| {

@@ -42,6 +42,8 @@ pub mod notes;
 pub mod primitives;
 #[doc(hidden)]
 pub mod search;
+#[doc(hidden)]
+pub mod task_route;
 
 mod findings;
 

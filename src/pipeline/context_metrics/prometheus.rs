@@ -114,6 +114,54 @@ impl ContextMetrics {
             "Observed: compact outputs that omitted content.",
             self.compact_truncation_applied_total,
         );
+        write_counter(
+            &mut out,
+            "synrepo_route_classifications_total",
+            "Observed: task-route classifications served without storing task text.",
+            self.route_classifications_total,
+        );
+        write_counter(
+            &mut out,
+            "synrepo_context_fast_path_signals_total",
+            "Observed: hook emissions containing the context fast-path signal.",
+            self.context_fast_path_signals_total,
+        );
+        write_counter(
+            &mut out,
+            "synrepo_deterministic_edit_candidates_total",
+            "Observed: route classifications that returned a deterministic edit candidate.",
+            self.deterministic_edit_candidates_total,
+        );
+        write_counter(
+            &mut out,
+            "synrepo_deterministic_edit_candidate_signals_total",
+            "Observed: hook emissions containing the deterministic edit candidate signal.",
+            self.deterministic_edit_candidate_signals_total,
+        );
+        write_counter(
+            &mut out,
+            "synrepo_llm_not_required_signals_total",
+            "Observed: hook emissions containing the LLM-not-required signal.",
+            self.llm_not_required_signals_total,
+        );
+        write_counter(
+            &mut out,
+            "synrepo_anchored_edit_accepted_total",
+            "Observed: anchored edit operations accepted by the gated edit surface.",
+            self.anchored_edit_accepted_total,
+        );
+        write_counter(
+            &mut out,
+            "synrepo_anchored_edit_rejected_total",
+            "Observed: anchored edit operations rejected by the gated edit surface.",
+            self.anchored_edit_rejected_total,
+        );
+        write_counter(
+            &mut out,
+            "synrepo_estimated_llm_calls_avoided_total",
+            "Estimated: route or hook recommendations where an LLM call was likely avoidable.",
+            self.estimated_llm_calls_avoided_total,
+        );
 
         writeln!(
             out,
@@ -231,6 +279,14 @@ mod tests {
         metrics.compact_estimated_tokens_saved_total = 320;
         metrics.compact_omitted_items_total = 5;
         metrics.compact_truncation_applied_total = 1;
+        metrics.route_classifications_total = 6;
+        metrics.context_fast_path_signals_total = 3;
+        metrics.deterministic_edit_candidates_total = 2;
+        metrics.deterministic_edit_candidate_signals_total = 1;
+        metrics.llm_not_required_signals_total = 3;
+        metrics.anchored_edit_accepted_total = 2;
+        metrics.anchored_edit_rejected_total = 1;
+        metrics.estimated_llm_calls_avoided_total = 5;
         metrics.budget_tier_usage.insert("tiny".to_string(), 2);
         metrics.budget_tier_usage.insert("normal".to_string(), 1);
         metrics
@@ -294,6 +350,30 @@ synrepo_test_surface_hits_total 2\n\
 	# HELP synrepo_compact_truncation_applied_total Observed: compact outputs that omitted content.\n\
 	# TYPE synrepo_compact_truncation_applied_total counter\n\
 	synrepo_compact_truncation_applied_total 1\n\
+	# HELP synrepo_route_classifications_total Observed: task-route classifications served without storing task text.\n\
+	# TYPE synrepo_route_classifications_total counter\n\
+	synrepo_route_classifications_total 6\n\
+	# HELP synrepo_context_fast_path_signals_total Observed: hook emissions containing the context fast-path signal.\n\
+	# TYPE synrepo_context_fast_path_signals_total counter\n\
+	synrepo_context_fast_path_signals_total 3\n\
+	# HELP synrepo_deterministic_edit_candidates_total Observed: route classifications that returned a deterministic edit candidate.\n\
+	# TYPE synrepo_deterministic_edit_candidates_total counter\n\
+	synrepo_deterministic_edit_candidates_total 2\n\
+	# HELP synrepo_deterministic_edit_candidate_signals_total Observed: hook emissions containing the deterministic edit candidate signal.\n\
+	# TYPE synrepo_deterministic_edit_candidate_signals_total counter\n\
+	synrepo_deterministic_edit_candidate_signals_total 1\n\
+	# HELP synrepo_llm_not_required_signals_total Observed: hook emissions containing the LLM-not-required signal.\n\
+	# TYPE synrepo_llm_not_required_signals_total counter\n\
+	synrepo_llm_not_required_signals_total 3\n\
+	# HELP synrepo_anchored_edit_accepted_total Observed: anchored edit operations accepted by the gated edit surface.\n\
+	# TYPE synrepo_anchored_edit_accepted_total counter\n\
+	synrepo_anchored_edit_accepted_total 2\n\
+	# HELP synrepo_anchored_edit_rejected_total Observed: anchored edit operations rejected by the gated edit surface.\n\
+	# TYPE synrepo_anchored_edit_rejected_total counter\n\
+	synrepo_anchored_edit_rejected_total 1\n\
+	# HELP synrepo_estimated_llm_calls_avoided_total Estimated: route or hook recommendations where an LLM call was likely avoidable.\n\
+	# TYPE synrepo_estimated_llm_calls_avoided_total counter\n\
+	synrepo_estimated_llm_calls_avoided_total 5\n\
 	# HELP synrepo_budget_tier_usage Observed: count of card responses by budget tier.\n\
 	# TYPE synrepo_budget_tier_usage counter\n\
 	synrepo_budget_tier_usage{tier=\"normal\"} 1\n\

@@ -69,6 +69,47 @@ fn record_compact_output_updates_content_free_totals() {
 }
 
 #[test]
+fn record_task_route_updates_fast_path_totals() {
+    let mut metrics = ContextMetrics::default();
+    let route = crate::surface::task_route::classify_task_route(
+        "convert var to const",
+        Some("src/app.ts"),
+    );
+
+    metrics.record_task_route_classification(&route);
+
+    assert_eq!(metrics.route_classifications_total, 1);
+    assert_eq!(metrics.deterministic_edit_candidates_total, 1);
+    assert_eq!(metrics.estimated_llm_calls_avoided_total, 1);
+}
+
+#[test]
+fn record_hook_route_emission_updates_signal_totals() {
+    let mut metrics = ContextMetrics::default();
+    let route = crate::surface::task_route::classify_task_route(
+        "find the CLI command",
+        Some("src/bin/cli.rs"),
+    );
+
+    metrics.record_hook_route_emission(&route);
+
+    assert_eq!(metrics.route_classifications_total, 1);
+    assert_eq!(metrics.context_fast_path_signals_total, 1);
+    assert_eq!(metrics.llm_not_required_signals_total, 1);
+    assert_eq!(metrics.estimated_llm_calls_avoided_total, 1);
+}
+
+#[test]
+fn record_anchored_edit_outcomes_updates_totals() {
+    let mut metrics = ContextMetrics::default();
+
+    metrics.record_anchored_edit_outcomes(2, 1);
+
+    assert_eq!(metrics.anchored_edit_accepted_total, 2);
+    assert_eq!(metrics.anchored_edit_rejected_total, 1);
+}
+
+#[test]
 fn mcp_metrics_default_when_loading_older_json() {
     let old_shape = serde_json::json!({
         "cards_served_total": 1,
@@ -92,6 +133,8 @@ fn mcp_metrics_default_when_loading_older_json() {
     assert!(metrics.saved_context_writes_total.is_empty());
     assert_eq!(metrics.compact_outputs_total, 0);
     assert_eq!(metrics.compact_estimated_tokens_saved_total, 0);
+    assert_eq!(metrics.route_classifications_total, 0);
+    assert_eq!(metrics.estimated_llm_calls_avoided_total, 0);
 }
 
 #[test]

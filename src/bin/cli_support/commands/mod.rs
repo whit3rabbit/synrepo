@@ -28,6 +28,7 @@ mod setup;
 mod setup_explain;
 mod setup_mcp_backup;
 mod status;
+mod task_route;
 mod uninstall;
 mod upgrade;
 mod watch;
@@ -95,6 +96,7 @@ pub(crate) use setup::{
 pub(crate) use setup_explain::step_apply_explain;
 pub(crate) use setup_mcp_backup::{mcp_config_has_synrepo, step_backup_mcp_config};
 pub(crate) use status::{status, status_output};
+pub(crate) use task_route::task_route;
 pub(crate) use uninstall::uninstall;
 #[cfg(test)]
 pub(crate) use upgrade::report_reconcile_outcome;

@@ -23,7 +23,7 @@ Codex and Claude can also install local client-side nudges with `synrepo setup c
 The default path for codebase questions, file reviews, broad search, impact checks, and edits is deliberately small first:
 
 1. `synrepo_orient` before reading the repo cold.
-2. `synrepo_find` or `synrepo_search` to route a task.
+2. `synrepo_find` or `synrepo_search` to route a task. `synrepo_find` decomposes broad task language into deterministic lexical anchors before returning empty.
 3. `synrepo_explain` for bounded details on a file or symbol.
 4. `synrepo_minimum_context` when a focal target is known but surrounding risk is unclear.
 5. `synrepo_impact` or `synrepo_risks` before edits or risky file reviews.
@@ -31,6 +31,8 @@ The default path for codebase questions, file reviews, broad search, impact chec
 7. `synrepo_changed` after edits to review changed context and validation commands.
 
 Use `tiny` budgets to route, `normal` budgets to understand a neighborhood, and `deep` budgets only before implementation or when exact source details matter. Use `synrepo_context_pack` when batching several read-only context artifacts is cheaper than serial tool calls. Its `targets` parameter is an array of structured objects: `{ "kind": "file|symbol|directory|minimum_context|test_surface|call_path|search", "target": "...", "budget": "tiny|normal|deep" }`.
+
+`synrepo_find` and `synrepo_where_to_edit` route plain-language tasks to tiny file cards. They first try the task text as-is, then use bounded deterministic fallback queries over phrase, token, and snake_case variants. Responses include `query_attempts`, `fallback_used`, and `miss_reason` (`no_index_matches` or `matches_not_in_graph`) so agents can see whether routing failed because the index had no matches or because matched paths were unavailable in the graph.
 
 `synrepo_search` is the exact lexical search fallback backed by the syntext substrate index. It accepts `query`, optional `limit` (default `20`), optional `path_filter`, optional `file_type`, optional `exclude_type`, optional `case_insensitive` (`ignore_case` is accepted as an alias), optional `output_mode` (`default` or `compact`), and optional `budget_tokens` for compact output. Default responses preserve `query` and `results: [{ path, line, content }]`, and include `engine: "syntext"`, `source_store: "substrate_index"`, `limit`, `filters`, and `result_count`.
 

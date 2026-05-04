@@ -27,7 +27,7 @@ synrepo is a code-context compiler. When `.synrepo/` exists in the repo root, pr
 The required sequence for codebase questions, reviews, search routing, and edits is orient, find, impact or risks, edit, tests, changed.
 
 1. Start with `synrepo_orient` before reading the repo cold.
-2. Use `synrepo_find` or `synrepo_search` to find candidate files and symbols. For broad lexical searches, prefer `output_mode: \"compact\"` so results are grouped and token-accounted before opening files.
+2. Use `synrepo_find` or `synrepo_search` to find candidate files and symbols. `synrepo_find` decomposes broad task language into deterministic lexical anchors before returning empty; for broad lexical searches, prefer `output_mode: \"compact\"` so results are grouped and token-accounted before opening files.
 3. Use `tiny` cards to route and `normal` cards to understand. Use `synrepo_minimum_context` once a focal target is known but the surrounding neighborhood risk is unclear, especially for file reviews and codebase questions.
 4. Use `synrepo_impact` (or its shorthand `synrepo_risks`) before editing or reviewing risky files, and `synrepo_tests` before claiming done.
 5. Use `synrepo_changed` after edits to review changed context and validation commands.

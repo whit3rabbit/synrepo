@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use crate::config::home_dir;
+use crate::pipeline::writer::now_rfc3339;
 mod install_records;
 pub mod io;
 mod project_meta;
@@ -205,12 +206,14 @@ pub fn record_project(project: &Path) -> anyhow::Result<ProjectEntry> {
     let canonical = canonicalize(project);
     if let Some(existing) = find_project_mut(&mut registry, &canonical) {
         ensure_project_identity(existing);
+        existing.last_opened_at = Some(now_rfc3339());
         let entry = existing.clone();
         io::save_to(&path, &registry)?;
         return Ok(entry);
     }
 
-    let entry = new_project_entry(canonical, false);
+    let mut entry = new_project_entry(canonical, false);
+    entry.last_opened_at = Some(now_rfc3339());
     registry.projects.push(entry.clone());
     io::save_to(&path, &registry)?;
     Ok(entry)

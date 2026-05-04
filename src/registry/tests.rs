@@ -236,6 +236,8 @@ fn record_project_sets_id_and_default_display_name() {
         project.path().file_name().unwrap().to_string_lossy()
     );
     assert_eq!(entry.effective_id(), entry.id);
+    assert!(entry.last_opened_at.is_some());
+    assert!(entry.is_explicitly_registered());
 }
 
 #[test]
@@ -344,13 +346,12 @@ fn record_install_under_home_env_guard_does_not_touch_user_registry() {
     );
     let isolated_registry = io::load_from(&isolated_registry).unwrap();
     let expected_project = super::canonicalize_path(project.path());
-    assert!(
-        isolated_registry
-            .projects
-            .iter()
-            .any(|entry| entry.path == expected_project),
-        "isolated registry must contain the project path; got: {isolated_registry:#?}"
-    );
+    let isolated_entry = isolated_registry
+        .projects
+        .iter()
+        .find(|entry| entry.path == expected_project)
+        .expect("isolated registry must contain the project path");
+    assert!(!isolated_entry.is_explicitly_registered());
 
     // Negative: real registry is untouched (no new [[project]] block).
     let _read_lock2 = crate::config::test_home::lock_home_env_read();

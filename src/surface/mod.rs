@@ -7,3 +7,4 @@ pub mod handoffs;
 pub mod mcp;
 pub mod readiness;
 pub mod status_snapshot;
+pub mod task_route;

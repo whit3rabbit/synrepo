@@ -1,7 +1,7 @@
 use rmcp::{handler::server::wrapper::Parameters, tool, tool_router};
 use synrepo::surface::handoffs::{collect_handoffs, to_json as handoffs_to_json, HandoffsRequest};
 use synrepo::surface::mcp::{
-    audit, cards, context_pack, docs, edits, graph, notes, primitives, search,
+    audit, cards, context_pack, docs, edits, graph, notes, primitives, search, task_route,
 };
 
 use super::SynrepoServer;
@@ -18,6 +18,12 @@ impl SynrepoServer {
     async fn synrepo_search(&self, Parameters(params): Parameters<search::SearchParams>) -> String {
         let repo_root = params.repo_root.clone();
         self.with_tool_state_blocking("synrepo_search", repo_root, move |state| search::handle_search(&state, params)).await
+    }
+
+    #[tool(name = "synrepo_task_route", description = "Classify a task into the cheapest safe synrepo route. Read-only and advisory: returns intent, confidence, recommended tools, budget tier, LLM requirement, edit candidate, and hook signals.")]
+    async fn synrepo_task_route(&self, Parameters(params): Parameters<task_route::TaskRouteParams>) -> String {
+        let repo_root = params.repo_root.clone();
+        self.with_tool_state_blocking("synrepo_task_route", repo_root, move |state| task_route::handle_task_route(&state, params)).await
     }
 
     #[tool(name = "synrepo_docs_search", description = "Search advisory explained commentary docs materialized under .synrepo/. Results are overlay-backed, freshness-labeled, and never canonical graph facts.")]

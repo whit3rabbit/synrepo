@@ -7,6 +7,7 @@ use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use crate::surface::card::ContextAccounting;
+use crate::surface::task_route::TaskRoute;
 
 use super::ContextMetrics;
 
@@ -150,6 +151,34 @@ pub fn record_compact_output_best_effort(
             omitted_count,
             truncation_applied,
         );
+    });
+}
+
+/// Best-effort recording of a task-route classification.
+pub fn record_task_route_classification_best_effort(synrepo_dir: &Path, route: &TaskRoute) {
+    record_delta_best_effort(synrepo_dir, |metrics| {
+        metrics.record_task_route_classification(route);
+    });
+}
+
+/// Best-effort recording of route signals emitted from a nudge hook.
+pub fn record_hook_route_emission_best_effort(synrepo_dir: &Path, route: &TaskRoute) {
+    record_delta_best_effort(synrepo_dir, |metrics| {
+        metrics.record_hook_route_emission(route);
+    });
+}
+
+/// Best-effort recording of accepted and rejected anchored edits.
+pub fn record_anchored_edit_outcomes_best_effort(
+    synrepo_dir: &Path,
+    accepted: u64,
+    rejected: u64,
+) {
+    if accepted == 0 && rejected == 0 {
+        return;
+    }
+    record_delta_best_effort(synrepo_dir, |metrics| {
+        metrics.record_anchored_edit_outcomes(accepted, rejected);
     });
 }
 

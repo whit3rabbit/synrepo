@@ -7,7 +7,7 @@ use crate::config::Config;
 use crate::surface::mcp::compact::OutputMode;
 use crate::surface::mcp::SynrepoState;
 
-use super::{default_limit, handle_search, SearchParams};
+use super::{default_edit_limit, default_limit, handle_search, handle_where_to_edit, SearchParams};
 
 fn make_state() -> (tempfile::TempDir, SynrepoState) {
     let home = tempdir().unwrap();
@@ -122,4 +122,113 @@ fn compact_search_metrics_do_not_store_content() {
     let serialized = serde_json::to_string(&metrics).unwrap();
     assert!(!serialized.contains("alpha"));
     assert!(!serialized.contains("src/lib.rs"));
+}
+
+fn make_routing_state() -> (tempfile::TempDir, SynrepoState) {
+    let home = tempdir().unwrap();
+    let _home_guard = crate::config::test_home::HomeEnvGuard::redirect_to(home.path());
+    let dir = tempdir().unwrap();
+    let repo = dir.path();
+    fs::create_dir_all(repo.join("src/bin/cli_support/commands/agent_hooks")).unwrap();
+    fs::create_dir_all(repo.join("src/pipeline/context_metrics")).unwrap();
+    fs::write(
+        repo.join("src/bin/cli_support/commands/agent_hooks/classify.rs"),
+        "pub fn classify_hook_nudge() {}\n// agent_hooks nudge classifier routing\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.join("src/bin/cli_support/commands/agent_hooks/render.rs"),
+        "pub fn render_hook_nudge() {}\n// agent_hooks nudge renderer signals\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.join("src/pipeline/context_metrics/mod.rs"),
+        "pub fn record_context_metric() {}\n// context_metrics budget accounting\n",
+    )
+    .unwrap();
+    bootstrap(repo, None, false).unwrap();
+    let state = SynrepoState {
+        config: Config::load(repo).unwrap(),
+        repo_root: repo.to_path_buf(),
+    };
+    (dir, state)
+}
+
+#[test]
+fn where_to_edit_decomposes_broad_task_into_snake_case_anchors() {
+    let (_dir, state) = make_routing_state();
+    let value: serde_json::Value = serde_json::from_str(&handle_where_to_edit(
+        &state,
+        "agent hook routing recommendations with context metrics".to_string(),
+        default_edit_limit(),
+        None,
+    ))
+    .unwrap();
+
+    assert_eq!(value["fallback_used"], true);
+    assert_eq!(value["miss_reason"], serde_json::Value::Null);
+    let paths = suggestion_paths(&value);
+    assert!(paths
+        .iter()
+        .any(|path| path.ends_with("agent_hooks/classify.rs")));
+    assert!(paths
+        .iter()
+        .any(|path| path.ends_with("context_metrics/mod.rs")));
+    let attempts = value["query_attempts"].as_array().unwrap();
+    assert!(attempts
+        .iter()
+        .any(|attempt| attempt["query"] == "agent_hooks"));
+    assert!(attempts
+        .iter()
+        .any(|attempt| attempt["query"] == "context_metrics"));
+}
+
+#[test]
+fn where_to_edit_handles_observed_agent_hook_miss_phrase() {
+    let (_dir, state) = make_routing_state();
+    let value: serde_json::Value = serde_json::from_str(&handle_where_to_edit(
+        &state,
+        "extend agent hook nudge classifier renderer with structured fast path signals".to_string(),
+        default_edit_limit(),
+        None,
+    ))
+    .unwrap();
+
+    assert_eq!(value["fallback_used"], true);
+    assert_eq!(value["miss_reason"], serde_json::Value::Null);
+    let paths = suggestion_paths(&value);
+    assert!(paths
+        .iter()
+        .any(|path| path.ends_with("agent_hooks/classify.rs")));
+    assert!(paths
+        .iter()
+        .any(|path| path.ends_with("agent_hooks/render.rs")));
+}
+
+#[test]
+fn where_to_edit_reports_zero_match_diagnostics_without_fake_suggestions() {
+    let (_dir, state) = make_routing_state();
+    let value: serde_json::Value = serde_json::from_str(&handle_where_to_edit(
+        &state,
+        "definitely absent qqqqq route".to_string(),
+        default_edit_limit(),
+        None,
+    ))
+    .unwrap();
+
+    assert_eq!(value["fallback_used"], true);
+    assert_eq!(value["miss_reason"], "no_index_matches");
+    assert!(value["suggestions"].as_array().unwrap().is_empty());
+    assert!(value["query_attempts"]
+        .as_array()
+        .is_some_and(|attempts| !attempts.is_empty()));
+}
+
+fn suggestion_paths(value: &serde_json::Value) -> Vec<String> {
+    value["suggestions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|card| card["path"].as_str().map(ToOwned::to_owned))
+        .collect()
 }

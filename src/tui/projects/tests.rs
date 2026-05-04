@@ -229,7 +229,7 @@ fn load_project_refs_hides_uninitialized_and_keeps_ready_and_partial() {
     std::fs::write(ready.join("README.md"), "ready token\n").unwrap();
     crate::bootstrap::bootstrap(&ready, None, false).unwrap();
     make_partial_project(&partial);
-    let ready_entry = registry::get(&ready).unwrap().unwrap();
+    let ready_entry = registry::record_project(&ready).unwrap();
     let partial_entry = registry::record_project(&partial).unwrap();
     let uninitialized_entry = registry::record_project(&uninitialized).unwrap();
 
@@ -242,4 +242,28 @@ fn load_project_refs_hides_uninitialized_and_keeps_ready_and_partial() {
     assert!(ids.contains(&ready_entry.id.as_str()), "{ids:?}");
     assert!(ids.contains(&partial_entry.id.as_str()), "{ids:?}");
     assert!(!ids.contains(&uninitialized_entry.id.as_str()), "{ids:?}");
+}
+
+#[test]
+fn load_project_refs_hides_bootstrap_only_entries() {
+    let (_lock, home, _guard) = home_guard();
+    let bootstrap_only = home.path().join("bootstrap-only");
+    let registered = home.path().join("registered");
+    std::fs::create_dir_all(&bootstrap_only).unwrap();
+    std::fs::create_dir_all(&registered).unwrap();
+    std::fs::write(bootstrap_only.join("README.md"), "bootstrap only\n").unwrap();
+    std::fs::write(registered.join("README.md"), "registered\n").unwrap();
+    crate::bootstrap::bootstrap(&bootstrap_only, None, false).unwrap();
+    crate::bootstrap::bootstrap(&registered, None, false).unwrap();
+    let bootstrap_only_entry = registry::get(&bootstrap_only).unwrap().unwrap();
+    let registered_entry = registry::record_project(&registered).unwrap();
+
+    let refs = load_project_refs().unwrap();
+    let ids = refs
+        .iter()
+        .map(|project| project.id.as_str())
+        .collect::<Vec<_>>();
+
+    assert!(!ids.contains(&bootstrap_only_entry.id.as_str()), "{ids:?}");
+    assert!(ids.contains(&registered_entry.id.as_str()), "{ids:?}");
 }

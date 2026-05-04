@@ -85,7 +85,7 @@ Do-not rules, asserted uniformly across surfaces:
 - do not treat client-side nudge hooks as MCP interception or enforcement;
 - **explicit refresh required for fresh commentary**: tools return stale content with tag, never blocking for new explain.
 
-The existing context-budget protocol is the substrate for this doctrine; the doctrine makes the protocol visible at every entry point an agent can hit.
+For task routing, `synrepo_find` first tries the task text as-is, then decomposes broad language into deterministic lexical anchors before returning empty. The existing context-budget protocol is the substrate for this doctrine; the doctrine makes the protocol visible at every entry point an agent can hit.
 
 ### Soft-state lifecycle
 

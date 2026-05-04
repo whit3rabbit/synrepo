@@ -41,6 +41,19 @@ impl ProjectEntry {
             .map(str::to_string)
             .unwrap_or_else(|| default_project_name(&self.path))
     }
+
+    /// True when the project was explicitly registered for user-facing
+    /// project management, not merely recorded as bootstrap bookkeeping.
+    pub fn is_explicitly_registered(&self) -> bool {
+        self.last_opened_at.is_some()
+            || self
+                .name
+                .as_deref()
+                .map(|name| !name.trim().is_empty())
+                .unwrap_or(false)
+            || !self.agents.is_empty()
+            || !self.hooks.is_empty()
+    }
 }
 
 pub(super) fn new_project_entry(path: PathBuf, root_gitignore_entry_added: bool) -> ProjectEntry {

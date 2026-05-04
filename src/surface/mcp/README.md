@@ -40,6 +40,8 @@ Current registrations (see `mcp.rs` for schemas):
 
 `synrepo_search` is backed by the syntext substrate index and accepts `query`, optional `limit`, `path_filter`, `file_type`, `exclude_type`, `case_insensitive` (`ignore_case` alias), `output_mode`, and compact `budget_tokens`. Default output returns exact lexical rows with syntext/source-store metadata. `output_mode="compact"` groups matches by file, returns short line previews and `suggested_card_targets`, and never mutates or refreshes the index during the search call.
 
+`synrepo_find` and `synrepo_where_to_edit` route plain-language tasks to tiny file cards. They first try the task text as-is, then decompose broad language into bounded deterministic lexical anchors (phrase, token, and snake_case variants such as `agent_hooks` or `context_metrics`) before returning empty. Responses include `query_attempts`, `fallback_used`, and `miss_reason` diagnostics; these diagnostics are returned to the caller and are not persisted as task content.
+
 **Advisory overlay and audit tools:**
 `synrepo_docs_search`, `synrepo_refresh_commentary`, `synrepo_findings`, `synrepo_recent_activity`
 
