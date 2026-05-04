@@ -23,8 +23,8 @@ expression: tiny
     "context_accounting": {
       "budget_tier": "tiny",
       "token_estimate": 10,
-      "raw_file_token_estimate": 16,
-      "estimated_savings_ratio": 0.375,
+      "raw_file_token_estimate": 22,
+      "estimated_savings_ratio": 0.5454545454545454,
       "source_hashes": [
         "26535f89bfda506331673d0cd2c73c4311fc9f61f361b7188e84cb858e8f8986"
       ],

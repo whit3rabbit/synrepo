@@ -319,3 +319,6 @@ fn stop_requested(should_stop: &mut Option<&mut dyn FnMut() -> bool>) -> bool {
         None => false,
     }
 }
+
+#[cfg(test)]
+mod tests;

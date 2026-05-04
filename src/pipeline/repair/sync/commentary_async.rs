@@ -19,9 +19,7 @@ use crate::{
 
 use super::{
     commentary_context::build_context_text,
-    commentary_generate::{
-        classify_outcome, retry_delay, ItemOutcome, MAX_RATE_LIMIT_ATTEMPTS,
-    },
+    commentary_generate::{classify_outcome, retry_delay, ItemOutcome, MAX_RATE_LIMIT_ATTEMPTS},
     commentary_plan::CommentaryWorkItem,
 };
 
@@ -119,7 +117,9 @@ async fn generate_once_async(
     ctx_text: &str,
 ) -> crate::Result<CommentaryGeneration> {
     let rx = telemetry::subscribe();
-    let outcome = generator.generate_with_outcome_async(node_id, ctx_text).await?;
+    let outcome = generator
+        .generate_with_outcome_async(node_id, ctx_text)
+        .await?;
     Ok(classify_outcome(outcome, node_id, &rx))
 }
 

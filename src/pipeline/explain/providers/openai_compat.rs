@@ -264,8 +264,9 @@ use crate::overlay::OverlayLink;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::ids::SymbolNodeId;
+    use crate::core::ids::{NodeId, SymbolNodeId};
     use crate::overlay::ConfidenceThresholds;
+    use crate::pipeline::explain::CommentaryGenerator;
 
     const TEST_CONFIG: OpenAiCompatConfig = OpenAiCompatConfig {
         provider: "test",

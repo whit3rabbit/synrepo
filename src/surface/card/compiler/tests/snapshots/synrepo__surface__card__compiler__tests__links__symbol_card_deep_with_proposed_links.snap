@@ -19,7 +19,7 @@ expression: json
   "context_accounting": {
     "budget_tier": "deep",
     "token_estimate": 23,
-    "raw_file_token_estimate": 10,
+    "raw_file_token_estimate": 14,
     "estimated_savings_ratio": 0.0,
     "source_hashes": [
       "ada598f4d7bb2f9e60803fe40a978335b582df452c433f1b4c4f5872dcafbaab"

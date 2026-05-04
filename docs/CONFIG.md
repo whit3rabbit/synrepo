@@ -14,6 +14,7 @@ Runtime config lives in `.synrepo/config.toml`; the struct is `Config` in `src/c
 | `max_graph_snapshot_bytes` | `134217728` (128 MiB) | Advisory ceiling for the published in-memory graph snapshot. `0` disables publication |
 | `redact_globs` | `["**/secrets/**", "**/*.env*", "**/*-private.md"]` | Files matching these are never indexed |
 | `retain_retired_revisions` | `10` | Compile revisions to keep retired observations before compaction deletes them |
+| `[explain].commentary_concurrency` | `4` | Concurrent commentary provider calls during refresh; clamped to at least `1` |
 | `auto_sync_enabled` | `true` | Run cheap repair surfaces (export regeneration, retired-observation compaction) automatically after every drift-producing reconcile while watch is active |
 
 ## Notes

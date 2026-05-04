@@ -96,8 +96,11 @@ mod tests {
     #[test]
     fn context_budget_supports_documented_long_context_cap() {
         let small = "x".repeat(4_000);
-        let large = "x".repeat((LONG_CONTEXT_MAX_RECOMMENDED_TOKENS as usize) * 4);
-        let over = "x".repeat((LONG_CONTEXT_MAX_RECOMMENDED_TOKENS as usize) * 4 + 4);
+        let chars_per_token = crate::pipeline::explain::providers::http::CHARS_PER_TOKEN as usize;
+        let large = "x".repeat((LONG_CONTEXT_MAX_RECOMMENDED_TOKENS as usize) * chars_per_token);
+        let over = "x".repeat(
+            (LONG_CONTEXT_MAX_RECOMMENDED_TOKENS as usize) * chars_per_token + chars_per_token,
+        );
 
         assert!(estimate_context_tokens(&small) < 5_000);
         assert_eq!(
