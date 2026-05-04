@@ -170,7 +170,7 @@ fn fallback_queries(task: &str) -> Vec<String> {
     let mut queries = Vec::new();
     let mut seen = HashSet::new();
 
-    for width in (2..=3).rev() {
+    for width in 2..=3 {
         for window in tokens.windows(width) {
             add_query_variants(&mut queries, &mut seen, window);
         }
@@ -187,17 +187,17 @@ fn fallback_queries(task: &str) -> Vec<String> {
 }
 
 fn add_query_variants(queries: &mut Vec<String>, seen: &mut HashSet<String>, window: &[String]) {
-    let phrase = window.join(" ");
-    add_candidate(queries, seen, phrase.clone());
-    if let Some(plural) = pluralize_phrase_tail(&phrase) {
-        add_candidate(queries, seen, plural);
-    }
-
     let snake = window.join("_");
-    add_candidate(queries, seen, snake.clone());
     if let Some(plural) = pluralize_phrase_tail(&snake) {
         add_candidate(queries, seen, plural);
     }
+    add_candidate(queries, seen, snake.clone());
+
+    let phrase = window.join(" ");
+    if let Some(plural) = pluralize_phrase_tail(&phrase) {
+        add_candidate(queries, seen, plural);
+    }
+    add_candidate(queries, seen, phrase.clone());
 }
 
 fn add_candidate(queries: &mut Vec<String>, seen: &mut HashSet<String>, query: String) {

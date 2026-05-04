@@ -10,6 +10,7 @@ use serde_json::json;
 
 use crate::{
     config::Config,
+    pipeline::context_metrics,
     pipeline::watch::{
         request_watch_control, watch_service_status, WatchControlRequest, WatchServiceStatus,
     },
@@ -68,11 +69,17 @@ fn apply_anchor_edits(
             ..edit
         });
     }
+    let requested_edits_total = groups.values().map(Vec::len).sum::<usize>() as u64;
     let paths_to_suppress = groups.keys().cloned().collect::<Vec<_>>();
 
     let lock = match acquire_writer_lock(&synrepo_dir) {
         Ok(lock) => lock,
         Err(err) => {
+            context_metrics::record_anchored_edit_outcomes_best_effort(
+                &synrepo_dir,
+                0,
+                requested_edits_total,
+            );
             return Ok(writer_lock_conflict_json(err));
         }
     };
@@ -81,24 +88,35 @@ fn apply_anchor_edits(
 
     let mut file_results = Vec::new();
     let mut touched = Vec::new();
+    let mut accepted_edits = 0;
+    let mut rejected_edits = 0;
     for (path, edits) in groups {
         match apply_one_file(state, &path, &edits) {
             Ok(new_hash) => {
                 touched.push(path.clone());
+                accepted_edits += edits.len() as u64;
                 file_results.push(json!({
                     "path": path,
                     "status": "applied",
                     "new_content_hash": new_hash,
                 }));
             }
-            Err(err) => file_results.push(json!({
-                "path": path,
-                "status": "rejected",
-                "error": err.to_string(),
-            })),
+            Err(err) => {
+                rejected_edits += edits.len() as u64;
+                file_results.push(json!({
+                    "path": path,
+                    "status": "rejected",
+                    "error": err.to_string(),
+                }));
+            }
         }
     }
     drop(lock);
+    context_metrics::record_anchored_edit_outcomes_best_effort(
+        &synrepo_dir,
+        accepted_edits,
+        rejected_edits,
+    );
 
     let diagnostics = if touched.is_empty() {
         json!({

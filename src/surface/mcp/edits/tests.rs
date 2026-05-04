@@ -8,7 +8,7 @@ use super::{handle_apply_anchor_edits, handle_prepare_edit_context};
 use crate::pipeline::writer::{
     hold_writer_flock_with_ownership, writer_lock_path, WriterOwnership,
 };
-use crate::{bootstrap, config::Config, surface::mcp::SynrepoState};
+use crate::{bootstrap, config::Config, pipeline::context_metrics, surface::mcp::SynrepoState};
 
 mod watch;
 
@@ -285,6 +285,9 @@ fn multi_file_request_reports_partial_outcomes() {
         fs::read_to_string(dir.path().join("src/b.rs")).unwrap(),
         "b1\nchanged\n"
     );
+    let metrics = context_metrics::load(&Config::synrepo_dir(dir.path())).unwrap();
+    assert_eq!(metrics.anchored_edit_accepted_total, 1);
+    assert_eq!(metrics.anchored_edit_rejected_total, 1);
 }
 
 #[cfg(unix)]

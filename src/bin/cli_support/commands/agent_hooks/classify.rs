@@ -80,7 +80,7 @@ fn command_needs_synrepo(input: &Value) -> bool {
     shell_command_needs_synrepo(command)
 }
 
-fn extract_command(input: &Value) -> Option<&str> {
+pub(super) fn extract_command(input: &Value) -> Option<&str> {
     input
         .get("tool_input")
         .and_then(|value| value.get("command"))

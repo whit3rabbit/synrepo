@@ -205,6 +205,41 @@ pub fn build_health_vm(snapshot: &StatusSnapshot) -> HealthVm {
                 severity: mcp_severity,
             });
         }
+        if metrics.route_classifications_total > 0
+            || metrics.context_fast_path_signals_total > 0
+            || metrics.deterministic_edit_candidates_total > 0
+        {
+            rows.push(HealthRow {
+                label: "fast path".to_string(),
+                value: format!(
+                    "{} routes, {} signals, {} edit candidates",
+                    metrics.route_classifications_total,
+                    metrics.context_fast_path_signals_total,
+                    metrics.deterministic_edit_candidates_total
+                ),
+                severity: Severity::Healthy,
+            });
+            rows.push(HealthRow {
+                label: "llm avoided".to_string(),
+                value: format!("{} est.", metrics.estimated_llm_calls_avoided_total),
+                severity: Severity::Healthy,
+            });
+        }
+        if metrics.anchored_edit_accepted_total > 0 || metrics.anchored_edit_rejected_total > 0 {
+            let severity = if metrics.anchored_edit_rejected_total > 0 {
+                Severity::Stale
+            } else {
+                Severity::Healthy
+            };
+            rows.push(HealthRow {
+                label: "anchored edits".to_string(),
+                value: format!(
+                    "{} accepted, {} rejected",
+                    metrics.anchored_edit_accepted_total, metrics.anchored_edit_rejected_total
+                ),
+                severity,
+            });
+        }
     }
 
     // Explain row: expected-off is Healthy; a detected but unused key

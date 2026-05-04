@@ -144,7 +144,8 @@ fn section_for(label: &str) -> HealthSectionKind {
         "repo" | "graph" | "export" | "commentary" | "overlay cost" => {
             HealthSectionKind::Repository
         }
-        "context" | "tokens avoided" | "stale responses" | "mcp" => HealthSectionKind::Context,
+        "context" | "tokens avoided" | "stale responses" | "mcp" | "fast path"
+        | "llm avoided" | "anchored edits" => HealthSectionKind::Context,
         "explain" | "explain usage" | "explain skipped" => HealthSectionKind::Explain,
         _ if label.starts_with("readiness:") => HealthSectionKind::Readiness,
         _ => HealthSectionKind::Other,

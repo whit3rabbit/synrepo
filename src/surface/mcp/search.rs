@@ -6,11 +6,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use syntext::SearchOptions;
 
-use crate::{
-    core::ids::NodeId,
-    structure::graph::EdgeKind,
-    surface::card::CardCompiler,
-};
+use crate::{core::ids::NodeId, structure::graph::EdgeKind, surface::card::CardCompiler};
 
 use super::compact::{self, OutputMode};
 use super::helpers::{render_result, with_graph_snapshot};

@@ -3,6 +3,7 @@
 use std::fmt::Write;
 
 use synrepo::{
+    pipeline::context_metrics::ContextMetrics,
     pipeline::diagnostics::{EmbeddingHealth, ReconcileHealth, WriterStatus},
     surface::readiness::ReadinessMatrix,
     surface::status_snapshot::{
@@ -124,31 +125,7 @@ pub(super) fn write_status_json(
             "pricing_last_updated": synrepo::pipeline::explain::pricing::LAST_UPDATED,
             "per_provider": t.per_provider,
         })),
-        "context_metrics": snapshot.context_metrics.as_ref().map(|m| serde_json::json!({
-            "cards_served_total": m.cards_served_total,
-            "card_tokens_total": m.card_tokens_total,
-            "card_tokens_avg": m.card_tokens_avg(),
-            "raw_file_tokens_total": m.raw_file_tokens_total,
-            "estimated_tokens_saved_total": m.estimated_tokens_saved_total,
-            "budget_tier_usage": m.budget_tier_usage,
-            "truncation_applied_total": m.truncation_applied_total,
-            "stale_responses_total": m.stale_responses_total,
-            "test_surface_hits_total": m.test_surface_hits_total,
-            "changed_files_total": m.changed_files_total,
-            "context_query_latency_ms_avg": m.context_query_latency_ms_avg(),
-            "workflow_calls_total": m.workflow_calls_total,
-            "mcp_requests_total": m.mcp_requests_total,
-            "mcp_tool_calls_total": m.mcp_tool_calls_total,
-            "mcp_tool_errors_total": m.mcp_tool_errors_total,
-            "mcp_resource_reads_total": m.mcp_resource_reads_total,
-            "saved_context_writes_total": m.saved_context_writes_total,
-            "compact_outputs_total": m.compact_outputs_total,
-            "compact_returned_tokens_total": m.compact_returned_tokens_total,
-            "compact_original_tokens_total": m.compact_original_tokens_total,
-            "compact_estimated_tokens_saved_total": m.compact_estimated_tokens_saved_total,
-            "compact_omitted_items_total": m.compact_omitted_items_total,
-            "compact_truncation_applied_total": m.compact_truncation_applied_total,
-        })),
+        "context_metrics": snapshot.context_metrics.as_ref().map(context_metrics_json),
         "recent_activity": activity_json,
         "last_compaction_timestamp": snapshot.last_compaction.map(|ts| ts.to_string()),
         "repair_audit": repair_audit_json,
@@ -157,6 +134,22 @@ pub(super) fn write_status_json(
 
     writeln!(out, "{}", serde_json::to_string_pretty(&output)?).unwrap();
     Ok(())
+}
+
+fn context_metrics_json(metrics: &ContextMetrics) -> serde_json::Value {
+    let mut value = serde_json::to_value(metrics).unwrap_or(serde_json::Value::Null);
+    let Some(obj) = value.as_object_mut() else {
+        return value;
+    };
+    obj.insert(
+        "card_tokens_avg".to_string(),
+        serde_json::json!(metrics.card_tokens_avg()),
+    );
+    obj.insert(
+        "context_query_latency_ms_avg".to_string(),
+        serde_json::json!(metrics.context_query_latency_ms_avg()),
+    );
+    value
 }
 
 fn commentary_json(coverage: &CommentaryCoverage) -> serde_json::Value {

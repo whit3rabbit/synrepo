@@ -244,6 +244,29 @@ pub(super) fn write_status_text(
             )
             .unwrap();
         }
+        if metrics.route_classifications_total > 0
+            || metrics.context_fast_path_signals_total > 0
+            || metrics.deterministic_edit_candidates_total > 0
+        {
+            writeln!(
+                out,
+                "  fast path:  {} route(s), {} context signal(s), {} edit candidate(s), {} est. LLM call(s) avoided",
+                metrics.route_classifications_total,
+                metrics.context_fast_path_signals_total,
+                metrics.deterministic_edit_candidates_total,
+                metrics.estimated_llm_calls_avoided_total
+            )
+            .unwrap();
+        }
+        if metrics.anchored_edit_accepted_total > 0 || metrics.anchored_edit_rejected_total > 0 {
+            writeln!(
+                out,
+                "  anchors:    {} accepted edit(s), {} rejected edit(s)",
+                metrics.anchored_edit_accepted_total,
+                metrics.anchored_edit_rejected_total
+            )
+            .unwrap();
+        }
     }
 
     writeln!(
