@@ -62,6 +62,12 @@ synrepo SHALL define a terminal dashboard that presents operational state for a 
 - **WHEN** the dashboard opens
 - **THEN** the layout includes panes for system health, recent activity, next actions or handoffs, quick actions, and an event or notification log
 
+#### Scenario: Suggestion tab surfaces large-file refactor candidates
+- **WHEN** the dashboard opens on a ready repository
+- **THEN** a `Suggestion` tab is available after the `MCP` tab as key `8`
+- **AND** the tab lists non-test source files over 300 physical lines with line count, language, path, symbol count, and modularity hint
+- **AND** suggestion rows are loaded lazily when the tab is selected and refreshed by pressing `r` while the tab is active
+
 #### Scenario: Quick actions reuse control-plane primitives
 - **WHEN** the user invokes a quick action for start watch, stop watch, reconcile now, refresh, open setup or repair flow, or open agent-integration flow
 - **THEN** the action dispatches to the existing watch-control, reconcile, and setup primitives

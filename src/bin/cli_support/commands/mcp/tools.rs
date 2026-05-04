@@ -1,7 +1,8 @@
 use rmcp::{handler::server::wrapper::Parameters, tool, tool_router};
 use synrepo::surface::handoffs::{collect_handoffs, to_json as handoffs_to_json, HandoffsRequest};
 use synrepo::surface::mcp::{
-    audit, cards, context_pack, docs, edits, graph, notes, primitives, search, task_route,
+    audit, cards, context_pack, docs, edits, graph, notes, primitives, refactor_suggestions,
+    search, task_route,
 };
 
 use super::SynrepoServer;
@@ -86,6 +87,12 @@ impl SynrepoServer {
     #[tool(name = "synrepo_entrypoints", description = "Return detected execution entry points (binaries, CLI commands, HTTP handlers, library roots) for an optional path-prefix scope. Default budget is tiny; escalate to normal for local understanding and deep only before edits.")]
     async fn synrepo_entrypoints(&self, Parameters(params): Parameters<cards::EntrypointsParams>) -> String {
         self.with_tool_state_blocking("synrepo_entrypoints", params.repo_root.clone(), move |state| cards::handle_entrypoints(&state, params.scope, params.budget, params.budget_tokens)).await
+    }
+
+    #[tool(name = "synrepo_refactor_suggestions", description = "Suggest large non-test source files that may benefit from modular refactors. Returns deterministic file facts and lightweight modularity hints for LLM analysis.")]
+    async fn synrepo_refactor_suggestions(&self, Parameters(params): Parameters<refactor_suggestions::RefactorSuggestionsParams>) -> String {
+        let repo_root = params.repo_root.clone();
+        self.with_tool_state_blocking("synrepo_refactor_suggestions", repo_root, move |state| refactor_suggestions::handle_refactor_suggestions(&state, params)).await
     }
 
     #[tool(name = "synrepo_note_add", description = "Add an advisory overlay agent note. Notes are labeled source_store=overlay and advisory=true; they never define graph truth.")]

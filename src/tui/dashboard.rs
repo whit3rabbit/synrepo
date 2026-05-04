@@ -34,7 +34,7 @@ use crate::tui::theme::Theme;
 use crate::tui::widgets::{
     ActionsTabWidget, DashboardTabsWidget, ExplainTabWidget, ExploreTabWidget, FooterWidget,
     HeaderWidget, HealthWidget, LiveFeedWidget, LogEntry, McpTabWidget, ProjectPickerWidget,
-    TrustWidget,
+    SuggestionTabWidget, TrustWidget,
 };
 
 /// Terminal alias used by the render loop.
@@ -275,6 +275,13 @@ fn draw_dashboard(frame: &mut ratatui::Frame, state: &mut AppState) {
                 theme: &state.theme,
             };
             frame.render_widget(mcp, content_area);
+        }
+        ActiveTab::Suggestion => {
+            let suggestion = SuggestionTabWidget {
+                report: state.suggestion_report.as_ref(),
+                theme: &state.theme,
+            };
+            frame.render_widget(suggestion, content_area);
         }
         ActiveTab::Repos => {
             let explore = ExploreTabWidget {

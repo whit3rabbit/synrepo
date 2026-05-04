@@ -6,5 +6,6 @@ pub mod graph_view;
 pub mod handoffs;
 pub mod mcp;
 pub mod readiness;
+pub mod refactor_suggestions;
 pub mod status_snapshot;
 pub mod task_route;

@@ -84,7 +84,7 @@ impl FooterWidget<'_> {
             priority: 1,
             spans: vec![
                 Span::styled(" tabs ", self.theme.muted_style()),
-                Span::styled("[Tab/1-7]", self.theme.agent_style()),
+                Span::styled("[Tab/1-8]", self.theme.agent_style()),
             ],
         });
         if matches!(self.active, ActiveTab::Live) {
@@ -298,7 +298,7 @@ mod tests {
         let text = rendered_text(&spans);
         assert!(text.contains("scroll"));
         assert!(text.contains("follow"));
-        assert!(text.contains("refresh"));
+        assert!(text.contains("refresh") && text.contains("[Tab/1-8]"));
         assert!(text.contains("watch") && text.contains("stop"));
         assert!(text.contains("integration"));
         assert!(text.ends_with("[q]"));

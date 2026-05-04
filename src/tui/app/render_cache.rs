@@ -4,6 +4,9 @@ use std::path::Path;
 use std::time::Instant;
 
 use super::{quick_actions_for, ActiveTab, AppState};
+use crate::surface::refactor_suggestions::{
+    collect_refactor_suggestions_for_repo, RefactorSuggestionOptions,
+};
 use crate::surface::status_snapshot::{build_status_snapshot, StatusOptions};
 use crate::tui::mcp_status::{build_mcp_display_rows, build_mcp_status_rows, McpDisplayRow};
 use crate::tui::probe::{build_header_vm, display_repo_path, HeaderVm};
@@ -54,6 +57,37 @@ impl AppState {
     /// Refresh the preformatted MCP display rows from a fresh status probe.
     pub(crate) fn refresh_mcp_rows(&mut self) {
         self.mcp_display_rows = build_initial_mcp_display_rows(&self.repo_root);
+    }
+
+    /// Load suggestion rows only when the tab needs them.
+    pub(crate) fn ensure_suggestions_loaded(&mut self) {
+        if self.suggestion_report.is_none() {
+            self.load_suggestions(false);
+        }
+    }
+
+    /// Refresh large-file suggestions and show an operator-visible toast.
+    pub(crate) fn refresh_suggestions(&mut self) {
+        self.load_suggestions(true);
+    }
+
+    fn load_suggestions(&mut self, toast: bool) {
+        match collect_refactor_suggestions_for_repo(
+            &self.repo_root,
+            RefactorSuggestionOptions::default(),
+        ) {
+            Ok(report) => {
+                let count = report.candidate_count;
+                self.suggestion_report = Some(report);
+                if toast {
+                    self.set_toast(format!("suggestions refreshed: {count} candidates"));
+                }
+            }
+            Err(error) => {
+                self.suggestion_report = None;
+                self.set_toast(format!("suggestions unavailable: {error}"));
+            }
+        }
     }
 
     /// Force a snapshot refresh right now.

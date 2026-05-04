@@ -1,7 +1,9 @@
 //! Snapshot isolation tests.
 
 use crate::core::ids::{NodeId, SymbolNodeId};
-use crate::overlay::{CommentaryEntry, CommentaryProvenance, OverlayStore};
+use crate::overlay::{
+    with_overlay_read_snapshot, CommentaryEntry, CommentaryProvenance, OverlayStore,
+};
 use crate::store::overlay::SqliteOverlayStore;
 use tempfile::tempdir;
 
@@ -118,4 +120,22 @@ fn overlay_end_without_begin_is_noop() {
     let store = SqliteOverlayStore::open(dir.path()).unwrap();
     store.end_read_snapshot().unwrap();
     store.end_read_snapshot().unwrap();
+}
+
+/// The snapshot helper must preserve the concrete store type so status can
+/// call SQLite-only aggregate helpers inside the transaction.
+#[test]
+fn with_overlay_read_snapshot_allows_concrete_store_methods() {
+    let dir = tempdir().unwrap();
+    let mut store = SqliteOverlayStore::open(dir.path()).unwrap();
+    store
+        .insert_commentary(sample_commentary_entry(
+            NodeId::Symbol(SymbolNodeId(3)),
+            "hash",
+        ))
+        .unwrap();
+
+    let count = with_overlay_read_snapshot(&store, |store| store.commentary_count()).unwrap();
+
+    assert_eq!(count, 1);
 }

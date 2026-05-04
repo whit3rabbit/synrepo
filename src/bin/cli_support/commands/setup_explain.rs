@@ -86,6 +86,9 @@ pub(crate) fn step_apply_explain(
                 provider.config_value(),
                 global_path.display()
             );
+            println!(
+                "  Warning: saved cloud API keys are plaintext in this file; prefer env vars on shared machines."
+            );
         }
         ExplainChoice::Local { preset, endpoint } => {
             let global_path = global_config_path()?;
@@ -104,6 +107,9 @@ pub(crate) fn step_apply_explain(
             println!(
                 "  Saved local explain endpoint in {}",
                 global_path.display()
+            );
+            println!(
+                "  Warning: local explain endpoints receive source and context snippets during refresh."
             );
         }
         _ => {}

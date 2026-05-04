@@ -17,6 +17,7 @@ pub mod health;
 pub mod live;
 pub mod mcp;
 pub(crate) mod projects;
+pub mod suggestion;
 pub mod tabs;
 pub mod trust;
 
@@ -29,6 +30,7 @@ pub use health::HealthWidget;
 pub use live::LiveFeedWidget;
 pub use mcp::McpTabWidget;
 pub(crate) use projects::ProjectPickerWidget;
+pub use suggestion::SuggestionTabWidget;
 pub use tabs::DashboardTabsWidget;
 pub use trust::TrustWidget;
 

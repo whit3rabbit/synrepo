@@ -62,6 +62,7 @@ Task-first read tools:
 - `synrepo_task_route`
 - `synrepo_search`
 - `synrepo_where_to_edit`
+- `synrepo_refactor_suggestions`
 - `synrepo_change_impact`
 - `synrepo_change_risk`
 - `synrepo_entrypoints`
@@ -98,6 +99,8 @@ Low-level graph primitives:
 
 Use `synrepo_graph_neighborhood` when an agent needs a bounded graph-shaped response directly. Defaults are `direction: "both"`, `depth: 1`, and `limit: 100`; depth is clamped to `3`, limit to `500`, and `target: null` returns a deterministic top-degree overview.
 
+Use `synrepo_refactor_suggestions` when an agent or operator asks whether large files should be refactored. It is read-only and returns deterministic facts for non-test source files over a physical-line threshold: graph file IDs, paths, language labels, line counts, symbol counts, modularity tags, and suggested follow-up MCP tools. The response is labeled `source_store: "graph+filesystem"` because it combines graph metadata with current filesystem line counts; it does not generate edits or refactor plans.
+
 Read-only resources:
 - `synrepo://card/{target}`
 - `synrepo://file/{path}/outline`
@@ -114,6 +117,8 @@ Graph-backed structural facts are authoritative. They come from parsers, Git, an
 Overlay content is advisory. Commentary, explained docs, proposed cross-links, and agent notes are labeled as overlay-backed and freshness-sensitive. If graph facts and overlay prose disagree, trust the graph.
 
 Freshness is explicit. A stale label is information, not an error, and synrepo does not silently refresh commentary just because an API key exists. Use `synrepo_refresh_commentary` only when fresh advisory prose is required.
+
+Explain credentials and endpoints are operator secrets. Cloud API keys saved by setup live as plaintext in `~/.synrepo/config.toml`; use environment variables instead on shared hosts. Local explain endpoints receive source and context snippets when commentary is refreshed, so do not point MCP-accessible refresh workflows at untrusted local or remote LLM servers.
 
 Prepared edit anchors are short-lived operational state. They are not graph facts, overlay content, commentary, agent notes, canonical source truth, or agent memory.
 

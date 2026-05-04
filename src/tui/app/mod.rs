@@ -34,6 +34,7 @@ use crossbeam_channel::Receiver;
 use crate::bootstrap::runtime_probe::AgentIntegration;
 use crate::pipeline::explain::telemetry::ExplainEvent;
 use crate::pipeline::watch::WatchEvent;
+use crate::surface::refactor_suggestions::RefactorSuggestionReport;
 use crate::tui::mcp_status::McpDisplayRow;
 use crate::tui::probe::HeaderVm;
 use crate::tui::projects::ProjectRef;
@@ -124,6 +125,8 @@ pub struct AppState {
     pub quick_actions: Vec<QuickAction>,
     /// Preformatted active-project MCP rows for render-time display.
     pub mcp_display_rows: Vec<McpDisplayRow>,
+    /// Cached large-file refactor suggestions for render-time display.
+    pub suggestion_report: Option<RefactorSuggestionReport>,
     /// Registry-backed project rows shown by the Repos tab.
     pub(crate) explore_projects: Vec<ProjectRef>,
     /// Last time Repos-tab project metadata was probed.

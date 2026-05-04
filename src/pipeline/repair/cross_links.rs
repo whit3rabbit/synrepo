@@ -7,9 +7,12 @@ use crate::{
         derive_link_freshness, ConfidenceTier, CrossLinkFreshness, OverlayEpistemic, OverlayLink,
         OverlayStore,
     },
-    pipeline::explain::{
-        build_cross_link_generator, score, telemetry, CandidatePair, CandidateScope,
-        CrossLinkGenerator,
+    pipeline::{
+        context_metrics::record_cross_link_generation_best_effort,
+        explain::{
+            build_cross_link_generator, score, telemetry, CandidatePair, CandidateScope,
+            CrossLinkGenerator,
+        },
     },
     store::{overlay::SqliteOverlayStore, sqlite::SqliteGraphStore},
 };
@@ -89,6 +92,7 @@ pub(super) fn run_cross_link_generation_with_generator(
             blocked_pairs,
         });
     }
+    record_cross_link_generation_best_effort(synrepo_dir, selected_pairs.len() as u64);
 
     let graph_distances = selected_pairs
         .iter()

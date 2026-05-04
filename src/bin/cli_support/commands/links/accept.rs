@@ -4,7 +4,10 @@ use synrepo::{
     config::{Config, Mode},
     core::ids::{EdgeId, NodeId},
     overlay::{OverlayEdgeKind, OverlayStore},
-    pipeline::writer::{acquire_write_admission, map_lock_error},
+    pipeline::{
+        context_metrics::record_cross_link_promoted_best_effort,
+        writer::{acquire_write_admission, map_lock_error},
+    },
     store::overlay::{candidate_pass_suffix, parse_overlay_edge_kind, SqliteOverlayStore},
     store::sqlite::SqliteGraphStore,
     structure::graph::{Edge, Epistemic, GraphStore},
@@ -213,6 +216,7 @@ pub(crate) fn links_accept(
                 .any(|e| e.to == to);
             if edge_exists {
                 overlay.mark_candidate_promoted(from, to, kind, reviewer, &edge_id.to_string())?;
+                record_cross_link_promoted_best_effort(&synrepo_dir, 1);
                 println!("Candidate {candidate_id} promotion completed (crash recovery).");
                 return Ok(());
             }
@@ -234,6 +238,7 @@ pub(crate) fn links_accept(
             reviewer,
         },
     )?;
+    record_cross_link_promoted_best_effort(&synrepo_dir, 1);
 
     println!("Candidate {candidate_id} accepted and written to graph.");
     Ok(())

@@ -32,6 +32,7 @@ impl Widget for DashboardTabsWidget<'_> {
             ("5", "Explain", ActiveTab::Explain),
             ("6", "Actions", ActiveTab::Actions),
             ("7", "MCP", ActiveTab::Mcp),
+            ("8", "Suggestion", ActiveTab::Suggestion),
         ]
         .into_iter()
         .map(|(key, label, _)| {
@@ -51,6 +52,7 @@ impl Widget for DashboardTabsWidget<'_> {
                 ActiveTab::Explain => 4,
                 ActiveTab::Actions => 5,
                 ActiveTab::Mcp => 6,
+                ActiveTab::Suggestion => 7,
             })
             .style(self.theme.base_style())
             .highlight_style(self.theme.selected_style())

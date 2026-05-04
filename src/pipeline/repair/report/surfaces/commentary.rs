@@ -20,32 +20,40 @@ pub struct CommentaryScan {
 /// return a fresh-vs-stale count. Used by both the repair surface check and
 /// the TUI Explain tab.
 pub fn scan_commentary_staleness(synrepo_dir: &std::path::Path) -> crate::Result<CommentaryScan> {
+    use std::str::FromStr;
+
+    use crate::core::ids::NodeId;
+    use crate::overlay::with_overlay_read_snapshot;
     use crate::pipeline::repair::commentary::resolve_commentary_node;
-    use crate::store::overlay::{derive_freshness, SqliteOverlayStore};
+    use crate::store::overlay::SqliteOverlayStore;
     use crate::store::sqlite::SqliteGraphStore;
+    use crate::structure::graph::with_graph_read_snapshot;
 
     let overlay_dir = synrepo_dir.join("overlay");
     if !SqliteOverlayStore::db_path(&overlay_dir).exists() {
         return Ok(CommentaryScan { total: 0, stale: 0 });
     }
     let overlay = SqliteOverlayStore::open_existing(&overlay_dir)?;
-    let entries = overlay.all_commentary_entries()?;
-
     let graph = SqliteGraphStore::open_existing(&synrepo_dir.join("graph"))?;
 
-    let mut total = 0usize;
-    let mut stale = 0usize;
-    for entry in entries {
-        total += 1;
-        let fresh = resolve_commentary_node(&graph, entry.node_id)?.is_some_and(|snap| {
-            derive_freshness(&entry, &snap.content_hash) == crate::overlay::FreshnessState::Fresh
-        });
-        if !fresh {
-            stale += 1;
-        }
-    }
-
-    Ok(CommentaryScan { total, stale })
+    with_overlay_read_snapshot(&overlay, |overlay| {
+        with_graph_read_snapshot(&graph, |graph| {
+            let mut stale = 0usize;
+            let total = overlay.scan_commentary_hashes(|node_id, source_hash| {
+                let Ok(node_id) = NodeId::from_str(node_id) else {
+                    stale += 1;
+                    return Ok(());
+                };
+                let fresh = resolve_commentary_node(graph, node_id)?
+                    .is_some_and(|snap| source_hash == snap.content_hash);
+                if !fresh {
+                    stale += 1;
+                }
+                Ok(())
+            })?;
+            Ok(CommentaryScan { total, stale })
+        })
+    })
 }
 
 pub struct CommentaryOverlayCheck;

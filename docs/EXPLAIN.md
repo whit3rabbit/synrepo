@@ -51,7 +51,11 @@ For `Local`, the request shape is inferred from the endpoint path: `/v1/chat/com
 
 ## API key handling
 
-API keys are resolved from provider environment variables first, then from user-global config. The setup wizard can save entered cloud keys in `~/.synrepo/config.toml` so they can be reused across repos. Repo-local `.synrepo/config.toml` stores explain provider and model settings, not cloud API keys, and explain telemetry/accounting must not persist keys. OS-keychain integration is explicitly out of scope today.
+API keys are resolved from provider environment variables first, then from user-global config. The setup wizard can save entered cloud keys in `~/.synrepo/config.toml` so they can be reused across repos. Saved keys are plaintext TOML on disk; file permissions depend on the host and umask. Prefer environment variables on shared machines, managed CI, or any host where other users may read your home directory.
+
+Repo-local `.synrepo/config.toml` stores explain provider and model settings, not cloud API keys, and explain telemetry/accounting must not persist keys. OS-keychain integration is not implemented yet; see `docs/KEYCHAIN-DESIGN.md` for the intended migration design.
+
+Local explain endpoints are treated as user-controlled provider endpoints. If `SYNREPO_LLM_LOCAL_ENDPOINT` or `explain.local_endpoint` points at a remote or untrusted service, that service can receive prompts containing source snippets, graph context, and commentary instructions. Only point local-provider config at endpoints you trust with the repository context.
 
 The legacy `SYNREPO_ANTHROPIC_API_KEY` is also accepted as a fallback to `ANTHROPIC_API_KEY`.
 

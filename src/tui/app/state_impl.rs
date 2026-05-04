@@ -111,6 +111,7 @@ impl AppState {
             log,
             quick_actions,
             mcp_display_rows,
+            suggestion_report: None,
             explore_projects: Vec::new(),
             explore_projects_loaded_at: None,
             explore_selected: 0,

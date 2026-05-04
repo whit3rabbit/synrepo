@@ -287,6 +287,24 @@ synrepo SHALL expose a `synrepo_entrypoints(scope?, budget?)` MCP tool that retu
 - **THEN** each entry in the response includes the caller count and truncated doc comment
 - **AND** source bodies are omitted
 
+### Requirement: Expose synrepo_refactor_suggestions as a task-first advisory tool
+synrepo SHALL expose `synrepo_refactor_suggestions(repo_root?, min_lines?, limit?, path_filter?)` as a read-only MCP tool that returns non-test source files whose physical line count is greater than the threshold. Defaults SHALL be `min_lines = 300` and `limit = 20`. The response SHALL include `source_store: "graph+filesystem"`, `metric: "physical_lines"`, `threshold`, `candidate_count`, `omitted_count`, `groups`, and `candidates`. Each candidate SHALL include graph-backed file identity and language metadata plus filesystem-backed line count, symbol counts, deterministic modularity tags, a short deterministic suggestion, and recommended follow-up MCP tools.
+
+#### Scenario: Agent asks whether files should be refactored
+- **WHEN** an agent invokes `synrepo_refactor_suggestions` without optional arguments
+- **THEN** synrepo returns non-test source files over 300 physical lines
+- **AND** candidates are sorted by descending line count, then path
+- **AND** the tool does not write source files, graph rows, overlay rows, or external process state
+
+#### Scenario: Agent scopes refactor suggestions
+- **WHEN** an agent invokes `synrepo_refactor_suggestions` with `path_filter: "src/tui/"`
+- **THEN** candidates outside that path prefix are excluded
+- **AND** the response preserves the same JSON contract
+
+#### Scenario: Test files are excluded
+- **WHEN** a repository contains large files under `tests/`, `__tests__/`, `tests.rs`, `test_*`, `*_test.*`, `*.test.*`, or `*.spec.*`
+- **THEN** those files are excluded from refactor suggestion candidates
+
 ### Requirement: Expose synrepo_minimum_context as a task-first MCP tool
 synrepo SHALL expose `synrepo_minimum_context` as a task-first MCP tool that returns a budget-bounded 1-hop neighborhood around a focal symbol or file. The tool SHALL accept parameters: `target` (node ID or qualified path, required), `budget` (`tiny`, `normal`, `deep`, default `normal`). The response SHALL follow the minimum-context spec contract: focal card, structural neighbor summaries or full cards depending on budget, governing decisions, and co-change partners.
 

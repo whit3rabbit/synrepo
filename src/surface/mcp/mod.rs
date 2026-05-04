@@ -41,6 +41,8 @@ pub mod notes;
 #[doc(hidden)]
 pub mod primitives;
 #[doc(hidden)]
+pub mod refactor_suggestions;
+#[doc(hidden)]
 pub mod search;
 #[doc(hidden)]
 pub mod task_route;

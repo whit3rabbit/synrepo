@@ -11,17 +11,14 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::surface::card::{Budget, ContextAccounting};
-use crate::surface::task_route::{
-    TaskRoute, SIGNAL_CONTEXT_FAST_PATH, SIGNAL_DETERMINISTIC_EDIT_CANDIDATE,
-    SIGNAL_LLM_NOT_REQUIRED,
-};
-
 mod persistence;
 mod prometheus;
+mod recording;
 pub use persistence::{
     load, load_optional, record_anchored_edit_outcomes_best_effort, record_card_best_effort,
-    record_cards_best_effort, record_changed_files_best_effort, record_compact_output_best_effort,
+    record_cards_best_effort, record_changed_files_best_effort,
+    record_commentary_refresh_best_effort, record_compact_output_best_effort,
+    record_cross_link_generation_best_effort, record_cross_link_promoted_best_effort,
     record_hook_route_emission_best_effort, record_mcp_resource_read_best_effort,
     record_mcp_tool_result_best_effort, record_task_route_classification_best_effort,
     record_workflow_call_best_effort, save,
@@ -131,6 +128,19 @@ pub struct ContextMetrics {
     /// surface.
     #[serde(default)]
     pub anchored_edit_rejected_total: u64,
+    /// **Observed**: cross-link candidate pairs sent to the configured
+    /// generator.
+    #[serde(default)]
+    pub cross_link_generation_total: u64,
+    /// **Observed**: proposed cross-links promoted into the graph.
+    #[serde(default)]
+    pub cross_link_promoted_total: u64,
+    /// **Observed**: commentary refresh attempts.
+    #[serde(default)]
+    pub commentary_refresh_total: u64,
+    /// **Observed**: commentary refresh attempts that returned an error.
+    #[serde(default)]
+    pub commentary_refresh_errors_total: u64,
     /// **Estimated**: count of route or hook recommendations where synrepo
     /// structural context was sufficient and an LLM call was likely avoidable.
     #[serde(default)]
@@ -154,153 +164,6 @@ impl ContextMetrics {
         } else {
             self.context_query_latency_ms_total as f64 / self.context_query_latency_samples as f64
         }
-    }
-
-    /// Record a card-shaped response.
-    pub fn record_card(&mut self, accounting: &ContextAccounting, latency_ms: u64) {
-        self.cards_served_total += 1;
-        self.card_tokens_total += accounting.token_estimate as u64;
-        self.raw_file_tokens_total += accounting.raw_file_token_estimate as u64;
-        self.estimated_tokens_saved_total += accounting
-            .raw_file_token_estimate
-            .saturating_sub(accounting.token_estimate)
-            as u64;
-        *self
-            .budget_tier_usage
-            .entry(budget_label(accounting.budget_tier).to_string())
-            .or_default() += 1;
-        if accounting.truncation_applied {
-            self.truncation_applied_total += 1;
-        }
-        if accounting.stale {
-            self.stale_responses_total += 1;
-        }
-        self.context_query_latency_ms_total += latency_ms;
-        self.context_query_latency_samples += 1;
-    }
-
-    /// Record a test-surface hit.
-    pub fn record_test_surface_hit(&mut self) {
-        self.test_surface_hits_total += 1;
-    }
-
-    /// Record changed files observed by the changed-context surface.
-    pub fn record_changed_files(&mut self, count: usize) {
-        self.changed_files_total += count as u64;
-    }
-
-    /// Record a workflow alias call by canonical tool name (for example
-    /// `"orient"`, `"find"`, `"minimum_context"`). Stored as an **observed**
-    /// counter; callers that serve the call are responsible for invoking
-    /// this.
-    pub fn record_workflow_call(&mut self, tool: &str) {
-        *self
-            .workflow_calls_total
-            .entry(tool.to_string())
-            .or_default() += 1;
-    }
-
-    /// Record an MCP tool request and its coarse outcome.
-    pub fn record_mcp_tool_result(
-        &mut self,
-        tool: &str,
-        errored: bool,
-        saved_context_write: Option<&str>,
-    ) {
-        self.mcp_requests_total += 1;
-        *self
-            .mcp_tool_calls_total
-            .entry(tool.to_string())
-            .or_default() += 1;
-        if errored {
-            *self
-                .mcp_tool_errors_total
-                .entry(tool.to_string())
-                .or_default() += 1;
-        }
-        if let Some(operation) = saved_context_write {
-            self.record_saved_context_write(operation);
-        }
-    }
-
-    /// Record an MCP resource read for a prepared repository.
-    pub fn record_mcp_resource_read(&mut self) {
-        self.mcp_requests_total += 1;
-        self.mcp_resource_reads_total += 1;
-    }
-
-    /// Record an explicit saved-context mutation without storing content.
-    pub fn record_saved_context_write(&mut self, operation: &str) {
-        *self
-            .saved_context_writes_total
-            .entry(operation.to_string())
-            .or_default() += 1;
-    }
-
-    /// Record a compact MCP read output without storing query or result text.
-    pub fn record_compact_output(
-        &mut self,
-        returned_token_estimate: usize,
-        original_token_estimate: usize,
-        estimated_tokens_saved: usize,
-        omitted_count: usize,
-        truncation_applied: bool,
-    ) {
-        self.compact_outputs_total += 1;
-        self.compact_returned_tokens_total += returned_token_estimate as u64;
-        self.compact_original_tokens_total += original_token_estimate as u64;
-        self.compact_estimated_tokens_saved_total += estimated_tokens_saved as u64;
-        self.compact_omitted_items_total += omitted_count as u64;
-        if truncation_applied {
-            self.compact_truncation_applied_total += 1;
-        }
-    }
-
-    /// Record a task-route classification without storing task text.
-    pub fn record_task_route_classification(&mut self, route: &TaskRoute) {
-        self.route_classifications_total += 1;
-        if route.edit_candidate.is_some() {
-            self.deterministic_edit_candidates_total += 1;
-        }
-        if !route.llm_required {
-            self.estimated_llm_calls_avoided_total += 1;
-        }
-    }
-
-    /// Record structured hook signals emitted from a task route.
-    pub fn record_hook_route_emission(&mut self, route: &TaskRoute) {
-        self.route_classifications_total += 1;
-        if route
-            .signals
-            .iter()
-            .any(|signal| signal == SIGNAL_CONTEXT_FAST_PATH)
-        {
-            self.context_fast_path_signals_total += 1;
-        }
-        if route
-            .signals
-            .iter()
-            .any(|signal| signal == SIGNAL_DETERMINISTIC_EDIT_CANDIDATE)
-        {
-            self.deterministic_edit_candidate_signals_total += 1;
-        }
-        if route
-            .signals
-            .iter()
-            .any(|signal| signal == SIGNAL_LLM_NOT_REQUIRED)
-        {
-            self.llm_not_required_signals_total += 1;
-            self.estimated_llm_calls_avoided_total += 1;
-        }
-        if route.edit_candidate.is_some() {
-            self.deterministic_edit_candidates_total += 1;
-        }
-    }
-
-    /// Record gated anchored edit outcomes.
-    pub fn record_anchored_edit_outcomes(&mut self, accepted: u64, rejected: u64) {
-        self.anchored_edit_accepted_total += accepted;
-        self.anchored_edit_rejected_total += rejected;
     }
 
     pub(super) fn merge_from(&mut self, delta: &Self) {
@@ -341,6 +204,10 @@ impl ContextMetrics {
         self.llm_not_required_signals_total += delta.llm_not_required_signals_total;
         self.anchored_edit_accepted_total += delta.anchored_edit_accepted_total;
         self.anchored_edit_rejected_total += delta.anchored_edit_rejected_total;
+        self.cross_link_generation_total += delta.cross_link_generation_total;
+        self.cross_link_promoted_total += delta.cross_link_promoted_total;
+        self.commentary_refresh_total += delta.commentary_refresh_total;
+        self.commentary_refresh_errors_total += delta.commentary_refresh_errors_total;
         self.estimated_llm_calls_avoided_total += delta.estimated_llm_calls_avoided_total;
     }
 
@@ -375,6 +242,10 @@ impl ContextMetrics {
             && self.llm_not_required_signals_total == 0
             && self.anchored_edit_accepted_total == 0
             && self.anchored_edit_rejected_total == 0
+            && self.cross_link_generation_total == 0
+            && self.cross_link_promoted_total == 0
+            && self.commentary_refresh_total == 0
+            && self.commentary_refresh_errors_total == 0
             && self.estimated_llm_calls_avoided_total == 0
     }
 }
@@ -382,14 +253,6 @@ impl ContextMetrics {
 fn merge_map(target: &mut BTreeMap<String, u64>, delta: &BTreeMap<String, u64>) {
     for (key, value) in delta {
         *target.entry(key.clone()).or_default() += value;
-    }
-}
-
-fn budget_label(budget: Budget) -> &'static str {
-    match budget {
-        Budget::Tiny => "tiny",
-        Budget::Normal => "normal",
-        Budget::Deep => "deep",
     }
 }
 

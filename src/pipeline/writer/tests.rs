@@ -236,6 +236,30 @@ fn write_admission_blocked_when_watch_running() {
     );
 }
 
+#[test]
+fn post_cleanup_watch_recheck_rejects_starting_owner() {
+    use crate::pipeline::watch::WatchServiceStatus;
+
+    assert!(matches!(
+        live_watch_lock_error(&WatchServiceStatus::Starting),
+        Some(LockError::WatchStarting)
+    ));
+}
+
+#[test]
+fn post_cleanup_watch_recheck_rejects_running_owner() {
+    use crate::pipeline::watch::{WatchDaemonState, WatchServiceMode, WatchServiceStatus};
+
+    let dir = tempdir().unwrap();
+    let mut state = WatchDaemonState::new(dir.path(), WatchServiceMode::Daemon);
+    state.pid = 42;
+
+    assert!(matches!(
+        live_watch_lock_error(&WatchServiceStatus::Running(state)),
+        Some(LockError::WatchOwned { watch_pid: 42 })
+    ));
+}
+
 /// Write admission succeeds after a stale watch state file is cleaned up.
 #[cfg(unix)]
 #[test]

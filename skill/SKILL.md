@@ -96,6 +96,7 @@ V1 edit candidates are advisory only: `var-to-const`, `remove-debug-logging`, `r
 - `synrepo_search(query, limit?, output_mode?, budget_tokens?)` — lexical search; `output_mode: "compact"` groups matches by file and returns `output_accounting`
 - `synrepo_docs_search(query, limit?)` — advisory advisory commentary search
 - `synrepo_where_to_edit(task, limit?)` — ranked edit candidates
+- `synrepo_refactor_suggestions(min_lines?, limit?, path_filter?)` — large non-test source files with modularity hints
 - `synrepo_change_impact(target)` — first-pass dependents
 - `synrepo_change_risk(target)` — composite risk signal
 - `synrepo_minimum_context(target, budget?)` — bounded neighborhood step before deep inspection or full-file reads

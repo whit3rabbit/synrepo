@@ -9,7 +9,10 @@ mod commentary_generate;
 mod commentary_plan;
 mod commentary_progress;
 mod commentary_run;
+mod export_regen;
+mod graph_maintenance;
 pub mod handlers;
+mod reconcile_handler;
 mod revalidate_links;
 
 pub use commentary::refresh_commentary;
@@ -276,6 +279,7 @@ pub fn resolve_pending_promotions(synrepo_dir: &Path) -> crate::Result<usize> {
     use crate::{
         core::ids::NodeId,
         overlay::OverlayEdgeKind,
+        pipeline::context_metrics::record_cross_link_promoted_best_effort,
         pipeline::structural::derive_edge_id,
         store::overlay::{parse_overlay_edge_kind, SqliteOverlayStore},
         store::sqlite::SqliteGraphStore,
@@ -343,6 +347,7 @@ pub fn resolve_pending_promotions(synrepo_dir: &Path) -> crate::Result<usize> {
                 reviewer,
                 &edge_id.to_string(),
             )?;
+            record_cross_link_promoted_best_effort(synrepo_dir, 1);
         } else {
             overlay.reset_candidate_to_active(from, to, overlay_kind)?;
         }

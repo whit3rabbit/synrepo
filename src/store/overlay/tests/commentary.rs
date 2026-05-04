@@ -60,6 +60,38 @@ fn insert_upserts_on_conflict_by_node_id() {
 }
 
 #[test]
+fn scan_commentary_hashes_streams_ids_and_hashes_only() {
+    let dir = tempdir().unwrap();
+    let mut store = SqliteOverlayStore::open(dir.path()).unwrap();
+
+    let first = NodeId::Symbol(SymbolNodeId(7));
+    let second = NodeId::File(FileNodeId(8));
+    store
+        .insert_commentary(sample_entry(first, "hash-a"))
+        .unwrap();
+    store
+        .insert_commentary(sample_entry(second, "hash-b"))
+        .unwrap();
+
+    let mut observed = Vec::new();
+    let count = store
+        .scan_commentary_hashes(|node_id, source_hash| {
+            observed.push((node_id.to_string(), source_hash.to_string()));
+            Ok(())
+        })
+        .unwrap();
+
+    assert_eq!(count, 2);
+    assert_eq!(
+        observed,
+        vec![
+            (second.to_string(), "hash-b".to_string()),
+            (first.to_string(), "hash-a".to_string()),
+        ]
+    );
+}
+
+#[test]
 fn commentary_for_missing_node_returns_none() {
     let dir = tempdir().unwrap();
     let store = SqliteOverlayStore::open(dir.path()).unwrap();

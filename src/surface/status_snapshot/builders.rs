@@ -1,9 +1,11 @@
 //! Helper functions for building status snapshots.
 
-use std::path::Path;
+use std::{path::Path, str::FromStr};
 
 use crate::{
     config::Config,
+    core::ids::NodeId,
+    overlay::with_overlay_read_snapshot,
     pipeline::{
         compact::load_last_compaction_timestamp,
         context_metrics::load_optional as load_context_metrics,
@@ -91,19 +93,17 @@ pub fn overlay_cost_summary(overlay: &OverlayHandle) -> String {
         OverlayHandle::Open(store) => store,
     };
 
-    let cross_link_gens = match overlay.cross_link_generation_count() {
-        Ok(n) => n,
-        Err(e) => return format!("unavailable (cross-link count query failed: {e})"),
-    };
-    let commentary_entries = match overlay.commentary_count() {
-        Ok(n) => n,
-        Err(e) => return format!("unavailable (commentary count query failed: {e})"),
-    };
+    let (cross_link_gens, commentary_entries, pending_promotion) =
+        match with_overlay_read_snapshot(overlay, |overlay| {
+            let cross_link_gens = overlay.cross_link_generation_count()?;
+            let commentary_entries = overlay.commentary_count()?;
+            let pending_promotion = overlay.cross_link_state_counts()?.pending_promotion;
+            Ok((cross_link_gens, commentary_entries, pending_promotion))
+        }) {
+            Ok(summary) => summary,
+            Err(e) => return format!("unavailable (overlay cost query failed: {e})"),
+        };
     let total_calls = cross_link_gens + commentary_entries;
-    let pending_promotion = match overlay.cross_link_state_counts() {
-        Ok(counts) => counts.pending_promotion,
-        Err(e) => return format!("unavailable (cross-link state count query failed: {e})"),
-    };
 
     format!(
         "{total_calls} LLM calls ({cross_link_gens} cross-link gen, {commentary_entries} commentary){pending_promotion_str}",
@@ -129,7 +129,8 @@ pub fn commentary_coverage(
     };
 
     if !full {
-        let total = match overlay.commentary_count() {
+        let total = match with_overlay_read_snapshot(overlay, |overlay| overlay.commentary_count())
+        {
             Ok(n) => n,
             Err(error) => return CommentaryCoverage::unavailable(error.to_string()),
         };
@@ -143,37 +144,35 @@ fn commentary_coverage_full(
     synrepo_dir: &Path,
     overlay: &SqliteOverlayStore,
 ) -> CommentaryCoverage {
-    let entries = match overlay.all_commentary_entries() {
-        Ok(rows) => rows,
-        Err(error) => return CommentaryCoverage::unavailable(error.to_string()),
-    };
-    if entries.is_empty() {
-        return CommentaryCoverage::full(0, 0);
-    }
-    let total = entries.len();
-
     let graph = match SqliteGraphStore::open_existing(&synrepo_dir.join("graph")) {
         Ok(graph) => graph,
-        Err(_) => return CommentaryCoverage::graph_unreadable(total),
+        Err(_) => {
+            let total = with_overlay_read_snapshot(overlay, |overlay| overlay.commentary_count())
+                .unwrap_or(0);
+            return CommentaryCoverage::graph_unreadable(total);
+        }
     };
 
-    let fresh = with_graph_read_snapshot(&graph, |graph| {
-        let mut fresh = 0usize;
-        for entry in &entries {
-            if resolve_commentary_node(graph, entry.node_id)
-                .ok()
-                .flatten()
-                .is_some_and(|snap| {
-                    crate::store::overlay::derive_freshness(entry, &snap.content_hash)
-                        == crate::overlay::FreshnessState::Fresh
-                })
-            {
-                fresh += 1;
-            }
-        }
-        Ok(fresh)
-    })
-    .unwrap_or(0);
+    let (total, fresh) = match with_overlay_read_snapshot(overlay, |overlay| {
+        with_graph_read_snapshot(&graph, |graph| {
+            let mut fresh = 0usize;
+            let total = overlay.scan_commentary_hashes(|node_id, source_hash| {
+                let Ok(node_id) = NodeId::from_str(node_id) else {
+                    return Ok(());
+                };
+                if resolve_commentary_node(graph, node_id)?
+                    .is_some_and(|snap| source_hash == snap.content_hash)
+                {
+                    fresh += 1;
+                }
+                Ok(())
+            })?;
+            Ok((total, fresh))
+        })
+    }) {
+        Ok(counts) => counts,
+        Err(error) => return CommentaryCoverage::unavailable(error.to_string()),
+    };
 
     CommentaryCoverage::full(total, fresh)
 }
@@ -245,7 +244,9 @@ pub fn build_status_snapshot(repo_root: &Path, opts: StatusOptions) -> StatusSna
     let overlay_cost_summary = overlay_cost_summary(&overlay);
     let commentary_coverage = commentary_coverage(&synrepo_dir, opts.full, &overlay);
     let agent_note_counts = match &overlay {
-        OverlayHandle::Open(store) => store.note_counts_impl().ok(),
+        OverlayHandle::Open(store) => {
+            with_overlay_read_snapshot(store, |store| store.note_counts_impl()).ok()
+        }
         OverlayHandle::NotInitialized | OverlayHandle::Unavailable(_) => None,
     };
     let last_compaction = load_last_compaction_timestamp(&synrepo_dir);

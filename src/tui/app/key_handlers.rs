@@ -83,6 +83,10 @@ impl AppState {
                 self.set_tab(ActiveTab::Mcp);
                 return true;
             }
+            KeyCode::Char('8') => {
+                self.set_tab(ActiveTab::Suggestion);
+                return true;
+            }
             _ => {}
         }
         if matches!(self.active_tab, ActiveTab::Repos) && self.handle_explore_key(code, modifiers) {
@@ -168,6 +172,10 @@ impl AppState {
         }
         match code {
             KeyCode::Char('r') => {
+                if matches!(self.active_tab, ActiveTab::Suggestion) {
+                    self.refresh_suggestions();
+                    return true;
+                }
                 self.refresh_now();
                 let counts = match self.snapshot.graph_stats.as_ref() {
                     Some(g) => format!("{} files, {} symbols", g.file_nodes, g.symbol_nodes),

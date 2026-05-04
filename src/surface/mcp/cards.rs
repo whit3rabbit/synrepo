@@ -388,6 +388,10 @@ pub fn handle_refresh_commentary(state: &SynrepoState, target: String) -> String
             "status": if text.is_some() { "refreshed" } else { "skipped" }
         }))
     });
+    crate::pipeline::context_metrics::record_commentary_refresh_best_effort(
+        &synrepo_dir,
+        result.is_err(),
+    );
 
     super::helpers::render_result(result)
 }

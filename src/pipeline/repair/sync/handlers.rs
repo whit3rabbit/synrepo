@@ -5,19 +5,7 @@
 use anyhow::anyhow;
 use std::path::Path;
 
-use crate::{
-    config::Config,
-    pipeline::{
-        maintenance::execute_maintenance,
-        structural::run_structural_compile,
-        watch::{
-            emit_cochange_edges_pass, emit_symbol_revisions_pass, finish_runtime_surfaces,
-            persist_reconcile_state, ReconcileOutcome, RepoIndexStrategy,
-        },
-    },
-    store::sqlite::SqliteGraphStore,
-    structure::graph::{GraphReader, GraphStore},
-};
+use crate::{config::Config, pipeline::maintenance::execute_maintenance};
 
 use crate::pipeline::repair::{
     DriftClass, RepairAction, RepairFinding, RepairSurface, Severity, SyncProgress,
@@ -77,7 +65,7 @@ pub fn handle_actionable_finding(
         }
         RepairAction::RunMaintenanceThenReconcile => {
             run_maintenance_if_needed(context.synrepo_dir, context.maint_plan, actions_taken)?;
-            record_reconcile_attempt(
+            super::reconcile_handler::record_reconcile_attempt(
                 finding,
                 context.repo_root,
                 context.synrepo_dir,
@@ -89,9 +77,14 @@ pub fn handle_actionable_finding(
         }
         RepairAction::RunReconcile => {
             if finding.surface == RepairSurface::EdgeDrift {
-                prune_dead_edges(finding, context.synrepo_dir, repaired, actions_taken)?;
+                super::graph_maintenance::prune_dead_edges(
+                    finding,
+                    context.synrepo_dir,
+                    repaired,
+                    actions_taken,
+                )?;
             } else {
-                record_reconcile_attempt(
+                super::reconcile_handler::record_reconcile_attempt(
                     finding,
                     context.repo_root,
                     context.synrepo_dir,
@@ -115,21 +108,23 @@ pub fn handle_actionable_finding(
                 actions_taken,
             );
         }
-        RepairAction::RegenerateExports => match regenerate_exports(context, actions_taken) {
-            Ok(()) => repaired.push(finding.clone()),
-            Err(err) => {
-                actions_taken.push(format!(
-                    "export regeneration failed for {}: {err}",
-                    finding.surface.as_str()
-                ));
-                let mut blocked_finding = finding.clone();
-                blocked_finding.drift_class = DriftClass::Blocked;
-                blocked_finding.severity = Severity::Blocked;
-                blocked_finding.recommended_action = RepairAction::ManualReview;
-                blocked_finding.notes = Some(format!("Export regeneration failed: {err}"));
-                blocked.push(blocked_finding);
+        RepairAction::RegenerateExports => {
+            match super::export_regen::regenerate_exports(context, actions_taken) {
+                Ok(()) => repaired.push(finding.clone()),
+                Err(err) => {
+                    actions_taken.push(format!(
+                        "export regeneration failed for {}: {err}",
+                        finding.surface.as_str()
+                    ));
+                    let mut blocked_finding = finding.clone();
+                    blocked_finding.drift_class = DriftClass::Blocked;
+                    blocked_finding.severity = Severity::Blocked;
+                    blocked_finding.recommended_action = RepairAction::ManualReview;
+                    blocked_finding.notes = Some(format!("Export regeneration failed: {err}"));
+                    blocked.push(blocked_finding);
+                }
             }
-        },
+        }
         RepairAction::RevalidateAgentNotes => {
             match mark_agent_note_stale(finding, context.synrepo_dir, actions_taken) {
                 Ok(()) => repaired.push(finding.clone()),
@@ -145,7 +140,7 @@ pub fn handle_actionable_finding(
             }
         }
         RepairAction::CompactRetired => {
-            match compact_retired_observations(context, actions_taken) {
+            match super::graph_maintenance::compact_retired_observations(context, actions_taken) {
                 Ok(()) => repaired.push(finding.clone()),
                 Err(err) => {
                     actions_taken.push(format!("compaction failed: {err}"));
@@ -175,6 +170,10 @@ pub fn handle_actionable_finding(
             } else {
                 super::commentary::refresh_commentary(context, actions_taken, None, None, None)
             };
+            crate::pipeline::context_metrics::record_commentary_refresh_best_effort(
+                context.synrepo_dir,
+                result.is_err(),
+            );
             match result {
                 Ok(()) => repaired.push(finding.clone()),
                 Err(err) => {
@@ -274,242 +273,4 @@ fn mark_agent_note_stale(
     let changed = overlay.mark_stale_notes(std::slice::from_ref(note_id), "synrepo-sync")?;
     actions_taken.push(format!("marked {changed} agent note(s) stale"));
     Ok(())
-}
-
-/// Prune edges with drift score of 1.0 (dead edges).
-pub fn prune_dead_edges(
-    finding: &RepairFinding,
-    synrepo_dir: &Path,
-    repaired: &mut Vec<RepairFinding>,
-    actions_taken: &mut Vec<String>,
-) -> crate::Result<()> {
-    let graph_dir = synrepo_dir.join("graph");
-    let Ok(mut graph) = SqliteGraphStore::open_existing(&graph_dir) else {
-        actions_taken.push("edge drift pruning skipped: graph store not found".to_string());
-        return Ok(());
-    };
-
-    // Use the latest revision recorded in edge_drift.
-    let Some(revision) = graph.latest_drift_revision()? else {
-        return Ok(());
-    };
-
-    let scores = graph.read_drift_scores(&revision)?;
-    let dead: Vec<_> = scores
-        .iter()
-        .filter(|(_, score)| (*score - 1.0).abs() < f32::EPSILON)
-        .collect();
-
-    if dead.is_empty() {
-        return Ok(());
-    }
-
-    graph.begin()?;
-    let mut pruned = 0usize;
-    let mut failed = 0usize;
-    let mut last_err: Option<crate::Error> = None;
-    for (edge_id, _) in &dead {
-        match graph.delete_edge(*edge_id) {
-            Ok(()) => pruned += 1,
-            Err(err) => {
-                tracing::warn!(edge_id = %edge_id, error = %err, "delete_edge failed during prune_dead_edges");
-                failed += 1;
-                last_err = Some(err);
-            }
-        }
-    }
-
-    let total = dead.len();
-    if failed == 0 {
-        graph.commit()?;
-        actions_taken.push(format!("pruned {pruned} dead edges (drift 1.0)"));
-        repaired.push(finding.clone());
-        Ok(())
-    } else if pruned > 0 {
-        graph.commit()?;
-        // Why: partial success — operator needs to see the failed count, but
-        // returning Err would lose the partial-progress signal. Push a noisy
-        // action message and still mark repaired so the caller proceeds.
-        actions_taken.push(format!(
-            "pruned {pruned}/{total} dead edges (drift 1.0); {failed} failure(s)"
-        ));
-        repaired.push(finding.clone());
-        Ok(())
-    } else {
-        let _ = graph.rollback();
-        // All deletes failed — surface the last error so the caller can route
-        // this as a Blocked finding.
-        Err(last_err.unwrap_or_else(|| {
-            crate::Error::Other(anyhow::anyhow!(
-                "prune_dead_edges: all {total} delete_edge calls failed"
-            ))
-        }))
-    }
-}
-
-/// Record a reconcile attempt and persist state.
-pub fn record_reconcile_attempt(
-    finding: &RepairFinding,
-    repo_root: &Path,
-    synrepo_dir: &Path,
-    config: &Config,
-    repaired: &mut Vec<RepairFinding>,
-    blocked: &mut Vec<RepairFinding>,
-    actions_taken: &mut Vec<String>,
-) {
-    let graph_dir = synrepo_dir.join("graph");
-    let mut graph = match SqliteGraphStore::open(&graph_dir) {
-        Ok(g) => g,
-        Err(err) => {
-            let message = err.to_string();
-            actions_taken.push(format!(
-                "structural reconcile for {} failed to open graph: {}",
-                finding.surface.as_str(),
-                message
-            ));
-            blocked.push(blocked_reconcile_finding(
-                finding,
-                format!("Reconcile failed: could not open graph store: {message}"),
-            ));
-            return;
-        }
-    };
-
-    let outcome = match run_structural_compile(repo_root, config, &mut graph) {
-        Ok(summary) => {
-            // Why: the co-change and symbol-revision passes are derived/
-            // advisory layers. A failure here leaves a partial graph but does
-            // not invalidate the structural reconcile, so we keep the outcome
-            // Completed and surface the failure via actions_taken so operators
-            // see partial-success in `synrepo status`.
-            if let Err(err) = emit_cochange_edges_pass(repo_root, config, &mut graph) {
-                tracing::warn!(error = %err, "co-change edge emission failed; continuing");
-                actions_taken.push(format!("co-change edge emission failed: {err}"));
-            }
-            if let Err(err) = emit_symbol_revisions_pass(repo_root, config, &mut graph) {
-                tracing::warn!(error = %err, "symbol revision derivation failed; continuing");
-                actions_taken.push(format!("symbol revision derivation failed: {err}"));
-            }
-            if let Err(err) = finish_runtime_surfaces(
-                repo_root,
-                config,
-                synrepo_dir,
-                &graph,
-                RepoIndexStrategy::FullRebuild,
-            ) {
-                ReconcileOutcome::Failed(format!("surface maintenance failed: {err}"))
-            } else {
-                ReconcileOutcome::Completed(summary)
-            }
-        }
-        Err(err) => ReconcileOutcome::Failed(err.to_string()),
-    };
-
-    persist_reconcile_state(synrepo_dir, &outcome, 0);
-    match outcome {
-        ReconcileOutcome::Completed(_) => {
-            actions_taken.push(format!(
-                "ran structural reconcile for {}",
-                finding.surface.as_str()
-            ));
-            repaired.push(finding.clone());
-        }
-        ReconcileOutcome::LockConflict { holder_pid } => {
-            let message =
-                format!("unexpected lock conflict with PID {holder_pid} while holding writer lock");
-            tracing::error!(%message);
-            blocked.push(blocked_reconcile_finding(finding, message));
-        }
-        ReconcileOutcome::Failed(message) => {
-            actions_taken.push(format!(
-                "structural reconcile for {} failed: {}",
-                finding.surface.as_str(),
-                message
-            ));
-            blocked.push(blocked_reconcile_finding(
-                finding,
-                format!(
-                    "Reconcile failed while repairing {}: {message}",
-                    finding.surface.as_str()
-                ),
-            ));
-        }
-    }
-}
-
-/// Re-run export generation.
-pub fn regenerate_exports(
-    context: &ActionContext<'_>,
-    actions_taken: &mut Vec<String>,
-) -> crate::Result<()> {
-    use crate::pipeline::export::{load_manifest, write_exports, ExportFormat};
-    use crate::surface::card::Budget;
-
-    let existing = load_manifest(context.repo_root, context.config);
-    let format = existing
-        .as_ref()
-        .map(|m| m.format)
-        .unwrap_or(ExportFormat::Markdown);
-    let budget = existing
-        .as_ref()
-        .and_then(|m| match m.budget.as_str() {
-            "deep" => Some(Budget::Deep),
-            "normal" => Some(Budget::Normal),
-            _ => None,
-        })
-        .unwrap_or(Budget::Normal);
-
-    write_exports(
-        context.repo_root,
-        context.synrepo_dir,
-        context.config,
-        format,
-        budget,
-        false,
-    )
-    .map_err(|e| anyhow!("{e}"))?;
-
-    actions_taken.push(format!(
-        "regenerated export directory (format={}, budget={})",
-        format.as_str(),
-        match budget {
-            Budget::Tiny => "tiny",
-            Budget::Normal => "normal",
-            Budget::Deep => "deep",
-        }
-    ));
-    Ok(())
-}
-
-/// Run compaction on retired observations.
-pub fn compact_retired_observations(
-    context: &ActionContext<'_>,
-    actions_taken: &mut Vec<String>,
-) -> crate::Result<()> {
-    let graph_dir = context.synrepo_dir.join("graph");
-    let mut graph = SqliteGraphStore::open_existing(&graph_dir)?;
-
-    let current_rev = graph.next_compile_revision()?;
-    let retain = context.config.retain_retired_revisions;
-    if current_rev <= retain {
-        actions_taken.push("compaction skipped: not enough revisions yet".to_string());
-        return Ok(());
-    }
-    let threshold = current_rev - retain;
-    let summary = graph.compact_retired(threshold)?;
-
-    actions_taken.push(format!(
-        "compaction: removed {} retired symbols, {} retired edges, {} old revisions",
-        summary.symbols_removed, summary.edges_removed, summary.revisions_removed
-    ));
-    Ok(())
-}
-
-fn blocked_reconcile_finding(finding: &RepairFinding, notes: String) -> RepairFinding {
-    let mut blocked = finding.clone();
-    blocked.drift_class = DriftClass::Blocked;
-    blocked.severity = Severity::Blocked;
-    blocked.recommended_action = RepairAction::ManualReview;
-    blocked.notes = Some(notes);
-    blocked
 }

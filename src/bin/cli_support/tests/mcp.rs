@@ -344,6 +344,16 @@ fn mcp_source_registers_context_pack_and_resources() {
 }
 
 #[test]
+fn mcp_source_registers_refactor_suggestions_tool() {
+    let source = fs::read_to_string("src/bin/cli_support/commands/mcp/tools.rs")
+        .expect("read MCP registration source");
+    assert!(
+        source.contains("name = \"synrepo_refactor_suggestions\""),
+        "MCP registration must include synrepo_refactor_suggestions"
+    );
+}
+
+#[test]
 fn mcp_source_registers_workflow_aliases() {
     let source = fs::read_to_string("src/bin/cli_support/commands/mcp/tools.rs")
         .expect("read MCP registration source");

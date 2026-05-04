@@ -26,6 +26,10 @@ fn prometheus_output_matches_golden_string() {
     metrics.llm_not_required_signals_total = 3;
     metrics.anchored_edit_accepted_total = 2;
     metrics.anchored_edit_rejected_total = 1;
+    metrics.cross_link_generation_total = 7;
+    metrics.cross_link_promoted_total = 2;
+    metrics.commentary_refresh_total = 5;
+    metrics.commentary_refresh_errors_total = 1;
     metrics.estimated_llm_calls_avoided_total = 5;
     metrics.budget_tier_usage.insert("tiny".to_string(), 2);
     metrics.budget_tier_usage.insert("normal".to_string(), 1);
@@ -111,6 +115,18 @@ synrepo_test_surface_hits_total 2\n\
 	# HELP synrepo_anchored_edit_rejected_total Observed: anchored edit operations rejected by the gated edit surface.\n\
 	# TYPE synrepo_anchored_edit_rejected_total counter\n\
 	synrepo_anchored_edit_rejected_total 1\n\
+	# HELP synrepo_cross_link_generation_total Observed: cross-link candidate pairs sent to the configured generator.\n\
+	# TYPE synrepo_cross_link_generation_total counter\n\
+	synrepo_cross_link_generation_total 7\n\
+	# HELP synrepo_cross_link_promoted_total Observed: proposed cross-links promoted into the graph.\n\
+	# TYPE synrepo_cross_link_promoted_total counter\n\
+	synrepo_cross_link_promoted_total 2\n\
+	# HELP synrepo_commentary_refresh_total Observed: commentary refresh attempts.\n\
+	# TYPE synrepo_commentary_refresh_total counter\n\
+	synrepo_commentary_refresh_total 5\n\
+	# HELP synrepo_commentary_refresh_errors_total Observed: commentary refresh attempts that returned an error.\n\
+	# TYPE synrepo_commentary_refresh_errors_total counter\n\
+	synrepo_commentary_refresh_errors_total 1\n\
 	# HELP synrepo_estimated_llm_calls_avoided_total Estimated: route or hook recommendations where an LLM call was likely avoidable.\n\
 	# TYPE synrepo_estimated_llm_calls_avoided_total counter\n\
 	synrepo_estimated_llm_calls_avoided_total 5\n\

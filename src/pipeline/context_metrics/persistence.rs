@@ -178,6 +178,33 @@ pub fn record_anchored_edit_outcomes_best_effort(synrepo_dir: &Path, accepted: u
     });
 }
 
+/// Best-effort recording of cross-link generation attempts.
+pub fn record_cross_link_generation_best_effort(synrepo_dir: &Path, attempts: u64) {
+    if attempts == 0 {
+        return;
+    }
+    record_delta_best_effort(synrepo_dir, |metrics| {
+        metrics.record_cross_link_generation(attempts);
+    });
+}
+
+/// Best-effort recording of promoted cross-links.
+pub fn record_cross_link_promoted_best_effort(synrepo_dir: &Path, count: u64) {
+    if count == 0 {
+        return;
+    }
+    record_delta_best_effort(synrepo_dir, |metrics| {
+        metrics.record_cross_link_promoted(count);
+    });
+}
+
+/// Best-effort recording of commentary refresh attempts.
+pub fn record_commentary_refresh_best_effort(synrepo_dir: &Path, errored: bool) {
+    record_delta_best_effort(synrepo_dir, |metrics| {
+        metrics.record_commentary_refresh(errored);
+    });
+}
+
 fn record_delta_best_effort<F>(synrepo_dir: &Path, record: F)
 where
     F: FnOnce(&mut ContextMetrics),

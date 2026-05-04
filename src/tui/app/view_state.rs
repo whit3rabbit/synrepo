@@ -26,6 +26,8 @@ pub enum ActiveTab {
     Actions,
     /// Active-project MCP registration status.
     Mcp,
+    /// Large-file refactor suggestions.
+    Suggestion,
 }
 
 impl fmt::Display for ActiveTab {
@@ -38,6 +40,7 @@ impl fmt::Display for ActiveTab {
             ActiveTab::Explain => write!(f, "Explain"),
             ActiveTab::Actions => write!(f, "Actions"),
             ActiveTab::Mcp => write!(f, "MCP"),
+            ActiveTab::Suggestion => write!(f, "Suggestion"),
         }
     }
 }
@@ -54,6 +57,8 @@ impl AppState {
                 self.refresh_explain_preview(false);
             } else if matches!(tab, ActiveTab::Repos) {
                 self.ensure_explore_projects_fresh();
+            } else if matches!(tab, ActiveTab::Suggestion) {
+                self.ensure_suggestions_loaded();
             } else if matches!(tab, ActiveTab::Live) {
                 // Re-enter Live pinned to the tail so operators always see
                 // the most recent entries on tab switch.
@@ -63,7 +68,7 @@ impl AppState {
         }
     }
 
-    /// Advance to the next tab in Repos → Live → Health → Trust → Explain → Actions → MCP order.
+    /// Advance to the next dashboard tab.
     pub fn cycle_tab(&mut self) {
         let next = match self.active_tab {
             ActiveTab::Repos => ActiveTab::Live,
@@ -72,7 +77,8 @@ impl AppState {
             ActiveTab::Trust => ActiveTab::Explain,
             ActiveTab::Explain => ActiveTab::Actions,
             ActiveTab::Actions => ActiveTab::Mcp,
-            ActiveTab::Mcp => ActiveTab::Repos,
+            ActiveTab::Mcp => ActiveTab::Suggestion,
+            ActiveTab::Suggestion => ActiveTab::Repos,
         };
         self.set_tab(next);
     }
@@ -80,13 +86,14 @@ impl AppState {
     /// Reverse of `cycle_tab`. Used by Shift-Tab and Left arrow.
     pub fn cycle_tab_back(&mut self) {
         let prev = match self.active_tab {
-            ActiveTab::Repos => ActiveTab::Mcp,
+            ActiveTab::Repos => ActiveTab::Suggestion,
             ActiveTab::Live => ActiveTab::Repos,
             ActiveTab::Health => ActiveTab::Live,
             ActiveTab::Trust => ActiveTab::Health,
             ActiveTab::Explain => ActiveTab::Trust,
             ActiveTab::Actions => ActiveTab::Explain,
             ActiveTab::Mcp => ActiveTab::Actions,
+            ActiveTab::Suggestion => ActiveTab::Mcp,
         };
         self.set_tab(prev);
     }

@@ -1,4 +1,5 @@
 use super::*;
+use crate::surface::card::{Budget, ContextAccounting};
 
 #[test]
 fn record_card_updates_token_and_budget_totals() {
@@ -108,6 +109,21 @@ fn record_anchored_edit_outcomes_updates_totals() {
 }
 
 #[test]
+fn record_explain_activity_updates_totals() {
+    let mut metrics = ContextMetrics::default();
+
+    metrics.record_cross_link_generation(3);
+    metrics.record_cross_link_promoted(2);
+    metrics.record_commentary_refresh(false);
+    metrics.record_commentary_refresh(true);
+
+    assert_eq!(metrics.cross_link_generation_total, 3);
+    assert_eq!(metrics.cross_link_promoted_total, 2);
+    assert_eq!(metrics.commentary_refresh_total, 2);
+    assert_eq!(metrics.commentary_refresh_errors_total, 1);
+}
+
+#[test]
 fn mcp_metrics_default_when_loading_older_json() {
     let old_shape = serde_json::json!({
         "cards_served_total": 1,
@@ -132,6 +148,10 @@ fn mcp_metrics_default_when_loading_older_json() {
     assert_eq!(metrics.compact_outputs_total, 0);
     assert_eq!(metrics.compact_estimated_tokens_saved_total, 0);
     assert_eq!(metrics.route_classifications_total, 0);
+    assert_eq!(metrics.cross_link_generation_total, 0);
+    assert_eq!(metrics.cross_link_promoted_total, 0);
+    assert_eq!(metrics.commentary_refresh_total, 0);
+    assert_eq!(metrics.commentary_refresh_errors_total, 0);
     assert_eq!(metrics.estimated_llm_calls_avoided_total, 0);
 }
 
@@ -171,9 +191,11 @@ fn flush_merges_pending_delta_with_current_disk_metrics() {
     let repo = tempfile::tempdir().unwrap();
     let synrepo_dir = repo.path().join(".synrepo");
     record_workflow_call_best_effort(&synrepo_dir, "orient");
+    record_cross_link_generation_best_effort(&synrepo_dir, 4);
 
     let mut external = ContextMetrics::default();
     external.record_mcp_resource_read();
+    external.record_cross_link_promoted(1);
     std::fs::create_dir_all(synrepo_dir.join("state")).unwrap();
     std::fs::write(
         synrepo_dir.join("state/context-metrics.json"),
@@ -187,4 +209,6 @@ fn flush_merges_pending_delta_with_current_disk_metrics() {
     assert_eq!(metrics.mcp_requests_total, 1);
     assert_eq!(metrics.mcp_resource_reads_total, 1);
     assert_eq!(metrics.workflow_calls_total.get("orient"), Some(&1));
+    assert_eq!(metrics.cross_link_generation_total, 4);
+    assert_eq!(metrics.cross_link_promoted_total, 1);
 }

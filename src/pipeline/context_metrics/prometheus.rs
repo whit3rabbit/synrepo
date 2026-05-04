@@ -158,6 +158,30 @@ impl ContextMetrics {
         );
         write_counter(
             &mut out,
+            "synrepo_cross_link_generation_total",
+            "Observed: cross-link candidate pairs sent to the configured generator.",
+            self.cross_link_generation_total,
+        );
+        write_counter(
+            &mut out,
+            "synrepo_cross_link_promoted_total",
+            "Observed: proposed cross-links promoted into the graph.",
+            self.cross_link_promoted_total,
+        );
+        write_counter(
+            &mut out,
+            "synrepo_commentary_refresh_total",
+            "Observed: commentary refresh attempts.",
+            self.commentary_refresh_total,
+        );
+        write_counter(
+            &mut out,
+            "synrepo_commentary_refresh_errors_total",
+            "Observed: commentary refresh attempts that returned an error.",
+            self.commentary_refresh_errors_total,
+        );
+        write_counter(
+            &mut out,
             "synrepo_estimated_llm_calls_avoided_total",
             "Estimated: route or hook recommendations where an LLM call was likely avoidable.",
             self.estimated_llm_calls_avoided_total,

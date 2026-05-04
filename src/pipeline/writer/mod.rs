@@ -37,6 +37,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use crate::pipeline::watch::WatchServiceStatus;
 pub use helpers::now_rfc3339;
 use helpers::{
     decrement_depth, insert_initial_lock, open_and_try_lock_with_retry, read_ownership,
@@ -261,28 +262,41 @@ pub fn acquire_write_admission(
     synrepo_dir: &Path,
     operation: &str,
 ) -> Result<WriterLock, LockError> {
-    use crate::pipeline::watch::{
-        cleanup_stale_watch_artifacts, watch_service_status, WatchServiceStatus,
-    };
+    use crate::pipeline::watch::{cleanup_stale_watch_artifacts, watch_service_status};
 
     tracing::debug!(operation, "acquiring write admission");
 
     match watch_service_status(synrepo_dir) {
         WatchServiceStatus::Inactive => {}
-        WatchServiceStatus::Starting => return Err(LockError::WatchStarting),
+        status @ WatchServiceStatus::Starting | status @ WatchServiceStatus::Running(_) => {
+            if let Some(err) = live_watch_lock_error(&status) {
+                return Err(err);
+            }
+        }
         WatchServiceStatus::Stale(_) | WatchServiceStatus::Corrupt(_) => {
             if let Err(e) = cleanup_stale_watch_artifacts(synrepo_dir) {
                 tracing::warn!("failed to clean stale watch artifacts: {e}");
             }
-        }
-        WatchServiceStatus::Running(state) => {
-            return Err(LockError::WatchOwned {
-                watch_pid: state.pid,
-            });
+            let status = watch_service_status(synrepo_dir);
+            if let Some(err) = live_watch_lock_error(&status) {
+                return Err(err);
+            }
         }
     }
 
     acquire_writer_lock(synrepo_dir)
+}
+
+fn live_watch_lock_error(status: &WatchServiceStatus) -> Option<LockError> {
+    match status {
+        WatchServiceStatus::Starting => Some(LockError::WatchStarting),
+        WatchServiceStatus::Running(state) => Some(LockError::WatchOwned {
+            watch_pid: state.pid,
+        }),
+        WatchServiceStatus::Inactive
+        | WatchServiceStatus::Stale(_)
+        | WatchServiceStatus::Corrupt(_) => None,
+    }
 }
 
 /// Map a `LockError` to a user-facing `anyhow::Error` prefixed with an
