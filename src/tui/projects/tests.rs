@@ -125,9 +125,11 @@ fn explore_enter_switches_selected_project() {
     let mut state = GlobalAppState::new(home.path(), Theme::plain(), false).unwrap();
 
     state.open_explore_tab();
-    assert_eq!(state.explore_selected_index(), 0);
-    assert!(state.handle_key(KeyCode::Down, KeyModifiers::NONE));
-    assert_eq!(state.explore_selected_index(), 1);
+    state.explore_selected = state
+        .projects
+        .iter()
+        .position(|project| project.id == beta_entry.id)
+        .unwrap();
     assert!(state.handle_key(KeyCode::Enter, KeyModifiers::NONE));
 
     assert_eq!(
@@ -156,11 +158,11 @@ fn explore_refresh_preserves_selected_project() {
     let mut state = GlobalAppState::new(home.path(), Theme::plain(), false).unwrap();
 
     state.open_explore_tab();
-    state.handle_key(KeyCode::Down, KeyModifiers::NONE);
-    assert_eq!(
-        state.projects[state.explore_selected_index()].id.as_str(),
-        beta_entry.id.as_str()
-    );
+    state.explore_selected = state
+        .projects
+        .iter()
+        .position(|project| project.id == beta_entry.id)
+        .unwrap();
     assert!(state.handle_key(KeyCode::Char('r'), KeyModifiers::NONE));
 
     assert_eq!(

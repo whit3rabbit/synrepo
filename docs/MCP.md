@@ -16,6 +16,8 @@ Most users should prefer `synrepo setup <tool>`, which writes the agent instruct
 
 Codex and Claude can also install local client-side nudges with `synrepo setup codex --agent-hooks` or `synrepo setup claude --agent-hooks`. These hooks call `synrepo agent-hook nudge`, remind the agent to use synrepo before direct grep/read/review/edit workflows, and never block tools or store prompt content.
 
+Nudge output may include structured fast-path signals. `[SYNREPO_CONTEXT_FAST_PATH]` means use compact search, cards, or context packs before cold reads. `[SYNREPO_DETERMINISTIC_EDIT_CANDIDATE] Intent: <intent>` means a narrow mechanical edit may be possible after preparing anchors. `[SYNREPO_LLM_NOT_REQUIRED]` means structural context or anchored edits should be enough for the next step.
+
 `synrepo mcp` does not start `synrepo watch`, install Git hooks, install agent nudge hooks, scan every repository, intercept external tool calls, or keep state fresh in the background. Use `synrepo watch`, `synrepo watch --daemon`, `synrepo install-hooks`, or explicit `synrepo setup <tool> --agent-hooks` when you want those behaviors.
 
 ## Default Agent Workflow
@@ -31,6 +33,8 @@ The default path for codebase questions, file reviews, broad search, impact chec
 7. `synrepo_changed` after edits to review changed context and validation commands.
 
 Use `tiny` budgets to route, `normal` budgets to understand a neighborhood, and `deep` budgets only before implementation or when exact source details matter. Use `synrepo_context_pack` when batching several read-only context artifacts is cheaper than serial tool calls. Its `targets` parameter is an array of structured objects: `{ "kind": "file|symbol|directory|minimum_context|test_surface|call_path|search", "target": "...", "budget": "tiny|normal|deep" }`.
+
+Use `synrepo_task_route` before ambiguous or hook-triggered work. It returns `{ intent, confidence, recommended_tools, budget_tier, llm_required, edit_candidate, signals, reason }` and records only aggregate counters. It does not read source, call an LLM, or apply edits. The CLI equivalent is `synrepo task-route <task> [--path <path>] [--json]`.
 
 `synrepo_find` and `synrepo_where_to_edit` route plain-language tasks to tiny file cards. They first try the task text as-is, then use bounded deterministic fallback queries over phrase, token, and snake_case variants. Responses include `query_attempts`, `fallback_used`, and `miss_reason` (`no_index_matches` or `matches_not_in_graph`) so agents can see whether routing failed because the index had no matches or because matched paths were unavailable in the graph.
 
@@ -55,6 +59,7 @@ Task-first read tools:
 - `synrepo_overview`
 - `synrepo_card`
 - `synrepo_context_pack`
+- `synrepo_task_route`
 - `synrepo_search`
 - `synrepo_where_to_edit`
 - `synrepo_change_impact`
@@ -114,6 +119,8 @@ Prepared edit anchors are short-lived operational state. They are not graph fact
 
 Context metrics are operational counters only. They track totals such as MCP requests, per-tool calls, per-tool errors, resource reads, card tokens, and explicit note mutations. They never store prompts, queries, note claims, caller identity, or session history.
 
+Fast-path metrics are counters only: route classifications, hook signal emissions, deterministic edit candidates, anchored edit accept/reject totals, and estimated LLM calls avoided. They never store the classified task text or source snippets.
+
 ## Edit-Enabled Workflow
 
 Read tools should still come first. When the server was started with `synrepo mcp --allow-edits`, use:
@@ -130,6 +137,7 @@ If MCP is unavailable, use the CLI rather than blocking:
 ```bash
 synrepo status
 synrepo status --recent
+synrepo task-route "find auth entrypoints"
 synrepo search "term"
 synrepo node <target>
 synrepo graph query "inbound <target>"

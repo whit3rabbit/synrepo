@@ -24,14 +24,18 @@ fn classifies_var_to_const_candidate() {
     assert_eq!(route.intent, "var-to-const");
     assert!(!route.llm_required);
     assert_eq!(
-        route.edit_candidate.as_ref().map(|candidate| candidate.intent.as_str()),
+        route
+            .edit_candidate
+            .as_ref()
+            .map(|candidate| candidate.intent.as_str()),
         Some("var-to-const")
     );
 }
 
 #[test]
 fn typescript_var_to_const_accepts_unreassigned_binding() {
-    let result = typescript_var_to_const_eligibility("let value = 1;\nconsole.log(value);\n", false);
+    let result =
+        typescript_var_to_const_eligibility("let value = 1;\nconsole.log(value);\n", false);
     assert!(result.eligible, "{result:?}");
     assert_eq!(result.binding.as_deref(), Some("value"));
 }

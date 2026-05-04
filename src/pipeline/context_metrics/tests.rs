@@ -71,10 +71,8 @@ fn record_compact_output_updates_content_free_totals() {
 #[test]
 fn record_task_route_updates_fast_path_totals() {
     let mut metrics = ContextMetrics::default();
-    let route = crate::surface::task_route::classify_task_route(
-        "convert var to const",
-        Some("src/app.ts"),
-    );
+    let route =
+        crate::surface::task_route::classify_task_route("convert var to const", Some("src/app.ts"));
 
     metrics.record_task_route_classification(&route);
 

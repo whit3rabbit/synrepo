@@ -1,5 +1,6 @@
 use synrepo::bootstrap::bootstrap;
 use synrepo::config::Config;
+use synrepo::pipeline::context_metrics::{self, ContextMetrics};
 use synrepo::pipeline::structural::CompileSummary;
 use synrepo::pipeline::watch::{persist_reconcile_state, ReconcileOutcome};
 use synrepo::pipeline::writer::{writer_lock_path, WriterOwnership};
@@ -139,4 +140,44 @@ fn status_reports_corrupt_watch_state() {
     )
     .unwrap();
     assert!(json["watch"].as_str().unwrap().contains("corrupt"));
+}
+
+#[test]
+fn status_surfaces_fast_path_context_metrics() {
+    let repo = tempdir().unwrap();
+    seed_graph(repo.path());
+    let synrepo_dir = Config::synrepo_dir(repo.path());
+    let metrics = ContextMetrics {
+        route_classifications_total: 3,
+        context_fast_path_signals_total: 2,
+        deterministic_edit_candidates_total: 1,
+        anchored_edit_accepted_total: 4,
+        anchored_edit_rejected_total: 1,
+        estimated_llm_calls_avoided_total: 2,
+        ..ContextMetrics::default()
+    };
+    context_metrics::save(&synrepo_dir, &metrics).unwrap();
+
+    let text = status_output(repo.path(), false, false, false).unwrap();
+    assert!(
+        text.contains("fast path:  3 route(s), 2 context signal(s), 1 edit candidate(s), 2 est. LLM call(s) avoided"),
+        "got: {text}"
+    );
+    assert!(
+        text.contains("anchors:    4 accepted edit(s), 1 rejected edit(s)"),
+        "got: {text}"
+    );
+
+    let json: serde_json::Value = serde_json::from_str(
+        status_output(repo.path(), true, false, false)
+            .unwrap()
+            .trim(),
+    )
+    .unwrap();
+    assert_eq!(json["context_metrics"]["route_classifications_total"], 3);
+    assert_eq!(json["context_metrics"]["anchored_edit_rejected_total"], 1);
+    assert_eq!(
+        json["context_metrics"]["estimated_llm_calls_avoided_total"],
+        2
+    );
 }

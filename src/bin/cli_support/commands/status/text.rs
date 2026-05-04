@@ -262,8 +262,7 @@ pub(super) fn write_status_text(
             writeln!(
                 out,
                 "  anchors:    {} accepted edit(s), {} rejected edit(s)",
-                metrics.anchored_edit_accepted_total,
-                metrics.anchored_edit_rejected_total
+                metrics.anchored_edit_accepted_total, metrics.anchored_edit_rejected_total
             )
             .unwrap();
         }

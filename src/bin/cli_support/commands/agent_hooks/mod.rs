@@ -98,11 +98,7 @@ pub(crate) fn agent_hooks_supported(tool: AgentTool) -> bool {
     matches!(tool, AgentTool::Codex | AgentTool::Claude)
 }
 
-fn task_route_from_input(
-    client: HookClient,
-    event: HookEvent,
-    input: &Value,
-) -> Option<TaskRoute> {
+fn task_route_from_input(client: HookClient, event: HookEvent, input: &Value) -> Option<TaskRoute> {
     match event {
         HookEvent::UserPromptSubmit => {
             let prompt = input.get("prompt")?.as_str()?;
@@ -130,7 +126,9 @@ fn tool_route(client: HookClient, input: &Value) -> Option<TaskRoute> {
         (HookClient::Claude, "Read" | "Grep" | "Glob") => "find or read repository file",
         (HookClient::Claude, "Edit" | "Write") => "edit repository file",
         (HookClient::Codex, "apply_patch") => "edit repository file",
-        _ if tool_name.starts_with("mcp__") => "review external tool output against repository context",
+        _ if tool_name.starts_with("mcp__") => {
+            "review external tool output against repository context"
+        }
         _ => return None,
     };
     Some(classify_task_route(task, path))
@@ -283,8 +281,9 @@ mod tests {
         let output = nudge_output(HookClient::Codex, HookEvent::UserPromptSubmit, &body)
             .expect("edit prompt should nudge");
         let parsed: Value = serde_json::from_str(&output).unwrap();
-        assert!(parsed["systemMessage"].as_str().unwrap().contains(
-            "[SYNREPO_DETERMINISTIC_EDIT_CANDIDATE] Intent: var-to-const"
-        ));
+        assert!(parsed["systemMessage"]
+            .as_str()
+            .unwrap()
+            .contains("[SYNREPO_DETERMINISTIC_EDIT_CANDIDATE] Intent: var-to-const"));
     }
 }

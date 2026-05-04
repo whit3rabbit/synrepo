@@ -169,11 +169,7 @@ pub fn record_hook_route_emission_best_effort(synrepo_dir: &Path, route: &TaskRo
 }
 
 /// Best-effort recording of accepted and rejected anchored edits.
-pub fn record_anchored_edit_outcomes_best_effort(
-    synrepo_dir: &Path,
-    accepted: u64,
-    rejected: u64,
-) {
+pub fn record_anchored_edit_outcomes_best_effort(synrepo_dir: &Path, accepted: u64, rejected: u64) {
     if accepted == 0 && rejected == 0 {
         return;
     }

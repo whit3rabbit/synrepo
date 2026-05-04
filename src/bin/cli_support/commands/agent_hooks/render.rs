@@ -5,7 +5,11 @@ use super::{HookClient, HookEvent};
 
 const NUDGE: &str = "Synrepo nudge: this repo has .synrepo context. For codebase questions, file reviews, broad search, and pre-edit work, call synrepo_orient first, then use synrepo_search with output_mode=\"compact\" or synrepo_find, followed by synrepo_explain, synrepo_minimum_context, synrepo_risks, and synrepo_tests as needed. Full source reads are an escalation when cards are insufficient.";
 
-pub(super) fn render_nudge(client: HookClient, event: HookEvent, route: Option<&TaskRoute>) -> String {
+pub(super) fn render_nudge(
+    client: HookClient,
+    event: HookEvent,
+    route: Option<&TaskRoute>,
+) -> String {
     let message = render_message(route);
     let value = match (client, event) {
         (HookClient::Codex, _) => json!({

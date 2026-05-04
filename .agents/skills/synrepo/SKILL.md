@@ -42,6 +42,10 @@ Graph-backed structural facts (files, symbols, edges) remain the authoritative s
 
 Client-side nudge hooks for Codex and Claude may remind agents to use synrepo before direct grep, read, review, or edit workflows. These hooks are advisory only; the MCP server remains read-first and does not intercept external tool calls.
 
+### Fast-path routing
+
+Use `synrepo_task_route` or `synrepo task-route` when hooks emit `[SYNREPO_CONTEXT_FAST_PATH]`, `[SYNREPO_DETERMINISTIC_EDIT_CANDIDATE] Intent: ...`, or `[SYNREPO_LLM_NOT_REQUIRED]`. Prefer compact search, cards, context packs, or prepared anchored edits before spending LLM tokens. The signals are advisory only; source mutation still requires `synrepo mcp --allow-edits` and `synrepo_apply_anchor_edits`.
+
 Graph export is native to synrepo, not skill-owned. When a user asks for a visual graph of the repository, run `synrepo export --format graph-html`. When they ask for machine-readable graph data, run `synrepo export --format graph-json`. These exports are deterministic convenience outputs from the canonical graph DB; they do not require an API key and are not explain input.
 
 ### Do not
@@ -63,6 +67,7 @@ Graph export is native to synrepo, not skill-owned. When a user asks for a visua
 
 - `synrepo_card target=<id> budget=<tiny|normal|deep>` — structured card for a file or symbol
 - `synrepo_search query=<text> [output_mode=compact]` — lexical search across indexed files; compact mode groups matches by file and returns output accounting
+- `synrepo_task_route task=<description> [path=<path>]` — classify a task into the cheapest safe route and hook signals
 - `synrepo_overview` — graph node counts and repository mode
 - `synrepo_where_to_edit task=<description>` — file suggestions for a plain-language task
 - `synrepo_change_impact target=<id>` — first-pass reverse dependencies
@@ -78,6 +83,7 @@ Node IDs: `file_0000000000000042`, `symbol_0000000000000024`. Use `synrepo_searc
 ```bash
 synrepo status                                   # health check
 synrepo status --recent                          # bounded operational history
+synrepo task-route "find auth entrypoints"        # advisory route classifier
 synrepo search <query>                           # lexical search
 synrepo node <target>                            # node metadata as JSON (accepts paths, symbol names, or node IDs)
 synrepo graph query "inbound <target>"            # reverse dependencies

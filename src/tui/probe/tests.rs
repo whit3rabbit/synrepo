@@ -195,6 +195,37 @@ fn health_rows_surface_mcp_request_metrics() {
 }
 
 #[test]
+fn health_rows_surface_fast_path_and_anchor_metrics() {
+    let metrics = ContextMetrics {
+        route_classifications_total: 5,
+        context_fast_path_signals_total: 4,
+        deterministic_edit_candidates_total: 2,
+        anchored_edit_accepted_total: 3,
+        anchored_edit_rejected_total: 1,
+        estimated_llm_calls_avoided_total: 4,
+        ..ContextMetrics::default()
+    };
+    let snapshot = snapshot_with_metrics(Some(metrics));
+
+    let vm = build_health_vm(&snapshot);
+    let fast_path = vm
+        .rows
+        .iter()
+        .find(|r| r.label == "fast path")
+        .expect("fast path row must be present");
+    assert_eq!(fast_path.value, "5 routes, 4 signals, 2 edit candidates");
+    assert_eq!(fast_path.severity, Severity::Healthy);
+
+    let anchors = vm
+        .rows
+        .iter()
+        .find(|r| r.label == "anchored edits")
+        .expect("anchored edits row must be present");
+    assert_eq!(anchors.value, "3 accepted, 1 rejected");
+    assert_eq!(anchors.severity, Severity::Stale);
+}
+
+#[test]
 fn export_stale_with_watch_auto_sync_shows_automatic_wait() {
     let snapshot = snapshot_for_actions(
         "stale (generated at old, current epoch new)",

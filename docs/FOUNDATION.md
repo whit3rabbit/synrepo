@@ -87,6 +87,8 @@ Do-not rules, asserted uniformly across surfaces:
 
 For task routing, `synrepo_find` first tries the task text as-is, then decomposes broad language into deterministic lexical anchors before returning empty. The existing context-budget protocol is the substrate for this doctrine; the doctrine makes the protocol visible at every entry point an agent can hit.
 
+Fast-path routing adds a read-only classifier, `synrepo_task_route`, that returns `{intent, confidence, recommended_tools, budget_tier, llm_required, edit_candidate, signals, reason}`. Hook signals such as `[SYNREPO_CONTEXT_FAST_PATH]`, `[SYNREPO_DETERMINISTIC_EDIT_CANDIDATE] Intent: <intent>`, and `[SYNREPO_LLM_NOT_REQUIRED]` tell agents when compact search, cards, context packs, or prepared anchored edits should be tried before spending LLM tokens. The classifier is advisory. It never applies edits, and deterministic edit candidates still flow through prepared anchors and `synrepo mcp --allow-edits`.
+
 ### Soft-state lifecycle
 
 Overlay and operational-history surfaces have an explicit lifecycle: create, mark stale, refresh on demand, compact, prune or expire. Semantic compression applies only to these soft surfaces — commentary, cross-link candidates, findings, and recent operational history. Canonical graph data is never compacted semantically and is never replaced by summaries.
@@ -384,6 +386,7 @@ Task-first and card-centric. The default response unit is a card (or set of card
 | `synrepo_overview(budget?)` | shipped | First-call orientation on an unfamiliar project | graph counts today; ModuleCards / EntryPointCards to fold in |
 | `synrepo_card(target, type?, budget?, require_freshness?)` | shipped for symbol / file / concept; directory case planned | Card for a specific symbol, file, or module | The requested card at the specified tier |
 | `synrepo_module_card(path, budget?)` | shipped | Directory-targeted ModuleCard; standalone-usable, also exposed via MCP | ModuleCard at the specified tier |
+| `synrepo_task_route(task, path?)` | shipped | Classify a task into the cheapest safe route | Intent, confidence, recommended tools, budget tier, signals |
 | `synrepo_where_to_edit(task_description, budget?)` | shipped | "I want to do X, which files matter?" | Ranked FileCards from lexical matches plus lightweight structural signals |
 | `synrepo_change_impact(target, budget?)` | shipped | "If I modify this, what could break?" | Approximate impacted files today; fuller ChangeRiskCard shape later |
 | `synrepo_entrypoints(scope?, budget?)` | shipped | "Where does execution start?" | EntryPointCards for the scope |

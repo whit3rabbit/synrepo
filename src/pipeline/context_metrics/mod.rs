@@ -270,7 +270,11 @@ impl ContextMetrics {
     /// Record structured hook signals emitted from a task route.
     pub fn record_hook_route_emission(&mut self, route: &TaskRoute) {
         self.route_classifications_total += 1;
-        if route.signals.iter().any(|signal| signal == SIGNAL_CONTEXT_FAST_PATH) {
+        if route
+            .signals
+            .iter()
+            .any(|signal| signal == SIGNAL_CONTEXT_FAST_PATH)
+        {
             self.context_fast_path_signals_total += 1;
         }
         if route
@@ -280,7 +284,11 @@ impl ContextMetrics {
         {
             self.deterministic_edit_candidate_signals_total += 1;
         }
-        if route.signals.iter().any(|signal| signal == SIGNAL_LLM_NOT_REQUIRED) {
+        if route
+            .signals
+            .iter()
+            .any(|signal| signal == SIGNAL_LLM_NOT_REQUIRED)
+        {
             self.llm_not_required_signals_total += 1;
             self.estimated_llm_calls_avoided_total += 1;
         }

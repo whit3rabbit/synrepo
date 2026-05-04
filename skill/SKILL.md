@@ -50,6 +50,17 @@ Rule of thumb: `tiny` to find, `normal` to understand, `deep` to write.
 
 Client-side nudge hooks for Codex and Claude may remind agents to use synrepo before direct grep, read, review, or edit workflows. Install them with `synrepo setup codex --agent-hooks` or `synrepo setup claude --agent-hooks`. These hooks are advisory reminders. They do not block tools, store prompt content, or make the MCP server intercept external tool calls.
 
+## Fast-path routing
+
+Use `synrepo_task_route(task, path?)` or `synrepo task-route <task> [--path <path>]` when you want the cheapest safe route before reading files or asking an LLM to transform code. It returns `intent`, `confidence`, `recommended_tools`, `budget_tier`, `llm_required`, optional `edit_candidate`, stable `signals`, and a short `reason`.
+
+Hook signals mean:
+- `[SYNREPO_CONTEXT_FAST_PATH]`: prefer compact search, cards, or context packs before cold file reads.
+- `[SYNREPO_DETERMINISTIC_EDIT_CANDIDATE] Intent: <intent>`: a narrow mechanical edit may be possible, but prepare anchors first.
+- `[SYNREPO_LLM_NOT_REQUIRED]`: structural context or anchored edits should be enough for the next step.
+
+V1 edit candidates are advisory only: `var-to-const`, `remove-debug-logging`, `replace-literal`, and `rename-local`. Reject `add-types`, `add-error-handling`, `async-await`, and broad rename as LLM-required unless the user supplies a prepared anchor range. Hooks never apply edits.
+
 ## Trust model
 
 - Graph content is primary.
@@ -80,6 +91,7 @@ Client-side nudge hooks for Codex and Claude may remind agents to use synrepo be
 - `synrepo_tests(scope, budget?, budget_tokens?)` — workflow alias for test discovery
 - `synrepo_changed()` — workflow alias for changed-context review
 - `synrepo_context_pack(goal?, targets?, budget?, budget_tokens?, output_mode?, include_tests?, include_notes?, limit?)` — batch read-only context artifacts into one token-accounted response; compact mode applies to search artifacts
+- `synrepo_task_route(task, path?)` — classify a task into the cheapest safe route and stable hook signals
 - `synrepo_card(target, budget?)` — card for a symbol or file
 - `synrepo_search(query, limit?, output_mode?, budget_tokens?)` — lexical search; `output_mode: "compact"` groups matches by file and returns `output_accounting`
 - `synrepo_docs_search(query, limit?)` — advisory advisory commentary search
@@ -114,6 +126,7 @@ If MCP is unavailable, use the CLI:
 ```bash
 synrepo status
 synrepo check
+synrepo task-route "find auth entrypoints"
 synrepo search "term"
 synrepo graph stats
 synrepo reconcile

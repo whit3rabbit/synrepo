@@ -65,6 +65,7 @@ cargo run -- check --json          # machine-readable JSON drift report
 cargo run -- sync                  # repair auto-fixable drift surfaces; appends to .synrepo/state/repair-log.jsonl
 cargo run -- sync --json           # JSON sync summary
 cargo run -- status [--json]        # operational health: mode, counts, last reconcile, lock, export freshness
+cargo run -- task-route <task> [--path <path>] [--json]  # read-only fast-path route classifier
 cargo run -- export [--format markdown|json] [--deep] [--commit] [--out <dir>]  # generate synrepo-context/
 cargo run -- upgrade [--apply]     # dry-run or apply storage compatibility actions
 cargo run -- watch                 # foreground watch for the current repo
@@ -126,7 +127,8 @@ These must hold across all changes:
 
 ### Agent shims and MCP
 
-- **Agent-doctrine text lives in `src/bin/cli_support/agent_shims/doctrine.rs`** as a `doctrine_block!()` macro. Every shim under `agent_shims/shims/` (sub-module directory: `basic_targets.rs`, `markdown_targets.rs`, `skill_targets.rs`, `shared.rs`) embeds it via `concat!`. Edits touching escalation rules, do-not rules, or the product-boundary paragraph MUST go through `doctrine_block!`; the byte-identical test (`every_shim_embeds_doctrine_block` in `agent_shims/tests/doctrine.rs`) enforces this. The escalation-line source-scan test reads `src/bin/cli_support/commands/mcp/tools.rs` (tool registrations) — do not move the MCP tool registration out of that file without updating the test path. Edit target-specific sections (tool list framing, CLI fallback examples, file paths) directly in the relevant `shims/*.rs` file.
+- **Agent-doctrine text lives in `src/surface/agent_doctrine.rs`** as the exported `doctrine_block!()` macro. `src/bin/cli_support/agent_shims/doctrine.rs` is only a binary-side re-export. Every shim under `agent_shims/shims/` (sub-module directory: `basic_targets.rs`, `markdown_targets.rs`, `skill_targets.rs`, `shared.rs`) embeds it via `concat!`. Edits touching escalation rules, do-not rules, fast-path hook signals, or the product-boundary paragraph MUST go through `doctrine_block!`; the byte-identical test (`every_shim_embeds_doctrine_block` in `agent_shims/tests/doctrine.rs`) enforces this. The escalation-line source-scan test reads `src/bin/cli_support/commands/mcp/tools.rs` (tool registrations); do not move the MCP tool registration out of that file without updating the test path. Edit target-specific sections (tool list framing, CLI fallback examples, file paths) directly in the relevant `shims/*.rs` file.
+- **Fast-path routing is advisory and read-only.** The shared classifier is `src/surface/task_route.rs`, with TypeScript parser proof in `src/surface/task_route/typescript.rs`. Expose new route intents through both `synrepo_task_route` and `synrepo task-route`, update hook signal rendering in `commands/agent_hooks/`, and keep source mutation behind `synrepo_apply_anchor_edits`.
 - **Agent install ownership goes through `agent-config`.** MCP, skill, and instruction installs use `agent-config = "0.1"` with owner/name `synrepo`; remove must call the matching uninstall API before any path-based fallback. `synrepo upgrade --apply` adopts legacy unowned installs into the ledger. `AgentTool::output_path()` is now a local-scope status probe with a legacy fallback; keep new path logic in the installer/status layer rather than adding another hard-coded table.
 
 ### Links, repair, explain
