@@ -358,8 +358,14 @@ pub(crate) enum Command {
 
     /// Start the MCP server over stdio.
     Mcp {
-        /// Explicitly expose edit-capable MCP tools.
+        /// Explicitly expose overlay-writing MCP tools, such as notes and commentary refresh.
         #[arg(long)]
+        allow_overlay_writes: bool,
+        /// Explicitly expose source-edit MCP tools.
+        #[arg(long)]
+        allow_source_edits: bool,
+        /// Deprecated alias for --allow-source-edits.
+        #[arg(long, hide = true)]
         allow_edits: bool,
         /// Per-tool call timeout, for example 30s, 2m, or 500ms.
         #[arg(long, default_value = "30s")]

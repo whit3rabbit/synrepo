@@ -11,6 +11,17 @@ use super::SynrepoServer;
 mod session;
 pub(crate) use session::SessionState;
 
+const OVERLAY_WRITE_TOOLS: &[&str] = &[
+    "synrepo_refresh_commentary",
+    "synrepo_note_add",
+    "synrepo_note_link",
+    "synrepo_note_supersede",
+    "synrepo_note_forget",
+    "synrepo_note_verify",
+];
+
+const SOURCE_EDIT_TOOLS: &[&str] = &["synrepo_prepare_edit_context", "synrepo_apply_anchor_edits"];
+
 #[derive(Clone)]
 pub(crate) struct StateResolver {
     states: Arc<RwLock<HashMap<PathBuf, Arc<SynrepoState>>>>,
@@ -130,7 +141,8 @@ impl Clone for SynrepoServer {
         Self {
             resolver: self.resolver.clone(),
             tool_router: self.tool_router.clone(),
-            allow_edits: self.allow_edits,
+            allow_overlay_writes: self.allow_overlay_writes,
+            allow_source_edits: self.allow_source_edits,
             session: self.session.clone(),
             call_timeout: self.call_timeout,
         }
@@ -139,33 +151,53 @@ impl Clone for SynrepoServer {
 
 impl SynrepoServer {
     #[cfg_attr(not(test), allow(dead_code))]
-    pub(crate) fn new(state: SynrepoState, allow_edits: bool) -> Self {
-        Self::new_optional(Some(state), allow_edits)
+    pub(crate) fn new(state: SynrepoState, allow_source_edits: bool) -> Self {
+        Self::new_optional(Some(state), allow_source_edits)
     }
 
-    pub(crate) fn new_optional(default_state: Option<SynrepoState>, allow_edits: bool) -> Self {
+    pub(crate) fn new_optional(
+        default_state: Option<SynrepoState>,
+        allow_source_edits: bool,
+    ) -> Self {
+        Self::new_optional_with_overlay(default_state, false, allow_source_edits)
+    }
+
+    pub(crate) fn new_optional_with_overlay(
+        default_state: Option<SynrepoState>,
+        allow_overlay_writes: bool,
+        allow_source_edits: bool,
+    ) -> Self {
         Self::new_optional_with_timeout(
             default_state,
-            allow_edits,
+            allow_overlay_writes,
+            allow_source_edits,
             std::time::Duration::from_secs(30),
         )
     }
 
     pub(crate) fn new_optional_with_timeout(
         default_state: Option<SynrepoState>,
-        allow_edits: bool,
+        allow_overlay_writes: bool,
+        allow_source_edits: bool,
         call_timeout: std::time::Duration,
     ) -> Self {
         let resolver = StateResolver::new(default_state);
         let mut tool_router = Self::build_tool_router();
-        if !allow_edits {
-            tool_router.remove_route("synrepo_prepare_edit_context");
-            tool_router.remove_route("synrepo_apply_anchor_edits");
+        if !allow_overlay_writes {
+            for tool in OVERLAY_WRITE_TOOLS {
+                tool_router.remove_route(tool);
+            }
+        }
+        if !allow_source_edits {
+            for tool in SOURCE_EDIT_TOOLS {
+                tool_router.remove_route(tool);
+            }
         }
         Self {
             resolver,
             tool_router,
-            allow_edits,
+            allow_overlay_writes,
+            allow_source_edits,
             session: SessionState::default(),
             call_timeout,
         }
@@ -303,8 +335,8 @@ impl SynrepoServer {
 fn response_has_error(output: &str) -> bool {
     serde_json::from_str::<serde_json::Value>(output)
         .ok()
-        .and_then(|value| value.get("error").cloned())
-        .is_some()
+        .and_then(|value| value.get("ok").and_then(|ok| ok.as_bool()).map(|ok| !ok))
+        .unwrap_or(false)
 }
 
 fn saved_context_metric(tool: &str, errored: bool) -> Option<&'static str> {

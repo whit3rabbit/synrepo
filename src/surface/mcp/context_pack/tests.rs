@@ -61,6 +61,64 @@ fn context_pack_returns_file_outline_and_state() {
 }
 
 #[test]
+fn context_pack_rejects_invalid_budget() {
+    let (_dir, state) = make_state();
+    let err = build_context_pack(
+        &state,
+        ContextPackParams {
+            repo_root: None,
+            goal: None,
+            targets: vec![ContextPackTarget {
+                kind: "file".to_string(),
+                target: "src/lib.rs".to_string(),
+                budget: None,
+            }],
+            budget: "deeep".to_string(),
+            budget_tokens: None,
+            output_mode: OutputMode::Default,
+            include_tests: false,
+            include_notes: false,
+            limit: 8,
+        },
+    )
+    .unwrap_err();
+
+    assert!(err.to_string().contains("invalid budget"), "{err}");
+}
+
+#[test]
+fn context_pack_error_artifacts_are_typed() {
+    let (_dir, state) = make_state();
+    let value = build_context_pack(
+        &state,
+        ContextPackParams {
+            repo_root: None,
+            goal: None,
+            targets: vec![ContextPackTarget {
+                kind: "file".to_string(),
+                target: "src/missing.rs".to_string(),
+                budget: None,
+            }],
+            budget: "tiny".to_string(),
+            budget_tokens: None,
+            output_mode: OutputMode::Default,
+            include_tests: false,
+            include_notes: false,
+            limit: 8,
+        },
+    )
+    .unwrap();
+
+    let artifact = &value["artifacts"][0];
+    assert_eq!(artifact["artifact_type"], "error");
+    assert_eq!(artifact["target_kind"], "file");
+    assert_eq!(artifact["status"], "error");
+    assert_eq!(artifact["severity"], "warning");
+    assert_eq!(artifact["error"]["code"], "NOT_FOUND");
+    assert_eq!(artifact["content"], serde_json::Value::Null);
+}
+
+#[test]
 fn context_pack_preserves_order_and_omits_over_budget() {
     let (_dir, state) = make_state();
     let value = build_context_pack(

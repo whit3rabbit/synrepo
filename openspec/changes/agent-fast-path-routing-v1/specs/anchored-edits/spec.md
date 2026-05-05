@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Treat deterministic edit candidates as recommendations only
-Deterministic edit candidates SHALL be advisory route results. They SHALL NOT mutate source by themselves. Source mutation SHALL continue to require `synrepo_prepare_edit_context` followed by `synrepo_apply_anchor_edits` on an MCP server started with `--allow-edits`.
+Deterministic edit candidates SHALL be advisory route results. They SHALL NOT mutate source by themselves. Source mutation SHALL continue to require `synrepo_prepare_edit_context` followed by `synrepo_apply_anchor_edits` on an MCP server started with `--allow-source-edits`.
 
 #### Scenario: Hook detects a deterministic edit candidate
 - **WHEN** a hook classifies a task as `var-to-const`, `remove-debug-logging`, `replace-literal`, or `rename-local`

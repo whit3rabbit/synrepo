@@ -152,6 +152,79 @@ fn metrics_json_reports_this_session_tool_counts() {
 }
 
 #[test]
+fn default_tool_list_excludes_all_mutating_tools() {
+    let server = SynrepoServer::new_optional(None, false);
+    let names = server.registered_tool_names();
+
+    for tool in [
+        "synrepo_prepare_edit_context",
+        "synrepo_apply_anchor_edits",
+        "synrepo_refresh_commentary",
+        "synrepo_note_add",
+        "synrepo_note_link",
+        "synrepo_note_supersede",
+        "synrepo_note_forget",
+        "synrepo_note_verify",
+    ] {
+        assert!(
+            !names.iter().any(|name| name == tool),
+            "{tool} was registered"
+        );
+    }
+    assert!(names.iter().any(|name| name == "synrepo_notes"));
+    assert!(names.iter().any(|name| name == "synrepo_findings"));
+    assert!(names.iter().any(|name| name == "synrepo_docs_search"));
+}
+
+#[test]
+fn overlay_write_gate_exposes_overlay_writes_only() {
+    let server = SynrepoServer::new_optional_with_overlay(None, true, false);
+    let names = server.registered_tool_names();
+
+    for tool in [
+        "synrepo_refresh_commentary",
+        "synrepo_note_add",
+        "synrepo_note_link",
+        "synrepo_note_supersede",
+        "synrepo_note_forget",
+        "synrepo_note_verify",
+    ] {
+        assert!(names.iter().any(|name| name == tool), "{tool} was hidden");
+    }
+    assert!(!names
+        .iter()
+        .any(|name| name == "synrepo_apply_anchor_edits"));
+}
+
+#[test]
+fn source_edit_gate_exposes_source_edits_only() {
+    let server = SynrepoServer::new_optional_with_overlay(None, false, true);
+    let names = server.registered_tool_names();
+
+    assert!(names
+        .iter()
+        .any(|name| name == "synrepo_prepare_edit_context"));
+    assert!(names
+        .iter()
+        .any(|name| name == "synrepo_apply_anchor_edits"));
+    assert!(!names.iter().any(|name| name == "synrepo_note_add"));
+    assert!(!names
+        .iter()
+        .any(|name| name == "synrepo_refresh_commentary"));
+}
+
+#[test]
+fn response_error_detection_uses_ok_false_only() {
+    assert!(response_has_error(
+        r#"{"ok":false,"error":{"code":"NOT_FOUND","message":"missing"}}"#
+    ));
+    assert!(!response_has_error(
+        r#"{"error":"domain data, not a tool failure"}"#
+    ));
+    assert!(!response_has_error(r#"{"ok":true,"error":"domain data"}"#));
+}
+
+#[test]
 fn blocking_tool_helper_returns_tool_output_under_tokio_runtime() {
     let _home = home_fixture();
     let (_repo, repo_path) = ready_repo("pub fn async_helper_needle() {}\n");

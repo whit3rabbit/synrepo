@@ -7,6 +7,7 @@
 mod anchors;
 mod apply;
 mod atomic;
+mod caps;
 mod diagnostics;
 mod prepare;
 mod runtime;

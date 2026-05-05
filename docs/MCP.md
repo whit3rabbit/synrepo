@@ -1,15 +1,16 @@
 # MCP
 
-`synrepo mcp` serves repository context to MCP-compatible coding agents over stdio. It is the agent-facing surface for cards, search, impact analysis, test discovery, advisory overlay data, explicit saved-context notes, and optional anchored edits.
+`synrepo mcp` serves repository context to MCP-compatible coding agents over stdio. It is the agent-facing surface for cards, search, impact analysis, test discovery, advisory overlay data, optional saved-context note writes, and optional anchored source edits.
 
-MCP is source-read-first by default. Source edit tools are hidden unless the server process starts with `synrepo mcp --allow-edits`. Advisory note tools can mutate only the overlay store and are explicit saved-context actions, not automatic session memory.
+MCP is read-only by default. Overlay write tools are hidden unless the server process starts with `synrepo mcp --allow-overlay-writes`. Source edit tools are hidden unless the server process starts with `synrepo mcp --allow-source-edits`. Advisory note tools can mutate only the overlay store and are explicit saved-context actions, not automatic session memory.
 
 ## Run
 
 ```bash
 synrepo mcp                    # stdio server for the current repo
 synrepo mcp --repo <path>      # stdio server for a specific repo
-synrepo mcp --allow-edits      # explicitly expose anchored edit tools
+synrepo mcp --allow-overlay-writes # expose overlay note/commentary writes
+synrepo mcp --allow-source-edits   # expose anchored source edit tools
 synrepo mcp --call-timeout 45s # cap blocking tool calls, default 30s
 ```
 
@@ -37,9 +38,9 @@ Use `tiny` budgets to route, `normal` budgets to understand a neighborhood, and 
 
 Use `synrepo_task_route` before ambiguous or hook-triggered work. It returns `{ intent, confidence, recommended_tools, budget_tier, llm_required, edit_candidate, signals, reason, routing_strategy, semantic_score? }` and records only aggregate counters. Deterministic safety guards always run first, including unsupported transforms and exact mechanical edit candidates. When `semantic-triage` is compiled, enabled, and local assets already load, routing uses semantic intent matching after those guards. Otherwise `routing_strategy` is `keyword_fallback` and `semantic_score` is absent. It does not read source, call an LLM, download a model, or apply edits. The CLI equivalent is `synrepo task-route <task> [--path <path>] [--json]`.
 
-`synrepo_find` and `synrepo_where_to_edit` route plain-language tasks to tiny file cards. They first try the task text as-is, then use bounded deterministic fallback queries over phrase, token, and snake_case variants. Responses include `query_attempts`, `fallback_used`, and `miss_reason` (`no_index_matches` or `matches_not_in_graph`) so agents can see whether routing failed because the index had no matches or because matched paths were unavailable in the graph.
+`synrepo_find` and `synrepo_where_to_edit` route plain-language tasks to tiny file cards. They are best for task routing, not exact code symbols, string literals, flags, schema fields, tool names, or file paths. They first try the task text as-is, then use bounded deterministic fallback queries over phrase, token, and snake_case variants. Responses include `query_attempts`, `fallback_used`, and `miss_reason` (`no_index_matches` or `matches_not_in_graph`) so agents can see whether routing failed because the index had no matches or because matched paths were unavailable in the graph. If the task includes exact identifiers, call `synrepo_search` first.
 
-`synrepo_search` is read-only search backed by the syntext substrate index and, in `mode: "auto"`, the local vector index when semantic triage is available. It accepts `query`, optional `mode` (`auto` default, or `lexical`), optional `limit` (default `20`), optional `path_filter`, optional `file_type`, optional `exclude_type`, optional `case_insensitive` (`ignore_case` is accepted as an alias), optional `output_mode` (`default`, `compact`, or `cards`), and optional `budget_tokens` for compact or cards output. Default responses preserve `query` and `results: [{ path, line, content, source, fusion_score, semantic_score?, chunk_id?, symbol_id? }]`, and include `engine`, `source_store`, `mode`, `semantic_available`, `limit`, `filters`, and `result_count`. Auto mode fuses lexical and semantic candidates when possible; otherwise it is an explicit lexical fallback with `semantic_available: false`. Semantic-only rows may have `path`, `line`, and `content` as null when the vector row cannot be graph-enriched. Pass `mode: "lexical"` to force exact syntext behavior.
+`synrepo_search` is read-only search backed by the syntext substrate index and, in `mode: "auto"`, the local vector index when semantic triage is available. It is the first choice for exact symbols, string literals, CLI flags, MCP tool names, schema keys, file paths, and code-review validation. It accepts `query`, optional `mode` (`auto` default, or `lexical`), optional `limit` (default `20`), optional `path_filter`, optional `file_type`, optional `exclude_type`, optional `case_insensitive` (`ignore_case` is accepted as an alias), optional `output_mode` (`default`, `compact`, or `cards`), and optional `budget_tokens` for compact or cards output. Default responses preserve `query` and `results: [{ path, line, content, source, fusion_score, semantic_score?, chunk_id?, symbol_id? }]`, and include `engine`, `source_store`, `mode`, `semantic_available`, `limit`, `filters`, and `result_count`. Auto mode fuses lexical and semantic candidates when possible; otherwise it is an explicit lexical fallback with `semantic_available: false`. Semantic-only rows may have `path`, `line`, and `content` as null when the vector row cannot be graph-enriched. Pass `mode: "lexical"` to force exact syntext behavior.
 
 Use `output_mode: "compact"` for broad searches where routing matters more than raw snippets. Compact search groups matches by file, returns short line previews, includes `suggested_card_targets`, and attaches `output_accounting` with returned tokens, original tokens, estimated savings, omitted count, and truncation state. Use `output_mode: "cards"` when the next step would be `synrepo_card` for each matched file. Cards mode dedupes matched graph files, returns tiny file cards, reports unresolved paths, and applies the shared card-set cap when `budget_tokens` is present. `synrepo_context_pack` also accepts `output_mode: "compact"`; only search artifacts switch to compact output, while card artifacts retain their existing `context_accounting`.
 
@@ -78,18 +79,20 @@ Task-first read tools:
 
 Advisory overlay and audit tools:
 - `synrepo_docs_search`
-- `synrepo_refresh_commentary`
 - `synrepo_findings`
 - `synrepo_recent_activity`
 
-`synrepo_refresh_commentary` accepts `scope: "target" | "file" | "directory" | "stale"`. `target` preserves one-node refresh behavior. `file` refreshes file commentary plus file symbols. `directory` uses the existing commentary work-plan scoping for that tree. `stale` refreshes stale existing commentary without seeding missing entries. When the MCP client supplies a progress token, the server sends progress notifications around the blocking refresh.
-
-Advisory agent note tools:
+Overlay-write tools, present only under `synrepo mcp --allow-overlay-writes`:
+- `synrepo_refresh_commentary`
 - `synrepo_note_add`
 - `synrepo_note_link`
 - `synrepo_note_supersede`
 - `synrepo_note_forget`
 - `synrepo_note_verify`
+
+`synrepo_refresh_commentary` accepts `scope: "target" | "file" | "directory" | "stale"`. `target` preserves one-node refresh behavior. `file` refreshes file commentary plus file symbols. `directory` uses the existing commentary work-plan scoping for that tree. `stale` refreshes stale existing commentary without seeding missing entries. When the MCP client supplies a progress token, the server sends progress notifications around the blocking refresh.
+
+Advisory agent note tools:
 - `synrepo_notes`
 
 Low-level graph primitives:
@@ -120,23 +123,25 @@ Read-only resources:
 
 `synrepo://projects` lists managed project registry entries. Use it with `synrepo_use_project` in global MCP sessions that need to choose a default repository once and omit `repo_root` afterward.
 
+Other resources use the server default repository only. Global/defaultless resource-aware hosts should call `synrepo_use_project` first, or use tool calls with `repo_root` when addressing non-default projects.
+
 Runtime and observability tools:
 - `synrepo_metrics` returns `{ this_session, persisted }`, combining in-memory per-tool call/error counters with persisted context metrics when a repository is available.
 - Simple in-memory limits protect runaway clients: card and context-pack tools allow 10 calls per second, commentary refresh allows 3 calls per minute, and other tools allow 30 calls per second. Rate-limit failures use the structured `RATE_LIMITED` error code.
 
-Edit-enabled tools, present only under `synrepo mcp --allow-edits`:
+Source-edit tools, present only under `synrepo mcp --allow-source-edits`:
 - `synrepo_prepare_edit_context`
 - `synrepo_apply_anchor_edits`
 
 ## Errors And Limits
 
-Tool errors are structured as `{"error":{"code":"...","message":"..."},"error_message":"..."}`. The transitional `error_message` field keeps legacy message-only clients working while new clients can branch on `error.code`.
+Tool errors are structured as `{"ok":false,"error":{"code":"...","message":"...","retryable":false,"next_action":"..."},"error_message":"..."}`. The transitional `error_message` field keeps legacy message-only clients working while new clients can branch on `error.code`.
 
 `error` is always an object, not a flat string. Clients and tests that need message text should read `error.message` or `error_message`; branch logic should prefer `error.code`.
 
 Current codes are `NOT_FOUND`, `NOT_INITIALIZED`, `INVALID_PARAMETER`, `RATE_LIMITED`, `LOCKED`, `BUSY`, `TIMEOUT`, and `INTERNAL`. Read snapshots are limited per repository, defaulting to 4 concurrent snapshots with a short wait before returning `BUSY`. Blocking tools are capped by `--call-timeout`, default `30s`, and return `TIMEOUT` on expiry.
 
-Input limits reject oversized parameters through `INVALID_PARAMETER`: search queries over 1000 characters, note claims over 2000 characters, note evidence arrays over 50 entries, note source hash arrays over 50 entries, and card batches over 10 targets.
+Input limits reject oversized or invalid parameters through `INVALID_PARAMETER`: unknown budget tiers, search queries over 1000 characters, note claims over 2000 characters, note evidence arrays over 50 entries, note source hash arrays over 50 entries, card batches over 10 targets, anchored edit batches over 100 edits, anchored edit batches touching over 20 files, single edit payloads over 256 KiB, and total submitted edit text over 512 KiB.
 
 ## Trust Model
 
@@ -144,7 +149,7 @@ Graph-backed structural facts are authoritative. They come from parsers, Git, an
 
 Overlay content is advisory. Commentary, explained docs, proposed cross-links, and agent notes are labeled as overlay-backed and freshness-sensitive. If graph facts and overlay prose disagree, trust the graph.
 
-Freshness is explicit. A stale label is information, not an error, and synrepo does not silently refresh commentary just because an API key exists. Use `synrepo_refresh_commentary` only when fresh advisory prose is required.
+Freshness is explicit. A stale label is information, not an error, and synrepo does not silently refresh commentary just because an API key exists. Start MCP with `--allow-overlay-writes` and use `synrepo_refresh_commentary` only when fresh advisory prose is required.
 
 Explain credentials and endpoints are operator secrets. Cloud API keys saved by setup live as plaintext in `~/.synrepo/config.toml`; use environment variables instead on shared hosts. Local explain endpoints receive source and context snippets when commentary is refreshed, so do not point MCP-accessible refresh workflows at untrusted local or remote LLM servers.
 
@@ -156,7 +161,7 @@ Fast-path metrics are counters only: route classifications, hook signal emission
 
 ## Edit-Enabled Workflow
 
-Read tools should still come first. When the server was started with `synrepo mcp --allow-edits`, use:
+Read tools should still come first. When the server was started with `synrepo mcp --allow-source-edits`, use:
 
 1. `synrepo_prepare_edit_context` to prepare session-scoped line anchors and compact source context.
 2. `synrepo_apply_anchor_edits` to validate prepared anchors, content hashes, and boundary text before writing.

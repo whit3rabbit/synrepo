@@ -23,7 +23,8 @@ use state::{SessionState, StateResolver};
 pub(crate) struct SynrepoServer {
     resolver: StateResolver,
     tool_router: ToolRouter<Self>,
-    allow_edits: bool,
+    allow_overlay_writes: bool,
+    allow_source_edits: bool,
     session: SessionState,
     call_timeout: Duration,
 }
@@ -49,7 +50,8 @@ impl ServerHandler for SynrepoServer {
              call synrepo_use_project once when a global/defaultless session should remember a default repo. \
              if a repository is not managed, ask the user to run synrepo project add <path>. \
              Repo-bound configs launched with synrepo mcp --repo . may omit repo_root. \
-             Edit tools are absent unless this server was started with synrepo mcp --allow-edits; when present, call prepare before apply. \
+             Overlay write tools are absent unless this server was started with synrepo mcp --allow-overlay-writes. \
+             Source edit tools are absent unless started with synrepo mcp --allow-source-edits; when present, call prepare before apply. \
              Tool errors are structured with error.code and transitional error_message; synrepo_metrics exposes this-session and persisted usage counters. \
              Read full source files only after card routing identifies the target or when a bounded card is insufficient; \
              that is an explicit escalation, not the default first step. \

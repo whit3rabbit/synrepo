@@ -87,7 +87,7 @@ Do-not rules, asserted uniformly across surfaces:
 
 For task routing, `synrepo_find` first tries the task text as-is, then decomposes broad language into deterministic lexical anchors before returning empty. The existing context-budget protocol is the substrate for this doctrine; the doctrine makes the protocol visible at every entry point an agent can hit.
 
-Fast-path routing adds a read-only classifier, `synrepo_task_route`, that returns `{intent, confidence, recommended_tools, budget_tier, llm_required, edit_candidate, signals, reason}`. Hook signals such as `[SYNREPO_CONTEXT_FAST_PATH]`, `[SYNREPO_DETERMINISTIC_EDIT_CANDIDATE] Intent: <intent>`, and `[SYNREPO_LLM_NOT_REQUIRED]` tell agents when compact search, cards, context packs, or prepared anchored edits should be tried before spending LLM tokens. The classifier is advisory. It never applies edits, and deterministic edit candidates still flow through prepared anchors and `synrepo mcp --allow-edits`.
+Fast-path routing adds a read-only classifier, `synrepo_task_route`, that returns `{intent, confidence, recommended_tools, budget_tier, llm_required, edit_candidate, signals, reason}`. Hook signals such as `[SYNREPO_CONTEXT_FAST_PATH]`, `[SYNREPO_DETERMINISTIC_EDIT_CANDIDATE] Intent: <intent>`, and `[SYNREPO_LLM_NOT_REQUIRED]` tell agents when compact search, cards, context packs, or prepared anchored edits should be tried before spending LLM tokens. The classifier is advisory. It never applies edits, and deterministic edit candidates still flow through prepared anchors and `synrepo mcp --allow-source-edits`.
 
 ### Soft-state lifecycle
 

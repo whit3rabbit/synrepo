@@ -42,11 +42,15 @@ where
     render_result(result)
 }
 
-pub fn parse_budget(s: &str) -> Budget {
-    match s.to_ascii_lowercase().as_str() {
-        "normal" => Budget::Normal,
-        "deep" => Budget::Deep,
-        _ => Budget::Tiny,
+pub fn parse_budget(s: &str) -> anyhow::Result<Budget> {
+    match s.trim().to_ascii_lowercase().as_str() {
+        "tiny" => Ok(Budget::Tiny),
+        "normal" => Ok(Budget::Normal),
+        "deep" => Ok(Budget::Deep),
+        _ => Err(super::error::McpError::invalid_parameter(format!(
+            "invalid budget: {s}; expected tiny, normal, or deep"
+        ))
+        .into()),
     }
 }
 
@@ -112,4 +116,26 @@ pub fn attach_decision_cards(
         );
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn budget_parser_rejects_unknown_tiers() {
+        assert_eq!(parse_budget("tiny").unwrap(), Budget::Tiny);
+        assert_eq!(parse_budget("normal").unwrap(), Budget::Normal);
+        assert_eq!(parse_budget("deep").unwrap(), Budget::Deep);
+
+        let err = parse_budget("deeep").unwrap_err();
+        let rendered = super::render_result(Err(err));
+        let value: serde_json::Value = serde_json::from_str(&rendered).unwrap();
+        assert_eq!(value["ok"], false);
+        assert_eq!(value["error"]["code"], "INVALID_PARAMETER");
+        assert!(value["error_message"]
+            .as_str()
+            .unwrap()
+            .contains("invalid budget"));
+    }
 }

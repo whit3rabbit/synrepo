@@ -332,9 +332,17 @@ fn dispatch(
         Command::Dashboard => run_dashboard_command(repo_root, tui_opts),
         Command::Server { metrics } => server(repo_root, &metrics),
         Command::Mcp {
+            allow_overlay_writes,
+            allow_source_edits,
             allow_edits,
             call_timeout,
-        } => run_mcp_server(repo_root, allow_edits, explicit_repo, &call_timeout),
+        } => run_mcp_server(
+            repo_root,
+            allow_overlay_writes,
+            allow_source_edits || allow_edits,
+            explicit_repo,
+            &call_timeout,
+        ),
         Command::Remove {
             tool,
             apply,

@@ -85,7 +85,7 @@ pub fn build_context_pack(
     params: ContextPackParams,
 ) -> anyhow::Result<Value> {
     let start = Instant::now();
-    let default_budget = parse_budget(&params.budget);
+    let default_budget = parse_budget(&params.budget)?;
     let mut targets = params.targets;
 
     if targets.is_empty() {
@@ -106,6 +106,7 @@ pub fn build_context_pack(
                     .budget
                     .as_deref()
                     .map(parse_budget)
+                    .transpose()?
                     .unwrap_or(default_budget);
                 let options = ArtifactOptions {
                     include_notes: params.include_notes,
@@ -334,15 +335,33 @@ fn artifact_value(artifact_type: &str, kind: &str, target: &str, mut content: Va
 }
 
 fn error_artifact(target: &ContextPackTarget, message: String, budget: Budget) -> Value {
-    let content = json!({ "error": message });
-    let accounting = estimated_accounting(&content, budget);
+    let error = error_object(&message);
+    let accounting = estimated_accounting(&error, budget);
     json!({
-        "artifact_type": target.kind,
+        "artifact_type": "error",
         "target_kind": target.kind,
         "target": target.target,
         "status": "error",
-        "content": content,
+        "severity": "warning",
+        "error": error,
+        "content": Value::Null,
         "context_accounting": accounting,
+    })
+}
+
+fn error_object(message: &str) -> Value {
+    let error = anyhow::anyhow!(message.to_string());
+    let code = super::error::classify_error(&error);
+    json!({
+        "code": code.as_str(),
+        "message": message,
+        "retryable": matches!(
+            code,
+            super::error::ErrorCode::RateLimited
+                | super::error::ErrorCode::Locked
+                | super::error::ErrorCode::Busy
+                | super::error::ErrorCode::Timeout
+        ),
     })
 }
 

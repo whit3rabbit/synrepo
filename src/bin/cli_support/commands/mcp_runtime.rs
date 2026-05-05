@@ -14,13 +14,23 @@ use super::mcp::SynrepoServer;
 /// Start the MCP server over stdio for the given repository root.
 pub(crate) fn run_mcp_server(
     repo_root: &Path,
-    allow_edits: bool,
+    allow_overlay_writes: bool,
+    allow_source_edits: bool,
     explicit_repo: bool,
     call_timeout: &str,
 ) -> anyhow::Result<()> {
     let call_timeout = parse_call_timeout(call_timeout)?;
     let rt = tokio::runtime::Runtime::new().context("failed to create tokio runtime")?;
-    rt.block_on(async { serve(repo_root, allow_edits, explicit_repo, call_timeout).await })
+    rt.block_on(async {
+        serve(
+            repo_root,
+            allow_overlay_writes,
+            allow_source_edits,
+            explicit_repo,
+            call_timeout,
+        )
+        .await
+    })
 }
 
 /// Load config and gate on storage compatibility.
@@ -40,7 +50,8 @@ pub(crate) fn prepare_state(repo_root: &Path) -> anyhow::Result<SynrepoState> {
 
 async fn serve(
     repo_root: &Path,
-    allow_edits: bool,
+    allow_overlay_writes: bool,
+    allow_source_edits: bool,
     explicit_repo: bool,
     call_timeout: Duration,
 ) -> anyhow::Result<()> {
@@ -56,7 +67,12 @@ async fn serve(
             None
         }
     };
-    let server = SynrepoServer::new_optional_with_timeout(default_state, allow_edits, call_timeout);
+    let server = SynrepoServer::new_optional_with_timeout(
+        default_state,
+        allow_overlay_writes,
+        allow_source_edits,
+        call_timeout,
+    );
     let service = server.serve(stdio()).await?;
     service.waiting().await?;
     Ok(())

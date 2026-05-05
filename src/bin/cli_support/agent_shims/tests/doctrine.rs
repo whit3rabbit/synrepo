@@ -67,11 +67,10 @@ fn skill_md_includes_doctrine_lines_verbatim() {
         .unwrap_or_else(|e| panic!("read {}: {e}", skill_path.display()));
 
     let required = [
-        "Use `tiny` cards to orient and route.",
-        "Use `normal` cards to understand a neighborhood.",
-        "Use `deep` cards only before writing code, or when exact source or body details matter.",
+        "Use `tiny` cards to route and `normal` cards to understand.",
+        "Read full source files or request `deep` cards only after bounded cards identify the target or when the card content is insufficient.",
         "Do not open large files first. Start at `tiny` and escalate only when a specific field forces it.",
-        "Do not treat overlay commentary as canonical. It is advisory prose layered on structural cards.",
+        "Do not treat overlay commentary, explain docs, or proposed cross-links as canonical source truth.",
         "Do not trigger explain (`--generate-cross-links`, deep commentary refresh) unless the task justifies the cost.",
         "Do not expect watch or background behavior unless `synrepo watch` is explicitly running.",
         "synrepo stores code facts and bounded operational memory. It is not a task tracker, not session memory, and not cross-session agent memory.",
@@ -80,7 +79,7 @@ fn skill_md_includes_doctrine_lines_verbatim() {
         "Client-side nudge hooks for Codex and Claude may remind agents to use synrepo before direct grep, read, review, or edit workflows.",
         "Do not mistake client-side hook nudges for MCP interception or enforcement. They are non-blocking reminders.",
         "Global MCP configs that launch `synrepo mcp` serve registered projects by absolute path.",
-        "If a tool reports that a repository is not managed by synrepo, ask the user to run `synrepo project add <path>`; do not bypass registry gating.",
+        "If a tool reports that a repository is not managed by synrepo, ask the user to run:",
     ];
 
     let missing: Vec<&str> = required
@@ -91,6 +90,40 @@ fn skill_md_includes_doctrine_lines_verbatim() {
     assert!(
         missing.is_empty(),
         "skill/SKILL.md is missing {} doctrine line(s):\n{}",
+        missing.len(),
+        missing.join("\n")
+    );
+}
+
+#[test]
+fn skill_teaches_exact_identifier_search_before_task_routing() {
+    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let skill_path = manifest_dir.join("skill").join("SKILL.md");
+    let skill = std::fs::read_to_string(&skill_path)
+        .unwrap_or_else(|e| panic!("read {}: {e}", skill_path.display()));
+
+    let required = [
+        "For exact symbols, tool names, function names, flags, JSON keys, CLI args, error strings, or file paths, prefer:",
+        "`synrepo_search(query, limit?, output_mode?, budget_tokens?)`",
+        "Use `output_mode: \"compact\"` for orientation.",
+        "Do not use a full sentence when an exact token or string literal is known.",
+        "For plain-language edit or investigation tasks, call:",
+        "`synrepo_find(task, limit?, budget_tokens?)`",
+        "`synrepo_where_to_edit(task, limit?)`",
+        "`query_attempts`",
+        "`fallback_used`",
+        "`miss_reason`",
+        "If `miss_reason` is `no_index_matches`, do not retry the same broad sentence.",
+    ];
+
+    let missing: Vec<&str> = required
+        .iter()
+        .copied()
+        .filter(|line| !skill.contains(line))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "skill/SKILL.md is missing {} exact-search guidance line(s):\n{}",
         missing.len(),
         missing.join("\n")
     );
@@ -151,4 +184,39 @@ fn card_returning_mcp_tool_descriptions_share_escalation_line() {
             "non-card MCP tool `{tool}` description carries the escalation sentence; remove it (the default-budget semantics for this tool differ from card-returning tools)"
         );
     }
+}
+
+#[test]
+fn mcp_tool_descriptions_distinguish_exact_search_from_task_routing() {
+    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let main_path = manifest_dir
+        .join("src")
+        .join("bin")
+        .join("cli_support")
+        .join("commands")
+        .join("mcp")
+        .join("tools.rs");
+    let source = std::fs::read_to_string(&main_path)
+        .unwrap_or_else(|e| panic!("read {}: {e}", main_path.display()));
+
+    let search_window = tool_window(&source, "synrepo_search");
+    assert!(search_window.contains("Best for exact symbols"));
+    assert!(search_window.contains("MCP tool names"));
+    assert!(search_window.contains("suggested_card_targets"));
+
+    for tool in ["synrepo_find", "synrepo_where_to_edit"] {
+        let window = tool_window(&source, tool);
+        assert!(window.contains("Best for plain-language task routing"));
+        assert!(window.contains("If the user mentions exact identifiers"));
+        assert!(window.contains("call synrepo_search first"));
+    }
+}
+
+fn tool_window<'a>(source: &'a str, tool: &str) -> &'a str {
+    let needle = format!("name = \"{tool}\"");
+    let idx = source
+        .find(&needle)
+        .unwrap_or_else(|| panic!("did not find `{needle}` in MCP tools.rs"));
+    let window_end = (idx + 900).min(source.len());
+    &source[idx..window_end]
 }

@@ -53,3 +53,51 @@ fn apply_enforces_text_line_budget() {
         "one\nalpha\nbeta\ntwo\n"
     );
 }
+
+#[test]
+fn apply_enforces_payload_caps_before_path_resolution() {
+    let (_dir, state) = state_with_files(&[("src/lib.rs", "one\ntwo\n")]);
+    let prepared = prepare(
+        &state,
+        json!({ "target": "src/lib.rs", "target_kind": "file", "task_id": "task-caps" }),
+    );
+    let edit = |path: &str, text: &str| {
+        json!({
+            "task_id": "task-caps",
+            "anchor_state_version": prepared["anchor_state_version"],
+            "path": path,
+            "content_hash": prepared["content_hash"],
+            "anchor": "L000001",
+            "edit_type": "insert_after",
+            "text": text,
+        })
+    };
+
+    let too_many_edits = (0..101)
+        .map(|_| edit("src/lib.rs", "alpha"))
+        .collect::<Vec<_>>();
+    let result = apply(&state, json!({ "edits": too_many_edits }));
+    assert_eq!(result["ok"], false);
+    assert!(result["error_message"]
+        .as_str()
+        .unwrap()
+        .contains("exceeding hard limit 100"));
+
+    let too_many_files = (0..21)
+        .map(|i| edit(&format!("src/{i}.rs"), "alpha"))
+        .collect::<Vec<_>>();
+    let result = apply(&state, json!({ "edits": too_many_files }));
+    assert_eq!(result["ok"], false);
+    assert!(result["error_message"]
+        .as_str()
+        .unwrap()
+        .contains("distinct files"));
+
+    let long_line = "x".repeat(256 * 1024);
+    let result = apply(&state, json!({ "edits": [edit("src/lib.rs", &long_line)] }));
+    assert_eq!(result["ok"], false);
+    assert!(result["error_message"]
+        .as_str()
+        .unwrap()
+        .contains("single edit payload"));
+}

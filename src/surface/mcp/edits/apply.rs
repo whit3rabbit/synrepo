@@ -5,12 +5,13 @@ use std::{
 };
 
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::{config::Config, pipeline::context_metrics, pipeline::writer::acquire_writer_lock};
 
 use super::atomic::{write_planned_files, PlannedFile};
+use super::caps::validate_edit_caps;
 use super::diagnostics::post_edit_diagnostics;
 use super::runtime::{suppress_watch_events, writer_lock_conflict_json};
 use super::{anchor_manager, PreparedAnchorState};
@@ -32,7 +33,7 @@ pub struct ApplyAnchorEditsParams {
     pub max_lines: Option<usize>,
 }
 
-#[derive(Clone, Debug, Deserialize, JsonSchema)]
+#[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 pub struct AnchorEditRequest {
     pub task_id: String,
     pub anchor_state_version: String,
@@ -61,6 +62,7 @@ fn apply_anchor_edits(
     if !(1..=HARD_MAX_LINES).contains(&max_lines) {
         anyhow::bail!("max_lines must be between 1 and {HARD_MAX_LINES}");
     }
+    validate_edit_caps(&params.edits)?;
     let submitted_lines = params
         .edits
         .iter()

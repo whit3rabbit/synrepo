@@ -38,13 +38,13 @@ The required sequence for codebase questions, reviews, search routing, and edits
 5. Use `synrepo_changed` after edits to review changed context and validation commands.
 6. Read full source files or request `deep` cards only after bounded cards identify the target or when the card content is insufficient. Full-file reads are an explicit escalation, not the default first step.
 
-Graph-backed structural facts (files, symbols, edges) remain the authoritative source of truth. Overlay commentary, explain docs, and proposed cross-links are advisory, labeled machine-authored, and freshness-sensitive. Treat stale labels as information, not as errors. **Refresh is explicit**: every tool returns what is currently in the overlay. To get fresh commentary after a code change, you must call `synrepo_refresh_commentary(target)`.
+Graph-backed structural facts (files, symbols, edges) remain the authoritative source of truth. Overlay commentary, explain docs, and proposed cross-links are advisory, labeled machine-authored, and freshness-sensitive. Treat stale labels as information, not as errors. **Refresh is explicit**: every tool returns what is currently in the overlay. Fresh commentary refresh requires `synrepo mcp --allow-overlay-writes` and `synrepo_refresh_commentary(target)`.
 
 Client-side nudge hooks for Codex and Claude may remind agents to use synrepo before direct grep, read, review, or edit workflows. These hooks are advisory only; the MCP server remains read-first and does not intercept external tool calls.
 
 ### Fast-path routing
 
-Use `synrepo_task_route` or `synrepo task-route` when hooks emit `[SYNREPO_CONTEXT_FAST_PATH]`, `[SYNREPO_DETERMINISTIC_EDIT_CANDIDATE] Intent: ...`, or `[SYNREPO_LLM_NOT_REQUIRED]`. Prefer compact search, cards, context packs, or prepared anchored edits before spending LLM tokens. The signals are advisory only; source mutation still requires `synrepo mcp --allow-edits` and `synrepo_apply_anchor_edits`.
+Use `synrepo_task_route` or `synrepo task-route` when hooks emit `[SYNREPO_CONTEXT_FAST_PATH]`, `[SYNREPO_DETERMINISTIC_EDIT_CANDIDATE] Intent: ...`, or `[SYNREPO_LLM_NOT_REQUIRED]`. Prefer compact search, cards, context packs, or prepared anchored edits before spending LLM tokens. The signals are advisory only; source mutation still requires `synrepo mcp --allow-source-edits` and `synrepo_apply_anchor_edits`.
 
 Graph export is native to synrepo, not skill-owned. When a user asks for a visual graph of the repository, run `synrepo export --format graph-html`. When they ask for machine-readable graph data, run `synrepo export --format graph-json`. These exports are deterministic convenience outputs from the canonical graph DB; they do not require an API key and are not explain input.
 

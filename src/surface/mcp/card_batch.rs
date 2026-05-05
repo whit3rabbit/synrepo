@@ -71,13 +71,14 @@ pub fn handle_card_params(state: &SynrepoState, params: CardParams) -> String {
             );
         }
         if targets.len() == 1 {
+            let budget = parse_budget(&params.budget)?;
             return state
                 .with_read_compiler(|compiler| {
                     render_card_target(
                         state,
                         compiler,
                         &targets[0],
-                        parse_budget(&params.budget),
+                        budget,
                         params.budget_tokens,
                         params.include_notes,
                         Instant::now(),
@@ -93,7 +94,7 @@ pub fn handle_card_params(state: &SynrepoState, params: CardParams) -> String {
             ))
             .into());
         }
-        let budget = parse_budget(&params.budget);
+        let budget = parse_budget(&params.budget)?;
         let mut cards = Vec::new();
         let mut errors = Vec::new();
         state

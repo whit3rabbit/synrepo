@@ -241,7 +241,7 @@ synrepo SHALL expose a `synrepo_change_risk(target?, budget?)` MCP tool that ret
 - **THEN** `synrepo_change_risk` appears in the available tools
 
 ### Requirement: Expose synrepo_context_pack as a batched read-only context tool
-synrepo SHALL expose `synrepo_context_pack(goal?, targets?, budget?, budget_tokens?, include_tests?, include_notes?, limit?)` as an MCP tool that batches read-only context artifacts into one response. Each target SHALL be a structured object `{ kind, target, budget? }`, where `kind` is one of `file`, `symbol`, `directory`, `minimum_context`, `test_surface`, `call_path`, or `search`; raw string targets SHALL NOT be treated as the public schema. The response SHALL include `schema_version`, `context_state`, `artifacts`, `omitted`, and `totals`. Each artifact SHALL include `artifact_type`, `target`, `status`, `content`, and `context_accounting`. The tool SHALL NOT mutate repository files, overlays, or external process state except for existing best-effort context metrics.
+synrepo SHALL expose `synrepo_context_pack(goal?, targets?, budget?, budget_tokens?, include_tests?, include_notes?, limit?)` as an MCP tool that batches read-only context artifacts into one response. Each target SHALL be a structured object `{ kind, target, budget? }`, where `kind` is one of `file`, `symbol`, `directory`, `minimum_context`, `test_surface`, `call_path`, or `search`; raw string targets SHALL NOT be treated as the public schema. The response SHALL include `schema_version`, `context_state`, `artifacts`, `omitted`, and `totals`. Each successful artifact SHALL include `artifact_type`, `target`, `status`, `content`, and `context_accounting`. Failed artifacts SHALL use `artifact_type: "error"` and include a typed `error` object with code, message, and retryability. The tool SHALL NOT mutate repository files, overlays, or external process state except for existing best-effort context metrics.
 
 #### Scenario: Batch file and symbol context
 - **WHEN** an agent invokes `synrepo_context_pack` with file and symbol targets
@@ -252,8 +252,14 @@ synrepo SHALL expose `synrepo_context_pack(goal?, targets?, budget?, budget_toke
 - **WHEN** an agent invokes `synrepo_context_pack` with `budget_tokens` lower than the full response estimate
 - **THEN** synrepo keeps the first artifact, records omitted later artifacts under `omitted`, and sets `context_state.truncation_applied` to true
 
+#### Scenario: Missing target produces typed error artifact
+- **WHEN** an agent invokes `synrepo_context_pack` with a missing file target
+- **THEN** the corresponding artifact has `artifact_type: "error"`
+- **AND** the artifact includes a typed `error.code` and `error.message`
+- **AND** other requested artifacts can still be returned in order
+
 ### Requirement: Expose read-only MCP resource templates for context artifacts
-synrepo SHALL advertise read-only MCP resource templates for `synrepo://card/{target}`, `synrepo://file/{path}/outline`, and `synrepo://context-pack?goal={goal}`. Resource reads SHALL return JSON content equivalent to the corresponding tool-backed context path and SHALL NOT add mutation capability.
+synrepo SHALL advertise read-only MCP resource templates for `synrepo://card/{target}`, `synrepo://file/{path}/outline`, and `synrepo://context-pack?goal={goal}`. Resource reads SHALL return JSON content equivalent to the corresponding tool-backed context path for the server default repository and SHALL NOT add mutation capability.
 
 #### Scenario: List resource templates
 - **WHEN** an MCP client lists resource templates
@@ -262,6 +268,11 @@ synrepo SHALL advertise read-only MCP resource templates for `synrepo://card/{ta
 #### Scenario: Read file outline resource
 - **WHEN** an MCP client reads `synrepo://file/src/lib.rs/outline`
 - **THEN** synrepo returns JSON containing a `file_outline` artifact and a `context_state`
+
+#### Scenario: Global resource reads require a default repository
+- **WHEN** a global/defaultless MCP server has no session default repository
+- **AND** a client reads `synrepo://card/src/lib.rs`
+- **THEN** the resource read returns a clear not-found or initialization error instead of selecting an arbitrary project
 
 ### Requirement: Expose synrepo_entrypoints as a task-first MCP tool
 synrepo SHALL expose a `synrepo_entrypoints(scope?, budget?)` MCP tool that returns an `EntryPointCard` for the requested scope. The `scope` parameter SHALL be an optional path prefix string; when absent, the compiler scans all indexed files. The `budget` parameter SHALL accept `"tiny"` (default), `"normal"`, or `"deep"`. Results SHALL be sorted by kind (binary first, then cli_command, http_handler, lib_root) then by file path within each kind. The result set SHALL be limited to 20 entries by default. The tool SHALL return a parseable JSON object and SHALL NOT raise an error when no entry points are found — it returns an empty `entry_points` list instead.
@@ -401,17 +412,26 @@ The MCP server SHALL expose concise workflow guidance in server info and relevan
 - **AND** it tells agents to read full files only after card routing or explicit insufficiency
 
 ### Requirement: Gate MCP mutation behind explicit process invocation
-The MCP server SHALL remain read-first by default. Mutating MCP tools SHALL be registered only when the server is started with an explicit process-level edit gate such as `synrepo mcp --allow-edits`. Configuration MAY further restrict edit capability, but configuration alone SHALL NOT enable mutating MCP tools.
+The MCP server SHALL remain read-only by default. Overlay-writing MCP tools SHALL be registered only when the server is started with `synrepo mcp --allow-overlay-writes`. Source-edit MCP tools SHALL be registered only when the server is started with `synrepo mcp --allow-source-edits`. Configuration MAY further restrict mutation capability, but configuration alone SHALL NOT enable mutating MCP tools.
 
-#### Scenario: Default MCP does not advertise edit tools
-- **WHEN** a user starts `synrepo mcp` without `--allow-edits`
+#### Scenario: Default MCP does not advertise mutating tools
+- **WHEN** a user starts `synrepo mcp` without mutation flags
 - **AND** an MCP client lists tools
 - **THEN** `synrepo_prepare_edit_context` is absent
 - **AND** `synrepo_apply_anchor_edits` is absent
+- **AND** `synrepo_refresh_commentary` is absent
+- **AND** overlay note mutation tools are absent
 - **AND** existing read-first tools remain available
 
-#### Scenario: Edit-enabled MCP advertises edit tools
-- **WHEN** a user starts `synrepo mcp --allow-edits`
+#### Scenario: Overlay-write MCP advertises overlay mutation tools
+- **WHEN** a user starts `synrepo mcp --allow-overlay-writes`
+- **AND** an MCP client lists tools
+- **THEN** `synrepo_refresh_commentary` is present
+- **AND** overlay note mutation tools are present
+- **AND** source edit tools remain absent unless source edits are also enabled
+
+#### Scenario: Source-edit MCP advertises edit tools
+- **WHEN** a user starts `synrepo mcp --allow-source-edits`
 - **AND** policy does not further disable editing
 - **AND** an MCP client lists tools
 - **THEN** `synrepo_prepare_edit_context` is present
@@ -420,9 +440,9 @@ The MCP server SHALL remain read-first by default. Mutating MCP tools SHALL be r
 
 #### Scenario: Config cannot silently enable edits
 - **WHEN** repository or user configuration permits edit-capable MCP behavior
-- **AND** the server is started as `synrepo mcp` without `--allow-edits`
+- **AND** the server is started as `synrepo mcp` without mutation flags
 - **THEN** mutating tools are not registered
-- **AND** calling either edit tool by name returns a not-available error
+- **AND** calling a mutating tool by name returns a not-available error
 
 ### Requirement: Expose a prepare/apply anchored edit workflow
 When edit mode is enabled, synrepo SHALL expose a two-step MCP workflow: `synrepo_prepare_edit_context` for preparing anchored source context and `synrepo_apply_anchor_edits` for validated source mutation. The apply tool SHALL require freshness inputs produced by prepare, including `task_id`, `anchor_state_version`, `path`, `content_hash`, `anchor`, optional `end_anchor`, `edit_type`, and `text`.

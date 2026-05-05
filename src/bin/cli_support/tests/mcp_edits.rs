@@ -15,7 +15,7 @@ fn setup_bootstrapped_repo() -> (tempfile::TempDir, std::path::PathBuf) {
 }
 
 #[test]
-fn mcp_edit_tools_are_hidden_until_allow_edits() {
+fn mcp_mutating_tools_are_hidden_by_default() {
     let (dir, repo) = setup_bootstrapped_repo();
     let state = prepare_mcp_state(&repo).expect("MCP state should load");
     let server = SynrepoServer::new(state, false);
@@ -37,8 +37,14 @@ fn mcp_edit_tools_are_hidden_until_allow_edits() {
         "read-first tools must remain available"
     );
     assert!(
-        tools.iter().any(|tool| tool == "synrepo_note_add"),
-        "explicit advisory note writes stay available in default MCP"
+        !tools.iter().any(|tool| tool == "synrepo_note_add"),
+        "default MCP must not advertise advisory note writes"
+    );
+    assert!(
+        !tools
+            .iter()
+            .any(|tool| tool == "synrepo_refresh_commentary"),
+        "default MCP must not advertise commentary refresh"
     );
     assert!(
         tools.iter().any(|tool| tool == "synrepo_notes"),
@@ -48,7 +54,7 @@ fn mcp_edit_tools_are_hidden_until_allow_edits() {
 }
 
 #[test]
-fn mcp_edit_tools_are_registered_when_allow_edits() {
+fn mcp_source_edit_tools_are_registered_when_allowed() {
     let (dir, repo) = setup_bootstrapped_repo();
     let state = prepare_mcp_state(&repo).expect("MCP state should load");
     let server = SynrepoServer::new(state, true);
@@ -64,6 +70,31 @@ fn mcp_edit_tools_are_registered_when_allow_edits() {
             .iter()
             .any(|tool| tool == "synrepo_apply_anchor_edits"),
         "edit-enabled MCP must advertise apply edit tool"
+    );
+    drop(dir);
+}
+
+#[test]
+fn mcp_overlay_write_tools_are_registered_when_allowed() {
+    let (dir, repo) = setup_bootstrapped_repo();
+    let state = prepare_mcp_state(&repo).expect("MCP state should load");
+    let server = SynrepoServer::new_optional_with_overlay(Some(state), true, false);
+    let tools = server.registered_tool_names();
+    assert!(
+        tools.iter().any(|tool| tool == "synrepo_note_add"),
+        "overlay-write MCP must advertise advisory note writes"
+    );
+    assert!(
+        tools
+            .iter()
+            .any(|tool| tool == "synrepo_refresh_commentary"),
+        "overlay-write MCP must advertise commentary refresh"
+    );
+    assert!(
+        !tools
+            .iter()
+            .any(|tool| tool == "synrepo_apply_anchor_edits"),
+        "overlay-write MCP must not imply source-edit tools"
     );
     drop(dir);
 }

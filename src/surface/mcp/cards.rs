@@ -7,7 +7,7 @@ use crate::{core::ids::NodeId, surface::card::CardCompiler};
 use super::card_accounting::{finalize_card_json, record_embedded_card_metrics};
 use super::card_render::render_card_target;
 pub use super::commentary::{handle_refresh_commentary, RefreshCommentaryParams};
-use super::helpers::{parse_budget, with_mcp_compiler};
+use super::helpers::{parse_budget, render_result, with_mcp_compiler};
 use super::SynrepoState;
 
 /// Parameters for the `synrepo_card` tool.
@@ -137,7 +137,10 @@ pub fn handle_card(
     include_notes: bool,
 ) -> String {
     let start = Instant::now();
-    let budget = parse_budget(&budget);
+    let budget = match parse_budget(&budget) {
+        Ok(budget) => budget,
+        Err(error) => return render_result(Err(error)),
+    };
     with_mcp_compiler(state, |compiler| {
         render_card_target(
             state,
@@ -158,7 +161,10 @@ pub fn handle_entrypoints(
     budget_tokens: Option<usize>,
 ) -> String {
     let start = Instant::now();
-    let budget = parse_budget(&budget);
+    let budget = match parse_budget(&budget) {
+        Ok(budget) => budget,
+        Err(error) => return render_result(Err(error)),
+    };
     with_mcp_compiler(state, |compiler| {
         let card = compiler.entry_point_card(scope.as_deref(), budget)?;
         Ok(finalize_card_json(
@@ -178,7 +184,10 @@ pub fn handle_module_card(
     budget_tokens: Option<usize>,
 ) -> String {
     let start = Instant::now();
-    let budget = parse_budget(&budget);
+    let budget = match parse_budget(&budget) {
+        Ok(budget) => budget,
+        Err(error) => return render_result(Err(error)),
+    };
     with_mcp_compiler(state, |compiler| {
         let card = compiler.module_card(&path, budget)?;
         Ok(finalize_card_json(
@@ -198,7 +207,10 @@ pub fn handle_public_api(
     budget_tokens: Option<usize>,
 ) -> String {
     let start = Instant::now();
-    let budget = parse_budget(&budget);
+    let budget = match parse_budget(&budget) {
+        Ok(budget) => budget,
+        Err(error) => return render_result(Err(error)),
+    };
     with_mcp_compiler(state, |compiler| {
         let card = compiler.public_api_card(&path, budget)?;
         Ok(finalize_card_json(
@@ -218,7 +230,10 @@ pub fn handle_minimum_context(
     budget_tokens: Option<usize>,
 ) -> String {
     let start = Instant::now();
-    let budget = parse_budget(&budget);
+    let budget = match parse_budget(&budget) {
+        Ok(budget) => budget,
+        Err(error) => return render_result(Err(error)),
+    };
     with_mcp_compiler(state, |compiler| {
         let mut response =
             crate::surface::card::neighborhood::resolve_neighborhood(compiler, &target, budget)?;
@@ -238,7 +253,10 @@ pub fn handle_call_path(
     budget_tokens: Option<usize>,
 ) -> String {
     let start = Instant::now();
-    let budget = parse_budget(&budget);
+    let budget = match parse_budget(&budget) {
+        Ok(budget) => budget,
+        Err(error) => return render_result(Err(error)),
+    };
     with_mcp_compiler(state, |compiler| {
         // Resolve target to a symbol node ID.
         let node_id = compiler
@@ -273,7 +291,10 @@ pub fn handle_test_surface(
     budget_tokens: Option<usize>,
 ) -> String {
     let start = Instant::now();
-    let budget = parse_budget(&budget);
+    let budget = match parse_budget(&budget) {
+        Ok(budget) => budget,
+        Err(error) => return render_result(Err(error)),
+    };
     with_mcp_compiler(state, |compiler| {
         let card = compiler.test_surface_card(&scope, budget)?;
         let test_hit = card.test_symbol_count > 0 || card.test_file_count > 0;
@@ -294,7 +315,10 @@ pub fn handle_change_risk(
     budget_tokens: Option<usize>,
 ) -> String {
     let start = Instant::now();
-    let budget = parse_budget(&budget);
+    let budget = match parse_budget(&budget) {
+        Ok(budget) => budget,
+        Err(error) => return render_result(Err(error)),
+    };
     with_mcp_compiler(state, |compiler| {
         let node_id = compiler
             .resolve_target(&target)?

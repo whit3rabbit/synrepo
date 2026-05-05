@@ -26,7 +26,7 @@ The overview blurb in `mcp/tools.rs` (the `synrepo_overview` description) and `s
 - `card_accounting.rs` — budget/accounting helpers for card compilation
 - `context_pack.rs` — single-file context-pack handler
 - `context_pack/` — context-pack assembly sub-module
-- `edits/` — write-side MCP tool surface (only registered with `--allow-edits`)
+- `edits/` — source-write MCP tool surface (only registered with `--allow-source-edits`)
 - `search.rs` — lexical search handler
 - `findings.rs` — audit and cross-link triage tools
 - `audit.rs` — cross-link audit surface

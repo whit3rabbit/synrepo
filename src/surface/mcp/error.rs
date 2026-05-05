@@ -123,10 +123,26 @@ pub fn error_value(err: &anyhow::Error) -> serde_json::Value {
         .downcast_ref::<McpError>()
         .map(|mcp| mcp.message().to_string())
         .unwrap_or_else(|| err.to_string());
+    let retryable = matches!(
+        code,
+        ErrorCode::RateLimited | ErrorCode::Locked | ErrorCode::Busy | ErrorCode::Timeout
+    );
+    let next_action = match code {
+        ErrorCode::NotFound => "Run synrepo_search or synrepo_overview to choose a valid target.",
+        ErrorCode::NotInitialized => "Run synrepo init or synrepo project add for the repository.",
+        ErrorCode::InvalidParameter => "Fix the tool parameters and retry.",
+        ErrorCode::RateLimited => "Wait briefly or reduce request volume.",
+        ErrorCode::Locked | ErrorCode::Busy => "Retry after the active writer or reader finishes.",
+        ErrorCode::Timeout => "Retry with a narrower target or smaller budget.",
+        ErrorCode::Internal => "Inspect synrepo status and retry with a narrower request.",
+    };
     json!({
+        "ok": false,
         "error": {
             "code": code.as_str(),
             "message": message,
+            "retryable": retryable,
+            "next_action": next_action,
         },
         "error_message": message,
     })

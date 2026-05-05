@@ -95,7 +95,8 @@ Within one repo, use `docs/CONFIG.md` to tune discovery. The relevant defaults a
 ```bash
 synrepo mcp                    # server for current repo when started there
 synrepo mcp --repo <path>      # server with a default repo
-synrepo mcp --allow-edits      # expose edit-capable MCP tools
+synrepo mcp --allow-overlay-writes # expose overlay note/commentary writes
+synrepo mcp --allow-source-edits   # expose anchored source edit tools
 ```
 
 MCP does not start `synrepo watch`, scan every managed repo, run reconcile, or silently refresh commentary. Searches and cards read the current `.synrepo/` state. Use `synrepo watch`, `synrepo reconcile`, `synrepo check`, or `synrepo sync` when state needs maintenance.
@@ -169,7 +170,8 @@ Use `synrepo uninstall` for the guided full teardown across projects, integratio
 | `synrepo status` | Quick operational health check |
 | `synrepo mcp` | Serve read-only repo intelligence to the agent |
 | `synrepo mcp --repo <path>` | Serve MCP with a default repo so `repo_root` can be omitted |
-| `synrepo mcp --allow-edits` | Expose edit-capable MCP tools |
+| `synrepo mcp --allow-overlay-writes` | Expose overlay note/commentary write tools |
+| `synrepo mcp --allow-source-edits` | Expose anchored source edit tools |
 | `synrepo remove [--apply]` | Dry-run or apply removal of synrepo-owned artifacts from the current repo |
 | `synrepo uninstall` | Guided full teardown |
 | Dashboard Explain tab | Refresh advisory commentary for missing or stale areas |

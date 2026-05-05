@@ -23,7 +23,7 @@ impl SynrepoServer {
         self.with_tool_state_blocking("synrepo_card", params.repo_root.clone(), move |state| card_batch::handle_card_params(&state, params)).await
     }
 
-    #[tool(name = "synrepo_search", description = "Search the repository using lexical queries. Default output preserves the raw result list; pass output_mode=\"compact\" for grouped, token-accounted routing output.")]
+    #[tool(name = "synrepo_search", description = "Search the repository using lexical queries. Best for exact symbols, string literals, CLI flags, MCP tool names, schema keys, file paths, and code-review validation. Prefer output_mode=\"compact\" for orientation, then use suggested_card_targets with synrepo_card.")]
     async fn synrepo_search(&self, Parameters(params): Parameters<search::SearchParams>) -> String {
         let repo_root = params.repo_root.clone();
         self.with_tool_state_blocking("synrepo_search", repo_root, move |state| search::handle_search(&state, params)).await
@@ -103,7 +103,7 @@ impl SynrepoServer {
         self.with_tool_state_blocking("synrepo_provenance", params.repo_root.clone(), move |state| primitives::handle_provenance(&state, params.id)).await
     }
 
-    #[tool(name = "synrepo_where_to_edit", description = "Suggest where to make edits for a plain-language task description. Default budget is tiny; escalate to normal for local understanding and deep only before edits.")]
+    #[tool(name = "synrepo_where_to_edit", description = "Suggest where to make edits for a plain-language task description. Best for plain-language task routing, not exact code symbols, string literals, flags, schema fields, tool names, or file paths. If the user mentions exact identifiers, call synrepo_search first. Default budget is tiny; escalate to normal for local understanding and deep only before edits.")]
     async fn synrepo_where_to_edit(&self, Parameters(params): Parameters<search::WhereToEditParams>) -> String {
         self.with_tool_state_blocking("synrepo_where_to_edit", params.repo_root.clone(), move |state| search::handle_where_to_edit(&state, params.task, params.limit, params.budget_tokens)).await
     }
@@ -201,7 +201,7 @@ impl SynrepoServer {
         }).await
     }
 
-    #[tool(name = "synrepo_find", description = "Workflow step 2: find bounded candidate cards for a plain-language task. Run before opening source files.")]
+    #[tool(name = "synrepo_find", description = "Workflow step 2: find bounded candidate cards for a plain-language task. Best for plain-language task routing, not exact code symbols, string literals, flags, schema fields, tool names, or file paths. If the user mentions exact identifiers, call synrepo_search first.")]
     async fn synrepo_find(&self, Parameters(params): Parameters<search::WhereToEditParams>) -> String {
         self.with_tool_state_blocking("synrepo_find", params.repo_root.clone(), move |state| {
             record_workflow(&state, "find");
@@ -290,7 +290,7 @@ impl SynrepoServer {
         self.with_tool_state_blocking("synrepo_prepare_edit_context", repo_root, move |state| edits::handle_prepare_edit_context(&state, params)).await
     }
 
-    #[tool(name = "synrepo_apply_anchor_edits", description = "Edit-enabled workflow step: validate prepared anchors, content hashes, and boundary text before applying source edits. This tool can mutate source files only when the server was started with synrepo mcp --allow-edits.")]
+    #[tool(name = "synrepo_apply_anchor_edits", description = "Edit-enabled workflow step: validate prepared anchors, content hashes, and boundary text before applying source edits. This tool can mutate source files only when the server was started with synrepo mcp --allow-source-edits.")]
     async fn synrepo_apply_anchor_edits(&self, Parameters(params): Parameters<edits::ApplyAnchorEditsParams>) -> String {
         let repo_root = params.repo_root.clone();
         self.with_tool_state_blocking("synrepo_apply_anchor_edits", repo_root, move |state| edits::handle_apply_anchor_edits(&state, params)).await
@@ -301,7 +301,7 @@ impl SynrepoServer {
         let request = HandoffsRequest { limit: params.limit.unwrap_or(20), since_days: params.since_days.unwrap_or(30) };
         self.with_tool_state_blocking("synrepo_next_actions", params.repo_root.clone(), move |state| match collect_handoffs(&state.repo_root, &state.config, &request) {
             Ok(items) => handoffs_to_json(&items),
-            Err(e) => serde_json::json!({ "error": e.to_string() }).to_string(),
+            Err(e) => synrepo::surface::mcp::error::error_json(e.into()),
         }).await
     }
 }
