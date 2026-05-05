@@ -44,3 +44,9 @@
 - [x] 7.2 Add active-project MCP status resolution with scope, trigger/source, config path, and tests.
 - [x] 7.3 Add registry-backed Explore tab selection, switching, refresh, watch toggle, and tests.
 - [x] 7.4 Run targeted TUI/registry tests and lint verification.
+
+## 8. Repo-Local MCP Install
+
+- [x] 8.1 Route `i` from the MCP tab to an MCP-only project install picker while keeping generic integration on other tabs.
+- [x] 8.2 Execute MCP-tab installs through `agent-config` local scope without writing shims, skills, instructions, or generic integration state.
+- [x] 8.3 Add app-state, picker-state, and Codex executor tests for repo-local MCP behavior.

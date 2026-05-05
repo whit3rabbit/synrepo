@@ -29,8 +29,9 @@ use crate::tui::widgets::LogEntry;
 
 pub use self::wizard::{
     CloudCredentialSource, ExplainChoice, ExplainWizardSupport, IntegrationPlan,
-    IntegrationWizardOutcome, RepairPlan, RepairWizardOutcome, SetupPlan, SetupWizardOutcome,
-    UninstallActionKind, UninstallPlan, UninstallWizardOutcome,
+    IntegrationWizardOutcome, McpInstallPlan, McpInstallWizardOutcome, RepairPlan,
+    RepairWizardOutcome, SetupPlan, SetupWizardOutcome, UninstallActionKind, UninstallPlan,
+    UninstallWizardOutcome,
 };
 
 pub mod actions;
@@ -39,6 +40,7 @@ pub mod dashboard;
 mod dashboard_tabs;
 mod explain_run;
 mod graph_view;
+mod live_dashboard;
 pub(crate) mod materializer;
 pub mod mcp_status;
 pub mod probe;
@@ -95,6 +97,10 @@ pub enum TuiOutcome {
     /// The caller should run `run_integration_wizard` and — on successful
     /// completion — re-open the dashboard.
     LaunchIntegrationRequested,
+    /// Dashboard exited with a request to install repo-local MCP from the MCP
+    /// tab. The caller should run the MCP install picker, execute the returned
+    /// project-scope plan, and re-open the dashboard.
+    LaunchProjectMcpInstallRequested,
     /// Dashboard exited with a request to launch the explain setup wizard.
     /// The caller should run `run_explain_only_wizard` and then re-open the
     /// dashboard.
@@ -131,6 +137,9 @@ pub fn run_dashboard(
     match intent {
         app::DashboardExit::Quit => Ok(TuiOutcome::Exited),
         app::DashboardExit::LaunchIntegration => Ok(TuiOutcome::LaunchIntegrationRequested),
+        app::DashboardExit::LaunchProjectMcpInstall => {
+            Ok(TuiOutcome::LaunchProjectMcpInstallRequested)
+        }
         app::DashboardExit::LaunchExplainSetup => Ok(TuiOutcome::LaunchExplainSetupRequested),
         app::DashboardExit::SwitchProject(repo_root) => {
             Ok(TuiOutcome::SwitchProjectRequested(repo_root))
@@ -265,6 +274,24 @@ pub fn run_integration_wizard(
     wizard::run_integration_wizard_loop(theme, integration, probe_report.detected_agent_targets)
 }
 
+/// Open the repo-local MCP install picker launched from the dashboard MCP tab.
+///
+/// Returns an [`McpInstallWizardOutcome`] so the caller can execute the
+/// resulting project-scope MCP registration after the TUI alternate-screen has
+/// been torn down.
+pub fn run_mcp_install_wizard(
+    repo_root: &Path,
+    opts: TuiOptions,
+) -> anyhow::Result<McpInstallWizardOutcome> {
+    if !stdout_is_tty() {
+        return Ok(McpInstallWizardOutcome::NonTty);
+    }
+    let theme = theme::Theme::from_no_color(opts.no_color);
+    let probe_report = probe(repo_root);
+    let rows = mcp_status::build_mcp_status_rows(repo_root);
+    wizard::run_mcp_install_wizard_loop(theme, repo_root, rows, probe_report.detected_agent_targets)
+}
+
 /// Open the uninstall wizard for the current repo.
 ///
 /// `installed` is the full set of detected artifacts the caller would apply
@@ -298,54 +325,7 @@ pub fn run_live_watch_dashboard(repo_root: &Path, opts: TuiOptions) -> anyhow::R
     if !stdout_is_tty() {
         return Ok(TuiOutcome::NonTtyFallback);
     }
-    live::run(repo_root, opts)
-}
-
-mod live {
-    //! Live-mode shim: host the watch service on a background thread and
-    //! drive the poll-mode dashboard in the foreground. Kept isolated so
-    //! the unix-only plumbing does not pollute the rest of `tui::mod`.
-    use std::path::Path;
-
-    use super::{
-        dashboard::run_poll_dashboard, theme::Theme, watcher::WatcherSupervisor, TuiOptions,
-        TuiOutcome,
-    };
-    use crate::bootstrap::runtime_probe::probe as bootstrap_probe;
-    use crate::tui::app::DashboardExit;
-
-    pub(super) fn run(repo_root: &Path, opts: TuiOptions) -> anyhow::Result<TuiOutcome> {
-        let theme = Theme::from_no_color(opts.no_color);
-        let mut supervisor = WatcherSupervisor::new(repo_root)?;
-        let event_rx = supervisor
-            .start()
-            .map_err(|err| anyhow::anyhow!(err.to_string()))?;
-
-        // Re-probe so the dashboard header reflects agent integration state.
-        let report = bootstrap_probe(repo_root);
-        // Live mode: the log pane drains `WatchEvent`s from `event_rx`;
-        // header stats still come from the status-snapshot file refresh.
-        let intent = run_poll_dashboard(
-            repo_root,
-            report.agent_integration,
-            theme,
-            false,
-            Some(event_rx),
-            Vec::new(),
-        )?;
-
-        // Dashboard has exited. Stop the service.
-        supervisor.stop();
-
-        match intent {
-            DashboardExit::Quit => Ok(TuiOutcome::Exited),
-            DashboardExit::LaunchIntegration => Ok(TuiOutcome::LaunchIntegrationRequested),
-            DashboardExit::LaunchExplainSetup => Ok(TuiOutcome::LaunchExplainSetupRequested),
-            DashboardExit::SwitchProject(repo_root) => {
-                Ok(TuiOutcome::SwitchProjectRequested(repo_root))
-            }
-        }
-    }
+    live_dashboard::run(repo_root, opts)
 }
 
 /// Detect whether stdout is attached to a TTY. Used by every entry point to

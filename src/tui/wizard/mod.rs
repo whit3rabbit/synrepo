@@ -23,6 +23,7 @@ use ratatui::Terminal;
 use crate::bootstrap::runtime_probe::AgentTargetKind;
 
 pub mod integration;
+pub mod mcp_install;
 pub mod repair;
 pub mod setup;
 pub mod uninstall;
@@ -30,6 +31,9 @@ pub mod uninstall;
 pub use integration::{
     run_integration_wizard_loop, ActionRow as IntegrationActionRow, IntegrationPlan,
     IntegrationWizardOutcome, IntegrationWizardState,
+};
+pub use mcp_install::{
+    run_mcp_install_wizard_loop, McpInstallPlan, McpInstallWizardOutcome, McpInstallWizardState,
 };
 pub use repair::{
     run_repair_wizard_loop, ActionRow as RepairActionRow, RepairActionKind, RepairPlan, RepairStep,

@@ -2,14 +2,15 @@ use std::path::Path;
 
 use synrepo::bootstrap::runtime_probe::{probe, AgentIntegration};
 use synrepo::tui::{
-    run_dashboard, run_integration_wizard, DashboardOptions, IntegrationPlan,
-    IntegrationWizardOutcome, RepairPlan, TuiOptions, TuiOutcome,
+    run_dashboard, run_integration_wizard, run_mcp_install_wizard, DashboardOptions,
+    IntegrationPlan, IntegrationWizardOutcome, McpInstallPlan, McpInstallWizardOutcome, RepairPlan,
+    TuiOptions, TuiOutcome,
 };
 
 use super::agent_shims::{registry as shim_registry, AgentTool, AutomationTier};
 use super::commands::{
     reconcile, resolve_setup_scope, step_apply_integration, step_backup_mcp_config, step_init,
-    step_install_agent_hooks, step_register_mcp, step_write_shim,
+    step_install_agent_hooks, step_register_mcp, step_write_shim, StepOutcome,
 };
 use super::setup_cmd::run_explain_step;
 
@@ -51,6 +52,23 @@ pub(crate) fn run_dashboard_with_sub_wizards(
                 // Re-probe so the dashboard reflects the new integration
                 // state on re-open. Suppress the welcome banner on re-open —
                 // the banner is a first-run-only affordance.
+                let report = probe(&current_root);
+                integration = report.agent_integration;
+                opts.welcome_banner = false;
+            }
+            TuiOutcome::LaunchProjectMcpInstallRequested => {
+                let tui_opts = TuiOptions {
+                    no_color: opts.no_color,
+                };
+                match run_mcp_install_wizard(&current_root, tui_opts)? {
+                    McpInstallWizardOutcome::Completed { plan } => {
+                        execute_project_mcp_install_plan(&current_root, plan)?;
+                    }
+                    McpInstallWizardOutcome::Cancelled => {
+                        println!("repo MCP install cancelled; no changes applied.");
+                    }
+                    McpInstallWizardOutcome::NonTty => return Ok(()),
+                }
                 let report = probe(&current_root);
                 integration = report.agent_integration;
                 opts.welcome_banner = false;
@@ -152,5 +170,30 @@ pub(crate) fn execute_integration_plan(
         plan.register_mcp && matches!(tool.automation_tier(), AutomationTier::Automated);
     shim_registry::record_install_best_effort(repo_root, tool, &scope, wrote_mcp, backup);
     println!("Integration complete.");
+    Ok(())
+}
+
+/// Execute a completed repo-local MCP install plan from the dashboard MCP tab.
+/// This intentionally skips shim writes and generic integration bookkeeping:
+/// the tab action only installs project-scoped MCP config.
+pub(crate) fn execute_project_mcp_install_plan(
+    repo_root: &Path,
+    plan: McpInstallPlan,
+) -> anyhow::Result<()> {
+    let tool = AgentTool::from_target_kind(plan.target);
+    let scope = agent_config::Scope::Local(repo_root.to_path_buf());
+    println!(
+        "Installing repo-local synrepo MCP for {}...",
+        tool.display_name()
+    );
+    step_backup_mcp_config(repo_root, tool, &scope)?;
+    match step_register_mcp(repo_root, tool, &scope)? {
+        StepOutcome::NotAutomated => anyhow::bail!(
+            "{} does not support automated repo-local MCP registration",
+            tool.display_name()
+        ),
+        StepOutcome::Applied | StepOutcome::AlreadyCurrent | StepOutcome::Updated => {}
+    }
+    println!("Repo MCP install complete.");
     Ok(())
 }

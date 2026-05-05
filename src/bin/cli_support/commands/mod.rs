@@ -87,11 +87,10 @@ pub(crate) use setup::{agent_setup_many_resolved, resolve_tool_resolution, setup
 pub(crate) use setup::{
     classify_mcp_registration, classify_shim_freshness, entry_after_failure, entry_after_success,
     render_client_setup_summary, ClientBefore, ClientSetupEntry, McpRegistration, ShimFreshness,
-    StepOutcome,
 };
 pub(crate) use setup::{
     resolve_setup_scope, step_apply_integration, step_ensure_ready, step_init,
-    step_install_agent_hooks, step_register_mcp, step_write_shim,
+    step_install_agent_hooks, step_register_mcp, step_write_shim, StepOutcome,
 };
 pub(crate) use setup_explain::step_apply_explain;
 pub(crate) use setup_mcp_backup::{mcp_config_has_synrepo, step_backup_mcp_config};

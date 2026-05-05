@@ -198,7 +198,11 @@ impl AppState {
                 true
             }
             KeyCode::Char('i') => {
-                self.launch_integration = true;
+                if matches!(self.active_tab, ActiveTab::Mcp) {
+                    self.launch_project_mcp_install = true;
+                } else {
+                    self.launch_integration = true;
+                }
                 self.should_exit = true;
                 true
             }

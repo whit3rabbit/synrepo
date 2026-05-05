@@ -28,8 +28,8 @@ impl Widget for McpTabWidget<'_> {
                 Line::from(""),
                 Line::from("  no MCP integrations detected."),
                 Line::from(""),
-                Line::from("  press [i] to launch the integration wizard,"),
-                Line::from("  or run: synrepo agent-setup <tool>"),
+                Line::from("  press [i] to install repo MCP,"),
+                Line::from("  or run: synrepo setup <tool> --project"),
             ];
             Paragraph::new(lines)
                 .block(block)

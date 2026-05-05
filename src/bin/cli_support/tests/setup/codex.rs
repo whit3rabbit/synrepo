@@ -4,9 +4,12 @@ use std::path::Path;
 use tempfile::tempdir;
 
 use agent_config::Scope;
+use synrepo::bootstrap::runtime_probe::AgentTargetKind;
+use synrepo::tui::McpInstallPlan;
 
 use crate::cli_support::agent_shims::AgentTool;
 use crate::cli_support::commands::{step_register_mcp, StepOutcome};
+use crate::cli_support::repair_cmd::execute_project_mcp_install_plan;
 
 fn setup_codex_mcp(repo_root: &Path, global: bool) -> anyhow::Result<StepOutcome> {
     let scope = if global {
@@ -248,4 +251,54 @@ fn codex_global_uses_codex_home_without_repo_flag() {
         vec!["mcp"]
     );
     assert!(!dir.path().join(".codex").exists());
+}
+
+#[test]
+fn codex_dashboard_mcp_install_is_repo_local_mcp_only() {
+    let home = tempdir().unwrap();
+    let codex_home = crate::cli_support::tests::support::canonicalize_no_verbatim(home.path());
+    let _lock =
+        synrepo::test_support::global_test_lock(synrepo::config::test_home::HOME_ENV_TEST_LOCK);
+    let _guard = EnvGuard::set("CODEX_HOME", &codex_home);
+    fs::create_dir_all(&codex_home).unwrap();
+    let global_config = codex_home.join("config.toml");
+    let global_before = "[profiles.default]\nmodel = \"gpt-test\"\n";
+    fs::write(&global_config, global_before).unwrap();
+    let repo = tempdir().unwrap();
+
+    execute_project_mcp_install_plan(
+        repo.path(),
+        McpInstallPlan {
+            target: AgentTargetKind::Codex,
+        },
+    )
+    .unwrap();
+
+    let local_config = repo.path().join(".codex").join("config.toml");
+    let parsed: toml::Value = toml::from_str(&fs::read_to_string(&local_config).unwrap()).unwrap();
+    assert_eq!(
+        parsed["mcp_servers"]["synrepo"]["args"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["mcp", "--repo", "."],
+        "dashboard MCP tab install must use repo-local command args"
+    );
+    assert!(
+        !repo
+            .path()
+            .join(".agents")
+            .join("skills")
+            .join("synrepo")
+            .join("SKILL.md")
+            .exists(),
+        "MCP-only install must not write the Codex skill"
+    );
+    assert_eq!(
+        fs::read_to_string(&global_config).unwrap(),
+        global_before,
+        "project MCP install must not touch global Codex config"
+    );
 }

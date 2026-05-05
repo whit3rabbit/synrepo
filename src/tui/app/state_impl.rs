@@ -118,6 +118,7 @@ impl AppState {
             switch_project_root: None,
             should_exit: false,
             launch_integration: false,
+            launch_project_mcp_install: false,
             launch_explain_setup: false,
             pending_explain: std::collections::VecDeque::new(),
             confirm_stop_watch: None,
@@ -167,6 +168,9 @@ impl AppState {
         }
         if self.launch_explain_setup {
             return DashboardExit::LaunchExplainSetup;
+        }
+        if self.launch_project_mcp_install {
+            return DashboardExit::LaunchProjectMcpInstall;
         }
         if self.launch_integration {
             return DashboardExit::LaunchIntegration;

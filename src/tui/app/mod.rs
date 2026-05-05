@@ -140,6 +140,9 @@ pub struct AppState {
     /// When set, the caller should launch the integration sub-wizard after the
     /// render loop unwinds. See [`DashboardExit`].
     pub launch_integration: bool,
+    /// When set, the caller should launch the project-local MCP install
+    /// picker after the render loop unwinds.
+    pub launch_project_mcp_install: bool,
     /// When set, the caller should launch the explain setup sub-wizard.
     pub launch_explain_setup: bool,
     /// When set, the dashboard loop should run explain in-place after the
@@ -241,6 +244,8 @@ pub enum DashboardExit {
     /// Operator asked for the integration sub-wizard; caller should launch it
     /// and then re-open the dashboard.
     LaunchIntegration,
+    /// Operator asked for repo-local MCP install from the MCP tab.
+    LaunchProjectMcpInstall,
     /// Operator asked for the explain setup sub-wizard.
     LaunchExplainSetup,
     /// Operator selected another registry project from Repos.

@@ -51,6 +51,13 @@ The dashboard SHALL include dedicated MCP and Explore tabs after Actions while p
 - **THEN** each row shows agent, status, scope, trigger/source, and config path when known
 - **AND** the dashboard does not launch or host the MCP stdio server
 
+#### Scenario: MCP tab installs repo-local MCP
+- **WHEN** the user presses `i` on the MCP tab and confirms a target
+- **THEN** synrepo registers that target's MCP config in project scope through agent-config
+- **AND** the registered server command is `synrepo mcp --repo .`
+- **AND** no agent shim, skill, or instruction file is written
+- **AND** pressing `i` outside the MCP tab still launches the generic integration wizard
+
 #### Scenario: Explore tab switches projects
 - **WHEN** the dashboard renders the Explore tab
 - **THEN** rows come from the managed-project registry with health, watch, lock, integration, and path
