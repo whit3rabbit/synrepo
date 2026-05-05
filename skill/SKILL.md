@@ -34,8 +34,8 @@ Do not use synrepo for:
 
 The required sequence for codebase questions, reviews, search routing, and edits is orient, search, cards, impact or risks, edit, tests, changed.
 
-1. Start with `synrepo_orient` before reading the repo cold.
-2. Use the search protocol below to decide between `synrepo_find`, `synrepo_where_to_edit`, and `synrepo_search`.
+1. Start with `synrepo_orient` before reading the repo cold. It is a small routing summary, not the full dashboard.
+2. Use `synrepo_task_route` for plain-language tasks, then use the search protocol below to decide between `synrepo_find`, `synrepo_where_to_edit`, and `synrepo_search`.
 3. Use `tiny` cards to route and `normal` cards to understand. Use `synrepo_minimum_context` as the bounded neighborhood step when a focal target is known but the surrounding risk is unclear, especially for file reviews and codebase questions.
 4. Use `synrepo_impact` or `synrepo_risks` before editing or reviewing risky files.
 5. Use `synrepo_tests` before claiming done.
@@ -53,15 +53,16 @@ Use different search tools for different question shapes.
 For broad repository questions, start with:
 
 - `synrepo_orient`
-- `synrepo_overview`
 - `synrepo_readiness` when you only need operational trust status
+- `synrepo_overview` only when you need the full dashboard
 
-Use these to identify modules, readiness, watch/reconcile state, likely card targets, and subsystem boundaries.
+Use these to identify modules, readiness, watch/reconcile state, likely card targets, and subsystem boundaries without pulling dashboard-only fields into context.
 
 ### 2. Task routing
 
 For plain-language edit or investigation tasks, call:
 
+- `synrepo_task_route(task, path?)`
 - `synrepo_find(task, limit?, budget_tokens?)`
 - `synrepo_where_to_edit(task, limit?)`
 
@@ -90,7 +91,7 @@ For exact symbols, tool names, function names, flags, JSON keys, CLI args, error
 
 - `synrepo_search(query, limit?, output_mode?, budget_tokens?)`
 
-Use `output_mode: "compact"` for orientation. Use `output_mode: "cards"` when you would otherwise call `synrepo_card` for each matched file.
+Use `output_mode: "compact"` for orientation. Adaptive compact output may return grouped previews, a minimal miss, or smaller raw rows for tiny result sets; read `output_accounting` before escalating. Use `output_mode: "cards"` when you would otherwise call `synrepo_card` for each matched file.
 
 Prefer exact probes over broad natural language when the task includes identifiers or likely identifiers.
 
@@ -227,12 +228,12 @@ V1 edit candidates are advisory only: `var-to-const`, `remove-debug-logging`, `r
 
 ## Core tools
 
-* `synrepo_overview()` — first call on an unfamiliar repo.
+* `synrepo_overview()` — full dashboard for graph, readiness, watch/reconcile, explain/commentary, metrics, and recent activity.
 * `synrepo_readiness()` — cheap read-only preflight for graph, overlay, index, watch, reconcile, and enabled MCP mutation modes.
-* `synrepo_orient()` — workflow alias for first-call orientation.
+* `synrepo_orient()` — compact first-call routing summary.
 * `synrepo_find(task, limit?, budget_tokens?)` — task-oriented routing for plain-language questions. Best for “where should I look?” Not the best first tool for exact symbols, string literals, flags, schema fields, tool names, or file paths.
 * `synrepo_where_to_edit(task, limit?)` — ranked edit candidates for plain-language edit tasks. Inspect diagnostics and switch to exact search when broad routing misses.
-* `synrepo_search(query, limit?, output_mode?, budget_tokens?)` — lexical search. Best for exact symbols, string literals, CLI flags, MCP tool names, schema keys, file paths, and code-review validation. Use `output_mode: "compact"` to group matches by file and return `output_accounting`; use `output_mode: "cards"` to return tiny file cards directly.
+* `synrepo_search(query, limit?, output_mode?, budget_tokens?)` — lexical search. Best for exact symbols, string literals, CLI flags, MCP tool names, schema keys, file paths, and code-review validation. Use `output_mode: "compact"` for adaptive compact output with `output_accounting`; use `output_mode: "cards"` to return tiny file cards directly.
 * `synrepo_explain(target, budget?, budget_tokens?)` — workflow alias for bounded card lookup.
 * `synrepo_card(target?, targets?, budget?, budget_tokens?)` — card for one symbol/file, or up to 10 cards in one batch.
 * `synrepo_minimum_context(target, budget?)` — bounded neighborhood step before deep inspection or full-file reads.
@@ -290,12 +291,20 @@ Do not maximize returned context. Return the smallest useful MCP response.
 
 Default sequence:
 1. `synrepo_orient`
-2. `synrepo_search(..., output_mode: "compact", limit: 5-10)`
-3. `synrepo_card(..., budget: "tiny")`
-4. `synrepo_card(..., budget: "normal")` only for the best 1-3 targets
-5. `synrepo_minimum_context(..., budget: "normal")` when local neighborhood matters
-6. `synrepo_context_pack(...)` only after targets are known
-7. `budget: "deep"` or full-file reads only immediately before implementation or validation
+2. `synrepo_task_route(...)` for plain-language tasks
+3. `synrepo_search(..., output_mode: "compact", limit: 5-10)`
+4. `synrepo_card(..., budget: "tiny")`
+5. `synrepo_card(..., budget: "normal")` only for the best 1-3 targets
+6. `synrepo_minimum_context(..., budget: "normal")` when local neighborhood matters
+7. `synrepo_context_pack(...)` only after targets are known
+8. `budget: "deep"` or full-file reads only immediately before implementation or validation
+
+Consume these fields first:
+- `synrepo_orient`: `workflow`, `capability_actions`, `graph`, `watch`, `reconcile`
+- `synrepo_search`: `suggested_card_targets`, `file_groups` or `results`, `miss_reason`, `output_accounting`
+- `synrepo_card`: `path`, `symbols`, `exports`, `imports`, `context_accounting`, `commentary_state`
+- `synrepo_context_pack`: `artifacts[].target`, `artifacts[].status`, `totals`, `omitted`, `context_state`
+- `synrepo_metrics`: `persisted.mcp_tool_errors_total`, `persisted.mcp_tool_error_codes_total`, `persisted.largest_response_tokens`
 
 Rules:
 - Always pass `limit` on search/list tools.

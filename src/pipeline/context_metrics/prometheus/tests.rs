@@ -45,6 +45,11 @@ fn prometheus_output_matches_golden_string() {
         .mcp_tool_errors_total
         .insert("synrepo_search".to_string(), 1);
     metrics
+        .mcp_tool_error_codes_total
+        .entry("synrepo_search".to_string())
+        .or_default()
+        .insert("NOT_FOUND".to_string(), 1);
+    metrics
         .saved_context_writes_total
         .insert("note_add".to_string(), 1);
     metrics
@@ -163,6 +168,9 @@ synrepo_route_classifications_total 6\n\
 	# HELP synrepo_mcp_tool_errors_total Observed: MCP tool responses with a top-level error field.\n\
 	# TYPE synrepo_mcp_tool_errors_total counter\n\
 	synrepo_mcp_tool_errors_total{tool=\"synrepo_search\"} 1\n\
+# HELP synrepo_mcp_tool_error_codes_total Observed: MCP tool errors keyed by tool and stable error code.\n\
+# TYPE synrepo_mcp_tool_error_codes_total counter\n\
+synrepo_mcp_tool_error_codes_total{tool=\"synrepo_search\",code=\"NOT_FOUND\"} 1\n\
 # HELP synrepo_saved_context_writes_total Observed: explicit advisory saved-context mutations keyed by operation.\n\
 # TYPE synrepo_saved_context_writes_total counter\n\
 synrepo_saved_context_writes_total{operation=\"note_add\"} 1\n\

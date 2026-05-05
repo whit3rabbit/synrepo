@@ -77,6 +77,10 @@ pub struct ContextMetrics {
     /// keyed by MCP tool name.
     #[serde(default)]
     pub mcp_tool_errors_total: BTreeMap<String, u64>,
+    /// **Observed**: MCP tool errors keyed by tool name and stable error code.
+    /// Does not store targets, queries, prompts, or response bodies.
+    #[serde(default)]
+    pub mcp_tool_error_codes_total: BTreeMap<String, BTreeMap<String, u64>>,
     /// **Observed**: MCP resource reads that reached a prepared repository.
     #[serde(default)]
     pub mcp_resource_reads_total: u64,
@@ -204,6 +208,10 @@ impl ContextMetrics {
             &mut self.mcp_tool_errors_total,
             &delta.mcp_tool_errors_total,
         );
+        merge_nested_map(
+            &mut self.mcp_tool_error_codes_total,
+            &delta.mcp_tool_error_codes_total,
+        );
         self.mcp_resource_reads_total += delta.mcp_resource_reads_total;
         merge_map(
             &mut self.saved_context_writes_total,
@@ -254,6 +262,7 @@ impl ContextMetrics {
             && self.mcp_requests_total == 0
             && self.mcp_tool_calls_total.is_empty()
             && self.mcp_tool_errors_total.is_empty()
+            && self.mcp_tool_error_codes_total.is_empty()
             && self.mcp_resource_reads_total == 0
             && self.saved_context_writes_total.is_empty()
             && self.compact_outputs_total == 0
@@ -286,6 +295,15 @@ impl ContextMetrics {
 fn merge_map(target: &mut BTreeMap<String, u64>, delta: &BTreeMap<String, u64>) {
     for (key, value) in delta {
         *target.entry(key.clone()).or_default() += value;
+    }
+}
+
+fn merge_nested_map(
+    target: &mut BTreeMap<String, BTreeMap<String, u64>>,
+    delta: &BTreeMap<String, BTreeMap<String, u64>>,
+) {
+    for (outer, inner) in delta {
+        merge_map(target.entry(outer.clone()).or_default(), inner);
     }
 }
 

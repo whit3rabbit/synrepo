@@ -56,6 +56,7 @@ Observed counters include:
 - `mcp_requests_total`
 - `mcp_tool_calls_total`
 - `mcp_tool_errors_total`
+- `mcp_tool_error_codes_total`
 - `saved_context_writes_total`
 - `compact_outputs_total`
 - `compact_omitted_items_total`

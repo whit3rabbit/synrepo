@@ -8,7 +8,9 @@ use synrepo::surface::mcp::SynrepoState;
 
 use super::SynrepoServer;
 
+mod outcome;
 mod session;
+use outcome::{response_error_code, response_has_error, saved_context_metric};
 pub(crate) use session::SessionState;
 
 const OVERLAY_WRITE_TOOLS: &[&str] = &[
@@ -240,10 +242,11 @@ impl SynrepoServer {
                     tool,
                     output,
                 );
-                let errored = response_has_error(&output);
+                let error_code = response_error_code(&output);
+                let errored = error_code.is_some();
                 self.session.record_tool(tool, errored);
                 let saved_context = saved_context_metric(tool, errored);
-                self.record_tool_result_for(&state, tool, errored, saved_context);
+                self.record_tool_result_for(&state, tool, error_code.as_deref(), saved_context);
                 output
             }
             Err(error) => {
@@ -343,14 +346,14 @@ impl SynrepoServer {
         &self,
         state: &SynrepoState,
         tool: &str,
-        errored: bool,
+        error_code: Option<&str>,
         saved_context_write: Option<&str>,
     ) {
         let synrepo_dir = synrepo::config::Config::synrepo_dir(&state.repo_root);
         synrepo::pipeline::context_metrics::record_mcp_tool_result_best_effort(
             &synrepo_dir,
             tool,
-            errored,
+            error_code,
             saved_context_write,
         );
     }
@@ -367,27 +370,6 @@ impl SynrepoServer {
             .into_iter()
             .map(|tool| tool.name.to_string())
             .collect()
-    }
-}
-
-fn response_has_error(output: &str) -> bool {
-    serde_json::from_str::<serde_json::Value>(output)
-        .ok()
-        .and_then(|value| value.get("ok").and_then(|ok| ok.as_bool()).map(|ok| !ok))
-        .unwrap_or(false)
-}
-
-fn saved_context_metric(tool: &str, errored: bool) -> Option<&'static str> {
-    if errored {
-        return None;
-    }
-    match tool {
-        "synrepo_note_add" => Some("note_add"),
-        "synrepo_note_link" => Some("note_link"),
-        "synrepo_note_supersede" => Some("note_supersede"),
-        "synrepo_note_forget" => Some("note_forget"),
-        "synrepo_note_verify" => Some("note_verify"),
-        _ => None,
     }
 }
 

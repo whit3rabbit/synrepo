@@ -32,8 +32,8 @@ fn record_workflow_call_increments_per_tool() {
 #[test]
 fn record_mcp_tool_result_tracks_calls_errors_and_saved_context() {
     let mut metrics = ContextMetrics::default();
-    metrics.record_mcp_tool_result("synrepo_note_add", false, Some("note_add"));
-    metrics.record_mcp_tool_result("synrepo_search", true, None);
+    metrics.record_mcp_tool_result("synrepo_note_add", None, Some("note_add"));
+    metrics.record_mcp_tool_result("synrepo_search", Some("NOT_FOUND"), None);
 
     assert_eq!(metrics.mcp_requests_total, 2);
     assert_eq!(
@@ -42,6 +42,13 @@ fn record_mcp_tool_result_tracks_calls_errors_and_saved_context() {
     );
     assert_eq!(
         metrics.mcp_tool_errors_total.get("synrepo_search"),
+        Some(&1)
+    );
+    assert_eq!(
+        metrics
+            .mcp_tool_error_codes_total
+            .get("synrepo_search")
+            .and_then(|codes| codes.get("NOT_FOUND")),
         Some(&1)
     );
     assert_eq!(metrics.saved_context_writes_total.get("note_add"), Some(&1));
@@ -184,7 +191,7 @@ fn best_effort_record_is_visible_before_flush() {
     let repo = tempfile::tempdir().unwrap();
     let synrepo_dir = repo.path().join(".synrepo");
 
-    record_mcp_tool_result_best_effort(&synrepo_dir, "synrepo_search", false, None);
+    record_mcp_tool_result_best_effort(&synrepo_dir, "synrepo_search", None, None);
 
     assert!(!synrepo_dir.join("state/context-metrics.json").exists());
     let metrics = load(&synrepo_dir).unwrap();

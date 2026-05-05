@@ -10,6 +10,69 @@ use crate::{
 
 use crate::surface::mcp::{helpers::render_result, SynrepoState};
 
+pub fn handle_orient(state: &SynrepoState) -> String {
+    let result: anyhow::Result<serde_json::Value> = {
+        let snapshot = build_status_snapshot(
+            &state.repo_root,
+            StatusOptions {
+                recent: false,
+                full: false,
+            },
+        );
+        let graph = snapshot.graph_stats.as_ref().map(|stats| {
+            json!({
+                "file_nodes": stats.file_nodes,
+                "symbol_nodes": stats.symbol_nodes,
+                "concept_nodes": stats.concept_nodes,
+            })
+        });
+        let diagnostics = snapshot.diagnostics.as_ref();
+        let metrics = snapshot.context_metrics.as_ref();
+        let capability_summary = snapshot.initialized.then(|| {
+            let report = probe(&state.repo_root);
+            let config = snapshot.config.clone().unwrap_or_default();
+            ReadinessMatrix::build(&state.repo_root, &report, &snapshot, &config)
+                .rows
+                .into_iter()
+                .filter(|row| row.next_action.is_some())
+                .map(|row| {
+                    json!({
+                        "capability": row.capability.as_str(),
+                        "state": row.state.as_str(),
+                        "next_action": row.next_action,
+                    })
+                })
+                .collect::<Vec<_>>()
+        });
+
+        Ok(json!({
+            "source_store": "graph",
+            "mode": state.config.mode.to_string(),
+            "graph": graph.unwrap_or_else(|| json!({
+                "file_nodes": 0,
+                "symbol_nodes": 0,
+                "concept_nodes": 0,
+            })),
+            "watch": diagnostics.map(|diag| format!("{:?}", diag.watch_status)),
+            "reconcile": diagnostics.map(|diag| format!("{:?}", diag.reconcile_health)),
+            "capability_actions": capability_summary.unwrap_or_default(),
+            "workflow": {
+                "route_first": "synrepo_task_route",
+                "exact_search": "synrepo_search output_mode=compact",
+                "next_detail": "synrepo_card budget=tiny, then normal for 1-3 targets",
+                "full_dashboard": "synrepo_overview",
+            },
+            "metrics_hint": metrics.map(|metrics| {
+                json!({
+                    "mcp_requests_total": metrics.mcp_requests_total,
+                    "largest_response_tokens": metrics.largest_response_tokens,
+                })
+            }),
+        }))
+    };
+    render_result(result)
+}
+
 pub fn handle_overview(state: &SynrepoState) -> String {
     let result: anyhow::Result<serde_json::Value> = {
         let snapshot = build_status_snapshot(

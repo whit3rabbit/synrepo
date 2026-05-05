@@ -71,6 +71,14 @@ pub fn compact_search_response(default_response: &Value, budget_tokens: Option<u
         .and_then(Value::as_u64)
         .unwrap_or(groups.iter().map(|g| g.match_count).sum::<usize>() as u64)
         as usize;
+    if total_matches == 0 {
+        return attach_accounting(
+            minimal_miss_payload(default_response),
+            original_token_estimate,
+            0,
+            false,
+        );
+    }
 
     let (kept, selection_truncated) = if let Some(cap) = budget_tokens {
         select_groups_for_budget(default_response, &groups, total_matches, cap)
@@ -79,23 +87,28 @@ pub fn compact_search_response(default_response: &Value, budget_tokens: Option<u
     };
 
     let omitted_count = omitted_count(total_matches, &kept);
-    let mut payload = compact_payload(default_response, &groups, &kept, omitted_count);
+    let payload = compact_payload(default_response, &groups, &kept, omitted_count);
     let returned_token_estimate = estimate_json_tokens(&payload);
     let budget_truncated =
         selection_truncated || budget_tokens.is_some_and(|cap| returned_token_estimate > cap);
-    let accounting = OutputAccounting::new(
-        returned_token_estimate,
+    let compact = attach_accounting(
+        payload,
         original_token_estimate,
         omitted_count,
         budget_truncated || omitted_count > 0,
     );
-    if let Some(obj) = payload.as_object_mut() {
-        obj.insert(
-            "output_accounting".to_string(),
-            serde_json::to_value(accounting).unwrap_or(Value::Null),
+    if total_matches <= 3 {
+        let fallback = attach_accounting(
+            adaptive_raw_payload(default_response),
+            original_token_estimate,
+            0,
+            false,
         );
+        if estimate_json_tokens(&fallback) < estimate_json_tokens(&compact) {
+            return fallback;
+        }
     }
-    payload
+    compact
 }
 
 fn select_groups_for_budget(
@@ -218,6 +231,53 @@ fn compact_payload(
             "file_count": omitted_file_count,
         },
     })
+}
+
+fn minimal_miss_payload(original: &Value) -> Value {
+    json!({
+        "query": original.get("query").cloned().unwrap_or(Value::Null),
+        "engine": original.get("engine").cloned().unwrap_or(Value::Null),
+        "source_store": original.get("source_store").cloned().unwrap_or(Value::Null),
+        "mode": original.get("mode").cloned().unwrap_or(Value::Null),
+        "semantic_available": original.get("semantic_available").cloned().unwrap_or(Value::Null),
+        "result_count": 0,
+        "output_mode": "compact",
+        "suggested_card_targets": [],
+        "miss_reason": "no_matches",
+    })
+}
+
+fn adaptive_raw_payload(original: &Value) -> Value {
+    let mut value = original.clone();
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert(
+            "output_mode".to_string(),
+            Value::String("default".to_string()),
+        );
+    }
+    value
+}
+
+fn attach_accounting(
+    mut payload: Value,
+    original_token_estimate: usize,
+    omitted_count: usize,
+    truncation_applied: bool,
+) -> Value {
+    let returned_token_estimate = estimate_json_tokens(&payload);
+    let accounting = OutputAccounting::new(
+        returned_token_estimate,
+        original_token_estimate,
+        omitted_count,
+        truncation_applied,
+    );
+    if let Some(obj) = payload.as_object_mut() {
+        obj.insert(
+            "output_accounting".to_string(),
+            serde_json::to_value(accounting).unwrap_or(Value::Null),
+        );
+    }
+    payload
 }
 
 fn group_json(group: &SearchGroup) -> Value {

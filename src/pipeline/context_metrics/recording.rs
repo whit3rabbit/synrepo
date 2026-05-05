@@ -57,7 +57,7 @@ impl ContextMetrics {
     pub fn record_mcp_tool_result(
         &mut self,
         tool: &str,
-        errored: bool,
+        error_code: Option<&str>,
         saved_context_write: Option<&str>,
     ) {
         self.mcp_requests_total += 1;
@@ -65,10 +65,16 @@ impl ContextMetrics {
             .mcp_tool_calls_total
             .entry(tool.to_string())
             .or_default() += 1;
-        if errored {
+        if let Some(code) = error_code {
             *self
                 .mcp_tool_errors_total
                 .entry(tool.to_string())
+                .or_default() += 1;
+            *self
+                .mcp_tool_error_codes_total
+                .entry(tool.to_string())
+                .or_default()
+                .entry(code.to_string())
                 .or_default() += 1;
         }
         if let Some(operation) = saved_context_write {

@@ -40,11 +40,13 @@ impl ServerHandler for SynrepoServer {
         )
         .with_instructions(
             "synrepo provides structured code-intelligence context for codebase questions, file reviews, search routing, impact checks, and edits. \
-             Required workflow: synrepo_orient to start, synrepo_find to route a task, \
+             Required workflow: synrepo_orient returns a small routing summary; use synrepo_overview only when the full dashboard is needed. \
+             Use synrepo_readiness for cheap health checks and synrepo_task_route for plain-language task routing. \
+             Then use synrepo_find to route a task, \
              synrepo_explain for bounded details, synrepo_impact (or its shorthand synrepo_risks) before edits, \
              synrepo_tests before claiming done, and synrepo_changed after edits. \
              Use synrepo_minimum_context as the bounded neighborhood step once a focal target is known. \
-             For broad lexical searches, pass output_mode=\"compact\" to get grouped, token-accounted routing output, or output_mode=\"cards\" to get tiny file cards directly. \
+             For broad lexical searches, pass output_mode=\"compact\"; adaptive compact output may return grouped previews, a minimal miss, or a smaller raw shape with output_accounting. \
              Use synrepo_context_pack or synrepo_card targets=[...] when batching several read-only context artifacts is cheaper than serial tool calls. \
              Global MCP configs serve registered projects by absolute path: pass the current workspace as repo_root; \
              call synrepo_use_project once when a global/defaultless session should remember a default repo. \

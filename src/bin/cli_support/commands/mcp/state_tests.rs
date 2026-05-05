@@ -177,6 +177,39 @@ fn tool_state_clamps_large_outputs_and_records_budget_metrics() {
 }
 
 #[test]
+fn tool_state_records_error_codes_without_content() {
+    let _home = home_fixture();
+    let (_repo, repo_path) = ready_repo("pub fn error_code_metric_needle() {}\n");
+    let state = prepare_state(&repo_path).unwrap();
+    let server = SynrepoServer::new_optional(Some(state), false);
+
+    let output = server.with_tool_state("synrepo_card", None, |_state| {
+        json!({
+            "ok": false,
+            "error": {
+                "code": "NOT_FOUND",
+                "message": "target not found: private_target"
+            },
+            "error_message": "target not found: private_target"
+        })
+        .to_string()
+    });
+    assert!(response_has_error(&output), "{output}");
+
+    let metrics = synrepo::pipeline::context_metrics::load(&Config::synrepo_dir(&repo_path))
+        .expect("load context metrics");
+    assert_eq!(metrics.mcp_tool_errors_total.get("synrepo_card"), Some(&1));
+    let codes = metrics
+        .mcp_tool_error_codes_total
+        .get("synrepo_card")
+        .unwrap();
+    assert_eq!(codes.get("NOT_FOUND"), Some(&1));
+    assert!(!serde_json::to_string(&metrics)
+        .unwrap()
+        .contains("private_target"));
+}
+
+#[test]
 fn metrics_with_bad_explicit_repo_root_returns_error() {
     let _home = home_fixture();
     let dir = tempdir().unwrap();

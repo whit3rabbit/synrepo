@@ -28,6 +28,25 @@ fn context_pack_params_schema_uses_target_objects() {
     assert!(source.contains("pub kind: String"));
     assert!(source.contains("pub target: String"));
     assert!(source.contains("pub budget: Option<String>"));
+
+    let schema = schemars::schema_for!(synrepo::surface::mcp::context_pack::ContextPackParams);
+    let schema_json = serde_json::to_value(schema).expect("schema serializes");
+    let targets = schema_json
+        .pointer("/schema/properties/targets/items")
+        .or_else(|| schema_json.pointer("/properties/targets/items"))
+        .or_else(|| schema_json.pointer("/schema/properties/targets/items/$ref"))
+        .or_else(|| schema_json.pointer("/properties/targets/items/$ref"))
+        .expect("targets has an item schema");
+    let serialized = serde_json::to_string(&schema_json).unwrap();
+    assert!(
+        serialized.contains("\"kind\"") && serialized.contains("\"target\""),
+        "context-pack schema must expose target object fields: {schema_json}"
+    );
+    assert_ne!(
+        targets.get("type").and_then(|value| value.as_str()),
+        Some("string"),
+        "targets must not be exposed as raw strings: {schema_json}"
+    );
 }
 
 #[test]

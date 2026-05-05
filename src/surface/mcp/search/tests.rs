@@ -7,7 +7,10 @@ use crate::config::Config;
 use crate::surface::mcp::compact::OutputMode;
 use crate::surface::mcp::SynrepoState;
 
-use super::{default_edit_limit, default_limit, handle_search, handle_where_to_edit, SearchParams};
+use super::{
+    default_edit_limit, default_limit, handle_orient, handle_search, handle_where_to_edit,
+    SearchParams,
+};
 
 fn make_state() -> (tempfile::TempDir, SynrepoState) {
     let home = tempdir().unwrap();
@@ -49,7 +52,7 @@ fn search_params(output_mode: OutputMode, budget_tokens: Option<usize>) -> Searc
 }
 
 #[test]
-fn search_defaults_to_compact_and_bounded() {
+fn search_defaults_to_adaptive_and_bounded() {
     let (_dir, state) = make_state();
     let params: SearchParams = serde_json::from_value(serde_json::json!({
         "query": "alpha",
@@ -63,10 +66,26 @@ fn search_defaults_to_compact_and_bounded() {
     assert_eq!(value["source_store"], "substrate_index");
     assert_eq!(value["mode"], "auto");
     assert_eq!(value["semantic_available"], false);
-    assert_eq!(value["output_mode"], "compact");
     assert_eq!(value["limit"], 1);
-    assert!(value.get("results").is_none());
+    assert_eq!(value["output_mode"], "default");
+    assert!(value["results"]
+        .as_array()
+        .is_some_and(|rows| rows.len() <= 1));
+    assert!(value.get("file_groups").is_none());
     assert!(value["output_accounting"].is_object());
+}
+
+#[test]
+fn orient_is_routing_summary_not_full_dashboard() {
+    let (_dir, state) = make_state();
+    let value: serde_json::Value = serde_json::from_str(&handle_orient(&state)).unwrap();
+
+    assert_eq!(value["source_store"], "graph");
+    assert!(value["workflow"]["route_first"].as_str() == Some("synrepo_task_route"));
+    assert!(value.get("recent_activity").is_none(), "{value}");
+    assert!(value.get("explain").is_none(), "{value}");
+    assert!(value.get("overlay_cost").is_none(), "{value}");
+    assert!(value["graph"].get("edges_by_kind").is_none(), "{value}");
 }
 
 #[test]
@@ -104,6 +123,49 @@ fn compact_search_groups_results_and_suggests_cards() {
     assert!(value["output_accounting"]["returned_token_estimate"]
         .as_u64()
         .is_some_and(|tokens| tokens > 0));
+}
+
+#[test]
+fn compact_search_zero_results_uses_minimal_miss_shape() {
+    let (_dir, state) = make_state();
+    let mut params = search_params(OutputMode::Compact, None);
+    params.query = "definitely_absent_query".to_string();
+    let value: serde_json::Value = serde_json::from_str(&handle_search(&state, params)).unwrap();
+
+    assert_eq!(value["output_mode"], "compact");
+    assert_eq!(value["miss_reason"], "no_matches");
+    assert_eq!(value["result_count"], 0);
+    assert!(value.get("results").is_none());
+    assert!(value.get("file_groups").is_none());
+    assert!(
+        value["output_accounting"]["returned_token_estimate"]
+            .as_u64()
+            .unwrap()
+            <= value["output_accounting"]["original_token_estimate"]
+                .as_u64()
+                .unwrap()
+    );
+}
+
+#[test]
+fn compact_search_tiny_results_can_return_smaller_raw_shape() {
+    let (_dir, state) = make_state();
+    let mut params = search_params(OutputMode::Compact, None);
+    params.query = "alpha_other".to_string();
+    params.limit = 3;
+    let value: serde_json::Value = serde_json::from_str(&handle_search(&state, params)).unwrap();
+
+    assert_eq!(value["output_mode"], "default");
+    assert!(value["results"]
+        .as_array()
+        .is_some_and(|rows| rows.len() == 1));
+    assert!(value.get("file_groups").is_none());
+    assert_eq!(
+        value["output_accounting"]["estimated_tokens_saved"]
+            .as_u64()
+            .unwrap(),
+        0
+    );
 }
 
 #[test]

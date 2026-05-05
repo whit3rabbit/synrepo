@@ -23,7 +23,7 @@ use cards_mode::search_cards_response;
 pub use impact::{
     handle_change_impact, handle_change_impact_with_direction, ChangeImpactParams, ImpactDirection,
 };
-pub use overview::{handle_degraded_overview, handle_overview};
+pub use overview::{handle_degraded_overview, handle_orient, handle_overview};
 pub use where_to_edit::handle_where_to_edit;
 
 /// Parameters for the `synrepo_search` tool.

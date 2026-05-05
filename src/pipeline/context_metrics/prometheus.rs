@@ -247,6 +247,7 @@ impl ContextMetrics {
             "tool",
             &self.mcp_tool_errors_total,
         );
+        write_tool_error_code_counter(&mut out, &self.mcp_tool_error_codes_total);
         write_labeled_counter(
             &mut out,
             "synrepo_saved_context_writes_total",
@@ -307,6 +308,31 @@ fn write_labeled_counter(
             count
         )
         .unwrap();
+    }
+}
+
+fn write_tool_error_code_counter(
+    out: &mut String,
+    values: &std::collections::BTreeMap<String, std::collections::BTreeMap<String, u64>>,
+) {
+    use std::fmt::Write as _;
+    writeln!(
+        out,
+        "# HELP synrepo_mcp_tool_error_codes_total Observed: MCP tool errors keyed by tool and stable error code."
+    )
+    .unwrap();
+    writeln!(out, "# TYPE synrepo_mcp_tool_error_codes_total counter").unwrap();
+    for (tool, codes) in values {
+        for (code, count) in codes {
+            writeln!(
+                out,
+                "synrepo_mcp_tool_error_codes_total{{tool=\"{}\",code=\"{}\"}} {}",
+                escape_label_value(tool),
+                escape_label_value(code),
+                count
+            )
+            .unwrap();
+        }
     }
 }
 

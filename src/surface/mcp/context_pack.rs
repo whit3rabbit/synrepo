@@ -21,6 +21,7 @@ pub struct ContextPackParams {
     #[serde(default)]
     pub goal: Option<String>,
     #[serde(default)]
+    #[schemars(description = "Structured targets: [{kind,target,budget?}].")]
     pub targets: Vec<ContextPackTarget>,
     #[serde(default = "super::cards::default_budget")]
     pub budget: String,

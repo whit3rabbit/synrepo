@@ -136,6 +136,9 @@ pub fn error_value(err: &anyhow::Error) -> serde_json::Value {
         ErrorCode::RateLimited | ErrorCode::Locked | ErrorCode::Busy | ErrorCode::Timeout
     );
     let next_action = match code {
+        ErrorCode::NotFound if message.contains("target not found") => {
+            "Run synrepo_search with the exact symbol/path, then pass a suggested_card_targets entry or exact path to synrepo_card."
+        }
         ErrorCode::NotFound => "Run synrepo_search or synrepo_overview to choose a valid target.",
         ErrorCode::NotInitialized => "Run synrepo init or synrepo project add for the repository.",
         ErrorCode::InvalidParameter => "Fix the tool parameters and retry.",

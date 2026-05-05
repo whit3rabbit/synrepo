@@ -121,11 +121,11 @@ pub fn record_workflow_call_best_effort(synrepo_dir: &Path, tool: &str) {
 pub fn record_mcp_tool_result_best_effort(
     synrepo_dir: &Path,
     tool: &str,
-    errored: bool,
+    error_code: Option<&str>,
     saved_context_write: Option<&str>,
 ) {
     record_delta_best_effort(synrepo_dir, |metrics| {
-        metrics.record_mcp_tool_result(tool, errored, saved_context_write);
+        metrics.record_mcp_tool_result(tool, error_code, saved_context_write);
     });
 }
 

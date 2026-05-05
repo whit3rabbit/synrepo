@@ -23,7 +23,7 @@ impl SynrepoServer {
         self.with_tool_state_blocking("synrepo_card", params.repo_root.clone(), move |state| card_batch::handle_card_params(&state, params)).await
     }
 
-    #[tool(name = "synrepo_search", description = "Search the repository using lexical queries. Best for exact symbols, string literals, CLI flags, MCP tool names, schema keys, file paths, and code-review validation. Prefer output_mode=\"compact\" for orientation, then use suggested_card_targets with synrepo_card.")]
+    #[tool(name = "synrepo_search", description = "Search the repository using lexical queries. Best for exact symbols, string literals, CLI flags, MCP tool names, schema keys, file paths, and code-review validation. Prefer output_mode=\"compact\" for orientation; use suggested_card_targets for follow-up cards. Adaptive output may return grouped previews, a minimal miss, or smaller raw rows with output_accounting.")]
     async fn synrepo_search(&self, Parameters(params): Parameters<search::SearchParams>) -> String {
         let repo_root = params.repo_root.clone();
         self.with_tool_state_blocking("synrepo_search", repo_root, move |state| search::handle_search(&state, params)).await
@@ -46,7 +46,7 @@ impl SynrepoServer {
         self.with_tool_state_blocking("synrepo_context_pack", repo_root, move |state| context_pack::handle_context_pack(&state, params)).await
     }
 
-    #[tool(name = "synrepo_overview", description = "Return a high-level overview of the repository graph state.")]
+    #[tool(name = "synrepo_overview", description = "Return the full repository dashboard: graph, readiness, watch/reconcile, explain, commentary, metrics, and recent activity.")]
     async fn synrepo_overview(&self, Parameters(params): Parameters<search::RepoRootParams>) -> String {
         if let Some(repo_root) = params.repo_root.clone() {
             if let Err(error) = self.resolve_state(Some(repo_root.clone())) {
@@ -201,11 +201,11 @@ impl SynrepoServer {
         self.with_tool_state_blocking("synrepo_change_risk", params.repo_root.clone(), move |state| cards::handle_change_risk(&state, params.target, params.budget, params.budget_tokens)).await
     }
 
-    #[tool(name = "synrepo_orient", description = "Workflow step 1: orient before reading the repo cold. Run before any cold file reads.")]
+    #[tool(name = "synrepo_orient", description = "Workflow step 1: small routing summary before reading the repo cold. Use synrepo_overview only when the full dashboard is needed.")]
     async fn synrepo_orient(&self, Parameters(params): Parameters<search::RepoRootParams>) -> String {
         self.with_tool_state_blocking("synrepo_orient", params.repo_root.clone(), move |state| {
             record_workflow(&state, "orient");
-            search::handle_overview(&state)
+            search::handle_orient(&state)
         }).await
     }
 
