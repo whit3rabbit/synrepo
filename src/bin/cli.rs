@@ -18,9 +18,9 @@ use cli_support::commands::{
     links_list, links_reject, links_review, node, notes_add, notes_audit, notes_forget, notes_link,
     notes_list, notes_supersede, notes_verify, project_add, project_inspect, project_list,
     project_prune_missing, project_remove, project_rename, project_use, reconcile, remove,
-    resolve_tool_resolution, risks_alias, run_mcp_server, search, server, stats_context, status,
-    sync, task_route, tests_alias, uninstall, upgrade, watch, watch_internal, watch_status,
-    watch_stop, StatFormat,
+    resolve_tool_resolution, risks_alias, run_mcp_server, server, stats_context, status, sync,
+    task_route, tests_alias, uninstall, upgrade, watch, watch_internal, watch_status, watch_stop,
+    StatFormat,
 };
 #[cfg(test)]
 use cli_support::commands::{prepare_mcp_state, report_reconcile_outcome};
@@ -124,7 +124,8 @@ fn dispatch(
             exclude_type,
             path_filter,
             max_results,
-        } => search(
+            mode,
+        } => cli_support::commands::search_with_mode(
             repo_root,
             &query,
             SearchOptions {
@@ -134,6 +135,7 @@ fn dispatch(
                 max_results,
                 case_insensitive: ignore_case,
             },
+            mode,
         ),
         Command::Cards { query, budget } => cards_alias(repo_root, &query, budget),
         Command::TaskRoute { task, path, json } => {
@@ -329,7 +331,10 @@ fn dispatch(
         Command::Doctor { json } => doctor(repo_root, json),
         Command::Dashboard => run_dashboard_command(repo_root, tui_opts),
         Command::Server { metrics } => server(repo_root, &metrics),
-        Command::Mcp { allow_edits } => run_mcp_server(repo_root, allow_edits, explicit_repo),
+        Command::Mcp {
+            allow_edits,
+            call_timeout,
+        } => run_mcp_server(repo_root, allow_edits, explicit_repo, &call_timeout),
         Command::Remove {
             tool,
             apply,

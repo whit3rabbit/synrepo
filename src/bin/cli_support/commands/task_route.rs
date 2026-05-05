@@ -3,7 +3,7 @@ use std::path::Path;
 use synrepo::config::Config;
 use synrepo::pipeline::context_metrics;
 use synrepo::surface::task_route::{
-    classify_task_route, TaskRoute, SIGNAL_DETERMINISTIC_EDIT_CANDIDATE,
+    classify_task_route_with_config, TaskRoute, SIGNAL_DETERMINISTIC_EDIT_CANDIDATE,
 };
 
 pub(crate) fn task_route(
@@ -23,8 +23,9 @@ pub(crate) fn task_route_output(
     path: Option<&str>,
     json: bool,
 ) -> anyhow::Result<String> {
-    let route = classify_task_route(task, path);
     let synrepo_dir = Config::synrepo_dir(repo_root);
+    let config = Config::load(repo_root).unwrap_or_default();
+    let route = classify_task_route_with_config(task, path, &config, &synrepo_dir);
     if synrepo_dir.exists() {
         context_metrics::record_task_route_classification_best_effort(&synrepo_dir, &route);
     }
@@ -42,6 +43,10 @@ fn render_text(route: &TaskRoute) -> String {
     out.push_str(&format!("confidence: {:.2}\n", route.confidence));
     out.push_str(&format!("budget_tier: {}\n", route.budget_tier));
     out.push_str(&format!("llm_required: {}\n", route.llm_required));
+    out.push_str(&format!("routing_strategy: {}\n", route.routing_strategy));
+    if let Some(score) = route.semantic_score {
+        out.push_str(&format!("semantic_score: {score:.2}\n"));
+    }
     out.push_str(&format!("reason: {}\n", route.reason));
     if let Some(candidate) = &route.edit_candidate {
         out.push_str(&format!(

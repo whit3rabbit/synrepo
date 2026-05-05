@@ -12,6 +12,9 @@ use crate::{
 };
 
 use super::helpers::render_result;
+use super::limits::{
+    check_chars, check_len, MAX_NOTE_CLAIM_CHARS, MAX_NOTE_EVIDENCE, MAX_NOTE_SOURCE_HASHES,
+};
 use super::SynrepoState;
 
 fn default_actor() -> String {
@@ -133,6 +136,11 @@ fn note_add_result(
     state: &SynrepoState,
     params: NoteAddParams,
 ) -> anyhow::Result<serde_json::Value> {
+    validate_note_payload(
+        &params.claim,
+        params.evidence.len(),
+        params.source_hashes.len(),
+    )?;
     let mut note = AgentNote::new(
         AgentNoteTarget {
             kind: params.target_kind,
@@ -170,6 +178,11 @@ fn note_supersede_result(
     state: &SynrepoState,
     params: NoteSupersedeParams,
 ) -> anyhow::Result<serde_json::Value> {
+    validate_note_payload(
+        &params.claim,
+        params.evidence.len(),
+        params.source_hashes.len(),
+    )?;
     let mut replacement = AgentNote::new(
         AgentNoteTarget {
             kind: params.target_kind,
@@ -189,6 +202,17 @@ fn note_supersede_result(
             &params.created_by,
         )?)?)
     })
+}
+
+fn validate_note_payload(
+    claim: &str,
+    evidence_len: usize,
+    source_hashes_len: usize,
+) -> anyhow::Result<()> {
+    check_chars("claim", claim, MAX_NOTE_CLAIM_CHARS)?;
+    check_len("evidence", evidence_len, MAX_NOTE_EVIDENCE)?;
+    check_len("source_hashes", source_hashes_len, MAX_NOTE_SOURCE_HASHES)?;
+    Ok(())
 }
 
 fn note_forget_result(

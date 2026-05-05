@@ -33,13 +33,12 @@ pub fn with_mcp_compiler<R>(
 where
     R: serde::Serialize,
 {
-    let result = (|| {
-        let compiler = state
-            .create_read_compiler()
-            .map_err(|e| anyhow::anyhow!(e))?;
-        let val = f(&compiler)?;
-        Ok(serde_json::to_value(val)?)
-    })();
+    let result = state
+        .with_read_compiler(|compiler| {
+            let val = f(compiler).map_err(crate::Error::from)?;
+            serde_json::to_value(val).map_err(|err| crate::Error::Other(anyhow::anyhow!(err)))
+        })
+        .map_err(|e| anyhow::anyhow!(e));
     render_result(result)
 }
 
@@ -54,9 +53,8 @@ pub fn parse_budget(s: &str) -> Budget {
 pub fn render_result(result: anyhow::Result<serde_json::Value>) -> String {
     match result {
         Ok(val) => serde_json::to_string_pretty(&val)
-            .unwrap_or_else(|e| serde_json::json!({ "error": e.to_string() }).to_string()),
-        Err(err) => serde_json::to_string_pretty(&serde_json::json!({ "error": err.to_string() }))
-            .unwrap_or_else(|_| r#"{"error":"serialization failure"}"#.to_string()),
+            .unwrap_or_else(|e| super::error::error_json(anyhow::anyhow!(e))),
+        Err(err) => super::error::error_json(err),
     }
 }
 

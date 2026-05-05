@@ -104,6 +104,7 @@ pub(crate) use upgrade::upgrade;
 pub(crate) use watch::{watch, watch_internal, watch_status, watch_stop};
 
 /// Perform a lexical search across indexed files.
+#[cfg(test)]
 pub(crate) fn search(
     repo_root: &Path,
     query: &str,
@@ -113,11 +114,39 @@ pub(crate) fn search(
     Ok(())
 }
 
+pub(crate) fn search_with_mode(
+    repo_root: &Path,
+    query: &str,
+    options: syntext::SearchOptions,
+    mode: crate::cli_support::cli_args::SearchModeArg,
+) -> anyhow::Result<()> {
+    print!(
+        "{}",
+        search_output_with_mode(repo_root, query, options, mode)?
+    );
+    Ok(())
+}
+
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn search_output(
     repo_root: &Path,
     query: &str,
     options: syntext::SearchOptions,
+) -> anyhow::Result<String> {
+    search_output_with_mode(
+        repo_root,
+        query,
+        options,
+        crate::cli_support::cli_args::SearchModeArg::Lexical,
+    )
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn search_output_with_mode(
+    repo_root: &Path,
+    query: &str,
+    options: syntext::SearchOptions,
+    mode: crate::cli_support::cli_args::SearchModeArg,
 ) -> anyhow::Result<String> {
     use std::fmt::Write as _;
 
@@ -130,23 +159,55 @@ pub(crate) fn search_output(
         );
     }
 
-    let matches = synrepo::substrate::search_with_options(&config, repo_root, query, &options)?;
-    let mut out = String::new();
-    for search_match in &matches {
-        writeln!(
-            out,
-            "{}:{}: {}",
-            search_match.path.display(),
-            search_match.line_number,
-            String::from_utf8_lossy(&search_match.line_content).trim_end()
-        )
-        .unwrap();
+    if mode == crate::cli_support::cli_args::SearchModeArg::Lexical {
+        let matches = synrepo::substrate::search_with_options(&config, repo_root, query, &options)?;
+        let mut out = String::new();
+        for search_match in &matches {
+            writeln!(
+                out,
+                "{}:{}: {}",
+                search_match.path.display(),
+                search_match.line_number,
+                String::from_utf8_lossy(&search_match.line_content).trim_end()
+            )
+            .unwrap();
+        }
+
+        if matches.is_empty() {
+            writeln!(out, "No matches found for `{query}`.").unwrap();
+        } else {
+            writeln!(out, "Found {} matches.", matches.len()).unwrap();
+        }
+        return Ok(out);
     }
 
-    if matches.is_empty() {
+    let report = synrepo::substrate::hybrid_search(&config, repo_root, query, &options)?;
+    let mut out = String::new();
+    for row in &report.rows {
+        let target = row
+            .path
+            .clone()
+            .or_else(|| row.symbol_id.map(|id| id.to_string()))
+            .or_else(|| row.chunk_id.clone())
+            .unwrap_or_else(|| "<semantic>".to_string());
+        let line = row
+            .line
+            .map(|n| n.to_string())
+            .unwrap_or_else(|| "-".to_string());
+        let content = row.content.as_deref().unwrap_or("");
+        writeln!(out, "{}:{}: {}", target, line, content).unwrap();
+    }
+
+    if report.rows.is_empty() {
         writeln!(out, "No matches found for `{query}`.").unwrap();
     } else {
-        writeln!(out, "Found {} matches.", matches.len()).unwrap();
+        writeln!(
+            out,
+            "Found {} matches (engine: {}).",
+            report.rows.len(),
+            report.engine
+        )
+        .unwrap();
     }
     Ok(out)
 }

@@ -36,8 +36,11 @@ fn refresh_commentary_rejects_when_writer_lock_is_held() {
         synrepo::surface::mcp::cards::handle_refresh_commentary(&state, "main".to_string());
     let json: serde_json::Value =
         serde_json::from_str(&output).expect("refresh_commentary should return JSON");
-    let error = json["error"].as_str().expect("lock conflict should error");
+    let error = json["error_message"]
+        .as_str()
+        .expect("lock conflict should error");
 
+    assert_eq!(json["error"]["code"], "LOCKED", "{output}");
     assert!(
         error.contains("writer lock held by pid 424242"),
         "expected writer lock conflict, got: {output}"

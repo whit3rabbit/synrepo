@@ -64,9 +64,11 @@ pub fn load_embedding_index(
         )));
     }
 
-    // Resolve the model from global cache (strict failure if missing/invalid)
+    // Resolve the model from global cache without downloading. Query-time
+    // semantic availability must stay local-only.
     let resolver = ModelResolver::new();
-    let model_res = resolver.resolve(&config.semantic_model, synrepo_dir, config.embedding_dim)?;
+    let model_res =
+        resolver.resolve_existing(&config.semantic_model, synrepo_dir, config.embedding_dim)?;
 
     // Load the index with the model session restored
     let index =

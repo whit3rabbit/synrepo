@@ -3,11 +3,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use parking_lot::{Mutex, RwLock};
-use serde_json::json;
 use synrepo::registry;
 use synrepo::surface::mcp::SynrepoState;
 
 use super::SynrepoServer;
+
+mod session;
+pub(crate) use session::SessionState;
 
 #[derive(Clone)]
 pub(crate) struct StateResolver {
@@ -16,7 +18,7 @@ pub(crate) struct StateResolver {
     // unrelated repos. Held only across `prepare_state`; the global `states`
     // RwLock is taken briefly for read and write.
     prepare_locks: Arc<Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>>,
-    default_repo_root: Option<PathBuf>,
+    default_repo_root: Arc<RwLock<Option<PathBuf>>>,
 }
 
 impl StateResolver {
@@ -34,14 +36,14 @@ impl StateResolver {
         Self {
             states: Arc::new(RwLock::new(states)),
             prepare_locks: Arc::new(Mutex::new(HashMap::new())),
-            default_repo_root,
+            default_repo_root: Arc::new(RwLock::new(default_repo_root)),
         }
     }
 
     pub(crate) fn resolve(&self, param_root: Option<PathBuf>) -> anyhow::Result<Arc<SynrepoState>> {
         let root = match param_root {
             Some(root) => registry::canonicalize_path(&root),
-            None => self.default_repo_root.clone().ok_or_else(|| {
+            None => self.default_repo_root.read().clone().ok_or_else(|| {
                 anyhow::anyhow!(
                     "repo_root is required for this synrepo MCP server. \
                      Pass the absolute workspace path as repo_root, or run \
@@ -63,8 +65,19 @@ impl StateResolver {
         self.cached_or_prepare(root)
     }
 
+    pub(crate) fn set_default(&self, root: PathBuf) -> anyhow::Result<Arc<SynrepoState>> {
+        let root = registry::canonicalize_path(&root);
+        if !self.is_default_root(&root) {
+            require_registered_project(&root)?;
+        }
+        let state = self.cached_or_prepare(root.clone())?;
+        *self.default_repo_root.write() = Some(root);
+        Ok(state)
+    }
+
     fn is_default_root(&self, root: &Path) -> bool {
         self.default_repo_root
+            .read()
             .as_deref()
             .map(|default| default == root)
             .unwrap_or(false)
@@ -98,8 +111,7 @@ impl StateResolver {
 }
 
 pub(crate) fn render_state_error(error: anyhow::Error) -> String {
-    serde_json::to_string_pretty(&json!({ "error": error.to_string() }))
-        .unwrap_or_else(|_| r#"{"error":"serialization failure"}"#.to_string())
+    synrepo::surface::mcp::error::error_json(error)
 }
 
 fn require_registered_project(root: &Path) -> anyhow::Result<()> {
@@ -119,6 +131,8 @@ impl Clone for SynrepoServer {
             resolver: self.resolver.clone(),
             tool_router: self.tool_router.clone(),
             allow_edits: self.allow_edits,
+            session: self.session.clone(),
+            call_timeout: self.call_timeout,
         }
     }
 }
@@ -130,6 +144,18 @@ impl SynrepoServer {
     }
 
     pub(crate) fn new_optional(default_state: Option<SynrepoState>, allow_edits: bool) -> Self {
+        Self::new_optional_with_timeout(
+            default_state,
+            allow_edits,
+            std::time::Duration::from_secs(30),
+        )
+    }
+
+    pub(crate) fn new_optional_with_timeout(
+        default_state: Option<SynrepoState>,
+        allow_edits: bool,
+        call_timeout: std::time::Duration,
+    ) -> Self {
         let resolver = StateResolver::new(default_state);
         let mut tool_router = Self::build_tool_router();
         if !allow_edits {
@@ -140,6 +166,8 @@ impl SynrepoServer {
             resolver,
             tool_router,
             allow_edits,
+            session: SessionState::default(),
+            call_timeout,
         }
     }
 
@@ -159,6 +187,9 @@ impl SynrepoServer {
     where
         F: FnOnce(Arc<SynrepoState>) -> String,
     {
+        if let Err(error) = self.session.check_rate_limit(tool) {
+            return render_state_error(error);
+        }
         match self.resolve_state(param_root) {
             Ok(state) => {
                 let synrepo_dir = synrepo::config::Config::synrepo_dir(&state.repo_root);
@@ -167,11 +198,15 @@ impl SynrepoServer {
                         f(Arc::clone(&state))
                     });
                 let errored = response_has_error(&output);
+                self.session.record_tool(tool, errored);
                 let saved_context = saved_context_metric(tool, errored);
                 self.record_tool_result_for(&state, tool, errored, saved_context);
                 output
             }
-            Err(error) => render_state_error(error),
+            Err(error) => {
+                self.session.record_tool(tool, true);
+                render_state_error(error)
+            }
         }
     }
 
@@ -185,11 +220,49 @@ impl SynrepoServer {
         F: FnOnce(Arc<SynrepoState>) -> String + Send + 'static,
     {
         let server = self.clone();
-        match tokio::task::spawn_blocking(move || server.with_tool_state(tool, param_root, f)).await
-        {
-            Ok(output) => output,
-            Err(error) => render_state_error(anyhow::anyhow!("MCP tool task failed: {error}")),
+        let task = tokio::task::spawn_blocking(move || server.with_tool_state(tool, param_root, f));
+        match tokio::time::timeout(self.call_timeout, task).await {
+            Ok(Ok(output)) => output,
+            Ok(Err(error)) => render_state_error(anyhow::anyhow!("MCP tool task failed: {error}")),
+            Err(_) => render_state_error(
+                synrepo::surface::mcp::error::McpError::timeout(format!(
+                    "MCP tool {tool} exceeded {}s timeout",
+                    self.call_timeout.as_secs()
+                ))
+                .into(),
+            ),
         }
+    }
+
+    pub(super) fn use_project(&self, repo_root: PathBuf) -> String {
+        let output = match self.resolver.set_default(repo_root) {
+            Ok(state) => serde_json::json!({
+                "status": "default_set",
+                "repo_root": state.repo_root,
+            })
+            .to_string(),
+            Err(error) => render_state_error(error),
+        };
+        let errored = response_has_error(&output);
+        self.session.record_tool("synrepo_use_project", errored);
+        output
+    }
+
+    pub(super) fn metrics_json(&self, state: Option<&SynrepoState>) -> String {
+        let persisted = state.and_then(|state| {
+            let synrepo_dir = synrepo::config::Config::synrepo_dir(&state.repo_root);
+            synrepo::pipeline::context_metrics::load_optional(&synrepo_dir)
+                .ok()
+                .flatten()
+        });
+        let output = serde_json::to_string_pretty(&serde_json::json!({
+            "this_session": self.session.snapshot(),
+            "persisted": persisted,
+        }))
+        .unwrap_or_else(|err| render_state_error(anyhow::anyhow!(err)));
+        let errored = response_has_error(&output);
+        self.session.record_tool("synrepo_metrics", errored);
+        output
     }
 
     pub(super) fn record_tool_result_for(

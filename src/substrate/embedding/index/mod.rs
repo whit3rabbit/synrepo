@@ -126,6 +126,22 @@ impl FlatVecIndex {
             })
     }
 
+    /// Get the source metadata for a chunk.
+    pub fn chunk_source(&self, chunk_id: &ChunkId) -> Option<EmbeddingChunkSource> {
+        self.chunks
+            .iter()
+            .find(|c| c.id == *chunk_id)
+            .map(|c| c.source.clone())
+    }
+
+    /// Get the stored text for a chunk.
+    pub fn chunk_text(&self, chunk_id: &ChunkId) -> Option<&str> {
+        self.chunks
+            .iter()
+            .find(|c| c.id == *chunk_id)
+            .map(|c| c.text.as_str())
+    }
+
     /// Get the number of chunks in the index.
     pub fn len(&self) -> usize {
         self.chunks.len()

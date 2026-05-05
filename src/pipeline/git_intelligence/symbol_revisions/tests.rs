@@ -66,6 +66,7 @@ fn setup_graph() -> (
             path: "lib.rs".to_string(),
             path_history: vec![],
             content_hash: "abc123".to_string(),
+            content_sample_hashes: Vec::new(),
             size_bytes: 100,
             language: Some("rust".to_string()),
             inline_decisions: vec![],

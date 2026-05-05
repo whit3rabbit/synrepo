@@ -220,6 +220,7 @@ mod tests {
             path: path.into(),
             path_history: Vec::new(),
             content_hash: format!("hash-{id}"),
+            content_sample_hashes: Vec::new(),
             size_bytes: 0,
             language: Some("rust".into()),
             inline_decisions: Vec::new(),

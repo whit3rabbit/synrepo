@@ -29,6 +29,7 @@ fn sample_file(id: u64, path: &str) -> FileNode {
         path: path.to_string(),
         path_history: Vec::new(),
         content_hash: format!("file-hash-{id}"),
+        content_sample_hashes: Vec::new(),
         size_bytes: 10,
         language: Some("rust".to_string()),
         inline_decisions: vec!["keep it simple".to_string()],

@@ -9,6 +9,7 @@ This file stays focused on the MCP surface exposed by `synrepo mcp`: handler lay
 cargo run -- mcp                    # stdio server for the current repo
 cargo run -- mcp --repo <path>      # stdio server for a specific repo
 cargo run -- mcp --allow-edits      # explicitly expose anchored edit tools
+cargo run -- mcp --call-timeout 45s # cap blocking tool calls, default 30s
 ```
 
 The server is a subcommand of the `synrepo` binary. There is no separate crate. Transport is stdio only.
@@ -36,9 +37,13 @@ Current registrations (see `mcp.rs` for schemas):
 `synrepo_orient`, `synrepo_find`, `synrepo_explain`, `synrepo_impact`, `synrepo_risks`, `synrepo_tests`, `synrepo_changed`
 
 **Task-first read tools:**
-`synrepo_overview`, `synrepo_card`, `synrepo_context_pack`, `synrepo_search`, `synrepo_where_to_edit`, `synrepo_refactor_suggestions`, `synrepo_change_impact`, `synrepo_change_risk`, `synrepo_entrypoints`, `synrepo_test_surface`, `synrepo_module_card`, `synrepo_public_api`, `synrepo_minimum_context`, `synrepo_call_path`, `synrepo_next_actions`
+`synrepo_overview`, `synrepo_card`, `synrepo_context_pack`, `synrepo_search`, `synrepo_where_to_edit`, `synrepo_refactor_suggestions`, `synrepo_change_impact`, `synrepo_change_risk`, `synrepo_entrypoints`, `synrepo_test_surface`, `synrepo_module_card`, `synrepo_public_api`, `synrepo_minimum_context`, `synrepo_call_path`, `synrepo_next_actions`, `synrepo_metrics`, `synrepo_use_project`
 
-`synrepo_search` is backed by the syntext substrate index and accepts `query`, optional `limit`, `path_filter`, `file_type`, `exclude_type`, `case_insensitive` (`ignore_case` alias), `output_mode`, and compact `budget_tokens`. Default output returns exact lexical rows with syntext/source-store metadata. `output_mode="compact"` groups matches by file, returns short line previews and `suggested_card_targets`, and never mutates or refreshes the index during the search call.
+`synrepo_search` is backed by the syntext substrate index and accepts `query`, optional `limit`, `path_filter`, `file_type`, `exclude_type`, `case_insensitive` (`ignore_case` alias), `output_mode`, and `budget_tokens`. Default output returns exact lexical rows with syntext/source-store metadata. `output_mode="compact"` groups matches by file and returns short line previews and `suggested_card_targets`. `output_mode="cards"` dedupes matched graph files and returns tiny file cards with unresolved-path diagnostics. Search never mutates or refreshes the index during the call.
+
+`synrepo_card` accepts `target` or `targets`. Batch requests are capped at 10 targets, run under one read epoch, and return per-target errors. Single-card `budget_tokens` requests retry smaller budget tiers before marking truncation. `synrepo_change_impact` accepts `direction: "inbound" | "outbound" | "both"`, defaulting to inbound.
+
+`synrepo_overview` keeps `mode` and `graph`, then adds readiness, watch, reconcile, export freshness, explain provider, commentary/overlay, agent integration, metrics, and recent activity summaries. Degraded overview and path-like card stubs can be returned when global/defaultless repository prep fails. Mutating tools return initialization errors instead.
 
 `synrepo_find` and `synrepo_where_to_edit` route plain-language tasks to tiny file cards. They first try the task text as-is, then decompose broad language into bounded deterministic lexical anchors (phrase, token, and snake_case variants such as `agent_hooks` or `context_metrics`) before returning empty. Responses include `query_attempts`, `fallback_used`, and `miss_reason` diagnostics; these diagnostics are returned to the caller and are not persisted as task content.
 
@@ -46,6 +51,8 @@ Current registrations (see `mcp.rs` for schemas):
 
 **Advisory overlay and audit tools:**
 `synrepo_docs_search`, `synrepo_refresh_commentary`, `synrepo_findings`, `synrepo_recent_activity`
+
+`synrepo_refresh_commentary` accepts `scope: "target" | "file" | "directory" | "stale"` and emits MCP progress notifications when a client supplies a progress token.
 
 **Advisory agent note tools:**
 `synrepo_note_add`, `synrepo_note_link`, `synrepo_note_supersede`, `synrepo_note_forget`, `synrepo_note_verify`, `synrepo_notes`
@@ -57,9 +64,11 @@ Current registrations (see `mcp.rs` for schemas):
 `synrepo_node`, `synrepo_edges`, `synrepo_query`, `synrepo_overlay`, `synrepo_provenance`
 
 **Resources:**
-`synrepo://card/{target}`, `synrepo://file/{path}/outline`, `synrepo://context-pack?goal={goal}`
+`synrepo://card/{target}`, `synrepo://file/{path}/outline`, `synrepo://context-pack?goal={goal}`, `synrepo://projects`
 
 Resources are read-only mirrors of tool-backed context. Tool-only hosts should call `synrepo_context_pack`; resource-aware hosts can cache the URI forms.
+
+Errors render as `{"error":{"code":"...","message":"..."},"error_message":"..."}` with codes `NOT_FOUND`, `NOT_INITIALIZED`, `INVALID_PARAMETER`, `RATE_LIMITED`, `LOCKED`, `BUSY`, `TIMEOUT`, and `INTERNAL`. The server enforces input limits for search query length, note claim/evidence/source-hash sizes, and card batch size. In-memory token buckets limit card/context-pack calls to 10 per second, commentary refresh to 3 per minute, and other tools to 30 per second.
 
 ## Edit-enabled workflow
 
@@ -67,7 +76,7 @@ Use read tools first. When edit mode is explicitly enabled, call `synrepo_prepar
 
 `synrepo_prepare_edit_context` accepts file, symbol, and range targets. It returns compact source context plus `task_id`, `anchor_state_version`, `path`, `file_id`, `content_hash`, `source_hash`, and prepared line anchors.
 
-`synrepo_apply_anchor_edits` validates the live anchor session, content hash, anchor existence, optional end-anchor ordering, and exact current boundary text before writing. File batches are atomic per file. Multi-file calls may return mixed per-file outcomes and never claim cross-file transaction semantics.
+`synrepo_apply_anchor_edits` validates the live anchor session, content hash, anchor existence, optional end-anchor ordering, and exact current boundary text before writing. Multi-file calls preflight every file before writing and roll back prior originals if a later write fails. Responses set `atomicity.cross_file: true`.
 
 Prepared anchors are session-scoped operational cache entries. They are not graph nodes, overlay content, commentary, agent notes, canonical source truth, or agent memory. Reconcile remains the only producer of graph facts after a write.
 
@@ -92,6 +101,7 @@ The overview blurb in `mcp.rs`, `skill/SKILL.md`, and `docs/MCP.md` are the surf
 - Prepared anchors are session-scoped operational state, not canonical graph facts or agent memory.
 - `synrepo_docs_search` returns advisory explained commentary only. It is searchable overlay output, not canonical graph state or explain input.
 - Multi-query reads run under `with_graph_read_snapshot` / `with_overlay_read_snapshot`. The re-entrant depth counter lets handlers and card compilers nest snapshots safely (see hard invariant 8 in the root `AGENTS.md`).
+- MCP read snapshots are capped per repository so concurrent clients return `BUSY` instead of opening unbounded WAL readers.
 - Overlay promotion to graph edges is curated-mode-only.
 - Budget tiers: `tiny` → `normal` → `deep`. Default is `tiny`.
 

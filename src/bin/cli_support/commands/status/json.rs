@@ -156,6 +156,9 @@ fn commentary_json(coverage: &CommentaryCoverage) -> serde_json::Value {
     serde_json::json!({
         "total": coverage.total,
         "fresh": coverage.fresh,
+        "estimated_fresh": coverage.estimated_fresh,
+        "estimated_stale_ratio": coverage.estimated_stale_ratio,
+        "estimate_confidence": coverage.estimate_confidence,
     })
 }
 

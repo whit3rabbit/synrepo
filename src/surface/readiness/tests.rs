@@ -63,6 +63,9 @@ fn base_snapshot(diag: RuntimeDiagnostics) -> StatusSnapshot {
         commentary_coverage: CommentaryCoverage {
             total: Some(0),
             fresh: None,
+            estimated_fresh: None,
+            estimated_stale_ratio: None,
+            estimate_confidence: None,
             display: "0 entries".to_string(),
         },
         agent_note_counts: None,
@@ -193,6 +196,9 @@ fn overlay_row_reports_unavailable_when_commentary_reports_unavailable() {
     snapshot.commentary_coverage = CommentaryCoverage {
         total: None,
         fresh: None,
+        estimated_fresh: None,
+        estimated_stale_ratio: None,
+        estimate_confidence: None,
         display: "unavailable (open failed)".to_string(),
     };
     let matrix =

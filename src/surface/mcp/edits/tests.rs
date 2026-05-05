@@ -136,7 +136,7 @@ fn apply_replace_insert_and_delete() {
         !dir.path().join("src/lib.rs.synrepo-edit-tmp").exists(),
         "anchored edit should not leave the old deterministic temp path behind"
     );
-    assert_eq!(result["atomicity"]["cross_file"], false);
+    assert_eq!(result["atomicity"]["cross_file"], true);
     assert_eq!(result["diagnostics"]["command_execution"], "unavailable");
 }
 
@@ -246,7 +246,7 @@ fn duplicate_line_text_uses_specific_anchor_without_ambiguity() {
 }
 
 #[test]
-fn multi_file_request_reports_partial_outcomes() {
+fn multi_file_request_preflights_all_files_before_writing() {
     let (dir, state) = state_with_files(&[("src/a.rs", "a1\na2\n"), ("src/b.rs", "b1\nb2\n")]);
     let a = prepare(
         &state,
@@ -281,20 +281,21 @@ fn multi_file_request_reports_partial_outcomes() {
             }
         ] }),
     );
-    assert_eq!(result["files"][0]["status"], "applied", "{result}");
-    assert_eq!(result["files"][1]["status"], "rejected", "{result}");
-    assert_eq!(result["atomicity"]["cross_file"], false);
+    assert_eq!(result["status"], "rejected", "{result}");
+    assert_eq!(result["files"][0]["status"], "rejected", "{result}");
+    assert_eq!(result["files"][1]["status"], "not_applied", "{result}");
+    assert_eq!(result["atomicity"]["cross_file"], true);
     assert_eq!(
         fs::read_to_string(dir.path().join("src/a.rs")).unwrap(),
-        "a1\nA2\n"
+        "a1\na2\n"
     );
     assert_eq!(
         fs::read_to_string(dir.path().join("src/b.rs")).unwrap(),
         "b1\nchanged\n"
     );
     let metrics = context_metrics::load(&Config::synrepo_dir(dir.path())).unwrap();
-    assert_eq!(metrics.anchored_edit_accepted_total, 1);
-    assert_eq!(metrics.anchored_edit_rejected_total, 1);
+    assert_eq!(metrics.anchored_edit_accepted_total, 0);
+    assert_eq!(metrics.anchored_edit_rejected_total, 2);
 }
 
 #[cfg(unix)]
@@ -337,7 +338,8 @@ fn writer_lock_conflict_rejects_without_writing() {
 fn prepare_not_found_returns_error() {
     let (_dir, state) = state_with_files(&[("src/lib.rs", "one\n")]);
     let result = prepare(&state, json!({ "target": "missing_symbol" }));
-    assert!(result["error"]
+    assert_eq!(result["error"]["code"], "NOT_FOUND");
+    assert!(result["error_message"]
         .as_str()
         .unwrap()
         .contains("target not found"));

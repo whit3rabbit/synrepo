@@ -224,4 +224,9 @@ impl SqliteGraphStore {
             edge_counts_by_kind: counts.into_iter().collect(),
         })
     }
+
+    /// Average drift score for the latest drift revision, when present.
+    pub fn latest_drift_average(&self) -> crate::Result<Option<f32>> {
+        ops::latest_drift_average(self)
+    }
 }

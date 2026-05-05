@@ -134,7 +134,14 @@ pub fn commentary_coverage(
             Ok(n) => n,
             Err(error) => return CommentaryCoverage::unavailable(error.to_string()),
         };
-        return CommentaryCoverage::partial(total);
+        let (estimated_fresh, estimated_stale_ratio, estimate_confidence) =
+            estimate_commentary_freshness(synrepo_dir, overlay, total);
+        return CommentaryCoverage::partial(
+            total,
+            estimated_fresh,
+            estimated_stale_ratio,
+            estimate_confidence,
+        );
     }
 
     commentary_coverage_full(synrepo_dir, overlay)
@@ -175,6 +182,55 @@ fn commentary_coverage_full(
     };
 
     CommentaryCoverage::full(total, fresh)
+}
+
+fn estimate_commentary_freshness(
+    synrepo_dir: &Path,
+    overlay: &SqliteOverlayStore,
+    total: usize,
+) -> (Option<usize>, Option<f32>, Option<String>) {
+    if total == 0 {
+        return (Some(0), Some(0.0), Some("high".to_string()));
+    }
+
+    let age_ratio =
+        with_overlay_read_snapshot(overlay, |overlay| overlay.commentary_generated_at_bounds())
+            .ok()
+            .flatten()
+            .map(|(oldest, _)| {
+                let age = time::OffsetDateTime::now_utc() - oldest;
+                let days = age.whole_days();
+                if days < 14 {
+                    0.0_f32
+                } else if days < 30 {
+                    0.2_f32
+                } else {
+                    0.5_f32
+                }
+            });
+
+    let drift_ratio = SqliteGraphStore::open_existing(&synrepo_dir.join("graph"))
+        .ok()
+        .and_then(|graph| graph.latest_drift_average().ok().flatten())
+        .map(|score| score.clamp(0.0, 1.0));
+
+    let stale_ratio = match (age_ratio, drift_ratio) {
+        (Some(age), Some(drift)) => age.max(drift),
+        (Some(age), None) => age,
+        (None, Some(drift)) => drift,
+        (None, None) => return (None, None, None),
+    };
+    let estimated_fresh = ((total as f32) * (1.0 - stale_ratio)).round() as usize;
+    let confidence = if age_ratio.is_some() && drift_ratio.is_some() {
+        "medium"
+    } else {
+        "low"
+    };
+    (
+        Some(estimated_fresh.min(total)),
+        Some(stale_ratio),
+        Some(confidence.to_string()),
+    )
 }
 
 /// Describe export freshness for status output.

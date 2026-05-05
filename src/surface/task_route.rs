@@ -1,7 +1,10 @@
 //! Deterministic task routing recommendations for agent fast paths.
 
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 
+#[path = "task_route/semantic.rs"]
+mod semantic;
 mod typescript;
 pub use typescript::typescript_var_to_const_eligibility;
 
@@ -31,6 +34,12 @@ pub struct TaskRoute {
     pub signals: Vec<String>,
     /// Short human-readable explanation.
     pub reason: String,
+    /// Classifier strategy used to produce the route.
+    #[serde(default = "default_routing_strategy")]
+    pub routing_strategy: String,
+    /// Semantic similarity score when semantic routing participated.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub semantic_score: Option<f32>,
 }
 
 /// Advisory deterministic edit candidate.
@@ -172,6 +181,31 @@ pub fn classify_task_route(task: &str, path: Option<&str>) -> TaskRoute {
     )
 }
 
+/// Classify a task, using local semantic routing when it is available.
+pub fn classify_task_route_with_config(
+    task: &str,
+    path: Option<&str>,
+    config: &crate::config::Config,
+    synrepo_dir: &Path,
+) -> TaskRoute {
+    let text = task.to_ascii_lowercase();
+    let keyword = classify_task_route(task, path);
+    if unsupported_semantic_transform(&text) || edit_intent(&text).is_some() {
+        return keyword;
+    }
+
+    if let Some(semantic_match) = semantic::classify(task, config, synrepo_dir) {
+        if semantic_match.score >= config.semantic_similarity_threshold as f32 {
+            if let Some(route) = route_for_semantic_intent(&semantic_match.intent, path) {
+                return with_strategy(route, "semantic", Some(semantic_match.score));
+            }
+        }
+        return with_strategy(keyword, "keyword_fallback", Some(semantic_match.score));
+    }
+
+    keyword
+}
+
 fn unsupported_semantic_transform(text: &str) -> bool {
     has_any(
         text,
@@ -251,6 +285,89 @@ fn route(
         edit_candidate: None,
         signals: Vec::new(),
         reason: reason.to_string(),
+        routing_strategy: default_routing_strategy(),
+        semantic_score: None,
+    }
+}
+
+fn route_for_semantic_intent(intent: &str, path: Option<&str>) -> Option<TaskRoute> {
+    match intent {
+        "var-to-const" | "remove-debug-logging" | "replace-literal" | "rename-local" => {
+            let candidate = EditCandidate {
+                intent: intent.to_string(),
+                eligible: false,
+                reason: "semantic routing matched a mechanical edit intent; source mutation remains gated by anchored edits".to_string(),
+            };
+            Some(with_signals(
+                with_edit_candidate(
+                    route(
+                        intent,
+                        edit_confidence(intent, path).max(0.7),
+                        &[
+                            "synrepo_orient",
+                            "synrepo_find",
+                            "synrepo_prepare_edit_context",
+                            "synrepo_apply_anchor_edits",
+                            "synrepo_changed",
+                        ],
+                        "normal",
+                        false,
+                        "semantic routing matched a mechanical edit candidate",
+                    ),
+                    candidate,
+                ),
+                &[
+                    SIGNAL_CONTEXT_FAST_PATH,
+                    SIGNAL_DETERMINISTIC_EDIT_CANDIDATE,
+                    SIGNAL_LLM_NOT_REQUIRED,
+                ],
+            ))
+        }
+        "test-surface" => Some(with_signals(
+            route(
+                "test-surface",
+                0.82,
+                &["synrepo_orient", "synrepo_tests", "synrepo_risks"],
+                "tiny",
+                false,
+                "semantic routing matched a test-discovery task",
+            ),
+            &[SIGNAL_CONTEXT_FAST_PATH, SIGNAL_LLM_NOT_REQUIRED],
+        )),
+        "risk-review" => Some(with_signals(
+            route(
+                "risk-review",
+                0.78,
+                &[
+                    "synrepo_orient",
+                    "synrepo_find",
+                    "synrepo_minimum_context",
+                    "synrepo_risks",
+                    "synrepo_tests",
+                ],
+                "normal",
+                false,
+                "semantic routing matched a review or change-risk task",
+            ),
+            &[SIGNAL_CONTEXT_FAST_PATH, SIGNAL_LLM_NOT_REQUIRED],
+        )),
+        "context-search" => Some(with_signals(
+            route(
+                "context-search",
+                0.76,
+                &[
+                    "synrepo_orient",
+                    "synrepo_search(output_mode=\"compact\")",
+                    "synrepo_find",
+                    "synrepo_context_pack(output_mode=\"compact\")",
+                ],
+                "tiny",
+                false,
+                "semantic routing matched a context-search task",
+            ),
+            &[SIGNAL_CONTEXT_FAST_PATH, SIGNAL_LLM_NOT_REQUIRED],
+        )),
+        _ => None,
     }
 }
 
@@ -262,6 +379,16 @@ fn with_edit_candidate(mut route: TaskRoute, candidate: EditCandidate) -> TaskRo
 fn with_signals(mut route: TaskRoute, signals: &[&str]) -> TaskRoute {
     route.signals = signals.iter().map(|signal| (*signal).to_string()).collect();
     route
+}
+
+fn with_strategy(mut route: TaskRoute, strategy: &str, semantic_score: Option<f32>) -> TaskRoute {
+    route.routing_strategy = strategy.to_string();
+    route.semantic_score = semantic_score;
+    route
+}
+
+fn default_routing_strategy() -> String {
+    "keyword_fallback".to_string()
 }
 
 fn has_any(text: &str, terms: &[&str]) -> bool {

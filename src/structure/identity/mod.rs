@@ -20,7 +20,8 @@ mod persist;
 
 pub use persist::persist_resolutions;
 
-use detect::{detect_merge, detect_split, symbol_set_for_file};
+pub use detect::sampled_content_hashes;
+use detect::{detect_merge, detect_rename, detect_split, symbol_set_for_file};
 
 /// Result of the rename detection cascade for one "disappeared" file.
 #[derive(Clone, Debug)]
@@ -115,6 +116,22 @@ pub fn resolve_identities(
     // Step 2: Split detection (one old -> many new).
     for old_file in disappeared {
         if consumed_old.contains(&old_file.id) {
+            continue;
+        }
+        if let Some(resolution) =
+            detect_rename(old_file, new_files, &old_symbol_sets, &new_symbol_sets)?
+        {
+            if let IdentityResolution::Rename {
+                preserved_id,
+                ref new_path,
+            } = resolution
+            {
+                consumed_old.insert(preserved_id);
+                if let Some(nf) = new_files.iter().find(|f| f.path == *new_path) {
+                    consumed_new.insert(nf.id);
+                }
+            }
+            resolutions.push(resolution);
             continue;
         }
         if let Some(resolution) =

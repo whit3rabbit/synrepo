@@ -38,6 +38,12 @@ pub struct TestEntry {
     /// Production symbols called by this test. Populated only at `Deep` budget.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub covers: Option<Vec<SymbolNodeId>>,
+    /// Cheap risk score for prioritizing likely failures.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub risk_score: Option<f32>,
+    /// Human-readable risk signals used to compute `risk_score`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub risk_reasons: Vec<String>,
 }
 
 /// TestSurfaceCard — answers "what tests cover this code?"

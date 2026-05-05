@@ -1,8 +1,12 @@
-use rmcp::{handler::server::wrapper::Parameters, tool, tool_router};
+use rmcp::{
+    handler::server::wrapper::Parameters,
+    model::{Meta, ProgressNotificationParam},
+    tool, tool_router, Peer,
+};
 use synrepo::surface::handoffs::{collect_handoffs, to_json as handoffs_to_json, HandoffsRequest};
 use synrepo::surface::mcp::{
-    audit, cards, context_pack, docs, edits, graph, notes, primitives, refactor_suggestions,
-    search, task_route,
+    audit, card_batch, cards, commentary, context_pack, docs, edits, graph, notes, primitives,
+    refactor_suggestions, search, task_route,
 };
 
 use super::SynrepoServer;
@@ -12,7 +16,11 @@ use super::SynrepoServer;
 impl SynrepoServer {
     #[tool(name = "synrepo_card", description = "Return a structured card describing a file or symbol. Default budget is tiny; escalate to normal for local understanding and deep only before edits.")]
     async fn synrepo_card(&self, Parameters(params): Parameters<cards::CardParams>) -> String {
-        self.with_tool_state_blocking("synrepo_card", params.repo_root.clone(), move |state| cards::handle_card(&state, params.target, params.budget, params.budget_tokens, params.include_notes)).await
+        let repo_root = params.repo_root.clone();
+        if let Err(error) = self.resolve_state(repo_root.clone()) {
+            return card_batch::handle_degraded_card(repo_root, params, error);
+        }
+        self.with_tool_state_blocking("synrepo_card", params.repo_root.clone(), move |state| card_batch::handle_card_params(&state, params)).await
     }
 
     #[tool(name = "synrepo_search", description = "Search the repository using lexical queries. Default output preserves the raw result list; pass output_mode=\"compact\" for grouped, token-accounted routing output.")]
@@ -40,7 +48,28 @@ impl SynrepoServer {
 
     #[tool(name = "synrepo_overview", description = "Return a high-level overview of the repository graph state.")]
     async fn synrepo_overview(&self, Parameters(params): Parameters<search::RepoRootParams>) -> String {
+        if let Some(repo_root) = params.repo_root.clone() {
+            if let Err(error) = self.resolve_state(Some(repo_root.clone())) {
+                return search::handle_degraded_overview(repo_root, error);
+            }
+        }
         self.with_tool_state_blocking("synrepo_overview", params.repo_root.clone(), move |state| search::handle_overview(&state)).await
+    }
+
+    #[tool(name = "synrepo_use_project", description = "Set the default repository root for this MCP server session. Useful for global/defaultless MCP configs.")]
+    async fn synrepo_use_project(&self, Parameters(params): Parameters<search::RepoRootParams>) -> String {
+        match params.repo_root {
+            Some(repo_root) => self.use_project(repo_root),
+            None => super::state::render_state_error(
+                synrepo::surface::mcp::error::McpError::invalid_parameter("repo_root is required").into(),
+            ),
+        }
+    }
+
+    #[tool(name = "synrepo_metrics", description = "Return this MCP server session's tool metrics plus persisted per-repo context metrics when a repo is available.")]
+    async fn synrepo_metrics(&self, Parameters(params): Parameters<search::RepoRootParams>) -> String {
+        let state = self.resolve_state(params.repo_root.clone()).ok();
+        self.metrics_json(state.as_deref())
     }
 
     #[tool(name = "synrepo_node", description = "Look up a graph node by display ID. Returns full stored metadata as JSON.")]
@@ -81,7 +110,7 @@ impl SynrepoServer {
 
     #[tool(name = "synrepo_change_impact", description = "Assess the change impact of modifying a file or symbol. Default budget is tiny; escalate to normal for local understanding and deep only before edits.")]
     async fn synrepo_change_impact(&self, Parameters(params): Parameters<search::ChangeImpactParams>) -> String {
-        self.with_tool_state_blocking("synrepo_change_impact", params.repo_root.clone(), move |state| search::handle_change_impact(&state, params.target)).await
+        self.with_tool_state_blocking("synrepo_change_impact", params.repo_root.clone(), move |state| search::handle_change_impact_with_direction(&state, params.target, params.direction)).await
     }
 
     #[tool(name = "synrepo_entrypoints", description = "Return detected execution entry points (binaries, CLI commands, HTTP handlers, library roots) for an optional path-prefix scope. Default budget is tiny; escalate to normal for local understanding and deep only before edits.")]
@@ -184,7 +213,7 @@ impl SynrepoServer {
     async fn synrepo_explain(&self, Parameters(params): Parameters<cards::CardParams>) -> String {
         self.with_tool_state_blocking("synrepo_explain", params.repo_root.clone(), move |state| {
             record_workflow(&state, "explain");
-            cards::handle_card(&state, params.target, params.budget, params.budget_tokens, params.include_notes)
+            card_batch::handle_card_params(&state, params)
         }).await
     }
 
@@ -220,9 +249,29 @@ impl SynrepoServer {
         }).await
     }
 
-    #[tool(name = "synrepo_refresh_commentary", description = "Explicitly generate or refresh LLM-authored commentary for a symbol. Use when synrepo_card reports commentary_state: 'missing' or 'stale' and fresh prose is required.")]
-    async fn synrepo_refresh_commentary(&self, Parameters(params): Parameters<cards::RefreshCommentaryParams>) -> String {
-        self.with_tool_state_blocking("synrepo_refresh_commentary", params.repo_root.clone(), move |state| cards::handle_refresh_commentary(&state, params.target)).await
+    #[tool(name = "synrepo_refresh_commentary", description = "Explicitly generate or refresh LLM-authored commentary for a target, file, directory, or all stale entries. Use when synrepo_card reports commentary_state: 'missing' or 'stale' and fresh prose is required.")]
+    async fn synrepo_refresh_commentary(&self, Parameters(params): Parameters<commentary::RefreshCommentaryParams>, meta: Meta, client: Peer<rmcp::RoleServer>) -> String {
+        let progress_token = meta.get_progress_token();
+        if let Some(token) = progress_token.clone() {
+            let _ = client.notify_progress(ProgressNotificationParam {
+                progress_token: token,
+                progress: 0.0,
+                total: Some(1.0),
+                message: Some("refreshing commentary".into()),
+            }).await;
+        }
+        let output = self.with_tool_state_blocking("synrepo_refresh_commentary", params.repo_root.clone(), move |state| {
+            commentary::handle_refresh_commentary_params(&state, params, None)
+        }).await;
+        if let Some(token) = progress_token {
+            let _ = client.notify_progress(ProgressNotificationParam {
+                progress_token: token,
+                progress: 1.0,
+                total: Some(1.0),
+                message: Some("commentary refresh complete".into()),
+            }).await;
+        }
+        output
     }
 
     #[tool(name = "synrepo_findings", description = "List operator-facing cross-link findings with provenance, tier, score, freshness, and endpoint IDs.")]

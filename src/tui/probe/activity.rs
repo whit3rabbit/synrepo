@@ -165,6 +165,9 @@ mod tests {
             commentary_coverage: CommentaryCoverage {
                 total: None,
                 fresh: None,
+                estimated_fresh: None,
+                estimated_stale_ratio: None,
+                estimate_confidence: None,
                 display: "unavailable (test fixture)".to_string(),
             },
             agent_note_counts: None,

@@ -11,6 +11,38 @@ use crate::overlay::{CommentaryEntry, CommentaryProvenance};
 use super::super::SqliteOverlayStore;
 
 impl SqliteOverlayStore {
+    /// Return oldest and newest commentary generation timestamps.
+    pub fn commentary_generated_at_bounds(
+        &self,
+    ) -> crate::Result<Option<(OffsetDateTime, OffsetDateTime)>> {
+        let conn = self.conn.lock();
+        let (oldest, newest): (Option<String>, Option<String>) = conn.query_row(
+            "SELECT MIN(generated_at), MAX(generated_at) FROM commentary",
+            [],
+            |row| {
+                Ok((
+                    row.get::<_, Option<String>>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                ))
+            },
+        )?;
+
+        let (Some(oldest), Some(newest)) = (oldest, newest) else {
+            return Ok(None);
+        };
+        let oldest = OffsetDateTime::parse(&oldest, &Rfc3339).map_err(|err| {
+            crate::Error::Other(anyhow::anyhow!(
+                "invalid stored generated_at timestamp: {err}"
+            ))
+        })?;
+        let newest = OffsetDateTime::parse(&newest, &Rfc3339).map_err(|err| {
+            crate::Error::Other(anyhow::anyhow!(
+                "invalid stored generated_at timestamp: {err}"
+            ))
+        })?;
+        Ok(Some((oldest, newest)))
+    }
+
     /// Stream `(node_id, source_content_hash)` pairs from commentary rows.
     ///
     /// This intentionally avoids loading commentary bodies for status and

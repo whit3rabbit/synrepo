@@ -52,6 +52,8 @@ pub(super) fn test_surface_card_impl(
 
             for symbol in test_symbols {
                 let association = compute_association(&symbol.kind, &test_file_path, source_path);
+                let (risk_score, risk_reasons) =
+                    test_risk(graph, symbol.id, source_path, association)?;
 
                 let entry = TestEntry {
                     symbol_id: symbol.id,
@@ -62,6 +64,8 @@ pub(super) fn test_surface_card_impl(
                     signature: None,
                     doc_comment: None,
                     covers: None,
+                    risk_score: Some(risk_score),
+                    risk_reasons,
                 };
 
                 all_tests.push(entry);
@@ -116,6 +120,15 @@ pub(super) fn test_surface_card_impl(
     } else {
         final_tests
     };
+
+    let mut final_tests = final_tests;
+    final_tests.sort_by(|a, b| {
+        b.risk_score
+            .unwrap_or(0.0)
+            .partial_cmp(&a.risk_score.unwrap_or(0.0))
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.qualified_name.cmp(&b.qualified_name))
+    });
 
     let test_symbol_count = final_tests.len();
     let approx_tokens = estimate_test_surface_tokens(&final_tests, budget);
@@ -176,6 +189,51 @@ fn compute_association(_kind: &SymbolKind, test_path: &str, source_path: &str) -
         TestAssociation::PathConvention
     } else {
         TestAssociation::SymbolKind
+    }
+}
+
+fn test_risk(
+    graph: &dyn GraphReader,
+    test_symbol_id: crate::core::ids::SymbolNodeId,
+    source_path: &str,
+    association: TestAssociation,
+) -> crate::Result<(f32, Vec<String>)> {
+    let mut score: f32 = match association {
+        TestAssociation::Both => 0.55,
+        TestAssociation::SymbolKind => 0.4,
+        TestAssociation::PathConvention => 0.3,
+    };
+    let mut reasons = vec![association.as_risk_reason().to_string()];
+
+    for edge in graph.outbound(NodeId::Symbol(test_symbol_id), Some(EdgeKind::Calls))? {
+        let NodeId::Symbol(target_id) = edge.to else {
+            continue;
+        };
+        let Some(target) = graph.get_symbol(target_id)? else {
+            continue;
+        };
+        let Some(file) = graph.get_file(target.file_id)? else {
+            continue;
+        };
+        if file.path == source_path {
+            score = score.max(0.9);
+            reasons.push("direct_call_to_source_symbol".to_string());
+            break;
+        }
+    }
+
+    reasons.sort();
+    reasons.dedup();
+    Ok((score, reasons))
+}
+
+impl TestAssociation {
+    fn as_risk_reason(self) -> &'static str {
+        match self {
+            Self::SymbolKind => "test_symbol_name",
+            Self::PathConvention => "path_convention",
+            Self::Both => "path_and_symbol_signals",
+        }
     }
 }
 

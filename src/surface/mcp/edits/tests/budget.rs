@@ -27,7 +27,7 @@ fn apply_enforces_text_line_budget() {
         &state,
         json!({ "max_lines": 1, "edits": [edit("alpha\nbeta")] }),
     );
-    assert!(over_budget["error"]
+    assert!(over_budget["error_message"]
         .as_str()
         .unwrap()
         .contains("exceeding max_lines"));
@@ -35,7 +35,7 @@ fn apply_enforces_text_line_budget() {
         &state,
         json!({ "max_lines": 5001, "edits": [edit("alpha")] }),
     );
-    assert!(hard_ceiling["error"]
+    assert!(hard_ceiling["error_message"]
         .as_str()
         .unwrap()
         .contains("between 1 and 5000"));

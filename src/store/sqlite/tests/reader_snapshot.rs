@@ -19,6 +19,7 @@ fn make_file(id: u64, path: &str) -> FileNode {
         path: path.to_string(),
         path_history: Vec::new(),
         content_hash: format!("hash-{id:x}"),
+        content_sample_hashes: Vec::new(),
         size_bytes: 1,
         language: Some("rust".to_string()),
         inline_decisions: Vec::new(),

@@ -29,6 +29,9 @@ fn snapshot(metrics: Option<ContextMetrics>, notes: Option<AgentNoteCounts>) -> 
         commentary_coverage: CommentaryCoverage {
             total: None,
             fresh: None,
+            estimated_fresh: None,
+            estimated_stale_ratio: None,
+            estimate_confidence: None,
             display: "unavailable".to_string(),
         },
         agent_note_counts: notes,

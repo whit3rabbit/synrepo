@@ -33,6 +33,7 @@ fn file_node(path: &str, hash: &str) -> FileNode {
         path: path.to_string(),
         path_history: Vec::new(),
         content_hash: hash.to_string(),
+        content_sample_hashes: Vec::new(),
         size_bytes: 10,
         language: Some("rust".to_string()),
         inline_decisions: Vec::new(),

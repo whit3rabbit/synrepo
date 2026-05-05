@@ -69,6 +69,12 @@ pub struct CommentaryCoverage {
     /// Number of commentary rows whose stored hash matches the current node
     /// content hash. `None` unless the full scan was requested.
     pub fresh: Option<usize>,
+    /// Estimated fresh commentary rows from cheap aggregate signals.
+    pub estimated_fresh: Option<usize>,
+    /// Estimated stale ratio from aggregate drift/commentary age signals.
+    pub estimated_stale_ratio: Option<f32>,
+    /// Confidence label for the estimate.
+    pub estimate_confidence: Option<String>,
     /// Human-readable one-line summary suitable for status text output.
     pub display: String,
 }
@@ -81,6 +87,9 @@ impl CommentaryCoverage {
         Self {
             total: None,
             fresh: None,
+            estimated_fresh: None,
+            estimated_stale_ratio: None,
+            estimate_confidence: None,
             display: "no overlay writes yet".to_string(),
         }
     }
@@ -89,19 +98,34 @@ impl CommentaryCoverage {
         Self {
             total: None,
             fresh: None,
+            estimated_fresh: None,
+            estimated_stale_ratio: None,
+            estimate_confidence: None,
             display: format!("unavailable ({reason})"),
         }
     }
 
-    pub(super) fn partial(total: usize) -> Self {
+    pub(super) fn partial(
+        total: usize,
+        estimated_fresh: Option<usize>,
+        estimated_stale_ratio: Option<f32>,
+        estimate_confidence: Option<String>,
+    ) -> Self {
         let display = if total == 0 {
             "0 entries".to_string()
+        } else if let (Some(fresh), Some(confidence)) =
+            (estimated_fresh, estimate_confidence.as_deref())
+        {
+            format!("{total} entries (~{fresh} estimated fresh, {confidence} confidence)")
         } else {
             format!("{total} entries (run `synrepo status --full` for freshness)")
         };
         Self {
             total: Some(total),
             fresh: None,
+            estimated_fresh,
+            estimated_stale_ratio,
+            estimate_confidence,
             display,
         }
     }
@@ -110,6 +134,13 @@ impl CommentaryCoverage {
         Self {
             total: Some(total),
             fresh: Some(fresh),
+            estimated_fresh: Some(fresh),
+            estimated_stale_ratio: Some(if total == 0 {
+                0.0
+            } else {
+                1.0 - (fresh as f32 / total as f32)
+            }),
+            estimate_confidence: Some("exact".to_string()),
             display: format!("{fresh} fresh / {total} total nodes with commentary"),
         }
     }
@@ -118,6 +149,9 @@ impl CommentaryCoverage {
         Self {
             total: Some(total),
             fresh: None,
+            estimated_fresh: None,
+            estimated_stale_ratio: None,
+            estimate_confidence: None,
             display: format!("{total} entries (graph unreadable)"),
         }
     }

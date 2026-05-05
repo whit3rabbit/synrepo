@@ -33,7 +33,7 @@ Do not use synrepo for:
 The required sequence for codebase questions, reviews, search routing, and edits is orient, find, impact or risks, edit, tests, changed.
 
 1. Start with `synrepo_orient` before reading the repo cold.
-2. Use `synrepo_find` or `synrepo_search` to find candidate files and symbols. For broad lexical searches, prefer `output_mode: "compact"` so results are grouped and token-accounted before opening files.
+2. Use `synrepo_find` or `synrepo_search` to find candidate files and symbols. For broad lexical searches, prefer `output_mode: "compact"` so results are grouped and token-accounted before opening files. Use `output_mode: "cards"` when you would otherwise call `synrepo_card` for each matched file.
 3. Use `tiny` cards to route and `normal` cards to understand. Use `synrepo_minimum_context` as the bounded neighborhood step when a focal target is known but the surrounding risk is unclear, especially for file reviews and codebase questions.
 4. Use `synrepo_impact` (or its shorthand `synrepo_risks`) before editing or reviewing risky files.
 5. Use `synrepo_tests` before claiming done.
@@ -44,7 +44,7 @@ When the server was explicitly started with `synrepo mcp --allow-edits`, prefer 
 
 Project-scoped MCP configs that launch `synrepo mcp --repo .` have a default repository, so `repo_root` may be omitted. Passing the absolute repository root is still valid and preferred when you can identify it reliably.
 
-Global MCP configs that launch `synrepo mcp` serve registered projects by absolute path. In global or defaultless contexts, pass the current workspace's absolute path as `repo_root` to repo-addressable tools. If a tool reports that a repository is not managed by synrepo, ask the user to run `synrepo project add <path>`; do not bypass registry gating.
+Global MCP configs that launch `synrepo mcp` serve registered projects by absolute path. In global or defaultless contexts, pass the current workspace's absolute path as `repo_root` to repo-addressable tools, or call `synrepo_use_project(repo_root)` once to set the session default. If a tool reports that a repository is not managed by synrepo, ask the user to run `synrepo project add <path>`; do not bypass registry gating.
 
 Rule of thumb: `tiny` to find, `normal` to understand, `deep` to write.
 
@@ -92,20 +92,22 @@ V1 edit candidates are advisory only: `var-to-const`, `remove-debug-logging`, `r
 - `synrepo_changed()` — workflow alias for changed-context review
 - `synrepo_context_pack(goal?, targets?, budget?, budget_tokens?, output_mode?, include_tests?, include_notes?, limit?)` — batch read-only context artifacts into one token-accounted response; compact mode applies to search artifacts
 - `synrepo_task_route(task, path?)` — classify a task into the cheapest safe route and stable hook signals
-- `synrepo_card(target, budget?)` — card for a symbol or file
-- `synrepo_search(query, limit?, output_mode?, budget_tokens?)` — lexical search; `output_mode: "compact"` groups matches by file and returns `output_accounting`
+- `synrepo_card(target?, targets?, budget?, budget_tokens?)` — card for one symbol/file, or up to 10 cards in one batch
+- `synrepo_search(query, limit?, output_mode?, budget_tokens?)` — lexical search; `output_mode: "compact"` groups matches by file and returns `output_accounting`; `output_mode: "cards"` returns tiny file cards directly
 - `synrepo_docs_search(query, limit?)` — advisory advisory commentary search
 - `synrepo_where_to_edit(task, limit?)` — ranked edit candidates
 - `synrepo_refactor_suggestions(min_lines?, limit?, path_filter?)` — large non-test source files with modularity hints
-- `synrepo_change_impact(target)` — first-pass dependents
+- `synrepo_change_impact(target, direction?)` — first-pass dependents and optional outbound dependencies
 - `synrepo_change_risk(target)` — composite risk signal
 - `synrepo_minimum_context(target, budget?)` — bounded neighborhood step before deep inspection or full-file reads
 - `synrepo_entrypoints(scope?, budget?)` — entrypoint discovery
 - `synrepo_test_surface(scope)` — test discovery
+- `synrepo_metrics()` — this-session and persisted MCP/context metrics
+- `synrepo_use_project(repo_root)` — set the default repo for a global/defaultless MCP session
 
 Edit-enabled tools, present only under `synrepo mcp --allow-edits`:
 - `synrepo_prepare_edit_context(target, target_kind?, start_line?, end_line?, task_id?, budget_lines?)` — prepare session-scoped line anchors and compact source context
-- `synrepo_apply_anchor_edits(edits, diagnostics_budget?)` — validate prepared anchors and apply atomic per-file edits
+- `synrepo_apply_anchor_edits(edits, diagnostics_budget?)` — validate prepared anchors and apply atomic cross-file edits
 
 ## Budget protocol
 
@@ -117,6 +119,8 @@ Edit-enabled tools, present only under `synrepo mcp --allow-edits`:
 - Use `deep` cards only before writing code, or when exact source or body details matter.
 - Use `synrepo_context_pack` when several known files, symbols, directories, tests, or call paths are needed together; it preserves read-only behavior and returns a shared `context_state`.
 - Cards are synrepo's native compact context format. Use compact search to route, then cards or context packs for bounded detail, then full source only when the bounded context is insufficient.
+- MCP errors are structured. Branch on `error.code` when present and use `error_message` only as a compatibility fallback.
+- Read/card tools are rate-limited. If you receive `RATE_LIMITED`, wait briefly or reduce batching. If you receive `BUSY`, retry after the current read pressure clears.
 
 Default to `tiny`.
 

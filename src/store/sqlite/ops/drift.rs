@@ -19,6 +19,17 @@ pub fn latest_drift_revision(store: &SqliteGraphStore) -> crate::Result<Option<S
     Ok(result)
 }
 
+/// Average drift score for the latest drift revision.
+pub fn latest_drift_average(store: &SqliteGraphStore) -> crate::Result<Option<f32>> {
+    let conn = store.conn.lock();
+    let mut stmt = conn.prepare_cached(
+        "SELECT AVG(drift_score) FROM edge_drift
+         WHERE revision = (SELECT MAX(revision) FROM edge_drift)",
+    )?;
+    let result: Option<f32> = stmt.query_row([], |row| row.get(0)).ok().flatten();
+    Ok(result)
+}
+
 /// Batch-write drift scores for a given revision.
 pub fn write_drift_scores(
     store: &mut SqliteGraphStore,

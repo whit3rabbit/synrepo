@@ -12,6 +12,10 @@ use crate::structure::graph::{EdgeKind, GraphReader, GraphStore};
 
 use super::SqliteGraphStore;
 
+pub(super) fn latest_drift_average(store: &SqliteGraphStore) -> crate::Result<Option<f32>> {
+    drift::latest_drift_average(store)
+}
+
 impl GraphReader for SqliteGraphStore {
     fn get_file(
         &self,

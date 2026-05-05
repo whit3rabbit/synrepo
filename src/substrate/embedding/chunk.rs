@@ -1,7 +1,8 @@
 //! Chunk extraction for embedding.
 //!
 //! Extracts embedding chunks from graph symbols and prose concepts.
-//! Each symbol produces one chunk from `qualified_name + " " + symbol_kind`.
+//! Each symbol produces one chunk from its qualified name, kind, path,
+//! signature, and doc comment when available.
 //! Each concept produces one chunk from its full text (truncated to 512 tokens).
 
 use crate::core::ids::{ConceptNodeId, FileNodeId, SymbolNodeId};
@@ -26,13 +27,22 @@ pub struct EmbeddingChunk {
 pub enum EmbeddingChunkSource {
     /// From a symbol node.
     Symbol {
+        /// Symbol node identifier.
         id: SymbolNodeId,
+        /// File node identifier containing the symbol.
         file_id: FileNodeId,
+        /// Fully qualified symbol name.
         qualified_name: String,
+        /// Stable symbol kind label.
         kind_label: String,
     },
     /// From a concept node.
-    Concept { id: ConceptNodeId, path: String },
+    Concept {
+        /// Concept node identifier.
+        id: ConceptNodeId,
+        /// Repo-relative concept path.
+        path: String,
+    },
 }
 
 /// Unique identifier for an embedding chunk.
@@ -66,7 +76,17 @@ fn extract_chunks_inner(graph: &dyn GraphReader) -> crate::Result<Vec<EmbeddingC
         // Load the symbol to get its kind
         if let Some(symbol) = graph.get_symbol(id)? {
             let kind_label = symbol.kind.as_str().to_string();
-            let text = format!("{} {}", qualified_name, kind_label);
+            let path = graph
+                .get_file(file_id)?
+                .map(|file| file.path)
+                .unwrap_or_default();
+            let text = symbol_chunk_text(
+                &qualified_name,
+                &kind_label,
+                &path,
+                symbol.signature.as_deref(),
+                symbol.doc_comment.as_deref(),
+            );
             chunks.push(EmbeddingChunk {
                 id: ChunkId(id.0),
                 source: EmbeddingChunkSource::Symbol {
@@ -128,17 +148,33 @@ fn truncate_text(text: &str, max_chars: usize) -> String {
     }
 }
 
+fn symbol_chunk_text(
+    qualified_name: &str,
+    kind_label: &str,
+    path: &str,
+    signature: Option<&str>,
+    doc_comment: Option<&str>,
+) -> String {
+    let mut parts = vec![
+        format!("symbol: {qualified_name}"),
+        format!("kind: {kind_label}"),
+    ];
+    if !path.is_empty() {
+        parts.push(format!("path: {path}"));
+    }
+    if let Some(signature) = signature.filter(|s| !s.trim().is_empty()) {
+        parts.push(format!("signature: {}", signature.trim()));
+    }
+    if let Some(doc_comment) = doc_comment.filter(|s| !s.trim().is_empty()) {
+        parts.push(format!("docs: {}", doc_comment.trim()));
+    }
+    parts.join("\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::core::ids::{FileNodeId, SymbolNodeId};
-    use crate::core::provenance::Provenance;
-    use crate::structure::graph::{Epistemic, SymbolKind, SymbolNode};
-
-    fn test_provenance() -> Provenance {
-        Provenance::structural("chunk-test", "rev", Vec::new())
-    }
-
     #[test]
     fn truncate_text_under_limit() {
         let input = "short text";
@@ -236,5 +272,21 @@ mod tests {
         let cloned = chunk.clone();
         assert_eq!(cloned.id, chunk.id);
         assert_eq!(cloned.text, chunk.text);
+    }
+
+    #[test]
+    fn symbol_chunk_text_includes_path_signature_and_docs() {
+        let text = symbol_chunk_text(
+            "crate::auth::login",
+            "function",
+            "src/auth.rs",
+            Some("pub fn login(user: &User) -> Result<()>"),
+            Some("Authenticate a user."),
+        );
+        assert!(text.contains("symbol: crate::auth::login"));
+        assert!(text.contains("kind: function"));
+        assert!(text.contains("path: src/auth.rs"));
+        assert!(text.contains("signature: pub fn login"));
+        assert!(text.contains("docs: Authenticate"));
     }
 }

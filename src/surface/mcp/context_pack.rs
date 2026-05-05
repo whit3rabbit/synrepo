@@ -86,9 +86,6 @@ pub fn build_context_pack(
 ) -> anyhow::Result<Value> {
     let start = Instant::now();
     let default_budget = parse_budget(&params.budget);
-    let compiler = state
-        .create_read_compiler()
-        .map_err(|e| anyhow::anyhow!(e))?;
     let mut targets = params.targets;
 
     if targets.is_empty() {
@@ -101,32 +98,37 @@ pub fn build_context_pack(
         }
     }
 
-    let mut artifacts = Vec::new();
-    for target in targets.into_iter().take(params.limit) {
-        let target_budget = target
-            .budget
-            .as_deref()
-            .map(parse_budget)
-            .unwrap_or(default_budget);
-        let options = ArtifactOptions {
-            include_notes: params.include_notes,
-            limit: params.limit,
-            output_mode: params.output_mode,
-            budget_tokens: params.budget_tokens,
-        };
-        artifacts.push(build_artifact(
-            state,
-            &compiler,
-            &target,
-            target_budget,
-            options,
-        ));
-        if params.include_tests {
-            if let Some(extra) = maybe_test_surface_for(&compiler, &target, default_budget) {
-                artifacts.push(extra);
+    let mut artifacts = state
+        .with_read_compiler(|compiler| {
+            let mut artifacts = Vec::new();
+            for target in targets.into_iter().take(params.limit) {
+                let target_budget = target
+                    .budget
+                    .as_deref()
+                    .map(parse_budget)
+                    .unwrap_or(default_budget);
+                let options = ArtifactOptions {
+                    include_notes: params.include_notes,
+                    limit: params.limit,
+                    output_mode: params.output_mode,
+                    budget_tokens: params.budget_tokens,
+                };
+                artifacts.push(build_artifact(
+                    state,
+                    compiler,
+                    &target,
+                    target_budget,
+                    options,
+                ));
+                if params.include_tests {
+                    if let Some(extra) = maybe_test_surface_for(compiler, &target, default_budget) {
+                        artifacts.push(extra);
+                    }
+                }
             }
-        }
-    }
+            Ok(artifacts)
+        })
+        .map_err(|e| anyhow::anyhow!(e))?;
 
     let mut omitted = Vec::new();
     let truncation_applied =

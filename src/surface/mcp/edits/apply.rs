@@ -8,22 +8,16 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::{
-    config::Config,
-    pipeline::context_metrics,
-    pipeline::watch::{
-        request_watch_control, watch_service_status, WatchControlRequest, WatchServiceStatus,
-    },
-    pipeline::writer::{acquire_writer_lock, LockError},
-};
+use crate::{config::Config, pipeline::context_metrics, pipeline::writer::acquire_writer_lock};
 
+use super::atomic::{write_planned_files, PlannedFile};
 use super::diagnostics::post_edit_diagnostics;
+use super::runtime::{suppress_watch_events, writer_lock_conflict_json};
 use super::{anchor_manager, PreparedAnchorState};
 use crate::surface::mcp::{helpers::render_result, SynrepoState};
 
 use super::prepare::{hash_bytes, resolve_edit_path};
 
-const EDIT_SUPPRESSION_TTL_MS: u64 = 15_000;
 const DEFAULT_MAX_LINES: usize = 1_000;
 const HARD_MAX_LINES: usize = 5_000;
 
@@ -112,22 +106,13 @@ fn apply_anchor_edits(
     suppress_watch_events(state, &synrepo_dir, &paths_to_suppress);
 
     let mut file_results = Vec::new();
-    let mut touched = Vec::new();
-    let mut accepted_edits = 0;
-    let mut rejected_edits = 0;
+    let mut planned_files = Vec::new();
+    let mut preflight_failed = false;
     for (path, edits) in groups {
-        match apply_one_file(state, &path, &resolved_paths[&path], &edits) {
-            Ok(new_hash) => {
-                touched.push(path.clone());
-                accepted_edits += edits.len() as u64;
-                file_results.push(json!({
-                    "path": path,
-                    "status": "applied",
-                    "new_content_hash": new_hash,
-                }));
-            }
+        match plan_one_file(state, &path, &resolved_paths[&path], &edits) {
+            Ok(planned) => planned_files.push(planned),
             Err(err) => {
-                rejected_edits += edits.len() as u64;
+                preflight_failed = true;
                 file_results.push(json!({
                     "path": path,
                     "status": "rejected",
@@ -136,6 +121,35 @@ fn apply_anchor_edits(
             }
         }
     }
+    let (file_results, touched, accepted_edits, rejected_edits, completed) = if preflight_failed {
+        file_results.extend(planned_files.iter().map(|planned| {
+            json!({
+                "path": planned.path,
+                "status": "not_applied",
+                "reason": "cross_file_preflight_failed",
+            })
+        }));
+        (file_results, Vec::new(), 0, requested_edits_total, false)
+    } else {
+        let outcome = write_planned_files(&planned_files);
+        let accepted = if outcome.applied {
+            planned_files.iter().map(|file| file.edit_count).sum()
+        } else {
+            0
+        };
+        let rejected = if outcome.applied {
+            0
+        } else {
+            requested_edits_total
+        };
+        (
+            outcome.file_results,
+            outcome.touched,
+            accepted,
+            rejected,
+            outcome.applied,
+        )
+    };
     drop(lock);
     context_metrics::record_anchored_edit_outcomes_best_effort(
         &synrepo_dir,
@@ -143,7 +157,7 @@ fn apply_anchor_edits(
         rejected_edits,
     );
 
-    let diagnostics = if touched.is_empty() {
+    let diagnostics = if !completed || touched.is_empty() {
         json!({
             "validation": "failed",
             "reconcile": { "status": "not_run", "reason": "no files were written" },
@@ -159,23 +173,23 @@ fn apply_anchor_edits(
     };
 
     Ok(json!({
-        "status": if touched.is_empty() { "rejected" } else { "completed" },
+        "status": if completed { "completed" } else { "rejected" },
         "atomicity": {
             "per_file": true,
-            "cross_file": false,
-            "message": "multi-file requests may have mixed per-file outcomes; no cross-file transaction is claimed"
+            "cross_file": true,
+            "message": "multi-file requests preflight every file before writing and roll back prior writes on failure"
         },
         "files": file_results,
         "diagnostics": diagnostics,
     }))
 }
 
-fn apply_one_file(
+fn plan_one_file(
     state: &SynrepoState,
     path: &str,
     prepared_abs_path: &Path,
     edits: &[AnchorEditRequest],
-) -> anyhow::Result<String> {
+) -> anyhow::Result<PlannedFile> {
     let resolved = resolve_edit_path(&state.repo_root, path)?;
     if resolved.absolute != prepared_abs_path {
         anyhow::bail!("resolved path changed before edit apply for {path}");
@@ -183,6 +197,7 @@ fn apply_one_file(
     let abs_path = resolved.absolute;
     let content = fs::read_to_string(&abs_path)
         .map_err(|err| anyhow::anyhow!("failed to read {path}: {err}"))?;
+    let original = content.as_bytes().to_vec();
     let current_hash = hash_bytes(content.as_bytes());
     let mut lines: Vec<String> = content.lines().map(ToString::to_string).collect();
     let had_final_newline = content.ends_with('\n');
@@ -223,8 +238,14 @@ fn apply_one_file(
         next.push('\n');
     }
     let new_hash = hash_bytes(next.as_bytes());
-    crate::util::atomic_write(&abs_path, next.as_bytes())?;
-    Ok(new_hash)
+    Ok(PlannedFile {
+        path: path.to_string(),
+        abs_path,
+        original,
+        next: next.into_bytes(),
+        new_hash,
+        edit_count: edits.len() as u64,
+    })
 }
 
 fn prepared_state(
@@ -351,48 +372,4 @@ fn reject_overlaps(planned: &[PlannedEdit]) -> anyhow::Result<()> {
         }
     }
     Ok(())
-}
-
-fn suppress_watch_events(state: &SynrepoState, synrepo_dir: &Path, paths: &[String]) {
-    if !matches!(
-        watch_service_status(synrepo_dir),
-        WatchServiceStatus::Running(_)
-    ) {
-        return;
-    }
-    let mut watch_paths = Vec::with_capacity(paths.len() * 2);
-    for path in paths {
-        let abs_path = state.repo_root.join(path);
-        watch_paths.push(abs_path.clone());
-        if let Some(parent) = abs_path.parent() {
-            watch_paths.push(parent.to_path_buf());
-        }
-    }
-    let _ = request_watch_control(
-        synrepo_dir,
-        WatchControlRequest::SuppressPaths {
-            paths: watch_paths,
-            ttl_ms: EDIT_SUPPRESSION_TTL_MS,
-        },
-    );
-}
-
-fn writer_lock_conflict_json(err: LockError) -> serde_json::Value {
-    match err {
-        LockError::HeldByOther { pid, lock_path } => json!({
-            "status": "writer_lock_conflict",
-            "writer_lock": {
-                "holder_pid": pid,
-                "path": lock_path,
-            },
-            "files": [],
-        }),
-        other => json!({
-            "status": "writer_lock_conflict",
-            "writer_lock": {
-                "message": other.to_string(),
-            },
-            "files": [],
-        }),
-    }
 }

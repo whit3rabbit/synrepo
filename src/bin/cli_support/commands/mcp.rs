@@ -4,6 +4,7 @@ mod state;
 mod tools;
 
 use std::future::Future;
+use std::time::Duration;
 
 use rmcp::{
     handler::server::router::tool::ToolRouter,
@@ -17,12 +18,14 @@ use rmcp::{
 };
 use synrepo::surface::mcp::context_pack;
 
-use state::StateResolver;
+use state::{SessionState, StateResolver};
 
 pub(crate) struct SynrepoServer {
     resolver: StateResolver,
     tool_router: ToolRouter<Self>,
     allow_edits: bool,
+    session: SessionState,
+    call_timeout: Duration,
 }
 
 #[tool_handler(router = self.tool_router)]
@@ -40,12 +43,14 @@ impl ServerHandler for SynrepoServer {
              synrepo_explain for bounded details, synrepo_impact (or its shorthand synrepo_risks) before edits, \
              synrepo_tests before claiming done, and synrepo_changed after edits. \
              Use synrepo_minimum_context as the bounded neighborhood step once a focal target is known. \
-             For broad lexical searches, pass output_mode=\"compact\" to synrepo_search or synrepo_context_pack search artifacts to get grouped, token-accounted routing output. \
-             Use synrepo_context_pack when batching several read-only context artifacts is cheaper than serial tool calls. \
+             For broad lexical searches, pass output_mode=\"compact\" to get grouped, token-accounted routing output, or output_mode=\"cards\" to get tiny file cards directly. \
+             Use synrepo_context_pack or synrepo_card targets=[...] when batching several read-only context artifacts is cheaper than serial tool calls. \
              Global MCP configs serve registered projects by absolute path: pass the current workspace as repo_root; \
+             call synrepo_use_project once when a global/defaultless session should remember a default repo. \
              if a repository is not managed, ask the user to run synrepo project add <path>. \
              Repo-bound configs launched with synrepo mcp --repo . may omit repo_root. \
              Edit tools are absent unless this server was started with synrepo mcp --allow-edits; when present, call prepare before apply. \
+             Tool errors are structured with error.code and transitional error_message; synrepo_metrics exposes this-session and persisted usage counters. \
              Read full source files only after card routing identifies the target or when a bounded card is insufficient; \
              that is an explicit escalation, not the default first step. \
              Graph-backed structural facts are authoritative; overlay commentary and advisory notes never define source truth. \
@@ -80,6 +85,12 @@ impl ServerHandler for SynrepoServer {
                 .with_mime_type("application/json"),
                 None,
             ),
+            ResourceTemplate::new(
+                RawResourceTemplate::new("synrepo://projects", "synrepo managed projects")
+                    .with_description("List managed projects from the user-level registry.")
+                    .with_mime_type("application/json"),
+                None,
+            ),
         ])))
     }
 
@@ -104,6 +115,20 @@ impl ServerHandler for SynrepoServer {
 
 impl SynrepoServer {
     fn read_resource_blocking(&self, uri: String) -> Result<ReadResourceResult, McpError> {
+        if uri == "synrepo://projects" {
+            let text = match synrepo::registry::load()
+                .and_then(|registry| serde_json::to_string_pretty(&registry).map_err(Into::into))
+            {
+                Ok(text) => text,
+                Err(error) => {
+                    return Err(McpError::resource_not_found(error.to_string(), None));
+                }
+            };
+            return Ok(ReadResourceResult::new(vec![ResourceContents::text(
+                text, uri,
+            )
+            .with_mime_type("application/json")]));
+        }
         let state = match self.resolve_state(None) {
             Ok(state) => state,
             Err(error) => {

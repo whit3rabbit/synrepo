@@ -125,6 +125,10 @@ pub struct FileNode {
     pub path_history: Vec<String>,
     /// blake3 hash of the current content.
     pub content_hash: String,
+    /// Bounded sampled-content shingle hashes used only for future
+    /// symbol-poor rename detection. Empty means unavailable.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub content_sample_hashes: Vec<u64>,
     /// File size in bytes.
     pub size_bytes: u64,
     /// Detected language, if supported by a tree-sitter grammar.

@@ -88,16 +88,17 @@ pub(super) fn run_identity_cascade(
         identity::resolve_identities(&disappeared, &new_files, graph, git_renames.as_ref())?;
     *identities_resolved += resolutions.len();
 
-    // Protect git-renamed old paths from deletion by delete_missing_files.
-    let git_rename_ids: HashSet<_> = resolutions
+    // Protect renamed old paths from deletion by delete_missing_files.
+    let rename_ids: HashSet<_> = resolutions
         .iter()
         .filter_map(|r| match r {
+            identity::IdentityResolution::Rename { preserved_id, .. } => Some(*preserved_id),
             identity::IdentityResolution::GitRename { preserved_id, .. } => Some(*preserved_id),
             _ => None,
         })
         .collect();
     for old_file in &disappeared {
-        if git_rename_ids.contains(&old_file.id) {
+        if rename_ids.contains(&old_file.id) {
             rename_matched_old_paths.insert(old_file.path.clone());
         }
     }

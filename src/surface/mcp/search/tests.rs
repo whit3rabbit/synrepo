@@ -44,6 +44,7 @@ fn search_params(output_mode: OutputMode, budget_tokens: Option<usize>) -> Searc
         case_insensitive: false,
         output_mode,
         budget_tokens,
+        mode: super::SearchMode::Auto,
     }
 }
 
@@ -59,6 +60,8 @@ fn default_search_output_remains_compatible() {
     assert_eq!(value["query"], "alpha");
     assert_eq!(value["engine"], "syntext");
     assert_eq!(value["source_store"], "substrate_index");
+    assert_eq!(value["mode"], "auto");
+    assert_eq!(value["semantic_available"], false);
     assert!(value["results"]
         .as_array()
         .is_some_and(|rows| !rows.is_empty()));
@@ -106,6 +109,26 @@ fn compact_search_budget_reports_omissions() {
     assert!(value["suggested_card_targets"]
         .as_array()
         .is_some_and(|targets| targets.len() == 1));
+}
+
+#[test]
+fn cards_search_returns_deduped_tiny_file_cards() {
+    let (_dir, state) = make_state();
+    let value: serde_json::Value = serde_json::from_str(&handle_search(
+        &state,
+        search_params(OutputMode::Cards, None),
+    ))
+    .unwrap();
+
+    assert_eq!(value["output_mode"], "cards");
+    assert_eq!(value["source_store"], "graph");
+    assert_eq!(value["search_source_store"], "substrate_index");
+    let cards = value["cards"].as_array().unwrap();
+    assert_eq!(cards.len(), 2, "{value}");
+    assert!(cards
+        .iter()
+        .any(|card| card["path"].as_str() == Some("src/lib.rs")));
+    assert!(value["unresolved"].as_array().unwrap().is_empty());
 }
 
 #[test]

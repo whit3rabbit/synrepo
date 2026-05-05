@@ -85,6 +85,7 @@ pub(super) fn process_supported_code_files(
                 })
                 .unwrap_or_default(),
             content_hash: content_hash.clone(),
+            content_sample_hashes: crate::structure::identity::sampled_content_hashes(&content),
             size_bytes: file.size_bytes,
             language,
             inline_decisions,

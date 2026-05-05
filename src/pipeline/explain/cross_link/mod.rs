@@ -11,12 +11,12 @@
 //! Optional semantic prefilter uses embedding similarity to catch pairs the
 //! deterministic prefilter missed.
 
+pub mod ranker;
 pub mod triage;
 
 use crate::core::ids::NodeId;
 use crate::overlay::{
-    classify_confidence, CitedSpan, ConfidenceThresholds, ConfidenceTier, OverlayEdgeKind,
-    OverlayLink,
+    CitedSpan, ConfidenceThresholds, ConfidenceTier, OverlayEdgeKind, OverlayLink,
 };
 
 /// Source of a candidate pair during triage.
@@ -108,19 +108,6 @@ pub const HIGH_TIER_MIN_SPANS: usize = 2;
 /// tier. Matches the triage cutoff.
 pub const HIGH_TIER_MAX_DISTANCE: u32 = 2;
 
-// Score weights. The doc on `score()` documents how these combine; if you
-// change a value here, update the shape description there too.
-const BASE_LCS_WEIGHT: f32 = 0.7;
-const MULTI_SPAN_BONUS: f32 = 0.2;
-const SINGLE_SPAN_BONUS: f32 = 0.1;
-const LENGTH_BONUS: f32 = 0.1;
-const OVER_DISTANCE_PENALTY: f32 = 0.1;
-/// Span length (chars of normalized text) at which the length bonus
-/// saturates: above this value every additional char adds zero.
-const LENGTH_BONUS_CAP_CHARS: usize = 64;
-/// Saturation cap on the over-distance penalty in hops.
-const OVER_DISTANCE_HOP_CAP: u32 = 3;
-
 /// Deterministic confidence scoring.
 ///
 /// Combines span count, LCS ratio per span, average span length, and graph
@@ -154,48 +141,10 @@ pub fn score(
     graph_distance: u32,
     thresholds: ConfidenceThresholds,
 ) -> (f32, ConfidenceTier) {
-    if spans.is_empty() {
-        return (0.0, ConfidenceTier::BelowThreshold);
-    }
-
-    let mean_lcs: f32 = spans.iter().map(|s| s.lcs_ratio).sum::<f32>() / (spans.len() as f32);
-    let base = mean_lcs * BASE_LCS_WEIGHT;
-
-    let span_bonus = if spans.len() >= HIGH_TIER_MIN_SPANS {
-        MULTI_SPAN_BONUS
-    } else {
-        SINGLE_SPAN_BONUS
-    };
-
-    let mean_len: f32 = spans
-        .iter()
-        .map(|s| s.normalized_text.len().min(LENGTH_BONUS_CAP_CHARS) as f32)
-        .sum::<f32>()
-        / (spans.len() as f32);
-    let length_bonus = (mean_len / LENGTH_BONUS_CAP_CHARS as f32) * LENGTH_BONUS;
-
-    let distance_penalty = if graph_distance <= HIGH_TIER_MAX_DISTANCE {
-        0.0
-    } else {
-        let over = (graph_distance - HIGH_TIER_MAX_DISTANCE).min(OVER_DISTANCE_HOP_CAP) as f32;
-        -over * OVER_DISTANCE_PENALTY
-    };
-
-    let raw = (base + span_bonus + length_bonus + distance_penalty).clamp(0.0, 1.0);
-
-    // Gate the `High` tier on all four hard criteria; if any fails, the
-    // partition still determines the tier but a `High` classification is
-    // demoted to `ReviewQueue`.
-    let all_spans_strong = spans.iter().all(|s| s.lcs_ratio >= HIGH_TIER_LCS_FLOOR);
-    let enough_spans = spans.len() >= HIGH_TIER_MIN_SPANS;
-    let close_enough = graph_distance <= HIGH_TIER_MAX_DISTANCE;
-    let high_eligible = all_spans_strong && enough_spans && close_enough;
-
-    let tier = match classify_confidence(raw, thresholds) {
-        ConfidenceTier::High if !high_eligible => ConfidenceTier::ReviewQueue,
-        t => t,
-    };
-    (raw, tier)
+    ranker::score_with_features(
+        ranker::RankFeatures::extract(spans, graph_distance),
+        thresholds,
+    )
 }
 
 #[cfg(test)]

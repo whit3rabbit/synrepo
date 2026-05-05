@@ -28,7 +28,7 @@ fn prepare_rejects_symlink_escape_before_reading() {
         json!({ "target": "src/escape.rs", "target_kind": "file", "task_id": "task-escape" }),
     );
     assert!(
-        result["error"]
+        result["error_message"]
             .as_str()
             .is_some_and(|err| err.contains("outside repo root")),
         "{result}"
@@ -62,7 +62,7 @@ fn apply_rejects_symlink_escape_after_prepare() {
         }] }),
     );
     assert!(
-        result["error"]
+        result["error_message"]
             .as_str()
             .is_some_and(|err| err.contains("outside repo root")),
         "{result}"

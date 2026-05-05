@@ -277,6 +277,7 @@ fn file_node(idx: usize, path: &str) -> FileNode {
         path: path.to_string(),
         path_history: Vec::new(),
         content_hash: format!("hash-{idx}"),
+        content_sample_hashes: Vec::new(),
         size_bytes: 1,
         language: Some("rust".to_string()),
         inline_decisions: Vec::new(),

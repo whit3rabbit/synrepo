@@ -107,6 +107,7 @@ pub(crate) fn setup_curated_link_repo(pass_id: &str) -> SeededLinkRepo {
             path: target_path.to_string(),
             path_history: Vec::new(),
             content_hash: "abc123".to_string(),
+            content_sample_hashes: Vec::new(),
             size_bytes: 64,
             language: Some("rust".to_string()),
             inline_decisions: Vec::new(),

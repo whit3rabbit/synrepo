@@ -14,6 +14,8 @@ Files must stay under 400 lines; split into sub-modules before they grow past th
 - `discover.rs` — filesystem walk via the `ignore` crate (respects `.gitignore`); produces `DiscoveredFile` from the primary checkout, linked worktrees when `include_worktrees = true`, and initialized submodules when `include_submodules = true`
 - `classify.rs` — maps files to `FileClass` (SupportedCode { language }, TextCode, Markdown, Jupyter, Skipped)
 - `index.rs` — wraps `syntext` for n-gram lexical indexing and search; builds/queries `.synrepo/index/`
+- `hybrid.rs` — fuses lexical top-k and vector top-k results with reciprocal rank fusion when semantic triage is locally available
+- `embedding/` — feature-gated ONNX embedding stack for semantic triage and hybrid search; query-time loading never downloads model assets
 - Spec: `openspec/specs/substrate/spec.md`
 
 **2. Structure** (`src/structure/`) — The canonical graph of directly-observed facts only.
@@ -63,7 +65,7 @@ Structural parsing supports Rust, Python, TypeScript/TSX, and Go.
 3. **Parse prose** — concept node extraction from configured markdown directories.
 4. **Cross-file edge resolution** — emits `Calls` (file→symbol for transition and module-scope calls, symbol→symbol for calls inside an extracted caller symbol; scoped resolution: +100 same-file, +50 imported, +20/+10/-100 visibility, +30 kind, +40 prefix. Edges only > 0 AND (unique OR tied ≥50)) and `Imports` (file→file). Resolvers: TypeScript/TSX (relative path), Python (dotted module), Rust (`crate::`/`self::`/`super::` plus bare top-level crate paths with longest-match selection), Go (module-prefix stripping via `go.mod`, fanning out to every `.go` file in the target package). `Inherits`, `References`, `Mentions` are not yet emitted.
 5. **Git mining** — deterministic first-parent history sampling per discovery root; emits `CoChangesWith` edges via `git_intelligence/emit.rs`. Cross-root Git edges are not emitted.
-6. **Identity cascade** — content-hash rename, split/merge detection, git rename fallback; emits `SplitFrom` / `MergedFrom`. Preserves `FileNodeId` across renames and records old paths in `path_history`.
+6. **Identity cascade** — content-hash rename, edited single-file rename, split/merge detection, git rename fallback; emits `SplitFrom` / `MergedFrom`. Edited single-file rename uses same-root high symbol overlap, or bounded sampled-content shingle similarity for symbol-poor files under a hard size cap. It never runs full byte LCS. Preserves `FileNodeId` across renames and records old paths in `path_history`.
 7. **Drift scoring** — Jaccard distance on persisted structural fingerprints; writes sidecar `edge_drift` and `file_fingerprints` tables.
 8. **ArcSwap publish** — rebuild immutable `Graph` from SQLite, then atomically publish via `ArcSwap`.
 

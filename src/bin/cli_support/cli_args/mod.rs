@@ -7,7 +7,7 @@ mod convert;
 mod graph;
 mod subcommands;
 
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
 use super::agent_shims::AgentTool;
@@ -37,6 +37,12 @@ pub(crate) struct Cli {
     /// Subcommand. Omit to run the smart entrypoint (runtime probe + router).
     #[command(subcommand)]
     pub(crate) command: Option<Command>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub(crate) enum SearchModeArg {
+    Auto,
+    Lexical,
 }
 
 #[derive(Subcommand)]
@@ -138,6 +144,9 @@ pub(crate) enum Command {
         /// Stop after this many matches.
         #[arg(short = 'm', long = "max-results")]
         max_results: Option<usize>,
+        /// Search mode. Auto uses semantic vectors when local assets are available.
+        #[arg(long, value_enum, default_value_t = SearchModeArg::Auto)]
+        mode: SearchModeArg,
     },
 
     /// Review, search, and import editable explain docs.
@@ -352,6 +361,9 @@ pub(crate) enum Command {
         /// Explicitly expose edit-capable MCP tools.
         #[arg(long)]
         allow_edits: bool,
+        /// Per-tool call timeout, for example 30s, 2m, or 500ms.
+        #[arg(long, default_value = "30s")]
+        call_timeout: String,
     },
 
     /// Uninstall synrepo artifacts from the current repo.

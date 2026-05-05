@@ -1,4 +1,5 @@
 use serde_json::{json, Value};
+use syntext::SearchOptions;
 
 use crate::surface::card::Budget;
 use crate::surface::mcp::compact::{self, OutputMode};
@@ -13,26 +14,51 @@ pub(super) fn search_artifact(
     output_mode: OutputMode,
     budget_tokens: Option<usize>,
 ) -> crate::Result<Value> {
-    let matches = crate::substrate::search(&state.config, &state.repo_root, &target.target)?;
-    let results: Vec<Value> = matches
+    let report = crate::substrate::hybrid_search(
+        &state.config,
+        &state.repo_root,
+        &target.target,
+        &SearchOptions {
+            max_results: Some(limit),
+            ..SearchOptions::default()
+        },
+    )?;
+    let results: Vec<Value> = report
+        .rows
         .into_iter()
-        .take(limit)
-        .map(|m| {
+        .map(|row| {
             json!({
-                "path": m.path.to_string_lossy(),
-                "line": m.line_number,
-                "content": String::from_utf8_lossy(&m.line_content).trim_end().to_string(),
+                "path": row.path,
+                "line": row.line,
+                "content": row.content,
+                "source": row.source.as_str(),
+                "fusion_score": row.fusion_score,
+                "semantic_score": row.semantic_score,
+                "chunk_id": row.chunk_id,
+                "symbol_id": row.symbol_id,
             })
         })
         .collect();
     let result_count = results.len();
-    let mut content = json!({ "query": target.target, "results": results });
+    let source_store = if report.semantic_available {
+        "substrate_index+vector_index"
+    } else {
+        "substrate_index"
+    };
+    let mut content = json!({
+        "query": target.target,
+        "results": results,
+        "engine": report.engine,
+        "source_store": source_store,
+        "mode": "auto",
+        "semantic_available": report.semantic_available,
+    });
     if output_mode == OutputMode::Compact {
         let compact_source = json!({
             "query": content["query"].clone(),
             "results": content["results"].clone(),
-            "engine": "syntext",
-            "source_store": "substrate_index",
+            "engine": content["engine"].clone(),
+            "source_store": content["source_store"].clone(),
             "limit": limit,
             "filters": Value::Null,
             "result_count": result_count,

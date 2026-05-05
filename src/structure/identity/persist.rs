@@ -19,10 +19,22 @@ pub fn persist_resolutions(
                 preserved_id,
                 new_path,
             } => {
+                let Some(mut file) = graph.get_file(*preserved_id)? else {
+                    continue;
+                };
+                if let Some(dup) = graph.file_by_root_path(&file.root_id, new_path)? {
+                    if dup.id != *preserved_id {
+                        graph.delete_node(NodeId::File(dup.id))?;
+                    }
+                }
+                let old_path = file.path.clone();
+                file.path_history.insert(0, old_path);
+                file.path = new_path.clone();
+                graph.upsert_file(file)?;
                 tracing::debug!(
                     file_id = %preserved_id,
                     new_path = %new_path,
-                    "identity: rename resolution (already handled in stages)"
+                    "identity: structural rename resolution"
                 );
             }
             IdentityResolution::Split {

@@ -5,9 +5,9 @@ use std::time::Instant;
 use crate::{core::ids::NodeId, surface::card::CardCompiler};
 
 use super::card_accounting::{finalize_card_json, record_embedded_card_metrics};
-use super::helpers::{
-    attach_decision_cards, lift_commentary_text, parse_budget, with_mcp_compiler,
-};
+use super::card_render::render_card_target;
+pub use super::commentary::{handle_refresh_commentary, RefreshCommentaryParams};
+use super::helpers::{parse_budget, with_mcp_compiler};
 use super::SynrepoState;
 
 /// Parameters for the `synrepo_card` tool.
@@ -16,7 +16,11 @@ pub struct CardParams {
     pub repo_root: Option<std::path::PathBuf>,
     /// Target to look up. Accepts a file path, a qualified symbol name, or a
     /// short symbol name (display name). First match wins.
-    pub target: String,
+    #[serde(default)]
+    pub target: Option<String>,
+    /// Batch targets to look up. Capped at 10 entries.
+    #[serde(default)]
+    pub targets: Vec<String>,
     /// Budget tier: "tiny" (default), "normal", or "deep".
     #[serde(default = "default_budget")]
     pub budget: String,
@@ -125,14 +129,6 @@ pub struct ChangeRiskParams {
     pub budget_tokens: Option<usize>,
 }
 
-/// Parameters for the `synrepo_refresh_commentary` tool.
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct RefreshCommentaryParams {
-    pub repo_root: Option<std::path::PathBuf>,
-    /// Target: qualified symbol name or node ID.
-    pub target: String,
-}
-
 pub fn handle_card(
     state: &SynrepoState,
     target: String,
@@ -143,60 +139,15 @@ pub fn handle_card(
     let start = Instant::now();
     let budget = parse_budget(&budget);
     with_mcp_compiler(state, |compiler| {
-        let node_id = compiler
-            .resolve_target(&target)?
-            .ok_or_else(|| anyhow::anyhow!("target not found: {target}"))?;
-
-        match node_id {
-            NodeId::Symbol(sym_id) => {
-                let card = compiler.symbol_card(sym_id, budget)?;
-                let mut json_val = serde_json::to_value(&card)?;
-                lift_commentary_text(&mut json_val);
-                attach_decision_cards(
-                    &mut json_val,
-                    NodeId::Symbol(sym_id),
-                    compiler.reader(),
-                    budget,
-                )?;
-                if include_notes {
-                    super::notes::attach_agent_notes(state, &mut json_val, NodeId::Symbol(sym_id))?;
-                }
-                Ok(finalize_card_json(
-                    state,
-                    json_val,
-                    budget_tokens,
-                    start,
-                    false,
-                ))
-            }
-            NodeId::File(file_id) => {
-                let card = compiler.file_card(file_id, budget)?;
-                let mut json_val = serde_json::to_value(&card)?;
-                attach_decision_cards(
-                    &mut json_val,
-                    NodeId::File(file_id),
-                    compiler.reader(),
-                    budget,
-                )?;
-                if include_notes {
-                    super::notes::attach_agent_notes(state, &mut json_val, NodeId::File(file_id))?;
-                }
-                Ok(finalize_card_json(
-                    state,
-                    json_val,
-                    budget_tokens,
-                    start,
-                    false,
-                ))
-            }
-            NodeId::Concept(concept_id) => {
-                let concept = compiler
-                    .reader()
-                    .get_concept(concept_id)?
-                    .ok_or_else(|| anyhow::anyhow!("concept not found"))?;
-                Ok(serde_json::to_value(&concept)?)
-            }
-        }
+        render_card_target(
+            state,
+            compiler,
+            &target,
+            budget,
+            budget_tokens,
+            include_notes,
+            start,
+        )
     })
 }
 
@@ -358,40 +309,4 @@ pub fn handle_change_risk(
             false,
         ))
     })
-}
-
-pub fn handle_refresh_commentary(state: &SynrepoState, target: String) -> String {
-    use crate::pipeline::{
-        explain::{build_commentary_generator, telemetry},
-        writer::{acquire_write_admission, map_lock_error},
-    };
-    use serde_json::json;
-
-    let synrepo_dir = crate::config::Config::synrepo_dir(&state.repo_root);
-    let result = telemetry::with_synrepo_dir(&synrepo_dir, || {
-        let _writer_lock = acquire_write_admission(&synrepo_dir, "refresh commentary")
-            .map_err(|err| map_lock_error("refresh commentary", err))?;
-        let compiler = state
-            .create_sqlite_compiler()
-            .map_err(|e| anyhow::anyhow!(e))?;
-        let node_id = compiler
-            .resolve_target(&target)?
-            .ok_or_else(|| anyhow::anyhow!("target not found: {target}"))?;
-
-        let max_tokens = state.config.commentary_cost_limit;
-        let generator = build_commentary_generator(&state.config, max_tokens);
-
-        let text = compiler.refresh_commentary(node_id, &*generator)?;
-        Ok(json!({
-            "node_id": node_id.to_string(),
-            "commentary": text,
-            "status": if text.is_some() { "refreshed" } else { "skipped" }
-        }))
-    });
-    crate::pipeline::context_metrics::record_commentary_refresh_best_effort(
-        &synrepo_dir,
-        result.is_err(),
-    );
-
-    super::helpers::render_result(result)
 }

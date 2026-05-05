@@ -6,6 +6,7 @@ use syntext::SearchOptions;
 
 use crate::surface::card::{Budget, CardCompiler};
 
+use super::super::card_set::apply_card_set_cap;
 use super::SynrepoState;
 
 const MAX_QUERY_ATTEMPTS: usize = 24;
@@ -298,56 +299,6 @@ fn miss_reason(cards_empty: bool, matched_index_rows: usize) -> Option<&'static 
         Some("no_index_matches")
     } else {
         Some("matches_not_in_graph")
-    }
-}
-
-/// Trim a ranked card set to fit under `budget_tokens`, preserving rank order.
-/// Always keeps the first top-ranked card so callers never get an empty
-/// suggestion list solely because that card exceeds the cap.
-fn apply_card_set_cap(
-    cards: &mut Vec<serde_json::Value>,
-    budget_tokens: Option<usize>,
-) -> (bool, Vec<crate::surface::card::ContextAccounting>) {
-    let original_len = cards.len();
-    let mut accountings = Vec::with_capacity(cards.len());
-    let mut total = 0usize;
-    let mut keep = 0usize;
-    let mut any_marked = false;
-
-    for (idx, card) in cards.iter_mut().enumerate() {
-        let Some(accounting) = card.get("context_accounting").and_then(|v| {
-            serde_json::from_value::<crate::surface::card::ContextAccounting>(v.clone()).ok()
-        }) else {
-            continue;
-        };
-        let tokens = accounting.token_estimate;
-
-        let over_cap = budget_tokens.is_some_and(|cap| total + tokens > cap);
-        if over_cap && idx > 0 {
-            break;
-        }
-        if over_cap {
-            mark_truncated(card);
-            any_marked = true;
-        }
-        total += tokens;
-        accountings.push(accounting);
-        keep = idx + 1;
-    }
-
-    cards.truncate(keep);
-    (any_marked || cards.len() != original_len, accountings)
-}
-
-fn mark_truncated(card: &mut serde_json::Value) {
-    if let Some(accounting) = card
-        .get_mut("context_accounting")
-        .and_then(|v| v.as_object_mut())
-    {
-        accounting.insert(
-            "truncation_applied".to_string(),
-            serde_json::Value::Bool(true),
-        );
     }
 }
 

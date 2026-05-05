@@ -5,7 +5,7 @@ use serde::Deserialize;
 
 use crate::config::Config;
 use crate::pipeline::context_metrics;
-use crate::surface::task_route::classify_task_route;
+use crate::surface::task_route::classify_task_route_with_config;
 
 use super::helpers::render_result;
 use super::SynrepoState;
@@ -23,8 +23,13 @@ pub struct TaskRouteParams {
 
 pub fn handle_task_route(state: &SynrepoState, params: TaskRouteParams) -> String {
     let result: anyhow::Result<serde_json::Value> = (|| {
-        let route = classify_task_route(&params.task, params.path.as_deref());
         let synrepo_dir = Config::synrepo_dir(&state.repo_root);
+        let route = classify_task_route_with_config(
+            &params.task,
+            params.path.as_deref(),
+            &state.config,
+            &synrepo_dir,
+        );
         context_metrics::record_task_route_classification_best_effort(&synrepo_dir, &route);
         Ok(serde_json::to_value(route)?)
     })();

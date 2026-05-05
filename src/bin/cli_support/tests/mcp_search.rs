@@ -1,7 +1,7 @@
 use serde_json::{json, Value};
 use synrepo::config::Config;
 use synrepo::surface::mcp::compact::OutputMode;
-use synrepo::surface::mcp::search::{handle_search, SearchParams};
+use synrepo::surface::mcp::search::{handle_search, SearchMode, SearchParams};
 use synrepo::surface::mcp::SynrepoState;
 use tempfile::{tempdir, TempDir};
 
@@ -39,6 +39,7 @@ fn params(query: &str) -> SearchParams {
         case_insensitive: false,
         output_mode: OutputMode::Default,
         budget_tokens: None,
+        mode: SearchMode::Auto,
     }
 }
 

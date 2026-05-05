@@ -121,6 +121,7 @@ pub(super) fn seed_graph(repo_root: &std::path::Path) -> SeededGraphIds {
             path: "src/lib.rs".to_string(),
             path_history: vec!["src/old_lib.rs".to_string()],
             content_hash: "abc123".to_string(),
+            content_sample_hashes: Vec::new(),
             size_bytes: 128,
             language: Some("rust".to_string()),
             inline_decisions: Vec::new(),

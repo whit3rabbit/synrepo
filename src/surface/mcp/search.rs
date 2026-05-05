@@ -1,4 +1,3 @@
-use std::collections::HashSet;
 use std::process::Command;
 
 use schemars::JsonSchema;
@@ -6,13 +5,22 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use syntext::SearchOptions;
 
-use crate::{core::ids::NodeId, structure::graph::EdgeKind, surface::card::CardCompiler};
+use crate::core::ids::SymbolNodeId;
 
 use super::compact::{self, OutputMode};
-use super::helpers::{render_result, with_graph_snapshot};
+use super::helpers::render_result;
+use super::limits::{check_chars, MAX_SEARCH_QUERY_CHARS};
 use super::SynrepoState;
 
+mod cards_mode;
+mod impact;
+mod overview;
 mod where_to_edit;
+use cards_mode::search_cards_response;
+pub use impact::{
+    handle_change_impact, handle_change_impact_with_direction, ChangeImpactParams, ImpactDirection,
+};
+pub use overview::{handle_degraded_overview, handle_overview};
 pub use where_to_edit::handle_where_to_edit;
 
 /// Parameters for the `synrepo_search` tool.
@@ -42,10 +50,24 @@ pub struct SearchParams {
     /// Optional numeric token cap for compact output.
     #[serde(default)]
     pub budget_tokens: Option<usize>,
+    /// Search mode. `auto` uses hybrid search when local semantic assets load.
+    #[serde(default)]
+    pub mode: SearchMode,
 }
 
 pub fn default_limit() -> u32 {
     20
+}
+
+/// Search strategy for MCP search.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum SearchMode {
+    /// Hybrid when semantic triage is locally available, lexical otherwise.
+    #[default]
+    Auto,
+    /// Exact syntext search only.
+    Lexical,
 }
 
 impl SearchParams {
@@ -87,14 +109,6 @@ pub fn default_edit_limit() -> u32 {
     5
 }
 
-/// Parameters for the `synrepo_change_impact` tool.
-#[derive(Debug, Deserialize, JsonSchema)]
-pub struct ChangeImpactParams {
-    pub repo_root: Option<std::path::PathBuf>,
-    /// Target file path or symbol name to assess change impact for.
-    pub target: String,
-}
-
 /// Parameters for repository-scoped MCP tools that otherwise need no input.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct RepoRootParams {
@@ -103,34 +117,54 @@ pub struct RepoRootParams {
 
 pub fn handle_search(state: &SynrepoState, params: SearchParams) -> String {
     let result: anyhow::Result<serde_json::Value> = (|| {
+        check_chars("query", &params.query, MAX_SEARCH_QUERY_CHARS)?;
         let output_mode = params.output_mode;
         let budget_tokens = params.budget_tokens;
         let options = params.search_options();
-        let matches = crate::substrate::search_with_options(
-            &state.config,
-            &state.repo_root,
-            &params.query,
-            &options,
-        )?;
-
-        let items: Vec<serde_json::Value> = matches
-            .into_iter()
-            .map(|m| {
-                json!({
-                    "path": m.path.to_string_lossy(),
-                    "line": m.line_number,
-                    "content": String::from_utf8_lossy(&m.line_content).trim_end().to_string(),
-                })
-            })
-            .collect();
+        let (items, engine, source_store, semantic_available) = match params.mode {
+            SearchMode::Lexical => {
+                let matches = crate::substrate::search_with_options(
+                    &state.config,
+                    &state.repo_root,
+                    &params.query,
+                    &options,
+                )?;
+                (lexical_items(matches), "syntext", "substrate_index", false)
+            }
+            SearchMode::Auto => {
+                let report = crate::substrate::hybrid_search(
+                    &state.config,
+                    &state.repo_root,
+                    &params.query,
+                    &options,
+                )?;
+                let items = hybrid_items(state, report.rows);
+                let source_store = if report.semantic_available {
+                    "substrate_index+vector_index"
+                } else {
+                    "substrate_index"
+                };
+                (
+                    items,
+                    report.engine,
+                    source_store,
+                    report.semantic_available,
+                )
+            }
+        };
         let result_count = items.len();
         let filters = params.filters_json();
 
         let response = json!({
             "query": params.query,
             "results": items,
-            "engine": "syntext",
-            "source_store": "substrate_index",
+            "engine": engine,
+            "source_store": source_store,
+            "mode": match params.mode {
+                SearchMode::Auto => "auto",
+                SearchMode::Lexical => "lexical",
+            },
+            "semantic_available": semantic_available,
             "limit": params.limit,
             "filters": filters,
             "result_count": result_count,
@@ -143,78 +177,81 @@ pub fn handle_search(state: &SynrepoState, params: SearchParams) -> String {
                 compact::record_output_accounting(state, &compacted);
                 compacted
             }
+            OutputMode::Cards => search_cards_response(state, &response, budget_tokens)?,
         })
     })();
     render_result(result)
 }
 
-pub fn handle_overview(state: &SynrepoState) -> String {
-    let result: anyhow::Result<serde_json::Value> = (|| {
-        let synrepo_dir = crate::config::Config::synrepo_dir(&state.repo_root);
-        let graph_dir = synrepo_dir.join("graph");
-        let store = crate::store::sqlite::SqliteGraphStore::open_existing(&graph_dir)?;
-        let stats = with_graph_snapshot(&store, || Ok(store.persisted_stats()?))?;
-        Ok(json!({
-            "mode": state.config.mode.to_string(),
-            "graph": {
-                "file_nodes": stats.file_nodes,
-                "symbol_nodes": stats.symbol_nodes,
-                "concept_nodes": stats.concept_nodes,
-                "total_edges": stats.total_edges,
-                "edges_by_kind": stats.edge_counts_by_kind,
-            }
-        }))
-    })();
-    render_result(result)
+fn lexical_items(matches: Vec<syntext::SearchMatch>) -> Vec<serde_json::Value> {
+    matches
+        .into_iter()
+        .map(|m| {
+            json!({
+                "path": m.path.to_string_lossy(),
+                "line": m.line_number,
+                "content": String::from_utf8_lossy(&m.line_content).trim_end().to_string(),
+                "source": "lexical",
+                "fusion_score": serde_json::Value::Null,
+                "semantic_score": serde_json::Value::Null,
+            })
+        })
+        .collect()
 }
 
-pub fn handle_change_impact(state: &SynrepoState, target: String) -> String {
-    let result = (|| {
-        let compiler = state
-            .create_read_compiler()
-            .map_err(|e| anyhow::anyhow!(e))?;
-        let node_id = compiler
-            .resolve_target(&target)?
-            .ok_or_else(|| anyhow::anyhow!("target not found: {target}"))?;
+fn hybrid_items(
+    state: &SynrepoState,
+    rows: Vec<crate::substrate::HybridSearchRow>,
+) -> Vec<serde_json::Value> {
+    let needs_graph = rows
+        .iter()
+        .any(|row| row.path.is_none() && row.symbol_id.is_some());
+    if needs_graph {
+        let fallback_rows = rows.clone();
+        state
+            .with_read_compiler(|compiler| Ok(hybrid_items_with_compiler(rows, Some(compiler))))
+            .unwrap_or_else(|_| hybrid_items_with_compiler(fallback_rows, None))
+    } else {
+        hybrid_items_with_compiler(rows, None)
+    }
+}
 
-        let imports_in = compiler
-            .reader()
-            .inbound(node_id, Some(EdgeKind::Imports))?;
-        let calls_in = compiler.reader().inbound(node_id, Some(EdgeKind::Calls))?;
+fn hybrid_items_with_compiler(
+    rows: Vec<crate::substrate::HybridSearchRow>,
+    compiler: Option<&crate::surface::card::compiler::GraphCardCompiler>,
+) -> Vec<serde_json::Value> {
+    rows.into_iter()
+        .map(|row| {
+            let path = row
+                .path
+                .clone()
+                .or_else(|| row.symbol_id.and_then(|id| symbol_path(compiler, id)));
+            json!({
+                "path": path,
+                "line": row.line,
+                "content": row.content,
+                "source": row.source.as_str(),
+                "fusion_score": row.fusion_score,
+                "semantic_score": row.semantic_score,
+                "chunk_id": row.chunk_id,
+                "symbol_id": row.symbol_id,
+            })
+        })
+        .collect()
+}
 
-        let mut impacted_files: Vec<serde_json::Value> = Vec::new();
-        let mut seen_files = HashSet::new();
-
-        for edge in imports_in.iter().chain(calls_in.iter()) {
-            let file_id = match edge.from {
-                NodeId::File(id) => id,
-                NodeId::Symbol(sym_id) => {
-                    if let Some(sym) = compiler.reader().get_symbol(sym_id)? {
-                        sym.file_id
-                    } else {
-                        continue;
-                    }
-                }
-                _ => continue,
-            };
-
-            if seen_files.insert(file_id) {
-                if let Some(file) = compiler.reader().get_file(file_id)? {
-                    impacted_files.push(json!({
-                        "path": file.path,
-                        "edge_kind": edge.kind.as_str(),
-                    }));
-                }
-            }
-        }
-
-        Ok(json!({
-            "target": target,
-            "impacted_files": impacted_files,
-            "total": impacted_files.len(),
-        }))
-    })();
-    render_result(result)
+fn symbol_path(
+    compiler: Option<&crate::surface::card::compiler::GraphCardCompiler>,
+    id: SymbolNodeId,
+) -> Option<String> {
+    let compiler = compiler?;
+    let symbol = compiler.reader().get_symbol(id).ok().flatten()?;
+    compiler
+        .reader()
+        .get_file(symbol.file_id)
+        .ok()
+        .flatten()
+        .map(|file| file.path)
 }
 
 pub fn handle_changed(state: &SynrepoState) -> String {

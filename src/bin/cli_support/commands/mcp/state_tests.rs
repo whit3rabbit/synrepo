@@ -2,6 +2,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use serde_json::json;
 use tempfile::{tempdir, TempDir};
 
 use super::*;
@@ -109,6 +110,45 @@ fn mcp_resolution_does_not_auto_start_watch() {
 
     let target_watch = watch_service_status(&Config::synrepo_dir(&target_path));
     assert!(matches!(target_watch, WatchServiceStatus::Inactive));
+}
+
+#[test]
+fn use_project_sets_default_for_defaultless_server() {
+    let _home = home_fixture();
+    let (_repo, repo_path) = ready_repo("pub fn project_default_needle() {}\n");
+    registry::record_project(&repo_path).unwrap();
+    let server = SynrepoServer::new_optional(None, false);
+
+    let output = server.use_project(repo_path.clone());
+    let value: serde_json::Value = serde_json::from_str(&output).unwrap();
+
+    assert_eq!(value["status"], "default_set", "{output}");
+    let resolved = server.resolve_state(None).unwrap();
+    assert_eq!(
+        resolved.repo_root,
+        synrepo::registry::canonicalize_path(&repo_path)
+    );
+}
+
+#[test]
+fn metrics_json_reports_this_session_tool_counts() {
+    let _home = home_fixture();
+    let (_repo, repo_path) = ready_repo("pub fn metrics_needle() {}\n");
+    let state = prepare_state(&repo_path).unwrap();
+    let server = SynrepoServer::new_optional(Some(state), false);
+
+    let output = server.with_tool_state("synrepo_overview", None, |state| {
+        synrepo::surface::mcp::search::handle_overview(&state)
+    });
+    assert!(!output.contains("\"error\""), "{output}");
+
+    let metrics = server.metrics_json(None);
+    let value: serde_json::Value = serde_json::from_str(&metrics).unwrap();
+    assert_eq!(
+        value["this_session"]["calls_by_tool"]["synrepo_overview"],
+        1
+    );
+    assert_eq!(value["this_session"]["errors_total"], 0);
 }
 
 #[test]

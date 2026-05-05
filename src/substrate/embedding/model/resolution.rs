@@ -1,8 +1,7 @@
 //! Model resolution: built-in registry, HuggingFace download, local path lookup.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use crate::core::path_safety::{has_windows_prefix_component, looks_like_unc};
 use crate::Result;
 
 use super::{get_global_cache_dir, ModelResolution, PoolingStrategy};
@@ -63,15 +62,39 @@ impl ModelResolver {
         _repo_synrepo_dir: &Path, // Not used anymore as we use global cache
         declared_dim: u16,
     ) -> Result<ModelResolution> {
+        self.resolve_inner(model_id, declared_dim, true)
+    }
+
+    /// Resolve a model only if its artifacts are already present locally.
+    ///
+    /// Query-time surfaces use this so semantic routing/search availability
+    /// never triggers a network download on an agent hook or MCP request.
+    pub fn resolve_existing(
+        &self,
+        model_id: &str,
+        _repo_synrepo_dir: &Path,
+        declared_dim: u16,
+    ) -> Result<ModelResolution> {
+        self.resolve_inner(model_id, declared_dim, false)
+    }
+
+    fn resolve_inner(
+        &self,
+        model_id: &str,
+        declared_dim: u16,
+        allow_download: bool,
+    ) -> Result<ModelResolution> {
         // Resolve to global cache
         let cache_base = get_global_cache_dir()?;
         let model_cache_dir = cache_base.join(model_id.replace('/', "--"));
-        std::fs::create_dir_all(&model_cache_dir)?;
+        if allow_download {
+            std::fs::create_dir_all(&model_cache_dir)?;
+        }
 
         // Check built-in registry
         for spec in BUILTIN_MODELS {
             if spec.model_id == model_id {
-                return self.resolve_spec(spec, &model_cache_dir, declared_dim);
+                return self.resolve_spec(spec, &model_cache_dir, declared_dim, allow_download);
             }
         }
 
@@ -91,6 +114,7 @@ impl ModelResolver {
         spec: &EmbeddingModelSpec,
         cache_dir: &Path,
         declared_dim: u16,
+        allow_download: bool,
     ) -> Result<ModelResolution> {
         if spec.expected_dim != declared_dim {
             return Err(crate::Error::Config(format!(
@@ -104,10 +128,22 @@ impl ModelResolver {
 
         let mut downloaded = false;
         if !model_path.exists() {
+            if !allow_download {
+                return Err(crate::Error::Other(anyhow::anyhow!(
+                    "model artifact is not cached at {}",
+                    model_path.display()
+                )));
+            }
             self.download_file(spec.onnx_url, &model_path)?;
             downloaded = true;
         }
         if !tokenizer_path.exists() {
+            if !allow_download {
+                return Err(crate::Error::Other(anyhow::anyhow!(
+                    "tokenizer artifact is not cached at {}",
+                    tokenizer_path.display()
+                )));
+            }
             self.download_file(spec.tokenizer_url, &tokenizer_path)?;
             downloaded = true;
         }

@@ -18,6 +18,7 @@ pub enum OutputMode {
     #[default]
     Default,
     Compact,
+    Cards,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]

@@ -111,6 +111,7 @@ fn sample_graph() -> MemGraphStore {
             path: "src/lib.rs".to_string(),
             path_history: Vec::new(),
             content_hash: "file-hash".to_string(),
+            content_sample_hashes: Vec::new(),
             size_bytes: 128,
             language: Some("rust".to_string()),
             inline_decisions: Vec::new(),
