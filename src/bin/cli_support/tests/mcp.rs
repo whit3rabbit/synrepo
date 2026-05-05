@@ -24,6 +24,8 @@ use time::OffsetDateTime;
 use super::support::{bootstrap_isolated as bootstrap, git, seed_graph};
 use crate::prepare_mcp_state;
 
+mod registration;
+
 const EXPLAIN_ENV: &[&str] = &[
     "SYNREPO_LLM_ENABLED",
     "SYNREPO_LLM_PROVIDER",
@@ -311,84 +313,6 @@ fn docs_search_via_mcp_returns_file_commentary_docs() {
     assert_eq!(results[0]["node_id"], NodeId::File(ids.file_id).to_string());
     assert_eq!(results[0]["source_store"], "overlay");
     assert_eq!(results[0]["content"], "File-level needle.");
-}
-
-#[test]
-fn mcp_source_registers_docs_search_tool() {
-    let source = fs::read_to_string("src/bin/cli_support/commands/mcp/tools.rs")
-        .expect("read MCP registration source");
-    assert!(
-        source.contains("name = \"synrepo_docs_search\""),
-        "MCP registration must include synrepo_docs_search"
-    );
-}
-
-#[test]
-fn mcp_source_registers_context_pack_and_resources() {
-    let tools_source = fs::read_to_string("src/bin/cli_support/commands/mcp/tools.rs")
-        .expect("read MCP registration source");
-    assert!(
-        tools_source.contains("name = \"synrepo_context_pack\""),
-        "MCP registration must include synrepo_context_pack"
-    );
-    let source =
-        fs::read_to_string("src/bin/cli_support/commands/mcp.rs").expect("read MCP server source");
-    assert!(
-        source.contains(".enable_resources()"),
-        "MCP server must advertise resource support"
-    );
-    assert!(
-        source.contains("synrepo://file/{path}/outline"),
-        "MCP resource templates must include file outlines"
-    );
-    assert!(
-        source.contains("synrepo://projects"),
-        "MCP resource templates must include managed projects"
-    );
-}
-
-#[test]
-fn mcp_source_registers_metrics_and_project_tools() {
-    let source = fs::read_to_string("src/bin/cli_support/commands/mcp/tools.rs")
-        .expect("read MCP registration source");
-    for tool in ["synrepo_metrics", "synrepo_use_project"] {
-        let needle = format!("name = \"{tool}\"");
-        assert!(
-            source.contains(&needle),
-            "MCP registration must include {tool}"
-        );
-    }
-}
-
-#[test]
-fn mcp_source_registers_refactor_suggestions_tool() {
-    let source = fs::read_to_string("src/bin/cli_support/commands/mcp/tools.rs")
-        .expect("read MCP registration source");
-    assert!(
-        source.contains("name = \"synrepo_refactor_suggestions\""),
-        "MCP registration must include synrepo_refactor_suggestions"
-    );
-}
-
-#[test]
-fn mcp_source_registers_workflow_aliases() {
-    let source = fs::read_to_string("src/bin/cli_support/commands/mcp/tools.rs")
-        .expect("read MCP registration source");
-    for alias in [
-        "synrepo_orient",
-        "synrepo_find",
-        "synrepo_explain",
-        "synrepo_impact",
-        "synrepo_risks",
-        "synrepo_tests",
-        "synrepo_changed",
-    ] {
-        let needle = format!("name = \"{alias}\"");
-        assert!(
-            source.contains(&needle),
-            "MCP registration must include {alias}"
-        );
-    }
 }
 
 #[test]
