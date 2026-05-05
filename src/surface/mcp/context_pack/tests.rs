@@ -7,6 +7,7 @@ use crate::config::Config;
 use crate::surface::mcp::compact::OutputMode;
 use crate::surface::mcp::SynrepoState;
 
+use super::read_resource;
 use super::{build_context_pack, ContextPackParams, ContextPackTarget};
 
 fn make_state() -> (tempfile::TempDir, SynrepoState) {
@@ -87,6 +88,28 @@ fn context_pack_rejects_invalid_budget() {
 }
 
 #[test]
+fn context_pack_requires_targets_or_goal() {
+    let (_dir, state) = make_state();
+    let err = build_context_pack(
+        &state,
+        ContextPackParams {
+            repo_root: None,
+            goal: Some("   ".to_string()),
+            targets: Vec::new(),
+            budget: "tiny".to_string(),
+            budget_tokens: None,
+            output_mode: OutputMode::Default,
+            include_tests: false,
+            include_notes: false,
+            limit: 8,
+        },
+    )
+    .unwrap_err();
+
+    assert!(err.to_string().contains("requires explicit targets"));
+}
+
+#[test]
 fn context_pack_error_artifacts_are_typed() {
     let (_dir, state) = make_state();
     let value = build_context_pack(
@@ -151,6 +174,41 @@ fn context_pack_preserves_order_and_omits_over_budget() {
     assert_eq!(value["artifacts"][0]["target"], "src/lib.rs");
     assert_eq!(value["omitted"][0]["target"], "src/other.rs");
     assert_eq!(value["context_state"]["truncation_applied"], true);
+}
+
+#[test]
+fn context_pack_reports_targets_omitted_by_limit() {
+    let (_dir, state) = make_state();
+    let value = build_context_pack(
+        &state,
+        ContextPackParams {
+            repo_root: None,
+            goal: None,
+            targets: vec![
+                ContextPackTarget {
+                    kind: "file".to_string(),
+                    target: "src/lib.rs".to_string(),
+                    budget: None,
+                },
+                ContextPackTarget {
+                    kind: "file".to_string(),
+                    target: "src/other.rs".to_string(),
+                    budget: None,
+                },
+            ],
+            budget: "tiny".to_string(),
+            budget_tokens: None,
+            output_mode: OutputMode::Default,
+            include_tests: false,
+            include_notes: false,
+            limit: 1,
+        },
+    )
+    .unwrap();
+
+    assert_eq!(value["totals"]["limit"], 1);
+    assert_eq!(value["omitted"][0]["target"], "src/other.rs");
+    assert_eq!(value["omitted"][0]["reason"], "limit_reached");
 }
 
 #[test]
@@ -221,4 +279,18 @@ fn compact_context_pack_compacts_search_artifacts() {
     let metrics = crate::pipeline::context_metrics::load(&synrepo_dir).unwrap();
     assert_eq!(metrics.compact_outputs_total, 1);
     assert_eq!(metrics.cards_served_total, 1);
+}
+
+#[test]
+fn resource_context_pack_defaults_to_tiny_and_honors_budget_tokens() {
+    let (_dir, state) = make_state();
+    let output = read_resource(
+        &state,
+        "synrepo://context-pack?goal=alpha&limit=5&budget_tokens=200",
+    )
+    .unwrap();
+    let value: serde_json::Value = serde_json::from_str(&output).unwrap();
+
+    assert_eq!(value["context_state"]["budget_tier"], "tiny");
+    assert_eq!(value["totals"]["token_cap"], 200);
 }

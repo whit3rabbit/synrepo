@@ -15,6 +15,7 @@ use crate::{
 };
 
 use super::helpers::{render_result, with_mcp_compiler};
+use super::limits::{bounded_limit, DEFAULT_GRAPH_LIMIT, MAX_GRAPH_LIMIT};
 use super::SynrepoState;
 
 /// Parameters for the `synrepo_node` tool.
@@ -37,6 +38,9 @@ pub struct EdgesParams {
     pub direction: String,
     /// Optional list of edge type filters (e.g. ["Defines", "Imports"]).
     pub edge_types: Option<Vec<String>>,
+    /// Maximum edges to return. Defaults to 100, capped at 500.
+    #[serde(default)]
+    pub limit: Option<usize>,
 }
 
 fn default_direction() -> String {
@@ -49,6 +53,9 @@ pub struct QueryParams {
     pub repo_root: Option<std::path::PathBuf>,
     /// Query string: "outbound <target> \[edge_kind]" or "inbound <target> \[edge_kind]".
     pub query: String,
+    /// Maximum edges to return. Defaults to 100, capped at 500.
+    #[serde(default)]
+    pub limit: Option<usize>,
 }
 
 /// Parameters for the `synrepo_overlay` tool.
@@ -155,6 +162,7 @@ pub fn handle_edges(
     id: String,
     direction: String,
     edge_types: Option<Vec<String>>,
+    limit: Option<usize>,
 ) -> String {
     let node_id = match parse_node_id(&id) {
         Ok(id) => id,
@@ -192,15 +200,23 @@ pub fn handle_edges(
                 .collect(),
         };
 
+        let total = filtered.len();
+        let limit = bounded_limit(limit, DEFAULT_GRAPH_LIMIT, MAX_GRAPH_LIMIT);
+        let edges = filtered.into_iter().take(limit).collect::<Vec<_>>();
         Ok(json!({
             "node_id": id,
             "direction": direction,
-            "edges": filtered,
+            "limit": limit,
+            "edges": edges,
+            "omitted": {
+                "edge_count": total.saturating_sub(limit),
+                "reason": "limit_reached",
+            },
         }))
     })
 }
 
-pub fn handle_query(state: &SynrepoState, query: String) -> String {
+pub fn handle_query(state: &SynrepoState, query: String, limit: Option<usize>) -> String {
     let (direction, target, edge_kind) = match parse_graph_query(&query) {
         Ok(res) => res,
         Err(e) => return render_result(Err(e)),
@@ -225,11 +241,19 @@ pub fn handle_query(state: &SynrepoState, query: String) -> String {
             QueryDirection::Inbound => "inbound",
         };
 
+        let total = rendered.len();
+        let limit = bounded_limit(limit, DEFAULT_GRAPH_LIMIT, MAX_GRAPH_LIMIT);
+        let edges = rendered.into_iter().take(limit).collect::<Vec<_>>();
         Ok(json!({
             "direction": dir_str,
             "node_id": node_id.to_string(),
             "edge_kind": edge_kind.map(|k| k.as_str().to_string()),
-            "edges": rendered,
+            "limit": limit,
+            "edges": edges,
+            "omitted": {
+                "edge_count": total.saturating_sub(limit),
+                "reason": "limit_reached",
+            },
         }))
     })
 }

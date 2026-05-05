@@ -116,6 +116,36 @@ impl ContextMetrics {
         );
         write_counter(
             &mut out,
+            "synrepo_responses_over_soft_cap_total",
+            "Observed: MCP responses whose estimated size exceeded the soft cap.",
+            self.responses_over_soft_cap_total,
+        );
+        write_counter(
+            &mut out,
+            "synrepo_responses_truncated_total",
+            "Observed: MCP responses trimmed by the final response clamp.",
+            self.responses_truncated_total,
+        );
+        write_counter(
+            &mut out,
+            "synrepo_deep_cards_served_total",
+            "Observed: deep card-shaped responses served.",
+            self.deep_cards_served_total,
+        );
+        write_counter(
+            &mut out,
+            "synrepo_context_pack_tokens_total",
+            "Estimated: sum of estimated tokens in served context packs.",
+            self.context_pack_tokens_total,
+        );
+        write_counter(
+            &mut out,
+            "synrepo_largest_response_tokens",
+            "Estimated: largest MCP response token estimate observed.",
+            self.largest_response_tokens,
+        );
+        write_counter(
+            &mut out,
             "synrepo_route_classifications_total",
             "Observed: task-route classifications served without storing task text.",
             self.route_classifications_total,
@@ -223,6 +253,13 @@ impl ContextMetrics {
             "Observed: explicit advisory saved-context mutations keyed by operation.",
             "operation",
             &self.saved_context_writes_total,
+        );
+        write_labeled_counter(
+            &mut out,
+            "synrepo_tool_token_totals",
+            "Estimated: MCP response token estimates keyed by tool name.",
+            "tool",
+            &self.tool_token_totals,
         );
 
         writeln!(

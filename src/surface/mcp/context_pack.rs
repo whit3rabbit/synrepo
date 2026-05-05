@@ -10,6 +10,7 @@ use crate::surface::card::{neighborhood, Budget, CardCompiler};
 
 use super::compact::OutputMode;
 use super::helpers::{parse_budget, render_result};
+use super::limits::DEFAULT_CONTEXT_PACK_LIMIT;
 use super::SynrepoState;
 
 const SCHEMA_VERSION: u32 = 1;
@@ -86,7 +87,12 @@ pub fn build_context_pack(
 ) -> anyhow::Result<Value> {
     let start = Instant::now();
     let default_budget = parse_budget(&params.budget)?;
-    let prepared = targeting::prepare_targets(params.goal.as_ref(), params.targets, params.limit, params.budget_tokens)?;
+    let prepared = targeting::prepare_targets(
+        params.goal.as_ref(),
+        params.targets,
+        params.limit,
+        params.budget_tokens,
+    )?;
     let effective_limit = prepared.limit;
     let budget_tokens = prepared.budget_tokens;
     let mut omitted = prepared.omitted;
@@ -124,7 +130,8 @@ pub fn build_context_pack(
         })
         .map_err(|e| anyhow::anyhow!(e))?;
 
-    let truncation_applied = accounting::apply_pack_cap(&mut artifacts, &mut omitted, budget_tokens);
+    let truncation_applied =
+        accounting::apply_pack_cap(&mut artifacts, &mut omitted, budget_tokens);
     let accountings = accounting::collect_artifact_accountings(&artifacts);
     let token_estimate = accountings.iter().map(|a| a.token_estimate).sum::<usize>();
     accounting::record_pack_metrics(state, &accountings, start, token_estimate);

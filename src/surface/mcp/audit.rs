@@ -7,12 +7,11 @@ use crate::pipeline::recent_activity::{
 
 use super::findings;
 use super::helpers::render_result;
+use super::limits::{
+    bounded_limit_value, DEFAULT_FINDINGS_LIMIT, DEFAULT_NOTES_LIMIT, MAX_FINDINGS_LIMIT,
+    MAX_NOTES_LIMIT,
+};
 use super::SynrepoState;
-
-/// Hard ceiling on `synrepo_findings` page size. Mirrors the 200-entry cap
-/// enforced by `recent_activity_impl`; prevents an LLM-supplied `limit` of
-/// millions from pulling the entire overlay table into memory.
-const MAX_FINDINGS_LIMIT: u32 = 500;
 
 /// Parameters for the `synrepo_findings` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -24,13 +23,13 @@ pub struct FindingsParams {
     pub kind: Option<String>,
     /// Optional freshness state to filter by.
     pub freshness: Option<String>,
-    /// Maximum number of findings to return. Defaults to 20, capped at 500.
+    /// Maximum number of findings to return. Defaults to 25, capped at 50.
     #[serde(default = "default_limit")]
     pub limit: u32,
 }
 
 fn default_limit() -> u32 {
-    20
+    DEFAULT_FINDINGS_LIMIT as u32
 }
 
 /// Parameters for the `synrepo_recent_activity` tool.
@@ -40,7 +39,7 @@ pub struct RecentActivityParams {
     /// Activity kinds to include: "reconcile", "repair", "cross_link",
     /// "overlay_refresh", "hotspot". Defaults to all kinds.
     pub kinds: Option<Vec<String>>,
-    /// Maximum entries to return (default 20, max 200).
+    /// Maximum entries to return (default 10, max 50).
     #[serde(default = "default_activity_limit")]
     pub limit: usize,
     /// Exclude entries older than this RFC 3339 timestamp.
@@ -48,7 +47,7 @@ pub struct RecentActivityParams {
 }
 
 fn default_activity_limit() -> usize {
-    20
+    DEFAULT_NOTES_LIMIT
 }
 
 /// Parameters for the `synrepo_next_actions` tool.
@@ -70,7 +69,8 @@ pub fn handle_findings(
     freshness: Option<String>,
     limit: u32,
 ) -> String {
-    let capped = limit.min(MAX_FINDINGS_LIMIT);
+    let capped =
+        bounded_limit_value(limit as usize, DEFAULT_FINDINGS_LIMIT, MAX_FINDINGS_LIMIT) as u32;
     let result = findings::render_findings(repo_root, node_id, kind, freshness, capped);
     render_result(result)
 }
@@ -105,7 +105,7 @@ fn recent_activity_impl(
     let synrepo_dir = crate::config::Config::synrepo_dir(&state.repo_root);
     let query = RecentActivityQuery {
         kinds: parsed_kinds,
-        limit,
+        limit: bounded_limit_value(limit, DEFAULT_NOTES_LIMIT, MAX_NOTES_LIMIT),
         since,
     };
     let entries = read_recent_activity(&synrepo_dir, &state.repo_root, &state.config, query)?;

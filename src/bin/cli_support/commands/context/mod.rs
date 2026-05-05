@@ -123,6 +123,15 @@ pub(crate) fn stats_context(repo_root: &Path, format: StatFormat) -> anyhow::Res
                 "    truncation applied: {}",
                 metrics.truncation_applied_total
             );
+            println!(
+                "    responses over soft cap: {}",
+                metrics.responses_over_soft_cap_total
+            );
+            println!(
+                "    responses truncated: {}",
+                metrics.responses_truncated_total
+            );
+            println!("    deep cards served: {}", metrics.deep_cards_served_total);
             println!("    test surface hits: {}", metrics.test_surface_hits_total);
             if metrics.workflow_calls_total.is_empty() {
                 println!("    workflow calls: (none recorded)");
@@ -145,6 +154,13 @@ pub(crate) fn stats_context(repo_root: &Path, format: StatFormat) -> anyhow::Res
                 metrics.compact_estimated_tokens_saved_total
             );
             println!("    omitted items: {}", metrics.compact_omitted_items_total);
+            println!("  context packs:");
+            println!("    tokens served: {}", metrics.context_pack_tokens_total);
+            println!("  response budget:");
+            println!(
+                "    largest response tokens: {}",
+                metrics.largest_response_tokens
+            );
         }
     }
     Ok(())

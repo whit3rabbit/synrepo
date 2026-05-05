@@ -12,7 +12,7 @@ fn query_via_mcp_resolves_short_symbol_names() {
     let state = prepare_mcp_state(repo.path()).expect("MCP state should load");
 
     let output =
-        synrepo::surface::mcp::primitives::handle_query(&state, "outbound lib".to_string());
+        synrepo::surface::mcp::primitives::handle_query(&state, "outbound lib".to_string(), None);
     let json: serde_json::Value = serde_json::from_str(&output).expect("query should return JSON");
 
     assert_eq!(json["direction"], "outbound", "unexpected output: {output}");

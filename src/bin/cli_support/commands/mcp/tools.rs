@@ -87,12 +87,12 @@ impl SynrepoServer {
 
     #[tool(name = "synrepo_edges", description = "Traverse edges from a node. Optional direction (outbound/inbound) and edge type filters.")]
     async fn synrepo_edges(&self, Parameters(params): Parameters<primitives::EdgesParams>) -> String {
-        self.with_tool_state_blocking("synrepo_edges", params.repo_root.clone(), move |state| primitives::handle_edges(&state, params.id, params.direction, params.edge_types)).await
+        self.with_tool_state_blocking("synrepo_edges", params.repo_root.clone(), move |state| primitives::handle_edges(&state, params.id, params.direction, params.edge_types, params.limit)).await
     }
 
     #[tool(name = "synrepo_query", description = "Structured graph query: 'outbound <target> [edge_kind]' or 'inbound <target> [edge_kind]'. Target accepts node IDs, file paths, and symbol names.")]
     async fn synrepo_query(&self, Parameters(params): Parameters<primitives::QueryParams>) -> String {
-        self.with_tool_state_blocking("synrepo_query", params.repo_root.clone(), move |state| primitives::handle_query(&state, params.query)).await
+        self.with_tool_state_blocking("synrepo_query", params.repo_root.clone(), move |state| primitives::handle_query(&state, params.query, params.limit)).await
     }
 
     #[tool(name = "synrepo_graph_neighborhood", description = "Return a bounded graph-backed neighborhood model for a target, or a top-degree overview when target is omitted.")]

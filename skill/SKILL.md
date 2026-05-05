@@ -284,6 +284,30 @@ Read/card tools are rate-limited. If you receive `RATE_LIMITED`, wait briefly or
 
 Default to `tiny`.
 
+## Context budget contract
+
+Do not maximize returned context. Return the smallest useful MCP response.
+
+Default sequence:
+1. `synrepo_orient`
+2. `synrepo_search(..., output_mode: "compact", limit: 5-10)`
+3. `synrepo_card(..., budget: "tiny")`
+4. `synrepo_card(..., budget: "normal")` only for the best 1-3 targets
+5. `synrepo_minimum_context(..., budget: "normal")` when local neighborhood matters
+6. `synrepo_context_pack(...)` only after targets are known
+7. `budget: "deep"` or full-file reads only immediately before implementation or validation
+
+Rules:
+- Always pass `limit` on search/list tools.
+- Prefer `budget_tokens` when available.
+- Prefer `output_mode: "compact"` for routing.
+- Do not call `output_mode: "cards"` with broad queries.
+- Do not batch unrelated targets into one context pack.
+- Do not request `deep` cards for more than 1-3 files at a time.
+- Do not paste whole MCP JSON responses into reasoning unless the relevant field is needed.
+- Treat `context_accounting.truncation_applied: true` as a signal to narrow the query, not automatically escalate.
+- If a response includes `omitted`, `truncated`, `output_accounting`, or `context_accounting`, use that metadata to decide the next smallest step.
+
 ## Fallback
 
 If MCP is unavailable, use the CLI:

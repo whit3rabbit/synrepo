@@ -70,6 +70,24 @@ fn record_compact_output_updates_content_free_totals() {
 }
 
 #[test]
+fn record_response_budget_updates_flood_metrics_without_content() {
+    let mut metrics = ContextMetrics::default();
+    metrics.record_mcp_response_budget("synrepo_search", 5_000, true, true);
+    metrics.record_context_pack_tokens(700);
+
+    assert_eq!(metrics.responses_over_soft_cap_total, 1);
+    assert_eq!(metrics.responses_truncated_total, 1);
+    assert_eq!(metrics.largest_response_tokens, 5_000);
+    assert_eq!(
+        metrics.tool_token_totals.get("synrepo_search"),
+        Some(&5_000)
+    );
+    assert_eq!(metrics.context_pack_tokens_total, 700);
+    let serialized = serde_json::to_string(&metrics).unwrap();
+    assert!(!serialized.contains("query text"));
+}
+
+#[test]
 fn record_task_route_updates_fast_path_totals() {
     let mut metrics = ContextMetrics::default();
     let route =
@@ -147,6 +165,12 @@ fn mcp_metrics_default_when_loading_older_json() {
     assert!(metrics.saved_context_writes_total.is_empty());
     assert_eq!(metrics.compact_outputs_total, 0);
     assert_eq!(metrics.compact_estimated_tokens_saved_total, 0);
+    assert_eq!(metrics.responses_over_soft_cap_total, 0);
+    assert_eq!(metrics.responses_truncated_total, 0);
+    assert_eq!(metrics.deep_cards_served_total, 0);
+    assert_eq!(metrics.context_pack_tokens_total, 0);
+    assert_eq!(metrics.largest_response_tokens, 0);
+    assert!(metrics.tool_token_totals.is_empty());
     assert_eq!(metrics.route_classifications_total, 0);
     assert_eq!(metrics.cross_link_generation_total, 0);
     assert_eq!(metrics.cross_link_promoted_total, 0);

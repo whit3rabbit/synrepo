@@ -4,7 +4,11 @@ use serde_json::json;
 
 use crate::{config::Config, pipeline::explain::docs::search_commentary_docs};
 
-use super::{helpers::render_result, SynrepoState};
+use super::{
+    helpers::render_result,
+    limits::{bounded_limit_value, DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT},
+    SynrepoState,
+};
 
 /// Parameters for the `synrepo_docs_search` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -12,13 +16,13 @@ pub struct DocsSearchParams {
     pub repo_root: Option<std::path::PathBuf>,
     /// Lexical query string against explaind commentary docs.
     pub query: String,
-    /// Maximum number of results to return. Defaults to 20.
+    /// Maximum number of results to return. Defaults to 10, capped at 50.
     #[serde(default = "default_limit")]
     pub limit: u32,
 }
 
 fn default_limit() -> u32 {
-    20
+    DEFAULT_SEARCH_LIMIT as u32
 }
 
 pub fn handle_docs_search(state: &SynrepoState, query: String, limit: u32) -> String {
@@ -30,12 +34,14 @@ pub fn handle_docs_search(state: &SynrepoState, query: String, limit: u32) -> St
         let overlay_dir = synrepo_dir.join("overlay");
         state.require_overlay_materialized()?;
         let overlay = crate::store::overlay::SqliteOverlayStore::open_existing(&overlay_dir)?;
+        let limit = bounded_limit_value(limit as usize, DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT);
         let results = compiler.with_reader(|graph| {
-            search_commentary_docs(&synrepo_dir, graph, Some(&overlay), &query, limit as usize)
+            search_commentary_docs(&synrepo_dir, graph, Some(&overlay), &query, limit)
         })?;
 
         Ok(json!({
             "query": query,
+            "limit": limit,
             "results": results,
         }))
     })();

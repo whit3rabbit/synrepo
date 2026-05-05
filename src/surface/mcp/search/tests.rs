@@ -49,22 +49,38 @@ fn search_params(output_mode: OutputMode, budget_tokens: Option<usize>) -> Searc
 }
 
 #[test]
-fn default_search_output_remains_compatible() {
+fn search_defaults_to_compact_and_bounded() {
     let (_dir, state) = make_state();
-    let value: serde_json::Value = serde_json::from_str(&handle_search(
-        &state,
-        search_params(OutputMode::Default, None),
-    ))
+    let params: SearchParams = serde_json::from_value(serde_json::json!({
+        "query": "alpha",
+        "limit": 0
+    }))
     .unwrap();
+    let value: serde_json::Value = serde_json::from_str(&handle_search(&state, params)).unwrap();
 
     assert_eq!(value["query"], "alpha");
     assert_eq!(value["engine"], "syntext");
     assert_eq!(value["source_store"], "substrate_index");
     assert_eq!(value["mode"], "auto");
     assert_eq!(value["semantic_available"], false);
+    assert_eq!(value["output_mode"], "compact");
+    assert_eq!(value["limit"], 1);
+    assert!(value.get("results").is_none());
+    assert!(value["output_accounting"].is_object());
+}
+
+#[test]
+fn explicit_default_search_output_remains_available() {
+    let (_dir, state) = make_state();
+    let mut params = search_params(OutputMode::Default, None);
+    params.limit = 1000;
+    let value: serde_json::Value = serde_json::from_str(&handle_search(&state, params)).unwrap();
+
+    assert_eq!(value["query"], "alpha");
     assert!(value["results"]
         .as_array()
         .is_some_and(|rows| !rows.is_empty()));
+    assert_eq!(value["limit"], 50);
     assert!(value.get("output_accounting").is_none());
 }
 
@@ -114,11 +130,10 @@ fn compact_search_budget_reports_omissions() {
 #[test]
 fn cards_search_returns_deduped_tiny_file_cards() {
     let (_dir, state) = make_state();
-    let value: serde_json::Value = serde_json::from_str(&handle_search(
-        &state,
-        search_params(OutputMode::Cards, None),
-    ))
-    .unwrap();
+    let mut params = search_params(OutputMode::Cards, None);
+    params.query = "pub fn alpha".to_string();
+    params.limit = 5;
+    let value: serde_json::Value = serde_json::from_str(&handle_search(&state, params)).unwrap();
 
     assert_eq!(value["output_mode"], "cards");
     assert_eq!(value["source_store"], "graph");
@@ -129,6 +144,19 @@ fn cards_search_returns_deduped_tiny_file_cards() {
         .iter()
         .any(|card| card["path"].as_str() == Some("src/lib.rs")));
     assert!(value["unresolved"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn cards_search_rejects_broad_queries() {
+    let (_dir, state) = make_state();
+    let value: serde_json::Value = serde_json::from_str(&handle_search(
+        &state,
+        search_params(OutputMode::Cards, None),
+    ))
+    .unwrap();
+
+    assert_eq!(value["ok"], false);
+    assert_eq!(value["error"]["code"], "INVALID_PARAMETER");
 }
 
 #[test]

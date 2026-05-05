@@ -13,7 +13,8 @@ use crate::{
 
 use super::helpers::render_result;
 use super::limits::{
-    check_chars, check_len, MAX_NOTE_CLAIM_CHARS, MAX_NOTE_EVIDENCE, MAX_NOTE_SOURCE_HASHES,
+    bounded_limit_value, check_chars, check_len, DEFAULT_NOTES_LIMIT, MAX_NOTES_LIMIT,
+    MAX_NOTE_CLAIM_CHARS, MAX_NOTE_EVIDENCE, MAX_NOTE_SOURCE_HASHES,
 };
 use super::SynrepoState;
 
@@ -26,7 +27,7 @@ fn default_confidence() -> AgentNoteConfidence {
 }
 
 fn default_limit() -> usize {
-    20
+    DEFAULT_NOTES_LIMIT
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -247,13 +248,14 @@ fn notes_result(state: &SynrepoState, params: NotesParams) -> anyhow::Result<ser
     let synrepo_dir = Config::synrepo_dir(&state.repo_root);
     state.require_overlay_materialized()?;
     let overlay = SqliteOverlayStore::open_existing(&synrepo_dir.join("overlay"))?;
+    let limit = bounded_limit_value(params.limit, DEFAULT_NOTES_LIMIT, MAX_NOTES_LIMIT);
     let notes = overlay.query_notes(AgentNoteQuery {
         target_kind: params.target_kind,
         target_id: params.target,
         include_forgotten: params.include_hidden,
         include_superseded: params.include_hidden,
         include_invalid: params.include_hidden,
-        limit: params.limit,
+        limit,
     })?;
     Ok(serde_json::to_value(notes)?)
 }

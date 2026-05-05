@@ -31,6 +31,15 @@ fn context_pack_params_schema_uses_target_objects() {
 }
 
 #[test]
+fn skill_contains_context_budget_contract() {
+    let skill = fs::read_to_string("skill/SKILL.md").expect("read skill");
+
+    assert!(skill.contains("## Context budget contract"));
+    assert!(skill.contains("Return the smallest useful MCP response"));
+    assert!(skill.contains("Do not request `deep` cards for more than 1-3 files at a time"));
+}
+
+#[test]
 fn refactor_suggestions_params_and_docs_are_listed() {
     let source = fs::read_to_string("src/surface/mcp/refactor_suggestions.rs")
         .expect("read refactor suggestions source");

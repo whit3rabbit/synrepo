@@ -157,8 +157,14 @@ fn collect_tool_outputs(
         search::handle_where_to_edit(state, "update add behavior".to_string(), 5, None),
         search::handle_change_impact(state, file_path.to_string()),
         primitives::handle_node(state, symbol_target.clone()),
-        primitives::handle_edges(state, symbol_target.clone(), "inbound".to_string(), None),
-        primitives::handle_query(state, format!("outbound {symbol_target}")),
+        primitives::handle_edges(
+            state,
+            symbol_target.clone(),
+            "inbound".to_string(),
+            None,
+            None,
+        ),
+        primitives::handle_query(state, format!("outbound {symbol_target}"), None),
         primitives::handle_provenance(state, symbol_target.clone()),
         audit::handle_findings(
             state.repo_root.as_path(),

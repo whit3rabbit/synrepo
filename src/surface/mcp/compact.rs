@@ -202,6 +202,8 @@ fn compact_payload(
         "query": original.get("query").cloned().unwrap_or(Value::Null),
         "engine": original.get("engine").cloned().unwrap_or(Value::Null),
         "source_store": original.get("source_store").cloned().unwrap_or(Value::Null),
+        "mode": original.get("mode").cloned().unwrap_or(Value::Null),
+        "semantic_available": original.get("semantic_available").cloned().unwrap_or(Value::Null),
         "limit": original.get("limit").cloned().unwrap_or(Value::Null),
         "filters": original.get("filters").cloned().unwrap_or(Value::Null),
         "result_count": original.get("result_count").cloned().unwrap_or(Value::Null),

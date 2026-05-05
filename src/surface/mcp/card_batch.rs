@@ -197,3 +197,81 @@ fn mark_card_truncated(card: &mut serde_json::Value) {
         );
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use tempfile::tempdir;
+
+    use super::*;
+    use crate::{bootstrap::bootstrap, config::Config};
+
+    fn make_state() -> (tempfile::TempDir, SynrepoState) {
+        let home = tempdir().unwrap();
+        let _home_guard = crate::config::test_home::HomeEnvGuard::redirect_to(home.path());
+        let dir = tempdir().unwrap();
+        let repo = dir.path();
+        fs::create_dir_all(repo.join("src")).unwrap();
+        for idx in 0..4 {
+            fs::write(
+                repo.join(format!("src/file{idx}.rs")),
+                format!("pub fn unique_card_batch_{idx}() {{}}\n"),
+            )
+            .unwrap();
+        }
+        bootstrap(repo, None, false).unwrap();
+        let state = SynrepoState {
+            config: Config::load(repo).unwrap(),
+            repo_root: repo.to_path_buf(),
+        };
+        (dir, state)
+    }
+
+    fn params(targets: Vec<&str>, budget: &str, budget_tokens: Option<usize>) -> CardParams {
+        CardParams {
+            repo_root: None,
+            target: None,
+            targets: targets.into_iter().map(str::to_string).collect(),
+            budget: budget.to_string(),
+            budget_tokens,
+            include_notes: false,
+        }
+    }
+
+    #[test]
+    fn deep_card_batch_rejects_more_than_three_targets() {
+        let (_dir, state) = make_state();
+        let output = handle_card_params(
+            &state,
+            params(
+                vec![
+                    "src/file0.rs",
+                    "src/file1.rs",
+                    "src/file2.rs",
+                    "src/file3.rs",
+                ],
+                "deep",
+                None,
+            ),
+        );
+        let value: serde_json::Value = serde_json::from_str(&output).unwrap();
+
+        assert_eq!(value["ok"], false);
+        assert_eq!(value["error"]["code"], "INVALID_PARAMETER");
+    }
+
+    #[test]
+    fn card_batch_reports_omitted_targets_over_budget() {
+        let (_dir, state) = make_state();
+        let output = handle_card_params(
+            &state,
+            params(vec!["src/file0.rs", "src/file1.rs"], "tiny", Some(1)),
+        );
+        let value: serde_json::Value = serde_json::from_str(&output).unwrap();
+
+        assert_eq!(value["cards"].as_array().unwrap().len(), 1);
+        assert_eq!(value["omitted"][0]["target"], "src/file1.rs");
+        assert_eq!(value["context_accounting"]["truncation_applied"], true);
+    }
+}

@@ -152,6 +152,31 @@ fn metrics_json_reports_this_session_tool_counts() {
 }
 
 #[test]
+fn tool_state_clamps_large_outputs_and_records_budget_metrics() {
+    let _home = home_fixture();
+    let (_repo, repo_path) = ready_repo("pub fn clamp_metric_needle() {}\n");
+    let state = prepare_state(&repo_path).unwrap();
+    let server = SynrepoServer::new_optional(Some(state), false);
+
+    let output = server.with_tool_state("synrepo_search", None, |_state| {
+        let rows = (0..120)
+            .map(|idx| json!({ "path": "src/lib.rs", "content": "x".repeat(300), "idx": idx }))
+            .collect::<Vec<_>>();
+        json!({ "results": rows }).to_string()
+    });
+    let value: serde_json::Value = serde_json::from_str(&output).unwrap();
+
+    assert_eq!(value["context_accounting"]["truncation_applied"], true);
+    let metrics = synrepo::pipeline::context_metrics::load(&Config::synrepo_dir(&repo_path))
+        .expect("load context metrics");
+    assert_eq!(metrics.responses_truncated_total, 1);
+    assert_eq!(
+        metrics.tool_token_totals.get("synrepo_search"),
+        Some(&metrics.largest_response_tokens)
+    );
+}
+
+#[test]
 fn metrics_with_bad_explicit_repo_root_returns_error() {
     let _home = home_fixture();
     let dir = tempdir().unwrap();
