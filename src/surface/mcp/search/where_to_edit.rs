@@ -9,6 +9,8 @@ use crate::surface::card::{Budget, CardCompiler};
 use super::super::card_set::apply_card_set_cap;
 use super::SynrepoState;
 
+mod recommend;
+
 const MAX_QUERY_ATTEMPTS: usize = 24;
 const MAX_MATCHES_PER_QUERY: usize = 50;
 
@@ -62,6 +64,12 @@ pub fn handle_where_to_edit(
 
         let cards_empty = cards.is_empty();
         let miss_reason = miss_reason(cards_empty, matched_index_rows);
+        let recommended_next_queries = recommend::recommended_next_queries(&task, miss_reason);
+        let recommended_tool = if recommended_next_queries.is_empty() {
+            None
+        } else {
+            Some("synrepo_search")
+        };
 
         Ok(json!({
             "task": task,
@@ -70,6 +78,8 @@ pub fn handle_where_to_edit(
             "query_attempts": query_attempts_json(&routing.query_attempts),
             "fallback_used": routing.fallback_used,
             "miss_reason": miss_reason,
+            "recommended_next_queries": recommended_next_queries,
+            "recommended_tool": recommended_tool,
         }))
     })();
     super::render_result(result)

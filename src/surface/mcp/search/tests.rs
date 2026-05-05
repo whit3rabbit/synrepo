@@ -245,6 +245,33 @@ fn where_to_edit_reports_zero_match_diagnostics_without_fake_suggestions() {
     assert!(value["query_attempts"]
         .as_array()
         .is_some_and(|attempts| !attempts.is_empty()));
+    assert_eq!(value["recommended_tool"], serde_json::Value::Null);
+    assert!(value["recommended_next_queries"]
+        .as_array()
+        .is_some_and(|queries| queries.is_empty()));
+}
+
+#[test]
+fn where_to_edit_recommends_exact_queries_on_mcp_review_miss() {
+    let (_dir, state) = make_routing_state();
+    let value: serde_json::Value = serde_json::from_str(&handle_where_to_edit(
+        &state,
+        "review MCP mutability and parameter validation".to_string(),
+        default_edit_limit(),
+        None,
+    ))
+    .unwrap();
+
+    assert_eq!(value["miss_reason"], "no_index_matches");
+    assert_eq!(value["recommended_tool"], "synrepo_search");
+    let queries = value["recommended_next_queries"].as_array().unwrap();
+    assert!(queries
+        .iter()
+        .any(|q| q.as_str() == Some("name = \"synrepo_")));
+    assert!(queries
+        .iter()
+        .any(|q| q.as_str() == Some("allow-source-edits")));
+    assert!(queries.iter().any(|q| q.as_str() == Some("parse_budget")));
 }
 
 fn suggestion_paths(value: &serde_json::Value) -> Vec<String> {

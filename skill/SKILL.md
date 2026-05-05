@@ -74,6 +74,8 @@ Read diagnostic fields when present:
 - `query_attempts`
 - `fallback_used`
 - `miss_reason`
+- `recommended_next_queries`
+- `recommended_tool`
 - `suggested_card_targets`
 - `output_accounting`
 
@@ -155,12 +157,13 @@ Do not treat CLI fallback as failure. Treat it as raw-source verification after 
 When a synrepo route misses or returns weak results:
 
 1. Inspect `query_attempts`, `fallback_used`, and `miss_reason` when present.
-2. If all attempts are broad phrases, retry with exact identifiers or string literals.
-3. If the task names a flag, tool, schema key, function, module, or file, use `synrepo_search` before `synrepo_find`.
-4. If compact search finds candidate files, escalate to `synrepo_card`.
-5. If cards are stale, incomplete, or not graph-backed, verify with raw source search.
-6. If the repo state is stale, run status/check/reconcile/sync through the CLI when allowed.
-7. Never claim an issue is confirmed from a broad finder result alone. Confirm against cards or source.
+2. If `recommended_next_queries` is non-empty, retry those exact probes with `recommended_tool`, usually `synrepo_search`.
+3. If all attempts are broad phrases, retry with exact identifiers or string literals.
+4. If the task names a flag, tool, schema key, function, module, or file, use `synrepo_search` before `synrepo_find`.
+5. If compact search finds candidate files, escalate to `synrepo_card`.
+6. If cards are stale, incomplete, or not graph-backed, verify with raw source search.
+7. If the repo state is stale, run status/check/reconcile/sync through the CLI when allowed.
+8. Never claim an issue is confirmed from a broad finder result alone. Confirm against cards or source.
 
 ## MCP edit path
 

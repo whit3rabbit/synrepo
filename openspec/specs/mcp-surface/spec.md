@@ -119,6 +119,11 @@ synrepo SHALL define an MCP surface centered on task-first tools for orientation
 - **THEN** the MCP surface defines a task-first tool that returns bounded card-based results
 - **AND** the tool contract does not require raw graph traversal knowledge from the caller
 
+#### Scenario: Route miss recommends exact follow-up probes
+- **WHEN** `synrepo_find` or `synrepo_where_to_edit` cannot produce graph-backed suggestions for broad task language
+- **THEN** the response includes miss diagnostics (`query_attempts`, `fallback_used`, and `miss_reason`)
+- **AND** the response MAY include `recommended_next_queries` plus `recommended_tool: "synrepo_search"` to guide exact lexical follow-up probes
+
 ### Requirement: Expose synrepo_docs_search as an advisory docs-search tool
 synrepo SHALL expose `synrepo_docs_search(query, limit?)` as an MCP tool that searches materialized explain commentary docs under `.synrepo/explain-docs/`. The tool SHALL return overlay-backed advisory results only, never canonical graph facts. Each result SHALL include `node_id`, `qualified_name`, `source_path`, `path`, `line`, `content`, `commentary_state`, `generated_at`, `model_identity`, and `source_store: "overlay"`.
 
