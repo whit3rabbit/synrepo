@@ -19,6 +19,11 @@ fn prometheus_output_matches_golden_string() {
     metrics.compact_estimated_tokens_saved_total = 320;
     metrics.compact_omitted_items_total = 5;
     metrics.compact_truncation_applied_total = 1;
+    metrics.responses_over_soft_cap_total = 2;
+    metrics.responses_truncated_total = 1;
+    metrics.deep_cards_served_total = 1;
+    metrics.context_pack_tokens_total = 640;
+    metrics.largest_response_tokens = 900;
     metrics.route_classifications_total = 6;
     metrics.context_fast_path_signals_total = 3;
     metrics.deterministic_edit_candidates_total = 2;
@@ -42,6 +47,9 @@ fn prometheus_output_matches_golden_string() {
     metrics
         .saved_context_writes_total
         .insert("note_add".to_string(), 1);
+    metrics
+        .tool_token_totals
+        .insert("synrepo_card".to_string(), 120);
     metrics.workflow_calls_total.insert("orient".to_string(), 2);
     metrics.workflow_calls_total.insert("find".to_string(), 1);
 
@@ -91,12 +99,27 @@ synrepo_test_surface_hits_total 2\n\
 	# HELP synrepo_compact_omitted_items_total Observed: search rows or compactable items omitted from compact outputs.\n\
 	# TYPE synrepo_compact_omitted_items_total counter\n\
 	synrepo_compact_omitted_items_total 5\n\
-	# HELP synrepo_compact_truncation_applied_total Observed: compact outputs that omitted content.\n\
-	# TYPE synrepo_compact_truncation_applied_total counter\n\
-	synrepo_compact_truncation_applied_total 1\n\
-	# HELP synrepo_route_classifications_total Observed: task-route classifications served without storing task text.\n\
-	# TYPE synrepo_route_classifications_total counter\n\
-	synrepo_route_classifications_total 6\n\
+# HELP synrepo_compact_truncation_applied_total Observed: compact outputs that omitted content.\n\
+# TYPE synrepo_compact_truncation_applied_total counter\n\
+synrepo_compact_truncation_applied_total 1\n\
+# HELP synrepo_responses_over_soft_cap_total Observed: MCP responses whose estimated size exceeded the soft cap.\n\
+# TYPE synrepo_responses_over_soft_cap_total counter\n\
+synrepo_responses_over_soft_cap_total 2\n\
+# HELP synrepo_responses_truncated_total Observed: MCP responses trimmed by the final response clamp.\n\
+# TYPE synrepo_responses_truncated_total counter\n\
+synrepo_responses_truncated_total 1\n\
+# HELP synrepo_deep_cards_served_total Observed: deep card-shaped responses served.\n\
+# TYPE synrepo_deep_cards_served_total counter\n\
+synrepo_deep_cards_served_total 1\n\
+# HELP synrepo_context_pack_tokens_total Estimated: sum of estimated tokens in served context packs.\n\
+# TYPE synrepo_context_pack_tokens_total counter\n\
+synrepo_context_pack_tokens_total 640\n\
+# HELP synrepo_largest_response_tokens Estimated: largest MCP response token estimate observed.\n\
+# TYPE synrepo_largest_response_tokens counter\n\
+synrepo_largest_response_tokens 900\n\
+# HELP synrepo_route_classifications_total Observed: task-route classifications served without storing task text.\n\
+# TYPE synrepo_route_classifications_total counter\n\
+synrepo_route_classifications_total 6\n\
 	# HELP synrepo_context_fast_path_signals_total Observed: hook emissions containing the context fast-path signal.\n\
 	# TYPE synrepo_context_fast_path_signals_total counter\n\
 	synrepo_context_fast_path_signals_total 3\n\
@@ -140,11 +163,14 @@ synrepo_test_surface_hits_total 2\n\
 	# HELP synrepo_mcp_tool_errors_total Observed: MCP tool responses with a top-level error field.\n\
 	# TYPE synrepo_mcp_tool_errors_total counter\n\
 	synrepo_mcp_tool_errors_total{tool=\"synrepo_search\"} 1\n\
-	# HELP synrepo_saved_context_writes_total Observed: explicit advisory saved-context mutations keyed by operation.\n\
-	# TYPE synrepo_saved_context_writes_total counter\n\
-	synrepo_saved_context_writes_total{operation=\"note_add\"} 1\n\
-	# HELP synrepo_workflow_calls_total Observed: workflow alias tool-call counts (orient, find, explain, impact, risks, tests, changed, minimum_context).\n\
-	# TYPE synrepo_workflow_calls_total counter\n\
+# HELP synrepo_saved_context_writes_total Observed: explicit advisory saved-context mutations keyed by operation.\n\
+# TYPE synrepo_saved_context_writes_total counter\n\
+synrepo_saved_context_writes_total{operation=\"note_add\"} 1\n\
+# HELP synrepo_tool_token_totals Estimated: MCP response token estimates keyed by tool name.\n\
+# TYPE synrepo_tool_token_totals counter\n\
+synrepo_tool_token_totals{tool=\"synrepo_card\"} 120\n\
+# HELP synrepo_workflow_calls_total Observed: workflow alias tool-call counts (orient, find, explain, impact, risks, tests, changed, minimum_context).\n\
+# TYPE synrepo_workflow_calls_total counter\n\
 synrepo_workflow_calls_total{tool=\"find\"} 1\n\
 synrepo_workflow_calls_total{tool=\"orient\"} 2\n";
 
