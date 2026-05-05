@@ -46,6 +46,8 @@ Use `output_mode: "compact"` for broad searches where routing matters more than 
 
 MCP search is read-only. It searches the persisted substrate indexes as-is and does not reconcile, rebuild indexes, download semantic models, start watch, or silently refresh state. Use `synrepo watch`, `synrepo reconcile`, `synrepo sync`, or initialization flows when you want indexes updated after source changes. Clients should treat `semantic_available` and `routing_strategy` as runtime availability signals, not as configuration promises.
 
+Use `synrepo_readiness` when an agent needs a cheap preflight instead of the full orientation dashboard. It returns `graph`, `overlay`, `index`, `watch`, `reconcile`, and `edit_mode` status fields, plus capability rows with severity and next-action text. It is read-only, never starts watch, never reconciles, and reports whether overlay writes and source edits were enabled for this MCP process.
+
 ## Tool Groups
 
 Workflow aliases:
@@ -59,6 +61,7 @@ Workflow aliases:
 
 Task-first read tools:
 - `synrepo_overview`
+- `synrepo_readiness`
 - `synrepo_card`
 - `synrepo_context_pack`
 - `synrepo_task_route`
@@ -110,6 +113,8 @@ Use `synrepo_graph_neighborhood` when an agent needs a bounded graph-shaped resp
 Use `synrepo_refactor_suggestions` when an agent or operator asks whether large files should be refactored. It is read-only and returns deterministic facts for non-test source files over a physical-line threshold: graph file IDs, paths, language labels, line counts, symbol counts, modularity tags, and suggested follow-up MCP tools. The response is labeled `source_store: "graph+filesystem"` because it combines graph metadata with current filesystem line counts; it does not generate edits or refactor plans.
 
 `synrepo_overview` keeps the compatibility `mode` and `graph` fields and adds an orientation dashboard: readiness rows, watch status, reconcile and writer state, export freshness, explain provider state, commentary and overlay state, agent integration readiness, metrics summary, and recent activity. On a global/defaultless server where repository prep fails, overview returns degraded probe data with a structured initialization error rather than failing the whole response.
+
+`synrepo_readiness` returns a compact preflight: `graph: "ready|missing|error"`, `overlay: "ready|missing|error"`, `index: "ready|stale|missing"`, `watch: "active|inactive|starting|stale|error"`, `reconcile: "fresh|stale|missing|error"`, and `edit_mode: { overlay_writes, source_edits }`. The `details.capabilities` array mirrors the readiness matrix used by `synrepo_overview`.
 
 `synrepo_card` accepts either `target` or `targets`. `targets` batches up to 10 files or symbols under one read epoch and returns per-target errors so one missing card does not fail the whole batch. A single card with `budget_tokens` retries smaller budget tiers before marking truncation. Path-like card targets can return a degraded file stub with existence and Git status when repository prep fails. Mutating tools never degrade.
 

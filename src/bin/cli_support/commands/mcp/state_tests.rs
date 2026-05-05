@@ -171,6 +171,7 @@ fn default_tool_list_excludes_all_mutating_tools() {
             "{tool} was registered"
         );
     }
+    assert!(names.iter().any(|name| name == "synrepo_readiness"));
     assert!(names.iter().any(|name| name == "synrepo_notes"));
     assert!(names.iter().any(|name| name == "synrepo_findings"));
     assert!(names.iter().any(|name| name == "synrepo_docs_search"));

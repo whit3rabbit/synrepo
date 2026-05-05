@@ -124,6 +124,26 @@ synrepo SHALL define an MCP surface centered on task-first tools for orientation
 - **THEN** the response includes miss diagnostics (`query_attempts`, `fallback_used`, and `miss_reason`)
 - **AND** the response MAY include `recommended_next_queries` plus `recommended_tool: "synrepo_search"` to guide exact lexical follow-up probes
 
+### Requirement: Expose synrepo_readiness as a read-only preflight tool
+synrepo SHALL expose `synrepo_readiness(repo_root?)` as a cheap read-only MCP tool for operational trust checks. The tool SHALL report top-level `graph`, `overlay`, `index`, `watch`, `reconcile`, and `edit_mode` fields. It SHALL include readiness detail rows derived from the shared readiness matrix. The tool SHALL NOT start watch, run reconcile, refresh commentary, mutate overlay state, mutate source files, or enable mutating tools.
+
+#### Scenario: Agent checks readiness before relying on repo context
+- **WHEN** an agent invokes `synrepo_readiness`
+- **THEN** the response includes `graph`, `overlay`, `index`, `watch`, and `reconcile` status fields
+- **AND** the response includes `edit_mode.overlay_writes` and `edit_mode.source_edits`
+- **AND** the response includes capability detail rows with severity and next action
+
+#### Scenario: Default server reports read-only edit modes
+- **WHEN** the MCP server was started without overlay-write or source-edit flags
+- **AND** an agent invokes `synrepo_readiness`
+- **THEN** `edit_mode.overlay_writes` is false
+- **AND** `edit_mode.source_edits` is false
+
+#### Scenario: Readiness does not repair or refresh state
+- **WHEN** `synrepo_readiness` observes a stale index, inactive watch, or missing overlay database
+- **THEN** the response labels that state and recommends next actions where available
+- **AND** the tool performs no write or background-start side effects
+
 ### Requirement: Expose synrepo_docs_search as an advisory docs-search tool
 synrepo SHALL expose `synrepo_docs_search(query, limit?)` as an MCP tool that searches materialized explain commentary docs under `.synrepo/explain-docs/`. The tool SHALL return overlay-backed advisory results only, never canonical graph facts. Each result SHALL include `node_id`, `qualified_name`, `source_path`, `path`, `line`, `content`, `commentary_state`, `generated_at`, `model_identity`, and `source_store: "overlay"`.
 

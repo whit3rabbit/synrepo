@@ -38,7 +38,11 @@ fn mcp_source_registers_context_pack_and_resources() {
 fn mcp_source_registers_metrics_and_project_tools() {
     let source = fs::read_to_string("src/bin/cli_support/commands/mcp/tools.rs")
         .expect("read MCP registration source");
-    for tool in ["synrepo_metrics", "synrepo_use_project"] {
+    for tool in [
+        "synrepo_readiness",
+        "synrepo_metrics",
+        "synrepo_use_project",
+    ] {
         let needle = format!("name = \"{tool}\"");
         assert!(
             source.contains(&needle),

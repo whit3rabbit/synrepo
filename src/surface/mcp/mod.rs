@@ -63,6 +63,8 @@ pub mod notes;
 #[doc(hidden)]
 pub mod primitives;
 #[doc(hidden)]
+pub mod readiness;
+#[doc(hidden)]
 pub mod refactor_suggestions;
 #[doc(hidden)]
 pub mod search;

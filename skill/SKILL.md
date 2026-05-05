@@ -54,6 +54,7 @@ For broad repository questions, start with:
 
 - `synrepo_orient`
 - `synrepo_overview`
+- `synrepo_readiness` when you only need operational trust status
 
 Use these to identify modules, readiness, watch/reconcile state, likely card targets, and subsystem boundaries.
 
@@ -225,6 +226,7 @@ V1 edit candidates are advisory only: `var-to-const`, `remove-debug-logging`, `r
 ## Core tools
 
 * `synrepo_overview()` — first call on an unfamiliar repo.
+* `synrepo_readiness()` — cheap read-only preflight for graph, overlay, index, watch, reconcile, and enabled MCP mutation modes.
 * `synrepo_orient()` — workflow alias for first-call orientation.
 * `synrepo_find(task, limit?, budget_tokens?)` — task-oriented routing for plain-language questions. Best for “where should I look?” Not the best first tool for exact symbols, string literals, flags, schema fields, tool names, or file paths.
 * `synrepo_where_to_edit(task, limit?)` — ranked edit candidates for plain-language edit tasks. Inspect diagnostics and switch to exact search when broad routing misses.

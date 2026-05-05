@@ -69,6 +69,7 @@ Graph export is native to synrepo, not skill-owned. When a user asks for a visua
 - `synrepo_search query=<text> [output_mode=compact]` — lexical search across indexed files; compact mode groups matches by file and returns output accounting
 - `synrepo_task_route task=<description> [path=<path>]` — classify a task into the cheapest safe route and hook signals
 - `synrepo_overview` — graph node counts and repository mode
+- `synrepo_readiness` — cheap read-only preflight for graph, overlay, index, watch, reconcile, and enabled MCP mutation modes
 - `synrepo_where_to_edit task=<description>` — file suggestions for a plain-language task
 - `synrepo_change_impact target=<id>` — first-pass reverse dependencies
 - `synrepo_minimum_context target=<id> budget=<...>` — budget-bounded 1-hop neighborhood

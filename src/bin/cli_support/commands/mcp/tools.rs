@@ -6,7 +6,7 @@ use rmcp::{
 use synrepo::surface::handoffs::{collect_handoffs, to_json as handoffs_to_json, HandoffsRequest};
 use synrepo::surface::mcp::{
     audit, card_batch, cards, commentary, context_pack, docs, edits, graph, notes, primitives,
-    refactor_suggestions, search, task_route,
+    readiness, refactor_suggestions, search, task_route,
 };
 
 use super::SynrepoServer;
@@ -54,6 +54,15 @@ impl SynrepoServer {
             }
         }
         self.with_tool_state_blocking("synrepo_overview", params.repo_root.clone(), move |state| search::handle_overview(&state)).await
+    }
+
+    #[tool(name = "synrepo_readiness", description = "Return a cheap read-only MCP readiness preflight for graph, overlay, index, watch, reconcile, and enabled mutation modes.")]
+    async fn synrepo_readiness(&self, Parameters(params): Parameters<search::RepoRootParams>) -> String {
+        let overlay_writes = self.allow_overlay_writes;
+        let source_edits = self.allow_source_edits;
+        self.with_tool_state_blocking("synrepo_readiness", params.repo_root.clone(), move |state| {
+            readiness::handle_readiness(&state, overlay_writes, source_edits)
+        }).await
     }
 
     #[tool(name = "synrepo_use_project", description = "Set the default repository root for this MCP server session. Useful for global/defaultless MCP configs.")]
