@@ -25,6 +25,9 @@ impl ContextMetrics {
         if accounting.truncation_applied {
             self.truncation_applied_total += 1;
         }
+        if accounting.budget_tier == Budget::Deep {
+            self.deep_cards_served_total += 1;
+        }
         if accounting.stale {
             self.stale_responses_total += 1;
         }
@@ -104,6 +107,30 @@ impl ContextMetrics {
         if truncation_applied {
             self.compact_truncation_applied_total += 1;
         }
+    }
+
+    /// Record final MCP response-budget behavior without storing content.
+    pub fn record_mcp_response_budget(
+        &mut self,
+        tool: &str,
+        token_estimate: usize,
+        over_soft_cap: bool,
+        truncated: bool,
+    ) {
+        let tokens = token_estimate as u64;
+        *self.tool_token_totals.entry(tool.to_string()).or_default() += tokens;
+        self.largest_response_tokens = self.largest_response_tokens.max(tokens);
+        if over_soft_cap {
+            self.responses_over_soft_cap_total += 1;
+        }
+        if truncated {
+            self.responses_truncated_total += 1;
+        }
+    }
+
+    /// Record aggregate context-pack output size.
+    pub fn record_context_pack_tokens(&mut self, token_estimate: usize) {
+        self.context_pack_tokens_total += token_estimate as u64;
     }
 
     /// Record a task-route classification without storing task text.

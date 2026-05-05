@@ -9,10 +9,8 @@
 //! invocations. It is constructed by the binary-side MCP command and
 //! passed to every handler.
 
-use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, Condvar, Mutex as StdMutex, OnceLock};
-use std::time::Duration;
+use std::sync::Arc;
 
 use parking_lot::Mutex;
 
@@ -20,16 +18,9 @@ use crate::config::Config;
 use crate::structure::graph::snapshot;
 use crate::surface::card::compiler::GraphCardCompiler;
 
-const MAX_CONCURRENT_READS_PER_REPO: usize = 4;
-const READ_LIMIT_WAIT: Duration = Duration::from_millis(250);
-const MAX_POOLED_SQLITE_COMPILERS_PER_REPO: usize = 4;
-
-static READ_LIMITERS: OnceLock<StdMutex<HashMap<PathBuf, Arc<ReadLimiter>>>> = OnceLock::new();
-static SQLITE_COMPILER_POOL: OnceLock<StdMutex<HashMap<PathBuf, Vec<GraphCardCompiler>>>> =
-    OnceLock::new();
-
 #[doc(hidden)]
 pub mod audit;
+mod cache;
 #[doc(hidden)]
 pub mod card_accounting;
 #[doc(hidden)]
@@ -67,6 +58,8 @@ pub mod readiness;
 #[doc(hidden)]
 pub mod refactor_suggestions;
 #[doc(hidden)]
+pub mod response_budget;
+#[doc(hidden)]
 pub mod search;
 #[doc(hidden)]
 pub mod task_route;
@@ -103,7 +96,7 @@ impl SynrepoState {
         &self,
         f: impl FnOnce(&GraphCardCompiler) -> crate::Result<R>,
     ) -> crate::Result<R> {
-        let _permit = read_limiter(&self.repo_root).acquire()?;
+        let _permit = cache::acquire_read(&self.repo_root)?;
         if let Some(compiler) = self.snapshot_compiler()? {
             return f(&compiler);
         }
@@ -151,6 +144,49 @@ impl SynrepoState {
         self.create_sqlite_compiler()
     }
 
+    /// Return the overlay open error when a materialized overlay database is unusable.
+    pub fn overlay_open_error(&self) -> Option<String> {
+        use crate::store::overlay::SqliteOverlayStore;
+
+        let synrepo_dir = Config::synrepo_dir(&self.repo_root);
+        let overlay_dir = synrepo_dir.join("overlay");
+        let overlay_db = SqliteOverlayStore::db_path(&overlay_dir);
+        if !overlay_db.exists() {
+            return None;
+        }
+        SqliteOverlayStore::open_existing(&overlay_dir)
+            .err()
+            .map(|error| error.to_string())
+    }
+
+    /// Require a materialized overlay database, when present, to open cleanly.
+    pub fn require_overlay_available(&self) -> anyhow::Result<()> {
+        if let Some(error) = self.overlay_open_error() {
+            return Err(self::error::McpError::not_initialized(format!(
+                "overlay store unavailable: {error}"
+            ))
+            .into());
+        }
+        Ok(())
+    }
+
+    /// Require an overlay database to exist and open cleanly for overlay reads.
+    pub fn require_overlay_materialized(&self) -> anyhow::Result<()> {
+        use crate::store::overlay::SqliteOverlayStore;
+
+        let synrepo_dir = Config::synrepo_dir(&self.repo_root);
+        let overlay_dir = synrepo_dir.join("overlay");
+        let overlay_db = SqliteOverlayStore::db_path(&overlay_dir);
+        if !overlay_db.exists() {
+            return Err(self::error::McpError::not_initialized(format!(
+                "overlay store unavailable: overlay store is not materialized at {}",
+                overlay_db.display()
+            ))
+            .into());
+        }
+        self.require_overlay_available()
+    }
+
     fn snapshot_compiler(&self) -> crate::Result<Option<GraphCardCompiler>> {
         use crate::store::overlay::SqliteOverlayStore;
 
@@ -185,81 +221,12 @@ impl SynrepoState {
     }
 
     fn take_pooled_sqlite_compiler(&self) -> Option<crate::Result<GraphCardCompiler>> {
-        let pool = SQLITE_COMPILER_POOL.get_or_init(|| StdMutex::new(HashMap::new()));
-        let mut pool = pool.lock().ok()?;
-        pool.get_mut(&self.repo_root).and_then(Vec::pop).map(Ok)
+        cache::take_compiler(&self.repo_root)
     }
 
     fn return_pooled_sqlite_compiler(&self, compiler: GraphCardCompiler) {
-        let pool = SQLITE_COMPILER_POOL.get_or_init(|| StdMutex::new(HashMap::new()));
-        if let Ok(mut pool) = pool.lock() {
-            let compilers = pool.entry(self.repo_root.clone()).or_default();
-            if compilers.len() < MAX_POOLED_SQLITE_COMPILERS_PER_REPO {
-                compilers.push(compiler);
-            }
-        }
+        cache::return_compiler(&self.repo_root, compiler);
     }
-}
-
-struct ReadLimiter {
-    state: StdMutex<ReadLimiterState>,
-    cvar: Condvar,
-}
-
-#[derive(Default)]
-struct ReadLimiterState {
-    active: usize,
-}
-
-struct ReadPermit {
-    limiter: Arc<ReadLimiter>,
-}
-
-impl ReadLimiter {
-    fn acquire(self: &Arc<Self>) -> crate::Result<ReadPermit> {
-        let mut state = self
-            .state
-            .lock()
-            .map_err(|_| crate::Error::Other(anyhow::anyhow!("MCP read limiter lock poisoned")))?;
-        while state.active >= MAX_CONCURRENT_READS_PER_REPO {
-            let (next, timeout) = self
-                .cvar
-                .wait_timeout(state, READ_LIMIT_WAIT)
-                .map_err(|_| {
-                    crate::Error::Other(anyhow::anyhow!("MCP read limiter lock poisoned"))
-                })?;
-            state = next;
-            if timeout.timed_out() && state.active >= MAX_CONCURRENT_READS_PER_REPO {
-                return Err(crate::Error::Other(
-                    self::error::McpError::busy("too many concurrent MCP read snapshots").into(),
-                ));
-            }
-        }
-        state.active += 1;
-        Ok(ReadPermit {
-            limiter: Arc::clone(self),
-        })
-    }
-}
-
-impl Drop for ReadPermit {
-    fn drop(&mut self) {
-        if let Ok(mut state) = self.limiter.state.lock() {
-            state.active = state.active.saturating_sub(1);
-            self.limiter.cvar.notify_one();
-        }
-    }
-}
-
-fn read_limiter(repo_root: &std::path::Path) -> Arc<ReadLimiter> {
-    let limiters = READ_LIMITERS.get_or_init(|| StdMutex::new(HashMap::new()));
-    let mut limiters = limiters.lock().expect("read limiter map poisoned");
-    Arc::clone(limiters.entry(repo_root.to_path_buf()).or_insert_with(|| {
-        Arc::new(ReadLimiter {
-            state: StdMutex::new(ReadLimiterState::default()),
-            cvar: Condvar::new(),
-        })
-    }))
 }
 
 pub(crate) fn graph_snapshot_disabled() -> bool {
@@ -327,5 +294,86 @@ mod tests {
                 "concurrent handler {i} returned a different payload",
             );
         }
+    }
+
+    #[test]
+    fn card_reports_overlay_unavailable_when_overlay_missing() {
+        let home = tempfile::tempdir().unwrap();
+        let _home_guard = crate::config::test_home::HomeEnvGuard::redirect_to(home.path());
+        let dir = tempfile::tempdir().unwrap();
+        let repo = dir.path();
+        fs::create_dir_all(repo.join("src")).unwrap();
+        fs::write(
+            repo.join("src/lib.rs"),
+            "pub fn overlay_missing_card() {}\n",
+        )
+        .unwrap();
+        crate::bootstrap::bootstrap(repo, None, false).unwrap();
+        let synrepo_dir = Config::synrepo_dir(repo);
+        let overlay_dir = synrepo_dir.join("overlay");
+        let overlay_db = crate::store::overlay::SqliteOverlayStore::db_path(&overlay_dir);
+        drop(crate::store::overlay::SqliteOverlayStore::open(&overlay_dir).unwrap());
+        fs::write(&overlay_db, b"not sqlite").unwrap();
+        let state = SynrepoState {
+            config: Config::load(repo).unwrap(),
+            repo_root: repo.to_path_buf(),
+        };
+
+        let out = super::cards::handle_card(
+            &state,
+            "src/lib.rs".to_string(),
+            "tiny".to_string(),
+            None,
+            false,
+        );
+        let val: serde_json::Value = serde_json::from_str(&out).unwrap();
+
+        assert_eq!(val["source_store"], "graph", "{out}");
+        assert_eq!(val["overlay_state"], "unavailable", "{out}");
+        assert!(val["overlay_error"]
+            .as_str()
+            .is_some_and(|error| !error.is_empty()));
+    }
+
+    #[test]
+    fn overlay_tools_report_overlay_unavailable() {
+        let home = tempfile::tempdir().unwrap();
+        let _home_guard = crate::config::test_home::HomeEnvGuard::redirect_to(home.path());
+        let dir = tempfile::tempdir().unwrap();
+        let repo = dir.path();
+        fs::create_dir_all(repo.join("src")).unwrap();
+        fs::write(
+            repo.join("src/lib.rs"),
+            "pub fn overlay_missing_notes() {}\n",
+        )
+        .unwrap();
+        crate::bootstrap::bootstrap(repo, None, false).unwrap();
+        let synrepo_dir = Config::synrepo_dir(repo);
+        let overlay_dir = synrepo_dir.join("overlay");
+        let overlay_db = crate::store::overlay::SqliteOverlayStore::db_path(&overlay_dir);
+        drop(crate::store::overlay::SqliteOverlayStore::open(&overlay_dir).unwrap());
+        fs::write(&overlay_db, b"not sqlite").unwrap();
+        let state = SynrepoState {
+            config: Config::load(repo).unwrap(),
+            repo_root: repo.to_path_buf(),
+        };
+
+        let out = super::notes::handle_notes(
+            &state,
+            super::notes::NotesParams {
+                repo_root: None,
+                target_kind: None,
+                target: None,
+                include_hidden: false,
+                limit: 10,
+            },
+        );
+        let val: serde_json::Value = serde_json::from_str(&out).unwrap();
+
+        assert_eq!(val["ok"], false, "{out}");
+        assert_eq!(val["error"]["code"], "NOT_INITIALIZED", "{out}");
+        assert!(val["error_message"]
+            .as_str()
+            .is_some_and(|message| message.contains("overlay store unavailable")));
     }
 }

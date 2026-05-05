@@ -1,5 +1,6 @@
 //! `synrepo mcp` subcommand — starts the MCP server over stdio.
 
+mod resources;
 mod state;
 mod tools;
 
@@ -10,13 +11,12 @@ use rmcp::{
     handler::server::router::tool::ToolRouter,
     model::{
         ListResourceTemplatesResult, PaginatedRequestParams, RawResourceTemplate,
-        ReadResourceRequestParams, ReadResourceResult, ResourceContents, ResourceTemplate,
-        ServerCapabilities, ServerInfo,
+        ReadResourceRequestParams, ReadResourceResult, ResourceTemplate, ServerCapabilities,
+        ServerInfo,
     },
     service::{RequestContext, RoleServer},
     tool_handler, ErrorData as McpError, ServerHandler,
 };
-use synrepo::surface::mcp::context_pack;
 
 use state::{SessionState, StateResolver};
 
@@ -88,6 +88,33 @@ impl ServerHandler for SynrepoServer {
                 None,
             ),
             ResourceTemplate::new(
+                RawResourceTemplate::new(
+                    "synrepo://project/{project_id}/card/{target}",
+                    "synrepo project card",
+                )
+                .with_description("Read a card-shaped JSON context artifact for a managed project.")
+                .with_mime_type("application/json"),
+                None,
+            ),
+            ResourceTemplate::new(
+                RawResourceTemplate::new(
+                    "synrepo://project/{project_id}/file/{path}/outline",
+                    "synrepo project file outline",
+                )
+                .with_description("Read a compact file outline for a managed project.")
+                .with_mime_type("application/json"),
+                None,
+            ),
+            ResourceTemplate::new(
+                RawResourceTemplate::new(
+                    "synrepo://project/{project_id}/context-pack?goal={goal}",
+                    "synrepo project context pack",
+                )
+                .with_description("Read a batched read-only context pack for a managed project.")
+                .with_mime_type("application/json"),
+                None,
+            ),
+            ResourceTemplate::new(
                 RawResourceTemplate::new("synrepo://projects", "synrepo managed projects")
                     .with_description("List managed projects from the user-level registry.")
                     .with_mime_type("application/json"),
@@ -103,49 +130,6 @@ impl ServerHandler for SynrepoServer {
     ) -> impl Future<Output = Result<ReadResourceResult, McpError>> + Send + '_ {
         let uri = request.uri;
         let server = self.clone();
-        async move {
-            match tokio::task::spawn_blocking(move || server.read_resource_blocking(uri)).await {
-                Ok(result) => result,
-                Err(error) => Err(McpError::internal_error(
-                    format!("MCP resource task failed: {error}"),
-                    None,
-                )),
-            }
-        }
-    }
-}
-
-impl SynrepoServer {
-    fn read_resource_blocking(&self, uri: String) -> Result<ReadResourceResult, McpError> {
-        if uri == "synrepo://projects" {
-            let text = match synrepo::registry::load()
-                .and_then(|registry| serde_json::to_string_pretty(&registry).map_err(Into::into))
-            {
-                Ok(text) => text,
-                Err(error) => {
-                    return Err(McpError::resource_not_found(error.to_string(), None));
-                }
-            };
-            return Ok(ReadResourceResult::new(vec![ResourceContents::text(
-                text, uri,
-            )
-            .with_mime_type("application/json")]));
-        }
-        let state = match self.resolve_state(None) {
-            Ok(state) => state,
-            Err(error) => {
-                return Err(McpError::resource_not_found(error.to_string(), None));
-            }
-        };
-        match context_pack::read_resource(&state, &uri) {
-            Ok(text) => {
-                self.record_resource_for(&state);
-                Ok(ReadResourceResult::new(vec![ResourceContents::text(
-                    text, uri,
-                )
-                .with_mime_type("application/json")]))
-            }
-            Err(message) => Err(McpError::resource_not_found(message, None)),
-        }
+        async move { server.read_resource_with_controls(uri).await }
     }
 }

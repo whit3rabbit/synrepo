@@ -18,8 +18,9 @@ pub use persistence::{
     load, load_optional, record_anchored_edit_outcomes_best_effort, record_card_best_effort,
     record_cards_best_effort, record_changed_files_best_effort,
     record_commentary_refresh_best_effort, record_compact_output_best_effort,
-    record_cross_link_generation_best_effort, record_cross_link_promoted_best_effort,
-    record_hook_route_emission_best_effort, record_mcp_resource_read_best_effort,
+    record_context_pack_tokens_best_effort, record_cross_link_generation_best_effort,
+    record_cross_link_promoted_best_effort, record_hook_route_emission_best_effort,
+    record_mcp_resource_read_best_effort, record_mcp_response_budget_best_effort,
     record_mcp_tool_result_best_effort, record_task_route_classification_best_effort,
     record_workflow_call_best_effort, save,
 };
@@ -102,6 +103,24 @@ pub struct ContextMetrics {
     /// **Observed**: compact outputs that omitted content.
     #[serde(default)]
     pub compact_truncation_applied_total: u64,
+    /// **Observed**: MCP responses whose estimated size exceeded the soft cap.
+    #[serde(default)]
+    pub responses_over_soft_cap_total: u64,
+    /// **Observed**: MCP responses trimmed by the final response clamp.
+    #[serde(default)]
+    pub responses_truncated_total: u64,
+    /// **Observed**: deep card-shaped responses served.
+    #[serde(default)]
+    pub deep_cards_served_total: u64,
+    /// **Estimated**: sum of estimated tokens in served context packs.
+    #[serde(default)]
+    pub context_pack_tokens_total: u64,
+    /// **Estimated**: largest MCP response token estimate observed.
+    #[serde(default)]
+    pub largest_response_tokens: u64,
+    /// **Estimated**: MCP response token estimates keyed by tool name.
+    #[serde(default)]
+    pub tool_token_totals: BTreeMap<String, u64>,
     /// **Observed**: number of task-route classifications served by CLI, MCP,
     /// or nudge hooks. Task text is never stored.
     #[serde(default)]
@@ -196,6 +215,14 @@ impl ContextMetrics {
         self.compact_estimated_tokens_saved_total += delta.compact_estimated_tokens_saved_total;
         self.compact_omitted_items_total += delta.compact_omitted_items_total;
         self.compact_truncation_applied_total += delta.compact_truncation_applied_total;
+        self.responses_over_soft_cap_total += delta.responses_over_soft_cap_total;
+        self.responses_truncated_total += delta.responses_truncated_total;
+        self.deep_cards_served_total += delta.deep_cards_served_total;
+        self.context_pack_tokens_total += delta.context_pack_tokens_total;
+        self.largest_response_tokens = self
+            .largest_response_tokens
+            .max(delta.largest_response_tokens);
+        merge_map(&mut self.tool_token_totals, &delta.tool_token_totals);
         self.route_classifications_total += delta.route_classifications_total;
         self.context_fast_path_signals_total += delta.context_fast_path_signals_total;
         self.deterministic_edit_candidates_total += delta.deterministic_edit_candidates_total;
@@ -235,6 +262,12 @@ impl ContextMetrics {
             && self.compact_estimated_tokens_saved_total == 0
             && self.compact_omitted_items_total == 0
             && self.compact_truncation_applied_total == 0
+            && self.responses_over_soft_cap_total == 0
+            && self.responses_truncated_total == 0
+            && self.deep_cards_served_total == 0
+            && self.context_pack_tokens_total == 0
+            && self.largest_response_tokens == 0
+            && self.tool_token_totals.is_empty()
             && self.route_classifications_total == 0
             && self.context_fast_path_signals_total == 0
             && self.deterministic_edit_candidates_total == 0

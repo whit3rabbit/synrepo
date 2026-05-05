@@ -10,6 +10,7 @@ pub fn finalize_card_json(
     test_surface_hit: bool,
 ) -> serde_json::Value {
     apply_numeric_cap_marker(&mut json, budget_tokens);
+    attach_overlay_state(state, &mut json);
     record_embedded_card_metrics(state, &json, start, test_surface_hit);
     json
 }
@@ -62,4 +63,21 @@ fn apply_numeric_cap_marker(json: &mut serde_json::Value, budget_tokens: Option<
             serde_json::Value::Bool(true),
         );
     }
+}
+
+fn attach_overlay_state(state: &SynrepoState, json: &mut serde_json::Value) {
+    let Some(error) = state.overlay_open_error() else {
+        return;
+    };
+    let Some(map) = json.as_object_mut() else {
+        return;
+    };
+    map.insert(
+        "overlay_state".to_string(),
+        serde_json::Value::String("unavailable".to_string()),
+    );
+    map.insert(
+        "overlay_error".to_string(),
+        serde_json::Value::String(error),
+    );
 }

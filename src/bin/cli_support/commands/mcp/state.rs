@@ -30,6 +30,7 @@ pub(crate) struct StateResolver {
     // RwLock is taken briefly for read and write.
     prepare_locks: Arc<Mutex<HashMap<PathBuf, Arc<Mutex<()>>>>>,
     default_repo_root: Arc<RwLock<Option<PathBuf>>>,
+    default_requires_registry: Arc<RwLock<bool>>,
 }
 
 impl StateResolver {
@@ -48,6 +49,7 @@ impl StateResolver {
             states: Arc::new(RwLock::new(states)),
             prepare_locks: Arc::new(Mutex::new(HashMap::new())),
             default_repo_root: Arc::new(RwLock::new(default_repo_root)),
+            default_requires_registry: Arc::new(RwLock::new(false)),
         }
     }
 
@@ -63,14 +65,12 @@ impl StateResolver {
             })?,
         };
 
-        // A cached state implies this root was validated on the first call;
-        // skip the per-request registry read for the steady-state hot path.
-        if let Some(state) = self.states.read().get(&root).cloned() {
-            return Ok(state);
+        if self.requires_registry(&root) {
+            require_registered_project(&root)?;
         }
 
-        if !self.is_default_root(&root) {
-            require_registered_project(&root)?;
+        if let Some(state) = self.states.read().get(&root).cloned() {
+            return Ok(state);
         }
 
         self.cached_or_prepare(root)
@@ -78,12 +78,18 @@ impl StateResolver {
 
     pub(crate) fn set_default(&self, root: PathBuf) -> anyhow::Result<Arc<SynrepoState>> {
         let root = registry::canonicalize_path(&root);
-        if !self.is_default_root(&root) {
-            require_registered_project(&root)?;
-        }
+        require_registered_project(&root)?;
         let state = self.cached_or_prepare(root.clone())?;
         *self.default_repo_root.write() = Some(root);
+        *self.default_requires_registry.write() = true;
         Ok(state)
+    }
+
+    fn requires_registry(&self, root: &Path) -> bool {
+        if self.is_default_root(root) {
+            return *self.default_requires_registry.read();
+        }
+        true
     }
 
     fn is_default_root(&self, root: &Path) -> bool {
@@ -124,16 +130,16 @@ impl StateResolver {
 pub(crate) fn render_state_error(error: anyhow::Error) -> String {
     synrepo::surface::mcp::error::error_json(error)
 }
-
 fn require_registered_project(root: &Path) -> anyhow::Result<()> {
     if registry::contains_project(root)? {
         return Ok(());
     }
-    anyhow::bail!(
+    Err(synrepo::surface::mcp::error::McpError::not_found(format!(
         "repository is not managed by synrepo: {}. Run `synrepo project add {}` to register it.",
         root.display(),
         root.display()
-    )
+    ))
+    .into())
 }
 
 impl Clone for SynrepoServer {
@@ -229,6 +235,11 @@ impl SynrepoServer {
                     synrepo::pipeline::explain::telemetry::with_synrepo_dir(&synrepo_dir, || {
                         f(Arc::clone(&state))
                     });
+                let output = synrepo::surface::mcp::response_budget::clamp_and_record_response(
+                    &synrepo_dir,
+                    tool,
+                    output,
+                );
                 let errored = response_has_error(&output);
                 self.session.record_tool(tool, errored);
                 let saved_context = saved_context_metric(tool, errored);
@@ -266,6 +277,23 @@ impl SynrepoServer {
         }
     }
 
+    pub(super) async fn with_tool_state_persistent<F>(
+        &self,
+        tool: &'static str,
+        param_root: Option<PathBuf>,
+        f: F,
+    ) -> String
+    where
+        F: FnOnce(Arc<SynrepoState>) -> String + Send + 'static,
+    {
+        let server = self.clone();
+        let task = tokio::task::spawn_blocking(move || server.with_tool_state(tool, param_root, f));
+        match task.await {
+            Ok(output) => output,
+            Err(error) => render_state_error(anyhow::anyhow!("MCP tool task failed: {error}")),
+        }
+    }
+
     pub(super) fn use_project(&self, repo_root: PathBuf) -> String {
         let output = match self.resolver.set_default(repo_root) {
             Ok(state) => serde_json::json!({
@@ -278,6 +306,20 @@ impl SynrepoServer {
         let errored = response_has_error(&output);
         self.session.record_tool("synrepo_use_project", errored);
         output
+    }
+
+    pub(super) fn metrics_for_repo_root(&self, repo_root: Option<PathBuf>) -> String {
+        let state = match repo_root {
+            Some(repo_root) => match self.resolve_state(Some(repo_root)) {
+                Ok(state) => Some(state),
+                Err(error) => {
+                    self.session.record_tool("synrepo_metrics", true);
+                    return render_state_error(error);
+                }
+            },
+            None => self.resolve_state(None).ok(),
+        };
+        self.metrics_json(state.as_deref())
     }
 
     pub(super) fn metrics_json(&self, state: Option<&SynrepoState>) -> String {
@@ -326,10 +368,6 @@ impl SynrepoServer {
             .map(|tool| tool.name.to_string())
             .collect()
     }
-
-    #[cfg(test)]
-    #[allow(dead_code)]
-    pub(crate) fn stop_auto_started_watchers(&self) {}
 }
 
 fn response_has_error(output: &str) -> bool {
@@ -353,6 +391,9 @@ fn saved_context_metric(tool: &str, errored: bool) -> Option<&'static str> {
     }
 }
 
+#[cfg(test)]
+#[path = "state_registry_tests.rs"]
+mod registry_tests;
 #[cfg(test)]
 #[path = "state_tests.rs"]
 mod tests;

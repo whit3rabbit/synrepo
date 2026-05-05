@@ -9,7 +9,10 @@ use crate::core::ids::SymbolNodeId;
 
 use super::compact::{self, OutputMode};
 use super::helpers::render_result;
-use super::limits::{check_chars, MAX_SEARCH_QUERY_CHARS};
+use super::limits::{
+    bounded_limit_value, check_chars, DEFAULT_SEARCH_BUDGET_TOKENS, DEFAULT_SEARCH_LIMIT,
+    MAX_SEARCH_CARDS_LIMIT, MAX_SEARCH_LIMIT, MAX_SEARCH_QUERY_CHARS,
+};
 use super::SynrepoState;
 
 mod cards_mode;
@@ -29,7 +32,7 @@ pub struct SearchParams {
     pub repo_root: Option<std::path::PathBuf>,
     /// Lexical query string.
     pub query: String,
-    /// Maximum number of results to return. Defaults to 20.
+    /// Maximum number of results to return. Defaults to 10, capped at 50.
     #[serde(default = "default_limit")]
     pub limit: u32,
     /// Optional path prefix or glob filter.
@@ -44,10 +47,10 @@ pub struct SearchParams {
     /// Whether matching should ignore ASCII case.
     #[serde(default, alias = "ignore_case")]
     pub case_insensitive: bool,
-    /// Response shape. Defaults to the existing raw result list.
+    /// Response shape. Defaults to compact routing output.
     #[serde(default)]
     pub output_mode: OutputMode,
-    /// Optional numeric token cap for compact output.
+    /// Optional numeric token cap for compact output. Defaults to 1500.
     #[serde(default)]
     pub budget_tokens: Option<usize>,
     /// Search mode. `auto` uses hybrid search when local semantic assets load.
@@ -56,7 +59,7 @@ pub struct SearchParams {
 }
 
 pub fn default_limit() -> u32 {
-    20
+    DEFAULT_SEARCH_LIMIT as u32
 }
 
 /// Search strategy for MCP search.
@@ -72,13 +75,18 @@ pub enum SearchMode {
 
 impl SearchParams {
     fn search_options(&self) -> SearchOptions {
+        let limit = self.effective_limit();
         SearchOptions {
             path_filter: self.path_filter.clone(),
             file_type: self.file_type.clone(),
             exclude_type: self.exclude_type.clone(),
-            max_results: Some(self.limit as usize),
+            max_results: Some(limit),
             case_insensitive: self.case_insensitive,
         }
+    }
+
+    fn effective_limit(&self) -> usize {
+        bounded_limit_value(self.limit as usize, DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT)
     }
 
     fn filters_json(&self) -> Value {
@@ -119,7 +127,17 @@ pub fn handle_search(state: &SynrepoState, params: SearchParams) -> String {
     let result: anyhow::Result<serde_json::Value> = (|| {
         check_chars("query", &params.query, MAX_SEARCH_QUERY_CHARS)?;
         let output_mode = params.output_mode;
-        let budget_tokens = params.budget_tokens;
+        let effective_limit = params.effective_limit();
+        if output_mode == OutputMode::Cards
+            && effective_limit > MAX_SEARCH_CARDS_LIMIT
+            && params.path_filter.is_none()
+        {
+            return Err(super::error::McpError::invalid_parameter(
+                "output_mode=\"cards\" requires limit <= 5 or a path_filter; use compact output for broad routing",
+            )
+            .into());
+        }
+        let budget_tokens = params.budget_tokens.or(Some(DEFAULT_SEARCH_BUDGET_TOKENS));
         let options = params.search_options();
         let (items, engine, source_store, semantic_available) = match params.mode {
             SearchMode::Lexical => {
@@ -165,7 +183,7 @@ pub fn handle_search(state: &SynrepoState, params: SearchParams) -> String {
                 SearchMode::Lexical => "lexical",
             },
             "semantic_available": semantic_available,
-            "limit": params.limit,
+            "limit": effective_limit,
             "filters": filters,
             "result_count": result_count,
         });

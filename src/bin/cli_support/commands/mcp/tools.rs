@@ -77,8 +77,7 @@ impl SynrepoServer {
 
     #[tool(name = "synrepo_metrics", description = "Return this MCP server session's tool metrics plus persisted per-repo context metrics when a repo is available.")]
     async fn synrepo_metrics(&self, Parameters(params): Parameters<search::RepoRootParams>) -> String {
-        let state = self.resolve_state(params.repo_root.clone()).ok();
-        self.metrics_json(state.as_deref())
+        self.metrics_for_repo_root(params.repo_root)
     }
 
     #[tool(name = "synrepo_node", description = "Look up a graph node by display ID. Returns full stored metadata as JSON.")]
@@ -136,31 +135,31 @@ impl SynrepoServer {
     #[tool(name = "synrepo_note_add", description = "Add an advisory overlay agent note. Notes are labeled source_store=overlay and advisory=true; they never define graph truth.")]
     async fn synrepo_note_add(&self, Parameters(params): Parameters<notes::NoteAddParams>) -> String {
         let repo_root = params.repo_root.clone();
-        self.with_tool_state_blocking("synrepo_note_add", repo_root, move |state| notes::handle_note_add(&state, params)).await
+        self.with_tool_state_persistent("synrepo_note_add", repo_root, move |state| notes::handle_note_add(&state, params)).await
     }
 
     #[tool(name = "synrepo_note_link", description = "Link two advisory overlay notes while preserving audit history.")]
     async fn synrepo_note_link(&self, Parameters(params): Parameters<notes::NoteLinkParams>) -> String {
         let repo_root = params.repo_root.clone();
-        self.with_tool_state_blocking("synrepo_note_link", repo_root, move |state| notes::handle_note_link(&state, params)).await
+        self.with_tool_state_persistent("synrepo_note_link", repo_root, move |state| notes::handle_note_link(&state, params)).await
     }
 
     #[tool(name = "synrepo_note_supersede", description = "Supersede an advisory overlay note with a replacement claim.")]
     async fn synrepo_note_supersede(&self, Parameters(params): Parameters<notes::NoteSupersedeParams>) -> String {
         let repo_root = params.repo_root.clone();
-        self.with_tool_state_blocking("synrepo_note_supersede", repo_root, move |state| notes::handle_note_supersede(&state, params)).await
+        self.with_tool_state_persistent("synrepo_note_supersede", repo_root, move |state| notes::handle_note_supersede(&state, params)).await
     }
 
     #[tool(name = "synrepo_note_forget", description = "Hide an advisory overlay note from normal retrieval while retaining audit history.")]
     async fn synrepo_note_forget(&self, Parameters(params): Parameters<notes::NoteForgetParams>) -> String {
         let repo_root = params.repo_root.clone();
-        self.with_tool_state_blocking("synrepo_note_forget", repo_root, move |state| notes::handle_note_forget(&state, params)).await
+        self.with_tool_state_persistent("synrepo_note_forget", repo_root, move |state| notes::handle_note_forget(&state, params)).await
     }
 
     #[tool(name = "synrepo_note_verify", description = "Verify an advisory overlay note and return it to active state when anchors match.")]
     async fn synrepo_note_verify(&self, Parameters(params): Parameters<notes::NoteVerifyParams>) -> String {
         let repo_root = params.repo_root.clone();
-        self.with_tool_state_blocking("synrepo_note_verify", repo_root, move |state| notes::handle_note_verify(&state, params)).await
+        self.with_tool_state_persistent("synrepo_note_verify", repo_root, move |state| notes::handle_note_verify(&state, params)).await
     }
 
     #[tool(name = "synrepo_notes", description = "List bounded advisory overlay notes. Hidden lifecycle states require include_hidden=true.")]
@@ -269,7 +268,7 @@ impl SynrepoServer {
                 message: Some("refreshing commentary".into()),
             }).await;
         }
-        let output = self.with_tool_state_blocking("synrepo_refresh_commentary", params.repo_root.clone(), move |state| {
+        let output = self.with_tool_state_persistent("synrepo_refresh_commentary", params.repo_root.clone(), move |state| {
             commentary::handle_refresh_commentary_params(&state, params, None)
         }).await;
         if let Some(token) = progress_token {
@@ -296,13 +295,13 @@ impl SynrepoServer {
     #[tool(name = "synrepo_prepare_edit_context", description = "Edit-enabled workflow step: prepare session-scoped line anchors and compact source context for a file, symbol, or range. This tool does not write files; source mutation can occur only through synrepo_apply_anchor_edits.")]
     async fn synrepo_prepare_edit_context(&self, Parameters(params): Parameters<edits::PrepareEditContextParams>) -> String {
         let repo_root = params.repo_root.clone();
-        self.with_tool_state_blocking("synrepo_prepare_edit_context", repo_root, move |state| edits::handle_prepare_edit_context(&state, params)).await
+        self.with_tool_state_persistent("synrepo_prepare_edit_context", repo_root, move |state| edits::handle_prepare_edit_context(&state, params)).await
     }
 
     #[tool(name = "synrepo_apply_anchor_edits", description = "Edit-enabled workflow step: validate prepared anchors, content hashes, and boundary text before applying source edits. This tool can mutate source files only when the server was started with synrepo mcp --allow-source-edits.")]
     async fn synrepo_apply_anchor_edits(&self, Parameters(params): Parameters<edits::ApplyAnchorEditsParams>) -> String {
         let repo_root = params.repo_root.clone();
-        self.with_tool_state_blocking("synrepo_apply_anchor_edits", repo_root, move |state| edits::handle_apply_anchor_edits(&state, params)).await
+        self.with_tool_state_persistent("synrepo_apply_anchor_edits", repo_root, move |state| edits::handle_apply_anchor_edits(&state, params)).await
     }
 
     #[tool(name = "synrepo_next_actions", description = "Return prioritized actionable items from repair-log, cross-link candidates, and git hotspots.")]

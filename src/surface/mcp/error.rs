@@ -52,8 +52,16 @@ impl McpError {
         Self::new(ErrorCode::NotFound, message)
     }
 
+    pub fn not_initialized(message: impl Into<String>) -> Self {
+        Self::new(ErrorCode::NotInitialized, message)
+    }
+
     pub fn invalid_parameter(message: impl Into<String>) -> Self {
         Self::new(ErrorCode::InvalidParameter, message)
+    }
+
+    pub fn internal(message: impl Into<String>) -> Self {
+        Self::new(ErrorCode::Internal, message)
     }
 
     pub fn timeout(message: impl Into<String>) -> Self {

@@ -28,15 +28,10 @@ pub fn handle_docs_search(state: &SynrepoState, query: String, limit: u32) -> St
             .map_err(|error| anyhow::anyhow!(error))?;
         let synrepo_dir = Config::synrepo_dir(&state.repo_root);
         let overlay_dir = synrepo_dir.join("overlay");
-        let overlay = crate::store::overlay::SqliteOverlayStore::open_existing(&overlay_dir).ok();
+        state.require_overlay_materialized()?;
+        let overlay = crate::store::overlay::SqliteOverlayStore::open_existing(&overlay_dir)?;
         let results = compiler.with_reader(|graph| {
-            search_commentary_docs(
-                &synrepo_dir,
-                graph,
-                overlay.as_ref(),
-                &query,
-                limit as usize,
-            )
+            search_commentary_docs(&synrepo_dir, graph, Some(&overlay), &query, limit as usize)
         })?;
 
         Ok(json!({

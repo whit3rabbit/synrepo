@@ -245,6 +245,7 @@ fn note_verify_result(
 
 fn notes_result(state: &SynrepoState, params: NotesParams) -> anyhow::Result<serde_json::Value> {
     let synrepo_dir = Config::synrepo_dir(&state.repo_root);
+    state.require_overlay_materialized()?;
     let overlay = SqliteOverlayStore::open_existing(&synrepo_dir.join("overlay"))?;
     let notes = overlay.query_notes(AgentNoteQuery {
         target_kind: params.target_kind,
@@ -270,7 +271,22 @@ pub(crate) fn attach_agent_notes(
     let synrepo_dir = Config::synrepo_dir(&state.repo_root);
     let overlay = match SqliteOverlayStore::open_existing(&synrepo_dir.join("overlay")) {
         Ok(overlay) => overlay,
-        Err(_) => return Ok(()),
+        Err(_) => {
+            let Some(error) = state.overlay_open_error() else {
+                return Ok(());
+            };
+            if let serde_json::Value::Object(map) = json {
+                map.insert(
+                    "overlay_state".to_string(),
+                    serde_json::Value::String("unavailable".to_string()),
+                );
+                map.insert(
+                    "overlay_error".to_string(),
+                    serde_json::Value::String(error),
+                );
+            }
+            return Ok(());
+        }
     };
     let notes = overlay.query_notes(AgentNoteQuery {
         target_kind: Some(target_kind),
@@ -292,6 +308,7 @@ fn with_overlay_for_write<R>(
     f: impl FnOnce(&mut SqliteOverlayStore) -> anyhow::Result<R>,
 ) -> anyhow::Result<R> {
     let synrepo_dir = Config::synrepo_dir(&state.repo_root);
+    state.require_overlay_available()?;
     let _lock = acquire_write_admission(&synrepo_dir, operation)
         .map_err(|err| map_lock_error(operation, err))?;
     let mut overlay = SqliteOverlayStore::open(&synrepo_dir.join("overlay"))?;

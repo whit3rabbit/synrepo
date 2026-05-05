@@ -57,6 +57,7 @@ pub fn handle_refresh_commentary_params(
 ) -> String {
     let synrepo_dir = crate::config::Config::synrepo_dir(&state.repo_root);
     let result = telemetry::with_synrepo_dir(&synrepo_dir, || {
+        state.require_overlay_available()?;
         let _writer_lock = acquire_write_admission(&synrepo_dir, "refresh commentary")
             .map_err(|err| map_lock_error("refresh commentary", err))?;
         let compiler = state

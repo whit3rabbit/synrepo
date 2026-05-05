@@ -180,6 +180,8 @@ Project-scoped MCP configs that launch `synrepo mcp --repo .` have a default rep
 
 Global MCP configs that launch `synrepo mcp` serve registered projects by absolute path. In global or defaultless contexts, pass the current workspace's absolute path as `repo_root` to repo-addressable tools, or call `synrepo_use_project(repo_root)` once to set the session default.
 
+Resource-aware MCP hosts may also address managed projects explicitly with `synrepo://project/{project_id}/card/{target}`, `synrepo://project/{project_id}/file/{path}/outline`, or `synrepo://project/{project_id}/context-pack?goal={goal}`. Use `synrepo://projects` to list stable project IDs.
+
 If a tool reports that a repository is not managed by synrepo, ask the user to run:
 
 ```bash

@@ -284,7 +284,7 @@ synrepo SHALL expose `synrepo_context_pack(goal?, targets?, budget?, budget_toke
 - **AND** other requested artifacts can still be returned in order
 
 ### Requirement: Expose read-only MCP resource templates for context artifacts
-synrepo SHALL advertise read-only MCP resource templates for `synrepo://card/{target}`, `synrepo://file/{path}/outline`, and `synrepo://context-pack?goal={goal}`. Resource reads SHALL return JSON content equivalent to the corresponding tool-backed context path for the server default repository and SHALL NOT add mutation capability.
+synrepo SHALL advertise read-only MCP resource templates for `synrepo://card/{target}`, `synrepo://file/{path}/outline`, `synrepo://context-pack?goal={goal}`, `synrepo://project/{project_id}/card/{target}`, `synrepo://project/{project_id}/file/{path}/outline`, and `synrepo://project/{project_id}/context-pack?goal={goal}`. Default resource reads SHALL return JSON content equivalent to the corresponding tool-backed context path for the server default repository. Project-qualified resource reads SHALL resolve `project_id` through the managed-project registry before returning equivalent context for that project. Resource reads SHALL NOT add mutation capability.
 
 #### Scenario: List resource templates
 - **WHEN** an MCP client lists resource templates
@@ -298,6 +298,11 @@ synrepo SHALL advertise read-only MCP resource templates for `synrepo://card/{ta
 - **WHEN** a global/defaultless MCP server has no session default repository
 - **AND** a client reads `synrepo://card/src/lib.rs`
 - **THEN** the resource read returns a clear not-found or initialization error instead of selecting an arbitrary project
+
+#### Scenario: Read project-qualified resource
+- **WHEN** an MCP client reads `synrepo://project/proj_1234/file/src/lib.rs/outline`
+- **THEN** synrepo verifies `proj_1234` against the managed-project registry
+- **AND** returns the file outline for that managed project
 
 ### Requirement: Expose synrepo_entrypoints as a task-first MCP tool
 synrepo SHALL expose a `synrepo_entrypoints(scope?, budget?)` MCP tool that returns an `EntryPointCard` for the requested scope. The `scope` parameter SHALL be an optional path prefix string; when absent, the compiler scans all indexed files. The `budget` parameter SHALL accept `"tiny"` (default), `"normal"`, or `"deep"`. Results SHALL be sorted by kind (binary first, then cli_command, http_handler, lib_root) then by file path within each kind. The result set SHALL be limited to 20 entries by default. The tool SHALL return a parseable JSON object and SHALL NOT raise an error when no entry points are found — it returns an empty `entry_points` list instead.

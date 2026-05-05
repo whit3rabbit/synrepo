@@ -11,7 +11,7 @@ synrepo mcp                    # stdio server for the current repo
 synrepo mcp --repo <path>      # stdio server for a specific repo
 synrepo mcp --allow-overlay-writes # expose overlay note/commentary writes
 synrepo mcp --allow-source-edits   # expose anchored source edit tools
-synrepo mcp --call-timeout 45s # cap blocking tool calls, default 30s
+synrepo mcp --call-timeout 45s # cap read/resource calls, default 30s
 ```
 
 Most users should prefer `synrepo setup <tool>`, which writes the agent instructions or skill and registers MCP through `agent-config` for supported integrations. The default is global agent config with `synrepo mcp`; pass `--project` to write repo-local MCP config that launches `synrepo mcp --repo .`. Global MCP is lazy: each tool call must supply a registered repository via `repo_root` unless the server has a default repository. Agents can call `synrepo_use_project` once to set a session default for registered projects. Shim-only integrations still need their own MCP config pointed at `synrepo mcp --repo .`.
@@ -124,11 +124,14 @@ Read-only resources:
 - `synrepo://card/{target}`
 - `synrepo://file/{path}/outline`
 - `synrepo://context-pack?goal={goal}`
+- `synrepo://project/{project_id}/card/{target}`
+- `synrepo://project/{project_id}/file/{path}/outline`
+- `synrepo://project/{project_id}/context-pack?goal={goal}`
 - `synrepo://projects`
 
-`synrepo://projects` lists managed project registry entries. Use it with `synrepo_use_project` in global MCP sessions that need to choose a default repository once and omit `repo_root` afterward.
+`synrepo://projects` lists managed project registry entries. Use it with `synrepo_use_project` in global MCP sessions that need to choose a default repository once and omit `repo_root` afterward, or use the project-qualified URI templates with the entry's stable `project_id`.
 
-Other resources use the server default repository only. Global/defaultless resource-aware hosts should call `synrepo_use_project` first, or use tool calls with `repo_root` when addressing non-default projects.
+Default resource URIs use the server default repository only. Global/defaultless resource-aware hosts should call `synrepo_use_project` first, use project-qualified resource URIs, or use tool calls with `repo_root` when addressing non-default projects.
 
 Runtime and observability tools:
 - `synrepo_metrics` returns `{ this_session, persisted }`, combining in-memory per-tool call/error counters with persisted context metrics when a repository is available.
@@ -144,7 +147,9 @@ Tool errors are structured as `{"ok":false,"error":{"code":"...","message":"..."
 
 `error` is always an object, not a flat string. Clients and tests that need message text should read `error.message` or `error_message`; branch logic should prefer `error.code`.
 
-Current codes are `NOT_FOUND`, `NOT_INITIALIZED`, `INVALID_PARAMETER`, `RATE_LIMITED`, `LOCKED`, `BUSY`, `TIMEOUT`, and `INTERNAL`. Read snapshots are limited per repository, defaulting to 4 concurrent snapshots with a short wait before returning `BUSY`. Blocking tools are capped by `--call-timeout`, default `30s`, and return `TIMEOUT` on expiry.
+Current codes are `NOT_FOUND`, `NOT_INITIALIZED`, `INVALID_PARAMETER`, `RATE_LIMITED`, `LOCKED`, `BUSY`, `TIMEOUT`, and `INTERNAL`. Read snapshots are limited per repository, defaulting to 4 concurrent snapshots with a short wait before returning `BUSY`. Per-repo read limiters and SQLite compiler pools are bounded to 128 tracked repositories with idle eviction. Read tools and resource reads are capped by `--call-timeout`, default `30s`, and return `TIMEOUT` on expiry.
+
+Persistent mutating MCP calls are not timed out after their blocking task starts. Source-edit tools, overlay note writes, and commentary refresh complete and return their authoritative outcome rather than reporting `TIMEOUT` while work may still finish in the background.
 
 Input limits reject oversized or invalid parameters through `INVALID_PARAMETER`: unknown budget tiers, search queries over 1000 characters, note claims over 2000 characters, note evidence arrays over 50 entries, note source hash arrays over 50 entries, card batches over 10 targets, anchored edit batches over 100 edits, anchored edit batches touching over 20 files, single edit payloads over 256 KiB, and total submitted edit text over 512 KiB.
 
@@ -152,7 +157,7 @@ Input limits reject oversized or invalid parameters through `INVALID_PARAMETER`:
 
 Graph-backed structural facts are authoritative. They come from parsers, Git, and human-declared inputs.
 
-Overlay content is advisory. Commentary, explained docs, proposed cross-links, and agent notes are labeled as overlay-backed and freshness-sensitive. If graph facts and overlay prose disagree, trust the graph.
+Overlay content is advisory. Commentary, explained docs, proposed cross-links, and agent notes are labeled as overlay-backed and freshness-sensitive. If graph facts and overlay prose disagree, trust the graph. If the overlay store becomes unavailable at runtime, graph card responses may continue with `overlay_state: "unavailable"` and `overlay_error`; overlay-backed tools return structured errors instead of silently pretending the overlay is absent.
 
 Freshness is explicit. A stale label is information, not an error, and synrepo does not silently refresh commentary just because an API key exists. Start MCP with `--allow-overlay-writes` and use `synrepo_refresh_commentary` only when fresh advisory prose is required.
 

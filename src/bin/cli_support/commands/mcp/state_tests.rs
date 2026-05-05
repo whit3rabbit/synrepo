@@ -152,6 +152,26 @@ fn metrics_json_reports_this_session_tool_counts() {
 }
 
 #[test]
+fn metrics_with_bad_explicit_repo_root_returns_error() {
+    let _home = home_fixture();
+    let dir = tempdir().unwrap();
+    let server = SynrepoServer::new_optional(None, false);
+
+    let output = server.metrics_for_repo_root(Some(dir.path().to_path_buf()));
+    let value: serde_json::Value = serde_json::from_str(&output).unwrap();
+
+    assert_eq!(value["ok"], false, "{output}");
+    assert_eq!(value["error"]["code"], "NOT_FOUND", "{output}");
+    assert_eq!(
+        value["error_message"]
+            .as_str()
+            .is_some_and(|message| message.contains("not managed by synrepo")),
+        true,
+        "{output}"
+    );
+}
+
+#[test]
 fn default_tool_list_excludes_all_mutating_tools() {
     let server = SynrepoServer::new_optional(None, false);
     let names = server.registered_tool_names();
@@ -245,6 +265,33 @@ fn blocking_tool_helper_returns_tool_output_under_tokio_runtime() {
         value.get("mode").is_some() && value.get("graph").is_some(),
         "{output}"
     );
+}
+
+#[test]
+fn persistent_tool_helper_does_not_return_timeout() {
+    let _home = home_fixture();
+    let (_repo, repo_path) = ready_repo("pub fn persistent_helper_needle() {}\n");
+    let state = prepare_state(&repo_path).unwrap();
+    let server = SynrepoServer::new_optional_with_timeout(
+        Some(state),
+        false,
+        true,
+        std::time::Duration::from_millis(1),
+    );
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+
+    let output = runtime.block_on(server.with_tool_state_persistent(
+        "synrepo_apply_anchor_edits",
+        None,
+        |_state| {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            serde_json::json!({ "ok": true, "status": "completed" }).to_string()
+        },
+    ));
+    let value: serde_json::Value = serde_json::from_str(&output).unwrap();
+
+    assert_eq!(value["status"], "completed", "{output}");
+    assert_ne!(value["error"]["code"], "TIMEOUT", "{output}");
 }
 
 #[test]

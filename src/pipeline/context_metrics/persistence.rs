@@ -154,6 +154,26 @@ pub fn record_compact_output_best_effort(
     });
 }
 
+/// Best-effort recording of final MCP response-budget behavior.
+pub fn record_mcp_response_budget_best_effort(
+    synrepo_dir: &Path,
+    tool: &str,
+    token_estimate: usize,
+    over_soft_cap: bool,
+    truncated: bool,
+) {
+    record_delta_best_effort(synrepo_dir, |metrics| {
+        metrics.record_mcp_response_budget(tool, token_estimate, over_soft_cap, truncated);
+    });
+}
+
+/// Best-effort recording of context-pack aggregate tokens.
+pub fn record_context_pack_tokens_best_effort(synrepo_dir: &Path, token_estimate: usize) {
+    record_delta_best_effort(synrepo_dir, |metrics| {
+        metrics.record_context_pack_tokens(token_estimate);
+    });
+}
+
 /// Best-effort recording of a task-route classification.
 pub fn record_task_route_classification_best_effort(synrepo_dir: &Path, route: &TaskRoute) {
     record_delta_best_effort(synrepo_dir, |metrics| {

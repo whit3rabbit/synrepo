@@ -15,8 +15,8 @@ const ARRAY_ITEM_OVERHEAD_TOKENS: usize = 1;
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum OutputMode {
-    #[default]
     Default,
+    #[default]
     Compact,
     Cards,
 }

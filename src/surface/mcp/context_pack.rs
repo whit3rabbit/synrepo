@@ -52,7 +52,7 @@ struct ArtifactOptions {
 }
 
 pub fn default_limit() -> usize {
-    8
+    DEFAULT_CONTEXT_PACK_LIMIT
 }
 
 pub fn handle_context_pack(state: &SynrepoState, params: ContextPackParams) -> String {
@@ -86,22 +86,15 @@ pub fn build_context_pack(
 ) -> anyhow::Result<Value> {
     let start = Instant::now();
     let default_budget = parse_budget(&params.budget)?;
-    let mut targets = params.targets;
-
-    if targets.is_empty() {
-        if let Some(goal) = params.goal.as_ref().filter(|g| !g.trim().is_empty()) {
-            targets.push(ContextPackTarget {
-                kind: "search".to_string(),
-                target: goal.clone(),
-                budget: Some("tiny".to_string()),
-            });
-        }
-    }
-
+    let prepared = targeting::prepare_targets(params.goal.as_ref(), params.targets, params.limit, params.budget_tokens)?;
+    let effective_limit = prepared.limit;
+    let budget_tokens = prepared.budget_tokens;
+    let mut omitted = prepared.omitted;
+    let targets = prepared.targets;
     let mut artifacts = state
         .with_read_compiler(|compiler| {
             let mut artifacts = Vec::new();
-            for target in targets.into_iter().take(params.limit) {
+            for target in targets.into_iter().take(effective_limit) {
                 let target_budget = target
                     .budget
                     .as_deref()
@@ -110,9 +103,9 @@ pub fn build_context_pack(
                     .unwrap_or(default_budget);
                 let options = ArtifactOptions {
                     include_notes: params.include_notes,
-                    limit: params.limit,
+                    limit: effective_limit,
                     output_mode: params.output_mode,
-                    budget_tokens: params.budget_tokens,
+                    budget_tokens,
                 };
                 artifacts.push(build_artifact(
                     state,
@@ -131,19 +124,20 @@ pub fn build_context_pack(
         })
         .map_err(|e| anyhow::anyhow!(e))?;
 
-    let mut omitted = Vec::new();
-    let truncation_applied =
-        accounting::apply_pack_cap(&mut artifacts, &mut omitted, params.budget_tokens);
+    let truncation_applied = accounting::apply_pack_cap(&mut artifacts, &mut omitted, budget_tokens);
     let accountings = accounting::collect_artifact_accountings(&artifacts);
-    accounting::record_pack_metrics(state, &accountings, start);
+    let token_estimate = accountings.iter().map(|a| a.token_estimate).sum::<usize>();
+    accounting::record_pack_metrics(state, &accountings, start, token_estimate);
 
     let context_state =
         accounting::context_state(state, default_budget, &accountings, truncation_applied);
     let totals = json!({
         "artifact_count": artifacts.len(),
         "omitted_count": omitted.len(),
-        "token_estimate": accountings.iter().map(|a| a.token_estimate).sum::<usize>(),
+        "token_estimate": token_estimate,
         "raw_file_token_estimate": accountings.iter().map(|a| a.raw_file_token_estimate).sum::<usize>(),
+        "limit": effective_limit,
+        "token_cap": budget_tokens,
     });
 
     Ok(json!({
@@ -388,6 +382,7 @@ mod accounting;
 mod outline;
 mod resource;
 mod search;
+mod targeting;
 #[cfg(test)]
 mod tests;
 use outline::file_outline_content;

@@ -16,12 +16,14 @@ pub(super) fn apply_pack_cap(
         return false;
     };
     let original = std::mem::take(artifacts);
+    let mut ranked = original.into_iter().enumerate().collect::<Vec<_>>();
+    ranked.sort_by_key(|(_, artifact)| artifact_priority(artifact));
     let mut kept = Vec::new();
     let mut total = 0usize;
     let mut truncated = false;
-    for (idx, mut artifact) in original.into_iter().enumerate() {
+    for (idx, mut artifact) in ranked {
         let tokens = artifact_tokens(&artifact);
-        if total + tokens > cap && idx > 0 {
+        if total + tokens > cap && !kept.is_empty() {
             omitted.push(json!({
                 "target": artifact["target"].clone(),
                 "artifact_type": artifact["artifact_type"].clone(),
@@ -35,9 +37,10 @@ pub(super) fn apply_pack_cap(
             truncated = true;
         }
         total += tokens;
-        kept.push(artifact);
+        kept.push((idx, artifact));
     }
-    *artifacts = kept;
+    kept.sort_by_key(|(idx, _)| *idx);
+    *artifacts = kept.into_iter().map(|(_, artifact)| artifact).collect();
     truncated
 }
 
@@ -82,11 +85,16 @@ pub(super) fn record_pack_metrics(
     state: &SynrepoState,
     accountings: &[ContextAccounting],
     start: Instant,
+    token_estimate: usize,
 ) {
+    let synrepo_dir = crate::config::Config::synrepo_dir(&state.repo_root);
+    crate::pipeline::context_metrics::record_context_pack_tokens_best_effort(
+        &synrepo_dir,
+        token_estimate,
+    );
     if accountings.is_empty() {
         return;
     }
-    let synrepo_dir = crate::config::Config::synrepo_dir(&state.repo_root);
     let latency_ms = start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
     crate::pipeline::context_metrics::record_cards_best_effort(
         &synrepo_dir,
@@ -102,6 +110,20 @@ fn artifact_tokens(artifact: &Value) -> usize {
         .and_then(|v| v.get("token_estimate"))
         .and_then(|v| v.as_u64())
         .unwrap_or(1) as usize
+}
+
+fn artifact_priority(artifact: &Value) -> u8 {
+    match artifact
+        .get("artifact_type")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+    {
+        "file_outline" | "symbol_card" | "module_card" | "minimum_context" | "error" => 0,
+        "test_surface" => 1,
+        "call_path" => 2,
+        "search" => 4,
+        _ => 3,
+    }
 }
 
 fn mark_truncated(artifact: &mut Value) {

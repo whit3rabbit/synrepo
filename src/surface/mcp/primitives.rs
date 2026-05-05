@@ -245,6 +245,7 @@ pub fn handle_overlay(state: &SynrepoState, id: String) -> String {
 
         let synrepo_dir = crate::config::Config::synrepo_dir(&state.repo_root);
         let overlay_dir = synrepo_dir.join("overlay");
+        state.require_overlay_materialized()?;
         let overlay = crate::store::overlay::SqliteOverlayStore::open_existing(&overlay_dir)?;
 
         let commentary = overlay.commentary_for(node_id)?;

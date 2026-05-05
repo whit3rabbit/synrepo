@@ -29,6 +29,18 @@ fn mcp_source_registers_context_pack_and_resources() {
         "MCP resource templates must include file outlines"
     );
     assert!(
+        source.contains("synrepo://project/{project_id}/card/{target}"),
+        "MCP resource templates must include project-qualified cards"
+    );
+    assert!(
+        source.contains("synrepo://project/{project_id}/file/{path}/outline"),
+        "MCP resource templates must include project-qualified file outlines"
+    );
+    assert!(
+        source.contains("synrepo://project/{project_id}/context-pack?goal={goal}"),
+        "MCP resource templates must include project-qualified context packs"
+    );
+    assert!(
         source.contains("synrepo://projects"),
         "MCP resource templates must include managed projects"
     );

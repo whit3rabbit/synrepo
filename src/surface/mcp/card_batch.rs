@@ -6,7 +6,8 @@ use super::{
     card_render::render_card_target,
     cards::CardParams,
     helpers::{parse_budget, render_result},
-    limits::MAX_CARD_TARGETS,
+    limits::{MAX_CARD_TARGETS, MAX_DEEP_CARD_TARGETS},
+    response_budget::estimate_json_tokens,
     SynrepoState,
 };
 
@@ -95,7 +96,13 @@ pub fn handle_card_params(state: &SynrepoState, params: CardParams) -> String {
             .into());
         }
         let budget = parse_budget(&params.budget)?;
-        let mut cards = Vec::new();
+        if budget == crate::surface::card::Budget::Deep && targets.len() > MAX_DEEP_CARD_TARGETS {
+            return Err(super::error::McpError::invalid_parameter(format!(
+                "deep card batches are capped at {MAX_DEEP_CARD_TARGETS} targets; use tiny/normal or narrow the request"
+            ))
+            .into());
+        }
+        let mut rendered = Vec::new();
         let mut errors = Vec::new();
         state
             .with_read_compiler(|compiler| {
@@ -109,7 +116,7 @@ pub fn handle_card_params(state: &SynrepoState, params: CardParams) -> String {
                         params.include_notes,
                         Instant::now(),
                     ) {
-                        Ok(card) => cards.push(card),
+                        Ok(card) => rendered.push((target, card)),
                         Err(error) => errors.push(json!({
                             "target": target,
                             "error": super::error::error_value(&error),
@@ -119,12 +126,74 @@ pub fn handle_card_params(state: &SynrepoState, params: CardParams) -> String {
                 Ok(())
             })
             .map_err(|err| anyhow::anyhow!(err))?;
+        let original_count = rendered.len();
+        let (cards, omitted, batch_truncated) = apply_batch_cap(rendered, params.budget_tokens);
+        let card_count = cards.len();
+        let batch_token_estimate = estimate_json_tokens(&json!({ "cards": &cards }));
         Ok(json!({
             "budget": params.budget,
             "cards": cards,
             "errors": errors,
-            "total": cards.len(),
+            "total": card_count,
+            "omitted": omitted,
+            "context_accounting": {
+                "budget_tier": params.budget,
+                "token_estimate": batch_token_estimate,
+                "raw_file_token_estimate": 0,
+                "estimated_savings_ratio": 0.0,
+                "source_hashes": [],
+                "stale": false,
+                "truncation_applied": batch_truncated,
+                "original_card_count": original_count
+            }
         }))
     })();
     render_result(result)
+}
+
+fn apply_batch_cap(
+    rendered: Vec<(String, serde_json::Value)>,
+    budget_tokens: Option<usize>,
+) -> (Vec<serde_json::Value>, Vec<serde_json::Value>, bool) {
+    let Some(cap) = budget_tokens else {
+        return (
+            rendered.into_iter().map(|(_, card)| card).collect(),
+            Vec::new(),
+            false,
+        );
+    };
+    let mut used = 0usize;
+    let mut cards = Vec::new();
+    let mut omitted = Vec::new();
+    let mut truncated = false;
+    for (idx, (target, mut card)) in rendered.into_iter().enumerate() {
+        let tokens = estimate_json_tokens(&card);
+        if used + tokens > cap && idx > 0 {
+            omitted.push(json!({
+                "target": target,
+                "reason": "budget_tokens_exceeded",
+            }));
+            truncated = true;
+            continue;
+        }
+        if used + tokens > cap {
+            mark_card_truncated(&mut card);
+            truncated = true;
+        }
+        used += tokens;
+        cards.push(card);
+    }
+    (cards, omitted, truncated)
+}
+
+fn mark_card_truncated(card: &mut serde_json::Value) {
+    if let Some(obj) = card
+        .get_mut("context_accounting")
+        .and_then(|value| value.as_object_mut())
+    {
+        obj.insert(
+            "truncation_applied".to_string(),
+            serde_json::Value::Bool(true),
+        );
+    }
 }

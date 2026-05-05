@@ -10,7 +10,7 @@ cargo run -- mcp                    # stdio server for the current repo
 cargo run -- mcp --repo <path>      # stdio server for a specific repo
 cargo run -- mcp --allow-overlay-writes # expose overlay note/commentary writes
 cargo run -- mcp --allow-source-edits   # expose anchored source edit tools
-cargo run -- mcp --call-timeout 45s # cap blocking tool calls, default 30s
+cargo run -- mcp --call-timeout 45s # cap read/resource calls, default 30s
 ```
 
 The server is a subcommand of the `synrepo` binary. There is no separate crate. Transport is stdio only.
@@ -70,11 +70,11 @@ Current registrations (see `mcp.rs` for schemas):
 `synrepo_node`, `synrepo_edges`, `synrepo_query`, `synrepo_overlay`, `synrepo_provenance`
 
 **Resources:**
-`synrepo://card/{target}`, `synrepo://file/{path}/outline`, `synrepo://context-pack?goal={goal}`, `synrepo://projects`
+`synrepo://card/{target}`, `synrepo://file/{path}/outline`, `synrepo://context-pack?goal={goal}`, `synrepo://project/{project_id}/card/{target}`, `synrepo://project/{project_id}/file/{path}/outline`, `synrepo://project/{project_id}/context-pack?goal={goal}`, `synrepo://projects`
 
-Resources are read-only mirrors of tool-backed context. They use the server default repository; global/defaultless hosts should call `synrepo_use_project` first or prefer tools with `repo_root`. Tool-only hosts should call `synrepo_context_pack`; resource-aware hosts can cache the URI forms.
+Resources are read-only mirrors of tool-backed context. Default resource URIs use the server default repository; global/defaultless hosts should call `synrepo_use_project` first, use project-qualified resources with a stable registry project ID, or prefer tools with `repo_root`. Tool-only hosts should call `synrepo_context_pack`; resource-aware hosts can cache the URI forms.
 
-Errors render as `{"ok":false,"error":{"code":"...","message":"...","retryable":false,"next_action":"..."},"error_message":"..."}` with codes `NOT_FOUND`, `NOT_INITIALIZED`, `INVALID_PARAMETER`, `RATE_LIMITED`, `LOCKED`, `BUSY`, `TIMEOUT`, and `INTERNAL`. The server enforces input limits for search query length, strict budget tiers, note claim/evidence/source-hash sizes, card batch size, and anchored edit payload size/count/file count. In-memory token buckets limit card/context-pack calls to 10 per second, commentary refresh to 3 per minute, and other tools to 30 per second.
+Errors render as `{"ok":false,"error":{"code":"...","message":"...","retryable":false,"next_action":"..."},"error_message":"..."}` with codes `NOT_FOUND`, `NOT_INITIALIZED`, `INVALID_PARAMETER`, `RATE_LIMITED`, `LOCKED`, `BUSY`, `TIMEOUT`, and `INTERNAL`. The server enforces input limits for search query length, strict budget tiers, note claim/evidence/source-hash sizes, card batch size, and anchored edit payload size/count/file count. In-memory token buckets limit card/context-pack calls to 10 per second, commentary refresh to 3 per minute, and other tools to 30 per second. Read tools and resource reads obey `--call-timeout`; persistent mutating calls complete and return their authoritative outcome once started. Per-repo read limiters and SQLite compiler pools are bounded to 128 tracked repositories with idle eviction.
 
 ## Edit-enabled workflow
 
@@ -107,6 +107,7 @@ The overview blurb in `mcp.rs`, `skill/SKILL.md`, and `docs/MCP.md` are the surf
 - Source edit tools require an explicit `--allow-source-edits` process gate and are hidden by default.
 - Prepared anchors are session-scoped operational state, not canonical graph facts or agent memory.
 - `synrepo_docs_search` returns advisory explained commentary only. It is searchable overlay output, not canonical graph state or explain input.
+- Graph card responses may continue with `overlay_state: "unavailable"` and `overlay_error` when the overlay store cannot be opened. Overlay-backed tools return structured errors in that state.
 - Multi-query reads run under `with_graph_read_snapshot` / `with_overlay_read_snapshot`. The re-entrant depth counter lets handlers and card compilers nest snapshots safely (see hard invariant 8 in the root `AGENTS.md`).
 - MCP read snapshots are capped per repository so concurrent clients return `BUSY` instead of opening unbounded WAL readers.
 - Overlay promotion to graph edges is curated-mode-only.
