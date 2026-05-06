@@ -16,10 +16,19 @@ use crate::tui::actions::{outcome_to_log, stop_watch, ActionContext, ActionOutco
 /// Modal state. Owned by `AppState` while the confirm prompt is visible.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConfirmStopWatchState {
-    /// Explain mode the operator was about to launch when we detected a
-    /// running watch service. Preserved so the confirm handler can hand it to
-    /// `launch_explain` after the stop succeeds.
-    pub pending_mode: ExplainMode,
+    /// Action the operator was about to launch when we detected a running
+    /// watch service. Preserved so the confirm handler can continue after the
+    /// stop succeeds.
+    pub pending: PendingStopWatchAction,
+}
+
+/// Action gated by the stop-watch confirmation modal.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PendingStopWatchAction {
+    /// Run Explain after watch stops.
+    Explain(ExplainMode),
+    /// Enable embeddings and rebuild vectors after watch stops.
+    EnableEmbeddings,
 }
 
 impl AppState {
@@ -30,7 +39,9 @@ impl AppState {
         let synrepo_dir = Config::synrepo_dir(&self.repo_root);
         match watch_service_status(&synrepo_dir) {
             WatchServiceStatus::Running(_) | WatchServiceStatus::Starting => {
-                self.confirm_stop_watch = Some(ConfirmStopWatchState { pending_mode: mode });
+                self.confirm_stop_watch = Some(ConfirmStopWatchState {
+                    pending: PendingStopWatchAction::Explain(mode),
+                });
             }
             _ => {
                 self.enqueue_pending_explain(PendingExplainRun {
@@ -60,6 +71,7 @@ impl AppState {
                 | KeyCode::Char('5')
                 | KeyCode::Char('6')
                 | KeyCode::Char('7')
+                | KeyCode::Char('8')
         ) {
             self.confirm_stop_watch = None;
             return None;
@@ -79,10 +91,17 @@ impl AppState {
                 self.log.push(outcome_to_log("watch", &outcome));
                 match &outcome {
                     ActionOutcome::Ack { .. } | ActionOutcome::Completed { .. } => {
-                        self.enqueue_pending_explain(PendingExplainRun {
-                            mode: pending.pending_mode,
-                            stopped_watch: true,
-                        });
+                        match pending.pending {
+                            PendingStopWatchAction::Explain(mode) => {
+                                self.enqueue_pending_explain(PendingExplainRun {
+                                    mode,
+                                    stopped_watch: true,
+                                });
+                            }
+                            PendingStopWatchAction::EnableEmbeddings => {
+                                self.run_enable_semantic_triage(true);
+                            }
+                        }
                     }
                     ActionOutcome::Conflict { guidance, .. } => {
                         self.set_toast(format!("watch stop blocked: {guidance}"));
@@ -115,6 +134,16 @@ pub fn describe_pending_mode(mode: &ExplainMode) -> String {
             } else {
                 paths.join(", ")
             }
+        }
+    }
+}
+
+/// Human-readable description of a pending stop-watch action.
+pub fn describe_pending_stop_action(action: &PendingStopWatchAction) -> String {
+    match action {
+        PendingStopWatchAction::Explain(mode) => describe_pending_mode(mode),
+        PendingStopWatchAction::EnableEmbeddings => {
+            "semantic vectors and hybrid search".to_string()
         }
     }
 }

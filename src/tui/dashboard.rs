@@ -265,6 +265,7 @@ fn draw_dashboard(frame: &mut ratatui::Frame, state: &mut AppState) {
             let actions = ActionsTabWidget {
                 next_actions: &next_actions,
                 quick_actions: &state.quick_actions,
+                confirm_stop_watch: state.confirm_stop_watch.as_ref(),
                 theme: &state.theme,
             };
             frame.render_widget(actions, content_area);

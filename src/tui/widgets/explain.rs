@@ -9,10 +9,10 @@ use ratatui::widgets::{Block, Borders, List, ListItem, Widget};
 use crate::pipeline::explain::{ExplainPreviewGroup, ExplainStatus};
 use crate::surface::status_snapshot::StatusSnapshot;
 use crate::tui::app::{
-    describe_pending_mode, ConfirmStopWatchState, ExplainPreviewPanel, ExplainPreviewState,
-    FolderPickerState,
+    ConfirmStopWatchState, ExplainPreviewPanel, ExplainPreviewState, FolderPickerState,
 };
 use crate::tui::theme::Theme;
+use crate::tui::widgets::confirm_stop_watch::render_confirm_stop_watch;
 
 /// Explain tab widget. Branches on `ExplainStatus` to render either the
 /// empty-state onboarding hint or the configured status + action menu. When
@@ -310,33 +310,6 @@ fn render_folder_picker(picker: &FolderPickerState, theme: &Theme) -> Vec<Line<'
         ]));
     }
     lines
-}
-
-fn render_confirm_stop_watch(confirm: &ConfirmStopWatchState, theme: &Theme) -> Vec<Line<'static>> {
-    let scope = describe_pending_mode(&confirm.pending_mode);
-    vec![
-        Line::from(Span::styled(
-            "Watch service is active.".to_string(),
-            theme.stale_style(),
-        )),
-        Line::from(""),
-        Line::from(Span::styled(
-            "  Explain needs the writer lock, which watch currently holds.".to_string(),
-            theme.muted_style(),
-        )),
-        Line::from(Span::styled(
-            "  Stop watch to run explain; restart it later with `synrepo watch`.".to_string(),
-            theme.muted_style(),
-        )),
-        Line::from(""),
-        Line::from(vec![
-            Span::styled("  Scope: ".to_string(), theme.muted_style()),
-            Span::styled(scope, theme.base_style()),
-        ]),
-        Line::from(""),
-        action_line("y", "Stop watch and run explain", theme),
-        action_line("n", "Cancel", theme),
-    ]
 }
 
 fn render_not_configured(

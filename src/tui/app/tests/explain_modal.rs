@@ -81,7 +81,10 @@ fn queue_explain_with_watch_opens_confirm_modal() {
     );
     assert!(!state.should_exit, "modal open, must not exit yet");
     let pending = state.confirm_stop_watch.as_ref().unwrap();
-    assert_eq!(pending.pending_mode, ExplainMode::Changed);
+    assert_eq!(
+        pending.pending,
+        PendingStopWatchAction::Explain(ExplainMode::Changed)
+    );
 
     // Cleanup: stop the daemon before the tempdir drops.
     let stop = stop_watch(&ctx);
@@ -167,7 +170,7 @@ fn confirm_modal_n_cancels_without_stopping_watch() {
 fn confirm_modal_6_switches_to_actions_and_clears_modal() {
     let (_repo, mut state) = make_ready_poll_state();
     state.confirm_stop_watch = Some(ConfirmStopWatchState {
-        pending_mode: ExplainMode::AllStale,
+        pending: PendingStopWatchAction::Explain(ExplainMode::AllStale),
     });
 
     let consumed = state.handle_key(KeyCode::Char('6'), KeyModifiers::NONE);

@@ -2,7 +2,9 @@ use crossterm::event::{KeyCode, KeyModifiers};
 use tempfile::tempdir;
 
 use super::*;
-use crate::tui::app::{ConfirmStopWatchState, ExplainMode, PendingExplainRun};
+use crate::tui::app::{
+    ConfirmStopWatchState, ExplainMode, PendingExplainRun, PendingStopWatchAction,
+};
 
 fn home_guard() -> (
     crate::test_support::GlobalTestLock,
@@ -38,7 +40,7 @@ fn switch_project_clears_transients_and_preserves_project_states() {
             stopped_watch: false,
         });
         active.confirm_stop_watch = Some(ConfirmStopWatchState {
-            pending_mode: ExplainMode::Changed,
+            pending: PendingStopWatchAction::Explain(ExplainMode::Changed),
         });
     }
 
