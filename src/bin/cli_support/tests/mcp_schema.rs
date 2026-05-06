@@ -73,6 +73,25 @@ fn context_pack_params_schema_uses_target_objects() {
 }
 
 #[test]
+fn context_pack_tool_description_lists_task_context_artifacts() {
+    let tools_source = fs::read_to_string("src/bin/cli_support/commands/mcp/tools.rs")
+        .expect("read MCP registration source");
+
+    for kind in [
+        "entrypoints",
+        "public_api",
+        "change_risk",
+        "findings",
+        "recent_activity",
+    ] {
+        assert!(
+            tools_source.contains(kind),
+            "context-pack MCP description must list {kind}"
+        );
+    }
+}
+
+#[test]
 fn skill_contains_context_budget_contract() {
     let skill = fs::read_to_string("skill/SKILL.md").expect("read skill");
 

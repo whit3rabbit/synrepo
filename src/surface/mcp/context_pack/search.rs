@@ -5,7 +5,8 @@ use crate::surface::card::Budget;
 use crate::surface::mcp::compact::{self, OutputMode};
 use crate::surface::mcp::SynrepoState;
 
-use super::{artifact, attach_estimated_accounting, ContextPackTarget};
+use super::artifacts::{artifact, attach_estimated_accounting};
+use super::ContextPackTarget;
 
 pub(super) fn search_artifact(
     state: &SynrepoState,

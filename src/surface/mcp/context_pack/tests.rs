@@ -282,6 +282,86 @@ fn compact_context_pack_compacts_search_artifacts() {
 }
 
 #[test]
+fn context_pack_supports_task_context_artifact_kinds() {
+    let (_dir, state) = make_state();
+    let value = build_context_pack(
+        &state,
+        ContextPackParams {
+            repo_root: None,
+            goal: None,
+            targets: vec![
+                ContextPackTarget {
+                    kind: "entrypoints".to_string(),
+                    target: ".".to_string(),
+                    budget: Some("tiny".to_string()),
+                },
+                ContextPackTarget {
+                    kind: "public_api".to_string(),
+                    target: "src".to_string(),
+                    budget: Some("tiny".to_string()),
+                },
+                ContextPackTarget {
+                    kind: "change_risk".to_string(),
+                    target: "src/lib.rs".to_string(),
+                    budget: Some("tiny".to_string()),
+                },
+                ContextPackTarget {
+                    kind: "findings".to_string(),
+                    target: "all".to_string(),
+                    budget: Some("tiny".to_string()),
+                },
+                ContextPackTarget {
+                    kind: "recent_activity".to_string(),
+                    target: "release_readiness".to_string(),
+                    budget: Some("tiny".to_string()),
+                },
+            ],
+            budget: "tiny".to_string(),
+            budget_tokens: None,
+            output_mode: OutputMode::Default,
+            include_tests: false,
+            include_notes: false,
+            limit: 8,
+        },
+    )
+    .unwrap();
+
+    let artifact_types: Vec<_> = value["artifacts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|artifact| artifact["artifact_type"].as_str().unwrap())
+        .collect();
+    let target_kinds: Vec<_> = value["artifacts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|artifact| artifact["target_kind"].as_str().unwrap())
+        .collect();
+
+    assert_eq!(
+        artifact_types,
+        vec![
+            "entrypoints",
+            "public_api",
+            "change_risk",
+            "error",
+            "recent_activity"
+        ]
+    );
+    assert_eq!(
+        target_kinds,
+        vec![
+            "entrypoints",
+            "public_api",
+            "change_risk",
+            "findings",
+            "recent_activity"
+        ]
+    );
+}
+
+#[test]
 fn resource_context_pack_defaults_to_tiny_and_honors_budget_tokens() {
     let (_dir, state) = make_state();
     let output = read_resource(

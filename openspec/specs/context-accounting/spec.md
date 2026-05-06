@@ -24,25 +24,35 @@ synrepo SHALL persist context usage metrics under `.synrepo/state/` and SHALL NO
 - **AND** the output is scrapeable by standard Prometheus tooling without post-processing
 
 ### Requirement: Benchmark context savings and usefulness
-synrepo SHALL provide a reproducible benchmark for context tasks that reports both compression and whether expected files, symbols, or tests were included.
+synrepo SHALL provide a reproducible benchmark for context tasks that reports compression, grounding, and whether expected files, symbols, or tests were included.
 
 #### Scenario: Context benchmark runs
-- **WHEN** an operator runs `synrepo bench context --tasks <glob> --json`
-- **THEN** the report includes raw file tokens, card tokens, reduction ratio, target hit or miss, stale rate, latency, and test-link coverage
+- **WHEN** an operator runs `synrepo bench context --tasks <glob> --mode all --json`
+- **THEN** the report includes raw file tokens, card tokens, reduction ratio, target hit or miss, stale rate, latency, task success, tokens returned, citation coverage, span coverage, wrong-context rate when `allowed_context` is present, and test-link coverage
 - **AND** no benchmark claim is reduced to token savings alone
 
 ### Requirement: Provide fixture-backed context benchmark reports
-`synrepo bench context` SHALL support checked-in task fixtures that produce stable benchmark reports containing compression, usefulness, freshness, and latency fields.
+`synrepo bench context` SHALL support checked-in task fixtures that produce stable benchmark reports containing compression, usefulness, freshness, grounding, wrong-context, and latency fields.
 
 #### Scenario: Run checked-in context benchmark fixtures
-- **WHEN** an operator runs `synrepo bench context --tasks "benches/tasks/*.json" --json`
-- **THEN** the report includes one entry per valid fixture with task name, category, query, baseline kind, raw file tokens, card tokens, reduction ratio, target hits, target misses, stale rate, latency, and returned targets
+- **WHEN** an operator runs `synrepo bench context --tasks "benches/tasks/*.json" --mode all --json`
+- **THEN** the report includes one entry per valid fixture with task name, category, query, baseline kind, raw file tokens, card tokens, reduction ratio, target hits, target misses, stale rate, latency, returned targets, and per-strategy runs under `runs`
 - **AND** the JSON field names are stable across patch releases unless a documented benchmark schema version changes
+
+#### Scenario: Run historical cards-only context benchmark
+- **WHEN** an operator runs `synrepo bench context --tasks "benches/tasks/*.json" --json`
+- **THEN** the default mode is `cards`
+- **AND** the report keeps the historical task-level card fields as compatibility aliases for the cards run
 
 #### Scenario: Required context is absent
 - **WHEN** a fixture names required files, symbols, or tests that are not returned by the benchmarked card path
 - **THEN** the task report marks those targets as misses
 - **AND** token reduction is still reported but is not treated as a successful context-saving result
+
+#### Scenario: Wrong-context rate is not measurable
+- **WHEN** a fixture omits `allowed_context`
+- **THEN** every strategy run reports `wrong_context_rate` as null
+- **AND** null is not rendered or interpreted as zero
 
 ### Requirement: Keep benchmark accounting outside graph truth
 Context benchmark results SHALL remain operational evidence and SHALL NOT write benchmark outcomes into graph or overlay truth stores.
@@ -145,4 +155,3 @@ Context accounting SHALL track aggregate response budget behavior without storin
 - **WHEN** synrepo loads a context metrics file written before flood metrics existed
 - **THEN** missing flood metric fields default to zero
 - **AND** the metrics file remains inspectable through JSON, text, and Prometheus surfaces
-

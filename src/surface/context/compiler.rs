@@ -1,11 +1,10 @@
-use std::path::Path;
-
 use serde::Serialize;
 
 #[cfg(test)]
 use std::collections::BTreeSet;
 
 use super::recipe::ContextRecipe;
+use super::recipes;
 use super::types::{ContextAskRequest, ContextTarget, GroundingMode, GroundingOptions};
 
 /// Deterministic plan for a high-level task-context request.
@@ -45,15 +44,15 @@ pub fn compile_context_request(request: &ContextAskRequest) -> anyhow::Result<Co
         .clone()
         .unwrap_or_else(|| recipe.default_budget_tier().to_string());
     let include_tests = wants_tests(recipe, &request.shape.sections);
-    let mut targets = Vec::new();
-    add_scoped_targets(&mut targets, request, recipe, &budget_tier);
-    add_recipe_search_targets(&mut targets, ask, recipe, &budget_tier);
+    let mut recipe_notes = Vec::new();
+    let mut targets = recipes::plan_targets(request, recipe, &budget_tier, &mut recipe_notes);
     if targets.is_empty() {
-        push_unique(&mut targets, "search", ask, Some("tiny"));
+        recipes::push_unique(&mut targets, "search", ask, Some("tiny"));
     }
 
     let limit = target_limit(request).min(targets.len().max(1));
-    let omitted_context_notes = omitted_notes(request, targets.len(), limit);
+    let mut omitted_context_notes = omitted_notes(request, targets.len(), limit);
+    omitted_context_notes.append(&mut recipe_notes);
 
     Ok(CompiledContextPlan {
         recipe,
@@ -68,80 +67,6 @@ pub fn compile_context_request(request: &ContextAskRequest) -> anyhow::Result<Co
     })
 }
 
-fn add_scoped_targets(
-    targets: &mut Vec<ContextTarget>,
-    request: &ContextAskRequest,
-    recipe: ContextRecipe,
-    budget_tier: &str,
-) {
-    for path in request.scope.paths.iter().filter(|p| !p.trim().is_empty()) {
-        let kind = path_target_kind(path);
-        push_unique(targets, kind, path, Some(budget_tier));
-        if matches!(
-            recipe,
-            ContextRecipe::ReviewModule | ContextRecipe::ReleaseReadiness
-        ) {
-            push_unique(targets, "minimum_context", path, Some("tiny"));
-        }
-    }
-
-    for symbol in request
-        .scope
-        .symbols
-        .iter()
-        .filter(|s| !s.trim().is_empty())
-    {
-        match recipe {
-            ContextRecipe::TraceCall => {
-                push_unique(targets, "call_path", symbol, Some(budget_tier));
-                push_unique(targets, "minimum_context", symbol, Some("normal"));
-            }
-            ContextRecipe::ExplainSymbol | ContextRecipe::FixTest => {
-                push_unique(targets, "symbol", symbol, Some(budget_tier));
-                push_unique(targets, "minimum_context", symbol, Some("tiny"));
-            }
-            _ => {
-                push_unique(targets, "symbol", symbol, Some(budget_tier));
-            }
-        }
-    }
-}
-
-fn add_recipe_search_targets(
-    targets: &mut Vec<ContextTarget>,
-    ask: &str,
-    recipe: ContextRecipe,
-    budget_tier: &str,
-) {
-    match recipe {
-        ContextRecipe::SecurityReview => {
-            for query in ["unsafe", "Command::new", "std::fs", "auth", ask] {
-                push_unique(targets, "search", query, Some("tiny"));
-            }
-        }
-        ContextRecipe::ReleaseReadiness => {
-            for query in ["TODO", "FIXME", "panic!", "unwrap()", ask] {
-                push_unique(targets, "search", query, Some("tiny"));
-            }
-        }
-        ContextRecipe::FixTest => {
-            for query in ["#[test]", "assert", ask] {
-                push_unique(targets, "search", query, Some("tiny"));
-            }
-        }
-        ContextRecipe::TraceCall if targets.is_empty() => {
-            push_unique(targets, "search", ask, Some("tiny"));
-        }
-        ContextRecipe::ReviewModule | ContextRecipe::General if targets.is_empty() => {
-            push_unique(targets, "search", ask, Some(budget_tier));
-        }
-        ContextRecipe::ExplainSymbol if targets.is_empty() => {
-            push_unique(targets, "search", ask, Some("tiny"));
-        }
-        _ => {}
-    }
-}
-
 fn wants_tests(recipe: ContextRecipe, sections: &[String]) -> bool {
     matches!(
         recipe,
@@ -149,15 +74,6 @@ fn wants_tests(recipe: ContextRecipe, sections: &[String]) -> bool {
     ) || sections
         .iter()
         .any(|section| section.eq_ignore_ascii_case("tests"))
-}
-
-fn path_target_kind(path: &str) -> &'static str {
-    let trimmed = path.trim_end_matches('/');
-    if Path::new(trimmed).extension().is_some() {
-        "file"
-    } else {
-        "directory"
-    }
 }
 
 fn target_limit(request: &ContextAskRequest) -> usize {
@@ -189,21 +105,6 @@ fn omitted_notes(request: &ContextAskRequest, target_count: usize, limit: usize)
         notes.push("packet was compiled from the current graph/index snapshot".to_string());
     }
     notes
-}
-
-fn push_unique(targets: &mut Vec<ContextTarget>, kind: &str, target: &str, budget: Option<&str>) {
-    let key = (kind, target);
-    if targets
-        .iter()
-        .any(|existing| existing.kind == key.0 && existing.target == key.1)
-    {
-        return;
-    }
-    targets.push(ContextTarget {
-        kind: kind.to_string(),
-        target: target.to_string(),
-        budget: budget.map(str::to_string),
-    });
 }
 
 #[cfg(test)]
@@ -252,7 +153,9 @@ mod tests {
         assert_eq!(plan.recipe, ContextRecipe::ReviewModule);
         assert!(plan.include_tests);
         assert!(keys.contains("directory:src/surface/mcp"));
-        assert!(keys.contains("minimum_context:src/surface/mcp"));
+        assert!(keys.contains("public_api:src/surface/mcp"));
+        assert!(keys.contains("entrypoints:src/surface/mcp"));
+        assert!(!keys.contains("minimum_context:src/surface/mcp"));
     }
 
     #[test]
@@ -265,6 +168,73 @@ mod tests {
         assert_eq!(plan.recipe, ContextRecipe::TraceCall);
         assert_eq!(plan.targets[0].kind, "call_path");
         assert_eq!(plan.targets[1].kind, "minimum_context");
+    }
+
+    #[test]
+    fn explain_symbol_adds_symbol_context_and_call_path() {
+        let mut req = request("explain this symbol");
+        req.scope.symbols = vec!["alpha".into()];
+
+        let plan = compile_context_request(&req).unwrap();
+        let keys = planned_target_keys(&plan);
+
+        assert_eq!(plan.recipe, ContextRecipe::ExplainSymbol);
+        assert!(keys.contains("symbol:alpha"));
+        assert!(keys.contains("minimum_context:alpha"));
+        assert!(keys.contains("call_path:alpha"));
+    }
+
+    #[test]
+    fn security_review_adds_entrypoints_and_risky_searches() {
+        let plan =
+            compile_context_request(&request("security review for command injection")).unwrap();
+        let keys = planned_target_keys(&plan);
+
+        assert_eq!(plan.recipe, ContextRecipe::SecurityReview);
+        assert!(keys.contains("entrypoints:."));
+        assert!(keys.contains("search:Command::new"));
+        assert!(keys.contains("search:TcpStream"));
+    }
+
+    #[test]
+    fn release_readiness_respects_overlay_gate() {
+        let plan = compile_context_request(&request("release readiness")).unwrap();
+        let keys = planned_target_keys(&plan);
+
+        assert_eq!(plan.recipe, ContextRecipe::ReleaseReadiness);
+        assert!(keys.contains("recent_activity:release_readiness"));
+        assert!(!keys.contains("findings:all"));
+        assert!(plan
+            .omitted_context_notes
+            .iter()
+            .any(|note| note.contains("findings were excluded")));
+    }
+
+    #[test]
+    fn release_readiness_includes_findings_when_overlay_allowed() {
+        let mut req = request("release readiness");
+        req.ground.allow_overlay = true;
+
+        let plan = compile_context_request(&req).unwrap();
+        let keys = planned_target_keys(&plan);
+
+        assert!(keys.contains("findings:all"));
+        assert!(keys.contains("recent_activity:release_readiness"));
+    }
+
+    #[test]
+    fn fix_test_adds_test_surface_and_target_context() {
+        let mut req = request("fix failing test");
+        req.scope.paths = vec!["src/lib.rs".into()];
+
+        let plan = compile_context_request(&req).unwrap();
+        let keys = planned_target_keys(&plan);
+
+        assert_eq!(plan.recipe, ContextRecipe::FixTest);
+        assert!(plan.include_tests);
+        assert!(keys.contains("test_surface:src/lib.rs"));
+        assert!(keys.contains("file:src/lib.rs"));
+        assert!(keys.contains("minimum_context:src/lib.rs"));
     }
 
     #[test]

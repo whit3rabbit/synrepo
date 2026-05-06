@@ -381,6 +381,9 @@ pub(crate) enum BenchCommand {
         /// Glob for JSON task fixtures.
         #[arg(long)]
         tasks: String,
+        /// Benchmark mode: cards, ask, or all. Defaults to cards for v1 compatibility.
+        #[arg(long, default_value = "cards")]
+        mode: String,
         /// Emit JSON instead of human-readable output.
         #[arg(long)]
         json: bool,

@@ -149,8 +149,8 @@ fn dispatch(
         Command::Stats(StatsCommand::Context { format, json }) => {
             stats_context(repo_root, StatFormat::from_cli(format, json))
         }
-        Command::Bench(BenchCommand::Context { tasks, json }) => {
-            bench_context(repo_root, &tasks, json)
+        Command::Bench(BenchCommand::Context { tasks, mode, json }) => {
+            bench_context(repo_root, &tasks, &mode, json)
         }
         Command::Bench(BenchCommand::Search { tasks, mode, json }) => {
             bench_search(repo_root, &tasks, &mode, json)

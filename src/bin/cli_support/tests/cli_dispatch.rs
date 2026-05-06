@@ -352,15 +352,16 @@ fn stats_and_bench_context_parse() {
         "context",
         "--tasks",
         "benches/tasks/*.json",
+        "--mode",
+        "all",
         "--json",
     ]);
-    assert!(
-        matches!(
-            bench.command,
-            Some(Command::Bench(BenchCommand::Context { json: true, .. }))
-        ),
-        "bench context --json should parse"
-    );
+    match bench.command {
+        Some(Command::Bench(BenchCommand::Context {
+            mode, json: true, ..
+        })) => assert_eq!(mode, "all"),
+        _ => panic!("bench context --mode all --json should parse"),
+    }
 }
 
 #[test]

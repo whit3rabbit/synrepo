@@ -8,6 +8,8 @@
 pub mod compiler;
 /// Built-in task-context recipe names and inference.
 pub mod recipe;
+/// Built-in deterministic recipe planners.
+mod recipes;
 /// Request, grounding, confidence, budget, and target types.
 pub mod types;
 

@@ -193,20 +193,20 @@ Use `synrepo uninstall` for the guided full teardown across projects, integratio
 | `synrepo impact <target> --budget 2000` | Change risk before editing |
 | `synrepo tests <path> --budget 1500` | Test-surface discovery |
 | `synrepo stats context --json` | Context-serving metrics |
-| `synrepo bench context --tasks "benches/tasks/*.json" --json` | Reproducible context-savings benchmark |
+| `synrepo bench context --tasks "benches/tasks/*.json" --mode all --json` | Reproducible context-quality benchmark |
 | `synrepo graph stats` | Inspect graph node and edge counts |
 
 ## Evidence For Context-Savings Claims
 
-`synrepo bench context` produces the evidence that backs numeric context-savings statements in this README, release notes, and product docs. A numeric context-savings percentage cites a benchmark run and reports reduction ratio, target hit rate, miss rate, stale rate, and latency. Token reduction on its own is not a savings claim: a small card that misses required context is a regression, not a win.
+`synrepo bench context --mode all` produces the evidence that backs numeric context-savings or context-quality statements in this README, release notes, and product docs. A numeric context claim cites a benchmark run and reports reduction ratio, target hit rate, miss rate, stale rate, latency, task success, token return, citation coverage, span coverage, and wrong-context rate when an allow-list is present. Token reduction on its own is not a savings claim: a small card that misses required context is a regression, not a win.
 
 Qualitative wording (for example "bounded structural cards", "smaller than raw-file reads") does not need a benchmark run. Numeric percentages do.
 
 ```bash
-synrepo bench context --tasks "benches/tasks/*.json" --json
+synrepo bench context --tasks "benches/tasks/*.json" --mode all --json
 ```
 
-The checked-in fixture set under `benches/tasks/` covers route-to-edit, symbol explanation, impact or risk, and test-surface discovery. Missing categories are reported in the benchmark summary rather than silently ignored, so release reviewers can see which workflows are not exercised.
+The checked-in fixture set under `benches/tasks/` covers route-to-edit, symbol explanation, impact or risk, and test-surface discovery. Missing categories are reported in the benchmark summary rather than silently ignored, so release reviewers can see which workflows are not exercised. The default `--mode cards` preserves the historical cards benchmark aliases; use `--mode ask` to compare `synrepo_ask` against cards, and `--mode all` to include raw-file and lexical baselines.
 
 The report carries a `schema_version` field and stable field names. Patch releases keep the field shape compatible; a rename or removal bumps the schema version.
 

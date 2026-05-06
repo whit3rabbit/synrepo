@@ -49,19 +49,19 @@ This store is for operator visibility and system health monitoring. It must neve
 - **AND** telemetry data must never appear as provenance or epistemic input to any graph node or edge
 
 ### Requirement: Require benchmark-backed context claims
-synrepo SHALL only make numeric context-savings claims when backed by reproducible benchmark output.
+synrepo SHALL only make numeric context-savings or context-quality claims when backed by reproducible benchmark output.
 
 #### Scenario: README reports context savings
 - **WHEN** documentation includes a numeric context-savings percentage
-- **THEN** the claim cites benchmark dimensions including reduction ratio, target hit rate, stale rate, latency, and test-link coverage
+- **THEN** the claim cites benchmark dimensions including reduction ratio, target hit rate, stale rate, latency, task success, tokens returned, citation coverage, span coverage, and test-link coverage
 - **AND** unbenchmarked wording stays qualitative
 
 ### Requirement: Require fixture evidence for numeric context-savings claims
-Synrepo SHALL only publish numeric context-savings claims when they are backed by a reproducible fixture benchmark report that includes usefulness and freshness dimensions.
+Synrepo SHALL only publish numeric context-savings or context-quality claims when they are backed by a reproducible fixture benchmark report that includes usefulness, freshness, grounding, and wrong-context dimensions.
 
 #### Scenario: Documentation includes a savings percentage
 - **WHEN** README, release notes, or product docs state a numeric context-savings percentage
-- **THEN** the claim cites or names a benchmark run that reports reduction ratio, target hit rate, miss rate, stale rate, latency, and test-link coverage when applicable
+- **THEN** the claim cites or names a benchmark run that reports reduction ratio, target hit rate, miss rate, stale rate, latency, task success, tokens returned, citation coverage, span coverage, wrong-context rate when an allow-list is present, and test-link coverage when applicable
 - **AND** the claim does not rely on token reduction alone
 
 #### Scenario: No benchmark evidence exists
@@ -76,3 +76,11 @@ The context benchmark fixture set SHALL cover more than one workflow category so
 - **THEN** it includes tasks for route-to-edit, symbol explanation, impact or risk, and test-surface discovery when those surfaces are supported by the repo under test
 - **AND** missing categories are reported as gaps rather than silently ignored
 
+### Requirement: Compare task-context strategies without claiming observed agent behavior
+The context benchmark SHALL compare raw-file, lexical, cards, and `synrepo_ask` strategies using deterministic Synrepo and syntext APIs. The report SHALL label follow-up file counts as estimates and SHALL NOT claim to observe external agent file reads.
+
+#### Scenario: Context-quality benchmark runs
+- **WHEN** an operator runs `synrepo bench context --tasks "benches/tasks/*.json" --mode all --json`
+- **THEN** each task can include strategy runs for `raw_file`, `lexical`, `cards`, and `ask`
+- **AND** each strategy run reports task success, tokens returned, tool calls needed, estimated follow-up files, latency, citation coverage, span coverage, target hits, target misses, and wrong-context rate when `allowed_context` is present
+- **AND** the report does not include a `files_opened_by_agent` field

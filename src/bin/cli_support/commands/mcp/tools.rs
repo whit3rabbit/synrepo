@@ -40,7 +40,7 @@ impl SynrepoServer {
         self.with_tool_state_blocking("synrepo_docs_search", params.repo_root.clone(), move |state| docs::handle_docs_search(&state, params.query, params.limit)).await
     }
 
-    #[tool(name = "synrepo_context_pack", description = "Batch read-only context artifacts into one token-accounted response. Pass targets as structured objects: {kind,target,budget?}. Kinds: file, symbol, directory, minimum_context, test_surface, call_path, search. Use output_mode=\"compact\" to compact search artifacts; card artifacts keep context_accounting. Default budget is tiny; escalate to normal for local understanding and deep only before edits.")]
+    #[tool(name = "synrepo_context_pack", description = "Batch read-only context artifacts into one token-accounted response. Pass targets as structured objects: {kind,target,budget?}. Kinds: file, symbol, directory, minimum_context, test_surface, call_path, search, entrypoints, public_api, change_risk, findings, recent_activity. Use output_mode=\"compact\" to compact search artifacts; card artifacts keep context_accounting. Default budget is tiny; escalate to normal for local understanding and deep only before edits.")]
     async fn synrepo_context_pack(&self, Parameters(params): Parameters<context_pack::ContextPackParams>) -> String {
         let repo_root = params.repo_root.clone();
         self.with_tool_state_blocking("synrepo_context_pack", repo_root, move |state| context_pack::handle_context_pack(&state, params)).await

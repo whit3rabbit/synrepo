@@ -323,4 +323,61 @@ mod tests {
             .iter()
             .any(|artifact| artifact["artifact_type"] == "search"));
     }
+
+    #[test]
+    fn ask_review_module_directory_does_not_emit_minimum_context() {
+        let (_dir, state) = make_state();
+        let mut params = request("review this module");
+        params.scope.paths = vec!["src".into()];
+
+        let value = build_ask_packet(&state, params).unwrap();
+        let artifacts = value["context_packet"]["artifacts"].as_array().unwrap();
+
+        assert!(artifacts
+            .iter()
+            .any(|artifact| artifact["artifact_type"] == "module_card"));
+        assert!(artifacts
+            .iter()
+            .any(|artifact| artifact["artifact_type"] == "public_api"));
+        assert!(!artifacts
+            .iter()
+            .any(|artifact| artifact["target_kind"] == "minimum_context"));
+    }
+
+    #[test]
+    fn ask_release_readiness_can_include_findings_and_activity() {
+        let (_dir, state) = make_state();
+        let mut params = request("release readiness");
+        params.ground.allow_overlay = true;
+
+        let value = build_ask_packet(&state, params).unwrap();
+        let artifacts = value["context_packet"]["artifacts"].as_array().unwrap();
+
+        assert!(artifacts
+            .iter()
+            .any(|artifact| artifact["target_kind"] == "findings"));
+        assert!(artifacts
+            .iter()
+            .any(|artifact| artifact["artifact_type"] == "recent_activity"));
+        assert_ne!(value["grounding"]["status"], "insufficient");
+    }
+
+    #[test]
+    fn ask_security_review_adds_bounded_risky_flow_searches() {
+        let (_dir, state) = make_state();
+        let value = build_ask_packet(&state, request("security review")).unwrap();
+        let artifacts = value["context_packet"]["artifacts"].as_array().unwrap();
+
+        assert!(artifacts
+            .iter()
+            .any(|artifact| artifact["artifact_type"] == "entrypoints"));
+        assert!(artifacts.iter().any(|artifact| {
+            artifact["artifact_type"] == "search"
+                && artifact["target"].as_str() == Some("Command::new")
+        }));
+        assert!(artifacts.iter().any(|artifact| {
+            artifact["artifact_type"] == "search"
+                && artifact["target"].as_str() == Some("TcpStream")
+        }));
+    }
 }

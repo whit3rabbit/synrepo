@@ -143,7 +143,7 @@ After search returns likely targets:
 - use `synrepo_card` with `budget: "tiny"` for many candidates
 - use `budget: "normal"` for the best 1-3 targets
 - use `budget: "deep"` only when validating implementation details or preparing edits
-- use `synrepo_context_pack` when several known files, symbols, directories, tests, or call paths are needed together
+- use `synrepo_context_pack` when several known files, symbols, directories, tests, call paths, entrypoints, public APIs, risk cards, findings, or recent-activity artifacts are needed together
 - use `synrepo_ask` first for broad plain-language tasks that need one bounded, cited task-context packet
 
 ### 6. CLI fallback
@@ -243,7 +243,7 @@ V1 edit candidates are advisory only: `var-to-const`, `remove-debug-logging`, `r
 * `synrepo_explain(target, budget?, budget_tokens?)` — workflow alias for bounded card lookup.
 * `synrepo_card(target?, targets?, budget?, budget_tokens?)` — card for one symbol/file, or up to 10 cards in one batch.
 * `synrepo_minimum_context(target, budget?)` — bounded neighborhood step before deep inspection or full-file reads.
-* `synrepo_context_pack(goal?, targets?, budget?, budget_tokens?, output_mode?, include_tests?, include_notes?, limit?)` — batch read-only context artifacts into one token-accounted response; compact mode applies to search artifacts.
+* `synrepo_context_pack(goal?, targets?, budget?, budget_tokens?, output_mode?, include_tests?, include_notes?, limit?)` — batch read-only context artifacts into one token-accounted response; target kinds include `file`, `symbol`, `directory`, `minimum_context`, `test_surface`, `call_path`, `search`, `entrypoints`, `public_api`, `change_risk`, `findings`, and `recent_activity`; compact mode applies to search artifacts.
 * `synrepo_impact(target, budget?, budget_tokens?)` — workflow alias for risk before editing.
 * `synrepo_risks(target, budget?, budget_tokens?)` — shorthand for `synrepo_impact`.
 * `synrepo_change_impact(target, direction?)` — first-pass dependents and optional outbound dependencies.
@@ -279,7 +279,7 @@ Use `tiny` cards to orient and route.
 Use `normal` cards to understand a neighborhood.
 Use `deep` cards only before writing code, or when exact source or body details matter.
 
-Use `synrepo_context_pack` when several known files, symbols, directories, tests, call paths, or other task-context pieces are needed together; it preserves read-only behavior and returns a shared `context_state`.
+Use `synrepo_context_pack` when several known files, symbols, directories, tests, call paths, entrypoints, public APIs, risk cards, findings, recent activity, or other task-context pieces are needed together; it preserves read-only behavior and returns a shared `context_state`.
 
 Unknown budget strings are invalid parameters. Valid tiers are exactly `tiny`, `normal`, and `deep`.
 

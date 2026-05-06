@@ -16,12 +16,15 @@ Use existing surfaces before adding new instrumentation:
 ```bash
 synrepo status --json
 synrepo status --recent
-synrepo bench context
+synrepo bench context --tasks "benches/tasks/*.json" --mode all --json
 du -sh .synrepo/overlay .synrepo/index/vectors .synrepo/cache/llm-responses
 ```
 
-`synrepo bench context` is required for context-savings claims. Token reduction
-alone is not enough; include target hit rate, miss rate, stale rate, and latency.
+`synrepo bench context --mode all` is required for numeric context-savings or
+context-quality claims. Token reduction alone is not enough; include target hit
+rate, miss rate, stale rate, latency, task success, tokens returned, citation
+coverage, span coverage, and wrong-context rate when the fixture defines
+`allowed_context`.
 
 ## Graph Snapshot Budget
 

@@ -64,7 +64,7 @@ pub(super) fn file_outline_content(
         "imports": imports,
         "imported_by": imported_by,
     });
-    super::attach_estimated_accounting(&mut content, budget);
+    super::artifacts::attach_estimated_accounting(&mut content, budget);
     if let Some(accounting) = content
         .get_mut("context_accounting")
         .and_then(|value| value.as_object_mut())

@@ -2,6 +2,9 @@ use std::path::{Path, PathBuf};
 
 use globset::{Glob, GlobSetBuilder};
 use serde::{Deserialize, Serialize};
+use synrepo::surface::context::{
+    ContextBudget, ContextRecipe, ContextScope, ContextShape, GroundingOptions,
+};
 use walkdir::WalkDir;
 
 /// Known workflow categories for benchmark fixtures.
@@ -14,7 +17,7 @@ pub(crate) const KNOWN_CATEGORIES: &[&str] = &[
 
 const KNOWN_TARGET_KINDS: &[&str] = &["file", "symbol", "test"];
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub(crate) struct BenchTask {
     #[serde(default)]
     pub(crate) name: Option<String>,
@@ -22,6 +25,18 @@ pub(crate) struct BenchTask {
     pub(crate) query: String,
     #[serde(default)]
     pub(crate) required_targets: Vec<BenchTarget>,
+    #[serde(default)]
+    pub(crate) scope: Option<ContextScope>,
+    #[serde(default)]
+    pub(crate) shape: Option<ContextShape>,
+    #[serde(default)]
+    pub(crate) ground: Option<GroundingOptions>,
+    #[serde(default)]
+    pub(crate) budget: Option<ContextBudget>,
+    #[serde(default)]
+    pub(crate) expected_recipe: Option<ContextRecipe>,
+    #[serde(default)]
+    pub(crate) allowed_context: Option<Vec<BenchTarget>>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -37,13 +52,21 @@ pub(crate) fn validate_fixture(fixture: &BenchTask) -> anyhow::Result<()> {
     if fixture.category.trim().is_empty() {
         anyhow::bail!("fixture `category` must be non-empty");
     }
-    for (idx, target) in fixture.required_targets.iter().enumerate() {
+    validate_targets("required_targets", &fixture.required_targets)?;
+    if let Some(allowed) = &fixture.allowed_context {
+        validate_targets("allowed_context", allowed)?;
+    }
+    Ok(())
+}
+
+fn validate_targets(field: &str, targets: &[BenchTarget]) -> anyhow::Result<()> {
+    for (idx, target) in targets.iter().enumerate() {
         if target.value.trim().is_empty() {
-            anyhow::bail!("required_targets[{idx}]: `value` must be non-empty");
+            anyhow::bail!("{field}[{idx}]: `value` must be non-empty");
         }
         if !KNOWN_TARGET_KINDS.contains(&target.kind.as_str()) {
             anyhow::bail!(
-                "required_targets[{idx}]: unknown `kind` `{}` (expected one of {})",
+                "{field}[{idx}]: unknown `kind` `{}` (expected one of {})",
                 target.kind,
                 KNOWN_TARGET_KINDS.join(", ")
             );
@@ -67,6 +90,35 @@ pub(crate) fn classify_targets(
         }
     }
     (hits, misses)
+}
+
+pub(crate) fn wrong_context_rate(
+    allowed: Option<&[BenchTarget]>,
+    returned_paths: &[String],
+    returned_symbols: &[String],
+) -> Option<f64> {
+    let allowed = allowed?;
+    let returned_count = returned_paths.len() + returned_symbols.len();
+    if returned_count == 0 {
+        return Some(0.0);
+    }
+    let wrong_paths = returned_paths
+        .iter()
+        .filter(|path| {
+            !allowed
+                .iter()
+                .any(|target| target_satisfied(target, std::slice::from_ref(path), &[]))
+        })
+        .count();
+    let wrong_symbols = returned_symbols
+        .iter()
+        .filter(|symbol| {
+            !allowed
+                .iter()
+                .any(|target| target_satisfied(target, &[], std::slice::from_ref(symbol)))
+        })
+        .count();
+    Some((wrong_paths + wrong_symbols) as f64 / returned_count as f64)
 }
 
 pub(crate) fn expand_task_glob(repo_root: &Path, pattern: &str) -> anyhow::Result<Vec<PathBuf>> {
