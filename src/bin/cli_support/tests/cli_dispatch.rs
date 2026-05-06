@@ -4,7 +4,7 @@
 //! that reorders, renames, or accidentally strips a subcommand fails loud
 //! without bringing up the runtime.
 
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 use tempfile::tempdir;
 
 use super::super::cli_args::{
@@ -60,6 +60,15 @@ fn status_json_flag_round_trips() {
         panic!("status --json should parse to Command::Status");
     };
     assert!(json, "--json must flip the flag");
+}
+
+#[test]
+fn export_help_describes_optional_context_snapshots() {
+    let help = Cli::command().render_long_help().to_string();
+    assert!(
+        help.contains("Generate optional context snapshots for sharing, offline review, or non-MCP agents"),
+        "export help must describe optional context snapshots, got: {help}"
+    );
 }
 
 #[test]

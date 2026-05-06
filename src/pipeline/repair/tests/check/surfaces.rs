@@ -107,6 +107,15 @@ fn check_reports_stale_rationale_when_no_drift_assessment() {
     assert_eq!(export_finding.drift_class, DriftClass::Absent);
     assert_eq!(export_finding.recommended_action, RepairAction::None);
     assert_eq!(export_finding.severity, Severity::ReportOnly);
+    let notes = export_finding.notes.as_deref().unwrap_or_default();
+    assert!(
+        notes.contains("optional snapshot"),
+        "absent export guidance must present export as optional, got: {notes}"
+    );
+    assert!(
+        !notes.contains("Run `synrepo export`"),
+        "absent export guidance must not imply required manual export: {notes}"
+    );
 }
 
 #[test]

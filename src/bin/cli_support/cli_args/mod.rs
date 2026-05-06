@@ -283,7 +283,7 @@ pub(crate) enum Command {
         policy: CompactPolicyArg,
     },
 
-    /// Generate export files in the configured export directory.
+    /// Generate optional context snapshots for sharing, offline review, or non-MCP agents.
     Export {
         /// Output format.
         #[arg(long, default_value = "markdown")]

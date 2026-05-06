@@ -7,7 +7,7 @@ use synrepo::{
     surface::card::Budget,
 };
 
-/// Generate export files in the configured export directory.
+/// Generate optional context snapshot files in the configured export directory.
 pub(crate) fn export(
     repo_root: &Path,
     format: ExportFormat,
@@ -41,15 +41,16 @@ pub(crate) fn export(
         ExportFormat::GraphJson | ExportFormat::GraphHtml
     ) {
         println!(
-            "Export complete: {} graph nodes, {} graph edges",
+            "Context export complete: {} graph nodes, {} graph edges",
             result.graph_node_count, result.graph_edge_count
         );
     } else {
         println!(
-            "Export complete: {} files, {} symbols, {} decisions",
+            "Context export complete: {} files, {} symbols, {} decisions",
             result.file_count, result.symbol_count, result.decision_count
         );
     }
+    println!("  Purpose:   portable context for sharing, offline review, or non-MCP agents");
     println!("  Directory: {}", result.export_dir.display());
     println!("  Format:    {}", result.manifest.format.as_str());
     println!("  Budget:    {}", result.manifest.budget);

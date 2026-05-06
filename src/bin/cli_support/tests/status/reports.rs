@@ -34,6 +34,28 @@ fn status_reports_graph_counts_after_bootstrap() {
 }
 
 #[test]
+fn status_reports_context_export_as_optional_when_absent() {
+    let repo = tempdir().unwrap();
+    seed_graph(repo.path());
+
+    let text = status_output(repo.path(), false, false, false).unwrap();
+    assert!(
+        text.contains("context export: not generated (optional; synrepo export writes synrepo-context/)"),
+        "expected optional context export line, got: {text}"
+    );
+
+    let json: serde_json::Value = serde_json::from_str(
+        status_output(repo.path(), true, false, false)
+            .unwrap()
+            .trim(),
+    )
+    .unwrap();
+    assert_eq!(json["export_freshness"], "not generated (optional; synrepo export writes synrepo-context/)");
+    assert_eq!(json["export_state"], "absent");
+    assert_eq!(json["export_dir"], "synrepo-context");
+}
+
+#[test]
 fn status_explain_hint_mentions_global_config_for_reusable_keys() {
     let env = EnvGuard::new();
     env.set("ANTHROPIC_API_KEY", "sk-test");

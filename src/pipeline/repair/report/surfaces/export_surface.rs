@@ -21,7 +21,7 @@ impl SurfaceCheck for ExportSurfaceCheck {
                 target_id: None,
                 recommended_action: RepairAction::None,
                 notes: Some(
-                    "Export directory has not been generated yet. Run `synrepo export`."
+                    "Context export has not been generated. This optional snapshot is only needed for sharing, offline review, or non-MCP agent context."
                         .to_string(),
                 ),
             }],
