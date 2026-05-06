@@ -167,7 +167,10 @@ fn skill_surfaces_teach_context_compiler_front_door() {
 fn tracked_codex_skill_matches_generated_shim() {
     let tracked_codex_skill = read_repo_file(&[".agents", "skills", "synrepo", "SKILL.md"]);
 
-    assert_eq!(tracked_codex_skill, AgentTool::Codex.shim_spec_body());
+    assert_eq!(
+        normalize_line_endings(&tracked_codex_skill),
+        AgentTool::Codex.shim_spec_body()
+    );
 }
 
 #[test]
@@ -268,6 +271,10 @@ fn read_repo_file(parts: &[&str]) -> String {
         .iter()
         .fold(manifest_dir.to_path_buf(), |path, part| path.join(part));
     std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
+}
+
+fn normalize_line_endings(source: &str) -> String {
+    source.replace("\r\n", "\n")
 }
 
 fn assert_required_lines(name: &str, surface: &str, required: &[&str]) {
