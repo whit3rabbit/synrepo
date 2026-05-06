@@ -40,7 +40,9 @@ fn status_reports_context_export_as_optional_when_absent() {
 
     let text = status_output(repo.path(), false, false, false).unwrap();
     assert!(
-        text.contains("context export: not generated (optional; synrepo export writes synrepo-context/)"),
+        text.contains(
+            "context export: not generated (optional; synrepo export writes synrepo-context/)"
+        ),
         "expected optional context export line, got: {text}"
     );
 
@@ -50,7 +52,10 @@ fn status_reports_context_export_as_optional_when_absent() {
             .trim(),
     )
     .unwrap();
-    assert_eq!(json["export_freshness"], "not generated (optional; synrepo export writes synrepo-context/)");
+    assert_eq!(
+        json["export_freshness"],
+        "not generated (optional; synrepo export writes synrepo-context/)"
+    );
     assert_eq!(json["export_state"], "absent");
     assert_eq!(json["export_dir"], "synrepo-context");
 }

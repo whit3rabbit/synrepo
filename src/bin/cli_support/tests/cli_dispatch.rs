@@ -66,7 +66,9 @@ fn status_json_flag_round_trips() {
 fn export_help_describes_optional_context_snapshots() {
     let help = Cli::command().render_long_help().to_string();
     assert!(
-        help.contains("Generate optional context snapshots for sharing, offline review, or non-MCP agents"),
+        help.contains(
+            "Generate optional context snapshots for sharing, offline review, or non-MCP agents"
+        ),
         "export help must describe optional context snapshots, got: {help}"
     );
 }

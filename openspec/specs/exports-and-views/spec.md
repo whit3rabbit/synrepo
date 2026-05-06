@@ -41,7 +41,7 @@ synrepo SHALL prevent generated exports and views from becoming explain input or
 - **AND** any later promotion requires an explicit human-authored source path
 
 ### Requirement: Define export command contract
-synrepo SHALL provide a `synrepo export` command that produces human-readable and machine-readable convenience snapshots of current card state. Exports SHALL be written to a configurable directory (default: `synrepo-context/` at the repo root) and SHALL never be used as explain input, graph truth, or canonical planning material.
+synrepo SHALL provide a `synrepo export` command that produces optional human-readable and machine-readable convenience snapshots of current card state for sharing, offline review, or non-MCP agent context. Exports SHALL be written to a configurable directory (default: `synrepo-context/` at the repo root) and SHALL never be used as explain input, graph truth, runtime graph reads, MCP cards, search, or canonical planning material.
 
 #### Scenario: Run export on an initialized repository
 - **WHEN** a user runs `synrepo export` in an initialized repository
@@ -92,3 +92,10 @@ synrepo SHALL derive export freshness by comparing the last-reconcile timestamp 
 - **WHEN** `synrepo check` runs and no `synrepo-context/.export-manifest.json` exists
 - **THEN** the `ExportSurface` is reported as absent
 - **AND** no error is raised and the surface is not reported as unsupported
+- **AND** no repair action is recommended because the export snapshot is optional
+
+#### Scenario: Status reports absent export as optional
+- **WHEN** `synrepo status` or the dashboard renders a repository with no export manifest
+- **THEN** the operator-facing label is `context export`
+- **AND** the value says the snapshot is not generated and optional
+- **AND** the dashboard does not raise a warning or next action for the absent export

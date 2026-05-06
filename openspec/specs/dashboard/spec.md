@@ -82,7 +82,7 @@ synrepo SHALL define a terminal dashboard that presents operational state for a 
 synrepo SHALL define a structured status snapshot consumed by both the `synrepo status` renderer and the dashboard, so the dashboard is a viewer over already-computed state and does not duplicate status logic.
 
 #### Scenario: Single source of truth
-- **WHEN** the dashboard renders health, activity, reconcile, export freshness, overlay cost, and writer-lock state
+- **WHEN** the dashboard renders health, activity, reconcile, context export freshness, overlay cost, and writer-lock state
 - **THEN** it reads from the same snapshot struct used by the `synrepo status` formatter
 - **AND** adding a new field to the snapshot surfaces it in both renderers
 
