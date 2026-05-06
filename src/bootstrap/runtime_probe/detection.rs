@@ -1,9 +1,6 @@
 //! Agent-integration detection functions.
 
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use crate::agent_install::{skill_manifest_path, SYNREPO_INSTALL_NAME, SYNREPO_INSTALL_OWNER};
 
@@ -44,6 +41,25 @@ pub fn all_agent_targets() -> &'static [AgentTargetKind] {
         AgentTargetKind::Codex,
         AgentTargetKind::Copilot,
         AgentTargetKind::Windsurf,
+        AgentTargetKind::Amp,
+        AgentTargetKind::Antigravity,
+        AgentTargetKind::Cline,
+        AgentTargetKind::CodeBuddy,
+        AgentTargetKind::Crush,
+        AgentTargetKind::Forge,
+        AgentTargetKind::Gemini,
+        AgentTargetKind::Hermes,
+        AgentTargetKind::Iflow,
+        AgentTargetKind::Junie,
+        AgentTargetKind::Kilocode,
+        AgentTargetKind::Opencode,
+        AgentTargetKind::Openclaw,
+        AgentTargetKind::Pi,
+        AgentTargetKind::Qodercli,
+        AgentTargetKind::Qwen,
+        AgentTargetKind::Roo,
+        AgentTargetKind::Tabnine,
+        AgentTargetKind::Trae,
     ]
 }
 
@@ -81,13 +97,7 @@ fn agent_config_shim_output_path(
 }
 
 fn agent_config_id(target: AgentTargetKind) -> &'static str {
-    match target {
-        AgentTargetKind::Claude => "claude",
-        AgentTargetKind::Cursor => "cursor",
-        AgentTargetKind::Codex => "codex",
-        AgentTargetKind::Copilot => "copilot",
-        AgentTargetKind::Windsurf => "windsurf",
-    }
+    target.as_str()
 }
 
 fn legacy_shim_output_path(repo_root: &Path, target: AgentTargetKind) -> PathBuf {
@@ -113,44 +123,29 @@ fn legacy_shim_output_path(repo_root: &Path, target: AgentTargetKind) -> PathBuf
             .join("skills")
             .join("synrepo")
             .join("SKILL.md"),
+        target => repo_root
+            .join(format!(".{}", target.as_str()))
+            .join("skills")
+            .join("synrepo")
+            .join("SKILL.md"),
     }
 }
 
 fn mcp_registration_present(repo_root: &Path, target: AgentTargetKind) -> bool {
-    match target {
-        AgentTargetKind::Claude => claude_mcp_registered(repo_root),
-        AgentTargetKind::Codex => codex_mcp_registered(repo_root),
-        // Cursor/Copilot/Windsurf do not have a canonical project-scoped MCP
-        // registration file today. The shim is the full integration signal.
-        AgentTargetKind::Cursor | AgentTargetKind::Copilot | AgentTargetKind::Windsurf => {
-            shim_exists(repo_root, target)
+    let id = target.as_str();
+    if let Some(installer) = agent_config::mcp_by_id(id) {
+        let scope = agent_config::Scope::Local(repo_root.to_path_buf());
+        if let Ok(report) =
+            installer.mcp_status(&scope, SYNREPO_INSTALL_NAME, SYNREPO_INSTALL_OWNER)
+        {
+            return matches!(
+                report.status,
+                agent_config::InstallStatus::InstalledOwned { .. }
+                    | agent_config::InstallStatus::PresentUnowned
+            );
         }
     }
-}
-
-fn claude_mcp_registered(repo_root: &Path) -> bool {
-    let path = repo_root.join(".mcp.json");
-    let Ok(text) = fs::read_to_string(&path) else {
-        return false;
-    };
-    let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else {
-        return false;
-    };
-    v.get("mcpServers").and_then(|s| s.get("synrepo")).is_some()
-}
-
-fn codex_mcp_registered(repo_root: &Path) -> bool {
-    let path = repo_root.join(".codex").join("config.toml");
-    let Ok(text) = fs::read_to_string(&path) else {
-        return false;
-    };
-    let Ok(doc) = text.parse::<toml_edit::DocumentMut>() else {
-        return false;
-    };
-    doc.get("mcp_servers")
-        .and_then(|i| i.as_table())
-        .and_then(|t| t.get("synrepo"))
-        .is_some()
+    shim_exists(repo_root, target)
 }
 
 /// Detect agent targets via observational hints in the repo and home directory.
@@ -176,6 +171,10 @@ fn target_hint_present(repo_root: &Path, home: Option<&Path>, target: AgentTarge
         ],
         AgentTargetKind::Copilot => vec![repo_root.join(".github").join("copilot-instructions.md")],
         AgentTargetKind::Windsurf => vec![repo_root.join(".windsurf")],
+        AgentTargetKind::Opencode => {
+            vec![repo_root.join("opencode.json"), repo_root.join("AGENTS.md")]
+        }
+        other => vec![repo_root.join(format!(".{}", other.as_str()))],
     };
     if repo_hints.iter().any(|p| p.exists()) {
         return true;
@@ -189,6 +188,8 @@ fn target_hint_present(repo_root: &Path, home: Option<&Path>, target: AgentTarge
         AgentTargetKind::Codex => vec![home.join(".codex"), home.join(".agents").join("skills")],
         AgentTargetKind::Copilot => vec![],
         AgentTargetKind::Windsurf => vec![home.join(".windsurf")],
+        AgentTargetKind::Opencode => vec![home.join(".opencode")],
+        other => vec![home.join(format!(".{}", other.as_str()))],
     };
     home_hints.iter().any(|p| p.exists())
 }

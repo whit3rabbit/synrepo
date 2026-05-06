@@ -4,11 +4,29 @@ Embeddings are optional in synrepo. They are a recall aid for semantic routing a
 
 Use them when your own benchmark tasks show fewer misses. Leave them off when exact symbol, path, or string lookup is already enough.
 
+## Build
+
+To use embeddings, you must build the binary with the `semantic-triage` feature enabled:
+
+```bash
+cargo build --features semantic-triage
+# or for a release build
+cargo build --release --features semantic-triage
+```
+
+If installing via Cargo, use:
+
+```bash
+cargo install --path . --features semantic-triage
+```
+
+This pulls in the `ort` (ONNX Runtime), `tokenizers`, and `ndarray` dependencies.
+
 ## Gates
 
 Embeddings only participate when all gates are open:
 
-1. The binary is built with `semantic-triage`.
+1. The binary is built with `semantic-triage` (see [Build](#build)).
 2. `.synrepo/config.toml` has `enable_semantic_triage = true`.
 3. `synrepo reconcile` has built `.synrepo/index/vectors/index.bin`.
 4. Query-time code can load the vector index and local embedding backend.

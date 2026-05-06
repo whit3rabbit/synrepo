@@ -20,7 +20,7 @@ macro_rules! doctrine_block {
     () => {
 "## Agent doctrine
 
-synrepo is a code-context compiler. In `.synrepo/` repos, prefer MCP tools or CLI fallback over cold reads for questions, reviews, search, impact, and pre-edit context.
+synrepo is a local, deterministic code-context compiler: `repo files -> graph facts -> code artifacts -> task contexts -> cards/MCP`. In `.synrepo/` repos, prefer MCP/CLI over cold reads for questions, reviews, search, impact, and edits.
 
 ### Default path
 

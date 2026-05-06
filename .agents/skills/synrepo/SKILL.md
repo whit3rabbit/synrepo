@@ -1,17 +1,19 @@
 ---
 name: synrepo
-description: Use synrepo in repositories with a .synrepo/ directory. Prefer synrepo cards and search before reading source files cold.
+description: Use synrepo in repositories with a .synrepo/ directory. Prefer synrepo cards, compact search, and bounded task contexts before reading source files cold.
 ---
 
 # synrepo context
 
-synrepo precomputes a structural graph of the codebase from tree-sitter parsing and git history.
+synrepo is a local, deterministic code-context compiler. It compiles repository files into observed graph facts, code artifacts, task contexts, and cards/MCP packets before agents read source cold.
 
 ## Codex setup
 
 This skill belongs at `.agents/skills/synrepo/SKILL.md`.
 
-For repo-scoped setup, add this to trusted project `.codex/config.toml`:
+Project-scoped setup writes trusted project `.codex/config.toml`. Global Codex MCP registration is not automated by `synrepo setup`; if you configure `~/.codex/config.toml` manually, launch `synrepo mcp` and pass `repo_root` to repo-addressable tools. To add local non-blocking Codex nudges, run `synrepo setup codex --agent-hooks`.
+
+For project-scoped manual setup, edit trusted project `.codex/config.toml` directly:
 
 ```toml
 [mcp_servers.synrepo]
@@ -19,34 +21,31 @@ command = "synrepo"
 args = ["mcp", "--repo", "."]
 ```
 
-Use `codex mcp add synrepo -- synrepo mcp --repo .` only when you want a user-level server in `~/.codex/config.toml`.
-For an npm-distributed build, use `codex mcp add synrepo -- npx -y synrepo mcp --repo .` instead.
-To add local non-blocking Codex nudges, run `synrepo setup codex --agent-hooks`.
-
 ## Agent doctrine
 
-synrepo is a code-context compiler. When `.synrepo/` exists in the repo root, prefer MCP tools (or the CLI fallback) over cold file reads for orientation, codebase questions, file reviews, broad search, change impact, and pre-edit context.
+synrepo is a local, deterministic code-context compiler: `repo files -> graph facts -> code artifacts -> task contexts -> cards/MCP`. In `.synrepo/` repos, prefer MCP/CLI over cold reads for questions, reviews, search, impact, and edits.
 
 ### Default path
 
-The required sequence for codebase questions, reviews, search routing, and edits is orient, find, impact or risks, edit, tests, changed.
+The required sequence for questions, reviews, search routing, and edits is orient, ask or find, impact or risks, edit, tests, changed.
 
-1. Start with `synrepo_orient` before reading the repo cold. It is a small routing summary; use `synrepo_overview` only when the full dashboard is needed.
-2. Use `synrepo_task_route` for plain-language tasks, then `synrepo_find` or `synrepo_search` to find candidate files and symbols. `synrepo_find` decomposes broad task language into deterministic lexical anchors before returning empty; for broad lexical searches, prefer `output_mode: "compact"` so results are adaptive and token-accounted before opening files.
-3. Use `tiny` cards to route and `normal` cards to understand. Use `synrepo_minimum_context` once a focal target is known but the surrounding neighborhood risk is unclear, especially for file reviews and codebase questions.
-4. Use `synrepo_impact` (or its shorthand `synrepo_risks`) before editing or reviewing risky files, and `synrepo_tests` before claiming done.
-5. Use `synrepo_changed` after edits to review changed context and validation commands.
-6. Read full source files or request `deep` cards only after bounded cards identify the target or when the card content is insufficient. Full-file reads are an explicit escalation, not the default first step.
+1. Start with `synrepo_orient` before reading the repo cold.
+2. Use `synrepo_ask` for broad plain-language tasks that need one bounded, cited task-context packet.
+3. Use `synrepo_find` or `synrepo_search` to drill down to files and symbols. `synrepo_find` decomposes broad language into deterministic lexical anchors before returning empty; for broad lexical searches, prefer `output_mode: "compact"`.
+4. Use `tiny` cards to route and `normal` cards to understand. Use `synrepo_minimum_context` once a focal target is known but the surrounding neighborhood risk is unclear, especially for file reviews and codebase questions.
+5. Use `synrepo_impact` (or its shorthand `synrepo_risks`) before editing or reviewing risky files, and `synrepo_tests` before claiming done.
+6. Use `synrepo_changed` after edits to review changed context and validation commands.
+7. Read full source files or request `deep` cards only after bounded cards identify the target or when the card content is insufficient. Full-file reads are an explicit escalation, not the default first step.
+
+### MCP repository selection
+
+Project-scoped MCP configs that launch `synrepo mcp --repo .` have a default repository, so `repo_root` may be omitted. Passing the absolute repository root is still valid and preferred when you can identify it reliably.
+
+Global MCP configs that launch `synrepo mcp` serve registered projects by absolute path. In global or defaultless contexts, pass the current workspace's absolute path as `repo_root` to repo-addressable tools. If a tool reports that a repository is not managed by synrepo, ask the user to run `synrepo project add <path>`; do not bypass registry gating.
 
 Graph-backed structural facts (files, symbols, edges) remain the authoritative source of truth. Overlay commentary, explain docs, and proposed cross-links are advisory, labeled machine-authored, and freshness-sensitive. Treat stale labels as information, not as errors. **Refresh is explicit**: every tool returns what is currently in the overlay. Fresh commentary refresh requires `synrepo mcp --allow-overlay-writes` and `synrepo_refresh_commentary(target)`.
 
-Client-side nudge hooks for Codex and Claude may remind agents to use synrepo before direct grep, read, review, or edit workflows. These hooks are advisory only; the MCP server remains read-first and does not intercept external tool calls.
-
-### Fast-path routing
-
-Use `synrepo_task_route` or `synrepo task-route` when hooks emit `[SYNREPO_CONTEXT_FAST_PATH]`, `[SYNREPO_DETERMINISTIC_EDIT_CANDIDATE] Intent: ...`, or `[SYNREPO_LLM_NOT_REQUIRED]`. Prefer compact search, cards, context packs, or prepared anchored edits before spending LLM tokens. The signals are advisory only; source mutation still requires `synrepo mcp --allow-source-edits` and `synrepo_apply_anchor_edits`.
-
-Graph export is native to synrepo, not skill-owned. When a user asks for a visual graph of the repository, run `synrepo export --format graph-html`. When they ask for machine-readable graph data, run `synrepo export --format graph-json`. These exports are deterministic convenience outputs from the canonical graph DB; they do not require an API key and are not explain input.
+Client-side nudge hooks for Codex and Claude may remind agents to use synrepo before direct grep, read, review, or edit workflows and emit `[SYNREPO_CONTEXT_FAST_PATH]`, `[SYNREPO_DETERMINISTIC_EDIT_CANDIDATE] Intent: ...`, or `[SYNREPO_LLM_NOT_REQUIRED]`. Hooks are advisory only; source mutation still requires `synrepo mcp --allow-source-edits` and `synrepo_apply_anchor_edits`.
 
 ### Do not
 
@@ -65,17 +64,22 @@ Graph export is native to synrepo, not skill-owned. When a user asks for a visua
 
 ## MCP tools (primary interface)
 
-- `synrepo_card target=<id> budget=<tiny|normal|deep>` — structured card for a file or symbol
-- `synrepo_search query=<text> [output_mode=compact]` — lexical search across indexed files; adaptive compact mode returns grouped previews, a minimal miss, or smaller raw rows with output accounting
-- `synrepo_task_route task=<description> [path=<path>]` — classify a task into the cheapest safe route and hook signals
-- `synrepo_overview` — full dashboard with graph, readiness, watch/reconcile, explain/commentary, metrics, and recent activity
-- `synrepo_readiness` — cheap read-only preflight for graph, overlay, index, watch, reconcile, and enabled MCP mutation modes
-- `synrepo_where_to_edit task=<description>` — file suggestions for a plain-language task
-- `synrepo_change_impact target=<id>` — first-pass reverse dependencies
-- `synrepo_minimum_context target=<id> budget=<...>` — budget-bounded 1-hop neighborhood
-- `synrepo_entrypoints` — entry-point discovery
-- `synrepo_findings [node_id=<id>] [kind=<kind>]` — cross-link findings
-- `synrepo_recent_activity [kinds=<list>]` — bounded synrepo operational events
+- `synrepo_readiness()` - cheap read-only preflight for graph, overlay, index, watch, reconcile, and edit-mode status
+- `synrepo_orient()` - workflow step 1: small routing summary before reading the repo cold
+- `synrepo_ask(ask, scope?, shape?, ground?, budget?)` - default high-level front door for one bounded, cited task-context packet
+- `synrepo_search(query, limit?, output_mode?, budget_tokens?)` - exact lexical search for symbols, flags, schema keys, file paths, and validation
+- `synrepo_card(target?, targets?, budget?, budget_tokens?)` - structured card for one file or symbol, or a small batch
+- `synrepo_context_pack(goal?, targets?, budget?, budget_tokens?, output_mode?, include_tests?, include_notes?, limit?)` - batch known read-only code artifacts and task-context pieces into one token-accounted response
+- `synrepo_task_route(task, path?)` - cheap route classification when only intent, budget, and next tools are needed
+- `synrepo_minimum_context(target, budget?)` - bounded neighborhood once a focal target is known
+- `synrepo_impact(target)` or `synrepo_risks(target)` - first-pass change-risk context before edits or risky reviews
+- `synrepo_tests(scope)` - discover likely validation commands before claiming done
+- `synrepo_changed()` - review changed context and validation guidance after edits
+- `synrepo_overview()` - full dashboard only when the full operational picture is useful
+
+`synrepo_ask` returns `answer`, `cards_used`, `evidence`, `grounding`, `omitted_context_notes`, `next_best_tools`, and `context_packet`. Its grounding policy accepts `mode` or `citations`, `include_spans`, and `allow_overlay`; default to observed graph/index evidence and allow overlay only when advisory machine-authored context is acceptable.
+
+Graph facts are authoritative observed source truth. Overlay commentary, explain docs, and notes are advisory; LLM-authored output never mutates the canonical graph. Embeddings are optional routing/search helpers and are not the core trust source.
 
 Node IDs: `file_0000000000000042`, `symbol_0000000000000024`. Use `synrepo_search` to find them.
 
@@ -86,12 +90,10 @@ synrepo status                                   # health check
 synrepo status --recent                          # bounded operational history
 synrepo task-route "find auth entrypoints"        # advisory route classifier
 synrepo search <query>                           # lexical search
-synrepo node <target>                            # node metadata as JSON (accepts paths, symbol names, or node IDs)
+synrepo node <target>                             # node metadata as JSON (accepts paths, symbol names, or node IDs)
 synrepo graph query "inbound <target>"            # reverse dependencies
 synrepo graph query "outbound <target>"           # forward dependencies
 synrepo graph stats                              # counts by type
-synrepo export --format graph-html               # visual graph export
-synrepo export --format graph-json               # machine-readable graph export
 synrepo reconcile                                # refresh graph
 synrepo links list                               # cross-link candidates
 synrepo findings [--freshness <state>]           # findings summary

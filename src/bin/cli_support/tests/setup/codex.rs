@@ -4,7 +4,6 @@ use std::path::Path;
 use tempfile::tempdir;
 
 use agent_config::Scope;
-use synrepo::bootstrap::runtime_probe::AgentTargetKind;
 use synrepo::tui::McpInstallPlan;
 
 use crate::cli_support::agent_shims::AgentTool;
@@ -269,7 +268,7 @@ fn codex_dashboard_mcp_install_is_repo_local_mcp_only() {
     execute_project_mcp_install_plan(
         repo.path(),
         McpInstallPlan {
-            target: AgentTargetKind::Codex,
+            target: "codex".to_string(),
         },
     )
     .unwrap();

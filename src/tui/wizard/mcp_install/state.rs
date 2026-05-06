@@ -13,7 +13,7 @@ use crate::tui::mcp_status::{McpScope, McpStatus, McpStatusRow};
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct McpInstallPlan {
     /// Target selected by the operator.
-    pub target: AgentTargetKind,
+    pub target: String,
 }
 
 /// Outcome of the MCP install picker.
@@ -43,7 +43,7 @@ pub enum McpInstallStep {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct McpInstallTargetRow {
-    pub(crate) target: AgentTargetKind,
+    pub(crate) target: String,
     pub(crate) agent: String,
     pub(crate) status: McpStatus,
     pub(crate) scope: McpScope,
@@ -61,7 +61,7 @@ pub struct McpInstallWizardState {
     /// Cursor in `rows`.
     pub target_cursor: usize,
     /// Committed target.
-    pub target: AgentTargetKind,
+    pub target: String,
     /// True when the operator pressed Esc / q / Ctrl-C before Confirm.
     pub cancelled: bool,
 }
@@ -77,8 +77,8 @@ impl McpInstallWizardState {
         let target_cursor = default_cursor(&rows);
         let target = rows
             .get(target_cursor)
-            .map(|row| row.target)
-            .unwrap_or(AgentTargetKind::Codex);
+            .map(|row| row.target.clone())
+            .unwrap_or_else(|| "codex".to_string());
         Self {
             step: McpInstallStep::SelectTarget,
             rows,
@@ -114,7 +114,7 @@ impl McpInstallWizardState {
             return None;
         }
         Some(McpInstallPlan {
-            target: self.target,
+            target: self.target.clone(),
         })
     }
 
@@ -171,7 +171,7 @@ impl McpInstallWizardState {
 
     fn reseed_target(&mut self) {
         if let Some(row) = self.selected_row() {
-            self.target = row.target;
+            self.target = row.target.clone();
         }
     }
 }
@@ -205,7 +205,7 @@ fn local_target_rows(
                 _ => (
                     McpStatus::Missing,
                     McpScope::Missing,
-                    detected_source(detected_targets.contains(&target)),
+                    detected_source(is_detected(&target, detected_targets)),
                 ),
             };
             let config_path = local_report
@@ -215,6 +215,7 @@ fn local_target_rows(
                         .then_some(row.config_path)
                         .flatten()
                 });
+            let detected = is_detected(&target, detected_targets);
             Some(McpInstallTargetRow {
                 target,
                 agent: row.agent,
@@ -222,10 +223,16 @@ fn local_target_rows(
                 scope,
                 source: source.to_string(),
                 config_path,
-                detected: detected_targets.contains(&target),
+                detected,
             })
         })
         .collect()
+}
+
+fn is_detected(target: &str, detected_targets: &[AgentTargetKind]) -> bool {
+    detected_targets
+        .iter()
+        .any(|detected| detected.as_str() == target)
 }
 
 fn default_cursor(rows: &[McpInstallTargetRow]) -> usize {
@@ -236,11 +243,20 @@ fn default_cursor(rows: &[McpInstallTargetRow]) -> usize {
         .unwrap_or(0)
 }
 
-fn target_for_id(id: &str) -> Option<AgentTargetKind> {
-    all_agent_targets()
-        .iter()
-        .copied()
-        .find(|target| target.as_str() == id)
+fn target_for_id(id: &str) -> Option<String> {
+    agent_config::mcp_by_id(id)
+        .and_then(|installer| {
+            installer
+                .supported_mcp_scopes()
+                .contains(&ScopeKind::Local)
+                .then(|| installer.id().to_string())
+        })
+        .or_else(|| {
+            all_agent_targets()
+                .iter()
+                .find(|target| target.as_str() == id)
+                .map(|target| target.as_str().to_string())
+        })
 }
 
 fn detected_source(detected: bool) -> &'static str {

@@ -299,6 +299,59 @@ fn apply_owned_instruction_round_trip_uses_agent_config_uninstall() {
 }
 
 #[test]
+fn build_plan_finds_owned_mcp_without_legacy_path() {
+    let fx = Fixture::new();
+    let scope = agent_config::Scope::Local(fx.path().to_path_buf());
+    let installer = agent_config::mcp_by_id("tabnine").unwrap();
+    let spec = agent_config::McpSpec::builder(SYNREPO_INSTALL_NAME)
+        .owner(SYNREPO_INSTALL_OWNER)
+        .stdio("synrepo", ["mcp", "--repo", "."])
+        .build();
+    let _ = installer.install_mcp(&scope, &spec).unwrap();
+
+    let plan = build_plan(fx.path(), Some(AgentTool::Tabnine), false).unwrap();
+    assert!(
+        plan.actions
+            .iter()
+            .any(|a| matches!(a, RemoveAction::StripMcpEntry { tool, .. } if tool == "tabnine")),
+        "agent-config MCP status should drive planning without a hard-coded path"
+    );
+
+    apply_plan(fx.path(), &plan).unwrap();
+    let status = installer
+        .mcp_status(&scope, SYNREPO_INSTALL_NAME, SYNREPO_INSTALL_OWNER)
+        .unwrap();
+    assert!(matches!(status.status, agent_config::InstallStatus::Absent));
+}
+
+#[test]
+fn build_plan_finds_owned_skill_without_legacy_path() {
+    let fx = Fixture::new();
+    let scope = agent_config::Scope::Local(fx.path().to_path_buf());
+    let installer = agent_config::skill_by_id("amp").unwrap();
+    let spec = agent_config::SkillSpec::builder(SYNREPO_INSTALL_NAME)
+        .owner(SYNREPO_INSTALL_OWNER)
+        .description("Use when a repository has synrepo context available.")
+        .body("# synrepo\n")
+        .build();
+    let _ = installer.install_skill(&scope, &spec).unwrap();
+
+    let plan = build_plan(fx.path(), Some(AgentTool::Amp), false).unwrap();
+    assert!(
+        plan.actions
+            .iter()
+            .any(|a| matches!(a, RemoveAction::DeleteShim { tool, .. } if tool == "amp")),
+        "agent-config skill status should drive planning without a hard-coded path"
+    );
+
+    apply_plan(fx.path(), &plan).unwrap();
+    let status = installer
+        .skill_status(&scope, SYNREPO_INSTALL_NAME, SYNREPO_INSTALL_OWNER)
+        .unwrap();
+    assert!(matches!(status.status, agent_config::InstallStatus::Absent));
+}
+
+#[test]
 fn preserved_backup_is_reported_and_not_deleted() {
     let fx = Fixture::new();
     write_mcp_json_with_synrepo(fx.path(), None);

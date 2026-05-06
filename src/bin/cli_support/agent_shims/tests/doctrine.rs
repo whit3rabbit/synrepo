@@ -40,7 +40,11 @@ fn every_shim_embeds_doctrine_block() {
 #[test]
 fn doctrine_block_covers_required_sections() {
     assert!(DOCTRINE_BLOCK.contains("## Agent doctrine"));
+    assert!(DOCTRINE_BLOCK.contains("local, deterministic code-context compiler"));
+    assert!(DOCTRINE_BLOCK
+        .contains("repo files -> graph facts -> code artifacts -> task contexts -> cards/MCP"));
     assert!(DOCTRINE_BLOCK.contains("### Default path"));
+    assert!(DOCTRINE_BLOCK.contains("`synrepo_ask`"));
     assert!(DOCTRINE_BLOCK.contains("### Do not"));
     assert!(DOCTRINE_BLOCK.contains("### Product boundary"));
     assert!(DOCTRINE_BLOCK.contains("`tiny`"));
@@ -127,6 +131,43 @@ fn skill_teaches_exact_identifier_search_before_task_routing() {
         missing.len(),
         missing.join("\n")
     );
+}
+
+#[test]
+fn skill_surfaces_teach_context_compiler_front_door() {
+    let repo_skill = read_repo_file(&["skill", "SKILL.md"]);
+    let codex_shim = AgentTool::Codex.shim_spec_body().to_string();
+    let tracked_codex_skill = read_repo_file(&[".agents", "skills", "synrepo", "SKILL.md"]);
+    let required = [
+        "local, deterministic code-context compiler",
+        "repo files -> graph facts -> code artifacts -> task contexts -> cards/MCP",
+        "`synrepo_ask(ask, scope?, shape?, ground?, budget?)`",
+        "default high-level front door for one bounded, cited task-context packet",
+        "`answer`, `cards_used`, `evidence`, `grounding`, `omitted_context_notes`, `next_best_tools`, and `context_packet`",
+        "`mode` or `citations`, `include_spans`, and `allow_overlay`",
+        "Graph facts are authoritative observed source truth",
+        "Overlay commentary, explain docs, and notes are advisory",
+        "LLM-authored output never mutates the canonical graph",
+        "Embeddings are optional routing/search helpers",
+    ];
+
+    for (name, surface) in [
+        ("skill/SKILL.md", repo_skill.as_str()),
+        ("AgentTool::Codex shim", codex_shim.as_str()),
+        (
+            ".agents/skills/synrepo/SKILL.md",
+            tracked_codex_skill.as_str(),
+        ),
+    ] {
+        assert_required_lines(name, surface, &required);
+    }
+}
+
+#[test]
+fn tracked_codex_skill_matches_generated_shim() {
+    let tracked_codex_skill = read_repo_file(&[".agents", "skills", "synrepo", "SKILL.md"]);
+
+    assert_eq!(tracked_codex_skill, AgentTool::Codex.shim_spec_body());
 }
 
 #[test]
@@ -219,4 +260,26 @@ fn tool_window<'a>(source: &'a str, tool: &str) -> &'a str {
         .unwrap_or_else(|| panic!("did not find `{needle}` in MCP tools.rs"));
     let window_end = (idx + 900).min(source.len());
     &source[idx..window_end]
+}
+
+fn read_repo_file(parts: &[&str]) -> String {
+    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let path = parts
+        .iter()
+        .fold(manifest_dir.to_path_buf(), |path, part| path.join(part));
+    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
+}
+
+fn assert_required_lines(name: &str, surface: &str, required: &[&str]) {
+    let missing: Vec<&str> = required
+        .iter()
+        .copied()
+        .filter(|line| !surface.contains(line))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "{name} is missing {} required line(s):\n{}",
+        missing.len(),
+        missing.join("\n")
+    );
 }

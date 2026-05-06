@@ -58,9 +58,9 @@ mod tests {
         // Target 0 is Claude (automated) → Complete; defaults off.
         assert_eq!(s.target_cursor, 0);
         assert!(!s.write_shim);
-        // Press Down to move to Cursor (target_cursor=1). Cursor is shim-only,
-        // so register_mcp stays off by default even when the integration state
-        // would otherwise turn it on; write_shim flips on.
+        // Press Down to move to Cursor (target_cursor=1). Cursor is now
+        // agent-config MCP capable, so both actions default on for a new
+        // target.
         press(&mut s, KeyCode::Down);
         assert_eq!(s.target_cursor, 1);
         assert!(
@@ -68,11 +68,10 @@ mod tests {
             "new target with absent integration seeds write_shim=on"
         );
         assert!(
-            !s.register_mcp,
-            "shim-only target must not default register_mcp=on"
+            s.register_mcp,
+            "MCP-capable target defaults register_mcp=on"
         );
-        // Press Down again to Codex (target_cursor=2). Codex is automated, so
-        // the reseeded defaults should enable both actions.
+        // Press Down again to Codex (target_cursor=2). Codex is also automated.
         press(&mut s, KeyCode::Down);
         assert_eq!(s.target_cursor, 2);
         assert!(s.write_shim);
@@ -84,13 +83,9 @@ mod tests {
 
     #[test]
     fn shim_only_target_defaults_register_mcp_off() {
-        // Cursor, Copilot, Windsurf are all shim-only; their MCP registration
-        // checkbox should default off regardless of integration state.
-        for target in [
-            AgentTargetKind::Cursor,
-            AgentTargetKind::Copilot,
-            AgentTargetKind::Windsurf,
-        ] {
+        // Targets without an agent-config MCP surface keep the registration
+        // checkbox off regardless of integration state.
+        for target in [AgentTargetKind::CodeBuddy, AgentTargetKind::Trae] {
             let s = IntegrationWizardState::new(partial(target), vec![]);
             assert_eq!(s.target, target);
             assert!(

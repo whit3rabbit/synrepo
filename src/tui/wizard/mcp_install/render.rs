@@ -7,7 +7,7 @@ use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
 use super::state::{McpInstallStep, McpInstallWizardState};
 use crate::tui::app::poll_key;
 use crate::tui::theme::Theme;
-use crate::tui::wizard::{enter_tui, leave_tui, target_label, WizardTerminal};
+use crate::tui::wizard::{enter_tui, leave_tui, WizardTerminal};
 
 /// Run the repo-local MCP install picker until completion or cancellation.
 pub fn run_mcp_install_wizard_loop(
@@ -164,7 +164,7 @@ fn draw_confirm_step(
         .unwrap_or_else(|| "-".to_string());
     let lines = vec![
         Line::from(Span::styled(
-            format!("Target: {}", target_label(row.target)),
+            format!("Target: {}", row.agent),
             theme.base_style(),
         )),
         Line::from(""),

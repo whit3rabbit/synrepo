@@ -90,7 +90,7 @@ pub(crate) const CODEX_SHIM: &str = concat!(
     "\
 # synrepo context
 
-synrepo precomputes a structural graph of the codebase from tree-sitter parsing and git history.
+synrepo is a local, deterministic code-context compiler. It compiles repository files into observed graph facts, code artifacts, task contexts, and cards/MCP packets before agents read source cold.
 
 ## Codex setup
 
@@ -111,15 +111,22 @@ args = [\"mcp\", \"--repo\", \".\"]
     "
 ## MCP tools (primary interface)
 
-- `synrepo_card target=<id> budget=<tiny|normal|deep>` — structured card for a file or symbol
-- `synrepo_search query=<text> [output_mode=compact]` — lexical search across indexed files
-- `synrepo_overview` — graph node counts and repository mode
-- `synrepo_where_to_edit task=<description>` — file suggestions for a plain-language task
-- `synrepo_change_impact target=<id>` — first-pass reverse dependencies
-- `synrepo_minimum_context target=<id> budget=<...>` — budget-bounded 1-hop neighborhood
-- `synrepo_entrypoints` — entry-point discovery
-- `synrepo_findings [node_id=<id>] [kind=<kind>]` — cross-link findings
-- `synrepo_recent_activity [kinds=<list>]` — bounded synrepo operational events
+- `synrepo_readiness()` - cheap read-only preflight for graph, overlay, index, watch, reconcile, and edit-mode status
+- `synrepo_orient()` - workflow step 1: small routing summary before reading the repo cold
+- `synrepo_ask(ask, scope?, shape?, ground?, budget?)` - default high-level front door for one bounded, cited task-context packet
+- `synrepo_search(query, limit?, output_mode?, budget_tokens?)` - exact lexical search for symbols, flags, schema keys, file paths, and validation
+- `synrepo_card(target?, targets?, budget?, budget_tokens?)` - structured card for one file or symbol, or a small batch
+- `synrepo_context_pack(goal?, targets?, budget?, budget_tokens?, output_mode?, include_tests?, include_notes?, limit?)` - batch known read-only code artifacts and task-context pieces into one token-accounted response
+- `synrepo_task_route(task, path?)` - cheap route classification when only intent, budget, and next tools are needed
+- `synrepo_minimum_context(target, budget?)` - bounded neighborhood once a focal target is known
+- `synrepo_impact(target)` or `synrepo_risks(target)` - first-pass change-risk context before edits or risky reviews
+- `synrepo_tests(scope)` - discover likely validation commands before claiming done
+- `synrepo_changed()` - review changed context and validation guidance after edits
+- `synrepo_overview()` - full dashboard only when the full operational picture is useful
+
+`synrepo_ask` returns `answer`, `cards_used`, `evidence`, `grounding`, `omitted_context_notes`, `next_best_tools`, and `context_packet`. Its grounding policy accepts `mode` or `citations`, `include_spans`, and `allow_overlay`; default to observed graph/index evidence and allow overlay only when advisory machine-authored context is acceptable.
+
+Graph facts are authoritative observed source truth. Overlay commentary, explain docs, and notes are advisory; LLM-authored output never mutates the canonical graph. Embeddings are optional routing/search helpers and are not the core trust source.
 
 Node IDs: `file_0000000000000042`, `symbol_0000000000000024`. Use `synrepo_search` to find them.
 
@@ -128,6 +135,7 @@ Node IDs: `file_0000000000000042`, `symbol_0000000000000024`. Use `synrepo_searc
 ```bash
 synrepo status                                   # health check
 synrepo status --recent                          # bounded operational history
+synrepo task-route \"find auth entrypoints\"        # advisory route classifier
 synrepo search <query>                           # lexical search
 synrepo node <target>                             # node metadata as JSON (accepts paths, symbol names, or node IDs)
 synrepo graph query \"inbound <target>\"            # reverse dependencies

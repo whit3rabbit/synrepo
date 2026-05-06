@@ -76,10 +76,29 @@ pub(crate) fn leave_tui(terminal: &mut WizardTerminal) -> anyhow::Result<()> {
 /// wizard (target selection) and the repair wizard.
 pub(crate) fn target_label(t: AgentTargetKind) -> &'static str {
     match t {
+        AgentTargetKind::Amp => "Amp",
+        AgentTargetKind::Antigravity => "Google Antigravity",
         AgentTargetKind::Claude => "Claude Code",
+        AgentTargetKind::Cline => "Cline",
+        AgentTargetKind::CodeBuddy => "CodeBuddy CLI",
         AgentTargetKind::Cursor => "Cursor",
-        AgentTargetKind::Codex => "Codex CLI",
         AgentTargetKind::Copilot => "GitHub Copilot",
+        AgentTargetKind::Crush => "Charm Crush",
+        AgentTargetKind::Codex => "Codex CLI",
+        AgentTargetKind::Forge => "Forge",
+        AgentTargetKind::Gemini => "Gemini CLI",
+        AgentTargetKind::Hermes => "Hermes",
+        AgentTargetKind::Iflow => "iFlow CLI",
+        AgentTargetKind::Junie => "Junie",
+        AgentTargetKind::Kilocode => "Kilo Code",
+        AgentTargetKind::Opencode => "OpenCode",
+        AgentTargetKind::Openclaw => "OpenClaw",
+        AgentTargetKind::Pi => "Pi",
+        AgentTargetKind::Qodercli => "Qoder CLI",
+        AgentTargetKind::Qwen => "Qwen Code",
+        AgentTargetKind::Roo => "Roo Code",
+        AgentTargetKind::Tabnine => "Tabnine CLI",
+        AgentTargetKind::Trae => "Trae",
         AgentTargetKind::Windsurf => "Windsurf",
     }
 }
@@ -90,12 +109,10 @@ pub(crate) fn target_label(t: AgentTargetKind) -> &'static str {
 /// subset so the TUI can render honest copy without depending on the binary
 /// crate's `AgentTool` enum.
 pub(crate) fn target_artifact_label(t: AgentTargetKind) -> &'static str {
-    match t {
-        AgentTargetKind::Claude
-        | AgentTargetKind::Cursor
-        | AgentTargetKind::Codex
-        | AgentTargetKind::Windsurf => "skill",
-        AgentTargetKind::Copilot => "instructions",
+    if agent_config::skill_by_id(t.as_str()).is_some() {
+        "skill"
+    } else {
+        "instructions"
     }
 }
 
@@ -130,10 +147,16 @@ pub enum AgentTargetTier {
 /// today. OpenCode is also Automated on the CLI, but is not part of the
 /// wizard probe set, so it does not appear here.
 pub fn target_tier(t: AgentTargetKind) -> AgentTargetTier {
-    match t {
-        AgentTargetKind::Claude | AgentTargetKind::Codex => AgentTargetTier::Automated,
-        AgentTargetKind::Cursor | AgentTargetKind::Copilot | AgentTargetKind::Windsurf => {
-            AgentTargetTier::ShimOnly
-        }
+    if agent_config::mcp_by_id(t.as_str())
+        .map(|installer| {
+            installer
+                .supported_mcp_scopes()
+                .contains(&agent_config::ScopeKind::Local)
+        })
+        .unwrap_or(false)
+    {
+        AgentTargetTier::Automated
+    } else {
+        AgentTargetTier::ShimOnly
     }
 }

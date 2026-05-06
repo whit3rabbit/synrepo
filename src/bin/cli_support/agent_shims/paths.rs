@@ -50,8 +50,28 @@ impl AgentTool {
 
     fn legacy_output_path(self, repo_root: &Path) -> PathBuf {
         match self {
+            AgentTool::Amp => repo_root
+                .join(".amp")
+                .join("skills")
+                .join("synrepo")
+                .join("SKILL.md"),
+            AgentTool::Antigravity => repo_root
+                .join(".antigravity")
+                .join("skills")
+                .join("synrepo")
+                .join("SKILL.md"),
             AgentTool::Claude => repo_root
                 .join(".claude")
+                .join("skills")
+                .join("synrepo")
+                .join("SKILL.md"),
+            AgentTool::Cline => repo_root
+                .join(".cline")
+                .join("skills")
+                .join("synrepo")
+                .join("SKILL.md"),
+            AgentTool::CodeBuddy => repo_root
+                .join(".codebuddy")
                 .join("skills")
                 .join("synrepo")
                 .join("SKILL.md"),
@@ -61,9 +81,31 @@ impl AgentTool {
                 .join("synrepo")
                 .join("SKILL.md"),
             AgentTool::Copilot => repo_root.join("synrepo-copilot-instructions.md"),
+            AgentTool::Crush => repo_root
+                .join(".crush")
+                .join("skills")
+                .join("synrepo")
+                .join("SKILL.md"),
             AgentTool::Generic => repo_root.join("synrepo-agents.md"),
             AgentTool::Codex => repo_root
                 .join(".agents")
+                .join("skills")
+                .join("synrepo")
+                .join("SKILL.md"),
+            AgentTool::Forge => repo_root
+                .join(".forge")
+                .join("skills")
+                .join("synrepo")
+                .join("SKILL.md"),
+            AgentTool::Hermes => repo_root
+                .join(".hermes")
+                .join("skills")
+                .join("synrepo")
+                .join("SKILL.md"),
+            AgentTool::Iflow => repo_root.join(".iflow").join("mcp.json"),
+            AgentTool::Junie => repo_root.join(".junie").join("commands").join("synrepo.md"),
+            AgentTool::Kilocode => repo_root
+                .join(".kilocode")
                 .join("skills")
                 .join("synrepo")
                 .join("SKILL.md"),
@@ -73,6 +115,16 @@ impl AgentTool {
                 .join("synrepo")
                 .join("SKILL.md"),
             AgentTool::OpenCode => repo_root.join("AGENTS.md"),
+            AgentTool::Openclaw => repo_root
+                .join(".openclaw")
+                .join("skills")
+                .join("synrepo")
+                .join("SKILL.md"),
+            AgentTool::Pi => repo_root
+                .join(".pi")
+                .join("skills")
+                .join("synrepo")
+                .join("SKILL.md"),
             AgentTool::Gemini => repo_root
                 .join(".gemini")
                 .join("skills")
@@ -83,8 +135,8 @@ impl AgentTool {
                 .join("recipes")
                 .join("synrepo.yaml"),
             AgentTool::Kiro => repo_root.join(".kiro").join("prompts").join("synrepo.md"),
+            AgentTool::Qodercli => repo_root.join(".qoder").join("mcp.json"),
             AgentTool::Qwen => repo_root.join(".qwen").join("commands").join("synrepo.md"),
-            AgentTool::Junie => repo_root.join(".junie").join("commands").join("synrepo.md"),
             AgentTool::Roo => repo_root.join(".roo").join("commands").join("synrepo.md"),
             AgentTool::Tabnine => repo_root
                 .join(".tabnine")

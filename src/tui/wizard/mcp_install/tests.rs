@@ -41,7 +41,7 @@ fn defaults_to_detected_missing_local_mcp_target() {
 
     let state = McpInstallWizardState::new(repo.path(), rows, vec![AgentTargetKind::Codex]);
 
-    assert_eq!(state.target, AgentTargetKind::Codex);
+    assert_eq!(state.target, "codex");
     assert_eq!(state.selected_row().unwrap().status, McpStatus::Missing);
 }
 
@@ -61,7 +61,7 @@ fn produces_plan_for_selected_target() {
     assert_eq!(
         state.finalize(),
         Some(McpInstallPlan {
-            target: AgentTargetKind::Codex
+            target: "codex".to_string()
         })
     );
 }
@@ -78,7 +78,7 @@ fn registered_targets_can_be_selected_for_idempotent_rerun() {
     let rows = build_mcp_status_rows(repo.path());
     let mut state = McpInstallWizardState::new(repo.path(), rows, vec![AgentTargetKind::Codex]);
 
-    while state.target != AgentTargetKind::Codex {
+    while state.target != "codex" {
         state.handle_key(KeyCode::Down, KeyModifiers::NONE);
     }
     assert_eq!(state.selected_row().unwrap().status, McpStatus::Registered);
@@ -89,7 +89,26 @@ fn registered_targets_can_be_selected_for_idempotent_rerun() {
     assert_eq!(
         state.finalize(),
         Some(McpInstallPlan {
-            target: AgentTargetKind::Codex
+            target: "codex".to_string()
         })
     );
+}
+
+#[test]
+fn picker_includes_every_local_agent_config_mcp_target() {
+    let repo = tempdir().unwrap();
+    let rows = build_mcp_status_rows(repo.path());
+    let state = McpInstallWizardState::new(repo.path(), rows, vec![]);
+    let actual: std::collections::HashSet<_> =
+        state.rows().iter().map(|row| row.target.as_str()).collect();
+    let expected: std::collections::HashSet<_> = agent_config::mcp_capable()
+        .into_iter()
+        .filter(|installer| {
+            installer
+                .supported_mcp_scopes()
+                .contains(&agent_config::ScopeKind::Local)
+        })
+        .map(|installer| installer.id())
+        .collect();
+    assert_eq!(actual, expected);
 }

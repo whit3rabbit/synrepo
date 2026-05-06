@@ -53,14 +53,52 @@ pub enum RuntimeClassification {
 /// touching the classification contract.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AgentTargetKind {
+    /// Sourcegraph Amp CLI (`.amp/`).
+    Amp,
+    /// Google Antigravity (`.antigravity/`).
+    Antigravity,
     /// Claude Code (`.claude/` or `CLAUDE.md`).
     Claude,
+    /// Cline (`.cline/`).
+    Cline,
+    /// CodeBuddy CLI (`.codebuddy/`).
+    CodeBuddy,
     /// Cursor (`.cursor/`).
     Cursor,
     /// OpenAI Codex CLI (`.codex/`).
     Codex,
     /// GitHub Copilot (`.github/copilot-instructions.md` or `copilot-*`).
     Copilot,
+    /// Charm Crush (`.crush/`).
+    Crush,
+    /// Forge (`.forge/`).
+    Forge,
+    /// Gemini CLI (`.gemini/`).
+    Gemini,
+    /// Hermes (`.hermes/`).
+    Hermes,
+    /// iFlow CLI (`.iflow/`).
+    Iflow,
+    /// Junie (`.junie/`).
+    Junie,
+    /// Kilo Code (`.kilocode/`).
+    Kilocode,
+    /// OpenCode (`opencode.json` or `AGENTS.md`).
+    Opencode,
+    /// OpenClaw (`.openclaw/`).
+    Openclaw,
+    /// Pi (`.pi/`).
+    Pi,
+    /// Qoder CLI (`.qoder/`).
+    Qodercli,
+    /// Qwen Code (`.qwen/`).
+    Qwen,
+    /// Roo Code (`.roo/`).
+    Roo,
+    /// Tabnine CLI (`.tabnine/`).
+    Tabnine,
+    /// Trae (`.trae/`).
+    Trae,
     /// Windsurf (`.windsurf/`).
     Windsurf,
 }
@@ -69,10 +107,29 @@ impl AgentTargetKind {
     /// Stable lowercase identifier used in serialized output.
     pub fn as_str(self) -> &'static str {
         match self {
+            AgentTargetKind::Amp => "amp",
+            AgentTargetKind::Antigravity => "antigravity",
             AgentTargetKind::Claude => "claude",
+            AgentTargetKind::Cline => "cline",
+            AgentTargetKind::CodeBuddy => "codebuddy",
             AgentTargetKind::Cursor => "cursor",
             AgentTargetKind::Codex => "codex",
             AgentTargetKind::Copilot => "copilot",
+            AgentTargetKind::Crush => "crush",
+            AgentTargetKind::Forge => "forge",
+            AgentTargetKind::Gemini => "gemini",
+            AgentTargetKind::Hermes => "hermes",
+            AgentTargetKind::Iflow => "iflow",
+            AgentTargetKind::Junie => "junie",
+            AgentTargetKind::Kilocode => "kilocode",
+            AgentTargetKind::Opencode => "opencode",
+            AgentTargetKind::Openclaw => "openclaw",
+            AgentTargetKind::Pi => "pi",
+            AgentTargetKind::Qodercli => "qodercli",
+            AgentTargetKind::Qwen => "qwen",
+            AgentTargetKind::Roo => "roo",
+            AgentTargetKind::Tabnine => "tabnine",
+            AgentTargetKind::Trae => "trae",
             AgentTargetKind::Windsurf => "windsurf",
         }
     }

@@ -52,6 +52,52 @@ fn automation_tier_tracks_agent_config_mcp_support() {
 }
 
 #[test]
+fn local_mcp_catalog_tracks_agent_config_registry() {
+    let actual: std::collections::HashSet<_> = AgentTool::local_mcp_tools()
+        .into_iter()
+        .filter_map(AgentTool::agent_config_id)
+        .collect();
+    let expected: std::collections::HashSet<_> = agent_config::mcp_capable()
+        .into_iter()
+        .filter(|installer| {
+            installer
+                .supported_mcp_scopes()
+                .contains(&agent_config::ScopeKind::Local)
+        })
+        .map(|installer| installer.id())
+        .collect();
+    assert_eq!(actual, expected);
+}
+
+#[test]
+fn local_artifact_catalog_covers_agent_config_skills_and_instructions() {
+    let actual: std::collections::HashSet<_> = AgentTool::local_artifact_tools()
+        .into_iter()
+        .filter_map(AgentTool::agent_config_id)
+        .collect();
+    let mut expected: std::collections::HashSet<&'static str> = agent_config::skill_capable()
+        .into_iter()
+        .filter(|installer| {
+            installer
+                .supported_skill_scopes()
+                .contains(&agent_config::ScopeKind::Local)
+        })
+        .map(|installer| installer.id())
+        .collect();
+    expected.extend(
+        agent_config::instruction_capable()
+            .into_iter()
+            .filter(|installer| {
+                installer
+                    .supported_instruction_scopes()
+                    .contains(&agent_config::ScopeKind::Local)
+            })
+            .map(|installer| installer.id()),
+    );
+    assert_eq!(actual, expected);
+}
+
+#[test]
 fn test_display_name() {
     assert_eq!(AgentTool::Claude.display_name(), "Claude Code");
     assert_eq!(AgentTool::Cursor.display_name(), "Cursor");

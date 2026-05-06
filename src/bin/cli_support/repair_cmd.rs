@@ -180,7 +180,8 @@ pub(crate) fn execute_project_mcp_install_plan(
     repo_root: &Path,
     plan: McpInstallPlan,
 ) -> anyhow::Result<()> {
-    let tool = AgentTool::from_target_kind(plan.target);
+    let tool = AgentTool::from_agent_config_id(&plan.target)
+        .ok_or_else(|| anyhow::anyhow!("unsupported agent-config target: {}", plan.target))?;
     let scope = agent_config::Scope::Local(repo_root.to_path_buf());
     println!(
         "Installing repo-local synrepo MCP for {}...",

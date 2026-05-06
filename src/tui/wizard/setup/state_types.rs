@@ -77,15 +77,33 @@ pub enum SetupStep {
     Complete,
 }
 
-/// V1 target roster offered by the wizard. Wider `AgentTool` variants
-/// (Gemini, Goose, Kiro, etc.) stay behind `synrepo agent-setup <tool>` for
-/// now; the wizard only offers the observationally-detectable five.
+/// Target roster offered by the wizard. This mirrors the local agent-config
+/// registry coverage exposed by the binary-side `AgentTool` catalog.
 pub const WIZARD_TARGETS: &[AgentTargetKind] = &[
     AgentTargetKind::Claude,
     AgentTargetKind::Cursor,
     AgentTargetKind::Codex,
     AgentTargetKind::Copilot,
     AgentTargetKind::Windsurf,
+    AgentTargetKind::Amp,
+    AgentTargetKind::Antigravity,
+    AgentTargetKind::Cline,
+    AgentTargetKind::CodeBuddy,
+    AgentTargetKind::Crush,
+    AgentTargetKind::Forge,
+    AgentTargetKind::Gemini,
+    AgentTargetKind::Hermes,
+    AgentTargetKind::Iflow,
+    AgentTargetKind::Junie,
+    AgentTargetKind::Kilocode,
+    AgentTargetKind::Opencode,
+    AgentTargetKind::Openclaw,
+    AgentTargetKind::Pi,
+    AgentTargetKind::Qodercli,
+    AgentTargetKind::Qwen,
+    AgentTargetKind::Roo,
+    AgentTargetKind::Tabnine,
+    AgentTargetKind::Trae,
 ];
 
 /// State machine driving the setup wizard. Tests drive this struct directly

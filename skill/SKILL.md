@@ -10,7 +10,9 @@ Use this skill only when the current repository contains a `.synrepo/` directory
 For product overview, setup flow, and operator-facing docs, start with [`README.md`](../README.md).
 This file is the agent operating guide: how to query synrepo safely once the repo is already wired.
 
-Synrepo's product model is `repo files -> graph facts -> code artifacts -> task contexts -> cards/MCP`. Graph facts are authoritative observed source truth; code artifacts are compiled records; task contexts are bounded bundles for a workflow; cards and MCP responses are the delivery packets you consume.
+Synrepo is a local, deterministic code-context compiler. Its product model is `repo files -> graph facts -> code artifacts -> task contexts -> cards/MCP`. Graph facts are authoritative observed source truth; code artifacts are compiled records; task contexts are bounded bundles for a workflow; cards and MCP responses are the delivery packets you consume.
+
+Use `synrepo_ask(ask, scope?, shape?, ground?, budget?)` as the default high-level front door for one bounded, cited task-context packet. It returns `answer`, `cards_used`, `evidence`, `grounding`, `omitted_context_notes`, `next_best_tools`, and `context_packet`. Its grounding policy accepts `mode` or `citations`, `include_spans`, and `allow_overlay`; default to graph facts as authoritative observed source truth. Overlay commentary, explain docs, and notes are advisory; LLM-authored output never mutates the canonical graph. Embeddings are optional routing/search helpers.
 
 ## Use when
 
@@ -185,6 +187,8 @@ Do not call `synrepo_apply_anchor_edits` without a fresh `synrepo_prepare_edit_c
 Project-scoped MCP configs that launch `synrepo mcp --repo .` have a default repository, so `repo_root` may be omitted. Passing the absolute repository root is still valid and preferred when you can identify it reliably.
 
 Global MCP configs that launch `synrepo mcp` serve registered projects by absolute path. In global or defaultless contexts, pass the current workspace's absolute path as `repo_root` to repo-addressable tools, or call `synrepo_use_project(repo_root)` once to set the session default.
+
+Repo-local setup and removal are backed by `agent-config`: `synrepo setup <tool> --project` installs local MCP, skills, or instructions for every supported registry target, and `synrepo remove [tool] --apply` removes the owned entries through the same ledger. Legacy unowned `synrepo` entries may be removed with a warning.
 
 Resource-aware MCP hosts may also address managed projects explicitly with `synrepo://project/{project_id}/card/{target}`, `synrepo://project/{project_id}/file/{path}/outline`, or `synrepo://project/{project_id}/context-pack?goal={goal}`. Use `synrepo://projects` to list stable project IDs.
 

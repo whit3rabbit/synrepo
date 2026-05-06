@@ -191,7 +191,7 @@ fn resolve_tool_row(
     registry_agent: Option<&AgentEntry>,
     detected_target: Option<AgentTargetKind>,
 ) -> McpStatusRow {
-    let agent = display_name(tool).to_string();
+    let agent = display_name(tool);
     if let Some(installer) = agent_config::mcp_by_id(tool) {
         if let Some(row) = row_from_agent_config(
             tool,
@@ -372,9 +372,14 @@ fn detected_source(target: Option<AgentTargetKind>) -> String {
 }
 
 fn default_tool_ids() -> Vec<String> {
-    all_agent_targets()
-        .iter()
-        .map(|target| target.as_str().to_string())
+    agent_config::mcp_capable()
+        .into_iter()
+        .filter(|installer| {
+            installer
+                .supported_mcp_scopes()
+                .contains(&agent_config::ScopeKind::Local)
+        })
+        .map(|installer| installer.id().to_string())
         .collect()
 }
 
@@ -385,14 +390,8 @@ fn target_for_id(id: &str) -> Option<AgentTargetKind> {
         .find(|target| target.as_str() == id)
 }
 
-fn display_name(id: &str) -> &str {
-    match id {
-        "claude" => "Claude Code",
-        "cursor" => "Cursor",
-        "codex" => "Codex CLI",
-        "copilot" => "GitHub Copilot",
-        "windsurf" => "Windsurf",
-        "generic" => "Generic",
-        other => other,
-    }
+fn display_name(id: &str) -> String {
+    agent_config::by_id(id)
+        .map(|agent| agent.display_name().to_string())
+        .unwrap_or_else(|| id.to_string())
 }

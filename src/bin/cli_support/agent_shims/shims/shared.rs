@@ -6,7 +6,7 @@ macro_rules! skill_frontmatter {
     () => {
         "---
 name: synrepo
-description: Use synrepo in repositories with a .synrepo/ directory. Prefer synrepo cards and search before reading source files cold.
+description: Use synrepo in repositories with a .synrepo/ directory. Prefer synrepo cards, compact search, and bounded task contexts before reading source files cold.
 ---
 
 "

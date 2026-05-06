@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use agent_config::{InstallStatus, Scope};
 use synrepo::config::Config;
 use synrepo::registry::{self, AgentEntry, ProjectEntry};
 
@@ -48,7 +49,8 @@ pub(crate) fn build_plan(
                     .map(|p| p.agents.iter().any(|a| a.tool == t.canonical_name()))
                     .unwrap_or(false);
                 let has_shim = t.output_path(repo_root).exists();
-                if !has_registry_entry && !has_shim {
+                let has_mcp = agent_config_mcp_path(repo_root, t).is_some();
+                if !has_registry_entry && !has_shim && !has_mcp {
                     continue;
                 }
                 add_agent_actions(
@@ -64,11 +66,12 @@ pub(crate) fn build_plan(
             // Catch lingering synrepo entries in MCP configs the per-agent loop
             // skipped (shim deleted but MCP entry left, or pre-existing installs
             // with no registry record).
-            for &t in all_agent_tools() {
-                let Some(rel) = t.mcp_config_relative_path() else {
+            for t in AgentTool::local_mcp_tools() {
+                let Some(abs) = agent_config_mcp_path(repo_root, t)
+                    .or_else(|| t.mcp_config_relative_path().map(|rel| repo_root.join(rel)))
+                else {
                     continue;
                 };
-                let abs = repo_root.join(rel);
                 if seen_mcp_paths.contains_key(&abs) {
                     continue;
                 }
@@ -92,7 +95,7 @@ pub(crate) fn build_plan(
                     }
                 }
             }
-            for &t in all_agent_tools() {
+            for t in AgentTool::local_mcp_tools() {
                 if let Some(rel) = t.mcp_config_relative_path() {
                     let bak = repo_root.join(format!("{rel}.bak"));
                     if bak.exists() && !plan.preserved.contains(&bak) {
@@ -163,6 +166,7 @@ fn add_agent_actions(
                 .as_ref()
                 .map(|p| registry_path(repo_root, p))
         })
+        .or_else(|| agent_config_mcp_path(repo_root, tool))
         .or_else(|| {
             tool.mcp_config_relative_path()
                 .map(|rel| repo_root.join(rel))
@@ -190,6 +194,34 @@ fn add_agent_actions(
             plan.preserved.push(bak);
         }
     }
+}
+
+fn agent_config_mcp_path(repo_root: &Path, tool: AgentTool) -> Option<PathBuf> {
+    let id = tool.agent_config_id()?;
+    let installer = agent_config::mcp_by_id(id)?;
+    if !installer
+        .supported_mcp_scopes()
+        .contains(&agent_config::ScopeKind::Local)
+    {
+        return None;
+    }
+    let report = installer
+        .mcp_status(
+            &Scope::Local(repo_root.to_path_buf()),
+            crate::cli_support::agent_shims::SYNREPO_INSTALL_NAME,
+            crate::cli_support::agent_shims::SYNREPO_INSTALL_OWNER,
+        )
+        .ok()?;
+    removable_status(&report.status)
+        .then_some(report.config_path)
+        .flatten()
+}
+
+fn removable_status(status: &InstallStatus) -> bool {
+    matches!(
+        status,
+        InstallStatus::InstalledOwned { .. } | InstallStatus::PresentUnowned
+    )
 }
 
 fn registry_path(repo_root: &Path, stored: &str) -> PathBuf {
