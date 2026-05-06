@@ -758,6 +758,8 @@ synrepo SHALL expose `synrepo_ask(ask, scope?, shape?, ground?, budget?)` as a d
 - **WHEN** an agent invokes `synrepo_ask` with `ground.mode = "required"` or `ground.citations = "required"`
 - **THEN** the response includes `grounding.status`
 - **AND** the response includes `evidence` entries for rendered artifacts when source fields are available
+- **AND** each evidence entry includes `source_store`, `confidence`, and `provenance`
+- **AND** each evidence entry includes `span` for the primary line span and `spans` for the full line-span list
 - **AND** missing spans are represented as `null` rather than fabricated line ranges
 
 #### Scenario: Tool remains read-only
@@ -826,4 +828,3 @@ Raw graph primitive MCP tools that can fan out SHALL accept bounded limits and r
 #### Scenario: Graph query clamps zero limit
 - **WHEN** an agent invokes `synrepo_edges` or `synrepo_query` with `limit = 0`
 - **THEN** the effective limit is `1`
-

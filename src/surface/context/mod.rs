@@ -16,6 +16,6 @@ pub mod types;
 pub use compiler::compile_context_request;
 pub use recipe::ContextRecipe;
 pub use types::{
-    Confidence, ContextAskRequest, ContextBudget, ContextScope, ContextShape, ContextTarget,
-    GroundingMode, GroundingOptions,
+    Cited, CitedLineSpan, Confidence, ContextAskRequest, ContextBudget, ContextEvidence,
+    ContextScope, ContextShape, ContextSourceRef, ContextTarget, GroundingMode, GroundingOptions,
 };

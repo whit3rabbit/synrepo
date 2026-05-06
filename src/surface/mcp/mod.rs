@@ -20,6 +20,7 @@ use crate::surface::card::compiler::GraphCardCompiler;
 
 #[doc(hidden)]
 pub mod ask;
+mod ask_evidence;
 #[doc(hidden)]
 pub mod audit;
 mod cache;

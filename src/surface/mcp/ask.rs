@@ -1,15 +1,15 @@
 use serde_json::{json, Value};
 
 use crate::surface::context::compiler::{compile_context_request, grounding_status};
-use crate::surface::context::{Confidence, ContextAskRequest, ContextTarget};
+use crate::surface::context::{ContextAskRequest, ContextTarget};
 
+use super::ask_evidence::collect_evidence;
 use super::compact::OutputMode;
 use super::context_pack::{self, ContextPackParams, ContextPackTarget};
 use super::helpers::render_result;
 use super::SynrepoState;
 
 const SCHEMA_VERSION: u32 = 1;
-const MAX_EVIDENCE_ITEMS: usize = 20;
 
 /// Parameters for the `synrepo_ask` tool.
 pub type AskParams = ContextAskRequest;
@@ -102,136 +102,6 @@ fn collect_cards_used(packet: &Value) -> Vec<String> {
         .collect()
 }
 
-fn collect_evidence(packet: &Value, include_spans: bool) -> Vec<Value> {
-    let mut evidence = Vec::new();
-    let Some(artifacts) = packet.get("artifacts").and_then(Value::as_array) else {
-        return evidence;
-    };
-    for artifact in artifacts {
-        if evidence.len() >= MAX_EVIDENCE_ITEMS {
-            break;
-        }
-        if artifact.get("status").and_then(Value::as_str) != Some("ok") {
-            continue;
-        }
-        match artifact.get("artifact_type").and_then(Value::as_str) {
-            Some("search") => collect_search_evidence(artifact, include_spans, &mut evidence),
-            _ => collect_artifact_evidence(artifact, include_spans, &mut evidence),
-        }
-    }
-    evidence.truncate(MAX_EVIDENCE_ITEMS);
-    evidence
-}
-
-fn collect_artifact_evidence(artifact: &Value, include_spans: bool, evidence: &mut Vec<Value>) {
-    let content = artifact.get("content").unwrap_or(&Value::Null);
-    let (source, line) = source_for_artifact(artifact, content);
-    evidence.push(json!({
-        "claim": format!(
-            "Included {} for {}",
-            artifact.get("artifact_type").and_then(Value::as_str).unwrap_or("artifact"),
-            artifact.get("target").and_then(Value::as_str).unwrap_or("unknown target")
-        ),
-        "source": source,
-        "span": span_value(include_spans, line),
-        "source_store": content
-            .get("source_store")
-            .and_then(Value::as_str)
-            .unwrap_or("graph"),
-        "confidence": Confidence::Observed,
-    }));
-}
-
-fn collect_search_evidence(artifact: &Value, include_spans: bool, evidence: &mut Vec<Value>) {
-    let content = artifact.get("content").unwrap_or(&Value::Null);
-    let query = content
-        .get("query")
-        .and_then(Value::as_str)
-        .unwrap_or("search query");
-    if let Some(rows) = content.get("results").and_then(Value::as_array) {
-        for row in rows.iter().take(3) {
-            push_search_row_evidence(query, row, include_spans, evidence);
-        }
-        return;
-    }
-    let Some(groups) = content.get("file_groups").and_then(Value::as_array) else {
-        return;
-    };
-    for group in groups.iter().take(3) {
-        let source = group
-            .get("path")
-            .and_then(Value::as_str)
-            .unwrap_or("unknown source");
-        let line = group
-            .get("lines")
-            .and_then(Value::as_array)
-            .and_then(|lines| lines.first())
-            .and_then(|line| line.get("line"))
-            .and_then(Value::as_u64);
-        evidence.push(json!({
-            "claim": format!("Search for `{query}` matched {source}"),
-            "source": source,
-            "span": span_value(include_spans, line),
-            "source_store": content
-                .get("source_store")
-                .and_then(Value::as_str)
-                .unwrap_or("substrate_index"),
-            "confidence": Confidence::Observed,
-        }));
-    }
-}
-
-fn push_search_row_evidence(
-    query: &str,
-    row: &Value,
-    include_spans: bool,
-    evidence: &mut Vec<Value>,
-) {
-    let Some(source) = row.get("path").and_then(Value::as_str) else {
-        return;
-    };
-    evidence.push(json!({
-        "claim": format!("Search for `{query}` matched {source}"),
-        "source": source,
-        "span": span_value(include_spans, row.get("line").and_then(Value::as_u64)),
-        "source_store": row
-            .get("source")
-            .and_then(Value::as_str)
-            .unwrap_or("substrate_index"),
-        "confidence": Confidence::Observed,
-    }));
-}
-
-fn source_for_artifact(artifact: &Value, content: &Value) -> (String, Option<u64>) {
-    if let Some(path) = content.get("path").and_then(Value::as_str) {
-        return (path.to_string(), None);
-    }
-    if let Some(defined_at) = content.get("defined_at").and_then(Value::as_str) {
-        if let Some((path, line)) = defined_at.rsplit_once(':') {
-            if let Ok(line) = line.parse::<u64>() {
-                return (path.to_string(), Some(line));
-            }
-        }
-    }
-    (
-        artifact
-            .get("target")
-            .and_then(Value::as_str)
-            .unwrap_or("unknown source")
-            .to_string(),
-        None,
-    )
-}
-
-fn span_value(include_spans: bool, line: Option<u64>) -> Value {
-    if include_spans {
-        if let Some(line) = line {
-            return json!({ "start_line": line, "end_line": line });
-        }
-    }
-    Value::Null
-}
-
 fn append_pack_omissions(packet: &Value, notes: &mut Vec<String>) {
     let Some(omitted) = packet.get("omitted").and_then(Value::as_array) else {
         return;
@@ -310,6 +180,13 @@ mod tests {
             .as_array()
             .is_some_and(|cards| !cards.is_empty()));
         assert_eq!(value["evidence"][0]["source"], "src/lib.rs");
+        assert_eq!(value["evidence"][0]["source_store"], "graph");
+        assert_eq!(value["evidence"][0]["confidence"], "observed");
+        assert_eq!(value["evidence"][0]["provenance"][0]["path"], "src/lib.rs");
+        assert_eq!(
+            value["evidence"][0]["provenance"][0]["source_store"],
+            "graph"
+        );
     }
 
     #[test]
@@ -322,6 +199,23 @@ mod tests {
             .unwrap()
             .iter()
             .any(|artifact| artifact["artifact_type"] == "search"));
+    }
+
+    #[test]
+    fn ask_respects_span_inclusion_policy() {
+        let (_dir, state) = make_state();
+        let mut params = request("review module");
+        params.scope.paths = vec!["src/lib.rs".into()];
+        params.ground.include_spans = false;
+
+        let value = build_ask_packet(&state, params).unwrap();
+        let evidence = value["evidence"].as_array().unwrap();
+
+        assert!(!evidence.is_empty());
+        assert!(evidence.iter().all(|item| item["span"].is_null()));
+        assert!(evidence
+            .iter()
+            .all(|item| item["spans"].as_array().unwrap().is_empty()));
     }
 
     #[test]

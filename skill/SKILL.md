@@ -314,6 +314,8 @@ Consume these fields first:
 - `synrepo_context_pack`: `artifacts[].target`, `artifacts[].status`, `totals`, `omitted`, `context_state`
 - `synrepo_metrics`: `persisted.mcp_tool_errors_total`, `persisted.mcp_tool_error_codes_total`, `persisted.largest_response_tokens`
 
+For `synrepo_ask.evidence`, prefer `source_store`, `confidence`, and `provenance` when deciding trust. `span` is a backward-compatible primary line span; `spans` is the full list. Null or empty spans mean unavailable or disabled, not implicit proof.
+
 Rules:
 - Always pass `limit` on search/list tools.
 - Prefer `budget_tokens` when available.

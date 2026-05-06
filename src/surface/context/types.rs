@@ -101,6 +101,87 @@ pub enum Confidence {
     HumanDeclared,
 }
 
+impl From<crate::structure::graph::Epistemic> for Confidence {
+    fn from(epistemic: crate::structure::graph::Epistemic) -> Self {
+        match epistemic {
+            crate::structure::graph::Epistemic::ParserObserved
+            | crate::structure::graph::Epistemic::GitObserved => Self::Observed,
+            crate::structure::graph::Epistemic::HumanDeclared => Self::HumanDeclared,
+        }
+    }
+}
+
+impl From<crate::overlay::OverlayEpistemic> for Confidence {
+    fn from(epistemic: crate::overlay::OverlayEpistemic) -> Self {
+        match epistemic {
+            crate::overlay::OverlayEpistemic::MachineAuthoredHighConf => Self::MachineOverlayHigh,
+            crate::overlay::OverlayEpistemic::MachineAuthoredLowConf => Self::MachineOverlayLow,
+        }
+    }
+}
+
+impl From<crate::overlay::ConfidenceTier> for Confidence {
+    fn from(tier: crate::overlay::ConfidenceTier) -> Self {
+        match tier {
+            crate::overlay::ConfidenceTier::High => Self::MachineOverlayHigh,
+            crate::overlay::ConfidenceTier::ReviewQueue
+            | crate::overlay::ConfidenceTier::BelowThreshold => Self::MachineOverlayLow,
+        }
+    }
+}
+
+/// Line-span evidence exposed by high-level task-context responses.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct CitedLineSpan {
+    /// One-based start line.
+    pub start_line: u64,
+    /// One-based end line.
+    pub end_line: u64,
+}
+
+/// Surface-level source reference for context evidence.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct ContextSourceRef {
+    /// Repo-relative source path or stable target label.
+    pub path: String,
+    /// Store that produced the evidence, such as `graph`, `overlay`, or `substrate_index`.
+    pub source_store: String,
+    /// Content hash when known from the underlying artifact.
+    pub content_hash: Option<String>,
+}
+
+/// Generic cited value used by task-context response fields.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct Cited<T> {
+    /// The answer value.
+    pub value: T,
+    /// Source references that ground the value.
+    pub provenance: Vec<ContextSourceRef>,
+    /// Line spans that ground the value when available and requested.
+    pub spans: Vec<CitedLineSpan>,
+    /// Coarse confidence label for the value.
+    pub confidence: Confidence,
+}
+
+/// Evidence row returned by `synrepo_ask`.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct ContextEvidence {
+    /// Human-readable claim grounded by the source reference.
+    pub claim: String,
+    /// Backward-compatible primary source field.
+    pub source: String,
+    /// Backward-compatible primary span field. `null` means unknown or withheld.
+    pub span: Option<CitedLineSpan>,
+    /// All line spans used to ground the claim.
+    pub spans: Vec<CitedLineSpan>,
+    /// Store that produced the evidence.
+    pub source_store: String,
+    /// Coarse confidence label for the claim.
+    pub confidence: Confidence,
+    /// Source references that ground the claim.
+    pub provenance: Vec<ContextSourceRef>,
+}
+
 /// Budget controls for a compiled task context.
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq)]
 pub struct ContextBudget {
