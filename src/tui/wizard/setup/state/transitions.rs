@@ -77,6 +77,38 @@ impl SetupWizardState {
             }
             KeyCode::Enter => {
                 self.target = WIZARD_TARGETS.get(self.target_cursor).copied();
+                self.step = SetupStep::SelectEmbeddings;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    pub(super) fn handle_select_embeddings_key(
+        &mut self,
+        code: KeyCode,
+        modifiers: KeyModifiers,
+    ) -> bool {
+        if Self::is_quit_key(code, modifiers) {
+            return self.cancel_to_complete();
+        }
+        match code {
+            KeyCode::Up | KeyCode::Char('k') => {
+                self.embeddings_cursor = self.embeddings_cursor.saturating_sub(1);
+                true
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if self.embeddings_cursor < 1 {
+                    self.embeddings_cursor += 1;
+                }
+                true
+            }
+            KeyCode::Char('b') => {
+                self.step = SetupStep::SelectTarget;
+                true
+            }
+            KeyCode::Enter => {
+                self.enable_embeddings = self.embeddings_cursor == 1;
                 self.step = SetupStep::ExplainExplain;
                 true
             }
@@ -98,7 +130,7 @@ impl SetupWizardState {
                 true
             }
             KeyCode::Char('b') => {
-                self.step = SetupStep::SelectTarget;
+                self.step = SetupStep::SelectEmbeddings;
                 true
             }
             _ => false,

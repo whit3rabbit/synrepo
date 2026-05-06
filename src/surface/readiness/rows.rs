@@ -142,7 +142,7 @@ pub(super) fn embeddings_row(snapshot: &StatusSnapshot, config: &Config) -> Read
         EmbeddingHealth::Disabled => ReadinessRow {
             capability: Capability::Embeddings,
             state: ReadinessState::Disabled,
-            detail: "semantic triage off".to_string(),
+            detail: "optional; semantic routing uses lexical fallback".to_string(),
             next_action: if config.enable_semantic_triage {
                 Some("rebuild with `--features semantic-triage`".to_string())
             } else {

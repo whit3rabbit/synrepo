@@ -31,6 +31,7 @@ fn first_run_choice_steps_are_single_selection_lists() {
     for step in [
         SetupStep::SelectMode,
         SetupStep::SelectTarget,
+        SetupStep::SelectEmbeddings,
         SetupStep::SelectExplain,
     ] {
         state.step = step;
@@ -63,6 +64,7 @@ fn first_run_confirm_lists_concrete_mcp_setup_plan() {
     assert!(screen.contains("init .synrepo/ in auto mode"));
     assert!(screen.contains("write Claude Code skill"));
     assert!(screen.contains("register MCP server for Claude Code"));
+    assert!(screen.contains("leave embeddings disabled"));
     assert!(screen.contains("leave explain disabled"));
     assert!(screen.contains("No files have been written yet"));
 }

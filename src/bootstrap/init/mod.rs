@@ -14,10 +14,10 @@ use crate::store::sqlite::SqliteGraphStore;
 use crate::util::atomic_write;
 
 use super::mode_inspect::inspect_repository_mode;
-use super::report::{BootstrapAction, BootstrapHealth, BootstrapReport, DegradedCapability};
-use super::runtime_probe::probe;
-use crate::surface::readiness::ReadinessMatrix;
-use crate::surface::status_snapshot::{build_status_snapshot, StatusOptions};
+use super::report::{BootstrapAction, BootstrapHealth, BootstrapReport};
+
+mod readiness;
+use readiness::collect_degraded_capabilities;
 
 #[cfg(test)]
 mod force_tests;
@@ -44,6 +44,21 @@ pub fn bootstrap_with_force(
     update_gitignore: bool,
     force: bool,
 ) -> anyhow::Result<BootstrapReport> {
+    bootstrap_with_force_and_config(repo_root, requested_mode, update_gitignore, force, |_| {})
+}
+
+/// Like [`bootstrap_with_force`], but lets guided setup seed optional config
+/// before bootstrap writes config and builds runtime surfaces.
+pub fn bootstrap_with_force_and_config<F>(
+    repo_root: &Path,
+    requested_mode: Option<Mode>,
+    update_gitignore: bool,
+    force: bool,
+    configure_config: F,
+) -> anyhow::Result<BootstrapReport>
+where
+    F: FnOnce(&mut Config),
+{
     let synrepo_dir = Config::synrepo_dir(repo_root);
     let runtime_already_existed = synrepo_dir.exists();
     let config_path = synrepo_dir.join("config.toml");
@@ -61,7 +76,8 @@ pub fn bootstrap_with_force(
         mode,
         ..Config::default()
     });
-    let config = Config { mode, ..config };
+    let mut config = Config { mode, ..config };
+    configure_config(&mut config);
     let compatibility_report =
         compatibility::evaluate_runtime(&synrepo_dir, runtime_already_existed, &config)?;
     if compatibility_report.has_blocking_actions() && !force {
@@ -244,34 +260,6 @@ pub fn bootstrap_with_force(
         next_step,
         degraded_capabilities,
     })
-}
-
-fn collect_degraded_capabilities(
-    repo_root: &Path,
-    _synrepo_dir: &Path,
-    config: &Config,
-) -> Vec<DegradedCapability> {
-    let snapshot = build_status_snapshot(
-        repo_root,
-        StatusOptions {
-            recent: false,
-            full: false,
-        },
-    );
-    if !snapshot.initialized {
-        return Vec::new();
-    }
-    let probe_report = probe(repo_root);
-    let matrix = ReadinessMatrix::build(repo_root, &probe_report, &snapshot, config);
-    matrix
-        .degraded_rows()
-        .map(|row| DegradedCapability {
-            capability: row.capability.as_str().to_string(),
-            state: row.state.as_str().to_string(),
-            detail: row.detail.clone(),
-            next_action: row.next_action.clone(),
-        })
-        .collect()
 }
 
 fn load_existing_config(config_path: &Path, synrepo_dir: &Path) -> anyhow::Result<Option<Config>> {

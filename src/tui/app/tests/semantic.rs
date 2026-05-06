@@ -31,7 +31,7 @@ fn quick_actions_include_embeddings_toggle_when_initialized() {
         .iter()
         .find(|action| action.key == "T")
         .expect("embeddings quick action");
-    assert_eq!(action.label, "enable embeddings");
+    assert_eq!(action.label, "enable optional embeddings");
     assert!(action.requires_confirm);
 }
 

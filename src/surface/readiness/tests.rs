@@ -261,6 +261,10 @@ fn disabled_embeddings_do_not_block_core_operation() {
         ReadinessMatrix::build(&repo_root(), &ready_probe(), &snapshot, &Config::default());
     let embeddings = find_row(&matrix, Capability::Embeddings);
     assert_eq!(embeddings.state, ReadinessState::Disabled);
+    assert_eq!(
+        embeddings.detail,
+        "optional; semantic routing uses lexical fallback"
+    );
 
     // The core-graph capabilities must stay non-blocked.
     for cap in [

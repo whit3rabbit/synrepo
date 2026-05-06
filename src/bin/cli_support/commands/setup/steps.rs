@@ -1,14 +1,14 @@
 use agent_config::{Scope, ScopeKind};
 use std::fs;
 use std::path::Path;
-use synrepo::config::Mode;
+use synrepo::config::{Config, Mode};
 
 use super::mcp_register;
 use crate::cli_support::agent_shims::{
     registry as shim_registry, scope_label, AgentTool, AutomationTier,
 };
 use crate::cli_support::commands::agent_hooks;
-use crate::cli_support::commands::basic::{agent_setup_with_scope, init};
+use crate::cli_support::commands::basic::agent_setup_with_scope;
 use crate::cli_support::commands::setup_mcp_backup::step_backup_mcp_config;
 
 /// Outcome of a single setup step. Tests assert on this rather than captured
@@ -130,10 +130,32 @@ pub(crate) fn step_init(
     force: bool,
     gitignore: bool,
 ) -> anyhow::Result<StepOutcome> {
+    step_init_with_config(repo_root, mode, force, gitignore, |_| {})
+}
+
+/// Initialize `.synrepo/` with a setup-specific config mutation applied before
+/// bootstrap writes config and builds indexes.
+pub(crate) fn step_init_with_config<F>(
+    repo_root: &Path,
+    mode: Option<Mode>,
+    force: bool,
+    gitignore: bool,
+    configure_config: F,
+) -> anyhow::Result<StepOutcome>
+where
+    F: FnOnce(&mut Config),
+{
     let synrepo_dir = repo_root.join(".synrepo");
     if !synrepo_dir.exists() || force {
         println!("  Initializing .synrepo/...");
-        init(repo_root, mode, gitignore, force)?;
+        let report = synrepo::bootstrap::bootstrap_with_force_and_config(
+            repo_root,
+            mode,
+            gitignore,
+            force,
+            configure_config,
+        )?;
+        print!("{}", report.render());
         Ok(StepOutcome::Applied)
     } else {
         println!("  .synrepo/ already initialized.");

@@ -4,7 +4,7 @@ use tempfile::tempdir;
 
 use crate::cli_support::setup_cmd::{execute_setup_plan, init_entry_mode, InitEntryMode};
 use crate::cli_support::tests::support::canonicalize_no_verbatim;
-use synrepo::config::Mode;
+use synrepo::config::{Config, Mode};
 use synrepo::tui::SetupPlan;
 
 fn redirect_home() -> (
@@ -89,6 +89,7 @@ fn wizard_plan_execution_registers_project() {
         SetupPlan {
             mode: Mode::Auto,
             target: None,
+            enable_embeddings: false,
             explain: None,
             reconcile_after: true,
         },
@@ -96,4 +97,63 @@ fn wizard_plan_execution_registers_project() {
     .unwrap();
 
     assert!(synrepo::registry::get(repo.path()).unwrap().is_some());
+}
+
+#[test]
+fn wizard_plan_execution_persists_embeddings_opt_in() {
+    let (_lock, _home, _guard) = redirect_home();
+    let repo = tempdir().unwrap();
+    fs::write(repo.path().join("README.md"), "setup embeddings test\n").unwrap();
+
+    execute_setup_plan(
+        repo.path(),
+        SetupPlan {
+            mode: Mode::Auto,
+            target: None,
+            enable_embeddings: true,
+            explain: None,
+            reconcile_after: true,
+        },
+    )
+    .unwrap();
+
+    let config = Config::load(repo.path()).unwrap();
+    assert!(config.enable_semantic_triage);
+    assert!(fs::read_to_string(repo.path().join(".synrepo/config.toml"))
+        .unwrap()
+        .contains("enable_semantic_triage = true"));
+}
+
+#[test]
+#[cfg(feature = "semantic-triage")]
+fn setup_init_with_semantic_triage_produces_vectors_index() {
+    let (_lock, _home, _guard) = redirect_home();
+    let repo = tempdir().unwrap();
+    fs::write(
+        repo.path().join("README.md"),
+        "# Test Concept\n\nA setup concept for embedding.\n",
+    )
+    .unwrap();
+
+    execute_setup_plan(
+        repo.path(),
+        SetupPlan {
+            mode: Mode::Auto,
+            target: None,
+            enable_embeddings: true,
+            explain: None,
+            reconcile_after: true,
+        },
+    )
+    .unwrap();
+
+    let vectors_dir = repo.path().join(".synrepo/index/vectors");
+    assert!(
+        vectors_dir.exists(),
+        "vectors directory must exist when setup enables embeddings"
+    );
+    assert!(
+        vectors_dir.join("index.bin").exists(),
+        "index.bin must exist when setup enables embeddings"
+    );
 }

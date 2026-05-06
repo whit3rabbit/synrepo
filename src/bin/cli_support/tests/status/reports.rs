@@ -273,10 +273,16 @@ fn status_reports_capability_readiness_matrix_in_text_and_json() {
         text.contains("capability readiness:"),
         "text status output must include the capability readiness section, got: {text}"
     );
+    assert!(
+        text.contains("embedding:    off (optional; lexical routing/search still available)"),
+        "status must label disabled embeddings as optional, got: {text}"
+    );
     // The seed_graph fixture does not set up embeddings; the embeddings row
     // must be visible as disabled.
     assert!(
-        text.contains("embeddings"),
+        text.contains(
+            "embeddings         disabled     optional; semantic routing uses lexical fallback"
+        ),
         "readiness section must list the embeddings capability, got: {text}"
     );
 

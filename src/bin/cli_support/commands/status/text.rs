@@ -143,7 +143,13 @@ pub(super) fn write_status_text(
         .unwrap();
     }
     match &diag.embedding_health {
-        EmbeddingHealth::Disabled => {}
+        EmbeddingHealth::Disabled => {
+            writeln!(
+                out,
+                "  embedding:    off (optional; lexical routing/search still available)"
+            )
+            .unwrap();
+        }
         EmbeddingHealth::Available { model, dim, chunks } => {
             writeln!(
                 out,

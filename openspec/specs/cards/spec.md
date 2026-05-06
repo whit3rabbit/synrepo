@@ -301,3 +301,32 @@ The `tiny`, `normal`, and `deep` budget tiers SHALL remain valid and backward co
 - **THEN** synrepo applies the existing tier behavior
 - **AND** the response still includes context accounting metadata
 
+### Requirement: Treat cards as artifact delivery packets
+synrepo SHALL treat cards as the current native compact delivery packet for code artifacts and task contexts. Existing card contracts, budget tiers, source labels, and context accounting SHALL remain valid when docs refer to cards as delivery packets.
+
+#### Scenario: Agent requests a card
+- **WHEN** an agent requests an existing card type
+- **THEN** the response preserves the existing card schema and budget behavior
+- **AND** docs may describe that response as a delivered code artifact or task context packet
+
+#### Scenario: Contributor updates card docs
+- **WHEN** a contributor updates card documentation
+- **THEN** they preserve the distinction between graph-backed fields and advisory overlay-backed fields
+- **AND** they do not introduce a new card schema solely for the framing change
+
+### Requirement: Surface cheap test-risk ranking signals
+`TestEntry` SHALL include optional `risk_score` and `risk_reasons` fields. The score SHALL be derived from cheap graph and path signals at card compile time. Direct-call coverage SHALL rank above path-only association when both are available.
+
+#### Scenario: Deep test surface includes direct-call risk reason
+- **WHEN** a deep test-surface card finds a test with outbound `Calls` edges into the scoped source file
+- **THEN** that entry includes a higher `risk_score`
+- **AND** `risk_reasons` explains the direct-call signal
+
+### Requirement: Surface estimated commentary freshness cheaply
+Default status SHALL be allowed to show estimated commentary freshness fields without running the full commentary freshness scan. Exact `fresh` SHALL remain populated only when the full scan runs.
+
+#### Scenario: Default status has an estimate but no exact freshness
+- **WHEN** status runs without `--full` and commentary rows exist
+- **THEN** `fresh` remains absent
+- **AND** estimated freshness fields may be populated with a confidence label
+

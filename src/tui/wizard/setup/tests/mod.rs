@@ -3,6 +3,7 @@
 #![cfg(test)]
 
 mod cancellation;
+mod embeddings;
 mod explain_cloud;
 mod explain_local;
 mod navigation;

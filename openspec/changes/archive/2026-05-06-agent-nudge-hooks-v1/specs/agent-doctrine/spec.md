@@ -1,4 +1,4 @@
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: Require synrepo-first context for agent workflows
 Agents using synrepo SHALL prefer synrepo MCP tools or CLI fallback before cold source reads for orientation, codebase questions, file reviews, broad search, change impact, and pre-edit context when a `.synrepo/` directory is present.

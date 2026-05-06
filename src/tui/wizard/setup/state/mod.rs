@@ -55,10 +55,12 @@ impl SetupWizardState {
             step: SetupStep::Splash,
             mode_cursor,
             target_cursor,
+            embeddings_cursor: 0,
             explain_cursor: 0,
             local_preset_cursor,
             mode: default_mode,
             target: None,
+            enable_embeddings: false,
             explain: None,
             endpoint_input: TextInputField::with_value(endpoint_seed),
             api_key_input: TextInputField::with_value(""),
@@ -72,8 +74,8 @@ impl SetupWizardState {
 
     /// Build a state positioned directly at `SelectExplain`, used by
     /// `synrepo setup --explain` to run only the explain sub-flow. The
-    /// plan's `mode`/`target` fields are placeholders — the caller must only
-    /// consume `plan.explain`.
+    /// plan's `mode`/`target`/`enable_embeddings` fields are placeholders;
+    /// the caller must only consume `plan.explain`.
     pub fn explain_only() -> Self {
         let mut s = Self::with_explain_support(Mode::Auto, vec![], ExplainWizardSupport::default());
         s.step = SetupStep::SelectExplain;
@@ -97,6 +99,7 @@ impl SetupWizardState {
             SetupStep::Splash => self.handle_splash_key(code, modifiers),
             SetupStep::SelectMode => self.handle_select_mode_key(code, modifiers),
             SetupStep::SelectTarget => self.handle_select_target_key(code, modifiers),
+            SetupStep::SelectEmbeddings => self.handle_select_embeddings_key(code, modifiers),
             SetupStep::ExplainExplain => self.handle_explain_explain_key(code, modifiers),
             SetupStep::SelectExplain => self.handle_select_explain_key(code, modifiers),
             SetupStep::EditCloudApiKey => self.handle_edit_cloud_api_key_key(code, modifiers),
@@ -129,6 +132,7 @@ impl SetupWizardState {
         Some(SetupPlan {
             mode: self.mode,
             target: self.target,
+            enable_embeddings: self.enable_embeddings,
             explain: self.explain.clone(),
             reconcile_after: true,
         })

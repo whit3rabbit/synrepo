@@ -125,3 +125,46 @@ For shim and skill files that synrepo already wrote in a previous version (no `_
 - **THEN** the upgrade replays the placement through `install_skill`
 - **AND** subsequent `synrepo agent-setup --regen` and `synrepo remove` operate via the installer's ledger
 
+### Requirement: Use context artifact terminology without changing workflow
+Agent-facing doctrine SHALL describe `synrepo_ask` as the default broad task-context front door while preserving bounded escalation through orient, drill-down, impact or risks, tests, edits, and changed-context review.
+
+#### Scenario: Agent reads generated guidance
+- **WHEN** an agent reads `skill/SKILL.md` or generated shim doctrine
+- **THEN** the guidance tells the agent to prefer `synrepo_ask` for broad plain-language task packets
+- **AND** it still tells the agent to use exact search/cards/minimum context for drill-down
+- **AND** it still treats overlay commentary and proposed links as advisory
+
+### Requirement: Surface deterministic fast-path routing signals
+Agent-facing doctrine SHALL tell agents to prefer deterministic synrepo fast paths before cold file reads or LLM-heavy work when a task can be answered by structural cards, compact search, context packs, risk/test surfaces, or gated anchored edits.
+
+#### Scenario: Agent sees fast-path hook output
+- **WHEN** a Codex or Claude hook emits `[SYNREPO_CONTEXT_FAST_PATH]`
+- **THEN** the agent guidance tells the agent to use the recommended synrepo read tools before opening full source
+- **AND** the guidance does not imply the hook can block or execute tools
+
+#### Scenario: Agent sees deterministic edit candidate
+- **WHEN** a hook emits `[SYNREPO_DETERMINISTIC_EDIT_CANDIDATE] Intent: <intent>`
+- **THEN** the agent guidance tells the agent to prepare anchors and apply edits only through edit-gated MCP tools when they are available
+- **AND** it does not imply the hook can mutate source files
+
+#### Scenario: Task does not require LLM output
+- **WHEN** a task-route result includes `[SYNREPO_LLM_NOT_REQUIRED]`
+- **THEN** doctrine tells agents to use structural context or anchored edits first
+- **AND** overlay commentary remains optional and freshness-labeled
+
+### Requirement: Require synrepo-first context for agent workflows
+Agents using synrepo SHALL prefer synrepo MCP tools or CLI fallback before cold source reads for orientation, codebase questions, file reviews, broad search, change impact, and pre-edit context when a `.synrepo/` directory is present.
+
+#### Scenario: Agent receives a codebase question
+- **WHEN** an agent is asked to answer a question about repository code
+- **THEN** the documented default path starts with synrepo orientation, search or find, and bounded cards before full source reads
+
+#### Scenario: Agent reviews files
+- **WHEN** an agent is asked to review one or more files
+- **THEN** the documented default path uses synrepo cards, minimum context, risks, and test discovery before forming conclusions
+
+#### Scenario: Agent uses direct shell or file tools
+- **WHEN** direct file, search, shell, or review tools are used first
+- **THEN** hook guidance MAY remind the agent to use synrepo first
+- **AND** the guidance remains client-side and advisory, not MCP server interception
+

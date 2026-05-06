@@ -148,7 +148,7 @@ fn render_configured(
         "Clean exported docs/index, overlay untouched",
         theme,
     ));
-    lines.push(action_line("s", "Re-run explain setup", theme));
+    lines.push(action_line("s", "Re-run optional explain setup", theme));
     lines
 }
 
@@ -346,7 +346,7 @@ fn render_not_configured(
 ) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = vec![
         Line::from(Span::styled(
-            "Explain is off.".to_string(),
+            "Optional explain is off.".to_string(),
             theme.stale_style(),
         )),
         Line::from(Span::styled(
@@ -375,7 +375,7 @@ fn render_not_configured(
         "Actions:".to_string(),
         theme.muted_style(),
     )));
-    lines.push(action_line("s", "Configure explain", theme));
+    lines.push(action_line("s", "Configure optional explain", theme));
     lines
 }
 

@@ -104,8 +104,8 @@ pub(super) fn drive_cancel_and_assert_no_writes(drive: impl FnOnce(&mut SetupWiz
 }
 
 /// Drive the wizard from Splash to SelectExplain using the defaults
-/// (auto mode, skip target). Passes through the `ExplainExplain`
-/// explainer step automatically.
+/// (auto mode, skip target, skip embeddings). Passes through the
+/// `ExplainExplain` explainer step automatically.
 pub(super) fn drive_to_explain(s: &mut SetupWizardState) {
     use crate::tui::wizard::setup::state::{SetupStep, WIZARD_TARGETS};
 
@@ -114,7 +114,9 @@ pub(super) fn drive_to_explain(s: &mut SetupWizardState) {
     for _ in 0..WIZARD_TARGETS.len() {
         press(s, KeyCode::Down); // land on "Skip"
     }
-    press(s, KeyCode::Enter); // target → explain
+    press(s, KeyCode::Enter); // target → embeddings
+    assert_eq!(s.step, SetupStep::SelectEmbeddings);
+    press(s, KeyCode::Enter); // embeddings → explain explainer
     assert_eq!(s.step, SetupStep::ExplainExplain);
     press(s, KeyCode::Enter); // explain → explain
     assert_eq!(s.step, SetupStep::SelectExplain);

@@ -14,6 +14,9 @@ pub struct SetupPlan {
     pub mode: Mode,
     /// Optional agent-integration target. `None` means the user chose "skip".
     pub target: Option<AgentTargetKind>,
+    /// Whether to enable optional embedding vectors for semantic routing and
+    /// hybrid search in this repository.
+    pub enable_embeddings: bool,
     /// Explain decision. `None` means the user picked "Skip" (no
     /// `[explain]` block is written; keys in env stay untouched).
     pub explain: Option<ExplainChoice>,
@@ -50,6 +53,8 @@ pub enum SetupStep {
     SelectMode,
     /// Pick agent-integration target or "skip".
     SelectTarget,
+    /// Pick optional embeddings setup or leave semantic triage disabled.
+    SelectEmbeddings,
     /// Static explainer: what explain produces, how it is triggered, what it
     /// costs, and the privacy posture. Always shown before `SelectExplain`.
     ExplainExplain,
@@ -94,6 +99,8 @@ pub struct SetupWizardState {
     pub mode_cursor: usize,
     /// Cursor index in the target list: 0..N for targets, N for "Skip".
     pub target_cursor: usize,
+    /// Cursor index in the embeddings list: 0 = Skip, 1 = Enable.
+    pub embeddings_cursor: usize,
     /// Cursor index into [`crate::tui::wizard::setup::EXPLAIN_ROWS`].
     pub explain_cursor: usize,
     /// Cursor index into [`crate::tui::wizard::setup::LOCAL_PRESETS`].
@@ -102,6 +109,8 @@ pub struct SetupWizardState {
     pub mode: Mode,
     /// Committed target (set on Enter at `SelectTarget`). `None` means skip.
     pub target: Option<AgentTargetKind>,
+    /// Committed embeddings choice. False means skip.
+    pub enable_embeddings: bool,
     /// Committed explain choice. `None` means the user picked "Skip" on
     /// `SelectExplain`. Set on Enter at `SelectExplain` for cloud/skip or
     /// at `EditLocalEndpoint` for local.

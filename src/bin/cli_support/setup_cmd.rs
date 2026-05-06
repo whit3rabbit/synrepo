@@ -10,7 +10,7 @@ use synrepo::tui::{
 use super::agent_shims::{registry as shim_registry, AgentTool, AutomationTier};
 use super::commands::{
     resolve_setup_scope, step_apply_explain, step_apply_integration, step_backup_mcp_config,
-    step_ensure_ready, step_init,
+    step_ensure_ready, step_init_with_config,
 };
 use super::entry::{bare_ready_summary, bare_uninitialized_fallback};
 use super::explain_cmd::print_explain_discovery_hint;
@@ -87,7 +87,9 @@ pub(crate) fn run_wizard_and_apply(repo_root: &Path, opts: TuiOptions) -> anyhow
 /// down. All file-system writes happen here, not inside the library.
 pub(crate) fn execute_setup_plan(repo_root: &Path, plan: SetupPlan) -> anyhow::Result<()> {
     println!("synrepo setup: applying plan.");
-    step_init(repo_root, Some(plan.mode), false, false)?;
+    step_init_with_config(repo_root, Some(plan.mode), false, false, |config| {
+        seed_optional_setup_config(config, &plan);
+    })?;
     if let Some(target) = plan.target {
         let tool = AgentTool::from_target_kind(target);
         let scope = resolve_setup_scope(repo_root, tool, false);
@@ -113,6 +115,20 @@ pub(crate) fn execute_setup_plan(repo_root: &Path, plan: SetupPlan) -> anyhow::R
     synrepo::registry::record_project(repo_root)?;
     println!("Setup complete. Repo is ready.");
     Ok(())
+}
+
+fn seed_optional_setup_config(config: &mut synrepo::config::Config, plan: &SetupPlan) {
+    config.enable_semantic_triage = plan.enable_embeddings;
+    if let Some(choice) = &plan.explain {
+        config.explain.enabled = true;
+        config.explain.provider = Some(
+            match choice {
+                synrepo::tui::ExplainChoice::Cloud { provider, .. } => provider.config_value(),
+                synrepo::tui::ExplainChoice::Local { .. } => "local",
+            }
+            .to_string(),
+        );
+    }
 }
 
 /// Launch the explain-only sub-wizard after `synrepo setup <tool> --explain`,

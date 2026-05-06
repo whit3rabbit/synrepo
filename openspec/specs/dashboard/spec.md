@@ -95,7 +95,7 @@ synrepo's dashboard process SHALL NOT launch the stdio MCP server in-process. Th
 - **AND** the dashboard does not bind stdin or stdout to an MCP transport while it is rendering
 
 ### Requirement: Provide a guided setup wizard
-synrepo SHALL provide a guided setup wizard that runs when the runtime probe classifies the repo as `uninitialized`. The wizard SHALL follow a defined arc (splash, mode, agent target, optional explain setup, confirm, run, land-in-dashboard), SHALL call decomposed setup steps (initialize runtime, write agent shim, register MCP, apply integration, apply explain config when selected), and SHALL NOT write any file-system state before the explicit "Confirm + run" step. Bare `synrepo` on a fresh repo and interactive no-flag `synrepo init` on a fresh repo SHALL enter the wizard directly without an intermediate "Do you want to set up?" confirmation.
+synrepo SHALL provide a guided setup wizard that runs when the runtime probe classifies the repo as `uninitialized`. The wizard SHALL follow a defined arc (splash, mode, agent target, optional embeddings setup, optional explain setup, confirm, run, land-in-dashboard), SHALL call decomposed setup steps (initialize runtime, write agent shim, register MCP, apply integration, apply embeddings config when selected, apply explain config when selected), and SHALL NOT write any file-system state before the explicit "Confirm + run" step. Bare `synrepo` on a fresh repo and interactive no-flag `synrepo init` on a fresh repo SHALL enter the wizard directly without an intermediate "Do you want to set up?" confirmation.
 
 #### Scenario: Enter the wizard from bare invocation on a fresh repo
 - **WHEN** a user runs bare `synrepo` in a directory the probe classifies as `uninitialized` and stdout is a TTY
@@ -109,8 +109,8 @@ synrepo SHALL provide a guided setup wizard that runs when the runtime probe cla
 
 #### Scenario: Complete a fresh setup
 - **WHEN** the wizard opens on an uninitialized repository
-- **THEN** the user proceeds through splash, mode selection, agent-target selection (including a first-class "Skip" option), optional explain setup, and a plan-confirmation step before any writes occur
-- **AND** the wizard runs init, writes the chosen shim if any, registers MCP for the chosen target if any, writes explain config if selected, performs a first reconcile, records the project, and transitions to the dashboard with a one-shot welcome message
+- **THEN** the user proceeds through splash, mode selection, agent-target selection (including a first-class "Skip" option), optional embeddings setup, optional explain setup, and a plan-confirmation step before any writes occur
+- **AND** the wizard applies selected embeddings and explain config before the initial runtime build, runs init, writes the chosen shim if any, registers MCP for the chosen target if any, persists selected explain credentials or endpoints, performs a first reconcile, records the project, and transitions to the dashboard with a one-shot welcome message
 
 #### Scenario: Cancel setup before any writes
 - **WHEN** the user cancels the setup wizard at or before the "Confirm + run" step
@@ -176,7 +176,7 @@ synrepo SHALL surface explain setup from a ready repository dashboard without re
 
 #### Scenario: Ready repo configures explain in place
 - **WHEN** the dashboard is open on a ready repository
-- **THEN** a quick action labeled `configure explain` is available
+- **THEN** a quick action labeled `configure optional explain` is available
 - **AND** activating it opens the explain setup sub-wizard, applies the selected config, and returns to the dashboard
 
 #### Scenario: Explain tab setup alias remains available
@@ -294,3 +294,121 @@ The dashboard's `NextAction` rendering SHALL, when a stale surface is present th
 #### Scenario: Stale reconcile with fresh bindings
 - **WHEN** the snapshot reports reconcile is stale and the dashboard has an `R` binding
 - **THEN** the rendered next-action line includes `(press R)` next to the reconcile suggestion
+
+### Requirement: Provide a global project shell
+The dashboard SHALL support a global shell over the managed project registry. The shell SHALL own the project list, an active project ID, and project-scoped runtime states. Rendering and actions SHALL operate on exactly one active project at a time.
+
+#### Scenario: Open dashboard inside a registered project
+- **WHEN** the user runs bare `synrepo` from inside a registered initialized project
+- **THEN** the dashboard opens with that project active
+- **AND** the header shows the project display name and path
+
+#### Scenario: Open dashboard outside a project
+- **WHEN** the user runs bare `synrepo` from outside an initialized project and the registry contains managed projects
+- **THEN** the dashboard opens the project picker
+- **AND** no repository action runs until the user selects a project
+
+#### Scenario: Explicit repo preserves single-project behavior
+- **WHEN** the user provides `--repo`
+- **THEN** synrepo probes and routes that repository as an explicit target
+- **AND** registry project selection does not override the explicit repository
+
+### Requirement: Switch projects atomically
+The dashboard SHALL switch the active project by loading or reusing a project-scoped runtime state and clearing transient global/project modals that cannot safely survive the switch.
+
+#### Scenario: Switch clears transient actions
+- **WHEN** the user switches from project A to project B while a confirm modal, folder picker, or pending explain run is active
+- **THEN** those transient states are cleared
+- **AND** project B renders from its own snapshot, log, materializer, explain preview, and watch state
+
+#### Scenario: Cached state stays project-scoped
+- **WHEN** the user switches away from a project and later switches back
+- **THEN** project-scoped cached preview, materializer state, log, and scroll state belong only to that project
+- **AND** no cached state from another project is displayed
+
+### Requirement: Provide fast project selection
+The dashboard SHALL provide a project picker opened by `[p]`. The picker SHALL list registered projects sorted by recent use, support filtering, and allow switching, renaming, adding the current directory, and detaching a selected project.
+
+#### Scenario: Picker shows project status
+- **WHEN** the project picker is open
+- **THEN** each row shows display name, path, derived health, watch state, lock state, and integration state when available
+
+#### Scenario: Detach from picker is non-destructive
+- **WHEN** the user detaches a selected project from the picker
+- **THEN** the registry entry is removed
+- **AND** repository-local state is left untouched
+
+### Requirement: Provide persistent MCP and Explore tabs
+The dashboard SHALL include dedicated MCP and Explore tabs after Actions while preserving the existing first five tab numbers. The MCP tab SHALL report active-project MCP enablement across known agent targets, including scope, source trigger, and config path. The Explore tab SHALL list registry-managed projects only and allow switching the active project.
+
+#### Scenario: MCP tab reports active project registration
+- **WHEN** the dashboard renders the MCP tab for an active project
+- **THEN** each row shows agent, status, scope, trigger/source, and config path when known
+- **AND** the dashboard does not launch or host the MCP stdio server
+
+#### Scenario: MCP tab installs repo-local MCP
+- **WHEN** the user presses `i` on the MCP tab and confirms a target
+- **THEN** synrepo registers that target's MCP config in project scope through agent-config
+- **AND** the registered server command is `synrepo mcp --repo .`
+- **AND** no agent shim, skill, or instruction file is written
+- **AND** pressing `i` outside the MCP tab still launches the generic integration wizard
+
+#### Scenario: Explore tab switches projects
+- **WHEN** the dashboard renders the Explore tab
+- **THEN** rows come from the managed-project registry with health, watch, lock, integration, and path
+- **AND** Enter switches to the selected project without scanning unrelated filesystem paths
+
+### Requirement: Scope dashboard actions to projects
+Every dashboard action that reads or mutates repository-scoped synrepo state SHALL be dispatched with an explicit project context containing project ID, display name, repo root, and `.synrepo/` path.
+
+#### Scenario: Action after project switch
+- **WHEN** the user switches to project B and invokes reconcile, sync, watch, materialize, explain, docs export, docs clean, or auto-sync
+- **THEN** the action runs against project B
+- **AND** logs identify the project when ambiguity is possible
+
+### Requirement: Show all-project watch visibility
+The dashboard SHALL expose watch status for every registered project without starting or stopping background project watchers implicitly.
+
+#### Scenario: Watch manager lists all projects
+- **WHEN** the user opens the project picker or watch manager
+- **THEN** every registered project row shows watch running, inactive, stale, corrupt, or missing-path status
+- **AND** start/stop actions apply only to the selected project
+
+### Requirement: Preserve essential footer hints
+The dashboard footer SHALL keep essential global hints visible even when a toast is active.
+
+#### Scenario: Toast with essentials
+- **WHEN** a toast is visible
+- **THEN** the footer still shows at least project picker, help, and quit hints when width permits
+
+### Requirement: Confirm heavyweight or destructive actions
+The dashboard SHALL require confirmation before applying destructive or expensive operations from quick actions or command palette entries.
+
+#### Scenario: Materialize confirmation
+- **WHEN** the user requests graph materialization from the dashboard
+- **THEN** the dashboard opens a confirmation dialog before starting the operation
+
+#### Scenario: Docs clean preview applies from modal
+- **WHEN** the user previews cleaning materialized docs
+- **THEN** the dashboard shows the preview result
+- **AND** applying deletion requires an explicit confirmation from that preview state
+
+### Requirement: Provide accessible dashboard rendering
+The dashboard SHALL support no-color, reduced-motion, and ASCII-only rendering modes. Semantic status SHALL NOT rely on color, glyph shape, or bold styling as the only signal.
+
+#### Scenario: Reduced motion removes spinner animation
+- **WHEN** reduced-motion or ASCII-only mode is active and a reconcile is running
+- **THEN** the header renders a textual running marker instead of animated Braille frames
+
+#### Scenario: Plain severity labels
+- **WHEN** no-color or ASCII-only mode is active
+- **THEN** healthy, warning, and blocked states include textual prefixes such as `[ok]`, `[warn]`, or `[blocked]`
+
+### Requirement: Use viewport-aware live pagination
+The Live tab SHALL base page-up and page-down movement on the last rendered visible row count rather than a fixed constant.
+
+#### Scenario: Page movement adapts to viewport
+- **WHEN** the Live tab is rendered in a small or large terminal
+- **THEN** PageUp and PageDown move by the visible row count minus headroom
+- **AND** movement is clamped to at least one row
+

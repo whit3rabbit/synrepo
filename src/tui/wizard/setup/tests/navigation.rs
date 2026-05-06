@@ -17,6 +17,9 @@ fn happy_path_default_auto_claude_target() {
     assert_eq!(s.step, SetupStep::SelectTarget);
     assert_eq!(s.mode, Mode::Auto);
     press(&mut s, KeyCode::Enter);
+    assert_eq!(s.step, SetupStep::SelectEmbeddings);
+    assert!(!s.enable_embeddings);
+    press(&mut s, KeyCode::Enter);
     assert_eq!(s.step, SetupStep::ExplainExplain);
     press(&mut s, KeyCode::Enter);
     assert_eq!(s.step, SetupStep::SelectExplain);
@@ -29,6 +32,7 @@ fn happy_path_default_auto_claude_target() {
     let plan = s.finalize().expect("plan");
     assert_eq!(plan.mode, Mode::Auto);
     assert_eq!(plan.target, Some(AgentTargetKind::Claude));
+    assert!(!plan.enable_embeddings);
     assert!(plan.reconcile_after);
 }
 
@@ -44,6 +48,8 @@ fn select_curated_and_skip_target() {
     }
     press(&mut s, KeyCode::Enter);
     assert_eq!(s.target, None);
+    assert_eq!(s.step, SetupStep::SelectEmbeddings);
+    press(&mut s, KeyCode::Enter);
     assert_eq!(s.step, SetupStep::ExplainExplain);
     press(&mut s, KeyCode::Enter);
     assert_eq!(s.step, SetupStep::SelectExplain);
@@ -53,6 +59,7 @@ fn select_curated_and_skip_target() {
     let plan = s.finalize().expect("plan");
     assert_eq!(plan.mode, Mode::Curated);
     assert_eq!(plan.target, None);
+    assert!(!plan.enable_embeddings);
 }
 
 #[test]
@@ -114,7 +121,8 @@ fn b_at_confirm_after_skip_goes_back_to_explain_selection() {
     let mut s = SetupWizardState::new(Mode::Auto, vec![]);
     press(&mut s, KeyCode::Enter); // splash → mode
     press(&mut s, KeyCode::Enter); // mode → target
-    press(&mut s, KeyCode::Enter); // target → explain
+    press(&mut s, KeyCode::Enter); // target → embeddings
+    press(&mut s, KeyCode::Enter); // embeddings → explain
     press(&mut s, KeyCode::Enter); // explain → explain
     assert_eq!(s.step, SetupStep::SelectExplain);
     press(&mut s, KeyCode::Enter); // Skip committed; jumps to confirm
@@ -132,7 +140,8 @@ fn b_at_confirm_after_provider_goes_back_to_review() {
         SetupWizardState::with_explain_support(Mode::Auto, vec![], support_with_saved_anthropic());
     press(&mut s, KeyCode::Enter); // splash → mode
     press(&mut s, KeyCode::Enter); // mode → target
-    press(&mut s, KeyCode::Enter); // target → explain
+    press(&mut s, KeyCode::Enter); // target → embeddings
+    press(&mut s, KeyCode::Enter); // embeddings → explain
     press(&mut s, KeyCode::Enter); // explain → explain
     press(&mut s, KeyCode::Down); // Skip → Anthropic
     press(&mut s, KeyCode::Enter); // commit Anthropic → review
@@ -149,7 +158,8 @@ fn ctrl_c_at_confirm_cancels() {
     let mut s = SetupWizardState::new(Mode::Auto, vec![]);
     press(&mut s, KeyCode::Enter); // splash → mode
     press(&mut s, KeyCode::Enter); // mode → target
-    press(&mut s, KeyCode::Enter); // target → explain
+    press(&mut s, KeyCode::Enter); // target → embeddings
+    press(&mut s, KeyCode::Enter); // embeddings → explain
     press(&mut s, KeyCode::Enter); // explain → explain
     press(&mut s, KeyCode::Enter); // Skip → confirm
     s.handle_key(KeyCode::Char('c'), KeyModifiers::CONTROL);
@@ -188,13 +198,14 @@ fn down_at_bottom_does_not_overflow() {
 }
 
 #[test]
-fn explain_explain_b_goes_back_to_select_target() {
+fn explain_explain_b_goes_back_to_embeddings() {
     let mut s = SetupWizardState::new(Mode::Auto, vec![]);
     press(&mut s, KeyCode::Enter); // splash → mode
     press(&mut s, KeyCode::Enter); // mode → target
-    press(&mut s, KeyCode::Enter); // target → explain
+    press(&mut s, KeyCode::Enter); // target → embeddings
+    press(&mut s, KeyCode::Enter); // embeddings → explain
     assert_eq!(s.step, SetupStep::ExplainExplain);
     press(&mut s, KeyCode::Char('b'));
-    assert_eq!(s.step, SetupStep::SelectTarget);
+    assert_eq!(s.step, SetupStep::SelectEmbeddings);
     assert!(!s.cancelled);
 }

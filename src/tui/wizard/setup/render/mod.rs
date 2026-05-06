@@ -4,6 +4,7 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
 
+mod embeddings;
 mod explain;
 #[cfg(test)]
 mod tests;
@@ -38,8 +39,8 @@ pub fn run_setup_wizard_loop(
 /// Run only the explain sub-flow of the setup wizard. Used by `synrepo
 /// setup <tool> --explain`, where the normal init + integration work has
 /// already run non-interactively and only the `[explain]` block remains.
-/// Callers should read `plan.explain` and ignore the plan's mode/target
-/// fields (which are placeholder defaults set by `explain_only()`).
+/// Callers should read `plan.explain` and ignore the plan's mode, target, and
+/// embeddings fields (which are placeholder defaults set by `explain_only()`).
 pub fn run_explain_only_wizard_loop(theme: Theme) -> anyhow::Result<super::SetupWizardOutcome> {
     let mut terminal = enter_tui()?;
     let mut state = SetupWizardState::explain_only_with_support(ExplainWizardSupport::detect());
@@ -87,16 +88,17 @@ fn draw(frame: &mut ratatui::Frame, state: &SetupWizardState, theme: &Theme) {
 
     let title = Paragraph::new(Line::from(Span::styled(
         match state.step {
-            SetupStep::Splash => " synrepo setup: step 1/5 welcome ",
-            SetupStep::SelectMode => " synrepo setup: step 2/5 graph mode ",
-            SetupStep::SelectTarget => " synrepo setup: step 3/5 agent integration ",
-            SetupStep::ExplainExplain => " synrepo setup: step 4/5 what explain does ",
-            SetupStep::SelectExplain => " synrepo setup: step 4/5 LLM explain ",
-            SetupStep::EditCloudApiKey => " synrepo setup: step 4a cloud API key ",
-            SetupStep::SelectLocalPreset => " synrepo setup: step 4a local LLM preset ",
-            SetupStep::EditLocalEndpoint => " synrepo setup: step 4b local endpoint ",
-            SetupStep::ReviewExplainPlan => " synrepo setup: step 4c review explain plan ",
-            SetupStep::Confirm => " synrepo setup: step 5/5 confirm ",
+            SetupStep::Splash => " synrepo setup: step 1/6 welcome ",
+            SetupStep::SelectMode => " synrepo setup: step 2/6 graph mode ",
+            SetupStep::SelectTarget => " synrepo setup: step 3/6 agent integration ",
+            SetupStep::SelectEmbeddings => " synrepo setup: step 4/6 embeddings ",
+            SetupStep::ExplainExplain => " synrepo setup: step 5/6 what explain does ",
+            SetupStep::SelectExplain => " synrepo setup: step 5/6 LLM explain ",
+            SetupStep::EditCloudApiKey => " synrepo setup: step 5a cloud API key ",
+            SetupStep::SelectLocalPreset => " synrepo setup: step 5a local LLM preset ",
+            SetupStep::EditLocalEndpoint => " synrepo setup: step 5b local endpoint ",
+            SetupStep::ReviewExplainPlan => " synrepo setup: step 5c review explain plan ",
+            SetupStep::Confirm => " synrepo setup: step 6/6 confirm ",
             SetupStep::Complete => " synrepo setup: done ",
         },
         theme.agent_style(),
@@ -112,6 +114,9 @@ fn draw(frame: &mut ratatui::Frame, state: &SetupWizardState, theme: &Theme) {
         SetupStep::Splash => draw_splash_step(frame, outer[1], theme),
         SetupStep::SelectMode => draw_mode_step(frame, outer[1], state, theme),
         SetupStep::SelectTarget => draw_target_step(frame, outer[1], state, theme),
+        SetupStep::SelectEmbeddings => {
+            embeddings::draw_embeddings_step(frame, outer[1], state, theme)
+        }
         SetupStep::ExplainExplain => explain::draw_explain_explain_step(frame, outer[1], theme),
         SetupStep::SelectExplain => explain::draw_explain_step(frame, outer[1], state, theme),
         SetupStep::EditCloudApiKey => {
@@ -134,6 +139,7 @@ fn draw(frame: &mut ratatui::Frame, state: &SetupWizardState, theme: &Theme) {
         SetupStep::Splash => " Enter continue  Esc exit ",
         SetupStep::SelectMode
         | SetupStep::SelectTarget
+        | SetupStep::SelectEmbeddings
         | SetupStep::SelectExplain
         | SetupStep::SelectLocalPreset => " ↑/↓ move  Enter select  Esc cancel ",
         SetupStep::EditCloudApiKey => {
@@ -307,6 +313,18 @@ fn draw_confirm_step(
         )));
         step_no += 1;
     }
+    if state.enable_embeddings {
+        lines.push(Line::from(Span::styled(
+            format!("  {step_no}. enable embeddings for semantic routing and hybrid search"),
+            theme.base_style(),
+        )));
+    } else {
+        lines.push(Line::from(Span::styled(
+            format!("  {step_no}. leave embeddings disabled (optional)"),
+            theme.muted_style(),
+        )));
+    }
+    step_no += 1;
     match &state.explain {
         Some(ExplainChoice::Cloud {
             provider,

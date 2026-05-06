@@ -6,7 +6,7 @@ synrepo SHALL define a first-run bootstrap flow that initializes project state, 
 
 #### Scenario: Run guided setup on a fresh clone
 - **WHEN** a user runs bare `synrepo` or interactive no-flag `synrepo init` in a repository with no prior setup
-- **THEN** synrepo opens the guided setup flow that initializes runtime state, offers agent integration, offers explain configuration, and lands in the dashboard
+- **THEN** synrepo opens the guided setup flow that initializes runtime state, offers agent integration, offers optional embeddings and explain configuration, and lands in the dashboard
 - **AND** the flow does not require manual authoring or a second command before structural value appears
 
 #### Scenario: Run runtime-only init on a fresh clone
@@ -50,6 +50,7 @@ synrepo SHALL define whether bootstrap is one-shot, re-runnable, or partially re
 - **WHEN** a user runs `synrepo init` with no flags in an uninitialized repository and stdout is a TTY
 - **THEN** synrepo opens the guided setup wizard instead of stopping after runtime bootstrap
 - **AND** selecting explain in that wizard writes the same `[explain]` config as the explain-only setup path
+- **AND** selecting embeddings in that wizard writes `enable_semantic_triage = true` before the initial runtime build
 
 #### Scenario: Bare entry on a partial install
 - **WHEN** a user runs bare `synrepo` in a repository whose runtime probe returns `partial`

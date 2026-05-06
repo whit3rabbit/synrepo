@@ -78,3 +78,71 @@ Context accounting SHALL track observable workflow tool usage separately from es
 - **THEN** the metric is labeled as estimated from card accounting data
 - **AND** it is not presented as proof that an external agent did not read files outside synrepo
 
+### Requirement: Track fast-path routing metrics without content
+Context accounting SHALL track fast-path routing usage through aggregate counters only. Persisted metrics SHALL NOT store task descriptions, prompts, paths, source snippets, note bodies, caller identity, or response bodies.
+
+#### Scenario: Task route is classified
+- **WHEN** a task route is classified through MCP, CLI, or hook output
+- **THEN** context metrics increment `route_classifications_total`
+- **AND** the stored metrics contain no task text
+
+#### Scenario: Hook emits fast-path signals
+- **WHEN** an agent hook emits context fast-path, deterministic edit candidate, or LLM-not-required signals
+- **THEN** context metrics increment the corresponding aggregate hook counters when a repo bucket is available
+
+#### Scenario: Anchored edits complete or reject
+- **WHEN** `synrepo_apply_anchor_edits` reports applied or rejected file outcomes
+- **THEN** context metrics increment accepted and rejected anchored edit counters
+- **AND** no edit text or file path is stored in metrics
+
+#### Scenario: Existing metrics remain readable
+- **WHEN** synrepo loads a context metrics file written before fast-path counters existed
+- **THEN** missing fast-path fields default to zero
+
+### Requirement: Report compact output accounting
+Compact MCP responses SHALL include `output_accounting` with deterministic token estimates for returned output and the original uncompact response, an estimated token savings value, an estimated savings ratio, omitted item count, and truncation flag.
+
+#### Scenario: Agent receives compact output accounting
+- **WHEN** an agent invokes a compact MCP read response
+- **THEN** the response includes `output_accounting.returned_token_estimate`, `original_token_estimate`, `estimated_tokens_saved`, `estimated_savings_ratio`, `omitted_count`, and `truncation_applied`
+- **AND** the estimates are computed from response shape and byte size rather than LLM output
+
+### Requirement: Track compact output metrics without content
+Context accounting SHALL track compact-output usage through aggregate counters only. Persisted metrics SHALL NOT store queries, result snippets, prompts, note bodies, caller identity, or response bodies.
+
+#### Scenario: Compact MCP output is counted
+- **WHEN** a compact MCP response is served from a prepared repository runtime
+- **THEN** context metrics increment compact-output counters and aggregate token estimates
+- **AND** the stored metrics contain no query text or result content
+
+#### Scenario: Existing metrics remain readable
+- **WHEN** synrepo loads a context metrics file written before compact-output counters existed
+- **THEN** missing compact-output fields default to zero
+- **AND** the metrics file remains inspectable through text, JSON, and Prometheus surfaces
+
+### Requirement: Track context flood metrics without content
+Context accounting SHALL track aggregate response budget behavior without storing queries, snippets, prompts, note bodies, caller identity, or response bodies.
+
+#### Scenario: Oversized MCP responses are counted
+- **WHEN** an MCP response exceeds the soft cap
+- **THEN** context metrics increment `responses_over_soft_cap_total`
+- **AND** the response's estimated token count contributes to `tool_token_totals` for that tool
+
+#### Scenario: Truncated MCP responses are counted
+- **WHEN** the final response clamp trims a response
+- **THEN** context metrics increment `responses_truncated_total`
+- **AND** `largest_response_tokens` is updated when the response is the largest observed response
+
+#### Scenario: Deep cards are counted
+- **WHEN** a card-shaped response uses deep budget
+- **THEN** context metrics increment `deep_cards_served_total`
+
+#### Scenario: Context pack tokens are counted
+- **WHEN** a context pack response is served
+- **THEN** context metrics add the pack token estimate to `context_pack_tokens_total`
+
+#### Scenario: Existing metrics remain readable
+- **WHEN** synrepo loads a context metrics file written before flood metrics existed
+- **THEN** missing flood metric fields default to zero
+- **AND** the metrics file remains inspectable through JSON, text, and Prometheus surfaces
+

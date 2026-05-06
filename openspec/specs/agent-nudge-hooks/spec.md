@@ -1,5 +1,8 @@
-## Requirements
+# agent-nudge-hooks Specification
 
+## Purpose
+TBD - created by archiving change agent-nudge-hooks-v1. Update Purpose after archive.
+## Requirements
 ### Requirement: Provide a hidden nudge hook CLI
 synrepo SHALL provide a hidden CLI entrypoint `synrepo agent-hook nudge --client <client> --event <event>` for Codex and Claude hook integrations.
 
@@ -46,3 +49,4 @@ synrepo SHALL install Codex and Claude hook configs only when the operator expli
 - **WHEN** Codex hook installation is requested and Codex hooks are not enabled
 - **THEN** setup prints the exact `[features] codex_hooks = true` requirement
 - **AND** it does not silently rely on an unavailable runtime feature
+

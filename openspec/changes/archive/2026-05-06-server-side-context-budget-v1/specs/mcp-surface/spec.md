@@ -66,3 +66,23 @@ Raw graph primitive MCP tools that can fan out SHALL accept bounded limits and r
 
 ### Requirement: Expose opt-in compact MCP read output
 Search compact output is no longer only opt-in. `synrepo_search` SHALL default to compact output while preserving explicit `output_mode = "default"` for bounded raw rows.
+
+#### Scenario: Default search returns compact output
+- **WHEN** an agent invokes `synrepo_search` without `output_mode`
+- **THEN** the response groups results by file path and returns short line previews instead of the full raw result array
+- **AND** the response includes `suggested_card_targets` so the caller can escalate to cards for bounded detail
+
+#### Scenario: Explicit default search remains compatible
+- **WHEN** an agent invokes `synrepo_search` with `output_mode = "default"`
+- **THEN** the response preserves bounded raw result rows
+- **AND** each result still includes `path`, `line`, and `content` when available
+
+#### Scenario: Compact search applies a token cap
+- **WHEN** an agent invokes compact `synrepo_search` with `budget_tokens`
+- **THEN** the response keeps ranked file groups in order until the cap is reached
+- **AND** it reports omitted matches and `output_accounting.truncation_applied = true` when content was omitted
+
+#### Scenario: Context pack compacts search artifacts
+- **WHEN** an agent invokes `synrepo_context_pack` with `output_mode = "compact"` and includes a search target
+- **THEN** search artifacts use the compact search representation
+- **AND** card-shaped artifacts retain their existing `context_accounting`

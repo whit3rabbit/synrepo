@@ -304,7 +304,7 @@ pub(super) fn quick_actions_for(mode: &AppMode, snapshot: &StatusSnapshot) -> Ve
         let label = if embeddings_enabled {
             "disable embeddings"
         } else {
-            "enable embeddings"
+            "enable optional embeddings"
         };
         actions.push(QuickAction {
             key: "T".to_string(),
@@ -328,12 +328,12 @@ pub(super) fn quick_actions_for(mode: &AppMode, snapshot: &StatusSnapshot) -> Ve
         },
         QuickAction {
             key: "e".to_string(),
-            label: "configure explain".to_string(),
+            label: "configure optional explain".to_string(),
             disabled: false,
             requires_confirm: false,
             destructive: false,
             expensive: false,
-            command_label: Some("configure explain".to_string()),
+            command_label: Some("configure optional explain".to_string()),
         },
         QuickAction {
             key: "q".to_string(),

@@ -642,3 +642,188 @@ The MCP server SHALL keep `synrepo_search` read-only. Search calls MUST NOT trig
 - **WHEN** an agent invokes `synrepo_search` after source files changed but before an explicit refresh path has run
 - **THEN** the tool searches the currently persisted substrate index
 - **AND** it does not run reconcile or update the index as part of the search call
+
+### Requirement: Describe context-pack as current batched context delivery
+The MCP surface SHALL describe `synrepo_context_pack` as the current read-only batching tool for known files, symbols, directories, tests, call paths, searches, and minimum-context artifacts. This description SHALL NOT rename the tool, change its target schema, or introduce `synrepo_ask`.
+
+#### Scenario: Agent reads MCP docs
+- **WHEN** an agent reads the MCP guide
+- **THEN** `synrepo_context_pack` is described as the current batched card/context delivery surface
+- **AND** the docs do not imply that a new high-level ask tool already exists
+
+#### Scenario: MCP tools are listed
+- **WHEN** an MCP client retrieves available tools
+- **THEN** the tool set remains unchanged by this framing change
+- **AND** existing request and response contracts remain unchanged
+
+### Requirement: Expose synrepo_task_route as a read-only MCP tool
+The MCP server SHALL expose `synrepo_task_route(task, path?)` as a read-only tool that classifies a plain-language task and returns deterministic routing recommendations. The response SHALL include `intent`, `confidence`, `recommended_tools`, `budget_tier`, `llm_required`, `edit_candidate`, `signals`, and `reason`.
+
+#### Scenario: Route a context task
+- **WHEN** an agent invokes `synrepo_task_route` with a broad search or codebase review task
+- **THEN** the response recommends read-only context tools such as `synrepo_orient`, `synrepo_search` with compact output, `synrepo_find`, `synrepo_minimum_context`, `synrepo_risks`, or `synrepo_tests`
+- **AND** the response marks LLM use as not required when structural context is sufficient
+
+#### Scenario: Route an unsupported semantic transform
+- **WHEN** an agent invokes `synrepo_task_route` with a task such as adding types, converting promises to async/await, or adding error handling
+- **THEN** the response sets `llm_required = true`
+- **AND** it does not report a deterministic edit candidate
+
+#### Scenario: Route a conservative edit candidate
+- **WHEN** an agent invokes `synrepo_task_route` with a supported mechanical edit intent
+- **THEN** the response includes `edit_candidate.intent`
+- **AND** the recommended tools still require `synrepo_prepare_edit_context` and `synrepo_apply_anchor_edits` for mutation
+
+### Requirement: Keep task routing content-free and read-only
+Task routing SHALL NOT run shell commands, reconcile the repository, start watch, refresh commentary, write source files, write overlay content, or persist the task text. Any metrics recorded for routing SHALL be aggregate counters only.
+
+#### Scenario: Task route records metrics
+- **WHEN** `synrepo_task_route` is invoked against a prepared repository
+- **THEN** context metrics increment aggregate route counters
+- **AND** the metrics do not store the task, path, prompt, source text, caller identity, or response body
+
+### Requirement: Default task routing to semantic intent matching when local assets are available
+`synrepo_task_route` SHALL use semantic intent matching by default when `semantic-triage` is compiled, `enable_semantic_triage = true`, and the configured model artifacts are already locally loadable. The response SHALL include `routing_strategy` and MAY include `semantic_score`. If semantic matching is unavailable, the response SHALL remain keyword-based and include `routing_strategy: "keyword_fallback"`.
+
+#### Scenario: Semantic routing is unavailable
+- **WHEN** the tool is invoked without compiled semantic support, with semantic config disabled, or without local model assets
+- **THEN** it returns the keyword route
+- **AND** the route includes `routing_strategy: "keyword_fallback"`
+- **AND** no network download is attempted
+
+#### Scenario: Deterministic safety takes precedence
+- **WHEN** task text matches a deterministic unsupported-transform guard
+- **THEN** the route remains `llm-required`
+- **AND** semantic matching cannot downgrade it to a mechanical edit route
+
+### Requirement: Default MCP search to hybrid retrieval when local semantic assets are available
+`synrepo_search` SHALL accept `mode = "auto" | "lexical"` with default `auto`. Auto mode SHALL use hybrid lexical plus semantic retrieval when semantic triage is locally available, otherwise lexical search. Lexical mode SHALL preserve the previous syntext-only behavior. Results SHALL include a `source` label, `fusion_score`, optional `semantic_score`, and nullable `line` / `content` fields for semantic-only matches.
+
+#### Scenario: Auto search falls back to lexical
+- **WHEN** semantic triage is disabled or local vector/model assets cannot load
+- **THEN** `synrepo_search` returns lexical results
+- **AND** the response identifies the engine as lexical fallback rather than failing the request
+
+#### Scenario: Hybrid search returns semantic-only rows
+- **WHEN** a semantic match is not present in the lexical result set
+- **THEN** the row may have `line = null` and `content = null`
+- **AND** it includes `source: "semantic"` or `source: "hybrid"` plus scores that explain the ranking
+
+### Requirement: Expose opt-in compact MCP read output
+Search compact output is no longer only opt-in. `synrepo_search` SHALL default to compact output while preserving explicit `output_mode = "default"` for bounded raw rows.
+
+#### Scenario: Default search returns compact output
+- **WHEN** an agent invokes `synrepo_search` without `output_mode`
+- **THEN** the response groups results by file path and returns short line previews instead of the full raw result array
+- **AND** the response includes `suggested_card_targets` so the caller can escalate to cards for bounded detail
+
+#### Scenario: Explicit default search remains compatible
+- **WHEN** an agent invokes `synrepo_search` with `output_mode = "default"`
+- **THEN** the response preserves bounded raw result rows
+- **AND** each result still includes `path`, `line`, and `content` when available
+
+#### Scenario: Compact search applies a token cap
+- **WHEN** an agent invokes compact `synrepo_search` with `budget_tokens`
+- **THEN** the response keeps ranked file groups in order until the cap is reached
+- **AND** it reports omitted matches and `output_accounting.truncation_applied = true` when content was omitted
+
+#### Scenario: Context pack compacts search artifacts
+- **WHEN** an agent invokes `synrepo_context_pack` with `output_mode = "compact"` and includes a search target
+- **THEN** search artifacts use the compact search representation
+- **AND** card-shaped artifacts retain their existing `context_accounting`
+
+### Requirement: Keep compact MCP output read-only
+Compact MCP output SHALL NOT run shell commands, trigger reconcile, start watch, rebuild indexes, mutate repository files, or mutate graph or overlay stores. Compacting SHALL be deterministic and derived only from the normal read-tool response shape.
+
+#### Scenario: Compact search reads the persisted index
+- **WHEN** an agent invokes compact `synrepo_search`
+- **THEN** the tool searches the currently persisted syntext substrate index
+- **AND** it does not refresh or update the index as part of the call
+
+#### Scenario: Compact output does not summarize with an LLM
+- **WHEN** an agent invokes any compact MCP read output
+- **THEN** synrepo computes previews, groups, estimates, and omissions deterministically
+- **AND** no explain provider or LLM-backed commentary generator is called
+
+### Requirement: Expose synrepo_ask as a bounded task-context MCP tool
+synrepo SHALL expose `synrepo_ask(ask, scope?, shape?, ground?, budget?)` as a default read-only MCP tool. The tool SHALL compile the request into existing context-pack targets and return a JSON object containing `schema_version`, `ask`, `recipe`, `answer`, `cards_used`, `evidence`, `grounding`, `budget`, `omitted_context_notes`, `next_best_tools`, and `context_packet`.
+
+#### Scenario: Agent asks for a scoped module review
+- **WHEN** an agent invokes `synrepo_ask` with `ask: "review this module"` and `scope.paths: ["src/surface/mcp"]`
+- **THEN** the response includes a bounded `context_packet`
+- **AND** `cards_used` lists the rendered artifacts
+- **AND** `next_best_tools` recommends drill-down tools
+
+#### Scenario: Grounding requires citations
+- **WHEN** an agent invokes `synrepo_ask` with `ground.mode = "required"` or `ground.citations = "required"`
+- **THEN** the response includes `grounding.status`
+- **AND** the response includes `evidence` entries for rendered artifacts when source fields are available
+- **AND** missing spans are represented as `null` rather than fabricated line ranges
+
+#### Scenario: Tool remains read-only
+- **WHEN** `synrepo_ask` is invoked
+- **THEN** it SHALL NOT mutate source files, graph facts, overlay notes, commentary, or external process state
+- **AND** it MAY update existing best-effort MCP/context metrics
+
+### Requirement: Enforce MCP response budgets server-side
+The MCP server SHALL apply a final deterministic token cap to every MCP tool response before returning it. The default soft cap SHALL be 4,000 estimated tokens and the hard cap SHALL be 12,000 estimated tokens. If a response exceeds the effective cap, the server SHALL prefer structured truncation of known large fields over raw string truncation and SHALL report truncation metadata.
+
+#### Scenario: Oversized response is clamped
+- **WHEN** an MCP read handler produces JSON above the effective response token cap
+- **THEN** the server trims known large arrays or payload fields before returning
+- **AND** the response includes `context_accounting.truncation_applied = true`
+- **AND** the response includes `context_accounting.token_cap` and `context_accounting.truncation_reason`
+
+#### Scenario: Tool error stays structured
+- **WHEN** an MCP handler returns a structured error
+- **THEN** the server preserves the `ok`, `error`, and `error_message` fields
+- **AND** the response remains valid JSON
+
+### Requirement: Default MCP routing surfaces to compact bounded output
+MCP search and list-style read tools SHALL use small default limits, hard maximums, and bounded token budgets. `limit: 0` SHALL NOT mean unbounded; it SHALL clamp to `1`.
+
+#### Scenario: Search defaults are compact and bounded
+- **WHEN** an agent invokes `synrepo_search` without `output_mode`, `limit`, or `budget_tokens`
+- **THEN** the effective output mode is `compact`
+- **AND** the effective limit is `10`
+- **AND** the effective token budget is `1500`
+
+#### Scenario: Search raw output remains explicit
+- **WHEN** an agent invokes `synrepo_search` with `output_mode = "default"`
+- **THEN** raw match rows may be returned
+- **AND** the result count remains bounded by the effective limit and final response cap
+
+#### Scenario: Cards mode rejects broad requests
+- **WHEN** an agent invokes `synrepo_search` with `output_mode = "cards"` and no narrowing filter
+- **AND** the effective limit is greater than `5`
+- **THEN** the tool returns `INVALID_PARAMETER` with guidance to use compact output or narrow the request
+
+### Requirement: Bound card and context-pack escalation
+MCP card and context-pack tools SHALL default to tiny budget, cap batch sizes, and reject broad deep escalation.
+
+#### Scenario: Deep card batches are rejected
+- **WHEN** an agent requests `synrepo_card` with `budget = "deep"` and more than 3 targets
+- **THEN** the tool returns `INVALID_PARAMETER`
+- **AND** no cards are returned
+
+#### Scenario: Context pack requires a focal input
+- **WHEN** an agent invokes `synrepo_context_pack` without targets and without a non-empty goal
+- **THEN** the tool returns `INVALID_PARAMETER`
+
+#### Scenario: Context pack omits lower-priority artifacts
+- **WHEN** a context pack exceeds its effective token budget
+- **THEN** focal artifacts are retained before tests, risks, notes, and search artifacts
+- **AND** omitted artifacts include target and reason metadata
+
+### Requirement: Bound raw graph primitives
+Raw graph primitive MCP tools that can fan out SHALL accept bounded limits and report omissions.
+
+#### Scenario: Graph query applies a default limit
+- **WHEN** an agent invokes `synrepo_query` without a limit
+- **THEN** the tool returns at most 100 edges
+- **AND** omitted edge counts are reported when more results exist
+
+#### Scenario: Graph query clamps zero limit
+- **WHEN** an agent invokes `synrepo_edges` or `synrepo_query` with `limit = 0`
+- **THEN** the effective limit is `1`
+
