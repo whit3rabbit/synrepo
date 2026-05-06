@@ -1,4 +1,5 @@
-//! Model resolution: built-in registry, HuggingFace download, local path lookup.
+//! Model resolution: built-in ONNX registry, Hugging Face artifact download,
+//! and local Ollama endpoint setup.
 
 use std::path::Path;
 

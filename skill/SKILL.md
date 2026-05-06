@@ -34,15 +34,16 @@ Do not use synrepo for:
 
 ## Default path
 
-The required sequence for codebase questions, reviews, search routing, and edits is orient, search, cards, impact or risks, edit, tests, changed.
+The required sequence for codebase questions, reviews, search routing, and edits is orient, ask or search, cards, impact or risks, edit, tests, changed.
 
 1. Start with `synrepo_orient` before reading the repo cold. It is a small routing summary, not the full dashboard.
-2. Use `synrepo_task_route` for plain-language tasks, then use the search protocol below to decide between `synrepo_find`, `synrepo_where_to_edit`, and `synrepo_search`.
-3. Use `tiny` cards to route and `normal` cards to understand. Use `synrepo_minimum_context` as the bounded neighborhood step when a focal target is known but the surrounding risk is unclear, especially for file reviews and codebase questions.
-4. Use `synrepo_impact` or `synrepo_risks` before editing or reviewing risky files.
-5. Use `synrepo_tests` before claiming done.
-6. Use `synrepo_changed` after edits to review changed context and validation commands.
-7. Read full source files or request `deep` cards only after bounded cards identify the target or when the card content is insufficient. Full-file reads are an explicit escalation, not the default first step.
+2. Use `synrepo_ask` for broad plain-language tasks that need one bounded, cited task-context packet.
+3. Use `synrepo_task_route` when only classification is needed, then use the search protocol below to decide between `synrepo_find`, `synrepo_where_to_edit`, and `synrepo_search`.
+4. Use `tiny` cards to route and `normal` cards to understand. Use `synrepo_minimum_context` as the bounded neighborhood step when a focal target is known but the surrounding risk is unclear, especially for file reviews and codebase questions.
+5. Use `synrepo_impact` or `synrepo_risks` before editing or reviewing risky files.
+6. Use `synrepo_tests` before claiming done.
+7. Use `synrepo_changed` after edits to review changed context and validation commands.
+8. Read full source files or request `deep` cards only after bounded cards identify the target or when the card content is insufficient. Full-file reads are an explicit escalation, not the default first step.
 
 Rule of thumb: `tiny` to find, `normal` to understand, `deep` to write.
 
@@ -64,6 +65,7 @@ Use these to identify modules, readiness, watch/reconcile state, likely card tar
 
 For plain-language edit or investigation tasks, call:
 
+- `synrepo_ask(ask, scope?, shape?, ground?, budget?)`
 - `synrepo_task_route(task, path?)`
 - `synrepo_find(task, limit?, budget_tokens?)`
 - `synrepo_where_to_edit(task, limit?)`
@@ -142,6 +144,7 @@ After search returns likely targets:
 - use `budget: "normal"` for the best 1-3 targets
 - use `budget: "deep"` only when validating implementation details or preparing edits
 - use `synrepo_context_pack` when several known files, symbols, directories, tests, or call paths are needed together
+- use `synrepo_ask` first for broad plain-language tasks that need one bounded, cited task-context packet
 
 ### 6. CLI fallback
 
@@ -233,6 +236,7 @@ V1 edit candidates are advisory only: `var-to-const`, `remove-debug-logging`, `r
 * `synrepo_overview()` — full dashboard for graph, readiness, watch/reconcile, explain/commentary, metrics, and recent activity.
 * `synrepo_readiness()` — cheap read-only preflight for graph, overlay, index, watch, reconcile, and enabled MCP mutation modes.
 * `synrepo_orient()` — compact first-call routing summary.
+* `synrepo_ask(ask, scope?, shape?, ground?, budget?)` — default high-level front door for a bounded, cited task-context packet. Use exact search after it when the packet is insufficient or the task names literal identifiers.
 * `synrepo_find(task, limit?, budget_tokens?)` — task-oriented routing for plain-language questions. Best for “where should I look?” Not the best first tool for exact symbols, string literals, flags, schema fields, tool names, or file paths.
 * `synrepo_where_to_edit(task, limit?)` — ranked edit candidates for plain-language edit tasks. Inspect diagnostics and switch to exact search when broad routing misses.
 * `synrepo_search(query, limit?, output_mode?, budget_tokens?)` — lexical search. Best for exact symbols, string literals, CLI flags, MCP tool names, schema keys, file paths, and code-review validation. Use `output_mode: "compact"` for adaptive compact output with `output_accounting`; use `output_mode: "cards"` to return tiny file cards directly.
@@ -293,16 +297,18 @@ Do not maximize returned context. Return the smallest useful MCP response.
 
 Default sequence:
 1. `synrepo_orient`
-2. `synrepo_task_route(...)` for plain-language tasks
-3. `synrepo_search(..., output_mode: "compact", limit: 5-10)`
-4. `synrepo_card(..., budget: "tiny")`
-5. `synrepo_card(..., budget: "normal")` only for the best 1-3 targets
-6. `synrepo_minimum_context(..., budget: "normal")` when local neighborhood matters
-7. `synrepo_context_pack(...)` only after targets are known
-8. `budget: "deep"` or full-file reads only immediately before implementation or validation
+2. `synrepo_ask(...)` for plain-language tasks that need a task-context packet
+3. `synrepo_task_route(...)` when only route classification is needed
+4. `synrepo_search(..., output_mode: "compact", limit: 5-10)` for exact identifiers or drill-down
+5. `synrepo_card(..., budget: "tiny")`
+6. `synrepo_card(..., budget: "normal")` only for the best 1-3 targets
+7. `synrepo_minimum_context(..., budget: "normal")` when local neighborhood matters
+8. `synrepo_context_pack(...)` only after targets are known
+9. `budget: "deep"` or full-file reads only immediately before implementation or validation
 
 Consume these fields first:
 - `synrepo_orient`: `workflow`, `capability_actions`, `graph`, `watch`, `reconcile`
+- `synrepo_ask`: `answer`, `cards_used`, `evidence`, `grounding`, `omitted_context_notes`, `next_best_tools`, `context_packet`
 - `synrepo_search`: `suggested_card_targets`, `file_groups` or `results`, `miss_reason`, `output_accounting`
 - `synrepo_card`: `path`, `symbols`, `exports`, `imports`, `context_accounting`, `commentary_state`
 - `synrepo_context_pack`: `artifacts[].target`, `artifacts[].status`, `totals`, `omitted`, `context_state`

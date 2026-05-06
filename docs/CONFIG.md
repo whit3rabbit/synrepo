@@ -16,7 +16,7 @@ Runtime config lives in `.synrepo/config.toml`; the struct is `Config` in `src/c
 | `retain_retired_revisions` | `10` | Compile revisions to keep retired observations before compaction deletes them |
 | `enable_semantic_triage` | `false` | Enables local embedding-based triage, semantic routing, and hybrid search when the binary is built with `semantic-triage` and local model assets are available |
 | `semantic_embedding_provider` | `"onnx"` | Embedding backend: `onnx` for built-in ONNX Runtime models, or `ollama` for a local Ollama `/api/embed` endpoint |
-| `semantic_model` | `"all-MiniLM-L6-v2"` | Built-in ONNX model identifier, local `.onnx` path, or Ollama model name such as `all-minilm` |
+| `semantic_model` | `"all-MiniLM-L6-v2"` | Built-in ONNX model identifier, or Ollama model name such as `all-minilm` |
 | `embedding_dim` | `384` | Expected embedding dimension for the configured semantic model |
 | `semantic_similarity_threshold` | `0.6` | Minimum semantic score for semantic routing and triage matches |
 | `semantic_ollama_endpoint` | `"http://localhost:11434"` | Base URL for local Ollama embeddings when `semantic_embedding_provider = "ollama"` |
@@ -32,6 +32,8 @@ Runtime config lives in `.synrepo/config.toml`; the struct is `Config` in `src/c
 - `max_graph_snapshot_bytes` is advisory. Oversized snapshots still publish with a warning; set to `0` to force readers onto the SQLite path.
 - `redact_globs` is hard: matched files are never indexed and never reach any parser, so they cannot leak into cards, exports, or overlay candidates.
 - `auto_sync_enabled` is read once at watch startup and seeds an in-process atomic flag. The dashboard `A` keybinding flips that atomic for the running watch service but does NOT rewrite this file. To change the default persistently, edit `config.toml` and restart watch. The runtime allow-list is hard-coded (`CHEAP_AUTO_SYNC_SURFACES` in `src/pipeline/repair/sync/mod.rs`); commentary refresh and other token-cost surfaces are never auto-run.
+- Embeddings are optional and disabled by default. See `docs/EMBEDDINGS.md` for provider setup, dashboard toggling, model choices, and benchmark interpretation.
 - Semantic query paths never download model artifacts. `synrepo init` / `synrepo reconcile` may build vectors when semantic triage is enabled, but `synrepo_task_route` and `synrepo_search` use semantic behavior only when the vector index and configured local backend are available.
+- ONNX supports the built-in registry only: `all-MiniLM-L6-v2` (384d), `all-MiniLM-L12-v2` (384d), and `all-mpnet-base-v2` (768d). Those ONNX and tokenizer artifacts are fetched from Hugging Face only during init/reconcile when embeddings are enabled.
 - Ollama embeddings are local-only. With `semantic_embedding_provider = "ollama"`, `semantic_model = "all-minilm"`, and `embedding_dim = 384`, smoke test the endpoint with `curl http://localhost:11434/api/embed -d '{"model":"all-minilm","input":["First sentence","Second sentence"]}'`.
 - Explain config (`[explain]`) lives in the same file; see `docs/EXPLAIN.md`.

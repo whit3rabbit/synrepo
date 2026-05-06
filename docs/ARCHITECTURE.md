@@ -15,7 +15,7 @@ Files must stay under 400 lines; split into sub-modules before they grow past th
 - `classify.rs` — maps files to `FileClass` (SupportedCode { language }, TextCode, Markdown, Jupyter, Skipped)
 - `index.rs` — wraps `syntext` for n-gram lexical indexing and search; builds/queries `.synrepo/index/`
 - `hybrid.rs` — fuses lexical top-k and vector top-k results with reciprocal rank fusion when semantic triage is locally available
-- `embedding/` — feature-gated embedding stack for semantic triage and hybrid search, with ONNX and local Ollama providers; query-time loading never downloads model assets
+- `embedding/` — optional, feature-gated embedding stack for semantic triage and hybrid search, with built-in Hugging Face-hosted ONNX models and local Ollama providers; query-time loading never downloads model assets. See `docs/EMBEDDINGS.md`.
 - Spec: `openspec/specs/substrate/spec.md`
 
 **2. Structure** (`src/structure/`) — The canonical graph of directly-observed facts only.

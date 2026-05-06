@@ -114,9 +114,9 @@ pub struct Config {
     #[serde(default = "default_semantic_embedding_provider")]
     pub semantic_embedding_provider: SemanticEmbeddingProvider,
 
-    /// The embedding model to use for semantic triage. Can be a built-in
-    /// model name (all-MiniLM-L6-v2, all-MiniLM-L12-v2, all-mpnet-base-v2),
-    /// a Hugging Face model ID, a local `.onnx` path, or an Ollama model.
+    /// The embedding model to use for semantic triage. ONNX accepts built-in
+    /// model names (all-MiniLM-L6-v2, all-MiniLM-L12-v2, all-mpnet-base-v2);
+    /// Ollama accepts a local Ollama model name.
     #[serde(default = "default_semantic_model")]
     pub semantic_model: String,
 

@@ -17,6 +17,7 @@ mod auto_sync;
 mod helpers;
 mod materialize;
 mod reconcile;
+mod semantic;
 mod sync;
 mod watch;
 
@@ -25,6 +26,7 @@ pub(crate) use helpers::now_rfc3339;
 pub use helpers::{outcome_to_log, outcome_to_project_log, writer_lock_hint};
 pub use materialize::materialize_now;
 pub use reconcile::reconcile_now;
+pub use semantic::set_semantic_triage;
 pub use sync::sync_now;
 pub use watch::{start_watch_daemon, stop_watch};
 

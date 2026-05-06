@@ -9,7 +9,8 @@ use crate::store::{overlay::SqliteOverlayStore, sqlite::SqliteGraphStore};
 use crate::structure::graph::with_graph_read_snapshot;
 use crate::tui::actions::{
     materialize_now, outcome_to_log, outcome_to_project_log, reconcile_now, set_auto_sync,
-    start_watch_daemon, stop_watch, sync_now, ActionContext, ActionOutcome, ProjectActionContext,
+    set_semantic_triage, start_watch_daemon, stop_watch, sync_now, ActionContext, ActionOutcome,
+    ProjectActionContext,
 };
 
 use super::{AppMode, AppState};
@@ -89,6 +90,21 @@ impl AppState {
         }
         self.set_toast(self.action_toast("auto-sync", &outcome));
         self.log_action_outcome("auto-sync", &outcome);
+        true
+    }
+
+    pub(super) fn handle_toggle_semantic_triage(&mut self) -> bool {
+        let ctx = self.action_context();
+        let enabled = self
+            .snapshot
+            .config
+            .as_ref()
+            .map(|config| config.enable_semantic_triage)
+            .unwrap_or(false);
+        let outcome = set_semantic_triage(&ctx, !enabled);
+        self.set_toast(self.action_toast("embeddings", &outcome));
+        self.log_action_outcome("embeddings", &outcome);
+        self.refresh_now();
         true
     }
 

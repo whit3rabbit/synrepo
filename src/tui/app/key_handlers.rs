@@ -189,6 +189,9 @@ impl AppState {
             KeyCode::Char('A') | KeyCode::Char('a') => {
                 self.open_quick_confirm(PendingQuickConfirm::ToggleAutoSync)
             }
+            KeyCode::Char('T') | KeyCode::Char('t') => {
+                self.open_quick_confirm(PendingQuickConfirm::ToggleEmbeddings)
+            }
             KeyCode::Char('M') | KeyCode::Char('m') => {
                 self.open_quick_confirm(PendingQuickConfirm::MaterializeGraph)
             }
@@ -225,6 +228,9 @@ impl AppState {
             PendingQuickConfirm::ToggleAutoSync => {
                 "auto-sync toggle: Enter to apply, Esc to cancel"
             }
+            PendingQuickConfirm::ToggleEmbeddings => {
+                "embeddings toggle: Enter to apply, Esc to cancel"
+            }
         });
         true
     }
@@ -241,6 +247,9 @@ impl AppState {
                     Some(PendingQuickConfirm::MaterializeGraph) => self.handle_materialize_now(),
                     Some(PendingQuickConfirm::DocsCleanApply) => self.handle_docs_clean(true),
                     Some(PendingQuickConfirm::ToggleAutoSync) => self.handle_toggle_auto_sync(),
+                    Some(PendingQuickConfirm::ToggleEmbeddings) => {
+                        self.handle_toggle_semantic_triage()
+                    }
                     None => true,
                 }
             }
@@ -284,6 +293,27 @@ pub(super) fn quick_actions_for(mode: &AppMode, snapshot: &StatusSnapshot) -> Ve
             destructive: false,
             expensive: false,
             command_label: Some(format!("watch {watch_label} current")),
+        });
+    }
+    if snapshot.initialized {
+        let embeddings_enabled = snapshot
+            .config
+            .as_ref()
+            .map(|config| config.enable_semantic_triage)
+            .unwrap_or(false);
+        let label = if embeddings_enabled {
+            "disable embeddings"
+        } else {
+            "enable embeddings"
+        };
+        actions.push(QuickAction {
+            key: "T".to_string(),
+            label: label.to_string(),
+            disabled: false,
+            requires_confirm: true,
+            destructive: false,
+            expensive: !embeddings_enabled,
+            command_label: Some(label.to_string()),
         });
     }
     actions.extend([

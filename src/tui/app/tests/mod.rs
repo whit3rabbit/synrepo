@@ -5,6 +5,7 @@ mod explain_modal;
 mod explain_setup;
 mod materialize;
 mod picker;
+mod semantic;
 mod state;
 mod support;
 mod watch_keys;

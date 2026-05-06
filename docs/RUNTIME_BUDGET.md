@@ -105,9 +105,10 @@ The retention targets from the foundation design are:
 | `.synrepo/index/vectors/` | `2 GB` | Explain the semantic-triage need and verify rebuild or eviction behavior. |
 | `.synrepo/cache/llm-responses/` | `1 GB` | Explain why cached LLM responses are needed and verify pruning behavior. |
 
-Semantic triage remains opt-in. The embedding model default is
-`all-MiniLM-L6-v2` with `384` dimensions. A model or dimension change must
-explain rebuild impact and compatibility behavior.
+Semantic triage remains opt-in. The default provider is ONNX
+`all-MiniLM-L6-v2` with `384` dimensions; Ollama can be configured as a
+local-only provider. A provider, model, or dimension change must explain
+rebuild impact and compatibility behavior. See `docs/EMBEDDINGS.md`.
 
 ## Stale Response And Latency Guardrails
 

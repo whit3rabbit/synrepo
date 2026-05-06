@@ -14,7 +14,7 @@ document.
   graph/nodes.db                  canonical graph (SQLite)
   overlay/overlay.db              overlay store (SQLite, separate database)
   index/                          syntext-backed lexical index (binary)
-  embeddings/                     flat-vec embedding index (binary, optional)
+  index/vectors/                  flat-vec embedding index (binary, optional)
   cache/llm-responses/            disposable LLM response cache
   state/                          ephemeral JSON / JSONL state files
   config.toml                     operator config (see docs/CONFIG.md)

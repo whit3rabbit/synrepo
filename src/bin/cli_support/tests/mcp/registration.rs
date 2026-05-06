@@ -15,6 +15,10 @@ fn mcp_source_registers_context_pack_and_resources() {
     let tools_source = fs::read_to_string("src/bin/cli_support/commands/mcp/tools.rs")
         .expect("read MCP registration source");
     assert!(
+        tools_source.contains("name = \"synrepo_ask\""),
+        "MCP registration must include synrepo_ask"
+    );
+    assert!(
         tools_source.contains("name = \"synrepo_context_pack\""),
         "MCP registration must include synrepo_context_pack"
     );

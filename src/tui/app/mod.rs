@@ -60,6 +60,7 @@ enum PendingQuickConfirm {
     MaterializeGraph,
     DocsCleanApply,
     ToggleAutoSync,
+    ToggleEmbeddings,
 }
 
 /// Bounded in-memory event log, used by both poll and live modes. Capped at

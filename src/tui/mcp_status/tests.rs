@@ -140,3 +140,48 @@ fn display_rows_preformat_path_and_fixed_cells() {
     assert_eq!(rows[0].source_cell, " source:legacy config     ");
     assert_eq!(rows[0].path_cell, " .codex/config.toml");
 }
+
+#[test]
+fn summary_reports_absent_without_registered_rows() {
+    let rows = [McpStatusRow {
+        agent: "Claude Code".to_string(),
+        tool: "claude".to_string(),
+        status: McpStatus::Missing,
+        scope: McpScope::Missing,
+        source: "not detected".to_string(),
+        config_path: None,
+    }];
+
+    let summary = summarize_mcp_status_rows(&rows);
+
+    assert_eq!(summary.label, "absent");
+    assert_eq!(summary.severity, Severity::Stale);
+}
+
+#[test]
+fn summary_reports_registered_single_tool_or_count() {
+    let registered = McpStatusRow {
+        agent: "Codex CLI".to_string(),
+        tool: "codex".to_string(),
+        status: McpStatus::Registered,
+        scope: McpScope::Project,
+        source: "agent-config owned".to_string(),
+        config_path: Some(PathBuf::from(".codex/config.toml")),
+    };
+    let mut rows = vec![registered.clone()];
+
+    let single = summarize_mcp_status_rows(&rows);
+    assert_eq!(single.label, "registered (codex)");
+    assert_eq!(single.severity, Severity::Healthy);
+
+    rows.push(McpStatusRow {
+        agent: "Claude Code".to_string(),
+        tool: "claude".to_string(),
+        config_path: Some(PathBuf::from(".mcp.json")),
+        ..registered
+    });
+
+    let multiple = summarize_mcp_status_rows(&rows);
+    assert_eq!(multiple.label, "registered (2)");
+    assert_eq!(multiple.severity, Severity::Healthy);
+}

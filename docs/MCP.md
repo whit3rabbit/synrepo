@@ -27,14 +27,17 @@ Nudge output may include structured fast-path signals. `[SYNREPO_CONTEXT_FAST_PA
 The default path for codebase questions, file reviews, broad search, impact checks, and edits is deliberately small first:
 
 1. `synrepo_orient` before reading the repo cold. It is a routing summary, not the full dashboard.
-2. `synrepo_find` or `synrepo_search` to route a task. `synrepo_find` decomposes broad task language into deterministic lexical anchors before returning empty.
-3. `synrepo_explain` for bounded details on a file or symbol.
-4. `synrepo_minimum_context` when a focal target is known but surrounding risk is unclear.
-5. `synrepo_impact` or `synrepo_risks` before edits or risky file reviews.
-6. `synrepo_tests` before claiming done.
-7. `synrepo_changed` after edits to review changed context and validation commands.
+2. `synrepo_ask` for a bounded, cited task-context packet when the task is plain-language or workflow-shaped.
+3. `synrepo_find` or `synrepo_search` to drill down. `synrepo_find` decomposes broad task language into deterministic lexical anchors before returning empty.
+4. `synrepo_explain` for bounded details on a file or symbol.
+5. `synrepo_minimum_context` when a focal target is known but surrounding risk is unclear.
+6. `synrepo_impact` or `synrepo_risks` before edits or risky file reviews.
+7. `synrepo_tests` before claiming done.
+8. `synrepo_changed` after edits to review changed context and validation commands.
 
-Use `tiny` budgets to route, `normal` budgets to understand a neighborhood, and `deep` budgets only before implementation or when exact source details matter. Use `synrepo_readiness` for cheap operational health, `synrepo_task_route` for plain-language task routing, and `synrepo_overview` only when the full dashboard is useful. Use `synrepo_context_pack` when batching several read-only code artifacts or task-context pieces is cheaper than serial tool calls. Its `targets` parameter is an array of structured objects: `{ "kind": "file|symbol|directory|minimum_context|test_surface|call_path|search", "target": "...", "budget": "tiny|normal|deep" }`.
+Use `tiny` budgets to route, `normal` budgets to understand a neighborhood, and `deep` budgets only before implementation or when exact source details matter. Use `synrepo_readiness` for cheap operational health, `synrepo_task_route` for cheap route classification, and `synrepo_overview` only when the full dashboard is useful. Use `synrepo_context_pack` when batching several known read-only code artifacts or task-context pieces is cheaper than serial tool calls. Its `targets` parameter is an array of structured objects: `{ "kind": "file|symbol|directory|minimum_context|test_surface|call_path|search", "target": "...", "budget": "tiny|normal|deep" }`.
+
+`synrepo_ask` accepts `ask`, optional `scope: { paths, symbols, change_set }`, optional `shape.sections`, optional `ground: { mode|citations, include_spans, allow_overlay }`, and optional `budget: { max_tokens, max_files, max_symbols, freshness, tier }`. It deterministically infers a built-in recipe such as `review_module`, `trace_call`, `security_review`, `release_readiness`, `fix_test`, or `explain_symbol`, compiles it into existing context-pack targets, and returns `{ answer, cards_used, evidence, grounding, omitted_context_notes, next_best_tools, context_packet }`. It is read-only and does not let LLM output mutate graph facts.
 
 Use `synrepo_task_route` before ambiguous or hook-triggered work. It returns `{ intent, confidence, recommended_tools, budget_tier, llm_required, edit_candidate, signals, reason, routing_strategy, semantic_score? }` and records only aggregate counters. Deterministic safety guards always run first, including unsupported transforms and exact mechanical edit candidates. When `semantic-triage` is compiled, enabled, and local assets already load, routing uses semantic intent matching after those guards. Otherwise `routing_strategy` is `keyword_fallback` and `semantic_score` is absent. It does not read source, call an LLM, download a model, or apply edits. The CLI equivalent is `synrepo task-route <task> [--path <path>] [--json]`.
 
@@ -62,6 +65,7 @@ Workflow aliases:
 Task-first read tools:
 - `synrepo_overview`
 - `synrepo_readiness`
+- `synrepo_ask`
 - `synrepo_card`
 - `synrepo_context_pack`
 - `synrepo_task_route`
@@ -118,7 +122,7 @@ Use `synrepo_refactor_suggestions` when an agent or operator asks whether large 
 
 `synrepo_readiness` returns a compact preflight: `graph: "ready|missing|error"`, `overlay: "ready|missing|error"`, `index: "ready|stale|missing"`, `watch: "active|inactive|starting|stale|error"`, `reconcile: "fresh|stale|missing|error"`, and `edit_mode: { overlay_writes, source_edits }`. The `details.capabilities` array mirrors the readiness matrix used by `synrepo_overview`.
 
-`synrepo_card` accepts either `target` or `targets`. `targets` batches up to 10 files or symbols under one read epoch and returns per-target errors so one missing card does not fail the whole batch. Deep card batches are capped at 3 targets. A single card with `budget_tokens` retries smaller budget tiers before marking truncation; batch calls also apply the token cap to the whole response and report omitted targets. Path-like card targets can return a degraded file stub with existence and Git status when repository prep fails. Mutating tools never degrade. Cards remain the current serialized packet for compiled code artifacts and task contexts; this framing does not add a new MCP tool or schema.
+`synrepo_card` accepts either `target` or `targets`. `targets` batches up to 10 files or symbols under one read epoch and returns per-target errors so one missing card does not fail the whole batch. Deep card batches are capped at 3 targets. A single card with `budget_tokens` retries smaller budget tiers before marking truncation; batch calls also apply the token cap to the whole response and report omitted targets. Path-like card targets can return a degraded file stub with existence and Git status when repository prep fails. Mutating tools never degrade. Cards remain the current serialized packet for compiled code artifacts and task contexts; `synrepo_ask` is the high-level task-context front door over those existing packets.
 
 `synrepo_change_impact` accepts `direction: "inbound" | "outbound" | "both"`. The default is `inbound`, preserving the legacy dependent-file response. Outbound adds files reached by imports and calls from the target.
 

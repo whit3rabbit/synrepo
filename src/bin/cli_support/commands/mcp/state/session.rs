@@ -85,7 +85,10 @@ impl SessionState {
 fn rate_limit_for(tool: &str) -> (u32, Duration) {
     if tool == "synrepo_refresh_commentary" {
         (3, Duration::from_secs(60))
-    } else if tool == "synrepo_card" || tool == "synrepo_explain" || tool == "synrepo_context_pack"
+    } else if tool == "synrepo_card"
+        || tool == "synrepo_explain"
+        || tool == "synrepo_context_pack"
+        || tool == "synrepo_ask"
     {
         (10, Duration::from_secs(1))
     } else {

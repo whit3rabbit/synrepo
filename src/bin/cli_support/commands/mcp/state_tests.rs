@@ -250,6 +250,7 @@ fn default_tool_list_excludes_all_mutating_tools() {
         );
     }
     assert!(names.iter().any(|name| name == "synrepo_readiness"));
+    assert!(names.iter().any(|name| name == "synrepo_ask"));
     assert!(names.iter().any(|name| name == "synrepo_notes"));
     assert!(names.iter().any(|name| name == "synrepo_findings"));
     assert!(names.iter().any(|name| name == "synrepo_docs_search"));

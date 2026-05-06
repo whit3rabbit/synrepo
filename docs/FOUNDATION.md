@@ -258,7 +258,7 @@ Staleness is explicit. Every overlay entry carries the content hash of the sourc
 
 How LLM-proposed cross-links get from "a candidate pair looks promising" to "an overlay entry with verified citations." Four stages.
 
-*v1 implementation.* Stages 1 through 4 below are fully shipped. Stage 1 utilizes a deterministic name-match prefilter by default, with an opt-in **semantic triage (`semantic-triage-v1`)** feature backed by local ONNX models to catch relationship candidates that lack lexical overlap.
+*v1 implementation.* Stages 1 through 4 below are fully shipped. Stage 1 utilizes a deterministic name-match prefilter by default, with an opt-in **semantic triage (`semantic-triage-v1`)** feature backed by local embedding providers to catch relationship candidates that lack lexical overlap.
 
 ### Stage 1 — Hybrid candidate generation
 
@@ -270,7 +270,7 @@ score = 0.5 * embedding_cosine
       + 0.2 * 1/(1 + directory_distance)
 ```
 
-The default embedding model is `all-MiniLM-L6-v2` via the `ort` ONNX runtime crate — ~90 MB on disk, CPU-fast, 384-dimensional, fully local. Vectors are keyed by `(content_hash, model_id)` and cached in `.synrepo/embeddings/`. This semantic prefilter acts as a safety net for candidate pairs that fail the deterministic prefilter.
+The default embedding model is `all-MiniLM-L6-v2` via the `ort` ONNX runtime crate, CPU-fast and 384-dimensional after its Hugging Face-hosted ONNX artifacts are cached locally. Ollama can also provide local `/api/embed` vectors. Vectors are keyed by `(content_hash, provider, model_id)` and persisted under `.synrepo/index/vectors/`. This semantic prefilter acts as a safety net for candidate pairs that fail the deterministic prefilter.
 
 For each source artifact, retrieve top 50 by raw embedding similarity, re-rank by the hybrid score, take top K (default 20). None of these land in the graph; they are candidates for the LLM to consider.
 
@@ -496,7 +496,7 @@ Caveats: not every grammar crate exposes the constants uniformly (some older or 
     nodes.db                    # nodes, edges, provenance in one SQLite file
   overlay/                      # machine-authored content, physically separate
     overlay.db                  # commentary, proposed links, findings in one SQLite file
-  embeddings/                   # reserved for Phase 5 embedding cache (empty today)
+  index/vectors/                # optional flat-vector semantic index
   cache/                        # LLM response cache directory (empty today)
   state/
     reconcile-state.json        # last reconcile outcome, timestamp, counts
@@ -509,7 +509,7 @@ Caveats: not every grammar crate exposes the constants uniformly (some older or 
 
 *Improvement vs the split-store v4 sketch.* Nodes, edges, and provenance live in a single `nodes.db`; commentary, cross-links, and findings live in a single `overlay.db`. Rationale: multi-table reads inside one SQLite file open under a single `BEGIN DEFERRED` snapshot, which is how the reader-snapshot invariant (invariant 8 in `CLAUDE.md`) can hold. Splitting would force either cross-DB attach contortions or coordinated per-store snapshots. The overhead of one extra file isn't worth fracturing atomicity. The graph and overlay stores remain physically separated from each other; the contamination invariant is untouched.
 
-*Laziness drift to call out.* The `cache/` and `embeddings/` directories are created but unused in the default install. They are not placeholders for imagined features; they are the hook points for Phase 5 embeddings and the Phase 4 LLM response cache respectively. Either wire them to the existing opt-in Claude generators or drop them when Phase 5 lands; do not let them accumulate as unexplained empty directories.
+*Laziness drift to call out.* The `cache/` directory is created but unused in the default install as the hook point for the Phase 4 LLM response cache. Optional embeddings now materialize under `index/vectors/` only when semantic triage is enabled and reconcile builds the vector index.
 
 The graph store is canonical. The overlay is physically separate. Nothing in `.synrepo/` is committed except `config.toml` and `.gitignore`.
 
@@ -671,7 +671,7 @@ Subsystem benchmarks lie. The validation suite must include ugly repos: huge gen
 | --- | --- | --- |
 | `index/` | Compacted on full reindex | Monthly default |
 | `graph/` | Permanent for current schema | Migration only |
-| `embeddings/` | LRU at 2 GB cap | Size threshold |
+| `index/vectors/` | Rebuilt on reconcile when embeddings are enabled | Config or source drift |
 | `cache/llm-responses/` | LRU at 1 GB cap | Size threshold |
 | `overlay/commentary/` | Keep current; history 30 days | Time |
 | `overlay/cross_links.db` | Expire unpromoted low-confidence at 90 days | Time |
@@ -696,7 +696,7 @@ The key principle: agent usefulness arrives at phase 2 with zero LLM involvement
 
 **Phase 4 — card commentary tier (shipped).** LLM explain is trait-shaped (`CommentaryGenerator`), defaults to `NoOpGenerator`, opts into `ClaudeCommentaryGenerator` when `SYNREPO_ANTHROPIC_API_KEY` is set. Commentary lands in overlay, never in graph. Freshness labels (fresh / stale / missing / unsupported / invalid / budget_withheld) are enforced at the card surface.
 
-**Phase 5 — overlay cross-linking (shipped).** Shipped: graph-distance plus prose-identifier candidate triage, two-stage Claude-backed LLM proposal, normalized fuzzy verification (3-stage cascade), confidence tiers, review queue, card surfacing at Deep tier, curated-mode promotion that creates `Governs` edges with `Epistemic::HumanDeclared`. The embedding model (`all-MiniLM-L6-v2` via `ort`) is fully integrated for semantic triage.
+**Phase 5 — overlay cross-linking (shipped).** Shipped: graph-distance plus prose-identifier candidate triage, two-stage Claude-backed LLM proposal, normalized fuzzy verification (3-stage cascade), confidence tiers, review queue, card surfacing at Deep tier, curated-mode promotion that creates `Governs` edges with `Epistemic::HumanDeclared`. Optional embeddings are fully integrated for semantic triage and hybrid search when the `semantic-triage` feature and repo config enable them.
 
 **Phase 6 — polish (shipped).** Shipped: `synrepo export`, `synrepo upgrade`, `synrepo status`, `synrepo agent-setup` across agent targets, and dedicated `synrepo compact` (with retention policies and repair-log rotation).
 

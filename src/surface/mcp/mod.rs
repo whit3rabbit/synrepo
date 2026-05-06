@@ -19,6 +19,8 @@ use crate::structure::graph::snapshot;
 use crate::surface::card::compiler::GraphCardCompiler;
 
 #[doc(hidden)]
+pub mod ask;
+#[doc(hidden)]
 pub mod audit;
 mod cache;
 #[doc(hidden)]

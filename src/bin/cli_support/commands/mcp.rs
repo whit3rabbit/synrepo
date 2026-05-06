@@ -41,7 +41,7 @@ impl ServerHandler for SynrepoServer {
         .with_instructions(
             "synrepo provides structured code-intelligence context for codebase questions, file reviews, search routing, impact checks, and edits. \
              Required workflow: synrepo_orient returns a small routing summary; use synrepo_overview only when the full dashboard is needed. \
-             Use synrepo_readiness for cheap health checks and synrepo_task_route for plain-language task routing. \
+             Use synrepo_readiness for cheap health checks, synrepo_ask for one bounded cited task-context packet, and synrepo_task_route when only route classification is needed. \
              Then use synrepo_find to route a task, \
              synrepo_explain for bounded details, synrepo_impact (or its shorthand synrepo_risks) before edits, \
              synrepo_tests before claiming done, and synrepo_changed after edits. \

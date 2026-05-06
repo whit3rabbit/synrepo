@@ -8,7 +8,10 @@ use crate::surface::refactor_suggestions::{
     collect_refactor_suggestions_for_repo, RefactorSuggestionOptions,
 };
 use crate::surface::status_snapshot::{build_status_snapshot, StatusOptions};
-use crate::tui::mcp_status::{build_mcp_display_rows, build_mcp_status_rows, McpDisplayRow};
+use crate::tui::mcp_status::{
+    build_mcp_display_rows, build_mcp_status_rows, summarize_mcp_status_rows, McpDisplayRow,
+    McpStatusRow,
+};
 use crate::tui::probe::{build_header_vm, display_repo_path, HeaderVm};
 use crate::tui::widgets::LogEntry;
 
@@ -18,17 +21,22 @@ pub(super) fn build_initial_header_vm(
     snapshot: &crate::surface::status_snapshot::StatusSnapshot,
     integration: &crate::bootstrap::runtime_probe::AgentIntegration,
     auto_sync_enabled: bool,
+    mcp_status_rows: &[McpStatusRow],
 ) -> HeaderVm {
-    build_header_vm(
+    let mut header = build_header_vm(
         repo_display(repo_root, project_name),
         snapshot,
         integration,
         Some(auto_sync_enabled),
-    )
+    );
+    let summary = summarize_mcp_status_rows(mcp_status_rows);
+    header.mcp_label = summary.label;
+    header.mcp_severity = summary.severity;
+    header
 }
 
-pub(super) fn build_initial_mcp_display_rows(repo_root: &Path) -> Vec<McpDisplayRow> {
-    build_mcp_display_rows(&build_mcp_status_rows(repo_root))
+pub(super) fn build_initial_mcp_display_rows(rows: &[McpStatusRow]) -> Vec<McpDisplayRow> {
+    build_mcp_display_rows(rows)
 }
 
 /// Compose the header repo label as `"<project>  <path>"` when a project name
@@ -45,18 +53,16 @@ impl AppState {
     /// Rebuild header labels after snapshot, project identity, or auto-sync
     /// state changes. The draw loop only reads this cached view model.
     pub(crate) fn rebuild_header_vm(&mut self) {
+        let mcp_status_rows = build_mcp_status_rows(&self.repo_root);
         self.header_vm = build_initial_header_vm(
             &self.repo_root,
             self.project_name.as_deref(),
             &self.snapshot,
             &self.integration,
             self.auto_sync_enabled,
+            &mcp_status_rows,
         );
-    }
-
-    /// Refresh the preformatted MCP display rows from a fresh status probe.
-    pub(crate) fn refresh_mcp_rows(&mut self) {
-        self.mcp_display_rows = build_initial_mcp_display_rows(&self.repo_root);
+        self.mcp_display_rows = build_mcp_display_rows(&mcp_status_rows);
     }
 
     /// Load suggestion rows only when the tab needs them.
@@ -100,7 +106,6 @@ impl AppState {
             },
         );
         self.quick_actions = quick_actions_for(&self.mode, &self.snapshot);
-        self.refresh_mcp_rows();
         self.rebuild_header_vm();
         if matches!(self.active_tab, ActiveTab::Explain) {
             self.refresh_explain_preview(false);

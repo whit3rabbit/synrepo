@@ -33,6 +33,10 @@ fn mcp_mutating_tools_are_hidden_by_default() {
         "default MCP must not advertise apply edit tool"
     );
     assert!(
+        tools.iter().any(|tool| tool == "synrepo_ask"),
+        "read-first ask tool must remain available"
+    );
+    assert!(
         tools.iter().any(|tool| tool == "synrepo_context_pack"),
         "read-first tools must remain available"
     );

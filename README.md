@@ -89,6 +89,12 @@ synrepo project add .
 
 Within one repo, use `docs/CONFIG.md` to tune discovery. The relevant defaults are `include_worktrees = true`, `include_submodules = false`, and `roots = ["."]`.
 
+## Optional Embeddings
+
+Embeddings are off by default. When synrepo is built with `semantic-triage`, you can enable them per repo from the dashboard Actions tab with `T`, then run `R` or `synrepo reconcile` to build the vector index.
+
+Use `synrepo bench search --tasks 'benches/tasks/*.json' --mode both --json` to compare lexical and hybrid search before keeping embeddings on. On this repo, local Ollama `all-minilm` improved the four-fixture hit@5 baseline from `0.25` to `1.00`, with total search latency rising from `49 ms` to `690 ms`. See [docs/EMBEDDINGS.md](docs/EMBEDDINGS.md) for ONNX, Ollama, Hugging Face-hosted model artifacts, and benchmark guidance.
+
 ## MCP And Agent Setup
 
 `synrepo mcp` is a stdio MCP server. It serves repository context, not background maintenance.
@@ -105,21 +111,22 @@ MCP does not start `synrepo watch`, scan every managed repo, run reconcile, or s
 The default agent workflow is:
 
 1. `synrepo_orient`
-2. `synrepo_find`
-3. `synrepo_explain`
-4. `synrepo_impact` or `synrepo_risks`
-5. `synrepo_tests`
-6. `synrepo_changed`
+2. `synrepo_ask` for one bounded, cited task-context packet
+3. `synrepo_find` or exact `synrepo_search` for drill-down
+4. `synrepo_explain`
+5. `synrepo_impact` or `synrepo_risks`
+6. `synrepo_tests`
+7. `synrepo_changed`
 
-Use `synrepo_minimum_context` when a focal target is known but the surrounding neighborhood is still unclear. Use `synrepo_context_pack` when several read-only code artifacts or task-context pieces are cheaper in one response. The full MCP tool surface, resources, overlay tools, and edit-gated behavior live in [docs/MCP.md](docs/MCP.md).
+Use `synrepo_minimum_context` when a focal target is known but the surrounding neighborhood is still unclear. Use `synrepo_context_pack` when several known read-only code artifacts or task-context pieces are cheaper in one response. The full MCP tool surface, resources, overlay tools, and edit-gated behavior live in [docs/MCP.md](docs/MCP.md).
 
 ## Daily Workflow
 
 1. Run `synrepo` or `synrepo dashboard` to inspect the current repo state.
 2. Keep `synrepo watch --daemon` running while you work if you want automatic refresh.
 3. Use `synrepo status` when you want a quick health check.
-4. Let the agent query `synrepo_orient`, `synrepo_find`, `synrepo_explain`, `synrepo_impact` or `synrepo_risks`, `synrepo_tests`, and `synrepo_changed` instead of opening large files first.
-5. Use `synrepo_context_pack` when the agent needs several read-only code artifacts or task-context pieces in one token-accounted response.
+4. Let the agent query `synrepo_orient`, `synrepo_ask`, `synrepo_find`, `synrepo_explain`, `synrepo_impact` or `synrepo_risks`, `synrepo_tests`, and `synrepo_changed` instead of opening large files first.
+5. Use `synrepo_context_pack` when the agent needs several known read-only code artifacts or task-context pieces in one token-accounted response.
 6. Use `synrepo explain <target> --budget 1000`, `synrepo impact <target> --budget 2000`, or `synrepo tests <path> --budget 1500` for the same flow outside MCP.
 7. Use the dashboard Explain tab if you want fresh commentary on the parts of the repo that just moved.
 8. Use `synrepo check` and `synrepo sync` when health or repair surfaces need manual attention.

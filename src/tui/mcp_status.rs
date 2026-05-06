@@ -58,6 +58,15 @@ pub struct McpDisplayRow {
     pub path_cell: String,
 }
 
+/// Compact MCP status used by the dashboard header.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct McpStatusSummary {
+    /// Header label, excluding the `mcp:` prefix.
+    pub label: String,
+    /// Header severity.
+    pub severity: Severity,
+}
+
 impl McpDisplayRow {
     fn from_status_row(row: &McpStatusRow) -> Self {
         let path = row
@@ -79,6 +88,29 @@ impl McpDisplayRow {
 /// Preformat MCP rows once per status refresh instead of on every frame.
 pub fn build_mcp_display_rows(rows: &[McpStatusRow]) -> Vec<McpDisplayRow> {
     rows.iter().map(McpDisplayRow::from_status_row).collect()
+}
+
+/// Summarize detailed MCP rows for the compact dashboard header.
+pub fn summarize_mcp_status_rows(rows: &[McpStatusRow]) -> McpStatusSummary {
+    let registered_count = rows
+        .iter()
+        .filter(|row| row.status == McpStatus::Registered)
+        .count();
+    let label = match registered_count {
+        0 => "absent".to_string(),
+        1 => rows
+            .iter()
+            .find(|row| row.status == McpStatus::Registered)
+            .map(|row| format!("registered ({})", row.tool))
+            .unwrap_or_else(|| "registered".to_string()),
+        count => format!("registered ({count})"),
+    };
+    let severity = if registered_count > 0 {
+        Severity::Healthy
+    } else {
+        Severity::Stale
+    };
+    McpStatusSummary { label, severity }
 }
 
 /// MCP registration status.

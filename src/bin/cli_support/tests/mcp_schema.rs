@@ -17,6 +17,29 @@ fn context_pack_tool_description_names_structured_targets() {
 }
 
 #[test]
+fn ask_params_schema_exposes_task_context_controls() {
+    let schema = schemars::schema_for!(synrepo::surface::mcp::ask::AskParams);
+    let schema_json = serde_json::to_value(schema).expect("schema serializes");
+    let serialized = serde_json::to_string(&schema_json).unwrap();
+
+    for field in [
+        "\"ask\"",
+        "\"scope\"",
+        "\"paths\"",
+        "\"symbols\"",
+        "\"shape\"",
+        "\"ground\"",
+        "\"budget\"",
+        "\"max_tokens\"",
+    ] {
+        assert!(
+            serialized.contains(field),
+            "ask schema must expose {field}: {schema_json}"
+        );
+    }
+}
+
+#[test]
 fn context_pack_params_schema_uses_target_objects() {
     let source =
         fs::read_to_string("src/surface/mcp/context_pack.rs").expect("read context pack source");

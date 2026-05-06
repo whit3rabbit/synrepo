@@ -16,6 +16,7 @@ use crate::pipeline::watch::{watch_service_status, WatchEvent, WatchServiceStatu
 use crate::surface::status_snapshot::{build_status_snapshot, StatusOptions};
 use crate::tui::actions::{materialize_now, now_rfc3339, ActionContext};
 use crate::tui::materializer::{MaterializeOutcome, MaterializeState, MaterializerSupervisor};
+use crate::tui::mcp_status::build_mcp_status_rows;
 use crate::tui::probe::Severity;
 use crate::tui::theme::Theme;
 use crate::tui::widgets::LogEntry;
@@ -92,9 +93,16 @@ impl AppState {
         let auto_sync_enabled = Config::load(repo_root)
             .map(|c| c.auto_sync_enabled)
             .unwrap_or(true);
-        let header_vm =
-            build_initial_header_vm(repo_root, None, &snapshot, &integration, auto_sync_enabled);
-        let mcp_display_rows = build_initial_mcp_display_rows(repo_root);
+        let mcp_status_rows = build_mcp_status_rows(repo_root);
+        let header_vm = build_initial_header_vm(
+            repo_root,
+            None,
+            &snapshot,
+            &integration,
+            auto_sync_enabled,
+            &mcp_status_rows,
+        );
+        let mcp_display_rows = build_initial_mcp_display_rows(&mcp_status_rows);
         let mut log = EventLog::default();
         for entry in startup_logs {
             log.push(entry);
