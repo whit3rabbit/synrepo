@@ -290,7 +290,11 @@ fn collect_artifact_targets(artifact: &Value, paths: &mut Vec<String>, symbols: 
     if let Some(target) = artifact.get("target").and_then(Value::as_str) {
         if target_kind == Some("symbol") || artifact_type == Some("symbol") {
             symbols.push(target.to_string());
-        } else if target_kind != Some("search") && artifact_type != Some("search") {
+        } else if matches!(target_kind, Some("file" | "directory"))
+            || (target_kind != Some("search")
+                && artifact_type != Some("search")
+                && is_path_like(target))
+        {
             paths.push(target.to_string());
         }
     }
@@ -327,9 +331,13 @@ fn collect_search_targets(content: &Value, paths: &mut Vec<String>) {
 }
 
 fn push_path_like(paths: &mut Vec<String>, value: &str) {
-    if value.contains('/') || value.contains('.') {
+    if is_path_like(value) {
         paths.push(value.to_string());
     }
+}
+
+fn is_path_like(value: &str) -> bool {
+    value.contains('/') || value.contains('.')
 }
 
 fn citation_coverage(packet: &Value, evidence_count: usize, fixture: &BenchTask) -> f64 {
