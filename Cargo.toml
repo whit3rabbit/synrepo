@@ -60,7 +60,7 @@ fs2 = "0.4"                 # cross-platform advisory file locking (flock / Lock
 interprocess = "2"          # local_socket: Unix socket on Unix, named pipe on Windows. Blocking API only.
 
 # --- Git integration ---
-gix = { version = "0.82", default-features = false, features = ["sha1", "max-performance-safe", "revision", "blob-diff"] }
+gix = { version = "0.83", default-features = false, features = ["sha1", "max-performance-safe", "revision", "blob-diff"] }
 
 # --- Hashing and encoding ---
 blake3 = "1"                # fast content hashing for file/symbol identity
