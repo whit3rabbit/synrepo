@@ -1,13 +1,23 @@
 //! Configuration loading. Reads `.synrepo/config.toml`.
 
 mod explain;
+mod io;
 mod mode;
+mod semantic;
 mod thresholds;
 
 pub use explain::ExplainConfig;
+pub use io::home_dir;
 pub use mode::Mode;
+pub use semantic::SemanticEmbeddingProvider;
 pub use thresholds::CrossLinkConfidenceThresholds;
 
+use io::reject_legacy_explain_block;
+use semantic::{
+    default_embedding_dim, default_semantic_embedding_batch_size,
+    default_semantic_embedding_provider, default_semantic_model, default_semantic_ollama_endpoint,
+    default_semantic_similarity_threshold,
+};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -99,10 +109,14 @@ pub struct Config {
     #[serde(default)]
     pub enable_semantic_triage: bool,
 
+    /// Embedding backend. `onnx` preserves the original local runtime;
+    /// `ollama` calls a local Ollama `/api/embed` endpoint.
+    #[serde(default = "default_semantic_embedding_provider")]
+    pub semantic_embedding_provider: SemanticEmbeddingProvider,
+
     /// The embedding model to use for semantic triage. Can be a built-in
     /// model name (all-MiniLM-L6-v2, all-MiniLM-L12-v2, all-mpnet-base-v2),
-    /// a Hugging Face model ID (e.g., intfloat/e5-base-v2), or an
-    /// absolute path to a local `.onnx` file.
+    /// a Hugging Face model ID, a local `.onnx` path, or an Ollama model.
     #[serde(default = "default_semantic_model")]
     pub semantic_model: String,
 
@@ -116,6 +130,15 @@ pub struct Config {
     /// this threshold are forwarded to LLM evidence extraction.
     #[serde(default = "default_semantic_similarity_threshold")]
     pub semantic_similarity_threshold: f64,
+
+    /// Base URL for the local Ollama server when `semantic_embedding_provider`
+    /// is `ollama`.
+    #[serde(default = "default_semantic_ollama_endpoint")]
+    pub semantic_ollama_endpoint: String,
+
+    /// Number of texts sent per embedding request.
+    #[serde(default = "default_semantic_embedding_batch_size")]
+    pub semantic_embedding_batch_size: usize,
 
     /// LLM explain configuration. Off by default; opting in is required
     /// even when provider API keys are present in the env. See
@@ -207,18 +230,6 @@ fn default_retain_retired_revisions() -> u64 {
     10
 }
 
-fn default_semantic_model() -> String {
-    "all-MiniLM-L6-v2".to_string()
-}
-
-fn default_embedding_dim() -> u16 {
-    384
-}
-
-fn default_semantic_similarity_threshold() -> f64 {
-    0.6
-}
-
 fn default_auto_sync_enabled() -> bool {
     true
 }
@@ -249,9 +260,12 @@ impl Default for Config {
             export_dir: default_export_dir(),
             retain_retired_revisions: default_retain_retired_revisions(),
             enable_semantic_triage: false,
+            semantic_embedding_provider: default_semantic_embedding_provider(),
             semantic_model: default_semantic_model(),
             embedding_dim: default_embedding_dim(),
             semantic_similarity_threshold: default_semantic_similarity_threshold(),
+            semantic_ollama_endpoint: default_semantic_ollama_endpoint(),
+            semantic_embedding_batch_size: default_semantic_embedding_batch_size(),
             explain: ExplainConfig::default(),
             auto_sync_enabled: default_auto_sync_enabled(),
             reconcile_keepalive_seconds: default_reconcile_keepalive_seconds(),
@@ -349,11 +363,20 @@ impl Config {
         if other.enable_semantic_triage {
             self.enable_semantic_triage = true;
         }
+        if other.semantic_embedding_provider != default_semantic_embedding_provider() {
+            self.semantic_embedding_provider = other.semantic_embedding_provider;
+        }
         if other.semantic_model != default_semantic_model() {
             self.semantic_model = other.semantic_model;
         }
         if other.embedding_dim != default_embedding_dim() {
             self.embedding_dim = other.embedding_dim;
+        }
+        if other.semantic_ollama_endpoint != default_semantic_ollama_endpoint() {
+            self.semantic_ollama_endpoint = other.semantic_ollama_endpoint;
+        }
+        if other.semantic_embedding_batch_size != default_semantic_embedding_batch_size() {
+            self.semantic_embedding_batch_size = other.semantic_embedding_batch_size;
         }
         self.cross_link_confidence_thresholds = other.cross_link_confidence_thresholds;
 
@@ -363,37 +386,6 @@ impl Config {
         if other.reconcile_keepalive_seconds != default_reconcile_keepalive_seconds() {
             self.reconcile_keepalive_seconds = other.reconcile_keepalive_seconds;
         }
-    }
-}
-
-fn reject_legacy_explain_block(text: &str, path: &Path) -> crate::Result<()> {
-    let Ok(value) = toml::from_str::<toml::Value>(text) else {
-        return Ok(());
-    };
-    if value.get("synthesis").is_some() {
-        return Err(crate::Error::Config(format!(
-            "{} uses legacy [synthesis]; rename it to [explain]",
-            path.display()
-        )));
-    }
-    Ok(())
-}
-
-/// Best-effort home-directory resolver: `$HOME` on Unix, `%USERPROFILE%` on
-/// Windows, `None` on bare/unsupported targets. Callers should treat `None` as
-/// "no per-user state available" and degrade gracefully.
-pub fn home_dir() -> Option<PathBuf> {
-    #[cfg(unix)]
-    {
-        std::env::var_os("HOME").map(PathBuf::from)
-    }
-    #[cfg(windows)]
-    {
-        std::env::var_os("USERPROFILE").map(PathBuf::from)
-    }
-    #[cfg(not(any(unix, windows)))]
-    {
-        None
     }
 }
 

@@ -70,7 +70,7 @@ impl FlatVecIndex {
         let vectors = session.embed(&texts)?;
 
         // Convert to flat storage
-        let dim = model.embedding_dim as usize;
+        let dim = model.embedding_dim() as usize;
         let mut flat_vectors = Vec::with_capacity(chunks.len() * dim);
         for v in vectors {
             flat_vectors.extend(v);
@@ -87,10 +87,10 @@ impl FlatVecIndex {
             .collect();
 
         Ok(Self {
-            dim: model.embedding_dim,
-            model_name: model.model_name,
+            dim: model.embedding_dim(),
+            model_name: model.model_name().to_string(),
             format_version: INDEX_FORMAT_VERSION,
-            normalized: model.normalize,
+            normalized: model.normalize(),
             chunks: chunk_metas,
             vectors: flat_vectors,
             session: Some(session),

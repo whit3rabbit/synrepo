@@ -8,8 +8,9 @@
 use crate::core::ids::{ConceptNodeId, FileNodeId, SymbolNodeId};
 use crate::structure::graph::{with_graph_read_snapshot, GraphReader, GraphStore};
 
-/// Maximum tokens for prose concept text.
-const MAX_PROSE_TOKENS: usize = 512;
+/// Maximum text length per embedding chunk. Local embedding models have small
+/// context windows, and Ollama rejects oversized inputs instead of truncating.
+const MAX_CHUNK_CHARS: usize = 512;
 
 /// A chunk of text to be embedded.
 #[derive(Clone, Debug)]
@@ -111,9 +112,7 @@ fn extract_chunks_inner(graph: &dyn GraphReader) -> crate::Result<Vec<EmbeddingC
             if let Some(summary) = &concept.summary {
                 text_parts.push(summary.clone());
             }
-            // Truncate to MAX_PROSE_TOKENS (approximate by characters / 4)
-            let max_chars = MAX_PROSE_TOKENS * 4;
-            let text = truncate_text(&text_parts.join(" "), max_chars);
+            let text = truncate_text(&text_parts.join(" "), MAX_CHUNK_CHARS);
 
             if !text.is_empty() {
                 chunks.push(EmbeddingChunk {
@@ -168,7 +167,7 @@ fn symbol_chunk_text(
     if let Some(doc_comment) = doc_comment.filter(|s| !s.trim().is_empty()) {
         parts.push(format!("docs: {}", doc_comment.trim()));
     }
-    parts.join("\n")
+    truncate_text(&parts.join("\n"), MAX_CHUNK_CHARS)
 }
 
 #[cfg(test)]

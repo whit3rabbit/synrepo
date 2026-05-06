@@ -17,7 +17,42 @@ pub enum PoolingStrategy {
 
 /// Result of resolving an embedding model.
 #[derive(Clone, Debug)]
-pub struct ModelResolution {
+pub enum ModelResolution {
+    /// ONNX Runtime-backed model bundle.
+    Onnx(OnnxModelResolution),
+    /// Ollama `/api/embed` local endpoint.
+    Ollama(OllamaModelResolution),
+}
+
+impl ModelResolution {
+    /// User-facing model name.
+    pub fn model_name(&self) -> &str {
+        match self {
+            Self::Onnx(res) => &res.model_name,
+            Self::Ollama(res) => &res.model_name,
+        }
+    }
+
+    /// Embedding vector dimension.
+    pub fn embedding_dim(&self) -> u16 {
+        match self {
+            Self::Onnx(res) => res.embedding_dim,
+            Self::Ollama(res) => res.embedding_dim,
+        }
+    }
+
+    /// Whether returned vectors should be treated as normalized.
+    pub fn normalize(&self) -> bool {
+        match self {
+            Self::Onnx(res) => res.normalize,
+            Self::Ollama(res) => res.normalize,
+        }
+    }
+}
+
+/// Resolved ONNX model bundle.
+#[derive(Clone, Debug)]
+pub struct OnnxModelResolution {
     /// Path to the ONNX model file.
     pub model_path: PathBuf,
     /// Path to the tokenizer.json file.
@@ -32,6 +67,21 @@ pub struct ModelResolution {
     pub normalize: bool,
     /// Whether the model was downloaded (vs. already present).
     pub downloaded: bool,
+}
+
+/// Resolved Ollama embedding endpoint.
+#[derive(Clone, Debug)]
+pub struct OllamaModelResolution {
+    /// Base endpoint or full `/api/embed` URL.
+    pub endpoint: String,
+    /// Ollama model name.
+    pub model_name: String,
+    /// Expected output dimension.
+    pub embedding_dim: u16,
+    /// Whether the session should normalize output vectors.
+    pub normalize: bool,
+    /// Number of texts per request.
+    pub batch_size: usize,
 }
 
 /// Get the global model cache directory (~/.cache/synrepo/models).

@@ -67,8 +67,7 @@ pub fn load_embedding_index(
     // Resolve the model from global cache without downloading. Query-time
     // semantic availability must stay local-only.
     let resolver = ModelResolver::new();
-    let model_res =
-        resolver.resolve_existing(&config.semantic_model, synrepo_dir, config.embedding_dim)?;
+    let model_res = resolver.resolve_existing(config, synrepo_dir)?;
 
     // Load the index with the model session restored
     let index =
@@ -90,7 +89,7 @@ fn build_index_with_config<G: GraphStore>(
 
     // Resolve and load the model (shared global cache)
     let resolver = ModelResolver::new();
-    let model = resolver.resolve(&config.semantic_model, synrepo_dir, config.embedding_dim)?;
+    let model = resolver.resolve(config, synrepo_dir)?;
 
     // Extract chunks from the graph
     let chunks = chunk::extract_chunks(graph)?;

@@ -1,19 +1,65 @@
-//! ONNX inference session wrapper with tokenizer support.
+//! Embedding session wrapper with provider-specific backends.
 
 use parking_lot::Mutex;
 
 use crate::Result;
 
-use super::{ModelResolution, PoolingStrategy};
+mod ollama;
+
+use super::{ModelResolution, OnnxModelResolution, PoolingStrategy};
+use ollama::OllamaEmbeddingSession;
 
 #[cfg(feature = "semantic-triage")]
 use ndarray::Array2;
 #[cfg(feature = "semantic-triage")]
 use ort::value::Value;
 
-/// ONNX inference session wrapper with tokenizer support.
+/// Embedding session wrapper.
 #[derive(Debug)]
 pub struct EmbeddingSession {
+    backend: EmbeddingSessionBackend,
+}
+
+#[derive(Debug)]
+enum EmbeddingSessionBackend {
+    Onnx(OnnxEmbeddingSession),
+    Ollama(OllamaEmbeddingSession),
+}
+
+impl EmbeddingSession {
+    /// Create a new session from a model resolution.
+    pub fn new_from_resolution(res: &ModelResolution) -> Result<Self> {
+        let backend = match res {
+            ModelResolution::Onnx(onnx) => {
+                EmbeddingSessionBackend::Onnx(OnnxEmbeddingSession::new(onnx)?)
+            }
+            ModelResolution::Ollama(ollama) => {
+                EmbeddingSessionBackend::Ollama(OllamaEmbeddingSession::new(ollama)?)
+            }
+        };
+        Ok(Self { backend })
+    }
+
+    /// Run inference on a batch of texts.
+    pub fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
+        match &self.backend {
+            EmbeddingSessionBackend::Onnx(session) => session.embed(texts),
+            EmbeddingSessionBackend::Ollama(session) => session.embed(texts),
+        }
+    }
+
+    /// Get the embedding dimension.
+    pub fn embedding_dim(&self) -> u16 {
+        match &self.backend {
+            EmbeddingSessionBackend::Onnx(session) => session.embedding_dim(),
+            EmbeddingSessionBackend::Ollama(session) => session.embedding_dim(),
+        }
+    }
+}
+
+/// ONNX inference session with tokenizer support.
+#[derive(Debug)]
+struct OnnxEmbeddingSession {
     dim: u16,
     pooling: PoolingStrategy,
     normalize: bool,
@@ -21,9 +67,8 @@ pub struct EmbeddingSession {
     session: Mutex<ort::session::Session>,
 }
 
-impl EmbeddingSession {
-    /// Create a new session from a model resolution.
-    pub fn new_from_resolution(res: &ModelResolution) -> Result<Self> {
+impl OnnxEmbeddingSession {
+    fn new(res: &OnnxModelResolution) -> Result<Self> {
         let tokenizer = tokenizers::Tokenizer::from_file(&res.tokenizer_path)
             .map_err(|e| crate::Error::Other(anyhow::anyhow!("Failed to load tokenizer: {}", e)))?;
 
@@ -41,8 +86,7 @@ impl EmbeddingSession {
         })
     }
 
-    /// Run inference on a batch of texts.
-    pub fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
+    fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
         if texts.is_empty() {
             return Ok(Vec::new());
         }
@@ -112,8 +156,7 @@ impl EmbeddingSession {
         Ok(results)
     }
 
-    /// Get the embedding dimension.
-    pub fn embedding_dim(&self) -> u16 {
+    fn embedding_dim(&self) -> u16 {
         self.dim
     }
 }

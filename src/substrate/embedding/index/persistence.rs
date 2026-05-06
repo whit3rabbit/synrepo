@@ -17,7 +17,10 @@ use super::{ChunkMeta, FlatVecIndex};
 ///
 /// Bumped 3 → 4 when symbol chunk text began including path, signature, and
 /// doc comments.
-pub(super) const INDEX_FORMAT_VERSION: u16 = 4;
+///
+/// Bumped 4 → 5 when symbol chunk text was capped to the embedding context
+/// budget used by local providers such as Ollama.
+pub(super) const INDEX_FORMAT_VERSION: u16 = 5;
 
 impl FlatVecIndex {
     /// Save the index to disk.

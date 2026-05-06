@@ -33,37 +33,23 @@
 //! changes. Documentation numeric claims must cite a benchmark report,
 //! including reduction ratio, target hit/miss, stale rate, and latency.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Instant;
 
-use globset::{Glob, GlobSetBuilder};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use synrepo::config::Config;
 use synrepo::surface::card::{Budget, CardCompiler};
-use walkdir::WalkDir;
 
 use super::super::mcp_runtime::prepare_state;
+use super::bench_shared::{
+    classify_targets, expand_task_glob, validate_fixture, BenchTarget, BenchTask, KNOWN_CATEGORIES,
+};
 
 /// Current benchmark report schema version.
 ///
 /// Bump this only when a field is renamed or removed in a way that breaks
 /// consumers. Additive field changes keep the same version.
 const SCHEMA_VERSION: u32 = 1;
-
-/// Known workflow categories for benchmark fixtures.
-///
-/// Fixtures may use other strings, but a release-grade benchmark set should
-/// cover more than one of these so numeric savings claims are not based on a
-/// single happy path.
-const KNOWN_CATEGORIES: &[&str] = &[
-    "route_to_edit",
-    "symbol_explanation",
-    "impact_or_risk",
-    "test_surface",
-];
-
-/// Valid `kind` values for `required_targets` entries.
-const KNOWN_TARGET_KINDS: &[&str] = &["file", "symbol", "test"];
 
 /// Baseline kind reported in each task output.
 ///
@@ -205,69 +191,6 @@ fn render_report(report: &BenchContextReport, json_output: bool) -> anyhow::Resu
     Ok(())
 }
 
-fn validate_fixture(fixture: &BenchTask) -> anyhow::Result<()> {
-    if fixture.query.trim().is_empty() {
-        anyhow::bail!("fixture `query` must be non-empty");
-    }
-    if fixture.category.trim().is_empty() {
-        anyhow::bail!("fixture `category` must be non-empty");
-    }
-    for (idx, target) in fixture.required_targets.iter().enumerate() {
-        if target.value.trim().is_empty() {
-            anyhow::bail!("required_targets[{idx}]: `value` must be non-empty");
-        }
-        if !KNOWN_TARGET_KINDS.contains(&target.kind.as_str()) {
-            anyhow::bail!(
-                "required_targets[{idx}]: unknown `kind` `{}` (expected one of {})",
-                target.kind,
-                KNOWN_TARGET_KINDS.join(", ")
-            );
-        }
-    }
-    Ok(())
-}
-
-fn classify_targets(
-    required: &[BenchTarget],
-    returned_paths: &[String],
-    returned_symbols: &[String],
-) -> (Vec<BenchTarget>, Vec<BenchTarget>) {
-    let mut hits = Vec::new();
-    let mut misses = Vec::new();
-    for target in required {
-        if target_satisfied(target, returned_paths, returned_symbols) {
-            hits.push(target.clone());
-        } else {
-            misses.push(target.clone());
-        }
-    }
-    (hits, misses)
-}
-
-fn target_satisfied(
-    target: &BenchTarget,
-    returned_paths: &[String],
-    returned_symbols: &[String],
-) -> bool {
-    match target.kind.as_str() {
-        // Symbol kind prefers matching a qualified name, but falls back to
-        // path substring so fixtures stay useful before symbol-level search
-        // lands in the card pipeline.
-        "symbol" => {
-            returned_symbols
-                .iter()
-                .any(|got| got.contains(&target.value))
-                || path_contains(returned_paths, &target.value)
-        }
-        // `file` and `test` match against returned card paths.
-        _ => path_contains(returned_paths, &target.value),
-    }
-}
-
-fn path_contains(returned_paths: &[String], needle: &str) -> bool {
-    returned_paths.iter().any(|got| got.contains(needle))
-}
-
 fn summarize(tasks: &[BenchTaskReport]) -> BenchContextSummary {
     let total_tasks = tasks.len();
     let tasks_with_hits = tasks.iter().filter(|t| !t.target_hits.is_empty()).count();
@@ -287,49 +210,6 @@ fn summarize(tasks: &[BenchTaskReport]) -> BenchContextSummary {
         categories,
         missing_categories,
     }
-}
-
-fn expand_task_glob(repo_root: &Path, pattern: &str) -> anyhow::Result<Vec<PathBuf>> {
-    let pattern_abs = repo_root.join(pattern).to_string_lossy().to_string();
-    let glob = Glob::new(&pattern_abs)?;
-    let mut builder = GlobSetBuilder::new();
-    builder.add(glob);
-    let set = builder.build()?;
-    // Walk only the glob's fixed prefix. A pattern like `benches/tasks/*.json`
-    // otherwise walks every file under the repo including `.git/` and `target/`.
-    let walk_root = fixed_prefix(&pattern_abs).unwrap_or_else(|| repo_root.to_path_buf());
-    let mut paths = Vec::new();
-    for entry in WalkDir::new(&walk_root).into_iter().filter_map(Result::ok) {
-        if entry.file_type().is_file() && set.is_match(entry.path()) {
-            paths.push(entry.path().to_path_buf());
-        }
-    }
-    paths.sort();
-    Ok(paths)
-}
-
-/// Return the deepest parent directory of `pattern` that contains no glob
-/// metacharacters. For `/root/benches/tasks/*.json` this is `/root/benches/tasks`.
-fn fixed_prefix(pattern: &str) -> Option<PathBuf> {
-    let cutoff = pattern.find(['*', '?', '[', '{']).unwrap_or(pattern.len());
-    let head = &pattern[..cutoff];
-    head.rfind('/').map(|idx| PathBuf::from(&head[..idx]))
-}
-
-#[derive(Debug, Deserialize)]
-struct BenchTask {
-    #[serde(default)]
-    name: Option<String>,
-    category: String,
-    query: String,
-    #[serde(default)]
-    required_targets: Vec<BenchTarget>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-struct BenchTarget {
-    kind: String,
-    value: String,
 }
 
 #[derive(Debug, Serialize)]

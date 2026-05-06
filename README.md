@@ -6,13 +6,14 @@
 
 `synrepo` gives coding agents a compact, queryable map of your repository so they can stop reading source cold and start with the smallest useful context.
 
-It builds a local structural model of the repo, keeps it fresh, and exposes it through read-only MCP tools plus a guided dashboard. It is not session memory and it is not a task tracker. It is repo intelligence for coding agents. See [docs/MCP.md](docs/MCP.md) for the MCP workflow and tool surface.
+It builds a local structural model of the repo, keeps it fresh, and exposes it through read-only MCP tools plus a guided dashboard. Its product model is `repo files -> graph facts -> code artifacts -> task contexts -> cards/MCP`: graph facts are canonical, artifacts are compiled records, task contexts are bounded bundles, and cards/MCP are the delivery packets agents consume. It is not session memory and it is not a task tracker. It is repo intelligence for coding agents. See [docs/MCP.md](docs/MCP.md) for the MCP workflow and tool surface.
 
 The default agent loop is explicit: orient, find bounded cards, inspect impact, edit, validate tests, then review changed context. Synrepo responses are budgeted by default. Large source files are not the default response unit unless a caller explicitly escalates.
 
 ## Why Use It
 
 - Start agents from cards, search, entrypoints, and impact views instead of dumping full files into prompts.
+- Give agents task contexts assembled from graph-backed code artifacts, without making them crawl raw files first.
 - See context accounting on card responses: estimated card tokens, raw-file comparison tokens, source hashes, and truncation state.
 - Keep repository context local, inspectable, and tied to the actual codebase under `.synrepo/`.
 - Use one operational flow: `setup` wires the repo and agent, bare `synrepo` opens the guided UI, `watch` keeps the model fresh, and `status` tells you whether things are healthy.
@@ -110,7 +111,7 @@ The default agent workflow is:
 5. `synrepo_tests`
 6. `synrepo_changed`
 
-Use `synrepo_minimum_context` when a focal target is known but the surrounding neighborhood is still unclear. Use `synrepo_context_pack` when several read-only context artifacts are cheaper in one response. The full MCP tool surface, resources, overlay tools, and edit-gated behavior live in [docs/MCP.md](docs/MCP.md).
+Use `synrepo_minimum_context` when a focal target is known but the surrounding neighborhood is still unclear. Use `synrepo_context_pack` when several read-only code artifacts or task-context pieces are cheaper in one response. The full MCP tool surface, resources, overlay tools, and edit-gated behavior live in [docs/MCP.md](docs/MCP.md).
 
 ## Daily Workflow
 
@@ -118,7 +119,7 @@ Use `synrepo_minimum_context` when a focal target is known but the surrounding n
 2. Keep `synrepo watch --daemon` running while you work if you want automatic refresh.
 3. Use `synrepo status` when you want a quick health check.
 4. Let the agent query `synrepo_orient`, `synrepo_find`, `synrepo_explain`, `synrepo_impact` or `synrepo_risks`, `synrepo_tests`, and `synrepo_changed` instead of opening large files first.
-5. Use `synrepo_context_pack` when the agent needs several read-only context artifacts in one token-accounted response.
+5. Use `synrepo_context_pack` when the agent needs several read-only code artifacts or task-context pieces in one token-accounted response.
 6. Use `synrepo explain <target> --budget 1000`, `synrepo impact <target> --budget 2000`, or `synrepo tests <path> --budget 1500` for the same flow outside MCP.
 7. Use the dashboard Explain tab if you want fresh commentary on the parts of the repo that just moved.
 8. Use `synrepo check` and `synrepo sync` when health or repair surfaces need manual attention.

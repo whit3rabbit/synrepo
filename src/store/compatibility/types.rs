@@ -217,8 +217,16 @@ impl ConfigFingerprints {
             format!("redact_globs={}", config.redact_globs.join("\u{1f}")),
         ];
         if config.enable_semantic_triage {
+            index_parts.push(format!(
+                "semantic_embedding_provider={}",
+                config.semantic_embedding_provider.as_str()
+            ));
             index_parts.push(format!("semantic_model={}", config.semantic_model));
             index_parts.push(format!("embedding_dim={}", config.embedding_dim));
+            index_parts.push(format!(
+                "semantic_ollama_endpoint={}",
+                config.semantic_ollama_endpoint
+            ));
         }
 
         Self {

@@ -6,11 +6,11 @@ A context compiler for AI coding agents.
 
 ## What synrepo is
 
-synrepo precomputes a small, deterministic, queryable working set of facts about a software project and serves that working set to coding agents through an MCP server in tight, task-shaped, token-budgeted packets called *cards*. Today the strongest shipped signals are symbol definitions, import relationships, symbol-to-symbol call hints, and approximate dependency hints, with **co-change links, git hotspots, and change impact analysis** now wired into the card surface. Full type-aware cross-language dependency proof remains follow-on work.
+synrepo precomputes a small, deterministic, queryable working set of facts about a software project and serves that working set to coding agents through an MCP server in tight, task-shaped, token-budgeted packets called *cards*. The product model is `repo files -> graph facts -> code artifacts -> task contexts -> cards/MCP`: graph facts are canonical observed truth, code artifacts are compiled records, task contexts are workflow-shaped bundles, and cards/MCP are the delivery packets agents consume. Today the strongest shipped signals are symbol definitions, import relationships, symbol-to-symbol call hints, and approximate dependency hints, with **co-change links, git hotspots, and change impact analysis** now wired into the card surface. Full type-aware cross-language dependency proof remains follow-on work.
 
 Underneath, [syntext](https://github.com/whit3rabbit/syntext) provides deterministic lexical search; tree-sitter via per-language Rust crates provides structural parsing; sqlite holds the canonical graph of facts the parsers and git observed directly. An LLM is layered on top, strictly off the critical path, to compress long material into commentary and to propose cross-links between code and prose — but everything the LLM produces lives in a clearly separate **overlay store** that is queryable alongside the graph but is never part of it. The graph holds only what was directly observed. The overlay holds what was inferred, with provenance and confidence visible to agents that ask.
 
-The product wedge is concrete: **fewer blind reads, fewer wrong-file edits, lower token burn, faster orientation on unfamiliar code.** The graph is infrastructure. Cards are the product. In the current implementation, that value is strongest for orientation and first-pass routing; precise cross-file impact proof is partially shipped.
+The product wedge is concrete: **fewer blind reads, fewer wrong-file edits, lower token burn, faster orientation on unfamiliar code.** The graph is infrastructure. Code artifacts and task contexts are the product abstraction. Cards are the current compact delivery packet. In the current implementation, that value is strongest for orientation and first-pass routing; precise cross-file impact proof is partially shipped.
 
 ---
 
@@ -108,13 +108,20 @@ Handoff items carry the same provenance fields as cards: `source_store`, `episte
 
 ---
 
-## Cards and the context budget protocol
+## Context artifacts, cards, and the context budget protocol
 
-The user-facing centerpiece. The thing an agent actually consumes is not a graph and not a query result — it is a card.
+The user-facing centerpiece. The thing an agent actually consumes is not a graph and not a raw query result. Today it is a card or context pack delivered through MCP.
+
+The terms are deliberately separate:
+
+- **Graph facts** are canonical observed facts from parsers, git, and human declarations.
+- **Code artifacts** are deterministic compiled records such as symbol, file, module, entry-point, risk, call-path, and test-surface artifacts.
+- **Task contexts** are bounded bundles of artifacts for workflows such as reviewing a module, tracing a call, or fixing a test.
+- **Cards/MCP** are the serialized delivery packets for those artifacts and contexts.
 
 ### What a card is
 
-A card is a tiny, structured, deterministic record about one thing in the project, compiled from the graph and source code, designed to fit a specific token budget and answer a specific class of agent question. Cards are not prose summaries. They are *records* — like a library catalog card, like a stat block, like the side panel of a Wikipedia article. A SymbolCard looks like this in spirit (the actual format is JSON returned over MCP):
+A card is a tiny, structured, deterministic delivery packet for one compiled code artifact or context slice, designed to fit a specific token budget and answer a specific class of agent question. Cards are not prose summaries. They are *records* — like a library catalog card, like a stat block, like the side panel of a Wikipedia article. A SymbolCard looks like this in spirit (the actual format is JSON returned over MCP):
 
 ```
 SymbolCard for `parse_query` (function)
@@ -131,7 +138,7 @@ SymbolCard for `parse_query` (function)
   approx tokens: 120
 ```
 
-Every field comes from the graph, syntext, or git. Zero LLM involvement in the card itself. An agent that needs to understand `parse_query` reads this card (~120 tokens) instead of opening `src/parser/query.rs` and consuming the whole file (possibly 4000 tokens).
+Every structural field comes from the graph, syntext, or git. Zero LLM involvement in the graph-backed artifact itself. An agent that needs to understand `parse_query` reads this card (~120 tokens) instead of opening `src/parser/query.rs` and consuming the whole file (possibly 4000 tokens).
 
 synrepo compiles several card types. The full family below describes the product direction. As of 2026-04-16, the shipped set is `SymbolCard`, `FileCard`, `ModuleCard`, `EntryPointCard`, `DecisionCard`, `ChangeRiskCard`, `CallPathCard`, and `TestSurfaceCard` (an improvement over the earlier v4 snapshot). `PublicAPICard` remains planned. The connectivity and change-impact fields on shipped cards are now wired; `FileCard.git_intelligence` is fully functional at `Normal` and `Deep` budget.
 
@@ -377,7 +384,7 @@ This is much stronger than a git-only approach but it is not bedrock. Pathologic
 
 ## The MCP tool surface
 
-Task-first and card-centric. The default response unit is a card (or set of cards) sized to a token budget.
+Task-first and artifact-centric. The default response unit is a card (or set of cards) sized to a token budget, with `synrepo_context_pack` batching several read-only artifact/context packets when that is cheaper than serial tool calls.
 
 ### Task-shaped tools (primary)
 
@@ -732,4 +739,4 @@ Each phase produces something shippable. Phase 0 is a faster grep. Phase 1 is a 
 
 ## The one-line summary
 
-synrepo is a context compiler for AI coding agents: it precomputes a small, deterministic, queryable working set of structural facts about a software project and serves them as token-budgeted cards through an MCP server, so an agent can act like it already knows the codebase without stuffing huge file chunks into context. The graph holds only what parsers, git, and humans observed directly. LLM-proposed cross-links and commentary live in a separate overlay store, queryable but never authoritative. The wedge is fewer blind reads, fewer wrong-file edits, lower token burn, and faster orientation on unfamiliar code. The graph is infrastructure. Cards are the product.
+synrepo is a context compiler for AI coding agents: it precomputes a small, deterministic, queryable working set of structural facts about a software project, compiles those facts into code artifacts and task contexts, and serves them as token-budgeted cards through an MCP server. The graph holds only what parsers, git, and humans observed directly. LLM-proposed cross-links and commentary live in a separate overlay store, queryable but never authoritative. The wedge is fewer blind reads, fewer wrong-file edits, lower token burn, and faster orientation on unfamiliar code. The graph is infrastructure; code artifacts and task contexts are the product abstraction; cards are the current delivery packet.

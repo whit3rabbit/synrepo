@@ -385,4 +385,15 @@ pub(crate) enum BenchCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Benchmark lexical versus hybrid search hit rate.
+    Search {
+        /// Glob for JSON task fixtures.
+        #[arg(long)]
+        tasks: String,
+        #[arg(long, default_value = "both")]
+        mode: String,
+        /// Emit JSON instead of human-readable output.
+        #[arg(long)]
+        json: bool,
+    },
 }

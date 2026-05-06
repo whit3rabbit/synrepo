@@ -95,16 +95,19 @@ pub(super) fn compute_embedding_health(synrepo_dir: &Path, config: &Config) -> E
     match crate::substrate::embedding::index::FlatVecIndex::load(&index_path, config.embedding_dim)
     {
         Ok(index) => {
-            let model_cached = crate::substrate::embedding::model::get_global_cache_dir()
-                .ok()
-                .map(|d| d.join(config.semantic_model.replace('/', "--")))
-                .is_some_and(|d| d.join("model.onnx").exists());
+            if config.semantic_embedding_provider == crate::config::SemanticEmbeddingProvider::Onnx
+            {
+                let model_cached = crate::substrate::embedding::model::get_global_cache_dir()
+                    .ok()
+                    .map(|d| d.join(config.semantic_model.replace('/', "--")))
+                    .is_some_and(|d| d.join("model.onnx").exists());
 
-            if !model_cached {
-                return EmbeddingHealth::Degraded(format!(
-                    "model '{}' not cached locally; will be downloaded on next use",
-                    config.semantic_model
-                ));
+                if !model_cached {
+                    return EmbeddingHealth::Degraded(format!(
+                        "model '{}' not cached locally; will be downloaded on next use",
+                        config.semantic_model
+                    ));
+                }
             }
 
             EmbeddingHealth::Available {

@@ -1,6 +1,8 @@
 //! `synrepo` context-serving command surface: dashboard aliases and stats.
 
 mod bench;
+mod bench_search;
+mod bench_shared;
 
 use std::path::Path;
 
@@ -12,6 +14,7 @@ use super::mcp_runtime::prepare_state;
 use crate::cli_support::cli_args::StatFormatArg;
 
 pub(crate) use bench::bench_context;
+pub(crate) use bench_search::bench_search;
 
 pub(crate) fn cards_alias(
     repo_root: &Path,

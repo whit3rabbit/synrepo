@@ -15,7 +15,7 @@ Files must stay under 400 lines; split into sub-modules before they grow past th
 - `classify.rs` — maps files to `FileClass` (SupportedCode { language }, TextCode, Markdown, Jupyter, Skipped)
 - `index.rs` — wraps `syntext` for n-gram lexical indexing and search; builds/queries `.synrepo/index/`
 - `hybrid.rs` — fuses lexical top-k and vector top-k results with reciprocal rank fusion when semantic triage is locally available
-- `embedding/` — feature-gated ONNX embedding stack for semantic triage and hybrid search; query-time loading never downloads model assets
+- `embedding/` — feature-gated embedding stack for semantic triage and hybrid search, with ONNX and local Ollama providers; query-time loading never downloads model assets
 - Spec: `openspec/specs/substrate/spec.md`
 
 **2. Structure** (`src/structure/`) — The canonical graph of directly-observed facts only.
@@ -32,7 +32,7 @@ Node types: `FileNode` (root-discriminated content-hash identity), `SymbolNode` 
 **3. Overlay** (`src/overlay/mod.rs`) — LLM-authored content in a physically separate SQLite database from the graph. Defines `OverlayStore`, `OverlayLink`, `OverlayEpistemic` (`machine_authored_high_conf` | `machine_authored_low_conf`), `CitedSpan`. Phase 4+ only; the module exists to establish the architectural boundary from the start.
 - Spec: `openspec/specs/overlay/spec.md`
 
-**4. Surface** (`src/surface/`, `src/bin/cli.rs`) — CLI (phase 0/1), MCP server (`synrepo mcp` subcommand, phase 2+), skill bundle (`skill/SKILL.md`). `src/surface/card/mod.rs` is the stable card surface (`Budget`, `SymbolCard`, `FileCard`, `CardCompiler`, `Freshness`, `SourceStore`) with `git.rs` for Git projections, `types.rs` for card payload structs, `compiler/` for `GraphCardCompiler` (split into file.rs, io.rs, mod.rs, resolve.rs, symbol.rs), and `decision.rs` for `DecisionCard`. `src/surface/mcp/` holds the MCP tool handlers (helpers, cards, search, audit, findings, primitives) and `SynrepoState`; the server dispatch lives in `src/bin/cli_support/commands/mcp.rs`.
+**4. Surface** (`src/surface/`, `src/bin/cli.rs`) — CLI (phase 0/1), MCP server (`synrepo mcp` subcommand, phase 2+), skill bundle (`skill/SKILL.md`). The surface layer delivers the product model `repo files -> graph facts -> code artifacts -> task contexts -> cards/MCP`: graph facts stay in structure, code artifacts and task contexts are compiled read models, and cards/MCP are the serialized delivery packets. `src/surface/card/mod.rs` is the stable card surface (`Budget`, `SymbolCard`, `FileCard`, `CardCompiler`, `Freshness`, `SourceStore`) with `git.rs` for Git projections, `types.rs` for card payload structs, `compiler/` for `GraphCardCompiler` (split into file.rs, io.rs, mod.rs, resolve.rs, symbol.rs), and `decision.rs` for `DecisionCard`. `src/surface/mcp/` holds the MCP tool handlers (helpers, cards, search, audit, findings, primitives) and `SynrepoState`; the server dispatch lives in `src/bin/cli_support/commands/mcp.rs`.
 - Spec: `openspec/specs/cards/spec.md`, `openspec/specs/mcp-surface/spec.md`
 
 ## Bootstrap

@@ -43,11 +43,15 @@ mod enabled {
         }
 
         let resolver = ModelResolver::new();
-        let resolution = resolver
-            .resolve_existing(&config.semantic_model, synrepo_dir, config.embedding_dim)
-            .ok()?;
+        let resolution = resolver.resolve_existing(config, synrepo_dir).ok()?;
         let session = EmbeddingSession::new_from_resolution(&resolution).ok()?;
-        let key = format!("{}:{}", config.semantic_model, config.embedding_dim);
+        let key = format!(
+            "{}:{}:{}:{}",
+            config.semantic_embedding_provider.as_str(),
+            config.semantic_ollama_endpoint,
+            config.semantic_model,
+            config.embedding_dim
+        );
         let centroids = cached_centroids(&key, &session)?;
         let task_vec = session
             .embed(&[task.to_string()])

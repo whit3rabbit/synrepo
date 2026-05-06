@@ -1,6 +1,6 @@
 ---
 name: synrepo
-description: Use synrepo in repositories with a .synrepo/ directory. Prefer synrepo cards, compact search, and bounded context before reading source files cold.
+description: Use synrepo in repositories with a .synrepo/ directory. Prefer synrepo cards, compact search, and bounded task contexts before reading source files cold.
 ---
 
 # synrepo
@@ -9,6 +9,8 @@ Use this skill only when the current repository contains a `.synrepo/` directory
 
 For product overview, setup flow, and operator-facing docs, start with [`README.md`](../README.md).
 This file is the agent operating guide: how to query synrepo safely once the repo is already wired.
+
+Synrepo's product model is `repo files -> graph facts -> code artifacts -> task contexts -> cards/MCP`. Graph facts are authoritative observed source truth; code artifacts are compiled records; task contexts are bounded bundles for a workflow; cards and MCP responses are the delivery packets you consume.
 
 ## Use when
 
@@ -273,11 +275,11 @@ Use `tiny` cards to orient and route.
 Use `normal` cards to understand a neighborhood.
 Use `deep` cards only before writing code, or when exact source or body details matter.
 
-Use `synrepo_context_pack` when several known files, symbols, directories, tests, or call paths are needed together; it preserves read-only behavior and returns a shared `context_state`.
+Use `synrepo_context_pack` when several known files, symbols, directories, tests, call paths, or other task-context pieces are needed together; it preserves read-only behavior and returns a shared `context_state`.
 
 Unknown budget strings are invalid parameters. Valid tiers are exactly `tiny`, `normal`, and `deep`.
 
-Cards are synrepo's native compact context format. Use compact search to route, then cards or context packs for bounded detail, then full source only when the bounded context is insufficient.
+Cards are synrepo's native compact delivery packet for code artifacts and task contexts. Use compact search to route, then cards or context packs for bounded detail, then full source only when the bounded context is insufficient.
 
 MCP errors are structured. Branch on `error.code` when present and use `error_message` only as a compatibility fallback.
 

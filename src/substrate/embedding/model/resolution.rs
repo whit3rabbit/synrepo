@@ -2,9 +2,13 @@
 
 use std::path::Path;
 
+use crate::config::{Config, SemanticEmbeddingProvider};
 use crate::Result;
 
-use super::{get_global_cache_dir, ModelResolution, PoolingStrategy};
+use super::{
+    get_global_cache_dir, ModelResolution, OllamaModelResolution, OnnxModelResolution,
+    PoolingStrategy,
+};
 
 /// Built-in model registry with explicit specs.
 const BUILTIN_MODELS: &[EmbeddingModelSpec] = &[
@@ -55,14 +59,9 @@ impl ModelResolver {
         Self
     }
 
-    /// Resolve a model identifier to a local model bundle.
-    pub fn resolve(
-        &self,
-        model_id: &str,
-        _repo_synrepo_dir: &Path, // Not used anymore as we use global cache
-        declared_dim: u16,
-    ) -> Result<ModelResolution> {
-        self.resolve_inner(model_id, declared_dim, true)
+    /// Resolve a configured model to a local model bundle or local endpoint.
+    pub fn resolve(&self, config: &Config, _repo_synrepo_dir: &Path) -> Result<ModelResolution> {
+        self.resolve_config(config, true)
     }
 
     /// Resolve a model only if its artifacts are already present locally.
@@ -71,11 +70,39 @@ impl ModelResolver {
     /// never triggers a network download on an agent hook or MCP request.
     pub fn resolve_existing(
         &self,
-        model_id: &str,
+        config: &Config,
         _repo_synrepo_dir: &Path,
-        declared_dim: u16,
     ) -> Result<ModelResolution> {
-        self.resolve_inner(model_id, declared_dim, false)
+        self.resolve_config(config, false)
+    }
+
+    fn resolve_config(&self, config: &Config, allow_download: bool) -> Result<ModelResolution> {
+        match config.semantic_embedding_provider {
+            SemanticEmbeddingProvider::Onnx => {
+                self.resolve_inner(&config.semantic_model, config.embedding_dim, allow_download)
+            }
+            SemanticEmbeddingProvider::Ollama => self.resolve_ollama(config),
+        }
+    }
+
+    fn resolve_ollama(&self, config: &Config) -> Result<ModelResolution> {
+        if config.semantic_embedding_batch_size == 0 {
+            return Err(crate::Error::Config(
+                "semantic_embedding_batch_size must be greater than 0".to_string(),
+            ));
+        }
+        if config.semantic_ollama_endpoint.trim().is_empty() {
+            return Err(crate::Error::Config(
+                "semantic_ollama_endpoint must not be empty".to_string(),
+            ));
+        }
+        Ok(ModelResolution::Ollama(OllamaModelResolution {
+            endpoint: config.semantic_ollama_endpoint.clone(),
+            model_name: config.semantic_model.clone(),
+            embedding_dim: config.embedding_dim,
+            normalize: true,
+            batch_size: config.semantic_embedding_batch_size,
+        }))
     }
 
     fn resolve_inner(
@@ -148,7 +175,7 @@ impl ModelResolver {
             downloaded = true;
         }
 
-        Ok(ModelResolution {
+        Ok(ModelResolution::Onnx(OnnxModelResolution {
             model_path,
             tokenizer_path,
             model_name: spec.model_id.to_string(),
@@ -156,7 +183,7 @@ impl ModelResolver {
             pooling: spec.pooling,
             normalize: spec.normalize,
             downloaded,
-        })
+        }))
     }
 
     fn download_file(&self, url: &str, dest: &Path) -> Result<()> {
@@ -226,9 +253,12 @@ mod tests {
     #[test]
     fn resolver_builtin_models() {
         let resolver = ModelResolver::new();
+        let mut config = crate::config::Config::default();
+        config.semantic_model = "all-MiniLM-L6-v2".to_string();
+        config.embedding_dim = 384;
         // This might fail if $HOME is not set or if we can't write to the cache.
         // We accept resolution success, or a clear "no HOME" error, or an IO error.
-        let result = resolver.resolve("all-MiniLM-L6-v2", Path::new("."), 384);
+        let result = resolver.resolve(&config, Path::new("."));
         match result {
             Ok(_) => {}
             Err(crate::Error::Io(_)) => {}

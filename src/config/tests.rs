@@ -96,6 +96,50 @@ fn cross_link_fields_round_trip_through_toml() {
 }
 
 #[test]
+fn semantic_embedding_fields_default_to_onnx() {
+    let config = Config::default();
+    assert_eq!(
+        config.semantic_embedding_provider,
+        SemanticEmbeddingProvider::Onnx
+    );
+    assert_eq!(config.semantic_model, "all-MiniLM-L6-v2");
+    assert_eq!(config.embedding_dim, 384);
+    assert_eq!(config.semantic_ollama_endpoint, "http://localhost:11434");
+    assert_eq!(config.semantic_embedding_batch_size, 128);
+}
+
+#[test]
+fn semantic_embedding_ollama_fields_round_trip_through_toml() {
+    let _lock = crate::test_support::global_test_lock(super::test_home::HOME_ENV_TEST_LOCK);
+    let home = tempdir().unwrap();
+    let _home_guard = super::test_home::HomeEnvGuard::redirect_to(home.path());
+
+    let dir = tempdir().unwrap();
+    let synrepo_dir = Config::synrepo_dir(dir.path());
+    fs::create_dir_all(&synrepo_dir).unwrap();
+
+    let custom_toml = r#"
+        enable_semantic_triage = true
+        semantic_embedding_provider = "ollama"
+        semantic_model = "all-minilm"
+        embedding_dim = 384
+        semantic_ollama_endpoint = "http://127.0.0.1:11434"
+        semantic_embedding_batch_size = 64
+    "#;
+    fs::write(synrepo_dir.join("config.toml"), custom_toml).unwrap();
+
+    let config = Config::load(dir.path()).unwrap();
+    assert!(config.enable_semantic_triage);
+    assert_eq!(
+        config.semantic_embedding_provider,
+        SemanticEmbeddingProvider::Ollama
+    );
+    assert_eq!(config.semantic_model, "all-minilm");
+    assert_eq!(config.semantic_ollama_endpoint, "http://127.0.0.1:11434");
+    assert_eq!(config.semantic_embedding_batch_size, 64);
+}
+
+#[test]
 fn load_invalid_toml_returns_error() {
     let _lock = crate::test_support::global_test_lock(super::test_home::HOME_ENV_TEST_LOCK);
     let home = tempdir().unwrap();
