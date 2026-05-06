@@ -255,15 +255,12 @@ fn agent_integration_partial_when_only_shim_present_for_cursor() {
     fs::write(cursor_skill.join("SKILL.md"), b"stub shim").unwrap();
 
     let report = probe_with_home(dir.path(), None);
-    // Cursor has no separate MCP-registration file, so "shim present" is
-    // treated as "complete" — this matches the detect_agent_integration
-    // branch. Keep the assertion aligned with that contract.
-    assert!(matches!(
+    assert_eq!(
         report.agent_integration,
-        AgentIntegration::Complete {
+        AgentIntegration::Partial {
             target: AgentTargetKind::Cursor
         }
-    ));
+    );
     assert_eq!(report.detected_agent_targets, vec![AgentTargetKind::Cursor]);
 }
 
