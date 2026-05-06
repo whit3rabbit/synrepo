@@ -6,15 +6,20 @@ use serde::{Deserialize, Serialize};
 /// High-level request accepted by the task-context front door.
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq)]
 pub struct ContextAskRequest {
+    /// Optional repository root for global/defaultless MCP sessions.
     pub repo_root: Option<PathBuf>,
     /// Plain-language task or question to compile into a context packet.
     pub ask: String,
+    /// Optional file, symbol, or change-set scope.
     #[serde(default)]
     pub scope: ContextScope,
+    /// Requested sections or output hints.
     #[serde(default)]
     pub shape: ContextShape,
+    /// Grounding and overlay inclusion policy.
     #[serde(default)]
     pub ground: GroundingOptions,
+    /// Token, file, symbol, freshness, and tier limits.
     #[serde(default)]
     pub budget: ContextBudget,
 }
@@ -22,10 +27,13 @@ pub struct ContextAskRequest {
 /// Optional explicit scope for the context packet.
 #[derive(Clone, Debug, Default, Deserialize, JsonSchema, PartialEq)]
 pub struct ContextScope {
+    /// Repo-relative paths to include in the task context.
     #[serde(default)]
     pub paths: Vec<String>,
+    /// Symbol names or IDs to include in the task context.
     #[serde(default)]
     pub symbols: Vec<String>,
+    /// Advisory change-set label such as `working_tree`.
     #[serde(default)]
     pub change_set: Option<String>,
 }
@@ -33,6 +41,7 @@ pub struct ContextScope {
 /// Requested answer sections. Unknown sections are preserved as intent hints.
 #[derive(Clone, Debug, Default, Deserialize, JsonSchema, PartialEq)]
 pub struct ContextShape {
+    /// Requested high-level answer sections, preserved as intent hints.
     #[serde(default)]
     pub sections: Vec<String>,
 }
@@ -43,8 +52,10 @@ pub struct GroundingOptions {
     /// `citations` is accepted as an alias for Nexus-like callers.
     #[serde(default, alias = "citations")]
     pub mode: GroundingMode,
+    /// Include line spans when the underlying artifact exposes them.
     #[serde(default)]
     pub include_spans: bool,
+    /// Allow advisory overlay notes or commentary in the packet.
     #[serde(default)]
     pub allow_overlay: bool,
 }
@@ -63,9 +74,12 @@ impl Default for GroundingOptions {
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum GroundingMode {
+    /// Evidence is required for the packet to be considered grounded.
     #[default]
     Required,
+    /// Evidence should be returned when available.
     Preferred,
+    /// Grounding is explicitly disabled.
     Off,
 }
 
@@ -73,23 +87,33 @@ pub enum GroundingMode {
 #[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Confidence {
+    /// Directly observed from graph, substrate, or filesystem-backed facts.
     Observed,
+    /// Inferred with high confidence by deterministic code.
     InferredHigh,
+    /// Inferred with low confidence by deterministic code.
     InferredLow,
+    /// Machine-authored overlay with high confidence.
     MachineOverlayHigh,
+    /// Machine-authored overlay with low confidence.
     MachineOverlayLow,
+    /// Human-authored or human-declared fact.
     HumanDeclared,
 }
 
 /// Budget controls for a compiled task context.
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq)]
 pub struct ContextBudget {
+    /// Maximum estimated tokens for the rendered packet.
     #[serde(default = "default_max_tokens")]
     pub max_tokens: usize,
+    /// Maximum scoped file/path targets to consider.
     #[serde(default = "default_max_files")]
     pub max_files: usize,
+    /// Maximum scoped symbol targets to consider.
     #[serde(default = "default_max_symbols")]
     pub max_symbols: usize,
+    /// Freshness preference, currently advisory.
     #[serde(default)]
     pub freshness: Option<String>,
     /// Optional card budget tier: `tiny`, `normal`, or `deep`.
@@ -112,19 +136,25 @@ impl Default for ContextBudget {
 /// Existing context-pack target expressed without depending on the MCP module.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ContextTarget {
+    /// Existing context-pack target kind.
     pub kind: String,
+    /// File path, symbol name, directory path, or search query.
     pub target: String,
+    /// Optional per-target budget tier.
     pub budget: Option<String>,
 }
 
+/// Default token cap for `synrepo_ask` packets.
 pub fn default_max_tokens() -> usize {
     6_000
 }
 
+/// Default maximum path/file scopes for `synrepo_ask`.
 pub fn default_max_files() -> usize {
     12
 }
 
+/// Default maximum symbol scopes for `synrepo_ask`.
 pub fn default_max_symbols() -> usize {
     40
 }

@@ -21,7 +21,7 @@ use crate::config::home_dir;
 use crate::pipeline::diagnostics::{ReconcileHealth, WriterStatus};
 use crate::pipeline::explain::ExplainStatus;
 use crate::pipeline::watch::WatchServiceStatus;
-use crate::surface::status_snapshot::StatusSnapshot;
+use crate::surface::status_snapshot::{ExportState, StatusSnapshot};
 
 /// Build a header view model from a pre-built status snapshot and the probe's
 /// agent-integration signal.
@@ -139,16 +139,13 @@ pub fn build_health_vm(snapshot: &StatusSnapshot) -> HealthVm {
         });
     }
 
-    // Export freshness: stale if the display starts with "stale" or "absent".
-    let export = &snapshot.export_freshness;
-    let export_sev = if export.starts_with("current") {
-        Severity::Healthy
-    } else {
-        Severity::Stale
+    let export_sev = match snapshot.export_status.state {
+        ExportState::Absent | ExportState::Current => Severity::Healthy,
+        ExportState::Stale => Severity::Stale,
     };
     rows.push(HealthRow {
-        label: "export".to_string(),
-        value: export.clone(),
+        label: "context export".to_string(),
+        value: snapshot.export_status.display.clone(),
         severity: export_sev,
     });
 

@@ -51,14 +51,18 @@ fn cli_text_and_dashboard_vm_agree_on_key_fields() {
         "CLI output missing mode line: {cli_text}"
     );
 
-    // Export freshness: CLI prints the raw string, health VM surfaces it as
-    // the `export` row value.
+    // Context export freshness: CLI prints the raw string, health VM surfaces
+    // it as the `context export` row value.
     let export_row = health
         .rows
         .iter()
-        .find(|r| r.label == "export")
-        .expect("health VM must surface an export row when initialized");
+        .find(|r| r.label == "context export")
+        .expect("health VM must surface a context export row when initialized");
     assert_eq!(export_row.value, snapshot.export_freshness);
+    assert!(
+        cli_text.contains("context export:"),
+        "CLI output missing context export label: {cli_text}"
+    );
     assert!(
         cli_text.contains(&snapshot.export_freshness),
         "CLI output missing export freshness line: {cli_text}"

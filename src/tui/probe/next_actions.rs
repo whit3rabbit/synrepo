@@ -7,7 +7,7 @@ use time::OffsetDateTime;
 use crate::bootstrap::runtime_probe::{AgentIntegration, AgentTargetKind};
 use crate::pipeline::diagnostics::{ReconcileHealth, WriterStatus};
 use crate::pipeline::watch::{WatchDaemonState, WatchServiceStatus};
-use crate::surface::status_snapshot::StatusSnapshot;
+use crate::surface::status_snapshot::{ExportState, StatusSnapshot};
 use crate::tui::materializer::MaterializeState;
 
 use super::{NextAction, Severity};
@@ -96,7 +96,7 @@ pub fn build_next_actions_with_context(
         }
     }
 
-    if !snapshot.export_freshness.starts_with("current") {
+    if snapshot.export_status.state == ExportState::Stale {
         out.push(export_action(snapshot, runtime));
     }
 
@@ -186,7 +186,7 @@ fn export_auto_action(
             .map(elapsed_label)
             .unwrap_or_else(|| "moments".to_string());
         return NextAction {
-            label: format!("Export refresh running, started {started} ago"),
+            label: format!("Context export refresh running, started {started} ago"),
             severity: Severity::Stale,
         };
     }
@@ -198,7 +198,7 @@ fn export_auto_action(
     }
     NextAction {
         label: format!(
-            "Export refresh is automatic, checking again in {}",
+            "Context export refresh is automatic, checking again in {}",
             countdown_label(runtime.snapshot_refresh_due_in)
         ),
         severity: Severity::Stale,
@@ -207,7 +207,7 @@ fn export_auto_action(
 
 fn manual_export_action() -> NextAction {
     NextAction {
-        label: "Export stale, press S to sync".to_string(),
+        label: "Context export stale, press S to refresh".to_string(),
         severity: Severity::Stale,
     }
 }

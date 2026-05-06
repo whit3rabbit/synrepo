@@ -89,6 +89,8 @@ pub(super) fn write_status_json(
         "watch": watch,
         "writer_lock": writer_lock,
         "export_freshness": snapshot.export_freshness,
+        "export_state": snapshot.export_status.state.as_str(),
+        "export_dir": snapshot.export_status.export_dir,
         "overlay_cost_summary": snapshot.overlay_cost_summary,
         "embedding_health": match &diag.embedding_health {
             EmbeddingHealth::Disabled => serde_json::json!({"status": "disabled"}),

@@ -10,7 +10,8 @@ use crate::pipeline::diagnostics::{
 use crate::pipeline::watch::{WatchDaemonState, WatchServiceMode, WatchServiceStatus};
 use crate::store::sqlite::PersistedGraphStats;
 use crate::surface::status_snapshot::{
-    CommentaryCoverage, GraphSnapshotStatus, RepairAuditState, StatusSnapshot,
+    CommentaryCoverage, ExportState, ExportStatus, GraphSnapshotStatus, RepairAuditState,
+    StatusSnapshot,
 };
 
 use super::{build_health_vm, build_next_actions_with_context, NextActionRuntime, Severity};
@@ -30,6 +31,13 @@ fn snapshot_with_metrics(metrics: Option<ContextMetrics>) -> StatusSnapshot {
             edge_count: 0,
         },
         export_freshness: "current".to_string(),
+        export_status: ExportStatus {
+            state: ExportState::Current,
+            display: "current".to_string(),
+            export_dir: "synrepo-context".to_string(),
+            format: Some("markdown".to_string()),
+            budget: Some("normal".to_string()),
+        },
         overlay_cost_summary: "0".to_string(),
         commentary_coverage: CommentaryCoverage {
             total: None,
@@ -65,6 +73,7 @@ fn snapshot_for_actions(
         edge_counts_by_kind: BTreeMap::new(),
     });
     snapshot.export_freshness = export_freshness.to_string();
+    snapshot.export_status = export_status_from_display(export_freshness);
     snapshot.diagnostics = Some(RuntimeDiagnostics {
         reconcile_health,
         watch_status,
@@ -74,6 +83,23 @@ fn snapshot_for_actions(
         embedding_health: EmbeddingHealth::Disabled,
     });
     snapshot
+}
+
+fn export_status_from_display(display: &str) -> ExportStatus {
+    let state = if display.starts_with("stale") {
+        ExportState::Stale
+    } else if display.starts_with("not generated") {
+        ExportState::Absent
+    } else {
+        ExportState::Current
+    };
+    ExportStatus {
+        state,
+        display: display.to_string(),
+        export_dir: "synrepo-context".to_string(),
+        format: Some("markdown".to_string()).filter(|_| state != ExportState::Absent),
+        budget: Some("normal".to_string()).filter(|_| state != ExportState::Absent),
+    }
 }
 
 fn watch_state() -> WatchDaemonState {
@@ -244,7 +270,7 @@ fn export_stale_with_watch_auto_sync_shows_automatic_wait() {
     );
     let labels: Vec<_> = actions.iter().map(|a| a.label.as_str()).collect();
 
-    assert!(labels.contains(&"Export refresh is automatic, checking again in 2s"));
+    assert!(labels.contains(&"Context export refresh is automatic, checking again in 2s"));
     assert!(!labels.iter().any(|label| label.contains("synrepo export")));
 }
 
@@ -268,7 +294,7 @@ fn export_stale_with_running_auto_sync_shows_running_timer() {
 
     assert!(actions
         .iter()
-        .any(|a| a.label == "Export refresh running, started 5s ago"));
+        .any(|a| a.label == "Context export refresh running, started 5s ago"));
 }
 
 #[test]
@@ -318,8 +344,35 @@ fn export_stale_without_auto_sync_uses_manual_sync_hint() {
         );
         assert!(actions
             .iter()
-            .any(|a| a.label == "Export stale, press S to sync"));
+            .any(|a| a.label == "Context export stale, press S to refresh"));
     }
+}
+
+#[test]
+fn absent_context_export_is_healthy_and_has_no_next_action() {
+    let snapshot = snapshot_for_actions(
+        "not generated (optional; synrepo export writes synrepo-context/)",
+        ReconcileHealth::Current,
+        WatchServiceStatus::Inactive,
+        WriterStatus::Free,
+    );
+
+    let health = build_health_vm(&snapshot);
+    let export_row = health
+        .rows
+        .iter()
+        .find(|row| row.label == "context export")
+        .expect("context export row must be present");
+    assert_eq!(export_row.severity, Severity::Healthy);
+
+    let actions = build_next_actions_with_context(
+        &snapshot,
+        &complete_integration(),
+        runtime(Duration::ZERO),
+    );
+    assert!(!actions
+        .iter()
+        .any(|action| action.label.contains("Context export")));
 }
 
 #[test]

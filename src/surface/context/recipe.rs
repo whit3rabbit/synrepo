@@ -5,16 +5,24 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Copy, Debug, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ContextRecipe {
+    /// Explain a specific symbol and its immediate neighborhood.
     ExplainSymbol,
+    /// Trace call paths or behavior flow for a symbol.
     TraceCall,
+    /// Review a file tree or module boundary.
     ReviewModule,
+    /// Gather context useful for security review.
     SecurityReview,
+    /// Gather release-blocker and readiness context.
     ReleaseReadiness,
+    /// Gather context for repairing failing tests.
     FixTest,
+    /// General fallback recipe for broad questions.
     General,
 }
 
 impl ContextRecipe {
+    /// Infer the built-in recipe from plain-language ask text.
     pub fn infer(ask: &str) -> Self {
         let text = ask.to_ascii_lowercase();
         if has_any(
@@ -40,6 +48,7 @@ impl ContextRecipe {
         }
     }
 
+    /// Default card budget tier for this recipe.
     pub fn default_budget_tier(self) -> &'static str {
         match self {
             Self::ExplainSymbol | Self::General => "tiny",
@@ -51,6 +60,7 @@ impl ContextRecipe {
         }
     }
 
+    /// Lower-level drill-down tools useful after this recipe's packet.
     pub fn next_tools(self) -> Vec<String> {
         match self {
             Self::TraceCall => vec![

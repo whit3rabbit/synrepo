@@ -121,20 +121,23 @@ mod tests {
     use tempfile::tempdir;
 
     fn isolated_ready_repo() -> (
+        crate::test_support::GlobalTestLock,
         tempfile::TempDir,
         crate::config::test_home::HomeEnvGuard,
         tempfile::TempDir,
     ) {
+        let lock =
+            crate::test_support::global_test_lock(crate::config::test_home::HOME_ENV_TEST_LOCK);
         let home = tempdir().unwrap();
         let guard = crate::config::test_home::HomeEnvGuard::redirect_to(home.path());
         let repo = tempdir().unwrap();
         crate::bootstrap::bootstrap(repo.path(), None, false).expect("bootstrap");
-        (repo, guard, home)
+        (lock, repo, guard, home)
     }
 
     #[test]
     fn disabling_semantic_triage_patches_repo_config() {
-        let (repo, _guard, _home) = isolated_ready_repo();
+        let (_lock, repo, _guard, _home) = isolated_ready_repo();
         let path = Config::synrepo_dir(repo.path()).join("config.toml");
         let mut config = Config::load(repo.path()).unwrap();
         config.enable_semantic_triage = true;
@@ -153,7 +156,7 @@ mod tests {
 
     #[test]
     fn disabling_reports_global_opt_in() {
-        let (repo, _guard, home) = isolated_ready_repo();
+        let (_lock, repo, _guard, home) = isolated_ready_repo();
         std::fs::create_dir_all(home.path().join(".synrepo")).unwrap();
         std::fs::write(
             home.path().join(".synrepo/config.toml"),
@@ -171,7 +174,7 @@ mod tests {
     #[test]
     #[cfg(feature = "semantic-triage")]
     fn enabling_semantic_triage_patches_repo_config_when_feature_exists() {
-        let (repo, _guard, _home) = isolated_ready_repo();
+        let (_lock, repo, _guard, _home) = isolated_ready_repo();
         let outcome = set_semantic_triage(&ActionContext::new(repo.path()), true);
         assert!(
             matches!(outcome, ActionOutcome::Completed { .. }),
@@ -183,7 +186,7 @@ mod tests {
     #[test]
     #[cfg(not(feature = "semantic-triage"))]
     fn enabling_semantic_triage_requires_feature_build() {
-        let (repo, _guard, _home) = isolated_ready_repo();
+        let (_lock, repo, _guard, _home) = isolated_ready_repo();
         let outcome = set_semantic_triage(&ActionContext::new(repo.path()), true);
         assert!(
             matches!(outcome, ActionOutcome::Error { ref message } if message.contains("optional")),

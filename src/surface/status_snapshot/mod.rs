@@ -17,7 +17,9 @@ use crate::{
 };
 
 mod builders;
+mod export_status;
 pub use builders::*;
+pub use export_status::*;
 
 /// Options controlling how the snapshot is built.
 #[derive(Clone, Copy, Debug, Default)]
@@ -200,6 +202,8 @@ pub struct StatusSnapshot {
     pub graph_snapshot: GraphSnapshotStatus,
     /// Export freshness summary line.
     pub export_freshness: String,
+    /// Structured context export status.
+    pub export_status: ExportStatus,
     /// Overlay LLM-cost summary line.
     pub overlay_cost_summary: String,
     /// Commentary coverage.

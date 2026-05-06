@@ -11,18 +11,16 @@ use crate::{
         context_metrics::load_optional as load_context_metrics,
         diagnostics::collect_diagnostics,
         explain::{accounting::load_totals, describe_active_provider},
-        export::load_manifest,
         recent_activity::{read_recent_activity, RecentActivityQuery},
         repair::{read_repair_log_degraded_marker, resolve_commentary_node, RepairLogDegraded},
-        watch::load_reconcile_state,
     },
     store::{overlay::SqliteOverlayStore, sqlite::SqliteGraphStore},
     structure::graph::{snapshot, with_graph_read_snapshot, GraphReader},
 };
 
 use super::{
-    CommentaryCoverage, ExplainDisplay, GraphSnapshotStatus, OverlayHandle, RepairAuditState,
-    StatusOptions, StatusSnapshot,
+    build_export_status, CommentaryCoverage, ExplainDisplay, ExportState, ExportStatus,
+    GraphSnapshotStatus, OverlayHandle, RepairAuditState, StatusOptions, StatusSnapshot,
 };
 
 pub(super) fn current_graph_snapshot_status(repo_root: &Path) -> GraphSnapshotStatus {
@@ -233,27 +231,6 @@ fn estimate_commentary_freshness(
     )
 }
 
-/// Describe export freshness for status output.
-pub fn export_freshness_summary(repo_root: &Path, synrepo_dir: &Path, config: &Config) -> String {
-    let manifest = load_manifest(repo_root, config);
-    match manifest {
-        None => "absent (run `synrepo export` to generate)".to_string(),
-        Some(m) => {
-            let current_epoch = load_reconcile_state(synrepo_dir)
-                .map(|r| r.last_reconcile_at)
-                .unwrap_or_default();
-            if m.last_reconcile_at == current_epoch {
-                format!("current ({}, {})", m.format.as_str(), m.budget)
-            } else {
-                format!(
-                    "stale (generated at {}, current epoch {})",
-                    m.last_reconcile_at, current_epoch
-                )
-            }
-        }
-    }
-}
-
 /// Build a full status snapshot for `repo_root`. Read-only; never takes the
 /// writer lock and never mutates the store.
 pub fn build_status_snapshot(repo_root: &Path, opts: StatusOptions) -> StatusSnapshot {
@@ -269,6 +246,13 @@ pub fn build_status_snapshot(repo_root: &Path, opts: StatusOptions) -> StatusSna
                 graph_stats: None,
                 graph_snapshot: current_graph_snapshot_status(repo_root),
                 export_freshness: String::new(),
+                export_status: ExportStatus {
+                    state: ExportState::Absent,
+                    display: String::new(),
+                    export_dir: String::new(),
+                    format: None,
+                    budget: None,
+                },
                 overlay_cost_summary: String::new(),
                 commentary_coverage: CommentaryCoverage::unavailable("not initialized"),
                 agent_note_counts: None,
@@ -294,7 +278,8 @@ pub fn build_status_snapshot(repo_root: &Path, opts: StatusOptions) -> StatusSna
             })
     };
 
-    let export_freshness = export_freshness_summary(repo_root, &synrepo_dir, config_ref);
+    let export_status = build_export_status(repo_root, &synrepo_dir, config_ref);
+    let export_freshness = export_status.display.clone();
     let graph_snapshot = current_graph_snapshot_status(repo_root);
     let overlay = open_status_overlay(&synrepo_dir);
     let overlay_cost_summary = overlay_cost_summary(&overlay);
@@ -336,6 +321,7 @@ pub fn build_status_snapshot(repo_root: &Path, opts: StatusOptions) -> StatusSna
         graph_stats,
         graph_snapshot,
         export_freshness,
+        export_status,
         overlay_cost_summary,
         commentary_coverage,
         agent_note_counts,

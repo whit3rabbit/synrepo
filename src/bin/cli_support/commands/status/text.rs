@@ -127,7 +127,7 @@ pub(super) fn write_status_text(
         )
         .unwrap();
     }
-    writeln!(out, "  export:       {}", snapshot.export_freshness).unwrap();
+    writeln!(out, "  context export: {}", snapshot.export_status.display).unwrap();
     writeln!(out, "  overlay cost: {}", snapshot.overlay_cost_summary).unwrap();
     if full {
         writeln!(

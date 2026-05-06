@@ -162,7 +162,7 @@ mod tests {
     use synrepo::bootstrap::runtime_probe::AgentIntegration;
     use synrepo::pipeline::context_metrics::ContextMetrics;
     use synrepo::surface::status_snapshot::{
-        CommentaryCoverage, GraphSnapshotStatus, RepairAuditState,
+        CommentaryCoverage, ExportState, ExportStatus, GraphSnapshotStatus, RepairAuditState,
     };
 
     fn fixture_snapshot(stale_responses: u64, explain: Option<SnapshotExplain>) -> StatusSnapshot {
@@ -184,6 +184,13 @@ mod tests {
                 edge_count: 0,
             },
             export_freshness: "current".to_string(),
+            export_status: ExportStatus {
+                state: ExportState::Current,
+                display: "current".to_string(),
+                export_dir: "synrepo-context".to_string(),
+                format: Some("markdown".to_string()),
+                budget: Some("normal".to_string()),
+            },
             overlay_cost_summary: "0".to_string(),
             commentary_coverage: CommentaryCoverage {
                 total: None,

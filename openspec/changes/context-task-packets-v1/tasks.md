@@ -18,5 +18,5 @@
 
 - [x] 4.1 Add source registration/schema tests for `synrepo_ask`.
 - [x] 4.2 Add focused unit tests for context planning and ask packet output.
-- [ ] 4.3 Run `openspec validate context-task-packets-v1 --strict`.
-- [ ] 4.4 Run focused MCP/context tests in a clean checkout if unrelated local TUI edits block direct cargo tests.
+- [x] 4.3 Run `openspec validate context-task-packets-v1 --strict`.
+- [x] 4.4 Run focused MCP/context tests in a clean checkout if unrelated local TUI edits block direct cargo tests.

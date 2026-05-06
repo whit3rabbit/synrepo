@@ -141,7 +141,7 @@ fn health_sections(rows: &[HealthRow]) -> Vec<HealthSection<'_>> {
 
 fn section_for(label: &str) -> HealthSectionKind {
     match label {
-        "repo" | "graph" | "export" | "commentary" | "overlay cost" => {
+        "repo" | "graph" | "context export" | "commentary" | "overlay cost" => {
             HealthSectionKind::Repository
         }
         "context" | "tokens avoided" | "stale responses" | "mcp" | "fast path" | "llm avoided"

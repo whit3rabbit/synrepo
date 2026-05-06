@@ -18,7 +18,8 @@ use crate::{
         watch::{ReconcileState, WatchServiceStatus},
     },
     surface::status_snapshot::{
-        CommentaryCoverage, GraphSnapshotStatus, RepairAuditState, StatusSnapshot,
+        CommentaryCoverage, ExportState, ExportStatus, GraphSnapshotStatus, RepairAuditState,
+        StatusSnapshot,
     },
 };
 
@@ -59,6 +60,13 @@ fn base_snapshot(diag: RuntimeDiagnostics) -> StatusSnapshot {
             edge_count: 0,
         },
         export_freshness: "current".to_string(),
+        export_status: ExportStatus {
+            state: ExportState::Current,
+            display: "current".to_string(),
+            export_dir: "synrepo-context".to_string(),
+            format: Some("markdown".to_string()),
+            budget: Some("normal".to_string()),
+        },
         overlay_cost_summary: "0 LLM calls".to_string(),
         commentary_coverage: CommentaryCoverage {
             total: Some(0),

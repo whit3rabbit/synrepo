@@ -1,7 +1,9 @@
-use std::collections::BTreeSet;
 use std::path::Path;
 
 use serde::Serialize;
+
+#[cfg(test)]
+use std::collections::BTreeSet;
 
 use super::recipe::ContextRecipe;
 use super::types::{ContextAskRequest, ContextTarget, GroundingMode, GroundingOptions};
@@ -9,17 +11,27 @@ use super::types::{ContextAskRequest, ContextTarget, GroundingMode, GroundingOpt
 /// Deterministic plan for a high-level task-context request.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct CompiledContextPlan {
+    /// Built-in recipe inferred from the ask text.
     pub recipe: ContextRecipe,
+    /// Card budget tier passed to rendered context-pack targets.
     pub budget_tier: String,
+    /// Numeric token cap for the resulting context packet.
     pub budget_tokens: usize,
+    /// Maximum number of planned targets to render.
     pub limit: usize,
+    /// Whether test-surface artifacts should be attached where possible.
     pub include_tests: bool,
+    /// Whether advisory overlay notes may be included.
     pub include_notes: bool,
+    /// Existing context-pack targets selected by the recipe.
     pub targets: Vec<ContextTarget>,
+    /// Human-readable notes about skipped or downgraded context.
     pub omitted_context_notes: Vec<String>,
+    /// Recommended lower-level drill-down tools after the packet.
     pub next_best_tools: Vec<String>,
 }
 
+/// Compile a high-level ask into a deterministic context-pack plan.
 pub fn compile_context_request(request: &ContextAskRequest) -> anyhow::Result<CompiledContextPlan> {
     let ask = request.ask.trim();
     if ask.is_empty() {
@@ -194,13 +206,15 @@ fn push_unique(targets: &mut Vec<ContextTarget>, kind: &str, target: &str, budge
     });
 }
 
-pub fn planned_target_keys(plan: &CompiledContextPlan) -> BTreeSet<String> {
+#[cfg(test)]
+fn planned_target_keys(plan: &CompiledContextPlan) -> BTreeSet<String> {
     plan.targets
         .iter()
         .map(|target| format!("{}:{}", target.kind, target.target))
         .collect()
 }
 
+/// Report whether the rendered packet satisfied the requested grounding mode.
 pub fn grounding_status(ground: &GroundingOptions, evidence_count: usize) -> &'static str {
     match (ground.mode, evidence_count) {
         (GroundingMode::Off, _) => "disabled",
