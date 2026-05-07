@@ -3,7 +3,7 @@ use synrepo::surface::task_route::{TaskRoute, SIGNAL_DETERMINISTIC_EDIT_CANDIDAT
 
 use super::{HookClient, HookEvent};
 
-const NUDGE: &str = "Synrepo nudge: this repo has .synrepo context. For codebase questions, file reviews, broad search, and pre-edit work, call synrepo_orient first, then use synrepo_search with output_mode=\"compact\" or synrepo_find, followed by synrepo_explain, synrepo_minimum_context, synrepo_risks, and synrepo_tests as needed. Full source reads are an escalation when cards are insufficient.";
+const NUDGE: &str = "synrepo hint: use graph context for repo questions, reviews, search, and edits. Read full source only when compact context is insufficient.";
 
 pub(super) fn render_nudge(
     client: HookClient,
@@ -37,7 +37,7 @@ fn render_message(route: Option<&TaskRoute>) -> String {
     };
 
     let mut message = NUDGE.to_string();
-    message.push_str("\n\nFast-path route: ");
+    message.push_str("\n\nRoute: ");
     message.push_str(&route.intent);
     message.push_str(" (budget=");
     message.push_str(&route.budget_tier);

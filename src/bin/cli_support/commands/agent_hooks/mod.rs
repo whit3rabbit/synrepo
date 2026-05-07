@@ -255,6 +255,22 @@ mod tests {
     }
 
     #[test]
+    fn pretool_message_stays_concise() {
+        let body = json!({
+            "tool_name": "Bash",
+            "tool_input": { "command": "rtk st -n nudge src" }
+        })
+        .to_string();
+        let output = nudge_output(HookClient::Codex, HookEvent::PreToolUse, &body)
+            .expect("search command should nudge");
+        let parsed: Value = serde_json::from_str(&output).unwrap();
+        let message = parsed["systemMessage"].as_str().unwrap();
+        assert!(message.len() < 400, "{message}");
+        assert!(message.contains("synrepo hint"));
+        assert!(message.contains("Recommended tools:"));
+    }
+
+    #[test]
     fn codex_pretool_skips_test_commands() {
         let body = json!({
             "tool_name": "Bash",
