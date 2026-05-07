@@ -253,11 +253,13 @@ fn codex_global_uses_codex_home_without_repo_flag() {
 }
 
 #[test]
-fn codex_dashboard_mcp_install_is_repo_local_mcp_only() {
+fn codex_dashboard_mcp_install_pairs_repo_local_mcp_with_skill() {
     let home = tempdir().unwrap();
     let codex_home = crate::cli_support::tests::support::canonicalize_no_verbatim(home.path());
     let _lock =
         synrepo::test_support::global_test_lock(synrepo::config::test_home::HOME_ENV_TEST_LOCK);
+    let registry_home = tempdir().unwrap();
+    let _home_guard = synrepo::config::test_home::HomeEnvGuard::redirect_to(registry_home.path());
     let _guard = EnvGuard::set("CODEX_HOME", &codex_home);
     fs::create_dir_all(&codex_home).unwrap();
     let global_config = codex_home.join("config.toml");
@@ -286,14 +288,13 @@ fn codex_dashboard_mcp_install_is_repo_local_mcp_only() {
         "dashboard MCP tab install must use repo-local command args"
     );
     assert!(
-        !repo
-            .path()
+        repo.path()
             .join(".agents")
             .join("skills")
             .join("synrepo")
             .join("SKILL.md")
             .exists(),
-        "MCP-only install must not write the Codex skill"
+        "dashboard MCP install must pair Codex MCP with the project skill"
     );
     assert_eq!(
         fs::read_to_string(&global_config).unwrap(),

@@ -348,9 +348,9 @@ The dashboard SHALL include dedicated MCP and Explore tabs after Actions while p
 
 #### Scenario: MCP tab installs repo-local MCP
 - **WHEN** the user presses `i` on the MCP tab and confirms a target
-- **THEN** synrepo registers that target's MCP config in project scope through agent-config
+- **THEN** synrepo writes or preserves that target's project skill or instruction through agent-config
+- **AND** synrepo registers that target's MCP config in project scope through agent-config
 - **AND** the registered server command is `synrepo mcp --repo .`
-- **AND** no agent shim, skill, or instruction file is written
 - **AND** pressing `i` outside the MCP tab still launches the generic integration wizard
 
 #### Scenario: Explore tab switches projects
@@ -411,4 +411,3 @@ The Live tab SHALL base page-up and page-down movement on the last rendered visi
 - **WHEN** the Live tab is rendered in a small or large terminal
 - **THEN** PageUp and PageDown move by the visible row count minus headroom
 - **AND** movement is clamped to at least one row
-

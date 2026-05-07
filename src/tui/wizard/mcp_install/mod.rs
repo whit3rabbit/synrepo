@@ -1,6 +1,7 @@
 //! Repo-local MCP install picker. Launched from the dashboard MCP tab so
-//! operators can register `synrepo mcp --repo .` for one local agent target
-//! without writing agent shims or running the generic integration wizard.
+//! operators can install project-scoped agent guidance and register
+//! `synrepo mcp --repo .` for one local agent target without running the
+//! generic integration wizard.
 
 pub mod render;
 pub mod state;

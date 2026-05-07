@@ -80,6 +80,10 @@ pub(crate) use project_prune::project_prune_missing;
 #[cfg(test)]
 pub(crate) use project_prune::project_prune_missing_output;
 pub(crate) use remove::remove;
+#[cfg(test)]
+pub(crate) use remove::{
+    apply_plan as remove_apply_plan, build_plan as remove_build_plan, RemoveAction,
+};
 pub(crate) use repair::{check, reconcile, sync};
 pub(crate) use server::server;
 pub(crate) use setup::{agent_setup_many_resolved, resolve_tool_resolution, setup_many_resolved};

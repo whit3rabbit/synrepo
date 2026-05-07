@@ -145,8 +145,8 @@ pub(crate) fn execute_repair_plan(repo_root: &Path, plan: RepairPlan) -> anyhow:
 }
 
 /// Execute a completed [`IntegrationPlan`] after the TUI alt-screen has been
-/// torn down. Splits the plan so the wizard can request shim-only, MCP-only,
-/// or both — `step_apply_integration` would force both.
+/// torn down. Splits the plan so the wizard can request individual actions,
+/// while still keeping MCP registration paired with its skill/instruction.
 pub(crate) fn execute_integration_plan(
     repo_root: &Path,
     plan: IntegrationPlan,
@@ -158,6 +158,9 @@ pub(crate) fn execute_integration_plan(
     }
     let mut backup: Option<String> = None;
     if plan.register_mcp {
+        if !plan.write_shim {
+            step_write_shim(repo_root, tool, &scope, plan.overwrite_shim)?;
+        }
         if matches!(scope, agent_config::Scope::Local(_)) {
             backup = step_backup_mcp_config(repo_root, tool, &scope)?;
         }
@@ -174,8 +177,8 @@ pub(crate) fn execute_integration_plan(
 }
 
 /// Execute a completed repo-local MCP install plan from the dashboard MCP tab.
-/// This intentionally skips shim writes and generic integration bookkeeping:
-/// the tab action only installs project-scoped MCP config.
+/// Project-scoped MCP is paired with the target's project skill/instruction so
+/// the agent gets both tools and the guidance for when to use them.
 pub(crate) fn execute_project_mcp_install_plan(
     repo_root: &Path,
     plan: McpInstallPlan,
@@ -187,7 +190,8 @@ pub(crate) fn execute_project_mcp_install_plan(
         "Installing repo-local synrepo MCP for {}...",
         tool.display_name()
     );
-    step_backup_mcp_config(repo_root, tool, &scope)?;
+    step_write_shim(repo_root, tool, &scope, false)?;
+    let backup = step_backup_mcp_config(repo_root, tool, &scope)?;
     match step_register_mcp(repo_root, tool, &scope)? {
         StepOutcome::NotAutomated => anyhow::bail!(
             "{} does not support automated repo-local MCP registration",
@@ -195,6 +199,7 @@ pub(crate) fn execute_project_mcp_install_plan(
         ),
         StepOutcome::Applied | StepOutcome::AlreadyCurrent | StepOutcome::Updated => {}
     }
+    shim_registry::record_install_best_effort(repo_root, tool, &scope, true, backup);
     println!("Repo MCP install complete.");
     Ok(())
 }

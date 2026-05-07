@@ -169,19 +169,19 @@ fn draw_confirm_step(
         )),
         Line::from(""),
         Line::from(Span::styled(
-            "The picker will install repo-local MCP only:",
+            "The picker will install project-local agent context:",
             theme.base_style(),
         )),
         Line::from(Span::styled(
-            "  1. Back up the target project MCP config if needed",
+            "  1. Write or preserve the target skill/instruction",
             theme.base_style(),
         )),
         Line::from(Span::styled(
-            "  2. Register command: synrepo mcp --repo .",
+            "  2. Back up the target project MCP config if needed",
             theme.base_style(),
         )),
         Line::from(Span::styled(
-            "  3. Leave agent skills and instructions untouched",
+            "  3. Register command: synrepo mcp --repo .",
             theme.base_style(),
         )),
         Line::from(""),
