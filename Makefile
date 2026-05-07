@@ -1,7 +1,10 @@
-.PHONY: build release test ci-test soak-test lint ci-lint fmt fmt-check clean install check ci-check
+.PHONY: build build-semantic release test ci-test soak-test lint ci-lint fmt fmt-check clean install check ci-check
 
 build:
 	cargo build
+
+build-semantic:
+	cargo build --features semantic-triage
 
 release:
 	cargo build --release

@@ -36,7 +36,7 @@ jobs:
         run: cargo install cargo-deb
 
       - name: Build binary
-        run: cross build --release --target ${{ matrix.target }}
+        run: cross build --release --target ${{ matrix.target }} --features semantic-triage
 
       - name: Stage binary and deb
         env:
@@ -82,7 +82,7 @@ jobs:
           key: ${{ matrix.target }}
 
       - name: Build binary
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo build --release --target ${{ matrix.target }} --features semantic-triage
 
       - name: Stage binary
         env:
@@ -117,7 +117,7 @@ jobs:
           key: x86_64-pc-windows-msvc
 
       - name: Build binary
-        run: cargo build --release --target x86_64-pc-windows-msvc
+        run: cargo build --release --target x86_64-pc-windows-msvc --features semantic-triage
 
       - name: Stage binary
         env:
