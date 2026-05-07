@@ -190,8 +190,8 @@ fn repos_enter_sets_switch_intent_without_mutating_repo_root() {
     let next = home.path().join("next");
     std::fs::create_dir_all(&current).unwrap();
     std::fs::create_dir_all(&next).unwrap();
-    std::fs::create_dir_all(current.join(".synrepo")).unwrap();
-    std::fs::create_dir_all(next.join(".synrepo")).unwrap();
+    crate::bootstrap::bootstrap(&current, None, false).unwrap();
+    crate::bootstrap::bootstrap(&next, None, false).unwrap();
     crate::registry::record_project(&current).unwrap();
     let next_entry = crate::registry::record_project(&next).unwrap();
     let mut state = AppState::new_poll(

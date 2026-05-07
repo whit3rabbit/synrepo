@@ -5,6 +5,7 @@ use std::time::Duration;
 use time::OffsetDateTime;
 
 use crate::bootstrap::runtime_probe::{AgentIntegration, AgentTargetKind};
+use crate::config::Config;
 use crate::pipeline::diagnostics::{ReconcileHealth, WriterStatus};
 use crate::pipeline::watch::{WatchDaemonState, WatchServiceStatus};
 use crate::surface::status_snapshot::{ExportState, StatusSnapshot};
@@ -89,10 +90,11 @@ pub fn build_next_actions_with_context(
             ReconcileHealth::Current => {}
         }
         if !d.store_guidance.is_empty() {
-            out.push(NextAction {
-                label: format!("Store compat action: {}", d.store_guidance[0]),
-                severity: Severity::Blocked,
-            });
+            out.push(store_compat_action(
+                &d.store_guidance[0],
+                snapshot.config.as_ref(),
+                &d.watch_status,
+            ));
         }
     }
 
@@ -109,6 +111,38 @@ pub fn build_next_actions_with_context(
         });
     }
     out
+}
+
+fn store_compat_action(
+    guidance: &str,
+    config: Option<&Config>,
+    watch_status: &WatchServiceStatus,
+) -> NextAction {
+    let semantic_enabled = config
+        .map(|config| config.enable_semantic_triage)
+        .unwrap_or(false);
+    let embedding_related = semantic_enabled
+        && (guidance.contains("embeddings are stale")
+            || guidance.starts_with("index: rebuild because"));
+
+    if embedding_related {
+        let label = match watch_status {
+            WatchServiceStatus::Running(_) | WatchServiceStatus::Starting => {
+                "Embedding/index rebuild pending, stop watch before pressing R to rebuild vectors"
+                    .to_string()
+            }
+            _ => "Embedding/index rebuild pending, press R to rebuild vectors".to_string(),
+        };
+        return NextAction {
+            label,
+            severity: Severity::Blocked,
+        };
+    }
+
+    NextAction {
+        label: format!("Store compat action: {guidance}"),
+        severity: Severity::Blocked,
+    }
 }
 
 fn graph_action(materialize_state: Option<&MaterializeState>) -> NextAction {

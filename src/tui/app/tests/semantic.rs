@@ -1,6 +1,7 @@
 //! AppState embeddings-toggle tests.
 
 use super::super::*;
+use crate::tui::actions::{stop_watch, ActionContext, ActionOutcome};
 use crossterm::event::{KeyCode, KeyModifiers};
 
 fn ready_state() -> (
@@ -60,4 +61,45 @@ fn pressing_t_disables_embeddings_after_confirmation() {
     let entry = state.log.as_slice().last().expect("embeddings log entry");
     assert_eq!(entry.tag, "embeddings");
     assert!(entry.message.contains("disabled"));
+}
+
+#[test]
+#[cfg(not(feature = "semantic-triage"))]
+fn enabling_without_semantic_feature_does_not_stop_watch() {
+    let _watch_guard = crate::test_support::global_test_lock("tui-app-watch-toggle");
+    let (_lock, repo, _guard, _home, mut state) = ready_state();
+    let ctx = ActionContext::new(repo.path());
+    let start = crate::tui::actions::start_watch_daemon(&ctx);
+    assert!(
+        matches!(start, ActionOutcome::Ack { .. }),
+        "setup start must succeed, got {start:?}"
+    );
+
+    assert!(state.handle_key(KeyCode::Char('T'), KeyModifiers::NONE));
+    assert_eq!(
+        state.pending_quick_confirm,
+        Some(PendingQuickConfirm::ToggleEmbeddings)
+    );
+    assert!(state.handle_key(KeyCode::Enter, KeyModifiers::NONE));
+
+    assert!(
+        state.confirm_stop_watch.is_none(),
+        "missing feature must fail before opening stop-watch modal"
+    );
+    assert!(state.log.as_slice().iter().any(|entry| {
+        entry.tag == "embeddings" && entry.message.contains("not built with `semantic-triage`")
+    }));
+    assert!(matches!(
+        crate::pipeline::watch::watch_service_status(&ctx.synrepo_dir),
+        crate::pipeline::watch::WatchServiceStatus::Running(_)
+    ));
+
+    let stop = stop_watch(&ctx);
+    assert!(
+        matches!(
+            stop,
+            ActionOutcome::Ack { .. } | ActionOutcome::Completed { .. }
+        ),
+        "cleanup stop must succeed, got {stop:?}"
+    );
 }

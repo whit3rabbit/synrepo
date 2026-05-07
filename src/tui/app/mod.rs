@@ -14,7 +14,10 @@ mod state_impl;
 mod view_state;
 mod watch_events;
 
-pub use confirm_stop_watch::{describe_pending_mode, ConfirmStopWatchState};
+pub use confirm_stop_watch::{
+    describe_pending_mode, describe_pending_stop_action, ConfirmStopWatchState,
+    PendingStopWatchAction,
+};
 pub use explain_events::explain_event_to_log_entry;
 pub use explain_picker::{FolderEntry, FolderPickerState};
 pub use explain_preview::{ExplainPreviewPanel, ExplainPreviewState};

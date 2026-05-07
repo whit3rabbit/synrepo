@@ -8,8 +8,10 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, Widget};
 
+use crate::tui::app::ConfirmStopWatchState;
 use crate::tui::probe::NextAction;
 use crate::tui::theme::Theme;
+use crate::tui::widgets::confirm_stop_watch::render_confirm_stop_watch;
 use crate::tui::widgets::{severity_span, QuickAction};
 
 /// Actions tab widget: next-actions stacked above quick-actions.
@@ -18,12 +20,30 @@ pub struct ActionsTabWidget<'a> {
     pub next_actions: &'a [NextAction],
     /// Explicit key-bound actions.
     pub quick_actions: &'a [QuickAction],
+    /// Active confirm-stop-watch modal state, when an action is gated.
+    pub confirm_stop_watch: Option<&'a ConfirmStopWatchState>,
     /// Active theme.
     pub theme: &'a Theme,
 }
 
 impl Widget for ActionsTabWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
+        if let Some(confirm) = self.confirm_stop_watch {
+            let block = Block::default()
+                .title(" actions ")
+                .borders(Borders::ALL)
+                .border_style(self.theme.border_style());
+            let items: Vec<ListItem> = render_confirm_stop_watch(confirm, self.theme)
+                .into_iter()
+                .map(ListItem::new)
+                .collect();
+            List::new(items)
+                .block(block)
+                .style(self.theme.base_style())
+                .render(area, buf);
+            return;
+        }
+
         let rows = Layout::default()
             .direction(Direction::Vertical)
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])

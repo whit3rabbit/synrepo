@@ -12,6 +12,8 @@ pub use trust::build_trust_vm;
 pub use vm::*;
 
 #[cfg(test)]
+mod next_actions_tests;
+#[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod trust_tests;
