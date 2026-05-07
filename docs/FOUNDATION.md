@@ -509,7 +509,7 @@ Caveats: not every grammar crate exposes the constants uniformly (some older or 
 
 *Improvement vs the split-store v4 sketch.* Nodes, edges, and provenance live in a single `nodes.db`; commentary, cross-links, and findings live in a single `overlay.db`. Rationale: multi-table reads inside one SQLite file open under a single `BEGIN DEFERRED` snapshot, which is how the reader-snapshot invariant (invariant 8 in `CLAUDE.md`) can hold. Splitting would force either cross-DB attach contortions or coordinated per-store snapshots. The overhead of one extra file isn't worth fracturing atomicity. The graph and overlay stores remain physically separated from each other; the contamination invariant is untouched.
 
-*Laziness drift to call out.* The `cache/` directory is created but unused in the default install as the hook point for the Phase 4 LLM response cache. Optional embeddings now materialize under `index/vectors/` only when semantic triage is enabled and reconcile builds the vector index.
+*Laziness drift to call out.* The `cache/` directory is created but unused in the default install as the hook point for the Phase 4 LLM response cache. Optional embeddings now materialize under `index/vectors/` only when semantic triage is enabled and `synrepo embeddings build` builds the vector index.
 
 The graph store is canonical. The overlay is physically separate. Nothing in `.synrepo/` is committed except `config.toml` and `.gitignore`.
 
@@ -671,7 +671,7 @@ Subsystem benchmarks lie. The validation suite must include ugly repos: huge gen
 | --- | --- | --- |
 | `index/` | Compacted on full reindex | Monthly default |
 | `graph/` | Permanent for current schema | Migration only |
-| `index/vectors/` | Rebuilt on reconcile when embeddings are enabled | Config or source drift |
+| `index/vectors/` | Rebuilt by `synrepo embeddings build` when embeddings are enabled | Config or source drift |
 | `cache/llm-responses/` | LRU at 1 GB cap | Size threshold |
 | `overlay/commentary/` | Keep current; history 30 days | Time |
 | `overlay/cross_links.db` | Expire unpromoted low-confidence at 90 days | Time |

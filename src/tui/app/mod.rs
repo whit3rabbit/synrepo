@@ -152,6 +152,9 @@ pub struct AppState {
     /// When set, the dashboard loop should run explain in-place after the
     /// current key event is handled.
     pub pending_explain: VecDeque<PendingExplainRun>,
+    /// When set, the dashboard loop should run an embedding build in-place
+    /// after the current key event is handled.
+    pub pending_embedding_build: VecDeque<PendingEmbeddingBuild>,
     /// Confirm-stop-watch modal state. `Some` when the operator asked to run
     /// explain while watch was still active; holds the pending mode until
     /// the operator answers yes (stop watch + launch) or no (cancel).
@@ -235,6 +238,13 @@ pub struct PendingExplainRun {
     /// Scope of the explain run.
     pub mode: ExplainMode,
     /// `true` when the dashboard stopped watch before queuing the run.
+    pub stopped_watch: bool,
+}
+
+/// Queued in-dashboard embedding index build.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PendingEmbeddingBuild {
+    /// `true` when the dashboard stopped watch before queuing the build.
     pub stopped_watch: bool,
 }
 

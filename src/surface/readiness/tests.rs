@@ -338,8 +338,8 @@ fn degraded_embeddings_report_degraded_with_next_action() {
     assert!(
         row.next_action
             .as_deref()
-            .is_some_and(|s| s.contains("reconcile")),
-        "degraded embeddings must point at reconcile"
+            .is_some_and(|s| s.contains("embeddings build")),
+        "degraded embeddings must point at embeddings build"
     );
 }
 

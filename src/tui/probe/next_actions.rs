@@ -128,10 +128,10 @@ fn store_compat_action(
     if embedding_related {
         let label = match watch_status {
             WatchServiceStatus::Running(_) | WatchServiceStatus::Starting => {
-                "Embedding/index rebuild pending, stop watch before pressing R to rebuild vectors"
+                "Embedding/index rebuild pending, stop watch before pressing B to rebuild vectors"
                     .to_string()
             }
-            _ => "Embedding/index rebuild pending, press R to rebuild vectors".to_string(),
+            _ => "Embedding/index rebuild pending, press B to rebuild vectors".to_string(),
         };
         return NextAction {
             label,
@@ -260,6 +260,12 @@ fn add_integration_action(out: &mut Vec<NextAction>, integration: &AgentIntegrat
                     "Complete MCP registration for {}",
                     integration_target_label(*target)
                 ),
+                severity: Severity::Stale,
+            });
+        }
+        AgentIntegration::McpOnly { target } => {
+            out.push(NextAction {
+                label: format!("Write agent shim for {}", integration_target_label(*target)),
                 severity: Severity::Stale,
             });
         }

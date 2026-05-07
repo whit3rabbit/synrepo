@@ -62,18 +62,61 @@ impl FlatVecIndex {
     pub fn build(chunks: Vec<EmbeddingChunk>, model: ModelResolution) -> crate::Result<Self> {
         // Load the model
         let session = EmbeddingSession::new_from_resolution(&model)?;
+        Self::build_with_session_and_progress(
+            chunks,
+            &model,
+            session,
+            |_current, _total| {},
+            || false,
+        )
+    }
 
-        // Extract texts from chunks
-        let texts: Vec<String> = chunks.iter().map(|c| c.text.clone()).collect();
-
-        // Run inference (Session handles normalization)
-        let vectors = session.embed(&texts)?;
-
-        // Convert to flat storage
+    /// Build an index using an already initialized session and per-batch hooks.
+    pub fn build_with_session_and_progress<F, C>(
+        chunks: Vec<EmbeddingChunk>,
+        model: &ModelResolution,
+        session: EmbeddingSession,
+        mut on_batch: F,
+        mut should_stop: C,
+    ) -> crate::Result<Self>
+    where
+        F: FnMut(usize, usize),
+        C: FnMut() -> bool,
+    {
         let dim = model.embedding_dim() as usize;
+        let total = chunks.len();
+
         let mut flat_vectors = Vec::with_capacity(chunks.len() * dim);
-        for v in vectors {
-            flat_vectors.extend(v);
+        let batch_size = model.build_batch_size();
+        let mut current = 0;
+        for batch in chunks.chunks(batch_size) {
+            if should_stop() {
+                return Err(crate::Error::Other(anyhow::anyhow!(
+                    "embedding build cancelled"
+                )));
+            }
+            let texts: Vec<String> = batch.iter().map(|c| c.text.clone()).collect();
+            let vectors = session.embed(&texts)?;
+            if vectors.len() != batch.len() {
+                return Err(crate::Error::Other(anyhow::anyhow!(
+                    "embedding provider returned {} vectors for {} chunks",
+                    vectors.len(),
+                    batch.len()
+                )));
+            }
+            for (idx, vector) in vectors.into_iter().enumerate() {
+                if vector.len() != dim {
+                    return Err(crate::Error::Other(anyhow::anyhow!(
+                        "embedding vector {} has dimension {}, expected {}",
+                        current + idx + 1,
+                        vector.len(),
+                        dim
+                    )));
+                }
+                flat_vectors.extend(vector);
+            }
+            current += batch.len();
+            on_batch(current, total);
         }
 
         // Store chunk metadata

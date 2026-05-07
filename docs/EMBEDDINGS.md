@@ -28,7 +28,7 @@ Embeddings only participate when all gates are open:
 
 1. The binary is built with `semantic-triage` (see [Build](#build)).
 2. `.synrepo/config.toml` has `enable_semantic_triage = true`.
-3. `synrepo reconcile` has built `.synrepo/index/vectors/index.bin`.
+3. `synrepo embeddings build` has built `.synrepo/index/vectors/index.bin`.
 4. Query-time code can load the vector index and local embedding backend.
 
 If any gate is closed, MCP and CLI search fall back to lexical behavior with `semantic_available: false` or `routing_strategy: "keyword_fallback"`. Query-time surfaces do not download ONNX artifacts, rebuild indexes, or start background work.
@@ -37,7 +37,7 @@ If any gate is closed, MCP and CLI search fall back to lexical behavior with `se
 
 In the dashboard Actions tab, press `T` to enable or disable embeddings for the current repo. The action writes only `enable_semantic_triage` in `.synrepo/config.toml`.
 
-After enabling, run `R` in the dashboard or `synrepo reconcile` to build vectors. The TUI does not start that rebuild automatically because embedding can download local model artifacts for ONNX or call a local Ollama endpoint over many chunks.
+After enabling, press `B` in the dashboard or run `synrepo embeddings build` to build vectors. The builder shows progress, preflights the provider, and reports failures such as an unavailable Ollama endpoint or wrong vector dimension. If watch is running, the dashboard asks before stopping watch because the build needs the writer lock.
 
 If the binary was not built with `semantic-triage`, enabling from the TUI reports that embeddings are unavailable. Disabling remains allowed.
 

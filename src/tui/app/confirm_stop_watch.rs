@@ -8,7 +8,7 @@
 
 use crossterm::event::{KeyCode, KeyModifiers};
 
-use super::{AppState, ExplainMode, PendingExplainRun};
+use super::{AppState, ExplainMode, PendingEmbeddingBuild, PendingExplainRun};
 use crate::config::Config;
 use crate::pipeline::watch::{watch_service_status, WatchServiceStatus};
 use crate::tui::actions::{outcome_to_log, stop_watch, ActionContext, ActionOutcome};
@@ -27,8 +27,8 @@ pub struct ConfirmStopWatchState {
 pub enum PendingStopWatchAction {
     /// Run Explain after watch stops.
     Explain(ExplainMode),
-    /// Enable embeddings and rebuild vectors after watch stops.
-    EnableEmbeddings,
+    /// Build embedding vectors after watch stops.
+    BuildEmbeddings,
 }
 
 impl AppState {
@@ -98,8 +98,10 @@ impl AppState {
                                     stopped_watch: true,
                                 });
                             }
-                            PendingStopWatchAction::EnableEmbeddings => {
-                                self.run_enable_semantic_triage(true);
+                            PendingStopWatchAction::BuildEmbeddings => {
+                                self.enqueue_pending_embedding_build(PendingEmbeddingBuild {
+                                    stopped_watch: true,
+                                });
                             }
                         }
                     }
@@ -142,8 +144,6 @@ pub fn describe_pending_mode(mode: &ExplainMode) -> String {
 pub fn describe_pending_stop_action(action: &PendingStopWatchAction) -> String {
     match action {
         PendingStopWatchAction::Explain(mode) => describe_pending_mode(mode),
-        PendingStopWatchAction::EnableEmbeddings => {
-            "semantic vectors and hybrid search".to_string()
-        }
+        PendingStopWatchAction::BuildEmbeddings => "embedding vector index".to_string(),
     }
 }

@@ -181,7 +181,9 @@ impl RepairWizardState {
 
         if matches!(
             integration,
-            AgentIntegration::Absent | AgentIntegration::Partial { .. }
+            AgentIntegration::Absent
+                | AgentIntegration::Partial { .. }
+                | AgentIntegration::McpOnly { .. }
         ) {
             if let Some(target) = shim_target {
                 rows.push(ActionRow {

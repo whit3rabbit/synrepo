@@ -14,9 +14,9 @@ use cli_support::cli_args::{
 };
 use cli_support::commands::{
     agent_setup_many_resolved, bench_context, bench_search, cards_alias, change_risk, check,
-    compact, docs, doctor, explain_alias, export, findings, graph, handoffs, impact_alias,
-    links_accept, links_list, links_reject, links_review, node, notes_add, notes_audit,
-    notes_forget, notes_link, notes_list, notes_supersede, notes_verify, project_add,
+    compact, docs, doctor, embeddings, explain_alias, export, findings, graph, handoffs,
+    impact_alias, links_accept, links_list, links_reject, links_review, node, notes_add,
+    notes_audit, notes_forget, notes_link, notes_list, notes_supersede, notes_verify, project_add,
     project_inspect, project_list, project_prune_missing, project_remove, project_rename,
     project_use, reconcile, remove, resolve_tool_resolution, risks_alias, run_mcp_server, server,
     stats_context, status, sync, task_route, tests_alias, uninstall, upgrade, watch,
@@ -142,6 +142,7 @@ fn dispatch(
             task_route(repo_root, &task, path.as_deref(), json)
         }
         Command::Docs(command) => docs(repo_root, command),
+        Command::Embeddings(command) => embeddings(repo_root, command),
         Command::Explain { target, budget } => explain_alias(repo_root, &target, budget),
         Command::Impact { target, budget } => impact_alias(repo_root, &target, budget),
         Command::Tests { target, budget } => tests_alias(repo_root, &target, budget),

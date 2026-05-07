@@ -37,15 +37,6 @@ pub(crate) fn finish_runtime_surfaces(
         }
     }
 
-    #[cfg(feature = "semantic-triage")]
-    {
-        if config.enable_semantic_triage {
-            if let Err(err) = crate::substrate::build_embedding_index(graph, config, synrepo_dir) {
-                tracing::warn!(error = %err, "embedding index rebuild skipped");
-            }
-        }
-    }
-
     prune_overlay_orphans(synrepo_dir, graph);
     sync_commentary_surfaces(synrepo_dir, graph)?;
     Ok(())

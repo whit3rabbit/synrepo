@@ -126,7 +126,7 @@ fn wizard_plan_execution_persists_embeddings_opt_in() {
 
 #[test]
 #[cfg(feature = "semantic-triage")]
-fn setup_init_with_semantic_triage_produces_vectors_index() {
+fn setup_init_with_semantic_triage_does_not_build_vectors_index() {
     let (_lock, _home, _guard) = redirect_home();
     let repo = tempdir().unwrap();
     fs::write(
@@ -149,11 +149,7 @@ fn setup_init_with_semantic_triage_produces_vectors_index() {
 
     let vectors_dir = repo.path().join(".synrepo/index/vectors");
     assert!(
-        vectors_dir.exists(),
-        "vectors directory must exist when setup enables embeddings"
-    );
-    assert!(
-        vectors_dir.join("index.bin").exists(),
-        "index.bin must exist when setup enables embeddings"
+        !vectors_dir.join("index.bin").exists(),
+        "setup must not build embeddings implicitly"
     );
 }

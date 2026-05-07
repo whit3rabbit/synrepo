@@ -10,7 +10,7 @@ use super::support::bootstrap_isolated as bootstrap;
 
 #[cfg(feature = "semantic-triage")]
 #[test]
-fn init_with_semantic_triage_produces_vectors_index() {
+fn init_with_semantic_triage_does_not_build_vectors_index() {
     let repo = tempdir().unwrap();
     std::fs::create_dir_all(repo.path().join("src")).unwrap();
     std::fs::write(repo.path().join("src/lib.rs"), "pub fn greet() {}\n").unwrap();
@@ -32,24 +32,17 @@ fn init_with_semantic_triage_produces_vectors_index() {
 
     bootstrap(repo.path(), None, false).unwrap();
 
-    // Verify vectors directory exists with valid index
     let vectors_dir = synrepo_dir.join("index").join("vectors");
-    assert!(
-        vectors_dir.exists(),
-        "vectors directory must exist when semantic_triage is enabled"
-    );
-
-    // Check for index file
     let index_path = vectors_dir.join("index.bin");
     assert!(
-        index_path.exists(),
-        "index.bin must exist in vectors directory"
+        !index_path.exists(),
+        "init must not build embedding vectors implicitly"
     );
 }
 
 #[cfg(feature = "semantic-triage")]
 #[test]
-fn reconcile_rebuilds_vectors_index_after_deletion() {
+fn reconcile_does_not_rebuild_vectors_index() {
     let repo = tempdir().unwrap();
     std::fs::create_dir_all(repo.path().join("src")).unwrap();
     std::fs::write(repo.path().join("src/lib.rs"), "pub fn greet() {}\n").unwrap();
@@ -74,24 +67,12 @@ fn reconcile_rebuilds_vectors_index_after_deletion() {
     let vectors_dir = synrepo_dir.join("index").join("vectors");
     let index_path = vectors_dir.join("index.bin");
 
-    // Verify initial index exists
-    assert!(index_path.exists(), "initial index must exist");
-
-    // Delete vectors directory
-    std::fs::remove_dir_all(&vectors_dir).unwrap();
-    assert!(!vectors_dir.exists(), "vectors directory must be deleted");
-
     // Run reconcile
     super::super::commands::reconcile(repo.path(), false).unwrap();
 
-    // Verify index is rebuilt
     assert!(
-        vectors_dir.exists(),
-        "vectors directory must be rebuilt after reconcile"
-    );
-    assert!(
-        index_path.exists(),
-        "index.bin must be rebuilt after reconcile"
+        !index_path.exists(),
+        "reconcile must not build embedding vectors implicitly"
     );
 }
 

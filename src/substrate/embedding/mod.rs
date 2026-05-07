@@ -9,12 +9,16 @@
 //! All functionality is gated behind the `semantic-triage` feature flag.
 
 #[cfg(feature = "semantic-triage")]
+pub mod build;
+#[cfg(feature = "semantic-triage")]
 pub mod chunk;
 #[cfg(feature = "semantic-triage")]
 pub mod index;
 #[cfg(feature = "semantic-triage")]
 pub mod model;
 
+#[cfg(feature = "semantic-triage")]
+pub use build::{build_embedding_index_with_progress, EmbeddingBuildEvent, EmbeddingBuildSummary};
 #[cfg(feature = "semantic-triage")]
 pub use chunk::{ChunkId, EmbeddingChunk, EmbeddingChunkSource};
 #[cfg(feature = "semantic-triage")]
@@ -43,6 +47,99 @@ pub fn build_embedding_index<G: GraphStore>(
     Ok(Some(index))
 }
 
+/// Explicit embedding builds require the optional semantic-triage feature.
+#[cfg(not(feature = "semantic-triage"))]
+pub fn build_embedding_index_with_progress(
+    _graph: &dyn crate::structure::graph::GraphStore,
+    _config: &Config,
+    _synrepo_dir: &std::path::Path,
+    _progress: Option<&mut dyn FnMut(EmbeddingBuildEvent)>,
+    _should_stop: Option<&mut dyn FnMut() -> bool>,
+) -> Result<EmbeddingBuildSummary> {
+    Err(crate::Error::Other(anyhow::anyhow!(
+        "embeddings are optional; this binary was not built with `semantic-triage`"
+    )))
+}
+
+/// Progress event placeholder used when semantic triage is not compiled.
+#[cfg(not(feature = "semantic-triage"))]
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(tag = "event", rename_all = "snake_case")]
+pub enum EmbeddingBuildEvent {
+    /// Model/provider resolution started.
+    ResolvingModel {
+        /// Embedding backend, for example `onnx` or `ollama`.
+        provider: String,
+        /// Configured model name.
+        model: String,
+        /// Expected vector dimension.
+        dim: u16,
+    },
+    /// Model/provider is resolved and ready to initialize.
+    ModelReady {
+        /// Embedding backend, for example `onnx` or `ollama`.
+        provider: String,
+        /// Resolved model name.
+        model: String,
+        /// Expected vector dimension.
+        dim: u16,
+        /// Whether ONNX artifacts were downloaded during resolution.
+        downloaded: bool,
+    },
+    /// Runtime session initialization started.
+    InitializingBackend,
+    /// One small provider request/inference is starting.
+    PreflightStarted,
+    /// Provider preflight completed successfully.
+    PreflightFinished,
+    /// Chunk extraction from the graph started.
+    ExtractingChunks,
+    /// Chunks are ready for embedding.
+    ChunksReady {
+        /// Number of chunks that will be embedded.
+        chunks: usize,
+    },
+    /// A batch of chunks finished embedding.
+    BatchFinished {
+        /// Number of chunks embedded so far.
+        current: usize,
+        /// Total chunks planned for this build.
+        total: usize,
+    },
+    /// Persisting the index started.
+    SavingIndex {
+        /// Destination index path.
+        path: std::path::PathBuf,
+    },
+    /// Build completed and the index is persisted.
+    Finished {
+        /// Number of chunks written to the index.
+        chunks: usize,
+        /// Destination index path.
+        path: std::path::PathBuf,
+        /// Resolved model name.
+        model: String,
+        /// Embedding backend, for example `onnx` or `ollama`.
+        provider: String,
+    },
+}
+
+/// Build summary placeholder used when semantic triage is not compiled.
+#[cfg(not(feature = "semantic-triage"))]
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct EmbeddingBuildSummary {
+    /// Embedding backend.
+    pub provider: String,
+    /// Model name.
+    pub model: String,
+    /// Vector dimension.
+    pub dim: u16,
+    /// Number of chunks written.
+    pub chunks: usize,
+    /// Destination index path.
+    pub index_path: std::path::PathBuf,
+}
+
 /// Load an existing embedding index for query-time use.
 /// Returns None if semantic triage is not enabled.
 /// If enabled but the index or model is missing/invalid, returns an Error (strict policy).
@@ -59,7 +156,7 @@ pub fn load_embedding_index(
     if !index_path.exists() {
         // If config is enabled but index is missing, it's an error in strict mode
         return Err(crate::Error::Other(anyhow::anyhow!(
-            "Semantic triage is enabled but embedding index is missing at {}. Run 'synrepo reconcile' to build it.",
+            "Semantic triage is enabled but embedding index is missing at {}. Run 'synrepo embeddings build' to build it.",
             index_path.display()
         )));
     }

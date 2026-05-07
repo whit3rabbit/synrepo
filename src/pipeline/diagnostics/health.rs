@@ -88,7 +88,7 @@ pub(super) fn compute_embedding_health(synrepo_dir: &Path, config: &Config) -> E
     let index_path = synrepo_dir.join("index/vectors/index.bin");
     if !index_path.exists() {
         return EmbeddingHealth::Degraded(
-            "embedding index missing; run `synrepo reconcile` to build it".to_string(),
+            "embedding index missing; run `synrepo embeddings build` to build it".to_string(),
         );
     }
 

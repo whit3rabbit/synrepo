@@ -19,6 +19,9 @@ mod tests {
     fn complete(t: AgentTargetKind) -> AgentIntegration {
         AgentIntegration::Complete { target: t }
     }
+    fn mcp_only(t: AgentTargetKind) -> AgentIntegration {
+        AgentIntegration::McpOnly { target: t }
+    }
 
     #[test]
     fn absent_seeds_write_shim_and_register_mcp_on() {
@@ -47,6 +50,16 @@ mod tests {
         let s = IntegrationWizardState::new(complete(AgentTargetKind::Cursor), vec![]);
         assert_eq!(s.target, AgentTargetKind::Cursor);
         assert!(!s.write_shim);
+        assert!(!s.register_mcp);
+        assert!(!s.overwrite_shim);
+        assert!(!s.install_agent_hooks);
+    }
+
+    #[test]
+    fn mcp_only_seeds_only_write_shim_on() {
+        let s = IntegrationWizardState::new(mcp_only(AgentTargetKind::Codex), vec![]);
+        assert_eq!(s.target, AgentTargetKind::Codex);
+        assert!(s.write_shim);
         assert!(!s.register_mcp);
         assert!(!s.overwrite_shim);
         assert!(!s.install_agent_hooks);

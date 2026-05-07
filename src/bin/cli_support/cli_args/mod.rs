@@ -4,6 +4,7 @@
 
 mod agent_hook;
 mod convert;
+mod embeddings;
 mod graph;
 mod subcommands;
 
@@ -14,6 +15,7 @@ use super::agent_shims::AgentTool;
 
 pub(crate) use agent_hook::*;
 pub(crate) use convert::*;
+pub(crate) use embeddings::*;
 pub(crate) use graph::*;
 pub(crate) use subcommands::*;
 
@@ -153,14 +155,15 @@ pub(crate) enum Command {
     #[command(subcommand)]
     Docs(DocsCommand),
 
+    /// Configure and build optional semantic embedding vectors.
+    #[command(subcommand)]
+    Embeddings(EmbeddingsCommand),
+
     /// Change risk assessment for a symbol or file.
     ChangeRisk {
-        /// Target: file path or qualified symbol name.
         target: String,
-        /// Budget tier: tiny, normal, or deep. Defaults to tiny.
         #[arg(long, short)]
         budget: Option<String>,
-        /// Output as JSON.
         #[arg(long)]
         json: bool,
     },
@@ -170,40 +173,31 @@ pub(crate) enum Command {
 
     /// Return bounded card suggestions for a task query.
     Cards {
-        /// Plain-language query.
         #[arg(long)]
         query: String,
-        /// Numeric token cap.
         #[arg(long)]
         budget: Option<usize>,
     },
 
     /// Classify a task into the cheapest safe synrepo route.
     TaskRoute {
-        /// Plain-language task.
         task: String,
-        /// Optional source path for extension-sensitive routing.
         #[arg(long)]
         path: Option<String>,
-        /// Emit JSON instead of human-readable output.
         #[arg(long)]
         json: bool,
     },
 
     /// Explain a file or symbol with a bounded card.
     Explain {
-        /// Target file path or symbol name.
         target: String,
-        /// Numeric token cap.
         #[arg(long)]
         budget: Option<usize>,
     },
 
     /// Inspect change impact/risk before editing.
     Impact {
-        /// Target file path or symbol name.
         target: String,
-        /// Numeric token cap.
         #[arg(long)]
         budget: Option<usize>,
     },

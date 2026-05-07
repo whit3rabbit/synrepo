@@ -55,10 +55,6 @@ pub(super) fn tool_needs_synrepo(client: HookClient, input: &Value) -> bool {
     if tool_name.starts_with("mcp__synrepo__") {
         return false;
     }
-    if tool_name.starts_with("mcp__") {
-        return true;
-    }
-
     match client {
         HookClient::Claude => match tool_name {
             "Read" | "Grep" | "Glob" | "Edit" | "Write" => true,
@@ -73,7 +69,7 @@ pub(super) fn tool_needs_synrepo(client: HookClient, input: &Value) -> bool {
     }
 }
 
-fn command_needs_synrepo(input: &Value) -> bool {
+pub(super) fn command_needs_synrepo(input: &Value) -> bool {
     let Some(command) = extract_command(input) else {
         return false;
     };

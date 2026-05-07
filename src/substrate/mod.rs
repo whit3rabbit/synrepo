@@ -8,7 +8,6 @@ pub mod hybrid;
 pub mod incremental;
 pub mod index;
 
-#[cfg(feature = "semantic-triage")]
 pub mod embedding;
 
 pub use classify::{classify, FileClass, SkipReason};

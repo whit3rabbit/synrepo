@@ -192,6 +192,10 @@ impl AppState {
             KeyCode::Char('T') | KeyCode::Char('t') => {
                 self.open_quick_confirm(PendingQuickConfirm::ToggleEmbeddings)
             }
+            KeyCode::Char('B') | KeyCode::Char('b') => {
+                self.queue_embedding_build();
+                true
+            }
             KeyCode::Char('M') | KeyCode::Char('m') => {
                 self.open_quick_confirm(PendingQuickConfirm::MaterializeGraph)
             }
@@ -315,6 +319,17 @@ pub(super) fn quick_actions_for(mode: &AppMode, snapshot: &StatusSnapshot) -> Ve
             expensive: !embeddings_enabled,
             command_label: Some(label.to_string()),
         });
+        if embeddings_enabled {
+            actions.push(QuickAction {
+                key: "B".to_string(),
+                label: "build embeddings".to_string(),
+                disabled: false,
+                requires_confirm: false,
+                destructive: false,
+                expensive: true,
+                command_label: Some("build embeddings".to_string()),
+            });
+        }
     }
     actions.extend([
         QuickAction {

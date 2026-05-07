@@ -27,7 +27,8 @@ pub fn detect_agent_integration(
         match (shim, mcp) {
             (true, true) => return AgentIntegration::Complete { target },
             (true, false) => return AgentIntegration::Partial { target },
-            (false, _) => continue,
+            (false, true) => return AgentIntegration::McpOnly { target },
+            (false, false) => continue,
         }
     }
     AgentIntegration::Absent

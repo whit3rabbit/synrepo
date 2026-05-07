@@ -12,6 +12,8 @@ pub use trust::build_trust_vm;
 pub use vm::*;
 
 #[cfg(test)]
+mod header_tests;
+#[cfg(test)]
 mod next_actions_tests;
 #[cfg(test)]
 mod tests;
@@ -92,6 +94,10 @@ pub fn build_header_vm(
         ),
         AgentIntegration::Partial { target } => (
             format!("instructions only ({})", target.as_str()),
+            Severity::Stale,
+        ),
+        AgentIntegration::McpOnly { target } => (
+            format!("shim missing ({})", target.as_str()),
             Severity::Stale,
         ),
         AgentIntegration::Absent => ("absent".to_string(), Severity::Stale),

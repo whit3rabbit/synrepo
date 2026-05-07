@@ -11,6 +11,7 @@ mod compact;
 mod context;
 mod docs;
 mod doctor;
+mod embeddings;
 mod export;
 mod graph_cmd;
 mod handoffs;
@@ -50,6 +51,9 @@ pub(crate) use docs::{
     docs_clean_output, docs_export_output, docs_import_output, docs_list_output, docs_search_output,
 };
 pub(crate) use doctor::doctor;
+pub(crate) use embeddings::embeddings;
+#[cfg(test)]
+pub(crate) use embeddings::embeddings_build_output;
 pub(crate) use export::export;
 pub(crate) use graph_cmd::graph;
 pub(crate) use handoffs::handoffs;

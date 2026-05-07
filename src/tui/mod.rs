@@ -38,6 +38,7 @@ pub mod actions;
 pub mod app;
 pub mod dashboard;
 mod dashboard_tabs;
+mod embedding_build_run;
 mod explain_run;
 mod graph_view;
 mod live_dashboard;

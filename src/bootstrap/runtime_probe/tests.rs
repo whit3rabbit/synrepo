@@ -4,6 +4,9 @@ use std::fs;
 use std::path::PathBuf;
 use tempfile::tempdir;
 
+#[path = "tests/agent_integration.rs"]
+mod agent_integration;
+
 fn snapshot_dir_bytes(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
     let mut out = BTreeMap::new();
     if !root.exists() {

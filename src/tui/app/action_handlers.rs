@@ -8,12 +8,14 @@ use crate::pipeline::watch::WatchServiceStatus;
 use crate::store::{overlay::SqliteOverlayStore, sqlite::SqliteGraphStore};
 use crate::structure::graph::with_graph_read_snapshot;
 use crate::tui::actions::{
-    enable_semantic_triage_and_rebuild, materialize_now, outcome_to_log, outcome_to_project_log,
-    reconcile_now, semantic_feature_compiled, set_auto_sync, set_semantic_triage,
-    start_watch_daemon, stop_watch, sync_now, ActionContext, ActionOutcome, ProjectActionContext,
+    materialize_now, outcome_to_log, outcome_to_project_log, reconcile_now,
+    semantic_feature_compiled, set_auto_sync, set_semantic_triage, start_watch_daemon, stop_watch,
+    sync_now, ActionContext, ActionOutcome, ProjectActionContext,
 };
 
-use super::{AppMode, AppState, ConfirmStopWatchState, PendingStopWatchAction};
+use super::{
+    AppMode, AppState, ConfirmStopWatchState, PendingEmbeddingBuild, PendingStopWatchAction,
+};
 
 impl AppState {
     pub(super) fn handle_docs_export(&mut self, force: bool) -> bool {
@@ -109,16 +111,27 @@ impl AppState {
             return true;
         }
 
-        self.queue_enable_semantic_triage();
+        let outcome = set_semantic_triage(&ctx, true);
+        self.set_toast(self.action_toast("embeddings", &outcome));
+        self.log_action_outcome("embeddings", &outcome);
+        self.refresh_now();
         true
     }
 
-    pub(super) fn queue_enable_semantic_triage(&mut self) {
+    pub(super) fn queue_embedding_build(&mut self) {
         if !semantic_feature_compiled() {
-            let outcome = enable_semantic_triage_and_rebuild(&self.action_context());
-            self.set_toast(self.action_toast("embeddings", &outcome));
-            self.log_action_outcome("embeddings", &outcome);
-            self.refresh_now();
+            self.set_toast("embeddings unavailable: rebuild with `--features semantic-triage`");
+            return;
+        }
+
+        let enabled = self
+            .snapshot
+            .config
+            .as_ref()
+            .map(|config| config.enable_semantic_triage)
+            .unwrap_or(false);
+        if !enabled {
+            self.set_toast("enable embeddings first with T");
             return;
         }
 
@@ -126,26 +139,13 @@ impl AppState {
         match crate::pipeline::watch::watch_service_status(&ctx.synrepo_dir) {
             WatchServiceStatus::Running(_) | WatchServiceStatus::Starting => {
                 self.confirm_stop_watch = Some(ConfirmStopWatchState {
-                    pending: PendingStopWatchAction::EnableEmbeddings,
+                    pending: PendingStopWatchAction::BuildEmbeddings,
                 });
             }
-            _ => self.run_enable_semantic_triage(false),
+            _ => self.enqueue_pending_embedding_build(PendingEmbeddingBuild {
+                stopped_watch: false,
+            }),
         }
-    }
-
-    pub(super) fn run_enable_semantic_triage(&mut self, stopped_watch: bool) {
-        let outcome = enable_semantic_triage_and_rebuild(&self.action_context());
-        if stopped_watch && matches!(outcome, ActionOutcome::Completed { .. }) {
-            self.log.push(outcome_to_log(
-                "watch",
-                &ActionOutcome::Completed {
-                    message: "watch was stopped to rebuild embeddings".to_string(),
-                },
-            ));
-        }
-        self.set_toast(self.action_toast("embeddings", &outcome));
-        self.log_action_outcome("embeddings", &outcome);
-        self.refresh_now();
     }
 
     pub(super) fn handle_watch_toggle(&mut self) -> bool {

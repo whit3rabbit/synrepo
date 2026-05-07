@@ -25,6 +25,14 @@ pub enum ModelResolution {
 }
 
 impl ModelResolution {
+    /// Provider label used in status and progress surfaces.
+    pub fn provider_label(&self) -> &'static str {
+        match self {
+            Self::Onnx(_) => "onnx",
+            Self::Ollama(_) => "ollama",
+        }
+    }
+
     /// User-facing model name.
     pub fn model_name(&self) -> &str {
         match self {
@@ -46,6 +54,22 @@ impl ModelResolution {
         match self {
             Self::Onnx(res) => res.normalize,
             Self::Ollama(res) => res.normalize,
+        }
+    }
+
+    /// Number of texts to embed per build request.
+    pub fn build_batch_size(&self) -> usize {
+        match self {
+            Self::Onnx(_) => 1,
+            Self::Ollama(res) => res.batch_size.max(1),
+        }
+    }
+
+    /// Whether ONNX artifacts were downloaded while resolving this model.
+    pub fn downloaded(&self) -> bool {
+        match self {
+            Self::Onnx(res) => res.downloaded,
+            Self::Ollama(_) => false,
         }
     }
 }

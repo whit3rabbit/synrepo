@@ -114,6 +114,9 @@ fn tool_route(client: HookClient, input: &Value) -> Option<TaskRoute> {
         return None;
     }
     if tool_name == "Bash" {
+        if !classify::command_needs_synrepo(input) {
+            return None;
+        }
         let command = classify::extract_command(input)?;
         return Some(classify_task_route(
             &format!("search repository with command: {command}"),
@@ -126,9 +129,6 @@ fn tool_route(client: HookClient, input: &Value) -> Option<TaskRoute> {
         (HookClient::Claude, "Read" | "Grep" | "Glob") => "find or read repository file",
         (HookClient::Claude, "Edit" | "Write") => "edit repository file",
         (HookClient::Codex, "apply_patch") => "edit repository file",
-        _ if tool_name.starts_with("mcp__") => {
-            "review external tool output against repository context"
-        }
         _ => return None,
     };
     Some(classify_task_route(task, path))
@@ -252,6 +252,26 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("[SYNREPO_CONTEXT_FAST_PATH]"));
+    }
+
+    #[test]
+    fn codex_pretool_skips_test_commands() {
+        let body = json!({
+            "tool_name": "Bash",
+            "tool_input": { "command": "rtk .venv/bin/python -m pytest -q" }
+        })
+        .to_string();
+        assert!(nudge_output(HookClient::Codex, HookEvent::PreToolUse, &body).is_none());
+    }
+
+    #[test]
+    fn pretool_skips_external_mcp_tools() {
+        let body = json!({
+            "tool_name": "mcp__tui__interact",
+            "tool_input": { "action": "press_enter" }
+        })
+        .to_string();
+        assert!(nudge_output(HookClient::Claude, HookEvent::PreToolUse, &body).is_none());
     }
 
     #[test]

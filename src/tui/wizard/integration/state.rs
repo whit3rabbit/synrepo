@@ -298,6 +298,7 @@ fn default_actions_for(current: &AgentIntegration, target: AgentTargetKind) -> (
     let (write_shim, register_mcp) = match current {
         AgentIntegration::Complete { target: t } if *t == target => (false, false),
         AgentIntegration::Partial { target: t } if *t == target => (false, true),
+        AgentIntegration::McpOnly { target: t } if *t == target => (true, false),
         _ => (true, true),
     };
     let register_mcp = register_mcp && target_tier(target) == AgentTargetTier::Automated;

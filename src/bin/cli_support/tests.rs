@@ -7,6 +7,7 @@ mod cli_dispatch_graph;
 mod compact;
 mod dashboard_parity;
 mod docs;
+mod embeddings;
 mod export;
 mod graph;
 mod links;

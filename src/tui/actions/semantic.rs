@@ -8,7 +8,6 @@ use crate::config::Config;
 use crate::pipeline::writer::acquire_write_admission;
 
 use super::helpers::{load_repo_config, lock_error_to_action};
-use super::reconcile::run_local_reconcile;
 use super::{ActionContext, ActionOutcome};
 
 /// Persist the repo-local semantic-triage opt-in flag.
@@ -67,34 +66,10 @@ pub fn semantic_feature_compiled() -> bool {
     cfg!(feature = "semantic-triage")
 }
 
-/// Enable semantic triage and immediately run a local reconcile so vector
-/// artifacts are rebuilt with the freshly loaded config.
-pub fn enable_semantic_triage_and_rebuild(ctx: &ActionContext) -> ActionOutcome {
-    match set_semantic_triage(ctx, true) {
-        ActionOutcome::Completed { .. } | ActionOutcome::Ack { .. } => {}
-        outcome => return outcome,
-    }
-
-    match run_local_reconcile(ctx) {
-        ActionOutcome::Completed { message } => ActionOutcome::Completed {
-            message: format!("embeddings enabled; {message}; vectors rebuilt"),
-        },
-        ActionOutcome::Conflict { guidance, .. } => ActionOutcome::Error {
-            message: format!("embeddings enabled, but vector rebuild was blocked: {guidance}"),
-        },
-        ActionOutcome::Error { message } => ActionOutcome::Error {
-            message: format!("embeddings enabled, but vector rebuild failed: {message}"),
-        },
-        ActionOutcome::Ack { message } => ActionOutcome::Completed {
-            message: format!("embeddings enabled; {message}; vectors rebuilt"),
-        },
-    }
-}
-
 fn semantic_message(enabled: bool, config: &Config) -> String {
     if enabled {
         format!(
-            "embeddings enabled ({}, {} {}d); run `synrepo reconcile` to build vectors",
+            "embeddings enabled ({}, {} {}d); run `synrepo embeddings build` or press B to build vectors",
             config.semantic_embedding_provider.as_str(),
             config.semantic_model,
             config.embedding_dim
@@ -214,18 +189,6 @@ mod tests {
     fn enabling_semantic_triage_requires_feature_build() {
         let (_lock, repo, _guard, _home) = isolated_ready_repo();
         let outcome = set_semantic_triage(&ActionContext::new(repo.path()), true);
-        assert!(
-            matches!(outcome, ActionOutcome::Error { ref message } if message.contains("optional")),
-            "got {outcome:?}"
-        );
-        assert!(!Config::load(repo.path()).unwrap().enable_semantic_triage);
-    }
-
-    #[test]
-    #[cfg(not(feature = "semantic-triage"))]
-    fn enable_and_rebuild_requires_feature_build_before_writing_config() {
-        let (_lock, repo, _guard, _home) = isolated_ready_repo();
-        let outcome = enable_semantic_triage_and_rebuild(&ActionContext::new(repo.path()));
         assert!(
             matches!(outcome, ActionOutcome::Error { ref message } if message.contains("optional")),
             "got {outcome:?}"

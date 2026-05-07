@@ -8,7 +8,9 @@ use std::time::{Duration, Instant};
 use crossbeam_channel::{Receiver, TryRecvError};
 
 use super::render_cache::{build_initial_header_vm, build_initial_mcp_display_rows};
-use super::{ActiveTab, AppMode, AppState, DashboardExit, EventLog, PendingExplainRun};
+use super::{
+    ActiveTab, AppMode, AppState, DashboardExit, EventLog, PendingEmbeddingBuild, PendingExplainRun,
+};
 use crate::bootstrap::runtime_probe::AgentIntegration;
 use crate::config::Config;
 use crate::pipeline::explain::telemetry;
@@ -129,6 +131,7 @@ impl AppState {
             launch_project_mcp_install: false,
             launch_explain_setup: false,
             pending_explain: std::collections::VecDeque::new(),
+            pending_embedding_build: std::collections::VecDeque::new(),
             confirm_stop_watch: None,
             pending_quick_confirm: None,
             picker: None,
@@ -192,6 +195,11 @@ impl AppState {
         self.pending_explain.pop_front()
     }
 
+    /// Take a queued embedding build so the dashboard loop can execute it.
+    pub fn take_pending_embedding_build(&mut self) -> Option<PendingEmbeddingBuild> {
+        self.pending_embedding_build.pop_front()
+    }
+
     /// Queue a dashboard explain run, deduping by mode so rapid repeat
     /// keypresses do not silently replace already scheduled work.
     pub(super) fn enqueue_pending_explain(&mut self, run: PendingExplainRun) {
@@ -204,6 +212,15 @@ impl AppState {
             return;
         }
         self.pending_explain.push_back(run);
+    }
+
+    /// Queue a dashboard embedding build, deduping rapid repeat keypresses.
+    pub(super) fn enqueue_pending_embedding_build(&mut self, run: PendingEmbeddingBuild) {
+        if !self.pending_embedding_build.is_empty() {
+            self.set_toast("embedding build already queued");
+            return;
+        }
+        self.pending_embedding_build.push_back(run);
     }
 
     /// Refresh the snapshot if the snapshot-refresh interval has elapsed. In

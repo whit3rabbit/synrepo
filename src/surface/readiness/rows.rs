@@ -159,7 +159,7 @@ pub(super) fn embeddings_row(snapshot: &StatusSnapshot, config: &Config) -> Read
             capability: Capability::Embeddings,
             state: ReadinessState::Degraded,
             detail: reason.clone(),
-            next_action: Some("run `synrepo reconcile` to rebuild the index".to_string()),
+            next_action: Some("run `synrepo embeddings build` to rebuild the index".to_string()),
         },
     }
 }

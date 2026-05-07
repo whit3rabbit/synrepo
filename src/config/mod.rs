@@ -103,9 +103,8 @@ pub struct Config {
     pub retain_retired_revisions: u64,
 
     /// Enable embedding-based semantic triage for cross-link candidate
-    /// generation. When true, an embedding index is built (during init
-    /// or reconcile) and used to prefilter candidate pairs based on
-    /// cosine similarity.
+    /// generation. When true, `synrepo embeddings build` can build an
+    /// index used to prefilter candidate pairs based on cosine similarity.
     #[serde(default)]
     pub enable_semantic_triage: bool,
 

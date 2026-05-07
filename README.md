@@ -91,7 +91,7 @@ Within one repo, use `docs/CONFIG.md` to tune discovery. The relevant defaults a
 
 ## Optional Embeddings
 
-Embeddings are off by default. When synrepo is built with the `semantic-triage` feature (`cargo build --features semantic-triage`), you can enable them per repo from the dashboard Actions tab with `T`, then run `R` or `synrepo reconcile` to build the vector index.
+Embeddings are off by default. When synrepo is built with the `semantic-triage` feature (`cargo build --features semantic-triage`), you can enable them per repo from the dashboard Actions tab with `T`, then press `B` or run `synrepo embeddings build` to build the vector index.
 
 Use `synrepo bench search --tasks 'benches/tasks/*.json' --mode both --json` to compare lexical and hybrid search before keeping embeddings on. On this repo, local Ollama `all-minilm` improved the four-fixture hit@5 baseline from `0.25` to `1.00`, with total search latency rising from `49 ms` to `690 ms`. See [docs/EMBEDDINGS.md](docs/EMBEDDINGS.md) for ONNX, Ollama, Hugging Face-hosted model artifacts, and benchmark guidance.
 

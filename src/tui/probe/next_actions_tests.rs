@@ -79,6 +79,12 @@ fn complete_integration() -> AgentIntegration {
     }
 }
 
+fn mcp_only_integration() -> AgentIntegration {
+    AgentIntegration::McpOnly {
+        target: AgentTargetKind::Codex,
+    }
+}
+
 fn runtime() -> NextActionRuntime<'static> {
     NextActionRuntime {
         snapshot_refresh_due_in: Duration::ZERO,
@@ -119,7 +125,7 @@ fn embedding_store_guidance_uses_rebuild_hint_when_watch_inactive() {
 
     assert!(actions
         .iter()
-        .any(|a| a.label == "Embedding/index rebuild pending, press R to rebuild vectors"));
+        .any(|a| a.label == "Embedding/index rebuild pending, press B to rebuild vectors"));
 }
 
 #[test]
@@ -132,6 +138,17 @@ fn embedding_store_guidance_does_not_say_press_r_while_watch_active() {
     let actions = build_next_actions_with_context(&snapshot, &complete_integration(), runtime());
 
     assert!(actions.iter().any(|a| {
-        a.label == "Embedding/index rebuild pending, stop watch before pressing R to rebuild vectors"
+        a.label == "Embedding/index rebuild pending, stop watch before pressing B to rebuild vectors"
     }));
+}
+
+#[test]
+fn mcp_only_integration_points_to_shim() {
+    let snapshot = snapshot_for_store_guidance(WatchServiceStatus::Inactive, "");
+
+    let actions = build_next_actions_with_context(&snapshot, &mcp_only_integration(), runtime());
+
+    assert!(actions
+        .iter()
+        .any(|a| a.label == "Write agent shim for codex"));
 }

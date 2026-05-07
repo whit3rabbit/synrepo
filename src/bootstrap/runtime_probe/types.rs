@@ -148,6 +148,11 @@ pub enum AgentIntegration {
         /// The detected target that has a shim but no MCP registration.
         target: AgentTargetKind,
     },
+    /// MCP registered for `target` but the local shim/instructions are missing.
+    McpOnly {
+        /// The detected target that has MCP registration but no shim.
+        target: AgentTargetKind,
+    },
     /// Shim present and MCP registered for `target`.
     Complete {
         /// The fully-configured target.
@@ -160,9 +165,9 @@ impl AgentIntegration {
     pub fn target(&self) -> Option<AgentTargetKind> {
         match self {
             AgentIntegration::Absent => None,
-            AgentIntegration::Partial { target } | AgentIntegration::Complete { target } => {
-                Some(*target)
-            }
+            AgentIntegration::Partial { target }
+            | AgentIntegration::McpOnly { target }
+            | AgentIntegration::Complete { target } => Some(*target),
         }
     }
 }
