@@ -85,12 +85,13 @@ fn roo_existing_different_unowned_synrepo_is_refused() {
 
     let err = setup_roo_mcp(dir.path()).expect_err("unowned synrepo entry must refuse");
     let message = format!("{err:#}");
+    let normalized = message.replace('\\', "/");
     assert!(
         message.contains("unowned by agent-config"),
         "error must explain unowned agent-config state: {message}"
     );
     assert!(
-        message.contains(".roo/mcp.json"),
+        normalized.contains(".roo/mcp.json"),
         "error must name Roo config path: {message}"
     );
     assert!(

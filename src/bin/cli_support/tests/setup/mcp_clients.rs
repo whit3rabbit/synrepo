@@ -26,12 +26,13 @@ fn setup_windsurf_mcp(repo_root: &Path, _global: bool) -> anyhow::Result<StepOut
 
 fn assert_unowned_refusal_guidance(err: &anyhow::Error, tool: AgentTool, path: &str) {
     let message = format!("{err:#}");
+    let normalized = message.replace('\\', "/");
     assert!(
         message.contains("unowned by agent-config"),
         "error must explain unowned agent-config state: {message}"
     );
     assert!(
-        message.contains(path),
+        normalized.contains(path),
         "error must name MCP config path {path}: {message}"
     );
     assert!(

@@ -39,12 +39,13 @@ fn assert_codex_mcp_owned(scope: &Scope) {
 
 fn assert_unowned_refusal_guidance(err: &anyhow::Error) {
     let message = format!("{err:#}");
+    let normalized = message.replace('\\', "/");
     assert!(
         message.contains("unowned by agent-config"),
         "error must explain unowned agent-config state: {message}"
     );
     assert!(
-        message.contains(".codex/config.toml"),
+        normalized.contains(".codex/config.toml"),
         "error must name Codex config path: {message}"
     );
     assert!(
