@@ -219,8 +219,22 @@ pub(crate) fn step_register_mcp(
     target: AgentTool,
     scope: &Scope,
 ) -> anyhow::Result<StepOutcome> {
+    step_register_mcp_with_force(repo_root, target, scope, false)
+}
+
+pub(crate) fn step_register_mcp_with_force(
+    repo_root: &Path,
+    target: AgentTool,
+    scope: &Scope,
+    force_adopt_unowned: bool,
+) -> anyhow::Result<StepOutcome> {
     if target.installer_supports_mcp() {
-        return mcp_register::register_synrepo_mcp(repo_root, target, scope.clone());
+        return mcp_register::register_synrepo_mcp(
+            repo_root,
+            target,
+            scope.clone(),
+            force_adopt_unowned,
+        );
     }
     debug_assert_eq!(target.automation_tier(), AutomationTier::ShimOnly);
     println!(
@@ -239,7 +253,7 @@ pub(crate) fn step_apply_integration(
     scope: &Scope,
 ) -> anyhow::Result<StepOutcome> {
     let shim = step_write_shim(repo_root, target, scope, force)?;
-    let mcp = step_register_mcp(repo_root, target, scope)?;
+    let mcp = step_register_mcp_with_force(repo_root, target, scope, force)?;
     Ok(match (shim, mcp) {
         (StepOutcome::Applied | StepOutcome::Updated, _) => StepOutcome::Applied,
         (_, StepOutcome::Applied) | (_, StepOutcome::Updated) => StepOutcome::Applied,

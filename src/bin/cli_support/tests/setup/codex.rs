@@ -3,11 +3,11 @@ use std::fs;
 use std::path::Path;
 use tempfile::tempdir;
 
-use agent_config::Scope;
+use agent_config::{InstallStatus, Scope};
 use synrepo::tui::McpInstallPlan;
 
-use crate::cli_support::agent_shims::AgentTool;
-use crate::cli_support::commands::{step_register_mcp, StepOutcome};
+use crate::cli_support::agent_shims::{AgentTool, SYNREPO_INSTALL_NAME, SYNREPO_INSTALL_OWNER};
+use crate::cli_support::commands::{step_apply_integration, step_register_mcp, StepOutcome};
 use crate::cli_support::repair_cmd::execute_project_mcp_install_plan;
 
 fn setup_codex_mcp(repo_root: &Path, global: bool) -> anyhow::Result<StepOutcome> {
@@ -17,6 +17,40 @@ fn setup_codex_mcp(repo_root: &Path, global: bool) -> anyhow::Result<StepOutcome
         Scope::Local(repo_root.to_path_buf())
     };
     step_register_mcp(repo_root, AgentTool::Codex, &scope)
+}
+
+fn local_scope(repo_root: &Path) -> Scope {
+    Scope::Local(repo_root.to_path_buf())
+}
+
+fn codex_mcp_status(scope: &Scope) -> agent_config::StatusReport {
+    agent_config::mcp_by_id("codex")
+        .unwrap()
+        .mcp_status(scope, SYNREPO_INSTALL_NAME, SYNREPO_INSTALL_OWNER)
+        .unwrap()
+}
+
+fn assert_codex_mcp_owned(scope: &Scope) {
+    assert!(matches!(
+        codex_mcp_status(scope).status,
+        InstallStatus::InstalledOwned { ref owner } if owner == SYNREPO_INSTALL_OWNER
+    ));
+}
+
+fn assert_unowned_refusal_guidance(err: &anyhow::Error) {
+    let message = format!("{err:#}");
+    assert!(
+        message.contains("unowned by agent-config"),
+        "error must explain unowned agent-config state: {message}"
+    );
+    assert!(
+        message.contains(".codex/config.toml"),
+        "error must name Codex config path: {message}"
+    );
+    assert!(
+        message.contains("synrepo setup codex --project --force"),
+        "error must include force recovery command: {message}"
+    );
 }
 
 struct EnvGuard {
@@ -173,10 +207,7 @@ fn codex_existing_different_unowned_synrepo_is_refused() {
     .unwrap();
 
     let err = setup_codex_mcp(dir.path(), false).expect_err("unowned synrepo entry must refuse");
-    assert!(
-        format!("{err:#}").contains("not owned by caller"),
-        "unexpected error: {err:#}"
-    );
+    assert_unowned_refusal_guidance(&err);
 
     let parsed: toml::Value = toml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
     assert_eq!(
@@ -186,6 +217,68 @@ fn codex_existing_different_unowned_synrepo_is_refused() {
         "legacy-bin",
         "setup must not take over unowned legacy content"
     );
+}
+
+#[test]
+fn codex_identical_unowned_synrepo_is_adopted_without_rewrite() {
+    let dir = tempdir().unwrap();
+    let scope = local_scope(dir.path());
+
+    setup_codex_mcp(dir.path(), false).unwrap();
+    let status = codex_mcp_status(&scope);
+    fs::remove_file(status.ledger_path.unwrap()).unwrap();
+
+    let path = dir.path().join(".codex").join("config.toml");
+    let before = fs::read(&path).unwrap();
+    let outcome = setup_codex_mcp(dir.path(), false).unwrap();
+    assert_eq!(outcome, StepOutcome::AlreadyCurrent);
+    assert_eq!(
+        fs::read(&path).unwrap(),
+        before,
+        "ledger-only adoption must not rewrite Codex config"
+    );
+    assert_codex_mcp_owned(&scope);
+
+    let after_adoption = fs::read(&path).unwrap();
+    setup_codex_mcp(dir.path(), false).unwrap();
+    assert_eq!(
+        fs::read(&path).unwrap(),
+        after_adoption,
+        "rerun after adoption must be byte-identical"
+    );
+}
+
+#[test]
+fn codex_force_replaces_different_unowned_synrepo() {
+    let dir = tempdir().unwrap();
+    fs::create_dir_all(dir.path().join(".codex")).unwrap();
+    let path = dir.path().join(".codex").join("config.toml");
+    fs::write(
+        &path,
+        "[mcp_servers.synrepo]\ncommand = \"legacy-bin\"\nargs = [\"x\"]\n",
+    )
+    .unwrap();
+    let scope = local_scope(dir.path());
+
+    step_apply_integration(dir.path(), AgentTool::Codex, true, &scope).unwrap();
+
+    let parsed: toml::Value = toml::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(
+        parsed["mcp_servers"]["synrepo"]["command"]
+            .as_str()
+            .unwrap(),
+        "synrepo"
+    );
+    assert_eq!(
+        parsed["mcp_servers"]["synrepo"]["args"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["mcp", "--repo", "."]
+    );
+    assert_codex_mcp_owned(&scope);
 }
 
 #[test]
@@ -201,7 +294,7 @@ fn codex_legacy_mcp_synrepo_is_left_for_upgrade_migration() {
     let parsed: toml::Value = toml::from_str(&raw).unwrap();
     assert!(
         parsed.get("mcp").and_then(|v| v.get("synrepo")).is_some(),
-        "legacy [mcp].synrepo must be left for upgrade adoption: {raw}"
+        "legacy [mcp].synrepo must be left for manual review: {raw}"
     );
     assert_eq!(
         parsed["mcp_servers"]["synrepo"]["command"]

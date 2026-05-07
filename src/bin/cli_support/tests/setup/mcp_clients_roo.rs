@@ -84,9 +84,18 @@ fn roo_existing_different_unowned_synrepo_is_refused() {
     .unwrap();
 
     let err = setup_roo_mcp(dir.path()).expect_err("unowned synrepo entry must refuse");
+    let message = format!("{err:#}");
     assert!(
-        format!("{err:#}").contains("not owned by caller"),
-        "unexpected error: {err:#}"
+        message.contains("unowned by agent-config"),
+        "error must explain unowned agent-config state: {message}"
+    );
+    assert!(
+        message.contains(".roo/mcp.json"),
+        "error must name Roo config path: {message}"
+    );
+    assert!(
+        message.contains("synrepo setup roo --project --force"),
+        "error must include force recovery command: {message}"
     );
 
     let parsed: serde_json::Value =

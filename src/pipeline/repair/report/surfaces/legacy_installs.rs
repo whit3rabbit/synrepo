@@ -32,7 +32,7 @@ impl SurfaceCheck for LegacyAgentInstallsCheck {
             target_id: Some(legacy.len().to_string()),
             recommended_action: RepairAction::ManualReview,
             notes: Some(format!(
-                "Legacy unowned synrepo agent install(s) detected: {}. Run `synrepo upgrade --apply` to adopt them into the agent-config ownership ledger.",
+                "Legacy unowned synrepo agent install(s) detected: {}. Inspect the entries manually, or rerun setup with `--force` for the specific agent to replace and adopt an MCP entry.",
                 legacy.join(", ")
             )),
         }]

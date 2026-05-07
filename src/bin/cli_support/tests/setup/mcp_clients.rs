@@ -2,9 +2,9 @@ use std::fs;
 use std::path::Path;
 use tempfile::tempdir;
 
-use agent_config::Scope;
+use agent_config::{InstallStatus, Scope};
 
-use crate::cli_support::agent_shims::AgentTool;
+use crate::cli_support::agent_shims::{AgentTool, SYNREPO_INSTALL_NAME, SYNREPO_INSTALL_OWNER};
 use crate::cli_support::commands::{step_register_mcp, StepOutcome};
 
 fn setup_mcp(repo_root: &Path, tool: AgentTool) -> anyhow::Result<StepOutcome> {
@@ -22,6 +22,62 @@ fn setup_cursor_mcp(repo_root: &Path, _global: bool) -> anyhow::Result<StepOutco
 
 fn setup_windsurf_mcp(repo_root: &Path, _global: bool) -> anyhow::Result<StepOutcome> {
     setup_mcp(repo_root, AgentTool::Windsurf)
+}
+
+fn assert_unowned_refusal_guidance(err: &anyhow::Error, tool: AgentTool, path: &str) {
+    let message = format!("{err:#}");
+    assert!(
+        message.contains("unowned by agent-config"),
+        "error must explain unowned agent-config state: {message}"
+    );
+    assert!(
+        message.contains(path),
+        "error must name MCP config path {path}: {message}"
+    );
+    assert!(
+        message.contains(&format!(
+            "synrepo setup {} --project --force",
+            tool.canonical_name()
+        )),
+        "error must include force recovery command: {message}"
+    );
+}
+
+fn assert_identical_unowned_synrepo_is_adopted(tool: AgentTool) {
+    let dir = tempdir().unwrap();
+    let scope = Scope::Local(dir.path().to_path_buf());
+    setup_mcp(dir.path(), tool).unwrap();
+
+    let installer = agent_config::mcp_by_id(tool.agent_config_id().unwrap()).unwrap();
+    let status = installer
+        .mcp_status(&scope, SYNREPO_INSTALL_NAME, SYNREPO_INSTALL_OWNER)
+        .unwrap();
+    let config_path = status.config_path.unwrap();
+    fs::remove_file(status.ledger_path.unwrap()).unwrap();
+
+    let before = fs::read(&config_path).unwrap();
+    let outcome = setup_mcp(dir.path(), tool).unwrap();
+    assert_eq!(outcome, StepOutcome::AlreadyCurrent);
+    assert_eq!(
+        fs::read(&config_path).unwrap(),
+        before,
+        "ledger-only adoption must not rewrite MCP config"
+    );
+    assert!(matches!(
+        installer
+            .mcp_status(&scope, SYNREPO_INSTALL_NAME, SYNREPO_INSTALL_OWNER)
+            .unwrap()
+            .status,
+        InstallStatus::InstalledOwned { ref owner } if owner == SYNREPO_INSTALL_OWNER
+    ));
+
+    let after_adoption = fs::read(&config_path).unwrap();
+    setup_mcp(dir.path(), tool).unwrap();
+    assert_eq!(
+        fs::read(&config_path).unwrap(),
+        after_adoption,
+        "rerun after adoption must be byte-identical"
+    );
 }
 
 // ---------- Claude: .mcp.json ----------
@@ -98,14 +154,16 @@ fn claude_existing_different_unowned_synrepo_is_refused() {
     .unwrap();
 
     let err = setup_claude_mcp(dir.path(), false).expect_err("unowned synrepo entry must refuse");
-    assert!(
-        format!("{err:#}").contains("not owned by caller"),
-        "unexpected error: {err:#}"
-    );
+    assert_unowned_refusal_guidance(&err, AgentTool::Claude, ".mcp.json");
 
     let parsed: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
     assert_eq!(parsed["mcpServers"]["synrepo"]["command"], "legacy-bin");
+}
+
+#[test]
+fn claude_identical_unowned_synrepo_is_adopted_without_rewrite() {
+    assert_identical_unowned_synrepo_is_adopted(AgentTool::Claude);
 }
 
 #[test]
@@ -195,10 +253,7 @@ fn cursor_existing_different_unowned_synrepo_is_refused() {
     .unwrap();
 
     let err = setup_cursor_mcp(dir.path(), false).expect_err("unowned synrepo entry must refuse");
-    assert!(
-        format!("{err:#}").contains("not owned by caller"),
-        "unexpected error: {err:#}"
-    );
+    assert_unowned_refusal_guidance(&err, AgentTool::Cursor, ".cursor/mcp.json");
 
     let parsed: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
@@ -293,10 +348,7 @@ fn windsurf_existing_different_unowned_synrepo_is_refused() {
     .unwrap();
 
     let err = setup_windsurf_mcp(dir.path(), false).expect_err("unowned synrepo entry must refuse");
-    assert!(
-        format!("{err:#}").contains("not owned by caller"),
-        "unexpected error: {err:#}"
-    );
+    assert_unowned_refusal_guidance(&err, AgentTool::Windsurf, ".windsurf/mcp_config.json");
 
     let parsed: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();

@@ -165,7 +165,7 @@ fn is_present_unowned(err: &AgentConfigError) -> bool {
 fn warn_legacy_remove(tool_name: &str, path: &Path) {
     eprintln!(
         "warning: removing legacy unowned synrepo install for {tool_name} at {}; \
-         run `synrepo upgrade --apply` in repos with older installs to adopt them before removal.",
+         agent-config cannot prove this entry was installed by synrepo, so inspect it before relying on removal.",
         path.display()
     );
 }

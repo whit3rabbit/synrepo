@@ -73,6 +73,41 @@ fn opencode_idempotent_on_rerun() {
 }
 
 #[test]
+fn opencode_existing_different_unowned_synrepo_is_refused() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("opencode.json");
+    fs::write(
+        &path,
+        r#"{
+  "mcp": {
+    "synrepo": { "type": "local", "command": ["legacy-bin"] }
+  }
+}
+"#,
+    )
+    .unwrap();
+
+    let err = setup_opencode_mcp(dir.path(), false).expect_err("unowned synrepo entry must refuse");
+    let message = format!("{err:#}");
+    assert!(
+        message.contains("unowned by agent-config"),
+        "error must explain unowned agent-config state: {message}"
+    );
+    assert!(
+        message.contains("opencode.json"),
+        "error must name OpenCode config path: {message}"
+    );
+    assert!(
+        message.contains("synrepo setup open-code --project --force"),
+        "error must include force recovery command: {message}"
+    );
+
+    let parsed: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    assert_eq!(parsed["mcp"]["synrepo"]["command"][0], "legacy-bin");
+}
+
+#[test]
 fn opencode_global_uses_user_config_without_repo_flag() {
     let _home_lock =
         synrepo::test_support::global_test_lock(synrepo::config::test_home::HOME_ENV_TEST_LOCK);
