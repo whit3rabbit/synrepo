@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::Path;
 
+use synrepo::tui::McpInstallPlan;
 use tempfile::tempdir;
 
 use super::apply::apply_uninstall_plan;
@@ -8,6 +9,8 @@ use super::plan::{
     build_uninstall_plan, PlannedAction, ProjectUninstallPlan, UninstallAction, UninstallPlan,
 };
 use crate::cli_support::commands::hooks::{full_hook_script, marked_hook_block};
+use crate::cli_support::commands::remove::RemoveAction;
+use crate::cli_support::repair_cmd::execute_project_mcp_install_plan;
 use synrepo::registry::HookEntry;
 
 fn isolated_home() -> (
@@ -119,6 +122,52 @@ fn planner_dedupes_global_agent_artifacts_across_projects() {
         ))
         .count();
     assert_eq!(count, 1, "global shim should only be planned once");
+}
+
+#[test]
+fn planner_includes_paired_dashboard_mcp_install_for_full_uninstall() {
+    let (_home, _guard, _lock) = isolated_home();
+    let project = tempdir().unwrap();
+
+    execute_project_mcp_install_plan(
+        project.path(),
+        McpInstallPlan {
+            target: "claude".to_string(),
+        },
+    )
+    .unwrap();
+
+    let plan = build_uninstall_plan(project.path(), false, true).unwrap();
+    let actions = plan
+        .projects
+        .iter()
+        .find(|p| p.path == synrepo::registry::canonicalize_path(project.path()))
+        .expect("project plan")
+        .actions
+        .iter()
+        .filter(|item| item.enabled)
+        .map(|item| &item.action)
+        .collect::<Vec<_>>();
+    assert!(
+        actions.iter().any(|action| matches!(
+            action,
+            UninstallAction::ProjectRemove {
+                remove_action: RemoveAction::DeleteShim { tool, .. },
+                ..
+            } if tool == "claude"
+        )),
+        "full uninstall should include paired skill removal"
+    );
+    assert!(
+        actions.iter().any(|action| matches!(
+            action,
+            UninstallAction::ProjectRemove {
+                remove_action: RemoveAction::StripMcpEntry { tool, .. },
+                ..
+            } if tool == "claude"
+        )),
+        "full uninstall should include paired MCP removal"
+    );
 }
 
 #[test]

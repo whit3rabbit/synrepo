@@ -308,10 +308,12 @@ If your main problem is "help the agent understand this repo without brute-forci
 
 ### Build
 
+Use the Makefile targets for local development builds:
+
 ```bash
-cargo build
-cargo build --features semantic-triage   # build with embeddings support
 make build
+make build-semantic   # build with embeddings support
+make release          # optimized build
 ```
 
 ### Validate

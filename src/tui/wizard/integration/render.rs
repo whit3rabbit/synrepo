@@ -163,7 +163,7 @@ fn draw_actions_step(
             let check = if checked { "[x]" } else { "[ ]" };
             let label: &str = match row {
                 ActionRow::WriteShim => write_label.as_str(),
-                ActionRow::RegisterMcp => "Register the synrepo MCP server",
+                ActionRow::RegisterMcp => "Register MCP and ensure paired agent context",
                 ActionRow::OverwriteShim => overwrite_label.as_str(),
                 ActionRow::InstallAgentHooks if agent_hooks_supported(state.target) => {
                     "Install local synrepo nudge hooks"
@@ -224,9 +224,15 @@ fn draw_confirm_step(
     }
     if state.register_mcp {
         lines.push(Line::from(Span::styled(
-            format!("  {step}. Register the synrepo MCP server"),
+            format!("  {step}. Register MCP and ensure paired agent context"),
             theme.base_style(),
         )));
+        if !state.write_shim {
+            lines.push(Line::from(Span::styled(
+                "     This writes or preserves the target skill/instruction before MCP registration.",
+                theme.muted_style(),
+            )));
+        }
         if target_tier(state.target) == AgentTargetTier::ShimOnly {
             lines.push(Line::from(Span::styled(
                 format!(
