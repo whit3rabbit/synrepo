@@ -34,13 +34,11 @@ fn agent_setup_regen_overwrites_non_utf8_existing() {
     );
 }
 
-/// `std::fs::write` follows symlinks: writing to a symlink overwrites the
-/// file it points to, leaving the symlink intact. This test pins that
-/// behavior so a future switch to `O_NOFOLLOW` (or any path that replaces
-/// the symlink with a regular file) forces an explicit decision.
+/// Local fallback shims must replace a symlink at the target path instead of
+/// writing through it.
 #[cfg(unix)]
 #[test]
-fn agent_setup_regen_follows_symlink_to_sibling() {
+fn agent_setup_regen_replaces_symlink_without_touching_target() {
     use std::os::unix::fs::symlink;
 
     let dir = tempdir().unwrap();
@@ -57,19 +55,45 @@ fn agent_setup_regen_follows_symlink_to_sibling() {
 
     agent_setup(repo, tool, false, true).expect("regen must succeed");
 
-    // Symlink is preserved (not replaced by a regular file).
     let link_meta = fs::symlink_metadata(&out_path).unwrap();
     assert!(
-        link_meta.file_type().is_symlink(),
-        "shim target must remain a symlink"
+        !link_meta.file_type().is_symlink(),
+        "shim target must be replaced by a regular file"
     );
 
-    // Write went through to the sibling.
+    let shim_content = fs::read_to_string(&out_path).unwrap();
+    assert_eq!(shim_content, tool.shim_content());
+
     let sibling_content = fs::read_to_string(&sibling).unwrap();
     assert_eq!(
-        sibling_content,
-        tool.shim_content(),
-        "write followed the symlink; sibling now holds the shim content"
+        sibling_content, "sibling original",
+        "write must not follow the symlink to its target"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn agent_setup_rejects_symlinked_parent_directory() {
+    use std::os::unix::fs::symlink;
+
+    let dir = tempdir().unwrap();
+    let outside = tempdir().unwrap();
+    let repo = dir.path();
+
+    let tool = AgentTool::Goose;
+    symlink(outside.path(), repo.join(".goose")).unwrap();
+
+    let err = agent_setup(repo, tool, true, false)
+        .expect_err("agent setup must reject symlinked parent directories");
+
+    assert!(
+        err.to_string()
+            .contains("refusing to write shim through symlink"),
+        "unexpected error: {err:#}"
+    );
+    assert!(
+        fs::read_dir(outside.path()).unwrap().next().is_none(),
+        "outside symlink target must remain untouched"
     );
 }
 

@@ -46,15 +46,41 @@ pub(super) fn with_write_transaction<F, R>(conn: &Connection, f: F) -> crate::Re
 where
     F: FnOnce(&Connection) -> crate::Result<R>,
 {
-    conn.execute_batch("BEGIN IMMEDIATE")?;
+    let tx = WriteTransaction::begin(conn)?;
     match f(conn) {
         Ok(result) => {
-            conn.execute_batch("COMMIT")?;
+            tx.commit()?;
             Ok(result)
         }
-        Err(err) => {
-            let _ = conn.execute_batch("ROLLBACK");
-            Err(err)
+        Err(err) => Err(err),
+    }
+}
+
+struct WriteTransaction<'a> {
+    conn: &'a Connection,
+    committed: bool,
+}
+
+impl<'a> WriteTransaction<'a> {
+    fn begin(conn: &'a Connection) -> crate::Result<Self> {
+        conn.execute_batch("BEGIN IMMEDIATE")?;
+        Ok(Self {
+            conn,
+            committed: false,
+        })
+    }
+
+    fn commit(mut self) -> crate::Result<()> {
+        self.conn.execute_batch("COMMIT")?;
+        self.committed = true;
+        Ok(())
+    }
+}
+
+impl Drop for WriteTransaction<'_> {
+    fn drop(&mut self) {
+        if !self.committed {
+            let _ = self.conn.execute_batch("ROLLBACK");
         }
     }
 }

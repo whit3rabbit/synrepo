@@ -63,18 +63,22 @@ struct CacheEntry {
 
 #[derive(Debug)]
 pub struct AnchorManager {
-    entries: Mutex<HashMap<AnchorKey, CacheEntry>>,
-    order: Mutex<VecDeque<AnchorKey>>,
+    cache: Mutex<CacheState>,
     ttl: Duration,
     max_entries: usize,
     next_version: AtomicU64,
 }
 
+#[derive(Debug, Default)]
+struct CacheState {
+    entries: HashMap<AnchorKey, CacheEntry>,
+    order: VecDeque<AnchorKey>,
+}
+
 impl Default for AnchorManager {
     fn default() -> Self {
         Self {
-            entries: Mutex::new(HashMap::new()),
-            order: Mutex::new(VecDeque::new()),
+            cache: Mutex::new(CacheState::default()),
             ttl: Duration::from_secs(30 * 60),
             max_entries: 128,
             next_version: AtomicU64::new(1),
@@ -96,15 +100,17 @@ impl AnchorManager {
     }
 
     pub fn insert(&self, state: PreparedAnchorState) {
-        self.prune();
+        let now = Instant::now();
         let key = key_for(&state);
         let entry = CacheEntry {
             state,
-            expires_at: Instant::now() + self.ttl,
+            expires_at: now + self.ttl,
         };
-        self.entries.lock().insert(key.clone(), entry);
-        self.order.lock().push_back(key);
-        self.enforce_lru();
+        let mut cache = self.cache.lock();
+        self.prune_locked(&mut cache, now);
+        cache.entries.insert(key.clone(), entry);
+        cache.order.push_back(key);
+        self.enforce_lru_locked(&mut cache);
     }
 
     pub fn get(
@@ -115,7 +121,7 @@ impl AnchorManager {
         content_hash: &str,
         anchor_state_version: &str,
     ) -> Option<PreparedAnchorState> {
-        self.prune();
+        let now = Instant::now();
         let key = AnchorKey {
             repo_root: repo_root.to_path_buf(),
             task_id: task_id.to_string(),
@@ -123,31 +129,22 @@ impl AnchorManager {
             content_hash: content_hash.to_string(),
             anchor_state_version: anchor_state_version.to_string(),
         };
-        self.entries
-            .lock()
-            .get(&key)
-            .map(|entry| entry.state.clone())
+        let mut cache = self.cache.lock();
+        self.prune_locked(&mut cache, now);
+        cache.entries.get(&key).map(|entry| entry.state.clone())
     }
 
-    fn prune(&self) {
-        let now = Instant::now();
-        self.entries
-            .lock()
-            .retain(|_, entry| entry.expires_at > now);
-        self.order
-            .lock()
-            .retain(|key| self.entries.lock().contains_key(key));
+    fn prune_locked(&self, cache: &mut CacheState, now: Instant) {
+        cache.entries.retain(|_, entry| entry.expires_at > now);
+        cache.order.retain(|key| cache.entries.contains_key(key));
     }
 
-    fn enforce_lru(&self) {
-        loop {
-            if self.entries.lock().len() <= self.max_entries {
-                break;
-            }
-            let Some(oldest) = self.order.lock().pop_front() else {
-                break;
+    fn enforce_lru_locked(&self, cache: &mut CacheState) {
+        while cache.entries.len() > self.max_entries {
+            let Some(oldest) = cache.order.pop_front() else {
+                return;
             };
-            self.entries.lock().remove(&oldest);
+            cache.entries.remove(&oldest);
         }
     }
 }
@@ -165,4 +162,105 @@ fn key_for(state: &PreparedAnchorState) -> AnchorKey {
 pub fn anchor_manager() -> &'static AnchorManager {
     static MANAGER: std::sync::OnceLock<AnchorManager> = std::sync::OnceLock::new();
     MANAGER.get_or_init(AnchorManager::default)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        path::PathBuf,
+        sync::{atomic::AtomicU64, Arc},
+        thread,
+        time::Duration,
+    };
+
+    use super::{AnchorLine, AnchorManager, CacheState, PreparedAnchorState};
+    use parking_lot::Mutex;
+
+    fn manager(max_entries: usize) -> AnchorManager {
+        AnchorManager {
+            cache: Mutex::new(CacheState::default()),
+            ttl: Duration::from_secs(60),
+            max_entries,
+            next_version: AtomicU64::new(1),
+        }
+    }
+
+    fn state(index: usize) -> PreparedAnchorState {
+        PreparedAnchorState {
+            repo_root: PathBuf::from("/repo"),
+            task_id: format!("task-{index}"),
+            path: "src/lib.rs".to_string(),
+            content_hash: "hash".to_string(),
+            anchor_state_version: format!("asv-{index}"),
+            anchors: vec![AnchorLine {
+                anchor: "L000001".to_string(),
+                line: 1,
+                text: "line".to_string(),
+            }],
+        }
+    }
+
+    #[test]
+    fn lru_eviction_keeps_entries_and_order_consistent() {
+        let manager = manager(2);
+        manager.insert(state(1));
+        manager.insert(state(2));
+        manager.insert(state(3));
+
+        assert!(manager
+            .get(
+                PathBuf::from("/repo").as_path(),
+                "task-1",
+                "src/lib.rs",
+                "hash",
+                "asv-1"
+            )
+            .is_none());
+        assert!(manager
+            .get(
+                PathBuf::from("/repo").as_path(),
+                "task-2",
+                "src/lib.rs",
+                "hash",
+                "asv-2"
+            )
+            .is_some());
+        assert!(manager
+            .get(
+                PathBuf::from("/repo").as_path(),
+                "task-3",
+                "src/lib.rs",
+                "hash",
+                "asv-3"
+            )
+            .is_some());
+
+        let cache = manager.cache.lock();
+        assert_eq!(cache.entries.len(), 2);
+        assert!(cache
+            .order
+            .iter()
+            .all(|key| cache.entries.contains_key(key)));
+    }
+
+    #[test]
+    fn concurrent_inserts_preserve_lru_invariants() {
+        let manager = Arc::new(manager(8));
+        let mut threads = Vec::new();
+        for index in 0..32 {
+            let manager = Arc::clone(&manager);
+            threads.push(thread::spawn(move || manager.insert(state(index))));
+        }
+        for thread in threads {
+            thread.join().unwrap();
+        }
+
+        let cache = manager.cache.lock();
+        assert!(cache.entries.len() <= 8);
+        assert!(cache.order.len() <= 8);
+        assert!(cache
+            .order
+            .iter()
+            .all(|key| cache.entries.contains_key(key)));
+    }
 }

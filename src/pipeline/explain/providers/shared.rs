@@ -161,6 +161,7 @@ pub fn default_lcs() -> f32 {
 pub fn sanitize_commentary_text(raw: &str) -> String {
     let mut text = raw.trim().to_string();
     loop {
+        // ASCII-only folding preserves byte indices for replace_range below.
         let lower = text.to_ascii_lowercase();
         let Some(start) = lower.find("<think>") else {
             break;

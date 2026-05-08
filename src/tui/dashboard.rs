@@ -55,7 +55,7 @@ pub fn run_poll_dashboard(
     events_rx: Option<Receiver<WatchEvent>>,
     startup_logs: Vec<LogEntry>,
 ) -> anyhow::Result<DashboardExit> {
-    let mut terminal = enter_tui()?;
+    let mut session = TuiSession::enter()?;
     let mut state = match events_rx {
         Some(rx) => AppState::new_live(repo_root, theme, integration, rx),
         None => AppState::new_poll_with_logs(repo_root, theme, integration, startup_logs),
@@ -63,8 +63,8 @@ pub fn run_poll_dashboard(
     if welcome_banner {
         state.push_welcome_banner();
     }
-    let result = render_loop(&mut terminal, &mut state);
-    leave_tui(&mut terminal)?;
+    let result = render_loop(session.terminal_mut(), &mut state);
+    session.leave()?;
     result?;
     Ok(state.exit_intent())
 }
@@ -75,10 +75,10 @@ pub fn run_global_dashboard(
     theme: Theme,
     open_picker: bool,
 ) -> anyhow::Result<DashboardExit> {
-    let mut terminal = enter_tui()?;
+    let mut session = TuiSession::enter()?;
     let mut state = GlobalAppState::new(cwd, theme, open_picker)?;
-    let result = render_global_loop(&mut terminal, &mut state);
-    leave_tui(&mut terminal)?;
+    let result = render_global_loop(session.terminal_mut(), &mut state);
+    session.leave()?;
     result?;
     Ok(state
         .active_state()
@@ -97,12 +97,43 @@ fn enter_tui() -> anyhow::Result<DashboardTerminal> {
     Ok(terminal)
 }
 
-/// Tear down crossterm state. Safe to call multiple times.
-fn leave_tui(terminal: &mut DashboardTerminal) -> anyhow::Result<()> {
-    disable_raw_mode().ok();
-    execute!(terminal.backend_mut(), LeaveAlternateScreen).ok();
-    terminal.show_cursor().ok();
-    Ok(())
+struct TuiSession {
+    terminal: DashboardTerminal,
+    active: bool,
+}
+
+impl TuiSession {
+    fn enter() -> anyhow::Result<Self> {
+        Ok(Self {
+            terminal: enter_tui()?,
+            active: true,
+        })
+    }
+
+    fn terminal_mut(&mut self) -> &mut DashboardTerminal {
+        &mut self.terminal
+    }
+
+    fn leave(mut self) -> anyhow::Result<()> {
+        self.restore();
+        Ok(())
+    }
+
+    fn restore(&mut self) {
+        if !self.active {
+            return;
+        }
+        disable_raw_mode().ok();
+        execute!(self.terminal.backend_mut(), LeaveAlternateScreen).ok();
+        self.terminal.show_cursor().ok();
+        self.active = false;
+    }
+}
+
+impl Drop for TuiSession {
+    fn drop(&mut self) {
+        self.restore();
+    }
 }
 
 fn render_loop(terminal: &mut DashboardTerminal, state: &mut AppState) -> anyhow::Result<()> {

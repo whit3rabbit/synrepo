@@ -14,6 +14,8 @@ use super::lease::{
 use super::reconcile::ReconcileOutcome;
 use super::status::load_watch_state;
 
+const MAX_CONTROL_LINE_BYTES: usize = 1024 * 1024;
+
 /// Control message sent over the per-repo watch control endpoint.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "command", rename_all = "snake_case")]
@@ -103,8 +105,7 @@ pub fn request_watch_control(
     write_control_request(&stream, &endpoint, &request)?;
 
     let mut reader = BufReader::new(&stream);
-    let mut response_line = String::new();
-    reader.read_line(&mut response_line).map_err(io_err)?;
+    let response_line = read_control_line(&mut reader, &endpoint, "watch control response")?;
 
     serde_json::from_str(response_line.trim_end_matches('\n')).map_err(|error| {
         WatchDaemonError::Control(format!("invalid watch control response: {error}"))
@@ -115,16 +116,49 @@ pub fn request_watch_control(
 /// server reads one line, parses it as JSON, and writes a newline-terminated
 /// response.
 pub(super) fn read_control_request(
-    reader: &mut BufReader<&Stream>,
+    reader: &mut impl BufRead,
     endpoint: &str,
 ) -> Result<WatchControlRequest, WatchDaemonError> {
-    let mut line = String::new();
-    reader
-        .read_line(&mut line)
-        .map_err(|source| io_err(endpoint, source))?;
+    let line = read_control_line(reader, endpoint, "watch control request")?;
     serde_json::from_str(line.trim_end_matches('\n')).map_err(|error| {
         WatchDaemonError::Control(format!("invalid watch control request: {error}"))
     })
+}
+
+fn read_control_line(
+    reader: &mut impl BufRead,
+    endpoint: &str,
+    label: &str,
+) -> Result<String, WatchDaemonError> {
+    let mut line = Vec::new();
+    loop {
+        let available = reader
+            .fill_buf()
+            .map_err(|source| io_err(endpoint, source))?;
+        if available.is_empty() {
+            break;
+        }
+
+        let take = available
+            .iter()
+            .position(|byte| *byte == b'\n')
+            .map(|pos| pos + 1)
+            .unwrap_or(available.len());
+        if line.len() + take > MAX_CONTROL_LINE_BYTES {
+            return Err(WatchDaemonError::Control(format!(
+                "{label} exceeded {MAX_CONTROL_LINE_BYTES} byte limit"
+            )));
+        }
+
+        line.extend_from_slice(&available[..take]);
+        reader.consume(take);
+        if line.ends_with(b"\n") {
+            break;
+        }
+    }
+
+    String::from_utf8(line)
+        .map_err(|error| WatchDaemonError::Control(format!("invalid UTF-8 in {label}: {error}")))
 }
 
 fn write_control_request(
@@ -199,6 +233,41 @@ fn resolve_control_endpoint(synrepo_dir: &Path) -> String {
 mod tests {
     use super::*;
     use interprocess::local_socket::{ListenerNonblockingMode, ListenerOptions};
+    use std::io::Cursor;
+
+    #[test]
+    fn read_control_request_accepts_newline_framed_json() {
+        let mut reader = Cursor::new(
+            br#"{"command":"status"}"#.iter().copied().chain([b'\n']).collect::<Vec<_>>(),
+        );
+
+        let request = read_control_request(&mut reader, "test.sock").unwrap();
+
+        assert_eq!(request, WatchControlRequest::Status);
+    }
+
+    #[test]
+    fn read_control_request_rejects_oversized_frame() {
+        let mut bytes = vec![b' '; MAX_CONTROL_LINE_BYTES + 1];
+        bytes.push(b'\n');
+        let mut reader = Cursor::new(bytes);
+
+        let err = read_control_request(&mut reader, "test.sock").unwrap_err();
+
+        assert!(err.to_string().contains("exceeded"));
+    }
+
+    #[test]
+    fn read_control_response_line_rejects_oversized_frame() {
+        let mut bytes = vec![b'x'; MAX_CONTROL_LINE_BYTES + 1];
+        bytes.push(b'\n');
+        let mut reader = Cursor::new(bytes);
+
+        let err =
+            read_control_line(&mut reader, "test.sock", "watch control response").unwrap_err();
+
+        assert!(err.to_string().contains("watch control response exceeded"));
+    }
 
     #[test]
     fn endpoint_unreachable_when_no_listener_bound() {

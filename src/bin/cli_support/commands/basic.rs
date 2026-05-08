@@ -1,9 +1,11 @@
-use std::path::Path;
+use std::{fs, path::Path};
 
 use synrepo::config::{Config, Mode};
 use synrepo::surface::card::{Budget, CardCompiler};
 
 use agent_config::{AgentConfigError, InstallReport, Scope};
+
+mod local_shim;
 
 use crate::cli_support::agent_shims::{
     registry as shim_registry, AgentTool, ShimPlacement, SYNREPO_INSTALL_OWNER,
@@ -152,8 +154,23 @@ fn write_local_shim(
     let content = tool.shim_content();
     let label = tool.artifact_label();
 
-    if regen && out_path.exists() {
-        let existing = std::fs::read_to_string(&out_path).unwrap_or_default();
+    local_shim::reject_parent_symlinks(repo_root, &out_path)?;
+    let target_meta = fs::symlink_metadata(&out_path)
+        .map(Some)
+        .or_else(|error| {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                Ok(None)
+            } else {
+                Err(error)
+            }
+        })
+        .map_err(|error| anyhow::anyhow!("could not inspect {}: {error}", out_path.display()))?;
+    let target_is_symlink = target_meta
+        .as_ref()
+        .is_some_and(|meta| meta.file_type().is_symlink());
+
+    if regen && target_meta.is_some() && !target_is_symlink {
+        let existing = fs::read_to_string(&out_path).unwrap_or_default();
         if existing == content {
             println!(
                 "{} {label} is already current: {}",
@@ -168,7 +185,7 @@ fn write_local_shim(
             tool.display_name(),
             out_path.display()
         );
-    } else if out_path.exists() && !force {
+    } else if target_meta.is_some() && !force && !regen {
         println!(
             "synrepo agent-setup: {} already exists.",
             out_path.display()
@@ -178,11 +195,17 @@ fn write_local_shim(
     }
 
     if let Some(parent) = out_path.parent() {
-        std::fs::create_dir_all(parent)
+        fs::create_dir_all(parent)
             .map_err(|error| anyhow::anyhow!("could not create {}: {error}", parent.display()))?;
     }
+    local_shim::reject_parent_symlinks(repo_root, &out_path)?;
+    if target_is_symlink {
+        fs::remove_file(&out_path).map_err(|error| {
+            anyhow::anyhow!("could not replace symlink {}: {error}", out_path.display())
+        })?;
+    }
 
-    std::fs::write(&out_path, content)
+    local_shim::write_atomic(&out_path, content)
         .map_err(|error| anyhow::anyhow!("could not write {}: {error}", out_path.display()))?;
 
     if !regen {
