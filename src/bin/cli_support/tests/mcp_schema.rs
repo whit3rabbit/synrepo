@@ -106,7 +106,8 @@ fn skill_contains_context_budget_contract() {
     assert!(budget_reference.contains("Default sequence:"));
     assert!(budget_reference.contains("`synrepo_resume_context`: `context_state`, `sections.changed_files`, `sections.next_actions`, `detail_pointers`, `omitted`"));
     assert!(budget_reference.contains("MCP errors are structured."));
-    assert!(budget_reference.contains("If you receive `RATE_LIMITED`, wait briefly or reduce batching."));
+    assert!(budget_reference
+        .contains("If you receive `RATE_LIMITED`, wait briefly or reduce batching."));
 }
 
 #[test]

@@ -24,42 +24,42 @@ synrepo is a local, deterministic code-context compiler: `repo files -> graph fa
 
 ### Default path
 
-The required sequence for questions, reviews, search routing, and edits is orient, ask or find, impact or risks, edit, tests, changed.
+For questions, reviews, search routing, and edits: orient, ask or find, impact or risks, edit, tests, changed.
 
 1. Start with `synrepo_orient` before reading the repo cold.
-2. Use `synrepo_ask` for broad plain-language tasks that need one bounded, cited task-context packet.
-3. Use `synrepo_find` or `synrepo_search` to drill down to files and symbols. `synrepo_find` decomposes broad language into deterministic lexical anchors before returning empty; for broad lexical searches, prefer `output_mode: \"compact\"`.
-4. Use `tiny` cards to route and `normal` cards to understand. Use `synrepo_minimum_context` once a focal target is known but the surrounding neighborhood risk is unclear, especially for file reviews and codebase questions.
-5. Use `synrepo_impact` (or its shorthand `synrepo_risks`) before editing or reviewing risky files, and `synrepo_tests` before claiming done.
+2. Use `synrepo_ask` for broad plain-language tasks needing one bounded, cited task-context packet.
+3. Use `synrepo_find` for broad tasks, or `synrepo_search` for exact files, symbols, strings, flags, and tool names. For broad lexical searches, prefer `output_mode: \"compact\"`.
+4. Use `tiny` cards to route and `normal` cards to understand. Use `synrepo_minimum_context` once a focal target is known and neighborhood risk is unclear.
+5. Use `synrepo_impact` (or `synrepo_risks`) before risky edits or reviews, and `synrepo_tests` before claiming done.
 6. Use `synrepo_changed` after edits to review changed context and validation commands.
-7. After resuming stale work or losing conversation context, call `synrepo_resume_context` before asking the user to repeat repo state.
-8. Read full source files or request `deep` cards only after bounded cards identify the target or when the card content is insufficient. Full-file reads are an explicit escalation, not the default first step.
+7. After stale resumes or lost context, call `synrepo_resume_context` before asking the user to repeat repo state.
+8. Read full source files or request `deep` cards only after bounded cards identify the target or prove insufficient.
 
 ### MCP repository selection
 
-Project-scoped MCP configs that launch `synrepo mcp --repo .` have a default repository, so `repo_root` may be omitted. Passing the absolute repository root is still valid and preferred when you can identify it reliably.
+Project-scoped MCP configs launching `synrepo mcp --repo .` have a default repository, so `repo_root` may be omitted. Passing the absolute root is valid and preferred when known.
 
 Global MCP configs that launch `synrepo mcp` serve registered projects by absolute path. In global or defaultless contexts, pass the current workspace's absolute path as `repo_root` to repo-addressable tools. If a tool reports that a repository is not managed by synrepo, ask the user to run `synrepo project add <path>`; do not bypass registry gating.
 
-Graph-backed structural facts (files, symbols, edges) remain the authoritative source of truth. Overlay commentary, explain docs, and proposed cross-links are advisory, labeled machine-authored, and freshness-sensitive. Treat stale labels as information, not as errors. **Refresh is explicit**: every tool returns what is currently in the overlay. Fresh commentary refresh requires `synrepo mcp --allow-overlay-writes` and `synrepo_refresh_commentary(target)`.
+Graph-backed structural facts are authoritative. Overlay commentary, explain docs, and proposed cross-links are advisory, machine-authored, and freshness-sensitive. Treat stale labels as information. **Refresh is explicit**: tools return current overlay state. Fresh commentary refresh requires `synrepo mcp --allow-overlay-writes` and `synrepo_refresh_commentary(target)`.
 
-Client-side nudge hooks for Codex and Claude may remind agents to use synrepo before direct grep, read, review, or edit workflows and emit `[SYNREPO_CONTEXT_FAST_PATH]`, `[SYNREPO_DETERMINISTIC_EDIT_CANDIDATE] Intent: ...`, or `[SYNREPO_LLM_NOT_REQUIRED]`. Hooks are advisory only; source mutation still requires `synrepo mcp --allow-source-edits` and `synrepo_apply_anchor_edits`.
+Client-side hooks for Codex and Claude may nudge agents before direct grep, read, review, or edit workflows and emit `[SYNREPO_CONTEXT_FAST_PATH]`, `[SYNREPO_DETERMINISTIC_EDIT_CANDIDATE] Intent: ...`, or `[SYNREPO_LLM_NOT_REQUIRED]`. Hooks are advisory; source mutation still requires `synrepo mcp --allow-source-edits` and `synrepo_apply_anchor_edits`.
 
 ### Do not
 
 - Do not open large files first. Start at `tiny` and escalate only when a specific field forces it.
-- Do not read a full source file before synrepo routing has identified it; treat a full-file read as an escalation after the bounded card is insufficient.
+- Do not read a full source file before synrepo routing identifies it; full-file reads are explicit escalation.
 - Do not treat overlay commentary, explain docs, or proposed cross-links as canonical source truth. They are advisory prose layered on structural cards.
 - Do not trigger explain (`--generate-cross-links`, deep commentary refresh) unless the task justifies the cost.
 - Do not ask the user to repeat stale repo context until `synrepo_resume_context` has been tried.
 - Do not expect watch or background behavior unless `synrepo watch` is explicitly running.
-- Do not mistake client-side hook nudges for MCP interception or enforcement. They are non-blocking reminders.
+- Do not mistake client-side hook nudges for MCP enforcement.
 
 ### Product boundary
 
 - synrepo stores code facts and bounded operational memory. It is not a task tracker, not session memory, and not cross-session agent memory.
-- `synrepo_resume_context` is an advisory, regeneratable repo packet assembled from existing state. It is not prompt logging, chat history, raw tool-output capture, or generic session memory.
-- Any handoff or next-action list is a derived recommendation regenerated from repo state. External task systems own assignment, status, and collaboration.
+- `synrepo_resume_context` is an advisory repo packet regenerated from existing state. It is not prompt logging, chat history, raw tool-output capture, or generic session memory.
+- Handoff or next-action lists are derived recommendations regenerated from repo state. External systems own assignment, status, and collaboration.
 - Freshness is explicit. A stale label is information, not an error; it is not silently refreshed on read.
 "
     };
