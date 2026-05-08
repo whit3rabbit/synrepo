@@ -113,6 +113,16 @@ impl CompatAction {
             CompatAction::Block => "block",
         }
     }
+
+    fn guidance_label(self) -> &'static str {
+        match self {
+            CompatAction::Continue => "is compatible",
+            CompatAction::Rebuild => "needs rebuild",
+            CompatAction::Invalidate => "needs invalidation",
+            CompatAction::ClearAndRecreate => "needs clear-and-recreate",
+            CompatAction::Block => "is blocked",
+        }
+    }
 }
 
 /// One store's compatibility decision.
@@ -167,15 +177,28 @@ impl CompatibilityReport {
             .filter(|entry| entry.action != CompatAction::Continue)
             .map(|entry| {
                 format!(
-                    "{}: {} because {}",
+                    "{} {} because {}; {}",
                     entry.store_id.as_str(),
-                    entry.action.as_str(),
-                    entry.reason
+                    entry.action.guidance_label(),
+                    entry.reason,
+                    entry.remediation()
                 )
             })
             .collect::<Vec<_>>();
         lines.extend(self.warnings.iter().cloned());
         lines
+    }
+}
+
+impl CompatibilityEntry {
+    fn remediation(&self) -> &'static str {
+        match self.action {
+            CompatAction::Continue => "no action needed",
+            CompatAction::Rebuild | CompatAction::Invalidate | CompatAction::ClearAndRecreate => {
+                "run `synrepo upgrade --apply`"
+            }
+            CompatAction::Block => "resolve manually, then rerun `synrepo init`",
+        }
     }
 }
 

@@ -31,10 +31,13 @@ use cli_support::commands::{prepare_mcp_state, report_reconcile_outcome};
 use cli_support::commands::agent_setup;
 use cli_support::entry::{run_bare_entrypoint, run_dashboard_command};
 
+const DEFAULT_LOG_FILTER: &str = "warn,synrepo=info";
+
 fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+            EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| EnvFilter::new(DEFAULT_LOG_FILTER)),
         )
         .with_writer(std::io::stderr)
         .init();
@@ -54,6 +57,17 @@ fn main() -> anyhow::Result<()> {
     match cli.command {
         None => run_bare_entrypoint(&repo_root, tui_opts, explicit_repo),
         Some(cmd) => dispatch(cmd, &repo_root, tui_opts, explicit_repo),
+    }
+}
+
+#[cfg(test)]
+mod logging_tests {
+    use super::*;
+
+    #[test]
+    fn default_log_filter_keeps_third_party_info_quiet() {
+        assert_eq!(DEFAULT_LOG_FILTER, "warn,synrepo=info");
+        assert!(EnvFilter::try_new(DEFAULT_LOG_FILTER).is_ok());
     }
 }
 

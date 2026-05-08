@@ -6,7 +6,9 @@ use super::super::explain::{
     CloudCredentialSource, CloudProvider, ExplainChoice, ExplainRow, LocalPreset, EXPLAIN_ROWS,
     LOCAL_PRESETS,
 };
-use super::super::state_types::{SetupStep, SetupWizardState, WIZARD_TARGETS};
+use super::super::state_types::{
+    EmbeddingSetupChoice, SetupStep, SetupWizardState, WIZARD_TARGETS,
+};
 use crate::config::Mode;
 
 impl SetupWizardState {
@@ -98,18 +100,29 @@ impl SetupWizardState {
                 true
             }
             KeyCode::Down | KeyCode::Char('j') => {
-                if self.embeddings_cursor < 1 {
+                if self.embeddings_cursor < 2 {
                     self.embeddings_cursor += 1;
                 }
                 true
             }
             KeyCode::Char('b') => {
+                if self.embeddings_only {
+                    return false;
+                }
                 self.step = SetupStep::SelectTarget;
                 true
             }
             KeyCode::Enter => {
-                self.enable_embeddings = self.embeddings_cursor == 1;
-                self.step = SetupStep::ExplainExplain;
+                self.embedding_setup = match self.embeddings_cursor {
+                    1 => EmbeddingSetupChoice::Onnx,
+                    2 => EmbeddingSetupChoice::Ollama,
+                    _ => EmbeddingSetupChoice::Disabled,
+                };
+                self.step = if self.embeddings_only {
+                    SetupStep::Complete
+                } else {
+                    SetupStep::ExplainExplain
+                };
                 true
             }
             _ => false,

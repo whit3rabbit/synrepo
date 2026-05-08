@@ -23,7 +23,6 @@ use crate::surface::readiness::ReadinessMatrix;
 use crate::tui::app::{poll_key, ActiveTab, AppState, DashboardExit};
 use crate::tui::dashboard::chrome::{draw_command_palette, draw_help, draw_too_small_warning};
 use crate::tui::dashboard_tabs::draw_global_explore_dashboard;
-use crate::tui::embedding_build_run::run_embedding_build_in_dashboard;
 use crate::tui::explain_run::run_explain_in_dashboard;
 use crate::tui::materializer::MaterializeState;
 use crate::tui::probe::{
@@ -81,7 +80,10 @@ pub fn run_global_dashboard(
     let result = render_global_loop(&mut terminal, &mut state);
     leave_tui(&mut terminal)?;
     result?;
-    Ok(DashboardExit::Quit)
+    Ok(state
+        .active_state()
+        .map(AppState::exit_intent)
+        .unwrap_or(DashboardExit::Quit))
 }
 
 /// Set up crossterm: raw mode, alt screen, hide cursor.
@@ -116,9 +118,6 @@ fn render_loop(terminal: &mut DashboardTerminal, state: &mut AppState) -> anyhow
         if let Some(pending) = state.take_pending_explain() {
             run_explain_in_dashboard(terminal, state, pending)?;
         }
-        if let Some(pending) = state.take_pending_embedding_build() {
-            run_embedding_build_in_dashboard(terminal, state, pending)?;
-        }
     }
     Ok(())
 }
@@ -140,9 +139,6 @@ fn render_global_loop(
         if let Some(active) = state.active_state_mut() {
             if let Some(pending) = active.take_pending_explain() {
                 run_explain_in_dashboard(terminal, active, pending)?;
-            }
-            if let Some(pending) = active.take_pending_embedding_build() {
-                run_embedding_build_in_dashboard(terminal, active, pending)?;
             }
         }
     }

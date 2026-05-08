@@ -28,8 +28,8 @@ use crate::tui::actions::{outcome_to_log, start_watch_daemon, ActionContext, Act
 use crate::tui::widgets::LogEntry;
 
 pub use self::wizard::{
-    CloudCredentialSource, ExplainChoice, ExplainWizardSupport, IntegrationPlan,
-    IntegrationWizardOutcome, McpInstallPlan, McpInstallWizardOutcome, RepairPlan,
+    CloudCredentialSource, EmbeddingSetupChoice, ExplainChoice, ExplainWizardSupport,
+    IntegrationPlan, IntegrationWizardOutcome, McpInstallPlan, McpInstallWizardOutcome, RepairPlan,
     RepairWizardOutcome, SetupPlan, SetupWizardOutcome, UninstallActionKind, UninstallPlan,
     UninstallWizardOutcome,
 };
@@ -38,7 +38,6 @@ pub mod actions;
 pub mod app;
 pub mod dashboard;
 mod dashboard_tabs;
-mod embedding_build_run;
 mod explain_run;
 mod graph_view;
 mod live_dashboard;
@@ -106,6 +105,13 @@ pub enum TuiOutcome {
     /// The caller should run `run_explain_only_wizard` and then re-open the
     /// dashboard.
     LaunchExplainSetupRequested,
+    /// Dashboard exited with a request to launch the embeddings setup picker.
+    /// The caller should run `run_embeddings_only_wizard` and then re-open
+    /// the dashboard.
+    LaunchEmbeddingsSetupRequested,
+    /// Dashboard exited with a request to build embeddings in normal terminal
+    /// output, then re-open the dashboard.
+    LaunchEmbeddingBuildRequested(app::PendingEmbeddingBuild),
     /// Dashboard exited with a request to re-open on another registry project.
     SwitchProjectRequested(std::path::PathBuf),
 }
@@ -142,6 +148,10 @@ pub fn run_dashboard(
             Ok(TuiOutcome::LaunchProjectMcpInstallRequested)
         }
         app::DashboardExit::LaunchExplainSetup => Ok(TuiOutcome::LaunchExplainSetupRequested),
+        app::DashboardExit::LaunchEmbeddingsSetup => Ok(TuiOutcome::LaunchEmbeddingsSetupRequested),
+        app::DashboardExit::LaunchEmbeddingBuild(pending) => {
+            Ok(TuiOutcome::LaunchEmbeddingBuildRequested(pending))
+        }
         app::DashboardExit::SwitchProject(repo_root) => {
             Ok(TuiOutcome::SwitchProjectRequested(repo_root))
         }
@@ -159,8 +169,21 @@ pub fn run_global_dashboard(
     }
     let opts = opts.into();
     let theme = theme::Theme::from_no_color(opts.no_color);
-    let _ = dashboard::run_global_dashboard(cwd, theme, open_picker)?;
-    Ok(TuiOutcome::Exited)
+    match dashboard::run_global_dashboard(cwd, theme, open_picker)? {
+        app::DashboardExit::Quit => Ok(TuiOutcome::Exited),
+        app::DashboardExit::LaunchIntegration => Ok(TuiOutcome::LaunchIntegrationRequested),
+        app::DashboardExit::LaunchProjectMcpInstall => {
+            Ok(TuiOutcome::LaunchProjectMcpInstallRequested)
+        }
+        app::DashboardExit::LaunchExplainSetup => Ok(TuiOutcome::LaunchExplainSetupRequested),
+        app::DashboardExit::LaunchEmbeddingsSetup => Ok(TuiOutcome::LaunchEmbeddingsSetupRequested),
+        app::DashboardExit::LaunchEmbeddingBuild(pending) => {
+            Ok(TuiOutcome::LaunchEmbeddingBuildRequested(pending))
+        }
+        app::DashboardExit::SwitchProject(repo_root) => {
+            Ok(TuiOutcome::SwitchProjectRequested(repo_root))
+        }
+    }
 }
 
 fn ensure_watch_daemon_for_dashboard(repo_root: &Path) -> Vec<LogEntry> {
@@ -214,6 +237,17 @@ pub fn run_explain_only_wizard(opts: TuiOptions) -> anyhow::Result<SetupWizardOu
     }
     let theme = theme::Theme::from_no_color(opts.no_color);
     wizard::run_explain_only_wizard_loop(theme)
+}
+
+/// Open the embeddings-only setup picker. Used by the dashboard after leaving
+/// the alternate screen, so provider setup has the same terminal behavior as
+/// the full setup wizard.
+pub fn run_embeddings_only_wizard(opts: TuiOptions) -> anyhow::Result<SetupWizardOutcome> {
+    if !stdout_is_tty() {
+        return Ok(SetupWizardOutcome::NonTty);
+    }
+    let theme = theme::Theme::from_no_color(opts.no_color);
+    wizard::run_embeddings_only_wizard_loop(theme)
 }
 
 /// Detect whether the repo contains any of the canonical concept / ADR

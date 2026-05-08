@@ -18,5 +18,10 @@ pub use explain::{
     CloudCredentialSource, CloudProvider, ExplainChoice, ExplainRow, ExplainWizardSupport,
     LocalPreset, TextInputField, EXPLAIN_ROWS, LOCAL_PRESETS,
 };
-pub use render::{run_explain_only_wizard_loop, run_setup_wizard_loop};
-pub use state_types::{SetupPlan, SetupStep, SetupWizardOutcome, SetupWizardState, WIZARD_TARGETS};
+pub use render::{
+    run_embeddings_only_wizard_loop, run_explain_only_wizard_loop, run_setup_wizard_loop,
+};
+pub use state_types::{
+    EmbeddingSetupChoice, SetupPlan, SetupStep, SetupWizardOutcome, SetupWizardState,
+    WIZARD_TARGETS,
+};

@@ -24,6 +24,9 @@
 
 pub mod types;
 
+mod compatibility_apply;
+
+pub use compatibility_apply::*;
 pub use types::*;
 
 use std::path::Path;

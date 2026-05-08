@@ -279,7 +279,7 @@ mod tests {
         };
         let diag = collect_diagnostics(&synrepo_dir, &config);
         assert!(
-            matches!(diag.embedding_health, EmbeddingHealth::Degraded(_)),
+            matches!(diag.embedding_health, EmbeddingHealth::Degraded { .. }),
             "expected Degraded, got {:?}",
             diag.embedding_health
         );

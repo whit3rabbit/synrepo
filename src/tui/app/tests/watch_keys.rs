@@ -4,6 +4,7 @@ use crate::bootstrap::runtime_probe::AgentIntegration;
 use crate::tui::actions::{stop_watch, ActionContext, ActionOutcome};
 use crate::tui::theme::Theme;
 use crossterm::event::{KeyCode, KeyModifiers};
+use std::fs;
 
 #[test]
 fn pressing_r_sets_refresh_toast() {
@@ -18,6 +19,94 @@ fn pressing_r_sets_refresh_toast() {
         toast.starts_with("refreshed"),
         "toast should announce a refresh: {toast:?}"
     );
+}
+
+fn write_index_sensitive_drift(repo: &std::path::Path) {
+    let synrepo_dir = crate::config::Config::synrepo_dir(repo);
+    let updated = crate::config::Config {
+        roots: vec!["src".to_string()],
+        ..crate::config::Config::load(repo).unwrap()
+    };
+    fs::create_dir_all(repo.join("src")).unwrap();
+    fs::write(repo.join("src/lib.rs"), "pub fn demo() {}\n").unwrap();
+    fs::write(
+        synrepo_dir.join("config.toml"),
+        toml::to_string_pretty(&updated).unwrap(),
+    )
+    .unwrap();
+}
+
+fn store_guidance(state: &AppState) -> Vec<String> {
+    state
+        .snapshot
+        .diagnostics
+        .as_ref()
+        .map(|diag| diag.store_guidance.clone())
+        .unwrap_or_default()
+}
+
+#[test]
+fn pressing_r_does_not_apply_compatibility_actions() {
+    let (_tempdir, mut state) = make_ready_poll_state();
+    write_index_sensitive_drift(&state.repo_root);
+    state.refresh_now();
+    let before = store_guidance(&state);
+    assert!(
+        before.iter().any(|line| line.contains("needs rebuild")),
+        "fixture should start stale: {before:?}"
+    );
+
+    let consumed = state.handle_key(KeyCode::Char('r'), KeyModifiers::NONE);
+    assert!(consumed, "'r' should consume refresh");
+
+    let after = store_guidance(&state);
+    assert!(
+        after.iter().any(|line| line.contains("needs rebuild")),
+        "'r' must remain read-only and leave compatibility guidance: {after:?}"
+    );
+}
+
+#[test]
+fn pressing_u_opens_compatibility_confirmation() {
+    let (_tempdir, mut state) = make_ready_poll_state();
+    let consumed = state.handle_key(KeyCode::Char('U'), KeyModifiers::NONE);
+    assert!(consumed, "'U' should consume the key event");
+    assert_eq!(
+        state.pending_quick_confirm,
+        Some(PendingQuickConfirm::ApplyCompatibility)
+    );
+    let toast = state
+        .active_toast()
+        .expect("compatibility confirm should set a toast");
+    assert!(toast.contains("compatibility apply"));
+}
+
+#[test]
+fn confirming_u_applies_compatibility_and_clears_guidance() {
+    let (_tempdir, mut state) = make_ready_poll_state();
+    write_index_sensitive_drift(&state.repo_root);
+    state.refresh_now();
+    assert!(
+        store_guidance(&state)
+            .iter()
+            .any(|line| line.contains("needs rebuild")),
+        "fixture should start stale"
+    );
+
+    assert!(state.handle_key(KeyCode::Char('U'), KeyModifiers::NONE));
+    assert!(state.handle_key(KeyCode::Enter, KeyModifiers::NONE));
+
+    let after = store_guidance(&state);
+    assert!(
+        after.is_empty(),
+        "compatibility apply should clear stale guidance: {after:?}"
+    );
+    let entry = state
+        .log
+        .as_slice()
+        .last()
+        .expect("compatibility apply should log");
+    assert_eq!(entry.tag, "compatibility");
 }
 
 #[test]

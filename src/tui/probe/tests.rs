@@ -85,6 +85,24 @@ fn snapshot_for_actions(
     snapshot
 }
 
+fn snapshot_for_store_guidance(
+    guidance: Vec<String>,
+    watch_status: WatchServiceStatus,
+) -> StatusSnapshot {
+    let mut snapshot = snapshot_for_actions(
+        "current",
+        ReconcileHealth::Current,
+        watch_status,
+        WriterStatus::Free,
+    );
+    snapshot
+        .diagnostics
+        .as_mut()
+        .expect("fixture has diagnostics")
+        .store_guidance = guidance;
+    snapshot
+}
+
 fn export_status_from_display(display: &str) -> ExportStatus {
     let state = if display.starts_with("stale") {
         ExportState::Stale
@@ -393,4 +411,48 @@ fn stale_reconcile_with_active_watch_waits_for_poll() {
     assert!(actions.iter().any(|a| {
         a.label == "Watch reconcile waiting on writer lock held by pid 99, checking again in 2s"
     }));
+}
+
+#[test]
+fn compatibility_rebuild_next_action_uses_u_when_watch_inactive() {
+    let snapshot = snapshot_for_store_guidance(
+        vec![
+            "index needs rebuild because index-sensitive config changed; run `synrepo upgrade --apply`"
+                .to_string(),
+        ],
+        WatchServiceStatus::Inactive,
+    );
+
+    let actions = build_next_actions_with_context(
+        &snapshot,
+        &complete_integration(),
+        runtime(Duration::ZERO),
+    );
+
+    assert!(actions
+        .iter()
+        .any(|a| a.label == "Compatibility rebuild pending, press U to apply"));
+    assert!(!actions.iter().any(|a| a.label.contains("press B")));
+}
+
+#[test]
+fn compatibility_rebuild_next_action_requires_stopping_watch() {
+    let snapshot = snapshot_for_store_guidance(
+        vec![
+            "index needs rebuild because index-sensitive config changed; run `synrepo upgrade --apply`"
+                .to_string(),
+        ],
+        WatchServiceStatus::Running(watch_state()),
+    );
+
+    let actions = build_next_actions_with_context(
+        &snapshot,
+        &complete_integration(),
+        runtime(Duration::from_secs(2)),
+    );
+
+    assert!(actions.iter().any(|a| {
+        a.label == "Compatibility rebuild pending, stop watch before pressing U to apply"
+    }));
+    assert!(!actions.iter().any(|a| a.label.contains("press B")));
 }

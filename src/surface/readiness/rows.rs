@@ -149,18 +149,43 @@ pub(super) fn embeddings_row(snapshot: &StatusSnapshot, config: &Config) -> Read
                 None
             },
         },
-        EmbeddingHealth::Available { model, dim, chunks } => ReadinessRow {
+        EmbeddingHealth::Available {
+            provider,
+            provider_source,
+            model,
+            dim,
+            chunks,
+        } => ReadinessRow {
             capability: Capability::Embeddings,
             state: ReadinessState::Supported,
-            detail: format!("{model} ({dim}d, {chunks} chunks)"),
+            detail: format!(
+                "{provider}/{model}{} ({dim}d, {chunks} chunks)",
+                provider_source_suffix(*provider_source)
+            ),
             next_action: None,
         },
-        EmbeddingHealth::Degraded(reason) => ReadinessRow {
+        EmbeddingHealth::Degraded {
+            provider,
+            provider_source,
+            reason,
+        } => ReadinessRow {
             capability: Capability::Embeddings,
             state: ReadinessState::Degraded,
-            detail: reason.clone(),
+            detail: format!(
+                "{}/{}{}: {reason}",
+                provider,
+                config.semantic_model.as_str(),
+                provider_source_suffix(*provider_source)
+            ),
             next_action: Some("run `synrepo embeddings build` to rebuild the index".to_string()),
         },
+    }
+}
+
+fn provider_source_suffix(source: crate::config::SemanticProviderSource) -> &'static str {
+    match source {
+        crate::config::SemanticProviderSource::Explicit => "",
+        crate::config::SemanticProviderSource::Defaulted => " (defaulted)",
     }
 }
 
@@ -333,7 +358,7 @@ pub(super) fn compatibility_row(probe: &ProbeReport, snapshot: &StatusSnapshot) 
                 capability: Capability::Compatibility,
                 state: ReadinessState::Stale,
                 detail,
-                next_action: Some("review `synrepo status` store guidance".to_string()),
+                next_action: Some("run `synrepo upgrade --apply`".to_string()),
             };
         }
     }

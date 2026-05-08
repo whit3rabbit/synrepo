@@ -172,6 +172,18 @@ fn upgrade_apply_rebuild_runs_reconcile_and_persists_completed_state() {
 
     upgrade(&repo, true).expect("apply with Rebuild action must succeed");
 
+    let guidance = synrepo::store::compatibility::evaluate_runtime(
+        &synrepo_dir,
+        true,
+        &Config::load(&repo).unwrap(),
+    )
+    .unwrap()
+    .guidance_lines();
+    assert!(
+        guidance.is_empty(),
+        "upgrade apply must refresh compatibility snapshot: {guidance:?}"
+    );
+
     let state = load_reconcile_state(&synrepo_dir)
         .expect("reconcile-state.json must exist after rebuild-triggered reconcile");
     assert_eq!(

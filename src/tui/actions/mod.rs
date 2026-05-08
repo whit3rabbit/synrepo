@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 use crate::config::Config;
 
 mod auto_sync;
+mod compatibility;
 mod helpers;
 mod materialize;
 mod reconcile;
@@ -22,6 +23,7 @@ mod sync;
 mod watch;
 
 pub use auto_sync::set_auto_sync;
+pub use compatibility::apply_compatibility_now;
 pub(crate) use helpers::now_rfc3339;
 pub use helpers::{outcome_to_log, outcome_to_project_log, writer_lock_hint};
 pub use materialize::materialize_now;

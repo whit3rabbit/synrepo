@@ -5,7 +5,9 @@ use crossterm::event::{KeyCode, KeyModifiers};
 use super::support::{press, support_with_saved_anthropic};
 use crate::bootstrap::runtime_probe::AgentTargetKind;
 use crate::config::Mode;
-use crate::tui::wizard::setup::state::{SetupStep, SetupWizardState, WIZARD_TARGETS};
+use crate::tui::wizard::setup::state::{
+    EmbeddingSetupChoice, SetupStep, SetupWizardState, WIZARD_TARGETS,
+};
 
 #[test]
 fn happy_path_default_auto_claude_target() {
@@ -18,7 +20,7 @@ fn happy_path_default_auto_claude_target() {
     assert_eq!(s.mode, Mode::Auto);
     press(&mut s, KeyCode::Enter);
     assert_eq!(s.step, SetupStep::SelectEmbeddings);
-    assert!(!s.enable_embeddings);
+    assert_eq!(s.embedding_setup, EmbeddingSetupChoice::Disabled);
     press(&mut s, KeyCode::Enter);
     assert_eq!(s.step, SetupStep::ExplainExplain);
     press(&mut s, KeyCode::Enter);
@@ -32,7 +34,7 @@ fn happy_path_default_auto_claude_target() {
     let plan = s.finalize().expect("plan");
     assert_eq!(plan.mode, Mode::Auto);
     assert_eq!(plan.target, Some(AgentTargetKind::Claude));
-    assert!(!plan.enable_embeddings);
+    assert_eq!(plan.embedding_setup, EmbeddingSetupChoice::Disabled);
     assert!(plan.reconcile_after);
 }
 
@@ -59,7 +61,35 @@ fn select_curated_and_skip_target() {
     let plan = s.finalize().expect("plan");
     assert_eq!(plan.mode, Mode::Curated);
     assert_eq!(plan.target, None);
-    assert!(!plan.enable_embeddings);
+    assert_eq!(plan.embedding_setup, EmbeddingSetupChoice::Disabled);
+}
+
+#[test]
+fn embeddings_picker_commits_onnx_and_ollama_choices() {
+    let mut onnx = SetupWizardState::new(Mode::Auto, vec![]);
+    onnx.step = SetupStep::SelectEmbeddings;
+    press(&mut onnx, KeyCode::Down);
+    press(&mut onnx, KeyCode::Enter);
+    assert_eq!(onnx.embedding_setup, EmbeddingSetupChoice::Onnx);
+    assert_eq!(onnx.step, SetupStep::ExplainExplain);
+
+    let mut ollama = SetupWizardState::new(Mode::Auto, vec![]);
+    ollama.step = SetupStep::SelectEmbeddings;
+    press(&mut ollama, KeyCode::Down);
+    press(&mut ollama, KeyCode::Down);
+    press(&mut ollama, KeyCode::Enter);
+    assert_eq!(ollama.embedding_setup, EmbeddingSetupChoice::Ollama);
+    assert_eq!(ollama.step, SetupStep::ExplainExplain);
+}
+
+#[test]
+fn embeddings_only_picker_completes_after_selection() {
+    let mut s = SetupWizardState::embeddings_only();
+    press(&mut s, KeyCode::Down);
+    press(&mut s, KeyCode::Enter);
+    assert_eq!(s.step, SetupStep::Complete);
+    let plan = s.finalize().expect("plan");
+    assert_eq!(plan.embedding_setup, EmbeddingSetupChoice::Onnx);
 }
 
 #[test]

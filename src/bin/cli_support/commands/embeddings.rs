@@ -40,6 +40,11 @@ pub(crate) fn embeddings_build_output(repo_root: &Path, json: bool) -> anyhow::R
     build_output(repo_root, json, false)
 }
 
+pub(crate) fn embeddings_build_human(repo_root: &Path) -> anyhow::Result<()> {
+    print!("{}", build_output(repo_root, false, true)?);
+    Ok(())
+}
+
 fn build_output(repo_root: &Path, json: bool, stream_progress: bool) -> anyhow::Result<String> {
     if !is_available() {
         anyhow::bail!(

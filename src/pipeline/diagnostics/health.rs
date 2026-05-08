@@ -87,7 +87,8 @@ pub(super) fn compute_embedding_health(synrepo_dir: &Path, config: &Config) -> E
 
     let index_path = synrepo_dir.join("index/vectors/index.bin");
     if !index_path.exists() {
-        return EmbeddingHealth::Degraded(
+        return embedding_degraded(
+            config,
             "embedding index missing; run `synrepo embeddings build` to build it".to_string(),
         );
     }
@@ -103,20 +104,25 @@ pub(super) fn compute_embedding_health(synrepo_dir: &Path, config: &Config) -> E
                     .is_some_and(|d| d.join("model.onnx").exists());
 
                 if !model_cached {
-                    return EmbeddingHealth::Degraded(format!(
-                        "model '{}' not cached locally; will be downloaded on next use",
-                        config.semantic_model
-                    ));
+                    return embedding_degraded(
+                        config,
+                        format!(
+                            "model '{}' not cached locally; will be downloaded on next use",
+                            config.semantic_model
+                        ),
+                    );
                 }
             }
 
             EmbeddingHealth::Available {
+                provider: config.semantic_embedding_provider.as_str().to_string(),
+                provider_source: config.semantic_embedding_provider_source,
                 model: config.semantic_model.clone(),
                 dim: config.embedding_dim,
                 chunks: index.len(),
             }
         }
-        Err(e) => EmbeddingHealth::Degraded(format!("index load failed: {e}")),
+        Err(e) => embedding_degraded(config, format!("index load failed: {e}")),
     }
 }
 
@@ -124,11 +130,20 @@ pub(super) fn compute_embedding_health(synrepo_dir: &Path, config: &Config) -> E
 pub(super) fn compute_embedding_health(_synrepo_dir: &Path, config: &Config) -> EmbeddingHealth {
     if config.enable_semantic_triage {
         // Config says enabled but the feature is not compiled in.
-        EmbeddingHealth::Degraded(
+        embedding_degraded(
+            config,
             "semantic triage enabled in config but not compiled in (rebuild with --features semantic-triage)".to_string(),
         )
     } else {
         EmbeddingHealth::Disabled
+    }
+}
+
+fn embedding_degraded(config: &Config, reason: String) -> EmbeddingHealth {
+    EmbeddingHealth::Degraded {
+        provider: config.semantic_embedding_provider.as_str().to_string(),
+        provider_source: config.semantic_embedding_provider_source,
+        reason,
     }
 }
 

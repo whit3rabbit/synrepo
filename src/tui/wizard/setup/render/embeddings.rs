@@ -15,7 +15,8 @@ pub(super) fn draw_embeddings_step(
 ) {
     let rows = [
         "Skip: leave embeddings off (recommended default).",
-        "Enable embeddings: build local vectors for semantic routing and hybrid search.",
+        "ONNX: built-in local model, no separate server.",
+        "Ollama: use local Ollama all-minilm at http://localhost:11434.",
     ];
     let items: Vec<ListItem> = rows
         .iter()

@@ -329,7 +329,11 @@ fn watch_stale_artifacts_is_stale_not_disabled() {
 #[test]
 fn degraded_embeddings_report_degraded_with_next_action() {
     let mut diag = base_diagnostics();
-    diag.embedding_health = EmbeddingHealth::Degraded("embedding index missing".to_string());
+    diag.embedding_health = EmbeddingHealth::Degraded {
+        provider: "onnx".to_string(),
+        provider_source: crate::config::SemanticProviderSource::Explicit,
+        reason: "embedding index missing".to_string(),
+    };
     let snapshot = base_snapshot(diag);
     let matrix =
         ReadinessMatrix::build(&repo_root(), &ready_probe(), &snapshot, &Config::default());

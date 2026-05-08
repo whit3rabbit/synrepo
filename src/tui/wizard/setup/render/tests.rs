@@ -5,7 +5,7 @@ use super::draw;
 use crate::bootstrap::runtime_probe::AgentTargetKind;
 use crate::config::Mode;
 use crate::tui::theme::Theme;
-use crate::tui::wizard::setup::state::{SetupStep, SetupWizardState};
+use crate::tui::wizard::setup::state::{EmbeddingSetupChoice, SetupStep, SetupWizardState};
 
 fn render_state(state: &SetupWizardState) -> String {
     let backend = TestBackend::new(100, 30);
@@ -67,4 +67,27 @@ fn first_run_confirm_lists_concrete_mcp_setup_plan() {
     assert!(screen.contains("leave embeddings disabled"));
     assert!(screen.contains("leave explain disabled"));
     assert!(screen.contains("No files have been written yet"));
+}
+
+#[test]
+fn embeddings_step_names_provider_choices() {
+    let mut state = SetupWizardState::new(Mode::Auto, vec![]);
+    state.step = SetupStep::SelectEmbeddings;
+
+    let screen = render_state(&state);
+
+    assert!(screen.contains("Skip"));
+    assert!(screen.contains("ONNX"));
+    assert!(screen.contains("Ollama"));
+}
+
+#[test]
+fn confirm_names_selected_embedding_provider() {
+    let mut state = SetupWizardState::new(Mode::Auto, vec![]);
+    state.step = SetupStep::Confirm;
+    state.embedding_setup = EmbeddingSetupChoice::Ollama;
+
+    let screen = render_state(&state);
+
+    assert!(screen.contains("enable Ollama embeddings"));
 }

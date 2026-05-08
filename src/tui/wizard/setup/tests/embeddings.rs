@@ -4,7 +4,7 @@ use crossterm::event::KeyCode;
 
 use super::support::press;
 use crate::config::Mode;
-use crate::tui::wizard::setup::state::{SetupStep, SetupWizardState};
+use crate::tui::wizard::setup::state::{EmbeddingSetupChoice, SetupStep, SetupWizardState};
 
 fn drive_to_embeddings(s: &mut SetupWizardState) {
     press(s, KeyCode::Enter); // splash -> mode
@@ -20,7 +20,7 @@ fn embeddings_default_skips_to_explain() {
 
     press(&mut s, KeyCode::Enter);
 
-    assert!(!s.enable_embeddings);
+    assert_eq!(s.embedding_setup, EmbeddingSetupChoice::Disabled);
     assert_eq!(s.step, SetupStep::ExplainExplain);
 }
 
@@ -36,7 +36,7 @@ fn embeddings_enable_is_recorded_in_plan() {
     press(&mut s, KeyCode::Enter); // apply
 
     let plan = s.finalize().expect("plan");
-    assert!(plan.enable_embeddings);
+    assert_eq!(plan.embedding_setup, EmbeddingSetupChoice::Onnx);
     assert!(plan.explain.is_none());
 }
 

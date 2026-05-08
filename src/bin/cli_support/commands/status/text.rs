@@ -150,15 +150,34 @@ pub(super) fn write_status_text(
             )
             .unwrap();
         }
-        EmbeddingHealth::Available { model, dim, chunks } => {
+        EmbeddingHealth::Available {
+            provider,
+            provider_source,
+            model,
+            dim,
+            chunks,
+        } => {
             writeln!(
                 out,
-                "  embedding:    available ({model}, {dim}d, {chunks} chunks)"
+                "  embedding:    available ({}/{model}{}, {dim}d, {chunks} chunks)",
+                provider,
+                provider_source_suffix(*provider_source)
             )
             .unwrap();
         }
-        EmbeddingHealth::Degraded(reason) => {
-            writeln!(out, "  embedding:    degraded ({reason})").unwrap();
+        EmbeddingHealth::Degraded {
+            provider,
+            provider_source,
+            reason,
+        } => {
+            writeln!(
+                out,
+                "  embedding:    degraded ({}/{model}{}: {reason})",
+                provider,
+                provider_source_suffix(*provider_source),
+                model = config.semantic_model.as_str()
+            )
+            .unwrap();
         }
     }
     if let Some(ts) = snapshot.last_compaction {
@@ -319,6 +338,13 @@ pub(super) fn write_status_text(
                 .unwrap();
             }
         }
+    }
+}
+
+fn provider_source_suffix(source: synrepo::config::SemanticProviderSource) -> &'static str {
+    match source {
+        synrepo::config::SemanticProviderSource::Explicit => "",
+        synrepo::config::SemanticProviderSource::Defaulted => " (defaulted)",
     }
 }
 

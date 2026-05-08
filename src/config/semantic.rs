@@ -11,12 +11,33 @@ pub enum SemanticEmbeddingProvider {
     Ollama,
 }
 
+/// Whether the embedding provider was written in config or supplied by the
+/// legacy default.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub enum SemanticProviderSource {
+    /// The config file explicitly named `semantic_embedding_provider`.
+    Explicit,
+    /// The field was omitted, so the historical ONNX default was used.
+    #[default]
+    Defaulted,
+}
+
 impl SemanticEmbeddingProvider {
     /// Stable config and compatibility label.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Onnx => "onnx",
             Self::Ollama => "ollama",
+        }
+    }
+}
+
+impl SemanticProviderSource {
+    /// Stable status/API label.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Explicit => "explicit",
+            Self::Defaulted => "defaulted",
         }
     }
 }

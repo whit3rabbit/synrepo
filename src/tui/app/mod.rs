@@ -9,6 +9,7 @@ mod explain_picker;
 mod explain_preview;
 mod explore;
 mod key_handlers;
+mod quick_actions;
 mod render_cache;
 mod state_impl;
 mod view_state;
@@ -26,7 +27,7 @@ pub(crate) use render_cache::repo_display;
 pub use view_state::ActiveTab;
 pub use watch_events::watch_event_to_log_entry;
 
-use key_handlers::quick_actions_for;
+use quick_actions::quick_actions_for;
 
 use std::collections::VecDeque;
 use std::path::PathBuf;
@@ -64,6 +65,7 @@ enum PendingQuickConfirm {
     DocsCleanApply,
     ToggleAutoSync,
     ToggleEmbeddings,
+    ApplyCompatibility,
 }
 
 /// Bounded in-memory event log, used by both poll and live modes. Capped at
@@ -149,12 +151,14 @@ pub struct AppState {
     pub launch_project_mcp_install: bool,
     /// When set, the caller should launch the explain setup sub-wizard.
     pub launch_explain_setup: bool,
+    /// When set, the caller should launch the embeddings setup picker.
+    pub launch_embeddings_setup: bool,
     /// When set, the dashboard loop should run explain in-place after the
     /// current key event is handled.
     pub pending_explain: VecDeque<PendingExplainRun>,
-    /// When set, the dashboard loop should run an embedding build in-place
-    /// after the current key event is handled.
-    pub pending_embedding_build: VecDeque<PendingEmbeddingBuild>,
+    /// When set, the caller should build embeddings after leaving the
+    /// alternate screen.
+    pub launch_embedding_build: Option<PendingEmbeddingBuild>,
     /// Confirm-stop-watch modal state. `Some` when the operator asked to run
     /// explain while watch was still active; holds the pending mode until
     /// the operator answers yes (stop watch + launch) or no (cancel).
@@ -262,6 +266,10 @@ pub enum DashboardExit {
     LaunchProjectMcpInstall,
     /// Operator asked for the explain setup sub-wizard.
     LaunchExplainSetup,
+    /// Operator asked for the embeddings setup picker.
+    LaunchEmbeddingsSetup,
+    /// Operator asked for an embedding build in normal terminal output.
+    LaunchEmbeddingBuild(PendingEmbeddingBuild),
     /// Operator selected another registry project from Repos.
     SwitchProject(PathBuf),
 }

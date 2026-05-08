@@ -115,30 +115,30 @@ fn watch_state() -> WatchDaemonState {
 }
 
 #[test]
-fn embedding_store_guidance_uses_rebuild_hint_when_watch_inactive() {
+fn compatibility_store_guidance_uses_u_when_watch_inactive() {
     let snapshot = snapshot_for_store_guidance(
         WatchServiceStatus::Inactive,
-        "index: rebuild because index-sensitive config changed (`roots`, `max_file_size_bytes`, or `redact_globs`)",
+        "index needs rebuild because index-sensitive config changed (`roots`, `max_file_size_bytes`, or `redact_globs`); run `synrepo upgrade --apply`",
     );
 
     let actions = build_next_actions_with_context(&snapshot, &complete_integration(), runtime());
 
     assert!(actions
         .iter()
-        .any(|a| a.label == "Embedding/index rebuild pending, press B to rebuild vectors"));
+        .any(|a| a.label == "Compatibility rebuild pending, press U to apply"));
 }
 
 #[test]
-fn embedding_store_guidance_does_not_say_press_r_while_watch_active() {
+fn compatibility_store_guidance_requires_stopping_watch() {
     let snapshot = snapshot_for_store_guidance(
         WatchServiceStatus::Running(watch_state()),
-        "embeddings: invalidate because index-sensitive config changed, so embeddings are stale",
+        "embeddings needs invalidation because index-sensitive config changed, so embeddings are stale; run `synrepo upgrade --apply`",
     );
 
     let actions = build_next_actions_with_context(&snapshot, &complete_integration(), runtime());
 
     assert!(actions.iter().any(|a| {
-        a.label == "Embedding/index rebuild pending, stop watch before pressing B to rebuild vectors"
+        a.label == "Compatibility action pending, stop watch before pressing U to apply"
     }));
 }
 
