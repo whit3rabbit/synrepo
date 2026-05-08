@@ -5,7 +5,6 @@ use std::time::Duration;
 use time::OffsetDateTime;
 
 use crate::bootstrap::runtime_probe::{AgentIntegration, AgentTargetKind};
-use crate::config::Config;
 use crate::pipeline::diagnostics::{ReconcileHealth, WriterStatus};
 use crate::pipeline::watch::{WatchDaemonState, WatchServiceStatus};
 use crate::surface::status_snapshot::{ExportState, StatusSnapshot};
@@ -90,11 +89,7 @@ pub fn build_next_actions_with_context(
             ReconcileHealth::Current => {}
         }
         if !d.store_guidance.is_empty() {
-            out.push(store_compat_action(
-                &d.store_guidance[0],
-                snapshot.config.as_ref(),
-                &d.watch_status,
-            ));
+            out.push(store_compat_action(&d.store_guidance[0], &d.watch_status));
         }
     }
 
@@ -113,25 +108,30 @@ pub fn build_next_actions_with_context(
     out
 }
 
-fn store_compat_action(
-    guidance: &str,
-    config: Option<&Config>,
-    watch_status: &WatchServiceStatus,
-) -> NextAction {
-    let semantic_enabled = config
-        .map(|config| config.enable_semantic_triage)
-        .unwrap_or(false);
-    let embedding_related = semantic_enabled
-        && (guidance.contains("embeddings are stale")
-            || guidance.starts_with("index: rebuild because"));
+fn store_compat_action(guidance: &str, watch_status: &WatchServiceStatus) -> NextAction {
+    if guidance.contains(" is blocked because ") {
+        return NextAction {
+            label: "Compatibility blocked, resolve manually before retrying".to_string(),
+            severity: Severity::Blocked,
+        };
+    }
 
-    if embedding_related {
+    let compat_action = if guidance.contains("needs rebuild") {
+        Some("rebuild")
+    } else if guidance.contains("needs invalidation")
+        || guidance.contains("needs clear-and-recreate")
+    {
+        Some("action")
+    } else {
+        None
+    };
+
+    if let Some(kind) = compat_action {
         let label = match watch_status {
             WatchServiceStatus::Running(_) | WatchServiceStatus::Starting => {
-                "Embedding/index rebuild pending, stop watch before pressing B to rebuild vectors"
-                    .to_string()
+                format!("Compatibility {kind} pending, stop watch before pressing U to apply")
             }
-            _ => "Embedding/index rebuild pending, press B to rebuild vectors".to_string(),
+            _ => format!("Compatibility {kind} pending, press U to apply"),
         };
         return NextAction {
             label,
@@ -140,8 +140,8 @@ fn store_compat_action(
     }
 
     NextAction {
-        label: format!("Store compat action: {guidance}"),
-        severity: Severity::Blocked,
+        label: format!("Store compat advisory: {guidance}"),
+        severity: Severity::Stale,
     }
 }
 

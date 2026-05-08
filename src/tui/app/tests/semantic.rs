@@ -33,7 +33,7 @@ fn quick_actions_include_embeddings_toggle_when_initialized() {
         .find(|action| action.key == "T")
         .expect("embeddings quick action");
     assert_eq!(action.label, "enable optional embeddings");
-    assert!(action.requires_confirm);
+    assert!(!action.requires_confirm);
     assert!(
         state.quick_actions.iter().all(|action| action.key != "B"),
         "build action should stay hidden until embeddings are enabled"
@@ -42,29 +42,16 @@ fn quick_actions_include_embeddings_toggle_when_initialized() {
 
 #[test]
 #[cfg(feature = "semantic-triage")]
-fn pressing_t_enables_embeddings_without_stop_watch_modal() {
-    let (_lock, repo, _guard, _home, mut state) = ready_state();
+fn pressing_t_when_disabled_exits_to_embeddings_setup() {
+    let (_lock, _repo, _guard, _home, mut state) = ready_state();
 
     assert!(state.handle_key(KeyCode::Char('T'), KeyModifiers::NONE));
-    assert_eq!(
-        state.pending_quick_confirm,
-        Some(PendingQuickConfirm::ToggleEmbeddings)
-    );
-    assert!(state.handle_key(KeyCode::Enter, KeyModifiers::NONE));
-
     assert!(
         state.confirm_stop_watch.is_none(),
-        "config-only enable must not ask to stop watch"
+        "provider setup must not ask to stop watch"
     );
-    assert!(
-        crate::config::Config::load(repo.path())
-            .unwrap()
-            .enable_semantic_triage
-    );
-    assert!(
-        state.quick_actions.iter().any(|action| action.key == "B"),
-        "build action should appear after embeddings are enabled"
-    );
+    assert!(state.should_exit);
+    assert_eq!(state.exit_intent(), DashboardExit::LaunchEmbeddingsSetup);
 }
 
 #[test]
@@ -103,11 +90,12 @@ fn pressing_b_without_watch_queues_embedding_build() {
 
     assert!(state.handle_key(KeyCode::Char('B'), KeyModifiers::NONE));
     assert_eq!(
-        state.pending_embedding_build.front(),
-        Some(&PendingEmbeddingBuild {
+        state.exit_intent(),
+        DashboardExit::LaunchEmbeddingBuild(PendingEmbeddingBuild {
             stopped_watch: false
         })
     );
+    assert!(state.should_exit);
 }
 
 #[test]
@@ -129,7 +117,7 @@ fn pressing_b_with_watch_opens_stop_watch_modal() {
         state.confirm_stop_watch.as_ref().map(|s| &s.pending),
         Some(&PendingStopWatchAction::BuildEmbeddings)
     );
-    assert!(state.pending_embedding_build.is_empty());
+    assert_eq!(state.launch_embedding_build, None);
 
     let stop = stop_watch(&ctx);
     assert!(
@@ -159,11 +147,12 @@ fn confirming_embedding_stop_watch_queues_build() {
     assert!(state.handle_key(KeyCode::Char('y'), KeyModifiers::NONE));
     assert!(state.confirm_stop_watch.is_none());
     assert_eq!(
-        state.pending_embedding_build.front(),
-        Some(&PendingEmbeddingBuild {
+        state.exit_intent(),
+        DashboardExit::LaunchEmbeddingBuild(PendingEmbeddingBuild {
             stopped_watch: true
         })
     );
+    assert!(state.should_exit);
     assert!(matches!(
         crate::pipeline::watch::watch_service_status(&ctx.synrepo_dir),
         crate::pipeline::watch::WatchServiceStatus::Inactive
@@ -183,19 +172,13 @@ fn enabling_without_semantic_feature_does_not_stop_watch() {
     );
 
     assert!(state.handle_key(KeyCode::Char('T'), KeyModifiers::NONE));
-    assert_eq!(
-        state.pending_quick_confirm,
-        Some(PendingQuickConfirm::ToggleEmbeddings)
-    );
-    assert!(state.handle_key(KeyCode::Enter, KeyModifiers::NONE));
-
     assert!(
         state.confirm_stop_watch.is_none(),
         "missing feature must fail before opening stop-watch modal"
     );
-    assert!(state.log.as_slice().iter().any(|entry| {
-        entry.tag == "embeddings" && entry.message.contains("not built with `semantic-triage`")
-    }));
+    assert!(state
+        .active_toast()
+        .is_some_and(|toast| toast.contains("semantic-triage")));
     assert!(matches!(
         crate::pipeline::watch::watch_service_status(&ctx.synrepo_dir),
         crate::pipeline::watch::WatchServiceStatus::Running(_)

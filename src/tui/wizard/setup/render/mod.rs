@@ -50,6 +50,17 @@ pub fn run_explain_only_wizard_loop(theme: Theme) -> anyhow::Result<super::Setup
     finalize_outcome(state)
 }
 
+/// Run only the embeddings backend picker. Used by dashboard `T` after the
+/// dashboard leaves the alternate screen.
+pub fn run_embeddings_only_wizard_loop(theme: Theme) -> anyhow::Result<super::SetupWizardOutcome> {
+    let mut terminal = enter_tui()?;
+    let mut state = SetupWizardState::embeddings_only();
+    let result = render_loop(&mut terminal, &mut state, &theme);
+    leave_tui(&mut terminal)?;
+    result?;
+    finalize_outcome(state)
+}
+
 fn finalize_outcome(state: SetupWizardState) -> anyhow::Result<super::SetupWizardOutcome> {
     if state.cancelled {
         Ok(super::SetupWizardOutcome::Cancelled)
@@ -91,6 +102,9 @@ fn draw(frame: &mut ratatui::Frame, state: &SetupWizardState, theme: &Theme) {
             SetupStep::Splash => " synrepo setup: step 1/6 welcome ",
             SetupStep::SelectMode => " synrepo setup: step 2/6 graph mode ",
             SetupStep::SelectTarget => " synrepo setup: step 3/6 agent integration ",
+            SetupStep::SelectEmbeddings if state.embeddings_only => {
+                " synrepo embeddings setup: provider "
+            }
             SetupStep::SelectEmbeddings => " synrepo setup: step 4/6 embeddings ",
             SetupStep::ExplainExplain => " synrepo setup: step 5/6 what explain does ",
             SetupStep::SelectExplain => " synrepo setup: step 5/6 LLM explain ",
@@ -139,9 +153,12 @@ fn draw(frame: &mut ratatui::Frame, state: &SetupWizardState, theme: &Theme) {
         SetupStep::Splash => " Enter continue  Esc exit ",
         SetupStep::SelectMode
         | SetupStep::SelectTarget
-        | SetupStep::SelectEmbeddings
         | SetupStep::SelectExplain
         | SetupStep::SelectLocalPreset => " ↑/↓ move  Enter select  Esc cancel ",
+        SetupStep::SelectEmbeddings if state.embeddings_only => {
+            " ↑/↓ move  Enter select  Esc cancel "
+        }
+        SetupStep::SelectEmbeddings => " ↑/↓ move  Enter select  b back  Esc cancel ",
         SetupStep::EditCloudApiKey => {
             " type key  Enter accept  Esc back  Ctrl-U clear  Ctrl-C abort "
         }
@@ -313,17 +330,21 @@ fn draw_confirm_step(
         )));
         step_no += 1;
     }
-    if state.enable_embeddings {
-        lines.push(Line::from(Span::styled(
-            format!("  {step_no}. enable embeddings for semantic routing and hybrid search"),
-            theme.base_style(),
-        )));
-    } else {
-        lines.push(Line::from(Span::styled(
+    let (embedding_line, embedding_style) = match state.embedding_setup {
+        super::EmbeddingSetupChoice::Disabled => (
             format!("  {step_no}. leave embeddings disabled (optional)"),
             theme.muted_style(),
-        )));
-    }
+        ),
+        super::EmbeddingSetupChoice::Onnx => (
+            format!("  {step_no}. enable ONNX embeddings for semantic routing and hybrid search"),
+            theme.base_style(),
+        ),
+        super::EmbeddingSetupChoice::Ollama => (
+            format!("  {step_no}. enable Ollama embeddings (all-minilm at http://localhost:11434)"),
+            theme.base_style(),
+        ),
+    };
+    lines.push(Line::from(Span::styled(embedding_line, embedding_style)));
     step_no += 1;
     match &state.explain {
         Some(ExplainChoice::Cloud {

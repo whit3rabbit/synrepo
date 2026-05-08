@@ -8,9 +8,9 @@ use crate::pipeline::watch::WatchServiceStatus;
 use crate::store::{overlay::SqliteOverlayStore, sqlite::SqliteGraphStore};
 use crate::structure::graph::with_graph_read_snapshot;
 use crate::tui::actions::{
-    materialize_now, outcome_to_log, outcome_to_project_log, reconcile_now,
-    semantic_feature_compiled, set_auto_sync, set_semantic_triage, start_watch_daemon, stop_watch,
-    sync_now, ActionContext, ActionOutcome, ProjectActionContext,
+    apply_compatibility_now, materialize_now, outcome_to_log, outcome_to_project_log,
+    reconcile_now, semantic_feature_compiled, set_auto_sync, set_semantic_triage,
+    start_watch_daemon, stop_watch, sync_now, ActionContext, ActionOutcome, ProjectActionContext,
 };
 
 use super::{
@@ -82,6 +82,15 @@ impl AppState {
         true
     }
 
+    pub(super) fn handle_apply_compatibility_now(&mut self) -> bool {
+        let ctx = self.action_context();
+        let outcome = apply_compatibility_now(&ctx);
+        self.set_toast(self.action_toast("compatibility", &outcome));
+        self.log_action_outcome("compatibility", &outcome);
+        self.refresh_now();
+        true
+    }
+
     pub(super) fn handle_toggle_auto_sync(&mut self) -> bool {
         let ctx = self.action_context();
         let desired = !self.auto_sync_enabled;
@@ -111,10 +120,13 @@ impl AppState {
             return true;
         }
 
-        let outcome = set_semantic_triage(&ctx, true);
-        self.set_toast(self.action_toast("embeddings", &outcome));
-        self.log_action_outcome("embeddings", &outcome);
-        self.refresh_now();
+        if !semantic_feature_compiled() {
+            self.set_toast("embeddings unavailable: rebuild with `--features semantic-triage`");
+            return true;
+        }
+
+        self.launch_embeddings_setup = true;
+        self.should_exit = true;
         true
     }
 
@@ -142,7 +154,7 @@ impl AppState {
                     pending: PendingStopWatchAction::BuildEmbeddings,
                 });
             }
-            _ => self.enqueue_pending_embedding_build(PendingEmbeddingBuild {
+            _ => self.launch_embedding_build(PendingEmbeddingBuild {
                 stopped_watch: false,
             }),
         }

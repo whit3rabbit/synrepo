@@ -5,7 +5,8 @@ use crossterm::event::{KeyCode, KeyModifiers};
 
 use super::explain::{ExplainWizardSupport, TextInputField, LOCAL_PRESETS};
 pub use super::state_types::{
-    SetupPlan, SetupStep, SetupWizardOutcome, SetupWizardState, WIZARD_TARGETS,
+    EmbeddingSetupChoice, SetupPlan, SetupStep, SetupWizardOutcome, SetupWizardState,
+    WIZARD_TARGETS,
 };
 use crate::config::Mode;
 
@@ -60,7 +61,8 @@ impl SetupWizardState {
             local_preset_cursor,
             mode: default_mode,
             target: None,
-            enable_embeddings: false,
+            embedding_setup: EmbeddingSetupChoice::Disabled,
+            embeddings_only: false,
             explain: None,
             endpoint_input: TextInputField::with_value(endpoint_seed),
             api_key_input: TextInputField::with_value(""),
@@ -74,7 +76,7 @@ impl SetupWizardState {
 
     /// Build a state positioned directly at `SelectExplain`, used by
     /// `synrepo setup --explain` to run only the explain sub-flow. The
-    /// plan's `mode`/`target`/`enable_embeddings` fields are placeholders;
+    /// plan's `mode`/`target`/`embedding_setup` fields are placeholders;
     /// the caller must only consume `plan.explain`.
     pub fn explain_only() -> Self {
         let mut s = Self::with_explain_support(Mode::Auto, vec![], ExplainWizardSupport::default());
@@ -87,6 +89,15 @@ impl SetupWizardState {
     pub fn explain_only_with_support(explain_support: ExplainWizardSupport) -> Self {
         let mut s = Self::with_explain_support(Mode::Auto, vec![], explain_support);
         s.step = SetupStep::SelectExplain;
+        s
+    }
+
+    /// Build a state positioned directly at the embeddings picker, used by
+    /// dashboard `T` when semantic triage is currently disabled.
+    pub fn embeddings_only() -> Self {
+        let mut s = Self::with_explain_support(Mode::Auto, vec![], ExplainWizardSupport::default());
+        s.step = SetupStep::SelectEmbeddings;
+        s.embeddings_only = true;
         s
     }
 
@@ -132,7 +143,7 @@ impl SetupWizardState {
         Some(SetupPlan {
             mode: self.mode,
             target: self.target,
-            enable_embeddings: self.enable_embeddings,
+            embedding_setup: self.embedding_setup,
             explain: self.explain.clone(),
             reconcile_after: true,
         })

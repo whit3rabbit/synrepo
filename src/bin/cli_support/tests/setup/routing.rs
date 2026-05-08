@@ -5,7 +5,7 @@ use tempfile::tempdir;
 use crate::cli_support::setup_cmd::{execute_setup_plan, init_entry_mode, InitEntryMode};
 use crate::cli_support::tests::support::canonicalize_no_verbatim;
 use synrepo::config::{Config, Mode};
-use synrepo::tui::SetupPlan;
+use synrepo::tui::{EmbeddingSetupChoice, SetupPlan};
 
 fn redirect_home() -> (
     synrepo::test_support::GlobalTestLock,
@@ -89,7 +89,7 @@ fn wizard_plan_execution_registers_project() {
         SetupPlan {
             mode: Mode::Auto,
             target: None,
-            enable_embeddings: false,
+            embedding_setup: EmbeddingSetupChoice::Disabled,
             explain: None,
             reconcile_after: true,
         },
@@ -110,7 +110,7 @@ fn wizard_plan_execution_persists_embeddings_opt_in() {
         SetupPlan {
             mode: Mode::Auto,
             target: None,
-            enable_embeddings: true,
+            embedding_setup: EmbeddingSetupChoice::Onnx,
             explain: None,
             reconcile_after: true,
         },
@@ -119,9 +119,51 @@ fn wizard_plan_execution_persists_embeddings_opt_in() {
 
     let config = Config::load(repo.path()).unwrap();
     assert!(config.enable_semantic_triage);
+    assert_eq!(
+        config.semantic_embedding_provider,
+        synrepo::config::SemanticEmbeddingProvider::Onnx
+    );
+    assert_eq!(config.semantic_model, "all-MiniLM-L6-v2");
     assert!(fs::read_to_string(repo.path().join(".synrepo/config.toml"))
         .unwrap()
         .contains("enable_semantic_triage = true"));
+    assert!(fs::read_to_string(repo.path().join(".synrepo/config.toml"))
+        .unwrap()
+        .contains("semantic_embedding_provider = \"onnx\""));
+}
+
+#[test]
+fn wizard_plan_execution_persists_ollama_embeddings_opt_in() {
+    let (_lock, _home, _guard) = redirect_home();
+    let repo = tempdir().unwrap();
+    fs::write(
+        repo.path().join("README.md"),
+        "setup ollama embeddings test\n",
+    )
+    .unwrap();
+
+    execute_setup_plan(
+        repo.path(),
+        SetupPlan {
+            mode: Mode::Auto,
+            target: None,
+            embedding_setup: EmbeddingSetupChoice::Ollama,
+            explain: None,
+            reconcile_after: true,
+        },
+    )
+    .unwrap();
+
+    let config = Config::load(repo.path()).unwrap();
+    assert!(config.enable_semantic_triage);
+    assert_eq!(
+        config.semantic_embedding_provider,
+        synrepo::config::SemanticEmbeddingProvider::Ollama
+    );
+    assert_eq!(config.semantic_model, "all-minilm");
+    assert_eq!(config.embedding_dim, 384);
+    assert_eq!(config.semantic_ollama_endpoint, "http://localhost:11434");
+    assert_eq!(config.semantic_embedding_batch_size, 128);
 }
 
 #[test]
@@ -140,7 +182,7 @@ fn setup_init_with_semantic_triage_does_not_build_vectors_index() {
         SetupPlan {
             mode: Mode::Auto,
             target: None,
-            enable_embeddings: true,
+            embedding_setup: EmbeddingSetupChoice::Onnx,
             explain: None,
             reconcile_after: true,
         },

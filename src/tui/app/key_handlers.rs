@@ -5,10 +5,7 @@ use std::time::Duration;
 
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 
-use super::action_handlers::watch_toggle_label_for;
-use super::{ActiveTab, AppMode, AppState, ExplainMode, PendingQuickConfirm};
-use crate::surface::status_snapshot::StatusSnapshot;
-use crate::tui::widgets::QuickAction;
+use super::{ActiveTab, AppState, ExplainMode, PendingQuickConfirm};
 
 impl AppState {
     /// Handle a key event. Returns true when the event was consumed.
@@ -186,11 +183,24 @@ impl AppState {
             }
             KeyCode::Char('R') => self.handle_reconcile_now(),
             KeyCode::Char('S') => self.handle_sync_now(),
+            KeyCode::Char('U') | KeyCode::Char('u') => {
+                self.open_quick_confirm(PendingQuickConfirm::ApplyCompatibility)
+            }
             KeyCode::Char('A') | KeyCode::Char('a') => {
                 self.open_quick_confirm(PendingQuickConfirm::ToggleAutoSync)
             }
             KeyCode::Char('T') | KeyCode::Char('t') => {
-                self.open_quick_confirm(PendingQuickConfirm::ToggleEmbeddings)
+                let embeddings_enabled = self
+                    .snapshot
+                    .config
+                    .as_ref()
+                    .map(|config| config.enable_semantic_triage)
+                    .unwrap_or(false);
+                if embeddings_enabled {
+                    self.open_quick_confirm(PendingQuickConfirm::ToggleEmbeddings)
+                } else {
+                    self.handle_toggle_semantic_triage()
+                }
             }
             KeyCode::Char('B') | KeyCode::Char('b') => {
                 self.queue_embedding_build();
@@ -235,6 +245,9 @@ impl AppState {
             PendingQuickConfirm::ToggleEmbeddings => {
                 "embeddings toggle: Enter to apply, Esc to cancel"
             }
+            PendingQuickConfirm::ApplyCompatibility => {
+                "compatibility apply: Enter to apply, Esc to cancel"
+            }
         });
         true
     }
@@ -254,6 +267,9 @@ impl AppState {
                     Some(PendingQuickConfirm::ToggleEmbeddings) => {
                         self.handle_toggle_semantic_triage()
                     }
+                    Some(PendingQuickConfirm::ApplyCompatibility) => {
+                        self.handle_apply_compatibility_now()
+                    }
                     None => true,
                 }
             }
@@ -265,102 +281,6 @@ impl AppState {
             _ => true,
         }
     }
-}
-
-pub(super) fn quick_actions_for(mode: &AppMode, snapshot: &StatusSnapshot) -> Vec<QuickAction> {
-    let mut actions = vec![QuickAction {
-        key: "r".to_string(),
-        label: "refresh snapshot".to_string(),
-        disabled: false,
-        requires_confirm: false,
-        destructive: false,
-        expensive: false,
-        command_label: Some("refresh snapshot".to_string()),
-    }];
-    if snapshot.graph_stats.is_none() && snapshot.initialized {
-        actions.push(QuickAction {
-            key: "M".to_string(),
-            label: "generate graph".to_string(),
-            disabled: false,
-            requires_confirm: true,
-            destructive: false,
-            expensive: true,
-            command_label: Some("materialize graph".to_string()),
-        });
-    }
-    if let Some(watch_label) = watch_toggle_label_for(mode, snapshot) {
-        actions.push(QuickAction {
-            key: "w".to_string(),
-            label: format!("{watch_label} watch"),
-            disabled: false,
-            requires_confirm: false,
-            destructive: false,
-            expensive: false,
-            command_label: Some(format!("watch {watch_label} current")),
-        });
-    }
-    if snapshot.initialized {
-        let embeddings_enabled = snapshot
-            .config
-            .as_ref()
-            .map(|config| config.enable_semantic_triage)
-            .unwrap_or(false);
-        let label = if embeddings_enabled {
-            "disable embeddings"
-        } else {
-            "enable optional embeddings"
-        };
-        actions.push(QuickAction {
-            key: "T".to_string(),
-            label: label.to_string(),
-            disabled: false,
-            requires_confirm: true,
-            destructive: false,
-            expensive: !embeddings_enabled,
-            command_label: Some(label.to_string()),
-        });
-        if embeddings_enabled {
-            actions.push(QuickAction {
-                key: "B".to_string(),
-                label: "build embeddings".to_string(),
-                disabled: false,
-                requires_confirm: false,
-                destructive: false,
-                expensive: true,
-                command_label: Some("build embeddings".to_string()),
-            });
-        }
-    }
-    actions.extend([
-        QuickAction {
-            key: "i".to_string(),
-            label: "agent integration".to_string(),
-            disabled: false,
-            requires_confirm: false,
-            destructive: false,
-            expensive: false,
-            command_label: Some("agent integration".to_string()),
-        },
-        QuickAction {
-            key: "e".to_string(),
-            label: "configure optional explain".to_string(),
-            disabled: false,
-            requires_confirm: false,
-            destructive: false,
-            expensive: false,
-            command_label: Some("configure optional explain".to_string()),
-        },
-        QuickAction {
-            key: "q".to_string(),
-            label: "quit".to_string(),
-            disabled: false,
-            requires_confirm: false,
-            destructive: false,
-            expensive: false,
-            command_label: Some("quit".to_string()),
-        },
-    ]);
-    actions
 }
 
 /// Poll the terminal for a key event, honoring a budget tied to the refresh

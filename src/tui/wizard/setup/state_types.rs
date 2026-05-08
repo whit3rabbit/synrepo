@@ -6,6 +6,24 @@ use super::explain::{
 use crate::bootstrap::runtime_probe::AgentTargetKind;
 use crate::config::Mode;
 
+/// Embedding setup decision made by the wizard.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EmbeddingSetupChoice {
+    /// Leave optional semantic routing/search disabled.
+    Disabled,
+    /// Enable the built-in ONNX backend.
+    Onnx,
+    /// Enable local Ollama `/api/embed`.
+    Ollama,
+}
+
+impl EmbeddingSetupChoice {
+    /// Whether this choice enables semantic triage.
+    pub fn is_enabled(self) -> bool {
+        !matches!(self, Self::Disabled)
+    }
+}
+
 /// Plan produced by a completed setup wizard. Executed by the bin-side
 /// dispatcher after the TUI alternate-screen has been torn down.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -14,9 +32,9 @@ pub struct SetupPlan {
     pub mode: Mode,
     /// Optional agent-integration target. `None` means the user chose "skip".
     pub target: Option<AgentTargetKind>,
-    /// Whether to enable optional embedding vectors for semantic routing and
+    /// Optional embedding backend to configure for semantic routing and
     /// hybrid search in this repository.
-    pub enable_embeddings: bool,
+    pub embedding_setup: EmbeddingSetupChoice,
     /// Explain decision. `None` means the user picked "Skip" (no
     /// `[explain]` block is written; keys in env stay untouched).
     pub explain: Option<ExplainChoice>,
@@ -117,7 +135,7 @@ pub struct SetupWizardState {
     pub mode_cursor: usize,
     /// Cursor index in the target list: 0..N for targets, N for "Skip".
     pub target_cursor: usize,
-    /// Cursor index in the embeddings list: 0 = Skip, 1 = Enable.
+    /// Cursor index in the embeddings list: 0 = Skip, 1 = ONNX, 2 = Ollama.
     pub embeddings_cursor: usize,
     /// Cursor index into [`crate::tui::wizard::setup::EXPLAIN_ROWS`].
     pub explain_cursor: usize,
@@ -127,8 +145,10 @@ pub struct SetupWizardState {
     pub mode: Mode,
     /// Committed target (set on Enter at `SelectTarget`). `None` means skip.
     pub target: Option<AgentTargetKind>,
-    /// Committed embeddings choice. False means skip.
-    pub enable_embeddings: bool,
+    /// Committed embeddings choice.
+    pub embedding_setup: EmbeddingSetupChoice,
+    /// True when running only the embeddings setup sub-flow.
+    pub embeddings_only: bool,
     /// Committed explain choice. `None` means the user picked "Skip" on
     /// `SelectExplain`. Set on Enter at `SelectExplain` for cloud/skip or
     /// at `EditLocalEndpoint` for local.

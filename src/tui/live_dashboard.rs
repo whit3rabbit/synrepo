@@ -35,6 +35,10 @@ pub(super) fn run(repo_root: &Path, opts: TuiOptions) -> anyhow::Result<TuiOutco
         DashboardExit::LaunchIntegration => Ok(TuiOutcome::LaunchIntegrationRequested),
         DashboardExit::LaunchProjectMcpInstall => Ok(TuiOutcome::LaunchProjectMcpInstallRequested),
         DashboardExit::LaunchExplainSetup => Ok(TuiOutcome::LaunchExplainSetupRequested),
+        DashboardExit::LaunchEmbeddingsSetup => Ok(TuiOutcome::LaunchEmbeddingsSetupRequested),
+        DashboardExit::LaunchEmbeddingBuild(pending) => {
+            Ok(TuiOutcome::LaunchEmbeddingBuildRequested(pending))
+        }
         DashboardExit::SwitchProject(repo_root) => {
             Ok(TuiOutcome::SwitchProjectRequested(repo_root))
         }

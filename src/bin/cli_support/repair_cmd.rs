@@ -1,3 +1,4 @@
+use std::io::{self, Write};
 use std::path::Path;
 
 use synrepo::bootstrap::runtime_probe::{probe, AgentIntegration};
@@ -9,10 +10,11 @@ use synrepo::tui::{
 
 use super::agent_shims::{registry as shim_registry, AgentTool, AutomationTier};
 use super::commands::{
-    reconcile, resolve_setup_scope, step_apply_integration, step_backup_mcp_config, step_init,
-    step_install_agent_hooks, step_register_mcp, step_write_shim, StepOutcome,
+    embeddings_build_human, reconcile, resolve_setup_scope, step_apply_integration,
+    step_backup_mcp_config, step_init, step_install_agent_hooks, step_register_mcp,
+    step_write_shim, StepOutcome,
 };
-use super::setup_cmd::run_explain_step;
+use super::setup_cmd::{run_embeddings_setup_step, run_explain_step};
 
 /// Run the poll-mode dashboard in a loop so dashboard-launched sub-wizards can
 /// tear down the alt-screen, execute their plan, and re-open the dashboard
@@ -80,6 +82,17 @@ pub(crate) fn run_dashboard_with_sub_wizards(
                 run_explain_step(&current_root, tui_opts)?;
                 opts.welcome_banner = false;
             }
+            TuiOutcome::LaunchEmbeddingsSetupRequested => {
+                let tui_opts = TuiOptions {
+                    no_color: opts.no_color,
+                };
+                run_embeddings_setup_step(&current_root, tui_opts)?;
+                opts.welcome_banner = false;
+            }
+            TuiOutcome::LaunchEmbeddingBuildRequested(pending) => {
+                run_embedding_build_step(&current_root, pending)?;
+                opts.welcome_banner = false;
+            }
             outcome @ (TuiOutcome::WizardCompleted | TuiOutcome::WizardCancelled) => {
                 debug_assert!(
                     false,
@@ -89,6 +102,32 @@ pub(crate) fn run_dashboard_with_sub_wizards(
             }
         }
     }
+}
+
+fn run_embedding_build_step(
+    repo_root: &Path,
+    pending: synrepo::tui::app::PendingEmbeddingBuild,
+) -> anyhow::Result<()> {
+    if pending.stopped_watch {
+        println!("Watch stopped. Building embeddings in normal terminal output...");
+    } else {
+        println!("Building embeddings in normal terminal output...");
+    }
+    if let Err(error) = embeddings_build_human(repo_root) {
+        eprintln!("embeddings build failed: {error:#}");
+    }
+    wait_for_enter_if_tty()
+}
+
+fn wait_for_enter_if_tty() -> anyhow::Result<()> {
+    if !synrepo::tui::stdout_is_tty() {
+        return Ok(());
+    }
+    print!("Press Enter to reopen the dashboard...");
+    io::stdout().flush()?;
+    let mut line = String::new();
+    io::stdin().read_line(&mut line)?;
+    Ok(())
 }
 
 /// Execute a completed [`RepairPlan`] after the TUI alt-screen has been torn

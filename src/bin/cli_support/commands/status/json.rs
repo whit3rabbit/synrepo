@@ -94,14 +94,28 @@ pub(super) fn write_status_json(
         "overlay_cost_summary": snapshot.overlay_cost_summary,
         "embedding_health": match &diag.embedding_health {
             EmbeddingHealth::Disabled => serde_json::json!({"status": "disabled"}),
-            EmbeddingHealth::Available { model, dim, chunks } => serde_json::json!({
+            EmbeddingHealth::Available {
+                provider,
+                provider_source,
+                model,
+                dim,
+                chunks,
+            } => serde_json::json!({
                 "status": "available",
+                "provider": provider,
+                "provider_source": provider_source.as_str(),
                 "model": model,
                 "dim": dim,
                 "chunks": chunks,
             }),
-            EmbeddingHealth::Degraded(reason) => serde_json::json!({
+            EmbeddingHealth::Degraded {
+                provider,
+                provider_source,
+                reason,
+            } => serde_json::json!({
                 "status": "degraded",
+                "provider": provider,
+                "provider_source": provider_source.as_str(),
                 "reason": reason,
             }),
         },

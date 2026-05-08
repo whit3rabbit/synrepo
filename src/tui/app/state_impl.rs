@@ -130,8 +130,9 @@ impl AppState {
             launch_integration: false,
             launch_project_mcp_install: false,
             launch_explain_setup: false,
+            launch_embeddings_setup: false,
             pending_explain: std::collections::VecDeque::new(),
-            pending_embedding_build: std::collections::VecDeque::new(),
+            launch_embedding_build: None,
             confirm_stop_watch: None,
             pending_quick_confirm: None,
             picker: None,
@@ -180,6 +181,12 @@ impl AppState {
         if self.launch_explain_setup {
             return DashboardExit::LaunchExplainSetup;
         }
+        if self.launch_embeddings_setup {
+            return DashboardExit::LaunchEmbeddingsSetup;
+        }
+        if let Some(pending) = &self.launch_embedding_build {
+            return DashboardExit::LaunchEmbeddingBuild(pending.clone());
+        }
         if self.launch_project_mcp_install {
             return DashboardExit::LaunchProjectMcpInstall;
         }
@@ -193,11 +200,6 @@ impl AppState {
     /// leaving the alternate screen.
     pub fn take_pending_explain(&mut self) -> Option<PendingExplainRun> {
         self.pending_explain.pop_front()
-    }
-
-    /// Take a queued embedding build so the dashboard loop can execute it.
-    pub fn take_pending_embedding_build(&mut self) -> Option<PendingEmbeddingBuild> {
-        self.pending_embedding_build.pop_front()
     }
 
     /// Queue a dashboard explain run, deduping by mode so rapid repeat
@@ -214,13 +216,10 @@ impl AppState {
         self.pending_explain.push_back(run);
     }
 
-    /// Queue a dashboard embedding build, deduping rapid repeat keypresses.
-    pub(super) fn enqueue_pending_embedding_build(&mut self, run: PendingEmbeddingBuild) {
-        if !self.pending_embedding_build.is_empty() {
-            self.set_toast("embedding build already queued");
-            return;
-        }
-        self.pending_embedding_build.push_back(run);
+    /// Request an embedding build outside the alternate screen.
+    pub(super) fn launch_embedding_build(&mut self, run: PendingEmbeddingBuild) {
+        self.launch_embedding_build = Some(run);
+        self.should_exit = true;
     }
 
     /// Refresh the snapshot if the snapshot-refresh interval has elapsed. In

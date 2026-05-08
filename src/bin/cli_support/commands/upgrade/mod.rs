@@ -2,8 +2,11 @@ use std::path::Path;
 
 use synrepo::{
     config::Config,
-    pipeline::writer::{acquire_write_admission, map_lock_error},
-    store::compatibility::{apply_runtime_actions, evaluate_runtime, CompatAction, StoreId},
+    pipeline::{
+        maintenance::apply_compatibility_report,
+        writer::{acquire_write_admission, map_lock_error},
+    },
+    store::compatibility::{evaluate_runtime, CompatAction},
 };
 
 /// Print a dry-run compatibility plan or execute it with `--apply`.
@@ -58,25 +61,11 @@ pub(crate) fn upgrade(repo_root: &Path, apply: bool) -> anyhow::Result<()> {
         }
     }
 
-    // Execute non-blocking actions in dependency order: index → graph → overlay → others.
-    let ordered: Vec<StoreId> = [
-        StoreId::Index,
-        StoreId::Graph,
-        StoreId::Overlay,
-        StoreId::Embeddings,
-        StoreId::LlmResponsesCache,
-        StoreId::State,
-    ]
-    .into_iter()
-    .filter(|id| {
-        report
-            .entries
-            .iter()
-            .any(|e| e.store_id == *id && e.action != CompatAction::Continue)
-    })
-    .collect();
-
-    if ordered.is_empty() {
+    let has_work = report
+        .entries
+        .iter()
+        .any(|entry| entry.action != CompatAction::Continue);
+    if !has_work {
         println!("\nAll stores are compatible. No upgrade needed.");
         return Ok(());
     }
@@ -84,50 +73,27 @@ pub(crate) fn upgrade(repo_root: &Path, apply: bool) -> anyhow::Result<()> {
     let _lock = acquire_write_admission(&synrepo_dir, "upgrade")
         .map_err(|err| map_lock_error("upgrade", err))?;
 
-    apply_runtime_actions(&_lock, &synrepo_dir, &report)
-        .map_err(|e| anyhow::anyhow!("upgrade: failed to apply actions: {e}"))?;
-
-    println!();
-    for id in &ordered {
-        let entry = report.entries.iter().find(|e| e.store_id == *id).unwrap();
-        println!("  {} {}: cleared", entry.action.as_str(), id.as_str());
-    }
-
-    // If any Rebuild action was applied, run a reconcile pass to repopulate.
     let needs_reconcile = report
         .entries
         .iter()
         .any(|e| e.action == CompatAction::Rebuild);
     if needs_reconcile {
         println!("  Running structural reconcile to repopulate rebuilt stores...");
-        use synrepo::pipeline::structural::run_structural_compile;
-        use synrepo::pipeline::watch::{
-            emit_cochange_edges_pass, emit_symbol_revisions_pass, persist_reconcile_state,
-            ReconcileOutcome,
-        };
-        use synrepo::store::sqlite::SqliteGraphStore;
+    }
 
-        let graph_dir = synrepo_dir.join("graph");
-        let mut graph = SqliteGraphStore::open(&graph_dir)?;
+    let summary = apply_compatibility_report(repo_root, &config, &synrepo_dir, &report, &_lock)
+        .map_err(|e| anyhow::anyhow!("upgrade: failed to apply actions: {e}"))?;
 
-        let outcome = match run_structural_compile(repo_root, &config, &mut graph) {
-            Ok(summary) => {
-                if let Err(err) = emit_cochange_edges_pass(repo_root, &config, &mut graph) {
-                    tracing::warn!(error = %err, "co-change edge emission failed; continuing");
-                }
-                if let Err(err) = emit_symbol_revisions_pass(repo_root, &config, &mut graph) {
-                    tracing::warn!(error = %err, "symbol revision derivation failed; continuing");
-                }
-                if let Err(err) = synrepo::substrate::build_index(&config, repo_root) {
-                    ReconcileOutcome::Failed(format!("index rebuild failed: {err}"))
-                } else {
-                    ReconcileOutcome::Completed(summary)
-                }
-            }
-            Err(err) => ReconcileOutcome::Failed(err.to_string()),
-        };
+    println!();
+    for applied in &summary.applied {
+        println!(
+            "  {} {}: cleared",
+            applied.action.as_str(),
+            applied.store_id.as_str()
+        );
+    }
 
-        persist_reconcile_state(&synrepo_dir, &outcome, 0);
+    if let Some(outcome) = summary.reconcile_outcome {
         report_reconcile_outcome(outcome)?;
     }
 

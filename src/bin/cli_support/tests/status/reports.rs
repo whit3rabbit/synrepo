@@ -1,4 +1,4 @@
-use synrepo::config::Config;
+use synrepo::config::{Config, SemanticEmbeddingProvider};
 use synrepo::core::ids::{NodeId, SymbolNodeId};
 use synrepo::overlay::{CommentaryEntry, CommentaryProvenance, OverlayStore};
 use synrepo::pipeline::explain::accounting::{ExplainTotals, ProviderTotals};
@@ -58,6 +58,39 @@ fn status_reports_context_export_as_optional_when_absent() {
     );
     assert_eq!(json["export_state"], "absent");
     assert_eq!(json["export_dir"], "synrepo-context");
+}
+
+#[test]
+fn status_embedding_health_names_provider_and_source() {
+    let repo = tempdir().unwrap();
+    seed_graph(repo.path());
+
+    let mut config = Config::load(repo.path()).unwrap();
+    config.enable_semantic_triage = true;
+    config.semantic_embedding_provider = SemanticEmbeddingProvider::Ollama;
+    config.semantic_model = "all-minilm".to_string();
+    config.embedding_dim = 384;
+    std::fs::write(
+        Config::synrepo_dir(repo.path()).join("config.toml"),
+        toml::to_string_pretty(&config).unwrap(),
+    )
+    .unwrap();
+
+    let json: serde_json::Value = serde_json::from_str(
+        status_output(repo.path(), true, false, false)
+            .unwrap()
+            .trim(),
+    )
+    .unwrap();
+    assert_eq!(json["embedding_health"]["provider"], "ollama");
+    assert_eq!(json["embedding_health"]["provider_source"], "explicit");
+    assert_eq!(json["embedding_health"]["model"], serde_json::Value::Null);
+
+    let text = status_output(repo.path(), false, false, false).unwrap();
+    assert!(
+        text.contains("ollama/all-minilm"),
+        "expected provider/model in embedding line, got: {text}"
+    );
 }
 
 #[test]

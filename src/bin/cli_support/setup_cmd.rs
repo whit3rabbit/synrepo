@@ -1,10 +1,13 @@
+use anyhow::Context;
+use std::fs;
 use std::path::Path;
+use toml_edit::{DocumentMut, Item, Value as TomlValue};
 
 use synrepo::bootstrap::runtime_probe::{probe, RoutingDecision, RuntimeClassification};
-use synrepo::config::Mode;
+use synrepo::config::{Mode, SemanticEmbeddingProvider, SemanticProviderSource};
 use synrepo::tui::{
-    run_explain_only_wizard, run_setup_wizard, stdout_is_tty, DashboardOptions, SetupPlan,
-    SetupWizardOutcome, TuiOptions,
+    run_embeddings_only_wizard, run_explain_only_wizard, run_setup_wizard, stdout_is_tty,
+    DashboardOptions, EmbeddingSetupChoice, SetupPlan, SetupWizardOutcome, TuiOptions,
 };
 
 use super::agent_shims::{registry as shim_registry, AgentTool, AutomationTier};
@@ -118,7 +121,7 @@ pub(crate) fn execute_setup_plan(repo_root: &Path, plan: SetupPlan) -> anyhow::R
 }
 
 fn seed_optional_setup_config(config: &mut synrepo::config::Config, plan: &SetupPlan) {
-    config.enable_semantic_triage = plan.enable_embeddings;
+    apply_embedding_setup_to_config(config, plan.embedding_setup);
     if let Some(choice) = &plan.explain {
         config.explain.enabled = true;
         config.explain.provider = Some(
@@ -129,6 +132,84 @@ fn seed_optional_setup_config(config: &mut synrepo::config::Config, plan: &Setup
             .to_string(),
         );
     }
+}
+
+pub(crate) fn apply_embedding_setup_to_config(
+    config: &mut synrepo::config::Config,
+    choice: EmbeddingSetupChoice,
+) {
+    config.enable_semantic_triage = choice.is_enabled();
+    match choice {
+        EmbeddingSetupChoice::Disabled => {}
+        EmbeddingSetupChoice::Onnx => {
+            config.semantic_embedding_provider = SemanticEmbeddingProvider::Onnx;
+            config.semantic_embedding_provider_source = SemanticProviderSource::Explicit;
+            config.semantic_model = "all-MiniLM-L6-v2".to_string();
+            config.embedding_dim = 384;
+        }
+        EmbeddingSetupChoice::Ollama => {
+            config.semantic_embedding_provider = SemanticEmbeddingProvider::Ollama;
+            config.semantic_embedding_provider_source = SemanticProviderSource::Explicit;
+            config.semantic_model = "all-minilm".to_string();
+            config.embedding_dim = 384;
+            config.semantic_ollama_endpoint = "http://localhost:11434".to_string();
+            config.semantic_embedding_batch_size = 128;
+        }
+    }
+}
+
+pub(crate) fn apply_embedding_setup(
+    repo_root: &Path,
+    choice: EmbeddingSetupChoice,
+) -> anyhow::Result<()> {
+    if matches!(choice, EmbeddingSetupChoice::Disabled) {
+        println!("  Embeddings left disabled; repo config unchanged.");
+        return Ok(());
+    }
+    let local_path = repo_root.join(".synrepo").join("config.toml");
+    let mut doc = load_toml_document(&local_path)?;
+    doc.insert("enable_semantic_triage", Item::Value(TomlValue::from(true)));
+    match choice {
+        EmbeddingSetupChoice::Onnx => {
+            doc.insert(
+                "semantic_embedding_provider",
+                Item::Value(TomlValue::from("onnx")),
+            );
+            doc.insert(
+                "semantic_model",
+                Item::Value(TomlValue::from("all-MiniLM-L6-v2")),
+            );
+            doc.insert("embedding_dim", Item::Value(TomlValue::from(384)));
+        }
+        EmbeddingSetupChoice::Ollama => {
+            doc.insert(
+                "semantic_embedding_provider",
+                Item::Value(TomlValue::from("ollama")),
+            );
+            doc.insert("semantic_model", Item::Value(TomlValue::from("all-minilm")));
+            doc.insert("embedding_dim", Item::Value(TomlValue::from(384)));
+            doc.insert(
+                "semantic_ollama_endpoint",
+                Item::Value(TomlValue::from("http://localhost:11434")),
+            );
+            doc.insert(
+                "semantic_embedding_batch_size",
+                Item::Value(TomlValue::from(128)),
+            );
+        }
+        EmbeddingSetupChoice::Disabled => unreachable!("disabled returned above"),
+    }
+    write_toml_document(&local_path, &doc)?;
+    println!(
+        "  Enabled {} embeddings in {}",
+        match choice {
+            EmbeddingSetupChoice::Onnx => "ONNX",
+            EmbeddingSetupChoice::Ollama => "Ollama",
+            EmbeddingSetupChoice::Disabled => unreachable!("disabled returned above"),
+        },
+        local_path.display()
+    );
+    Ok(())
 }
 
 /// Launch the explain-only sub-wizard after `synrepo setup <tool> --explain`,
@@ -155,6 +236,48 @@ pub(crate) fn run_explain_step(repo_root: &Path, opts: TuiOptions) -> anyhow::Re
             Ok(())
         }
     }
+}
+
+pub(crate) fn run_embeddings_setup_step(repo_root: &Path, opts: TuiOptions) -> anyhow::Result<()> {
+    match run_embeddings_only_wizard(opts)? {
+        SetupWizardOutcome::Completed { plan } => {
+            apply_embedding_setup(repo_root, plan.embedding_setup)
+        }
+        SetupWizardOutcome::Cancelled => {
+            println!("embeddings setup cancelled; repo config untouched.");
+            Ok(())
+        }
+        SetupWizardOutcome::NonTty => {
+            println!(
+                "embeddings setup requires a TTY. Edit .synrepo/config.toml and set \
+                 enable_semantic_triage plus semantic_embedding_provider to `onnx` or `ollama`."
+            );
+            Ok(())
+        }
+    }
+}
+
+fn load_toml_document(path: &Path) -> anyhow::Result<DocumentMut> {
+    let raw = if path.exists() {
+        fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))?
+    } else {
+        String::new()
+    };
+    raw.parse().map_err(|err| {
+        anyhow::anyhow!(
+            "refusing to overwrite {}: file exists but is not valid TOML ({err})",
+            path.display()
+        )
+    })
+}
+
+fn write_toml_document(path: &Path, doc: &DocumentMut) -> anyhow::Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create {}", parent.display()))?;
+    }
+    synrepo::util::atomic_write(path, doc.to_string().as_bytes())
+        .with_context(|| format!("failed to atomically write {}", path.display()))
 }
 
 /// After a successful setup wizard, re-probe and open the dashboard with the

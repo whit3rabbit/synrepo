@@ -99,7 +99,7 @@ impl AppState {
                                 });
                             }
                             PendingStopWatchAction::BuildEmbeddings => {
-                                self.enqueue_pending_embedding_build(PendingEmbeddingBuild {
+                                self.launch_embedding_build(PendingEmbeddingBuild {
                                     stopped_watch: true,
                                 });
                             }

@@ -40,8 +40,9 @@ pub use repair::{
     RepairWizardOutcome, RepairWizardState,
 };
 pub use setup::{
-    run_explain_only_wizard_loop, run_setup_wizard_loop, CloudCredentialSource, ExplainChoice,
-    ExplainWizardSupport, SetupPlan, SetupWizardOutcome, SetupWizardState, WIZARD_TARGETS,
+    run_embeddings_only_wizard_loop, run_explain_only_wizard_loop, run_setup_wizard_loop,
+    CloudCredentialSource, EmbeddingSetupChoice, ExplainChoice, ExplainWizardSupport, SetupPlan,
+    SetupWizardOutcome, SetupWizardState, WIZARD_TARGETS,
 };
 pub use uninstall::{
     run_uninstall_wizard_loop, UninstallActionKind, UninstallActionRow, UninstallPlan,

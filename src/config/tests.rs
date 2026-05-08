@@ -102,10 +102,46 @@ fn semantic_embedding_fields_default_to_onnx() {
         config.semantic_embedding_provider,
         SemanticEmbeddingProvider::Onnx
     );
+    assert_eq!(
+        config.semantic_embedding_provider_source,
+        SemanticProviderSource::Defaulted
+    );
     assert_eq!(config.semantic_model, "all-MiniLM-L6-v2");
     assert_eq!(config.embedding_dim, 384);
     assert_eq!(config.semantic_ollama_endpoint, "http://localhost:11434");
     assert_eq!(config.semantic_embedding_batch_size, 128);
+}
+
+#[test]
+fn legacy_enabled_embeddings_without_provider_default_to_onnx() {
+    let _lock = crate::test_support::global_test_lock(super::test_home::HOME_ENV_TEST_LOCK);
+    let home = tempdir().unwrap();
+    let _home_guard = super::test_home::HomeEnvGuard::redirect_to(home.path());
+
+    let dir = tempdir().unwrap();
+    let synrepo_dir = Config::synrepo_dir(dir.path());
+    fs::create_dir_all(&synrepo_dir).unwrap();
+
+    fs::write(
+        synrepo_dir.join("config.toml"),
+        r#"
+        enable_semantic_triage = true
+        semantic_model = "all-MiniLM-L6-v2"
+        embedding_dim = 384
+    "#,
+    )
+    .unwrap();
+
+    let config = Config::load(dir.path()).unwrap();
+    assert!(config.enable_semantic_triage);
+    assert_eq!(
+        config.semantic_embedding_provider,
+        SemanticEmbeddingProvider::Onnx
+    );
+    assert_eq!(
+        config.semantic_embedding_provider_source,
+        SemanticProviderSource::Defaulted
+    );
 }
 
 #[test]
@@ -134,9 +170,57 @@ fn semantic_embedding_ollama_fields_round_trip_through_toml() {
         config.semantic_embedding_provider,
         SemanticEmbeddingProvider::Ollama
     );
+    assert_eq!(
+        config.semantic_embedding_provider_source,
+        SemanticProviderSource::Explicit
+    );
     assert_eq!(config.semantic_model, "all-minilm");
     assert_eq!(config.semantic_ollama_endpoint, "http://127.0.0.1:11434");
     assert_eq!(config.semantic_embedding_batch_size, 64);
+}
+
+#[test]
+fn local_explicit_onnx_overrides_global_ollama_semantic_defaults() {
+    let _lock = crate::test_support::global_test_lock(super::test_home::HOME_ENV_TEST_LOCK);
+    let home = tempdir().unwrap();
+    let repo = tempdir().unwrap();
+    let _home_guard = super::test_home::HomeEnvGuard::redirect_to(home.path());
+    fs::create_dir_all(home.path().join(".synrepo")).unwrap();
+    fs::create_dir_all(repo.path().join(".synrepo")).unwrap();
+
+    fs::write(
+        home.path().join(".synrepo/config.toml"),
+        r#"
+        enable_semantic_triage = true
+        semantic_embedding_provider = "ollama"
+        semantic_model = "all-minilm"
+        embedding_dim = 384
+        semantic_ollama_endpoint = "http://localhost:11434"
+    "#,
+    )
+    .unwrap();
+    fs::write(
+        repo.path().join(".synrepo/config.toml"),
+        r#"
+        semantic_embedding_provider = "onnx"
+        semantic_model = "all-MiniLM-L6-v2"
+        embedding_dim = 384
+    "#,
+    )
+    .unwrap();
+
+    let config = Config::load(repo.path()).unwrap();
+    assert!(config.enable_semantic_triage);
+    assert_eq!(
+        config.semantic_embedding_provider,
+        SemanticEmbeddingProvider::Onnx
+    );
+    assert_eq!(
+        config.semantic_embedding_provider_source,
+        SemanticProviderSource::Explicit
+    );
+    assert_eq!(config.semantic_model, "all-MiniLM-L6-v2");
+    assert_eq!(config.embedding_dim, 384);
 }
 
 #[test]

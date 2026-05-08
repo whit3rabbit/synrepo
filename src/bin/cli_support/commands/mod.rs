@@ -52,6 +52,7 @@ pub(crate) use docs::{
 };
 pub(crate) use doctor::doctor;
 pub(crate) use embeddings::embeddings;
+pub(crate) use embeddings::embeddings_build_human;
 #[cfg(test)]
 pub(crate) use embeddings::embeddings_build_output;
 pub(crate) use export::export;

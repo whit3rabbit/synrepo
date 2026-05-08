@@ -61,6 +61,10 @@ pub enum EmbeddingHealth {
     Disabled,
     /// The embedding index and model cache are available.
     Available {
+        /// Configured provider name.
+        provider: String,
+        /// Whether the provider was explicit or defaulted from legacy config.
+        provider_source: crate::config::SemanticProviderSource,
         /// Configured model name.
         model: String,
         /// Embedding vector dimension.
@@ -69,7 +73,14 @@ pub enum EmbeddingHealth {
         chunks: usize,
     },
     /// The index or model is missing or corrupted.
-    Degraded(String),
+    Degraded {
+        /// Configured provider name.
+        provider: String,
+        /// Whether the provider was explicit or defaulted from legacy config.
+        provider_source: crate::config::SemanticProviderSource,
+        /// Human-readable degraded reason.
+        reason: String,
+    },
 }
 
 /// Top-level operational diagnostics for a `.synrepo/` runtime.
@@ -138,14 +149,33 @@ impl RuntimeDiagnostics {
 
         match &self.embedding_health {
             EmbeddingHealth::Disabled => {}
-            EmbeddingHealth::Available { model, dim, chunks } => {
+            EmbeddingHealth::Available {
+                provider,
+                provider_source,
+                model,
+                dim,
+                chunks,
+            } => {
                 out.push_str(&format!(
-                    "Embedding: available (model={}, dim={}, chunks={})\n",
-                    model, dim, chunks
+                    "Embedding: available (provider={}, source={}, model={}, dim={}, chunks={})\n",
+                    provider,
+                    provider_source.as_str(),
+                    model,
+                    dim,
+                    chunks
                 ));
             }
-            EmbeddingHealth::Degraded(reason) => {
-                out.push_str(&format!("Embedding: degraded ({reason})\n"));
+            EmbeddingHealth::Degraded {
+                provider,
+                provider_source,
+                reason,
+            } => {
+                out.push_str(&format!(
+                    "Embedding: degraded (provider={}, source={}, reason={})\n",
+                    provider,
+                    provider_source.as_str(),
+                    reason
+                ));
             }
         }
 
