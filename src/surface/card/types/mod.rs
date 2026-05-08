@@ -26,3 +26,7 @@ pub use test_surface::{TestAssociation, TestEntry, TestSurfaceCard};
 
 // Re-export SourceStore from sibling module.
 pub use super::{ContextAccounting, SourceStore};
+
+pub(super) fn option_vec_is_empty<T>(value: &Option<Vec<T>>) -> bool {
+    value.as_ref().is_none_or(Vec::is_empty)
+}

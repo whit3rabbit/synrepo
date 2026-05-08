@@ -50,9 +50,9 @@ fn wide_terminal_keeps_every_hint() {
     let text = rendered_text(&spans);
     assert!(text.contains("scroll"));
     assert!(text.contains("follow"));
-    assert!(text.contains("refresh") && text.contains("[Tab/1-8]"));
-    assert!(text.contains("watch") && text.contains("stop"));
-    assert!(text.contains("integration"));
+    assert!(text.contains("[:]") && text.contains("[Tab/1-8]"));
+    assert!(!text.contains("watch"));
+    assert!(!text.contains("integration"));
     assert!(text.ends_with("[q]"));
 }
 
@@ -64,8 +64,11 @@ fn narrow_terminal_preserves_quit_hint() {
             let spans = fit_groups(groups, width);
             let text = rendered_text(&spans);
             assert!(
-                text.contains("[p]") && text.contains("[?]") && text.contains("[q]"),
-                "tab={active:?} width={width} must keep project/help/quit, got {text:?}"
+                text.contains("[p]")
+                    && text.contains("[?]")
+                    && text.contains("[:]")
+                    && text.contains("[q]"),
+                "tab={active:?} width={width} must keep project/help/commands/quit, got {text:?}"
             );
             let visible: usize = spans.iter().map(|s| s.width()).sum();
             assert!(
@@ -96,7 +99,7 @@ fn explain_tab_shows_explain_and_docs_hints_when_wide() {
     let (groups, _) = footer(ActiveTab::Explain, false, None);
     let spans = fit_groups(groups, 200);
     let text = rendered_text(&spans);
-    assert!(text.contains("[r/c/f]"), "missing explain hint: {text:?}");
+    assert!(text.contains("[r/a/c/f]"), "missing explain hint: {text:?}");
     assert!(text.contains("[d/D/x/X]"), "missing docs hint: {text:?}");
 }
 
@@ -105,9 +108,14 @@ fn explain_tab_drops_explain_hints_on_narrow_terminal() {
     let (groups, _) = footer(ActiveTab::Explain, false, None);
     let spans = fit_groups(groups, 50);
     let text = rendered_text(&spans);
-    assert!(text.contains("[p]") && text.contains("[?]") && text.contains("[q]"));
     assert!(
-        !text.contains("[r/c/f]") && !text.contains("[d/D/x/X]"),
+        text.contains("[p]")
+            && text.contains("[?]")
+            && text.contains("[:]")
+            && text.contains("[q]")
+    );
+    assert!(
+        !text.contains("[r/a/c/f]") && !text.contains("[d/D/x/X]"),
         "explain+docs hints should drop together on narrow: {text:?}"
     );
 }
@@ -117,7 +125,7 @@ fn explain_hints_survive_together_at_120_cols() {
     let (groups, _) = footer(ActiveTab::Explain, false, Some("stop"));
     let spans = fit_groups(groups, 120);
     let text = rendered_text(&spans);
-    let has_run = text.contains("[r/c/f]");
+    let has_run = text.contains("[r/a/c/f]");
     let has_docs = text.contains("[d/D/x/X]");
     assert_eq!(
         has_run, has_docs,
@@ -154,11 +162,11 @@ fn toast_keeps_essential_hints_when_set() {
     widget.render(area, &mut buf);
     let row: String = (0..area.width).map(|x| buf[(x, 0)].symbol()).collect();
     assert!(
-        row.contains("refreshed: 12 files, 34 symbols"),
-        "toast text must appear in footer row: {row:?}"
+        row.contains("refreshed: 12 files"),
+        "toast text must appear, even if truncated: {row:?}"
     );
     assert!(
-        row.contains("[p]") && row.contains("[?]") && row.contains("[q]"),
+        row.contains("[p]") && row.contains("[?]") && row.contains("[:]") && row.contains("[q]"),
         "toast must keep essential hints: {row:?}"
     );
 }
@@ -170,6 +178,7 @@ fn very_narrow_terminal_keeps_only_essentials() {
     let text = rendered_text(&spans);
     assert!(text.contains("[p]"));
     assert!(text.contains("[?]"));
+    assert!(text.contains("[:]"));
     assert!(text.contains("[q]"));
     assert!(!text.contains("tabs"));
     assert!(!text.contains("scroll"));
@@ -190,15 +199,11 @@ fn omits_watch_hint_when_toggle_is_unavailable() {
 }
 
 #[test]
-fn shows_materialize_hint_when_graph_missing() {
+fn omits_materialize_hint_even_when_graph_missing() {
     let groups = footer_with_materialize(ActiveTab::Health, None, true);
     let spans = fit_groups(groups, 200);
     let text = rendered_text(&spans);
-    assert!(text.contains("[M]"), "missing [M] hint: {text:?}");
-    assert!(
-        text.contains("generate"),
-        "missing generate label: {text:?}"
-    );
+    assert!(!text.contains("[M]"), "stray [M] hint: {text:?}");
 }
 
 #[test]

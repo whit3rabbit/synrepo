@@ -14,11 +14,6 @@ expression: normal
         "location": "src/lib.rs:22"
       }
     ],
-    "imported_by": [],
-    "imports": [],
-    "co_changes": [],
-    "git_intelligence": null,
-    "drift_flag": null,
     "approx_tokens": 10,
     "context_accounting": {
       "budget_tier": "normal",
@@ -33,10 +28,6 @@ expression: normal
     },
     "source_store": "graph"
   },
-  "neighbors": null,
-  "neighbor_summaries": [],
-  "decision_cards": null,
-  "co_change_partners": [],
   "co_change_state": "missing",
   "edge_counts": {
     "outbound_calls_count": 0,

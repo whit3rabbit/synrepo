@@ -1,11 +1,13 @@
 //! Materialized explaind commentary docs and their dedicated syntext index.
 
+mod catalogue;
 mod corpus;
 mod edit;
 mod index;
 mod maintenance;
 mod search;
 
+pub use catalogue::{write_discovery_artifacts, DiscoveryArtifactsSummary};
 pub use corpus::{
     commentary_doc_relative_path, delete_commentary_doc, docs_root, index_dir,
     parse_commentary_doc, parse_commentary_doc_header, reconcile_commentary_docs,

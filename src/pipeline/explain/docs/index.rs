@@ -6,9 +6,9 @@ use std::path::{Path, PathBuf};
 use syntext::index::{ExternalFileRecord, Index};
 use syntext::Config as SyntextConfig;
 use syntext::SearchOptions;
-use walkdir::WalkDir;
 
 use super::corpus::{docs_root, index_dir};
+use super::edit::commentary_doc_paths;
 use crate::substrate::incremental::should_rebuild;
 
 /// How the commentary-doc index was maintained on this call.
@@ -122,16 +122,15 @@ fn rebuild_commentary_index(docs_root: &Path, index_dir: &Path) -> crate::Result
     fs::create_dir_all(docs_root)?;
     fs::create_dir_all(index_dir)?;
     let mut records = Vec::new();
-    for entry in WalkDir::new(docs_root).into_iter().filter_map(Result::ok) {
-        if !entry.file_type().is_file() {
-            continue;
-        }
-        let absolute_path = entry.path().to_path_buf();
+    let synrepo_dir = docs_root
+        .parent()
+        .ok_or_else(|| crate::Error::Other(anyhow::anyhow!("invalid explain-docs root")))?;
+    for absolute_path in commentary_doc_paths(synrepo_dir)? {
         let relative_path = match absolute_path.strip_prefix(docs_root) {
             Ok(path) => PathBuf::from(path.to_string_lossy().replace('\\', "/")),
             Err(_) => continue,
         };
-        let size_bytes = entry
+        let size_bytes = absolute_path
             .metadata()
             .map_err(|err| {
                 crate::Error::Other(anyhow::anyhow!(
@@ -205,6 +204,11 @@ mod tests {
         )
         .unwrap();
 
+        fs::write(
+            docs_root(&synrepo_dir).join("index.md"),
+            "support-only-needle",
+        )
+        .unwrap();
         sync_commentary_index(
             &synrepo_dir,
             &[docs_root(&synrepo_dir)
@@ -214,5 +218,8 @@ mod tests {
         .unwrap();
         let hits = search_commentary_index(&synrepo_dir, "needle commentary", 10).unwrap();
         assert_eq!(hits.len(), 1);
+        let support_hits =
+            search_commentary_index(&synrepo_dir, "support-only-needle", 10).unwrap();
+        assert!(support_hits.is_empty());
     }
 }

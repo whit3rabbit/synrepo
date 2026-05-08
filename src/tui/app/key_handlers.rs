@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use crossterm::event::{Event, KeyCode, KeyEventKind, KeyModifiers};
 
+use super::quick_actions::can_generate_graph;
 use super::{ActiveTab, AppState, ExplainMode, PendingQuickConfirm};
 
 impl AppState {
@@ -20,7 +21,9 @@ impl AppState {
             }
         }
         if self.pending_quick_confirm.is_some() {
-            return self.handle_quick_confirm_key(code, modifiers);
+            if let Some(consumed) = self.handle_quick_confirm_key(code, modifiers) {
+                return consumed;
+            }
         }
         // Folder-picker modal: consumes navigation/toggle/commit/cancel keys
         // before anything else. Global quit (q/Ctrl-C) and tab switches still
@@ -30,8 +33,17 @@ impl AppState {
                 return consumed;
             }
         }
+        if code == KeyCode::Esc {
+            if matches!(self.active_tab, ActiveTab::Live) {
+                self.set_toast("press q to quit");
+            } else {
+                self.set_tab(ActiveTab::Live);
+                self.set_toast("returned to Live; press q to quit");
+            }
+            return true;
+        }
         // Global quit bindings.
-        if matches!(code, KeyCode::Char('q') | KeyCode::Esc) {
+        if matches!(code, KeyCode::Char('q')) {
             self.should_exit = true;
             return true;
         }
@@ -91,7 +103,8 @@ impl AppState {
         }
         // Explain-tab key dispatch. Plan-specified bindings:
         //   s — launch explain setup sub-wizard
-        //   r — run `synrepo explain` against all stale entries
+        //   r — refresh explain status
+        //   a — run `synrepo explain` against all stale entries
         //   c — run with `--changed` (recent hotspots)
         //   f — open folder picker sub-view (in-tab, no dashboard exit)
         //   d — export docs from overlay without model calls
@@ -106,6 +119,11 @@ impl AppState {
                     return true;
                 }
                 KeyCode::Char('r') => {
+                    self.refresh_explain_preview(true);
+                    self.set_toast("explain status refreshed");
+                    return true;
+                }
+                KeyCode::Char('a') => {
                     self.queue_explain(ExplainMode::AllStale);
                     return true;
                 }
@@ -207,11 +225,30 @@ impl AppState {
                 true
             }
             KeyCode::Char('M') | KeyCode::Char('m') => {
-                self.open_quick_confirm(PendingQuickConfirm::MaterializeGraph)
+                if can_generate_graph(&self.snapshot) {
+                    self.open_quick_confirm(PendingQuickConfirm::MaterializeGraph)
+                } else {
+                    self.set_toast(
+                        "graph already exists; use rebuild command if you want a full rebuild",
+                    );
+                    true
+                }
             }
             KeyCode::Char('w') => self.handle_watch_toggle(),
             KeyCode::Char('p') => {
                 self.set_tab(ActiveTab::Repos);
+                true
+            }
+            KeyCode::Char('?') => {
+                self.set_tab(ActiveTab::Actions);
+                self.set_toast("Actions tab shows the available keymap");
+                true
+            }
+            KeyCode::Char(':') => {
+                self.set_tab(ActiveTab::Actions);
+                self.set_toast(
+                    "Use Actions quick actions; global dashboard has searchable commands",
+                );
                 true
             }
             KeyCode::Char('i') => {
@@ -252,15 +289,17 @@ impl AppState {
         true
     }
 
-    fn handle_quick_confirm_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> bool {
-        if code == KeyCode::Char('c') && modifiers.contains(KeyModifiers::CONTROL) {
+    fn handle_quick_confirm_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> Option<bool> {
+        if is_modal_fallthrough_key(code)
+            || (code == KeyCode::Char('c') && modifiers.contains(KeyModifiers::CONTROL))
+        {
             self.pending_quick_confirm = None;
-            return true;
+            return None;
         }
         match code {
-            KeyCode::Enter | KeyCode::Char('y') => {
+            KeyCode::Enter | KeyCode::Char('y') | KeyCode::Char('Y') => {
                 let action = self.pending_quick_confirm.take();
-                match action {
+                Some(match action {
                     Some(PendingQuickConfirm::MaterializeGraph) => self.handle_materialize_now(),
                     Some(PendingQuickConfirm::DocsCleanApply) => self.handle_docs_clean(true),
                     Some(PendingQuickConfirm::ToggleAutoSync) => self.handle_toggle_auto_sync(),
@@ -271,16 +310,35 @@ impl AppState {
                         self.handle_apply_compatibility_now()
                     }
                     None => true,
-                }
+                })
             }
             KeyCode::Esc | KeyCode::Char('n') => {
                 self.pending_quick_confirm = None;
                 self.set_toast("cancelled");
-                true
+                Some(true)
             }
-            _ => true,
+            _ => Some(true),
         }
     }
+}
+
+fn is_modal_fallthrough_key(code: KeyCode) -> bool {
+    matches!(
+        code,
+        KeyCode::Char('q')
+            | KeyCode::Tab
+            | KeyCode::BackTab
+            | KeyCode::Left
+            | KeyCode::Right
+            | KeyCode::Char('1')
+            | KeyCode::Char('2')
+            | KeyCode::Char('3')
+            | KeyCode::Char('4')
+            | KeyCode::Char('5')
+            | KeyCode::Char('6')
+            | KeyCode::Char('7')
+            | KeyCode::Char('8')
+    )
 }
 
 /// Poll the terminal for a key event, honoring a budget tied to the refresh

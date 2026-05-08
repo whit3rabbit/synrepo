@@ -13,7 +13,7 @@ pub(super) fn quick_actions_for(mode: &AppMode, snapshot: &StatusSnapshot) -> Ve
         expensive: false,
         command_label: Some("refresh snapshot".to_string()),
     }];
-    if snapshot.graph_stats.is_none() && snapshot.initialized {
+    if can_generate_graph(snapshot) {
         actions.push(QuickAction {
             key: "M".to_string(),
             label: "generate graph".to_string(),
@@ -108,6 +108,10 @@ pub(super) fn quick_actions_for(mode: &AppMode, snapshot: &StatusSnapshot) -> Ve
         },
     ]);
     actions
+}
+
+pub(super) fn can_generate_graph(snapshot: &StatusSnapshot) -> bool {
+    snapshot.initialized && snapshot.graph_stats.is_none()
 }
 
 fn snapshot_has_pending_compatibility_action(snapshot: &StatusSnapshot) -> bool {

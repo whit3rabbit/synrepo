@@ -87,11 +87,9 @@ fn registered_repo_root_lazy_loads_and_routes_handlers() {
     let file_id = file_id_for(&target_path, "src/lib.rs");
     let node_output =
         synrepo::surface::mcp::primitives::handle_node(&resolved, file_id.to_string());
-    assert!(
-        node_output.contains("\"node_type\": \"file\""),
-        "{node_output}"
-    );
-    assert!(!node_output.contains("\"error\""), "{node_output}");
+    let node_json: serde_json::Value = serde_json::from_str(&node_output).unwrap();
+    assert_eq!(node_json["node_type"], "file", "{node_output}");
+    assert!(node_json.get("error").is_none(), "{node_output}");
 }
 
 #[test]

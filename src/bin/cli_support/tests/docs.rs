@@ -21,7 +21,14 @@ fn docs_export_materializes_file_commentary() {
     let output = docs_export_output(repo.path(), false).unwrap();
 
     assert!(output.contains("1 docs"), "unexpected output: {output}");
+    assert!(
+        output.contains("Discovery: 3 artifacts"),
+        "unexpected output: {output}"
+    );
     assert!(doc_path(repo.path(), NodeId::File(ids.file_id)).exists());
+    assert!(docs_root(repo.path()).join("index.md").exists());
+    assert!(docs_root(repo.path()).join("catalogue.json").exists());
+    assert!(docs_root(repo.path()).join("llms.txt").exists());
 }
 
 #[test]
@@ -145,8 +152,9 @@ fn seed_file_commentary(repo: &std::path::Path, node_id: NodeId, text: &str) {
 }
 
 fn doc_path(repo: &std::path::Path, node_id: NodeId) -> std::path::PathBuf {
-    Config::synrepo_dir(repo)
-        .join("explain-docs")
-        .join("files")
-        .join(format!("{node_id}.md"))
+    docs_root(repo).join("files").join(format!("{node_id}.md"))
+}
+
+fn docs_root(repo: &std::path::Path) -> std::path::PathBuf {
+    Config::synrepo_dir(repo).join("explain-docs")
 }

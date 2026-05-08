@@ -76,7 +76,10 @@ impl Widget for ActionsTabWidget<'_> {
                     (self.theme.base_style(), self.theme.agent_style())
                 };
                 ListItem::new(Line::from(vec![
-                    Span::styled(format!(" [{}] ", a.key), key_style),
+                    Span::styled(
+                        format!(" {} [{}] ", quick_action_prefix(a), a.key),
+                        key_style,
+                    ),
                     Span::styled(a.label.clone(), label_style),
                 ]))
             })
@@ -84,5 +87,48 @@ impl Widget for ActionsTabWidget<'_> {
         List::new(quick_items)
             .block(quick_block)
             .render(rows[1], buf);
+    }
+}
+
+fn quick_action_prefix(action: &QuickAction) -> &'static str {
+    if action.disabled {
+        "x"
+    } else if action.destructive {
+        "!"
+    } else if action.expensive {
+        "~"
+    } else if action.requires_confirm {
+        "?"
+    } else {
+        " "
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn action() -> QuickAction {
+        QuickAction {
+            key: "x".to_string(),
+            label: "demo".to_string(),
+            disabled: false,
+            requires_confirm: false,
+            destructive: false,
+            expensive: false,
+            command_label: None,
+        }
+    }
+
+    #[test]
+    fn quick_action_prefix_marks_plain_mode_state() {
+        let mut a = action();
+        assert_eq!(quick_action_prefix(&a), " ");
+        a.expensive = true;
+        assert_eq!(quick_action_prefix(&a), "~");
+        a.destructive = true;
+        assert_eq!(quick_action_prefix(&a), "!");
+        a.disabled = true;
+        assert_eq!(quick_action_prefix(&a), "x");
     }
 }

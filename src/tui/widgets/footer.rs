@@ -41,15 +41,25 @@ impl HintGroup {
 impl Widget for FooterWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         if let Some(msg) = self.toast {
-            let line = Line::from(vec![
-                Span::styled(format!(" {msg}"), self.theme.healthy_style()),
+            let suffix = vec![
                 Span::styled("    projects ", self.theme.muted_style()),
                 Span::styled("[p]", self.theme.agent_style()),
                 Span::styled("  help ", self.theme.muted_style()),
                 Span::styled("[?]", self.theme.agent_style()),
+                Span::styled("  commands ", self.theme.muted_style()),
+                Span::styled("[:]", self.theme.agent_style()),
                 Span::styled("  quit ", self.theme.muted_style()),
                 Span::styled("[q]", self.theme.agent_style()),
-            ]);
+            ];
+            let suffix_width: usize = suffix.iter().map(Span::width).sum();
+            let max_msg_width = (area.width as usize).saturating_sub(suffix_width);
+            let msg = truncate_message(msg, max_msg_width);
+            let line = Line::from(
+                vec![Span::styled(format!(" {msg}"), self.theme.healthy_style())]
+                    .into_iter()
+                    .chain(suffix)
+                    .collect::<Vec<_>>(),
+            );
             Paragraph::new(line)
                 .style(self.theme.base_style())
                 .render(area, buf);
@@ -63,30 +73,48 @@ impl Widget for FooterWidget<'_> {
     }
 }
 
+fn truncate_message(msg: &str, max_width: usize) -> String {
+    if msg.chars().count() < max_width {
+        return msg.to_string();
+    }
+    let take = max_width.saturating_sub(2);
+    let mut out = msg.chars().take(take).collect::<String>();
+    out.push('~');
+    out
+}
+
 impl FooterWidget<'_> {
     fn build_hints(&self) -> Vec<HintGroup> {
-        let mut groups = Vec::new();
-        groups.push(HintGroup {
-            priority: 0,
-            spans: vec![
-                Span::styled(" proj ", self.theme.muted_style()),
-                Span::styled("[p]", self.theme.agent_style()),
-            ],
-        });
-        groups.push(HintGroup {
-            priority: 0,
-            spans: vec![
-                Span::styled("  help ", self.theme.muted_style()),
-                Span::styled("[?]", self.theme.agent_style()),
-            ],
-        });
-        groups.push(HintGroup {
-            priority: 1,
-            spans: vec![
-                Span::styled(" tabs ", self.theme.muted_style()),
-                Span::styled("[Tab/1-8]", self.theme.agent_style()),
-            ],
-        });
+        let mut groups = vec![
+            HintGroup {
+                priority: 0,
+                spans: vec![
+                    Span::styled(" proj ", self.theme.muted_style()),
+                    Span::styled("[p]", self.theme.agent_style()),
+                ],
+            },
+            HintGroup {
+                priority: 0,
+                spans: vec![
+                    Span::styled("  help ", self.theme.muted_style()),
+                    Span::styled("[?]", self.theme.agent_style()),
+                ],
+            },
+            HintGroup {
+                priority: 0,
+                spans: vec![
+                    Span::styled("  cmds ", self.theme.muted_style()),
+                    Span::styled("[:]", self.theme.agent_style()),
+                ],
+            },
+            HintGroup {
+                priority: 2,
+                spans: vec![
+                    Span::styled(" tabs ", self.theme.muted_style()),
+                    Span::styled("[Tab/1-8]", self.theme.agent_style()),
+                ],
+            },
+        ];
         if matches!(self.active, ActiveTab::Live) {
             groups.push(HintGroup {
                 priority: 5,
@@ -126,51 +154,12 @@ impl FooterWidget<'_> {
                 priority: 4,
                 spans: vec![
                     Span::styled("  explain ", self.theme.muted_style()),
-                    Span::styled("[r/c/f]", self.theme.agent_style()),
+                    Span::styled("[r/a/c/f]", self.theme.agent_style()),
                     Span::styled("  docs ", self.theme.muted_style()),
                     Span::styled("[d/D/x/X]", self.theme.agent_style()),
                 ],
             });
         }
-        groups.push(HintGroup {
-            priority: 3,
-            spans: vec![
-                Span::styled("  refresh ", self.theme.muted_style()),
-                Span::styled("[r]", self.theme.agent_style()),
-            ],
-        });
-        if self.materialize_hint_visible {
-            groups.push(HintGroup {
-                priority: 1,
-                spans: vec![
-                    Span::styled("  graph ", self.theme.muted_style()),
-                    Span::styled("[M] ", self.theme.agent_style()),
-                    Span::styled("generate", self.theme.stale_style()),
-                ],
-            });
-        }
-        if let Some(label) = self.watch_toggle_label {
-            groups.push(HintGroup {
-                priority: 3,
-                spans: vec![
-                    Span::styled("  watch ", self.theme.muted_style()),
-                    Span::styled("[w] ", self.theme.agent_style()),
-                    Span::styled(label.to_string(), self.theme.base_style()),
-                ],
-            });
-        }
-        let integration_label = if matches!(self.active, ActiveTab::Mcp) {
-            "  repo mcp "
-        } else {
-            "  integration "
-        };
-        groups.push(HintGroup {
-            priority: 4,
-            spans: vec![
-                Span::styled(integration_label, self.theme.muted_style()),
-                Span::styled("[i]", self.theme.agent_style()),
-            ],
-        });
         groups.push(HintGroup {
             priority: 0,
             spans: vec![

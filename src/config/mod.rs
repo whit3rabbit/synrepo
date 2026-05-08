@@ -1,9 +1,11 @@
 //! Configuration loading. Reads `.synrepo/config.toml`.
 
+mod defaults;
 mod explain;
 mod io;
 mod mode;
 mod semantic;
+mod semantic_presence;
 mod thresholds;
 
 pub use explain::ExplainConfig;
@@ -12,12 +14,14 @@ pub use mode::Mode;
 pub use semantic::{SemanticEmbeddingProvider, SemanticProviderSource};
 pub use thresholds::CrossLinkConfidenceThresholds;
 
+use defaults::*;
 use io::reject_legacy_explain_block;
 use semantic::{
     default_embedding_dim, default_semantic_embedding_batch_size,
     default_semantic_embedding_provider, default_semantic_model, default_semantic_ollama_endpoint,
     default_semantic_similarity_threshold,
 };
+use semantic_presence::SemanticPresence;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -176,107 +180,6 @@ pub struct Config {
     /// sync request in time" without a real wedge.
     #[serde(default = "default_watch_sync_timeout_seconds")]
     pub watch_sync_timeout_seconds: u32,
-}
-
-fn default_roots() -> Vec<String> {
-    vec![".".to_string()]
-}
-
-fn default_concept_dirs() -> Vec<String> {
-    vec![
-        "docs/concepts".to_string(),
-        "docs/adr".to_string(),
-        "docs/decisions".to_string(),
-    ]
-}
-
-fn default_include_worktrees() -> bool {
-    true
-}
-
-fn default_include_submodules() -> bool {
-    false
-}
-
-fn default_git_commit_depth() -> u32 {
-    500
-}
-
-fn default_max_file_size() -> u64 {
-    1024 * 1024 // 1 MB
-}
-
-fn default_max_graph_snapshot_bytes() -> usize {
-    128 * 1024 * 1024
-}
-
-fn default_redact_globs() -> Vec<String> {
-    vec![
-        "**/secrets/**".to_string(),
-        "**/*.env*".to_string(),
-        "**/*-private.md".to_string(),
-    ]
-}
-
-fn default_commentary_cost_limit() -> u32 {
-    5000
-}
-
-fn default_cross_link_cost_limit() -> u32 {
-    200
-}
-
-fn default_export_dir() -> String {
-    "synrepo-context".to_string()
-}
-
-fn default_retain_retired_revisions() -> u64 {
-    10
-}
-
-fn default_auto_sync_enabled() -> bool {
-    true
-}
-
-fn default_reconcile_keepalive_seconds() -> u32 {
-    1800
-}
-
-fn default_watch_sync_timeout_seconds() -> u32 {
-    600
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            mode: Mode::default(),
-            roots: default_roots(),
-            include_worktrees: default_include_worktrees(),
-            include_submodules: default_include_submodules(),
-            concept_directories: default_concept_dirs(),
-            git_commit_depth: default_git_commit_depth(),
-            max_file_size_bytes: default_max_file_size(),
-            max_graph_snapshot_bytes: default_max_graph_snapshot_bytes(),
-            redact_globs: default_redact_globs(),
-            commentary_cost_limit: default_commentary_cost_limit(),
-            cross_link_cost_limit: default_cross_link_cost_limit(),
-            cross_link_confidence_thresholds: CrossLinkConfidenceThresholds::default(),
-            export_dir: default_export_dir(),
-            retain_retired_revisions: default_retain_retired_revisions(),
-            enable_semantic_triage: false,
-            semantic_embedding_provider: default_semantic_embedding_provider(),
-            semantic_embedding_provider_source: SemanticProviderSource::Defaulted,
-            semantic_model: default_semantic_model(),
-            embedding_dim: default_embedding_dim(),
-            semantic_similarity_threshold: default_semantic_similarity_threshold(),
-            semantic_ollama_endpoint: default_semantic_ollama_endpoint(),
-            semantic_embedding_batch_size: default_semantic_embedding_batch_size(),
-            explain: ExplainConfig::default(),
-            auto_sync_enabled: default_auto_sync_enabled(),
-            reconcile_keepalive_seconds: default_reconcile_keepalive_seconds(),
-            watch_sync_timeout_seconds: default_watch_sync_timeout_seconds(),
-        }
-    }
 }
 
 impl Config {
@@ -473,32 +376,6 @@ impl Config {
         if other.reconcile_keepalive_seconds != default_reconcile_keepalive_seconds() {
             self.reconcile_keepalive_seconds = other.reconcile_keepalive_seconds;
         }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Default)]
-struct SemanticPresence {
-    provider: bool,
-    model: bool,
-    dim: bool,
-    ollama_endpoint: bool,
-    batch_size: bool,
-}
-
-impl SemanticPresence {
-    fn from_toml(text: &str) -> crate::Result<Self> {
-        let value =
-            toml::from_str::<toml::Value>(text).map_err(|e| crate::Error::Config(e.to_string()))?;
-        let Some(table) = value.as_table() else {
-            return Ok(Self::default());
-        };
-        Ok(Self {
-            provider: table.contains_key("semantic_embedding_provider"),
-            model: table.contains_key("semantic_model"),
-            dim: table.contains_key("embedding_dim"),
-            ollama_endpoint: table.contains_key("semantic_ollama_endpoint"),
-            batch_size: table.contains_key("semantic_embedding_batch_size"),
-        })
     }
 }
 

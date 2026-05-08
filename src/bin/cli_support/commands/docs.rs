@@ -43,11 +43,13 @@ pub(crate) fn docs_export_output(repo_root: &Path, force: bool) -> anyhow::Resul
     })?;
 
     Ok(format!(
-        "Explain docs exported: {} docs, {} changed{}\n  Directory: {}\n  Index: {:?} ({} touched)\n",
+        "Explain docs exported: {} docs, {} changed{}\n  Directory: {}\n  Discovery: {} artifacts, {} changed\n  Index: {:?} ({} touched)\n",
         summary.total_docs,
         summary.changed_paths,
         if force { " (forced rebuild)" } else { "" },
         summary.docs_dir.display(),
+        summary.discovery_artifacts,
+        summary.discovery_changed_paths,
         summary.index_mode,
         summary.index_touched_paths,
     ))

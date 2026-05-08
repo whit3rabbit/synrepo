@@ -10,10 +10,6 @@ expression: json
   "defined_at": "src/lib.rs:10",
   "signature": "pub fn annotated() -> u32",
   "doc_comment": "Docs.",
-  "callers": [],
-  "callees": [],
-  "tests_touching": [],
-  "drift_flag": null,
   "source_body": "pub fn annotated() -> u32 { 7 }",
   "approx_tokens": 23,
   "context_accounting": {
@@ -29,7 +25,6 @@ expression: json
   },
   "source_store": "graph",
   "epistemic": "parser_observed",
-  "overlay_commentary": null,
   "commentary_state": "missing",
   "proposed_links": [
     {

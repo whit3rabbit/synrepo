@@ -1,8 +1,9 @@
 //! Shared dashboard chrome helpers.
 
-use ratatui::text::Line;
-use ratatui::widgets::{Block, Borders, Paragraph};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
 
+use crate::tui::projects::GlobalAppState;
 use crate::tui::theme::Theme;
 
 pub(super) fn draw_help(frame: &mut ratatui::Frame, theme: Theme) {
@@ -12,26 +13,73 @@ pub(super) fn draw_help(frame: &mut ratatui::Frame, theme: Theme) {
         .border_style(theme.border_style());
     let lines = vec![
         Line::from("[p] projects    [?] help    [:] commands    [q] quit"),
-        Line::from("[Tab/Shift-Tab/←/→/1-7] tabs  [r] refresh  [w] watch for active project"),
-        Line::from("Project picker: filter, Enter switch, r rename, a add cwd, d detach, w watch"),
+        Line::from("[Tab/Shift-Tab/Left/Right/1-8] tabs  [Esc] Live/cancel  [r] refresh"),
+        Line::from("Explain: r refresh, a all stale, c changed, f folders, d/D/x/X docs"),
+        Line::from(
+            "Project picker: filter, Enter switch, r rename, a add cwd, d detach confirm, w watch",
+        ),
     ];
     let paragraph = Paragraph::new(lines).block(block).style(theme.base_style());
     frame.render_widget(paragraph, frame.area());
 }
 
-pub(super) fn draw_command_palette(frame: &mut ratatui::Frame, theme: Theme) {
+pub(super) fn draw_command_palette(frame: &mut ratatui::Frame, state: &GlobalAppState) {
+    let theme = state.theme;
+    let filter = state
+        .command_palette
+        .as_ref()
+        .map(|palette| palette.filter.as_str())
+        .unwrap_or("");
+    let selected = state
+        .command_palette
+        .as_ref()
+        .map(|palette| palette.selected)
+        .unwrap_or(0);
+    let title = if filter.is_empty() {
+        " commands ".to_string()
+    } else {
+        format!(" commands /{filter} ")
+    };
     let block = Block::default()
-        .title(" commands ")
+        .title(title)
         .borders(Borders::ALL)
         .border_style(theme.border_style());
-    let lines = vec![
-        Line::from("project switch"),
-        Line::from("project add current directory"),
-        Line::from("project detach selected"),
-        Line::from("watch start/stop selected project"),
-    ];
-    let paragraph = Paragraph::new(lines).block(block).style(theme.base_style());
-    frame.render_widget(paragraph, frame.area());
+    let items = state.filtered_command_palette_items();
+    if items.is_empty() {
+        let text = if filter.is_empty() {
+            "  no commands available".to_string()
+        } else {
+            format!("  no commands match /{filter}")
+        };
+        let paragraph = Paragraph::new(Line::from(text))
+            .block(block)
+            .style(theme.muted_style());
+        frame.render_widget(paragraph, frame.area());
+        return;
+    }
+    let rows = items
+        .iter()
+        .enumerate()
+        .map(|(idx, item)| {
+            let marker = if idx == selected { ">" } else { " " };
+            let style = if idx == selected {
+                theme.selected_style()
+            } else if item.disabled_reason.is_some() {
+                theme.muted_style()
+            } else {
+                theme.base_style()
+            };
+            let mut spans = vec![
+                Span::styled(format!("{marker} {}", item.prefix()), style),
+                Span::styled(format!(" {}", item.label), style),
+            ];
+            if let Some(reason) = &item.disabled_reason {
+                spans.push(Span::styled(format!(" ({reason})"), theme.muted_style()));
+            }
+            ListItem::new(Line::from(spans))
+        })
+        .collect::<Vec<_>>();
+    frame.render_widget(List::new(rows).block(block), frame.area());
 }
 
 /// Minimum terminal size where every tab still renders something usable.

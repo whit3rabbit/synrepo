@@ -65,8 +65,26 @@ pub fn clamp_response_string(output: &str, requested_budget: Option<usize>) -> C
         };
     };
     let (value, report) = clamp_json_response(value, requested_budget);
-    let output = serde_json::to_string_pretty(&value).unwrap_or_else(|_| output.to_string());
+    let output = serialize_mcp_json(&value).unwrap_or_else(|_| output.to_string());
     ClampedResponse { output, report }
+}
+
+pub fn serialize_mcp_json(value: &Value) -> serde_json::Result<String> {
+    serialize_mcp_json_for_mode(value, mcp_pretty_json_enabled())
+}
+
+fn mcp_pretty_json_enabled() -> bool {
+    std::env::var("SYNREPO_MCP_PRETTY_JSON")
+        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false)
+}
+
+fn serialize_mcp_json_for_mode(value: &Value, pretty: bool) -> serde_json::Result<String> {
+    if pretty {
+        serde_json::to_string_pretty(value)
+    } else {
+        serde_json::to_string(value)
+    }
 }
 
 pub fn clamp_and_record_response(synrepo_dir: &Path, tool: &str, output: String) -> String {
@@ -227,5 +245,23 @@ mod tests {
         assert!(value["results"].as_array().unwrap().len() < 100);
         assert_eq!(value["context_accounting"]["truncation_applied"], true);
         assert!(value["response_omitted"].as_array().unwrap().len() > 0);
+    }
+
+    #[test]
+    fn mcp_json_is_compact_unless_pretty_mode_is_enabled() {
+        let value = json!({"outer": {"inner": 1}, "list": [1, 2]});
+
+        let compact = serialize_mcp_json_for_mode(&value, false).unwrap();
+        assert_eq!(
+            serde_json::from_str::<Value>(&compact).unwrap(),
+            value,
+            "compact JSON must round-trip"
+        );
+        assert!(!compact.contains('\n'));
+        assert!(!compact.contains("  \""));
+
+        let pretty = serialize_mcp_json_for_mode(&value, true).unwrap();
+        assert!(pretty.contains('\n'));
+        assert!(pretty.contains("  \""));
     }
 }

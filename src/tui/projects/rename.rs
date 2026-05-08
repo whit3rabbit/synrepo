@@ -47,11 +47,22 @@ impl GlobalAppState {
             .and_then(|picker| picker.rename_input.clone());
         if let (Some(project), Some(name)) = (selected, name) {
             let trimmed = name.trim();
-            if registry::rename_project(&project.id, trimmed).is_ok() {
-                let _ = self.refresh_projects();
-                if let Some(active) = self.project_states.get_mut(&project.id) {
-                    active.project_name = Some(trimmed.to_string());
-                    active.set_toast(format!("Renamed project to {trimmed}"));
+            if trimmed.is_empty() {
+                self.set_active_toast("project alias cannot be empty");
+                return;
+            }
+            match registry::rename_project(&project.id, trimmed) {
+                Ok(_) => {
+                    let _ = self.refresh_projects();
+                    self.clamp_picker_selection();
+                    if let Some(active) = self.project_states.get_mut(&project.id) {
+                        active.project_name = Some(trimmed.to_string());
+                        active.rebuild_header_vm();
+                        active.set_toast(format!("Renamed project to {trimmed}"));
+                    }
+                }
+                Err(err) => {
+                    self.set_active_toast(format!("project rename failed: {err}"));
                 }
             }
         }

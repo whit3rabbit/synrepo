@@ -111,3 +111,25 @@ fn picker_quit_key_falls_through() {
     assert!(consumed);
     assert!(state.should_exit, "q must quit even with picker open");
 }
+
+#[test]
+fn malformed_saved_scope_sets_toast_before_using_defaults() {
+    let (repo, mut state) = make_ready_poll_state();
+    std::fs::create_dir_all(repo.path().join("src")).unwrap();
+    std::fs::write(repo.path().join("src/lib.rs"), "pub fn demo() {}\n").unwrap();
+    std::fs::write(
+        repo.path().join(".synrepo/state/explain-scope.json"),
+        "{not json",
+    )
+    .unwrap();
+
+    state.open_folder_picker();
+
+    assert!(
+        state
+            .active_toast()
+            .unwrap_or_default()
+            .contains("saved folder scope was invalid"),
+        "malformed scope should be visible to the operator"
+    );
+}

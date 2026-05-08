@@ -10,10 +10,6 @@ expression: deep
   "defined_at": "src/lib.rs:31",
   "signature": "pub fn add(a: i32, b: i32) -> i32",
   "doc_comment": "Add two integers together.",
-  "callers": [],
-  "callees": [],
-  "tests_touching": [],
-  "drift_flag": null,
   "source_body": "pub fn add(a: i32, b: i32) -> i32 { a + b }",
   "approx_tokens": 30,
   "context_accounting": {
@@ -29,8 +25,6 @@ expression: deep
   },
   "source_store": "graph",
   "epistemic": "parser_observed",
-  "overlay_commentary": null,
   "commentary_state": "missing",
-  "proposed_links": null,
   "links_state": "missing"
 }

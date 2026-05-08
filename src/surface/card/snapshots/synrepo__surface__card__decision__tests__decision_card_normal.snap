@@ -6,6 +6,5 @@ expression: rendered
 {
   "title": "Use SQLite for Graph Storage",
   "status": "Accepted",
-  "decision_body": "We store the canonical graph in SQLite because it provides transactional writes and zero-dependency deployment without a separate server process.",
-  "governed_node_ids": []
+  "decision_body": "We store the canonical graph in SQLite because it provides transactional writes and zero-dependency deployment without a separate server process."
 }

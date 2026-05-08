@@ -9,12 +9,6 @@ expression: tiny
   "qualified_name": "add",
   "defined_at": "src/lib.rs:31",
   "signature": "pub fn add(a: i32, b: i32) -> i32",
-  "doc_comment": null,
-  "callers": [],
-  "callees": [],
-  "tests_touching": [],
-  "drift_flag": null,
-  "source_body": null,
   "approx_tokens": 13,
   "context_accounting": {
     "budget_tier": "tiny",
@@ -29,8 +23,6 @@ expression: tiny
   },
   "source_store": "graph",
   "epistemic": "parser_observed",
-  "overlay_commentary": null,
   "commentary_state": "budget_withheld",
-  "proposed_links": null,
   "links_state": "budget_withheld"
 }

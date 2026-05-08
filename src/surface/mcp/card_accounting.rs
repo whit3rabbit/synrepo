@@ -4,14 +4,23 @@ use super::SynrepoState;
 
 pub fn finalize_card_json(
     state: &SynrepoState,
-    mut json: serde_json::Value,
+    json: serde_json::Value,
     budget_tokens: Option<usize>,
     start: Instant,
     test_surface_hit: bool,
 ) -> serde_json::Value {
+    let json = prepare_card_json(state, json, budget_tokens);
+    record_embedded_card_metrics(state, &json, start, test_surface_hit);
+    json
+}
+
+pub fn prepare_card_json(
+    state: &SynrepoState,
+    mut json: serde_json::Value,
+    budget_tokens: Option<usize>,
+) -> serde_json::Value {
     apply_numeric_cap_marker(&mut json, budget_tokens);
     attach_overlay_state(state, &mut json);
-    record_embedded_card_metrics(state, &json, start, test_surface_hit);
     json
 }
 

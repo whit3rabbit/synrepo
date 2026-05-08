@@ -202,6 +202,38 @@ fn explain_tab_docs_export_does_not_queue_model_run() {
 }
 
 #[test]
+fn explain_tab_r_refreshes_status_without_queueing_run() {
+    let (_repo, mut state) = make_ready_poll_state();
+    state.set_tab(ActiveTab::Explain);
+
+    let consumed = state.handle_key(KeyCode::Char('r'), KeyModifiers::NONE);
+
+    assert!(consumed);
+    assert!(state.pending_explain.is_empty());
+    assert!(state
+        .active_toast()
+        .unwrap_or_default()
+        .contains("explain status refreshed"));
+}
+
+#[test]
+fn explain_tab_a_queues_all_stale_run() {
+    let (_repo, mut state) = make_ready_poll_state();
+    state.set_tab(ActiveTab::Explain);
+
+    let consumed = state.handle_key(KeyCode::Char('a'), KeyModifiers::NONE);
+
+    assert!(consumed);
+    assert!(matches!(
+        state.pending_explain.front(),
+        Some(PendingExplainRun {
+            mode: ExplainMode::AllStale,
+            stopped_watch: false,
+        })
+    ));
+}
+
+#[test]
 fn explain_tab_docs_clean_previews_before_apply() {
     let (repo, mut state) = make_ready_poll_state();
     state.set_tab(ActiveTab::Explain);

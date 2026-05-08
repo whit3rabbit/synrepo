@@ -82,6 +82,51 @@ fn pressing_u_opens_compatibility_confirmation() {
 }
 
 #[test]
+fn quick_confirm_esc_cancels_without_exit() {
+    let (_tempdir, mut state) = make_ready_poll_state();
+    state.handle_key(KeyCode::Char('U'), KeyModifiers::NONE);
+
+    assert!(state.handle_key(KeyCode::Esc, KeyModifiers::NONE));
+
+    assert_eq!(state.pending_quick_confirm, None);
+    assert!(!state.should_exit);
+}
+
+#[test]
+fn quick_confirm_q_exits() {
+    let (_tempdir, mut state) = make_ready_poll_state();
+    state.handle_key(KeyCode::Char('U'), KeyModifiers::NONE);
+
+    assert!(state.handle_key(KeyCode::Char('q'), KeyModifiers::NONE));
+
+    assert_eq!(state.pending_quick_confirm, None);
+    assert!(state.should_exit);
+}
+
+#[test]
+fn quick_confirm_tab_switches_and_clears_modal() {
+    let (_tempdir, mut state) = make_ready_poll_state();
+    state.set_tab(ActiveTab::Health);
+    state.handle_key(KeyCode::Char('U'), KeyModifiers::NONE);
+
+    assert!(state.handle_key(KeyCode::Tab, KeyModifiers::NONE));
+
+    assert_eq!(state.pending_quick_confirm, None);
+    assert_eq!(state.active_tab, ActiveTab::Trust);
+}
+
+#[test]
+fn quick_confirm_ctrl_c_exits() {
+    let (_tempdir, mut state) = make_ready_poll_state();
+    state.handle_key(KeyCode::Char('U'), KeyModifiers::NONE);
+
+    assert!(state.handle_key(KeyCode::Char('c'), KeyModifiers::CONTROL));
+
+    assert_eq!(state.pending_quick_confirm, None);
+    assert!(state.should_exit);
+}
+
+#[test]
 fn confirming_u_applies_compatibility_and_clears_guidance() {
     let (_tempdir, mut state) = make_ready_poll_state();
     write_index_sensitive_drift(&state.repo_root);

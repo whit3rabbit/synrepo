@@ -63,6 +63,21 @@ fn list_commentary_docs_returns_file_docs() {
     assert_eq!(docs[0].node_kind, "file");
 }
 
+#[test]
+fn commentary_doc_paths_only_returns_file_and_symbol_docs() {
+    let (repo, graph, _sym_id) = fresh_symbol_fixture();
+    let synrepo_dir = repo.path().join(".synrepo");
+    let file = graph.file_by_path("src/lib.rs").unwrap().unwrap();
+    let node_id = NodeId::File(file.id);
+    let doc_path = write_file_doc(&synrepo_dir, node_id, &file.path, &file.content_hash);
+    fs::write(docs_root(&synrepo_dir).join("index.md"), "# Support\n").unwrap();
+    fs::write(docs_root(&synrepo_dir).join("llms.txt"), "# Support\n").unwrap();
+
+    let paths = commentary_doc_paths(&synrepo_dir).unwrap();
+
+    assert_eq!(paths, vec![doc_path]);
+}
+
 fn write_file_doc(
     synrepo_dir: &std::path::Path,
     node_id: NodeId,

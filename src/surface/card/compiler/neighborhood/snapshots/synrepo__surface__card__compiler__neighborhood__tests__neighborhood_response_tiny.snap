@@ -14,11 +14,6 @@ expression: tiny
         "location": "src/lib.rs:22"
       }
     ],
-    "imported_by": [],
-    "imports": [],
-    "co_changes": [],
-    "git_intelligence": null,
-    "drift_flag": null,
     "approx_tokens": 10,
     "context_accounting": {
       "budget_tier": "tiny",
@@ -33,10 +28,6 @@ expression: tiny
     },
     "source_store": "graph"
   },
-  "neighbors": null,
-  "neighbor_summaries": null,
-  "decision_cards": null,
-  "co_change_partners": null,
   "co_change_state": "missing",
   "edge_counts": {
     "outbound_calls_count": 0,

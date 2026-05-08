@@ -6,7 +6,7 @@ use crate::structure::graph::Epistemic;
 
 use super::super::git::SymbolLastChange;
 use super::refs::SymbolRef;
-use super::{ContextAccounting, SourceStore};
+use super::{option_vec_is_empty, ContextAccounting, SourceStore};
 
 /// SymbolCard — answers "what is this function/class, how is it connected?"
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -20,14 +20,19 @@ pub struct SymbolCard {
     /// File and line where defined.
     pub defined_at: String,
     /// One-line signature.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub signature: Option<String>,
     /// Doc comment, truncated for `tiny` budget.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub doc_comment: Option<String>,
     /// Callers (symbols that call this one). Truncated per budget.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub callers: Vec<SymbolRef>,
     /// Callees (symbols this one calls). Truncated per budget.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub callees: Vec<SymbolRef>,
     /// Test symbols that exercise this one. Empty for `tiny`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tests_touching: Vec<SymbolRef>,
     /// Most recent commit touching this symbol's containing file (V1
     /// granularity: `File`). Absent at `Tiny` budget; revision + author +
@@ -35,8 +40,10 @@ pub struct SymbolCard {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_change: Option<SymbolLastChange>,
     /// Drift score and flag, if any.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub drift_flag: Option<String>,
     /// Full source body, only populated for `Deep` budget.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub source_body: Option<String>,
     /// Approximate token count of this card.
     pub approx_tokens: usize,
@@ -50,6 +57,7 @@ pub struct SymbolCard {
     /// Optional LLM-authored commentary from the overlay, clearly marked.
     /// Only populated if the card was requested at `Deep` budget and
     /// commentary exists in the overlay.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub overlay_commentary: Option<OverlayCommentary>,
     /// Flat commentary state label exposed to MCP callers so they can
     /// distinguish `budget_withheld` (Tiny/Normal) from `missing`, `fresh`,
@@ -60,6 +68,7 @@ pub struct SymbolCard {
     pub commentary_state: Option<String>,
     /// Proposed cross-links authored by the explain layer with evidence verification.
     /// Only populated at Deep budget.
+    #[serde(default, skip_serializing_if = "option_vec_is_empty")]
     pub proposed_links: Option<Vec<ProposedLink>>,
     /// State of the proposed links (e.g., "budget_withheld", "fresh", etc.)
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -7,8 +7,8 @@ use crate::store::overlay::SqliteOverlayStore;
 use crate::structure::graph::GraphReader;
 
 use super::{
-    commentary_doc_paths, docs_root, index_dir, list_commentary_docs, reconcile_commentary_docs,
-    sync_commentary_index, CommentaryIndexSyncMode,
+    docs_root, index_dir, list_commentary_docs, reconcile_commentary_docs, sync_commentary_index,
+    write_discovery_artifacts, CommentaryIndexSyncMode,
 };
 
 /// Options for exporting materialized commentary docs.
@@ -32,6 +32,10 @@ pub struct CommentaryDocsExportSummary {
     pub index_mode: CommentaryIndexSyncMode,
     /// Paths touched by index maintenance.
     pub index_touched_paths: usize,
+    /// Discovery support artifacts currently written under `.synrepo/explain-docs/`.
+    pub discovery_artifacts: usize,
+    /// Discovery support artifacts whose bytes changed on disk.
+    pub discovery_changed_paths: usize,
 }
 
 /// Summary of a commentary-doc clean operation.
@@ -64,6 +68,7 @@ pub fn export_commentary_docs(
     }
 
     let touched = reconcile_commentary_docs(synrepo_dir, graph, overlay)?;
+    let discovery = write_discovery_artifacts(synrepo_dir, graph)?;
     let index = sync_commentary_index(synrepo_dir, &touched)?;
     let total_docs = list_commentary_docs(synrepo_dir)?.len();
 
@@ -73,6 +78,8 @@ pub fn export_commentary_docs(
         docs_dir,
         index_mode: index.mode,
         index_touched_paths: index.touched_paths,
+        discovery_artifacts: discovery.total_artifacts,
+        discovery_changed_paths: discovery.changed_artifacts,
     })
 }
 
@@ -84,7 +91,7 @@ pub fn clean_commentary_docs(
 ) -> crate::Result<CommentaryDocsCleanSummary> {
     let docs_dir = docs_root(synrepo_dir);
     let index_path = index_dir(synrepo_dir);
-    let doc_files = commentary_doc_paths(synrepo_dir)?.len();
+    let doc_files = count_files(&docs_dir)?;
     let index_files = count_files(&index_path)?;
 
     if apply {

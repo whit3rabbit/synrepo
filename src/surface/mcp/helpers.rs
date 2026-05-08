@@ -56,7 +56,7 @@ pub fn parse_budget(s: &str) -> anyhow::Result<Budget> {
 
 pub fn render_result(result: anyhow::Result<serde_json::Value>) -> String {
     match result {
-        Ok(val) => serde_json::to_string_pretty(&val)
+        Ok(val) => super::response_budget::serialize_mcp_json(&val)
             .unwrap_or_else(|e| super::error::error_json(anyhow::anyhow!(e))),
         Err(err) => super::error::error_json(err),
     }

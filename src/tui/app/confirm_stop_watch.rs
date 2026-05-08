@@ -63,6 +63,9 @@ impl AppState {
         if matches!(
             code,
             KeyCode::Tab
+                | KeyCode::BackTab
+                | KeyCode::Left
+                | KeyCode::Right
                 | KeyCode::Char('q')
                 | KeyCode::Char('1')
                 | KeyCode::Char('2')

@@ -67,12 +67,16 @@ pub struct MinimumContextResponse {
     /// The focal node's card (SymbolCard or FileCard as JSON).
     pub focal_card: serde_json::Value,
     /// Full neighbor cards (deep budget only).
+    #[serde(skip_serializing_if = "optional_vec_is_empty")]
     pub neighbors: Option<Vec<serde_json::Value>>,
     /// Neighbor summaries (normal budget only).
+    #[serde(skip_serializing_if = "optional_vec_is_empty")]
     pub neighbor_summaries: Option<Vec<NeighborSummary>>,
     /// Governing DecisionCards.
+    #[serde(skip_serializing_if = "optional_vec_is_empty")]
     pub decision_cards: Option<Vec<serde_json::Value>>,
     /// Co-change partners from git intelligence.
+    #[serde(skip_serializing_if = "optional_vec_is_empty")]
     pub co_change_partners: Option<Vec<CoChangePartner>>,
     /// Whether co-change data was available.
     pub co_change_state: CoChangeState,
@@ -80,6 +84,10 @@ pub struct MinimumContextResponse {
     pub edge_counts: EdgeCounts,
     /// Budget tier used for this response.
     pub budget: &'static str,
+}
+
+fn optional_vec_is_empty<T>(value: &Option<Vec<T>>) -> bool {
+    value.as_ref().is_none_or(Vec::is_empty)
 }
 
 impl MinimumContextResponse {

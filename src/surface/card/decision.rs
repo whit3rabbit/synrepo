@@ -4,6 +4,7 @@
 //! Never overrides structural card truth; it surfaces design intent alongside facts.
 
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 
 use crate::core::ids::NodeId;
 
@@ -41,26 +42,38 @@ impl DecisionCard {
             .iter()
             .map(|id| id.to_string())
             .collect();
-        match budget {
-            Budget::Tiny => serde_json::json!({
-                "title": self.title,
-                "governed_node_ids": governed_ids,
-            }),
-            Budget::Normal => serde_json::json!({
-                "title": self.title,
-                "status": self.status,
-                "decision_body": self.decision_body.as_deref().map(|s| truncate_chars(s, 300)),
-                "governed_node_ids": governed_ids,
-            }),
-            Budget::Deep => serde_json::json!({
-                "title": self.title,
-                "status": self.status,
-                "decision_body": self.decision_body,
-                "governed_node_ids": governed_ids,
-                "source_path": self.source_path,
-                "freshness": self.freshness,
-            }),
+        let mut map = Map::new();
+        map.insert("title".to_string(), Value::String(self.title.clone()));
+        if !governed_ids.is_empty() {
+            map.insert(
+                "governed_node_ids".to_string(),
+                Value::Array(governed_ids.into_iter().map(Value::String).collect()),
+            );
         }
+        if matches!(budget, Budget::Normal | Budget::Deep) {
+            if let Some(status) = &self.status {
+                map.insert("status".to_string(), Value::String(status.clone()));
+            }
+            if let Some(body) = &self.decision_body {
+                let body = if budget == Budget::Normal {
+                    truncate_chars(body, 300)
+                } else {
+                    body.clone()
+                };
+                map.insert("decision_body".to_string(), Value::String(body));
+            }
+        }
+        if budget == Budget::Deep {
+            map.insert(
+                "source_path".to_string(),
+                Value::String(self.source_path.clone()),
+            );
+            map.insert(
+                "freshness".to_string(),
+                serde_json::to_value(self.freshness).unwrap_or(Value::String("fresh".to_string())),
+            );
+        }
+        Value::Object(map)
     }
 }
 

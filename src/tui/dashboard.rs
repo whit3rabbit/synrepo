@@ -153,8 +153,8 @@ fn draw_global_dashboard(frame: &mut ratatui::Frame, state: &mut GlobalAppState)
         draw_help(frame, state.theme);
         return;
     }
-    if state.command_palette {
-        draw_command_palette(frame, state.theme);
+    if state.command_palette.is_some() {
+        draw_command_palette(frame, state);
         return;
     }
     if state.picker.is_some() || state.active_state().is_none() {

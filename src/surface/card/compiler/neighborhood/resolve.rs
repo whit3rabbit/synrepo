@@ -1,6 +1,7 @@
 use crate::core::ids::NodeId;
 use crate::structure::graph::{EdgeKind, GraphReader};
 use crate::surface::card::compiler::GraphCardCompiler;
+use crate::surface::card::concept::concept_summary_card;
 use crate::surface::card::git::FileGitIntelligence;
 use crate::surface::card::types::Freshness;
 use crate::surface::card::{Budget, CardCompiler};
@@ -81,8 +82,8 @@ pub(super) fn resolve_neighborhood_inner(
 
 /// Render a graph node as a JSON card at `budget`, stripping overlay-only fields.
 ///
-/// Symbols and files produce their respective cards; concepts fall back to the
-/// raw `ConceptNode` payload because there is no ConceptCard surface today.
+/// Symbols and files produce their respective cards; concepts get a compact
+/// summary so decision bodies never leak into minimum-context routing output.
 fn node_card_json(
     compiler: &GraphCardCompiler,
     node_id: NodeId,
@@ -102,7 +103,7 @@ fn node_card_json(
                 .reader()
                 .get_concept(concept_id)?
                 .ok_or_else(|| anyhow!("concept not found"))?;
-            serde_json::to_value(&concept).map_err(|e| anyhow!(e))?
+            concept_summary_card(&concept)
         }
     };
     strip_overlay_fields(&mut json);

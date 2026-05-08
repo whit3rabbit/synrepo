@@ -30,6 +30,8 @@ pub struct CommentaryDocListItem {
     pub commentary_state: String,
     /// Model or actor identity recorded in the doc header.
     pub model_identity: String,
+    /// RFC3339 timestamp recorded in the doc header.
+    pub generated_at: String,
 }
 
 /// Outcome for importing one edited commentary doc.
@@ -79,6 +81,7 @@ pub fn list_commentary_docs(synrepo_dir: &Path) -> crate::Result<Vec<CommentaryD
             qualified_name: header.qualified_name,
             commentary_state: header.commentary_state,
             model_identity: header.model_identity,
+            generated_at: header.generated_at,
         });
     }
     docs.sort_by(|a, b| a.path.cmp(&b.path));
@@ -92,13 +95,19 @@ pub fn commentary_doc_paths(synrepo_dir: &Path) -> crate::Result<Vec<PathBuf>> {
         return Ok(Vec::new());
     }
     let mut paths = Vec::new();
-    for entry in WalkDir::new(root).into_iter().filter_map(Result::ok) {
-        if !entry.file_type().is_file() {
+    for dirname in ["files", "symbols"] {
+        let dir = root.join(dirname);
+        if !dir.exists() {
             continue;
         }
-        let path = entry.path();
-        if path.extension().and_then(|ext| ext.to_str()) == Some("md") {
-            paths.push(path.to_path_buf());
+        for entry in WalkDir::new(dir).into_iter().filter_map(Result::ok) {
+            if !entry.file_type().is_file() {
+                continue;
+            }
+            let path = entry.path();
+            if path.extension().and_then(|ext| ext.to_str()) == Some("md") {
+                paths.push(path.to_path_buf());
+            }
         }
     }
     paths.sort();

@@ -1,8 +1,12 @@
 //! Global project dashboard state and registry-backed project picker.
 
 mod explore;
+mod palette;
+mod picker;
 mod rename;
 mod watch;
+
+pub(crate) use palette::CommandPaletteState;
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -70,6 +74,7 @@ pub(crate) struct ProjectPickerState {
     pub(crate) filter: String,
     pub(crate) selected: usize,
     pub(crate) rename_input: Option<String>,
+    pub(crate) detach_confirm: Option<String>,
 }
 
 /// Global shell over project-scoped dashboard states.
@@ -80,7 +85,7 @@ pub(crate) struct GlobalAppState {
     pub(crate) picker: Option<ProjectPickerState>,
     pub(crate) explore_selected: usize,
     pub(crate) help_visible: bool,
-    pub(crate) command_palette: bool,
+    pub(crate) command_palette: Option<CommandPaletteState>,
     pub(crate) cwd: PathBuf,
     pub(crate) theme: Theme,
     pub(crate) should_exit: bool,
@@ -96,7 +101,7 @@ impl GlobalAppState {
             picker: open_picker.then(ProjectPickerState::default),
             explore_selected: 0,
             help_visible: false,
-            command_palette: false,
+            command_palette: None,
             cwd: cwd.to_path_buf(),
             theme,
             should_exit: false,
@@ -142,7 +147,7 @@ impl GlobalAppState {
         }
         self.picker = None;
         self.help_visible = false;
-        self.command_palette = false;
+        self.command_palette = None;
         if let Some(active) = self.active_state_mut() {
             active.pending_explain.clear();
             active.confirm_stop_watch = None;
@@ -170,9 +175,8 @@ impl GlobalAppState {
             self.help_visible = false;
             return true;
         }
-        if self.command_palette {
-            self.command_palette = false;
-            return true;
+        if self.command_palette.is_some() {
+            return self.handle_command_palette_key(code, modifiers);
         }
         if self
             .picker
@@ -200,13 +204,7 @@ impl GlobalAppState {
                 true
             }
             KeyCode::Char(':') => {
-                self.command_palette = true;
-                true
-            }
-            KeyCode::Char('i') => {
-                if let Some(active) = self.active_state_mut() {
-                    active.set_toast("Open this project directly to run integration setup");
-                }
+                self.command_palette = Some(CommandPaletteState::default());
                 true
             }
             _ if self
@@ -217,114 +215,34 @@ impl GlobalAppState {
                 if self.handle_explore_key(code, modifiers) {
                     true
                 } else {
-                    self.active_state_mut()
-                        .map(|active| active.handle_key(code, modifiers))
-                        .unwrap_or(false)
+                    self.forward_active_key(code, modifiers)
                 }
             }
-            _ => self
-                .active_state_mut()
-                .map(|active| active.handle_key(code, modifiers))
-                .unwrap_or(false),
+            _ => self.forward_active_key(code, modifiers),
         }
     }
 
-    fn handle_picker_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> bool {
-        if code == KeyCode::Char('c') && modifiers.contains(KeyModifiers::CONTROL) {
-            self.should_exit = true;
-            return true;
+    fn forward_active_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> bool {
+        let consumed = self
+            .active_state_mut()
+            .map(|active| active.handle_key(code, modifiers))
+            .unwrap_or(false);
+        if let Some(active) = self.active_state() {
+            self.should_exit |= active.should_exit;
         }
-        match code {
-            KeyCode::Esc => {
-                if self.active_project_id.is_some() {
-                    self.picker = None;
-                } else {
-                    self.should_exit = true;
-                }
-                true
-            }
-            KeyCode::Char('q') => {
-                self.should_exit = true;
-                true
-            }
-            KeyCode::Up => {
-                if let Some(picker) = self.picker.as_mut() {
-                    picker.selected = picker.selected.saturating_sub(1);
-                }
-                true
-            }
-            KeyCode::Down => {
-                let max = self.filtered_projects().len().saturating_sub(1);
-                if let Some(picker) = self.picker.as_mut() {
-                    picker.selected = (picker.selected + 1).min(max);
-                }
-                true
-            }
-            KeyCode::Enter => {
-                if let Some(project) = self.selected_project().cloned() {
-                    let _ = self.switch_project(&project.id);
-                }
-                true
-            }
-            KeyCode::Backspace => {
-                if let Some(picker) = self.picker.as_mut() {
-                    picker.filter.pop();
-                    picker.selected = 0;
-                }
-                true
-            }
-            KeyCode::Char('a') => {
-                let result = (|| -> anyhow::Result<()> {
-                    crate::bootstrap::bootstrap(&self.cwd, None, false)?;
-                    registry::record_project(&self.cwd)?;
-                    Ok(())
-                })();
-                match result {
-                    Ok(()) => {
-                        let _ = self.refresh_projects();
-                    }
-                    Err(err) => {
-                        if let Some(active) = self.active_state_mut() {
-                            active.set_toast(format!("project add failed: {err}"));
-                        }
-                    }
-                }
-                true
-            }
-            KeyCode::Char('r') => {
-                if let Some(project) = self.selected_project().cloned() {
-                    if let Some(picker) = self.picker.as_mut() {
-                        picker.rename_input = Some(project.name);
-                    }
-                }
-                true
-            }
-            KeyCode::Char('w') => {
-                self.toggle_selected_project_watch();
-                true
-            }
-            KeyCode::Char('d') => {
-                if let Some(project) = self.selected_project().cloned() {
-                    let _ = registry::remove_project(&project.root);
-                    self.project_states.remove(&project.id);
-                    if self.active_project_id.as_deref() == Some(project.id.as_str()) {
-                        self.active_project_id = None;
-                    }
-                    let _ = self.refresh_projects();
-                    if self.active_project_id.is_none() {
-                        self.picker = Some(ProjectPickerState::default());
-                    }
-                }
-                true
-            }
-            KeyCode::Char(ch) if !modifiers.contains(KeyModifiers::CONTROL) => {
-                if let Some(picker) = self.picker.as_mut() {
-                    picker.filter.push(ch);
-                    picker.selected = 0;
-                }
-                true
-            }
-            _ => true,
+        consumed
+    }
+
+    pub(crate) fn clamp_picker_selection(&mut self) {
+        let max = self.filtered_projects().len().saturating_sub(1);
+        if let Some(picker) = self.picker.as_mut() {
+            picker.selected = picker.selected.min(max);
+        }
+    }
+
+    pub(crate) fn set_active_toast(&mut self, msg: impl Into<String>) {
+        if let Some(active) = self.active_state_mut() {
+            active.set_toast(msg);
         }
     }
 

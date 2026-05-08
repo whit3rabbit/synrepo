@@ -4,6 +4,5 @@ assertion_line: 91
 expression: rendered
 ---
 {
-  "title": "Use SQLite for Graph Storage",
-  "governed_node_ids": []
+  "title": "Use SQLite for Graph Storage"
 }

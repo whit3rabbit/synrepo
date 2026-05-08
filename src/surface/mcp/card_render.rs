@@ -4,12 +4,13 @@ use serde_json::Value;
 
 use crate::{
     core::ids::NodeId,
-    surface::card::{Budget, CardCompiler},
+    surface::card::{concept::concept_summary_card, Budget, CardCompiler},
 };
 
 use super::{
-    card_accounting::finalize_card_json,
+    card_accounting::{prepare_card_json, record_embedded_card_metrics},
     helpers::{attach_decision_cards, lift_commentary_text},
+    response_budget::estimate_json_tokens,
     SynrepoState,
 };
 
@@ -25,14 +26,16 @@ pub fn render_card_target(
     let mut last = None;
     for &candidate in downgrade_budgets(budget) {
         let json = render_card_content(state, compiler, target, candidate, include_notes)?;
-        let fits = budget_tokens.is_none_or(|cap| token_estimate(&json) <= cap);
+        let json = prepare_card_json(state, json, budget_tokens);
+        let fits = fits_budget_tokens(&json, budget_tokens);
         last = Some((json, candidate));
         if fits || candidate == Budget::Tiny {
             break;
         }
     }
     let (json, _) = last.expect("downgrade_budgets returns at least one budget");
-    Ok(finalize_card_json(state, json, budget_tokens, start, false))
+    record_embedded_card_metrics(state, &json, start, false);
+    Ok(json)
 }
 
 fn render_card_content(
@@ -81,7 +84,7 @@ fn render_card_content(
                 .reader()
                 .get_concept(concept_id)?
                 .ok_or_else(|| anyhow::anyhow!("concept not found"))?;
-            Ok(serde_json::to_value(&concept)?)
+            Ok(concept_summary_card(&concept))
         }
     }
 }
@@ -94,8 +97,26 @@ fn downgrade_budgets(budget: Budget) -> &'static [Budget] {
     }
 }
 
-fn token_estimate(json: &Value) -> usize {
-    json.pointer("/context_accounting/token_estimate")
-        .and_then(|value| value.as_u64())
-        .unwrap_or(0) as usize
+fn fits_budget_tokens(json: &Value, budget_tokens: Option<usize>) -> bool {
+    budget_tokens.is_none_or(|cap| estimate_json_tokens(json) <= cap)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn budget_fit_uses_final_serialized_json_size() {
+        let json = serde_json::json!({
+            "context_accounting": {
+                "token_estimate": 1
+            },
+            "payload": "x".repeat(120)
+        });
+        let serialized_estimate = estimate_json_tokens(&json);
+
+        assert!(serialized_estimate > 1);
+        assert!(!fits_budget_tokens(&json, Some(1)));
+        assert!(fits_budget_tokens(&json, Some(serialized_estimate)));
+    }
 }

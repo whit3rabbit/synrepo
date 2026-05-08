@@ -120,7 +120,7 @@ pub fn classify_error(error: &anyhow::Error) -> ErrorCode {
 }
 
 pub fn error_json(err: anyhow::Error) -> String {
-    serde_json::to_string_pretty(&error_value(&err)).unwrap_or_else(|_| {
+    super::response_budget::serialize_mcp_json(&error_value(&err)).unwrap_or_else(|_| {
         r#"{"error":{"code":"INTERNAL","message":"serialization failure"},"error_message":"serialization failure"}"#.to_string()
     })
 }
@@ -157,4 +157,18 @@ pub fn error_value(err: &anyhow::Error) -> serde_json::Value {
         },
         "error_message": message,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn error_json_is_compact_by_default() {
+        let rendered = error_json(McpError::invalid_parameter("bad input").into());
+
+        assert!(!rendered.contains('\n'));
+        let value: serde_json::Value = serde_json::from_str(&rendered).unwrap();
+        assert_eq!(value["error"]["code"], "INVALID_PARAMETER");
+    }
 }

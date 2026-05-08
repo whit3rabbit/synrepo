@@ -76,9 +76,16 @@ synrepo docs import <path>   # import one edited Markdown body back into the ove
 synrepo docs import --all    # import all edited Markdown bodies
 ```
 
+`docs export` also writes native discovery files under
+`.synrepo/explain-docs/`: `index.md` for a human/agent entrypoint,
+`catalogue.json` for machine-readable metadata, and `llms.txt` for compact
+LLM-facing discovery. These files are advisory, label `source_store: overlay`,
+and point back to the materialized commentary docs and their graph-backed source
+paths.
+
 Only the body after the `---` separator is treated as editable content. Import skips a doc when its `source_content_hash` header no longer matches the current graph, so a stale edit cannot silently become fresh commentary for changed source.
 
-Export always materializes from overlay commentary. That means local Markdown edits should be imported before running `docs export`, `docs export --force`, or an Explain refresh if the edits should be preserved. `docs clean --apply` deletes only `.synrepo/explain-docs/` and `.synrepo/explain-index/`; it does not remove overlay commentary.
+Export always materializes from overlay commentary. That means local Markdown edits should be imported before running `docs export`, `docs export --force`, or an Explain refresh if the edits should be preserved. `docs list`, `docs import --all`, and `docs search` only treat `files/*.md` and `symbols/*.md` as editable/searchable commentary docs; discovery files are ignored by those commentary-specific operations. `docs clean --apply` deletes `.synrepo/explain-docs/` and `.synrepo/explain-index/`; it does not remove overlay commentary.
 
 Newly generated commentary bodies use a fixed Markdown template: Purpose, How
 It Fits, Associated Nodes, Important Gotchas, Associated Tests, TODOs / Dead

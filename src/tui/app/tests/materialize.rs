@@ -110,10 +110,12 @@ fn tick_does_not_re_fire_auto_after_first_attempt() {
 #[test]
 fn manual_m_press_dispatches_even_after_auto_attempted() {
     let _guard = crate::test_support::global_test_lock("tui-app-materialize");
-    let (_repo, mut state) = make_ready_poll_state();
+    let (repo, mut state) = make_ready_poll_state();
+    std::fs::remove_dir_all(repo.path().join(".synrepo/graph")).expect("remove graph dir");
+    state.refresh_now();
 
     // Pretend an auto attempt already fired this session so the auto path
-    // would be suppressed; the manual key must still work.
+    // would be suppressed; the manual key must still work when graph is missing.
     state.materializer.mark_auto_attempted();
     let log_len_before = state.log.as_slice().len();
 
@@ -136,6 +138,24 @@ fn manual_m_press_dispatches_even_after_auto_attempted() {
 }
 
 #[test]
+fn pressing_m_when_graph_present_does_not_materialize() {
+    let _guard = crate::test_support::global_test_lock("tui-app-materialize");
+    let (_repo, mut state) = make_ready_poll_state();
+
+    let consumed = state.handle_key(KeyCode::Char('M'), KeyModifiers::NONE);
+
+    assert!(consumed);
+    assert_eq!(state.pending_quick_confirm, None);
+    assert!(
+        state
+            .active_toast()
+            .unwrap_or_default()
+            .contains("graph already exists"),
+        "present graph should produce rebuild guidance toast"
+    );
+}
+
+#[test]
 fn quick_actions_include_m_when_graph_missing() {
     let _guard = crate::test_support::global_test_lock("tui-app-materialize");
     let (repo, mut state) = make_ready_poll_state();
@@ -155,4 +175,19 @@ fn quick_actions_omit_m_when_graph_present() {
     let (_repo, state) = make_ready_poll_state();
     let has_m = state.quick_actions.iter().any(|a| a.key == "M");
     assert!(!has_m, "stray M quick action: {:?}", state.quick_actions);
+}
+
+#[test]
+fn quick_actions_and_key_handler_share_materialize_predicate() {
+    let _guard = crate::test_support::global_test_lock("tui-app-materialize");
+    let (repo, mut state) = make_ready_poll_state();
+    std::fs::remove_dir_all(repo.path().join(".synrepo/graph")).expect("remove graph dir");
+    state.refresh_now();
+
+    assert!(state.quick_actions.iter().any(|a| a.key == "M"));
+    assert!(state.handle_key(KeyCode::Char('M'), KeyModifiers::NONE));
+    assert_eq!(
+        state.pending_quick_confirm,
+        Some(PendingQuickConfirm::MaterializeGraph)
+    );
 }

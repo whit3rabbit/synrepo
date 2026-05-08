@@ -6,6 +6,9 @@ use crate::tui::app::{
     ConfirmStopWatchState, ExplainMode, PendingExplainRun, PendingStopWatchAction,
 };
 
+#[path = "picker_tests.rs"]
+mod picker_tests;
+
 fn home_guard() -> (
     crate::test_support::GlobalTestLock,
     tempfile::TempDir,

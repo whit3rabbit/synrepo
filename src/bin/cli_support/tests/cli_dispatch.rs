@@ -373,30 +373,4 @@ fn dashboard_dispatches_to_dashboard_variant() {
     );
 }
 
-#[test]
-fn repo_flag_is_global_and_survives_on_every_subcommand() {
-    // Spot-check a couple of subcommands; the flag is declared `global = true`
-    // on `Cli`, so clap propagates it regardless of the subcommand that
-    // follows. Asserting on two representative subcommands pins that
-    // invariant without exploding into N × M tests.
-    let status = parse(&["--repo", "/tmp/x", "status"]);
-    assert_eq!(
-        status.repo.as_deref(),
-        Some(std::path::Path::new("/tmp/x")),
-        "--repo must propagate to status"
-    );
-    let watch = parse(&["--repo", "/tmp/y", "watch", "--daemon"]);
-    assert_eq!(
-        watch.repo.as_deref(),
-        Some(std::path::Path::new("/tmp/y")),
-        "--repo must propagate to watch"
-    );
-}
-
-#[test]
-fn no_color_flag_is_global_across_subcommands() {
-    let bare = parse(&["--no-color"]);
-    assert!(bare.no_color, "--no-color should set on bare synrepo");
-    let dashboard = parse(&["--no-color", "dashboard"]);
-    assert!(dashboard.no_color, "--no-color should survive on dashboard");
-}
+mod global_flags;

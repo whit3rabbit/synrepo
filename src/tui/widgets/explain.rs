@@ -122,10 +122,11 @@ fn render_configured(
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled("Actions:", theme.muted_style())));
     lines.push(Line::from(Span::styled(
-        "  Running r / c / f opens an in-dashboard Explain progress view.".to_string(),
+        "  Running a / c / f opens an in-dashboard Explain progress view.".to_string(),
         theme.muted_style(),
     )));
-    lines.push(action_line("r", "Refresh all stale commentary", theme));
+    lines.push(action_line("r", "Refresh Explain status", theme));
+    lines.push(action_line("a", "Refresh all stale commentary", theme));
     lines.push(action_line("f", "Refresh specific folders...", theme));
     lines.push(action_line(
         "c",
