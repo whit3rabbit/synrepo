@@ -325,6 +325,25 @@ pub(crate) enum Command {
         json: bool,
     },
 
+    /// Return a compact repo-scoped packet for resuming work without session memory.
+    ResumeContext {
+        /// Limit items per bounded section.
+        #[arg(long, short)]
+        limit: Option<usize>,
+        /// Only include operational history from the last N days.
+        #[arg(long)]
+        since_days: Option<u32>,
+        /// Approximate response token cap.
+        #[arg(long)]
+        budget_tokens: Option<usize>,
+        /// Do not include advisory overlay note summaries.
+        #[arg(long)]
+        no_notes: bool,
+        /// Emit JSON instead of markdown.
+        #[arg(long)]
+        json: bool,
+    },
+
     #[command(name = "watch-internal", hide = true)]
     WatchInternal,
 

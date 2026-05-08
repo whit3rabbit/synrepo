@@ -18,6 +18,7 @@ This repo uses synrepo, a context compiler that precomputes a structural graph o
 - `synrepo_entrypoints` — entry-point discovery
 - `synrepo_findings` — operator-facing cross-link findings
 - `synrepo_recent_activity` — bounded synrepo operational events
+- `synrepo_resume_context` — compact repo resume packet before asking the user to repeat stale context
 
 Node IDs: `file_0000000000000042`, `symbol_0000000000000024`. Use `synrepo_search` to find them before calling card, impact, or findings tools.
 
@@ -27,6 +28,7 @@ Treat impact output as approximate routing help, not exact blast-radius proof.
 
 - `synrepo status` — health: mode, graph counts, last reconcile
 - `synrepo status --recent` — bounded operational history
+- `synrepo resume-context --json` — compact repo resume packet
 - `synrepo search <query>` — lexical search
 - `synrepo node <target>` — node metadata as JSON (accepts paths, symbol names, or node IDs)
 - `synrepo graph query \"inbound <target>\"` — reverse dependencies
@@ -58,6 +60,7 @@ synrepo is a context compiler: it precomputes a structural graph of the codebase
 - `synrepo_entrypoints` — entry-point discovery.
 - `synrepo_findings [node_id=<id>] [kind=<kind>] [freshness=<state>]` — operator-facing cross-link findings.
 - `synrepo_recent_activity [kinds=<list>] [limit=<n>]` — bounded synrepo operational events.
+- `synrepo_resume_context [limit=<n>] [since_days=<n>]` — compact repo resume packet before asking the user to repeat stale context.
 
 Node IDs: `file_0000000000000042`, `symbol_0000000000000024`. Use `synrepo_search` to find them.
 
@@ -68,6 +71,7 @@ Treat impact output as approximate routing help, not exact blast-radius proof.
 ```bash
 synrepo status                                    # health check
 synrepo status --recent                           # bounded operational history
+synrepo resume-context --json                     # compact repo resume packet
 synrepo search <query>                            # find symbols/files by name
 synrepo node <target>                             # node metadata as JSON (accepts paths, symbol names, or node IDs)
 synrepo graph query \"inbound <target>\"            # reverse dependencies
@@ -103,6 +107,7 @@ OpenCode supports these tools when the synrepo MCP server is registered in `open
 - `synrepo_entrypoints` — entry-point discovery.
 - `synrepo_findings [node_id=<id>]` — operator-facing cross-link findings.
 - `synrepo_recent_activity` — bounded synrepo operational events.
+- `synrepo_resume_context` — compact repo resume packet before asking the user to repeat stale context.
 
 Use `synrepo_search` to find node IDs (format: `file_0000000000000042`, `symbol_0000000000000024`).
 
@@ -111,6 +116,7 @@ Use `synrepo_search` to find node IDs (format: `file_0000000000000042`, `symbol_
 ```bash
 synrepo status                                   # health check
 synrepo status --recent                          # bounded operational history
+synrepo resume-context --json                    # compact repo resume packet
 synrepo search <query>                           # lexical search
 synrepo node <target>                             # node metadata as JSON (accepts paths, symbol names, or node IDs)
 synrepo graph query \"inbound <target>\"            # reverse dependencies

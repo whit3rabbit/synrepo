@@ -23,6 +23,8 @@ fn prometheus_output_matches_golden_string() {
     metrics.responses_truncated_total = 1;
     metrics.deep_cards_served_total = 1;
     metrics.context_pack_tokens_total = 640;
+    metrics.resume_context_responses_total = 2;
+    metrics.resume_context_tokens_total = 300;
     metrics.largest_response_tokens = 900;
     metrics.route_classifications_total = 6;
     metrics.context_fast_path_signals_total = 3;
@@ -119,6 +121,12 @@ synrepo_deep_cards_served_total 1\n\
 # HELP synrepo_context_pack_tokens_total Estimated: sum of estimated tokens in served context packs.\n\
 # TYPE synrepo_context_pack_tokens_total counter\n\
 synrepo_context_pack_tokens_total 640\n\
+# HELP synrepo_resume_context_responses_total Observed: repo resume context packets served without storing packet content.\n\
+# TYPE synrepo_resume_context_responses_total counter\n\
+synrepo_resume_context_responses_total 2\n\
+# HELP synrepo_resume_context_tokens_total Estimated: sum of estimated tokens in served repo resume packets.\n\
+# TYPE synrepo_resume_context_tokens_total counter\n\
+synrepo_resume_context_tokens_total 300\n\
 # HELP synrepo_largest_response_tokens Estimated: largest MCP response token estimate observed.\n\
 # TYPE synrepo_largest_response_tokens counter\n\
 synrepo_largest_response_tokens 900\n\

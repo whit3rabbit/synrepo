@@ -174,6 +174,13 @@ pub fn record_context_pack_tokens_best_effort(synrepo_dir: &Path, token_estimate
     });
 }
 
+/// Best-effort recording of repo resume context packets.
+pub fn record_resume_context_best_effort(synrepo_dir: &Path, token_estimate: usize) {
+    record_delta_best_effort(synrepo_dir, |metrics| {
+        metrics.record_resume_context(token_estimate);
+    });
+}
+
 /// Best-effort recording of a task-route classification.
 pub fn record_task_route_classification_best_effort(synrepo_dir: &Path, route: &TaskRoute) {
     record_delta_best_effort(synrepo_dir, |metrics| {

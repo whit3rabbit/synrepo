@@ -140,6 +140,18 @@ impl ContextMetrics {
         );
         write_counter(
             &mut out,
+            "synrepo_resume_context_responses_total",
+            "Observed: repo resume context packets served without storing packet content.",
+            self.resume_context_responses_total,
+        );
+        write_counter(
+            &mut out,
+            "synrepo_resume_context_tokens_total",
+            "Estimated: sum of estimated tokens in served repo resume packets.",
+            self.resume_context_tokens_total,
+        );
+        write_counter(
+            &mut out,
             "synrepo_largest_response_tokens",
             "Estimated: largest MCP response token estimate observed.",
             self.largest_response_tokens,

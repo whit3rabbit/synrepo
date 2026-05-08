@@ -6,7 +6,7 @@ use rmcp::{
 use synrepo::surface::handoffs::{collect_handoffs, to_json as handoffs_to_json, HandoffsRequest};
 use synrepo::surface::mcp::{
     ask, audit, card_batch, cards, commentary, context_pack, docs, edits, graph, notes, primitives,
-    readiness, refactor_suggestions, search, task_route,
+    readiness, refactor_suggestions, resume_context, search, task_route,
 };
 
 use super::SynrepoServer;
@@ -50,6 +50,12 @@ impl SynrepoServer {
     async fn synrepo_ask(&self, Parameters(params): Parameters<ask::AskParams>) -> String {
         let repo_root = params.repo_root.clone();
         self.with_tool_state_blocking("synrepo_ask", repo_root, move |state| ask::handle_ask(&state, params)).await
+    }
+
+    #[tool(name = "synrepo_resume_context", description = "Return an explicit repo-scoped resume packet from changed files, next actions, recent activity, explicit overlay notes, and aggregate metrics. NOT session memory: stores no prompts, chat history, or raw tool output.")]
+    async fn synrepo_resume_context(&self, Parameters(params): Parameters<resume_context::ResumeContextParams>) -> String {
+        let repo_root = params.repo_root.clone();
+        self.with_tool_state_blocking("synrepo_resume_context", repo_root, move |state| resume_context::handle_resume_context(&state, params)).await
     }
 
     #[tool(name = "synrepo_overview", description = "Return the full repository dashboard: graph, readiness, watch/reconcile, explain, commentary, metrics, and recent activity.")]

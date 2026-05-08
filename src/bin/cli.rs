@@ -18,9 +18,9 @@ use cli_support::commands::{
     impact_alias, links_accept, links_list, links_reject, links_review, node, notes_add,
     notes_audit, notes_forget, notes_link, notes_list, notes_supersede, notes_verify, project_add,
     project_inspect, project_list, project_prune_missing, project_remove, project_rename,
-    project_use, reconcile, remove, resolve_tool_resolution, risks_alias, run_mcp_server, server,
-    stats_context, status, sync, task_route, tests_alias, uninstall, upgrade, watch,
-    watch_internal, watch_status, watch_stop, StatFormat,
+    project_use, reconcile, remove, resolve_tool_resolution, resume_context, risks_alias,
+    run_mcp_server, server, stats_context, status, sync, task_route, tests_alias, uninstall,
+    upgrade, watch, watch_internal, watch_status, watch_stop, StatFormat,
 };
 #[cfg(test)]
 use cli_support::commands::{prepare_mcp_state, report_reconcile_outcome};
@@ -345,6 +345,13 @@ fn dispatch(
         } => change_risk(repo_root, &target, budget.as_deref(), json),
         Command::CiRun(args) => cli_support::commands::ci_run(repo_root, args),
         Command::Handoffs { limit, since, json } => handoffs(repo_root, limit, since, json),
+        Command::ResumeContext {
+            limit,
+            since_days,
+            budget_tokens,
+            no_notes,
+            json,
+        } => resume_context(repo_root, limit, since_days, budget_tokens, no_notes, json),
         Command::WatchInternal => watch_internal(repo_root),
         Command::Doctor { json } => doctor(repo_root, json),
         Command::Dashboard => run_dashboard_command(repo_root, tui_opts),

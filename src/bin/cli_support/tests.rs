@@ -22,6 +22,7 @@ mod overlay_scale;
 mod project;
 mod reconcile;
 mod repair;
+mod resume_context;
 mod search;
 mod setup;
 mod status;

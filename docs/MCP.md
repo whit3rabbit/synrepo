@@ -34,6 +34,7 @@ The default path for codebase questions, file reviews, broad search, impact chec
 6. `synrepo_impact` or `synrepo_risks` before edits or risky file reviews.
 7. `synrepo_tests` before claiming done.
 8. `synrepo_changed` after edits to review changed context and validation commands.
+9. `synrepo_resume_context` after resuming stale work or losing conversation context, before asking the user to repeat repo state.
 
 Use `tiny` budgets to route, `normal` budgets to understand a neighborhood, and `deep` budgets only before implementation or when exact source details matter. Use `synrepo_readiness` for cheap operational health, `synrepo_task_route` for cheap route classification, and `synrepo_overview` only when the full dashboard is useful. Use `synrepo_context_pack` when batching several known read-only code artifacts or task-context pieces is cheaper than serial tool calls. Its `targets` parameter is an array of structured objects: `{ "kind": "file|symbol|directory|minimum_context|test_surface|call_path|search|entrypoints|public_api|change_risk|findings|recent_activity", "target": "...", "budget": "tiny|normal|deep" }`. For task-context artifacts, `entrypoints` uses `target: "."` for whole-repo scope or a path prefix, `public_api` uses a directory path, `change_risk` uses a file path or symbol, `findings` uses `target: "all"` for bounded unfiltered overlay audit findings, and `recent_activity` uses `target: "release_readiness"` for release-relevant operational activity.
 
@@ -51,6 +52,8 @@ MCP search is read-only. It searches the persisted substrate indexes as-is and d
 
 Use `synrepo_readiness` when an agent needs a cheap preflight instead of the full orientation dashboard. It returns `graph`, `overlay`, `index`, `watch`, `reconcile`, and `edit_mode` status fields, plus capability rows with severity and next-action text. It is read-only, never starts watch, never reconciles, and reports whether overlay writes and source edits were enabled for this MCP process.
 
+Use `synrepo_resume_context` when an agent resumes stale work and needs a compact repo-scoped packet before asking the user to repeat context. It accepts optional `repo_root`, `limit` (default `10`, capped at `50`), `since_days` (default `14`, capped at `365`), `budget_tokens` (default `2000`, clamped by the normal MCP response limits), and `include_notes` (default `true`). It returns `schema_version: 1`, `packet_type: "repo_resume_context"`, `context_state`, `sections`, `detail_pointers`, and `omitted`. The packet is derived from current changed files, next actions, recent activity, explicit overlay note summaries, validation commands, and context metrics. Notes are summary-only: note id, target, status, confidence, updated time, and a short claim preview. The tool is advisory and regeneratable. It does not store prompt logs, chat history, raw tool outputs, caller identity, response bodies, or generic session memory.
+
 ## Tool Groups
 
 Workflow aliases:
@@ -61,6 +64,7 @@ Workflow aliases:
 - `synrepo_risks`
 - `synrepo_tests`
 - `synrepo_changed`
+- `synrepo_resume_context`
 
 Task-first read tools:
 - `synrepo_overview`
@@ -70,6 +74,7 @@ Task-first read tools:
 - `synrepo_context_pack`
 - `synrepo_task_route`
 - `synrepo_search`
+- `synrepo_resume_context`
 - `synrepo_where_to_edit`
 - `synrepo_refactor_suggestions`
 - `synrepo_change_impact`
@@ -142,7 +147,7 @@ Read-only resources:
 Default resource URIs use the server default repository only. Global/defaultless resource-aware hosts should call `synrepo_use_project` first, use project-qualified resource URIs, or use tool calls with `repo_root` when addressing non-default projects.
 
 Runtime and observability tools:
-- `synrepo_metrics` returns `{ this_session, persisted }`, combining in-memory per-tool call/error counters with persisted context metrics when a repository is available. Persisted metrics include response soft-cap crossings, final truncations, deep-card counts, context-pack token totals, largest response tokens, per-tool token totals, and aggregate error-code counts by tool.
+- `synrepo_metrics` returns `{ this_session, persisted }`, combining in-memory per-tool call/error counters with persisted context metrics when a repository is available. Persisted metrics include response soft-cap crossings, final truncations, deep-card counts, context-pack token totals, resume-context response and token totals, largest response tokens, per-tool token totals, and aggregate error-code counts by tool.
 - Simple in-memory limits protect runaway clients: card and context-pack tools allow 10 calls per second, commentary refresh allows 3 calls per minute, and other tools allow 30 calls per second. Rate-limit failures use the structured `RATE_LIMITED` error code.
 
 Source-edit tools, present only under `synrepo mcp --allow-source-edits`:
@@ -177,6 +182,8 @@ Prepared edit anchors are short-lived operational state. They are not graph fact
 
 Context metrics are operational counters only. They track totals such as MCP requests, per-tool calls, per-tool errors, resource reads, card tokens, and explicit note mutations. They never store prompts, queries, note claims, caller identity, or session history.
 
+Resume-context metrics are aggregate counters only. They count packet responses and estimated tokens, and never store packet bodies, queries, prompts, tool outputs, note bodies beyond the existing overlay note itself, caller identity, or session history.
+
 Fast-path metrics are counters only: route classifications, hook signal emissions, deterministic edit candidates, anchored edit accept/reject totals, and estimated LLM calls avoided. They never store the classified task text or source snippets.
 
 ## Edit-Enabled Workflow
@@ -195,6 +202,7 @@ If MCP is unavailable, use the CLI rather than blocking:
 ```bash
 synrepo status
 synrepo status --recent
+synrepo resume-context --json
 synrepo task-route "find auth entrypoints"
 synrepo search "term"
 synrepo node <target>

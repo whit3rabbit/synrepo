@@ -101,12 +101,11 @@ fn skill_md_includes_doctrine_lines_verbatim() {
 
 #[test]
 fn skill_teaches_exact_identifier_search_before_task_routing() {
-    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let skill_path = manifest_dir.join("skill").join("SKILL.md");
-    let skill = std::fs::read_to_string(&skill_path)
-        .unwrap_or_else(|e| panic!("read {}: {e}", skill_path.display()));
+    let skill = read_repo_file(&["skill", "SKILL.md"]);
+    let search_reference = read_repo_file(&["skill", "references", "search-routing.md"]);
 
-    let required = [
+    let root_required = [
+        "See [`references/search-routing.md`](references/search-routing.md) for examples, fallback rules, and phrase-to-probe mappings.",
         "For exact symbols, tool names, function names, flags, JSON keys, CLI args, error strings, or file paths, prefer:",
         "`synrepo_search(query, limit?, output_mode?, budget_tokens?)`",
         "Use `output_mode: \"compact\"` for orientation.",
@@ -119,18 +118,43 @@ fn skill_teaches_exact_identifier_search_before_task_routing() {
         "`miss_reason`",
         "If `miss_reason` is `no_index_matches`, do not retry the same broad sentence.",
     ];
+    assert_required_lines("skill/SKILL.md", &skill, &root_required);
 
-    let missing: Vec<&str> = required
-        .iter()
-        .copied()
-        .filter(|line| !skill.contains(line))
-        .collect();
-    assert!(
-        missing.is_empty(),
-        "skill/SKILL.md is missing {} exact-search guidance line(s):\n{}",
-        missing.len(),
-        missing.join("\n")
+    let reference_required = [
+        "## Exact lexical search",
+        "Adaptive compact output may return grouped previews, a minimal miss, or smaller raw rows for tiny result sets",
+        "`parse_budget`",
+        "`response_has_error`",
+        "`registered_tool_names`",
+        "## Convert natural language into code-shaped probes",
+        "\"agent hooks\" -> `agent_hooks`",
+        "\"MCP registration\" -> `registered_tool_names`, `name = \"synrepo_`",
+        "## Search failure handling",
+        "If compact search finds candidate files, escalate to `synrepo_card`.",
+        "Never claim an issue is confirmed from a broad finder result alone.",
+    ];
+    assert_required_lines(
+        "skill/references/search-routing.md",
+        &search_reference,
+        &reference_required,
     );
+}
+
+#[test]
+fn skill_links_progressive_reference_files() {
+    let skill = read_repo_file(&["skill", "SKILL.md"]);
+    for reference in [
+        "references/search-routing.md",
+        "references/mcp-tools.md",
+        "references/budgets-and-errors.md",
+        "references/editing-and-mutation.md",
+        "references/setup-and-fallback.md",
+    ] {
+        assert!(
+            skill.contains(reference),
+            "skill/SKILL.md must link {reference}"
+        );
+    }
 }
 
 #[test]

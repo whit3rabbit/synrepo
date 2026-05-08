@@ -94,10 +94,19 @@ fn context_pack_tool_description_lists_task_context_artifacts() {
 #[test]
 fn skill_contains_context_budget_contract() {
     let skill = fs::read_to_string("skill/SKILL.md").expect("read skill");
+    let budget_reference = fs::read_to_string("skill/references/budgets-and-errors.md")
+        .expect("read budget reference");
 
     assert!(skill.contains("## Context budget contract"));
     assert!(skill.contains("Return the smallest useful MCP response"));
     assert!(skill.contains("Do not request `deep` cards for more than 1-3 files at a time"));
+    assert!(skill.contains("references/budgets-and-errors.md"));
+
+    assert!(budget_reference.contains("## Budget protocol"));
+    assert!(budget_reference.contains("Default sequence:"));
+    assert!(budget_reference.contains("`synrepo_resume_context`: `context_state`, `sections.changed_files`, `sections.next_actions`, `detail_pointers`, `omitted`"));
+    assert!(budget_reference.contains("MCP errors are structured."));
+    assert!(budget_reference.contains("If you receive `RATE_LIMITED`, wait briefly or reduce batching."));
 }
 
 #[test]
@@ -111,4 +120,32 @@ fn refactor_suggestions_params_and_docs_are_listed() {
     let docs = fs::read_to_string("docs/MCP.md").expect("read MCP docs");
     assert!(docs.contains("synrepo_refactor_suggestions"));
     assert!(docs.contains("source_store: \"graph+filesystem\""));
+}
+
+#[test]
+fn resume_context_params_and_docs_are_listed() {
+    let tools_source = fs::read_to_string("src/bin/cli_support/commands/mcp/tools.rs")
+        .expect("read MCP registration source");
+    assert!(tools_source.contains("name = \"synrepo_resume_context\""));
+    assert!(tools_source.contains("NOT session memory"));
+
+    let schema = schemars::schema_for!(synrepo::surface::mcp::resume_context::ResumeContextParams);
+    let schema_json = serde_json::to_value(schema).expect("schema serializes");
+    let serialized = serde_json::to_string(&schema_json).unwrap();
+    for field in [
+        "\"repo_root\"",
+        "\"limit\"",
+        "\"since_days\"",
+        "\"budget_tokens\"",
+        "\"include_notes\"",
+    ] {
+        assert!(
+            serialized.contains(field),
+            "resume-context schema must expose {field}: {schema_json}"
+        );
+    }
+
+    let docs = fs::read_to_string("docs/MCP.md").expect("read MCP docs");
+    assert!(docs.contains("synrepo_resume_context"));
+    assert!(docs.contains("prompt logs, chat history, raw tool outputs"));
 }

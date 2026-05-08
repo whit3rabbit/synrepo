@@ -68,6 +68,7 @@ cargo run -- sync                  # repair auto-fixable drift surfaces; appends
 cargo run -- sync --json           # JSON sync summary
 cargo run -- status [--json]        # operational health: mode, counts, last reconcile, lock, export freshness
 cargo run -- task-route <task> [--path <path>] [--json]  # read-only fast-path route classifier
+cargo run -- resume-context [--json]  # compact repo resume packet for stale agent work
 cargo run -- export [--format markdown|json] [--deep] [--commit] [--out <dir>]  # generate synrepo-context/
 cargo run -- upgrade [--apply]     # dry-run or apply storage compatibility actions
 cargo run -- watch                 # foreground watch for the current repo

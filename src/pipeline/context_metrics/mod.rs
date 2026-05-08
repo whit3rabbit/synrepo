@@ -21,8 +21,8 @@ pub use persistence::{
     record_context_pack_tokens_best_effort, record_cross_link_generation_best_effort,
     record_cross_link_promoted_best_effort, record_hook_route_emission_best_effort,
     record_mcp_resource_read_best_effort, record_mcp_response_budget_best_effort,
-    record_mcp_tool_result_best_effort, record_task_route_classification_best_effort,
-    record_workflow_call_best_effort, save,
+    record_mcp_tool_result_best_effort, record_resume_context_best_effort,
+    record_task_route_classification_best_effort, record_workflow_call_best_effort, save,
 };
 
 /// Aggregated context-serving metrics stored under `.synrepo/state/`.
@@ -119,6 +119,12 @@ pub struct ContextMetrics {
     /// **Estimated**: sum of estimated tokens in served context packs.
     #[serde(default)]
     pub context_pack_tokens_total: u64,
+    /// **Observed**: repo resume context packets served by CLI or MCP.
+    #[serde(default)]
+    pub resume_context_responses_total: u64,
+    /// **Estimated**: sum of estimated tokens in served repo resume packets.
+    #[serde(default)]
+    pub resume_context_tokens_total: u64,
     /// **Estimated**: largest MCP response token estimate observed.
     #[serde(default)]
     pub largest_response_tokens: u64,
@@ -227,6 +233,8 @@ impl ContextMetrics {
         self.responses_truncated_total += delta.responses_truncated_total;
         self.deep_cards_served_total += delta.deep_cards_served_total;
         self.context_pack_tokens_total += delta.context_pack_tokens_total;
+        self.resume_context_responses_total += delta.resume_context_responses_total;
+        self.resume_context_tokens_total += delta.resume_context_tokens_total;
         self.largest_response_tokens = self
             .largest_response_tokens
             .max(delta.largest_response_tokens);
@@ -275,6 +283,8 @@ impl ContextMetrics {
             && self.responses_truncated_total == 0
             && self.deep_cards_served_total == 0
             && self.context_pack_tokens_total == 0
+            && self.resume_context_responses_total == 0
+            && self.resume_context_tokens_total == 0
             && self.largest_response_tokens == 0
             && self.tool_token_totals.is_empty()
             && self.route_classifications_total == 0

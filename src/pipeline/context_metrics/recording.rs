@@ -139,6 +139,12 @@ impl ContextMetrics {
         self.context_pack_tokens_total += token_estimate as u64;
     }
 
+    /// Record an explicit repo resume packet without storing packet content.
+    pub fn record_resume_context(&mut self, token_estimate: usize) {
+        self.resume_context_responses_total += 1;
+        self.resume_context_tokens_total += token_estimate as u64;
+    }
+
     /// Record a task-route classification without storing task text.
     pub fn record_task_route_classification(&mut self, route: &TaskRoute) {
         self.route_classifications_total += 1;

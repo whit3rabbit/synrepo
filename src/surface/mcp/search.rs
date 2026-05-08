@@ -1,11 +1,10 @@
-use std::process::Command;
-
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use syntext::SearchOptions;
 
 use crate::core::ids::SymbolNodeId;
+use crate::surface::changed::git_changed_files;
 
 use super::compact::{self, OutputMode};
 use super::helpers::render_result;
@@ -294,31 +293,6 @@ pub fn handle_changed(state: &SynrepoState) -> String {
         }))
     })();
     render_result(result)
-}
-
-fn git_changed_files(repo_root: &std::path::Path) -> anyhow::Result<Vec<String>> {
-    let output = Command::new("git")
-        .args(["status", "--porcelain"])
-        .current_dir(repo_root)
-        .output()?;
-    if !output.status.success() {
-        return Ok(vec![]);
-    }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut files = Vec::new();
-    for line in stdout.lines() {
-        if line.len() < 4 {
-            continue;
-        }
-        let path = line[3..].trim();
-        let path = path.rsplit(" -> ").next().unwrap_or(path);
-        if !path.is_empty() {
-            files.push(path.to_string());
-        }
-    }
-    files.sort();
-    files.dedup();
-    Ok(files)
 }
 
 #[cfg(test)]

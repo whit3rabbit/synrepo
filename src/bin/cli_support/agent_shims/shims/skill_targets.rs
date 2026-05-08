@@ -122,6 +122,7 @@ args = [\"mcp\", \"--repo\", \".\"]
 - `synrepo_impact(target)` or `synrepo_risks(target)` - first-pass change-risk context before edits or risky reviews
 - `synrepo_tests(scope)` - discover likely validation commands before claiming done
 - `synrepo_changed()` - review changed context and validation guidance after edits
+- `synrepo_resume_context(limit?, since_days?, budget_tokens?, include_notes?)` - compact repo resume packet before asking the user to repeat stale context
 - `synrepo_overview()` - full dashboard only when the full operational picture is useful
 
 `synrepo_ask` returns `answer`, `cards_used`, `evidence`, `grounding`, `omitted_context_notes`, `next_best_tools`, and `context_packet`. Its grounding policy accepts `mode` or `citations`, `include_spans`, and `allow_overlay`; default to observed graph/index evidence and allow overlay only when advisory machine-authored context is acceptable.
@@ -135,6 +136,7 @@ Node IDs: `file_0000000000000042`, `symbol_0000000000000024`. Use `synrepo_searc
 ```bash
 synrepo status                                   # health check
 synrepo status --recent                          # bounded operational history
+synrepo resume-context --json                    # compact repo resume packet
 synrepo task-route \"find auth entrypoints\"        # advisory route classifier
 synrepo search <query>                           # lexical search
 synrepo node <target>                             # node metadata as JSON (accepts paths, symbol names, or node IDs)

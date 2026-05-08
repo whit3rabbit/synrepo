@@ -89,6 +89,7 @@ fn mcp_source_registers_workflow_aliases() {
         "synrepo_risks",
         "synrepo_tests",
         "synrepo_changed",
+        "synrepo_resume_context",
     ] {
         let needle = format!("name = \"{alias}\"");
         assert!(

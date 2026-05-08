@@ -24,6 +24,7 @@ mod project;
 mod project_prune;
 mod remove;
 mod repair;
+mod resume_context;
 mod server;
 mod setup;
 mod setup_explain;
@@ -90,6 +91,9 @@ pub(crate) use remove::{
     apply_plan as remove_apply_plan, build_plan as remove_build_plan, RemoveAction,
 };
 pub(crate) use repair::{check, reconcile, sync};
+pub(crate) use resume_context::resume_context;
+#[cfg(test)]
+pub(crate) use resume_context::resume_context_output;
 pub(crate) use server::server;
 pub(crate) use setup::{agent_setup_many_resolved, resolve_tool_resolution, setup_many_resolved};
 #[cfg(test)]

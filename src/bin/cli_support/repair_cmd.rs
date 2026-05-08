@@ -1,6 +1,11 @@
 use std::io::{self, Write};
 use std::path::Path;
 
+use crossterm::{
+    cursor::Show,
+    execute,
+    terminal::{disable_raw_mode, LeaveAlternateScreen},
+};
 use synrepo::bootstrap::runtime_probe::{probe, AgentIntegration};
 use synrepo::tui::{
     run_dashboard, run_integration_wizard, run_mcp_install_wizard, DashboardOptions,
@@ -108,6 +113,7 @@ fn run_embedding_build_step(
     repo_root: &Path,
     pending: synrepo::tui::app::PendingEmbeddingBuild,
 ) -> anyhow::Result<()> {
+    restore_normal_terminal_for_dashboard_handoff();
     if pending.stopped_watch {
         println!("Watch stopped. Building embeddings in normal terminal output...");
     } else {
@@ -123,11 +129,23 @@ fn wait_for_enter_if_tty() -> anyhow::Result<()> {
     if !synrepo::tui::stdout_is_tty() {
         return Ok(());
     }
+    restore_normal_terminal_for_dashboard_handoff();
     print!("Press Enter to reopen the dashboard...");
     io::stdout().flush()?;
     let mut line = String::new();
     io::stdin().read_line(&mut line)?;
     Ok(())
+}
+
+fn restore_normal_terminal_for_dashboard_handoff() {
+    if !synrepo::tui::stdout_is_tty() {
+        return;
+    }
+    let _ = disable_raw_mode();
+    let mut stdout = io::stdout();
+    let _ = execute!(stdout, LeaveAlternateScreen, Show);
+    let _ = write!(stdout, "\r");
+    let _ = stdout.flush();
 }
 
 /// Execute a completed [`RepairPlan`] after the TUI alt-screen has been torn

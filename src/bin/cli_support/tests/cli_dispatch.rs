@@ -209,6 +209,36 @@ fn ci_run_dispatches_to_ci_run_variant() {
 }
 
 #[test]
+fn resume_context_dispatches_to_resume_context_variant() {
+    let cli = parse(&[
+        "resume-context",
+        "--limit",
+        "2",
+        "--since-days",
+        "7",
+        "--budget-tokens",
+        "500",
+        "--no-notes",
+        "--json",
+    ]);
+    let Some(Command::ResumeContext {
+        limit,
+        since_days,
+        budget_tokens,
+        no_notes,
+        json,
+    }) = cli.command
+    else {
+        panic!("resume-context should parse to Command::ResumeContext");
+    };
+    assert_eq!(limit, Some(2));
+    assert_eq!(since_days, Some(7));
+    assert_eq!(budget_tokens, Some(500));
+    assert!(no_notes);
+    assert!(json);
+}
+
+#[test]
 fn upgrade_dispatches_to_upgrade_variant() {
     let cli = parse(&["upgrade"]);
     matches!(cli.command, Some(Command::Upgrade { .. }))

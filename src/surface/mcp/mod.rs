@@ -63,6 +63,8 @@ pub mod refactor_suggestions;
 #[doc(hidden)]
 pub mod response_budget;
 #[doc(hidden)]
+pub mod resume_context;
+#[doc(hidden)]
 pub mod search;
 #[doc(hidden)]
 pub mod task_route;
