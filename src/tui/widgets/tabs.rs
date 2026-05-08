@@ -31,7 +31,7 @@ impl Widget for DashboardTabsWidget<'_> {
             ("4", "Trust", ActiveTab::Trust),
             ("5", "Explain", ActiveTab::Explain),
             ("6", "Actions", ActiveTab::Actions),
-            ("7", "MCP", ActiveTab::Mcp),
+            ("7", "Integrations", ActiveTab::Mcp),
             ("8", "Suggestion", ActiveTab::Suggestion),
         ]
         .into_iter()
@@ -59,5 +59,32 @@ impl Widget for DashboardTabsWidget<'_> {
             .divider(Span::styled("  ", self.theme.muted_style()))
             .block(block)
             .render(area, buf);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use ratatui::buffer::Buffer;
+
+    use super::*;
+
+    #[test]
+    fn tab_bar_labels_agent_status_as_integrations() {
+        let area = Rect::new(0, 0, 120, 3);
+        let mut buf = Buffer::empty(area);
+        DashboardTabsWidget {
+            active: ActiveTab::Mcp,
+            theme: &Theme::plain(),
+        }
+        .render(area, &mut buf);
+        let text = (0..area.height)
+            .map(|y| {
+                (0..area.width)
+                    .map(|x| buf[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(text.contains("[7] Integrations"));
     }
 }

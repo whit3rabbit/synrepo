@@ -41,6 +41,11 @@ pub(crate) fn setup(
         tool.display_name(),
         scope_label(&scope)
     );
+    if agent_hooks_enabled {
+        println!("  Hooks: installing local synrepo nudge hooks.");
+    } else {
+        println!("  Hooks: not installed; pass --agent-hooks to add local nudges.");
+    }
 
     step_init(repo_root, None, force, gitignore)?;
     // Back up the tool's MCP config before any mutation so `synrepo remove`

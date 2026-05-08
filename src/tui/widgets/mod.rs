@@ -29,7 +29,7 @@ pub use footer::FooterWidget;
 pub use header::HeaderWidget;
 pub use health::HealthWidget;
 pub use live::LiveFeedWidget;
-pub use mcp::McpTabWidget;
+pub use mcp::IntegrationsTabWidget;
 pub(crate) use projects::ProjectPickerWidget;
 pub use suggestion::SuggestionTabWidget;
 pub use tabs::DashboardTabsWidget;

@@ -72,7 +72,7 @@ pub(crate) fn run_dashboard_with_sub_wizards(
                         execute_project_mcp_install_plan(&current_root, plan)?;
                     }
                     McpInstallWizardOutcome::Cancelled => {
-                        println!("repo MCP install cancelled; no changes applied.");
+                        println!("project integration install cancelled; no changes applied.");
                     }
                     McpInstallWizardOutcome::NonTty => return Ok(()),
                 }
@@ -233,9 +233,10 @@ pub(crate) fn execute_integration_plan(
     Ok(())
 }
 
-/// Execute a completed repo-local MCP install plan from the dashboard MCP tab.
-/// Project-scoped MCP is paired with the target's project skill/instruction so
-/// the agent gets both tools and the guidance for when to use them.
+/// Execute a completed project integration install plan from the dashboard
+/// Integrations tab. Project-scoped MCP is paired with the target's project
+/// skill/instruction so the agent gets both tools and the guidance for when
+/// to use them.
 pub(crate) fn execute_project_mcp_install_plan(
     repo_root: &Path,
     plan: McpInstallPlan,
@@ -244,8 +245,12 @@ pub(crate) fn execute_project_mcp_install_plan(
         .ok_or_else(|| anyhow::anyhow!("unsupported agent-config target: {}", plan.target))?;
     let scope = agent_config::Scope::Local(repo_root.to_path_buf());
     println!(
-        "Installing repo-local synrepo MCP for {}...",
+        "Installing project-local synrepo integration for {}...",
         tool.display_name()
+    );
+    println!(
+        "  Hooks: unchanged; use `synrepo setup {} --agent-hooks` to add them.",
+        tool.canonical_name()
     );
     step_write_shim(repo_root, tool, &scope, false)?;
     let backup = step_backup_mcp_config(repo_root, tool, &scope)?;
@@ -257,6 +262,6 @@ pub(crate) fn execute_project_mcp_install_plan(
         StepOutcome::Applied | StepOutcome::AlreadyCurrent | StepOutcome::Updated => {}
     }
     shim_registry::record_install_best_effort(repo_root, tool, &scope, true, backup);
-    println!("Repo MCP install complete.");
+    println!("Project integration install complete.");
     Ok(())
 }

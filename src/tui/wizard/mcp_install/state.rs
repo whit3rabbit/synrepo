@@ -1,4 +1,4 @@
-//! Repo-local MCP install picker state.
+//! Repo-local integration install picker state.
 
 use std::path::{Path, PathBuf};
 
@@ -9,14 +9,14 @@ use crate::agent_install::{SYNREPO_INSTALL_NAME, SYNREPO_INSTALL_OWNER};
 use crate::bootstrap::runtime_probe::{all_agent_targets, AgentTargetKind};
 use crate::tui::mcp_status::{McpScope, McpStatus, McpStatusRow};
 
-/// Plan produced by a completed MCP install picker.
+/// Plan produced by a completed project integration install picker.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct McpInstallPlan {
     /// Target selected by the operator.
     pub target: String,
 }
 
-/// Outcome of the MCP install picker.
+/// Outcome of the project integration install picker.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum McpInstallWizardOutcome {
     /// Stdout is not a TTY; picker was not entered.

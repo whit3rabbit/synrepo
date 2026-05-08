@@ -24,7 +24,7 @@ fn new_poll_defaults_to_live_tab_with_follow_on() {
 }
 
 #[test]
-fn header_mcp_status_uses_mcp_rows_when_integration_is_absent() {
+fn header_integration_status_uses_install_rows_when_probe_is_absent() {
     let _lock = crate::test_support::global_test_lock(crate::config::test_home::HOME_ENV_TEST_LOCK);
     let (_home, _guard) = isolated_home();
     let repo = tempfile::tempdir().unwrap();
@@ -36,12 +36,12 @@ fn header_mcp_status_uses_mcp_rows_when_integration_is_absent() {
 
     let state = AppState::new_poll(repo.path(), Theme::plain(), AgentIntegration::Absent);
 
-    assert!(state.header_vm.mcp_label.starts_with("registered"));
-    assert_eq!(state.header_vm.mcp_severity, Severity::Healthy);
+    assert!(state.header_vm.mcp_label.starts_with("partial"));
+    assert_eq!(state.header_vm.mcp_severity, Severity::Stale);
     assert!(state
-        .mcp_display_rows
+        .integration_display_rows
         .iter()
-        .any(|row| row.status_label == "registered" && row.path_cell.contains(".mcp.json")));
+        .any(|row| row.mcp.contains("installed") && row.mcp.contains(".mcp.json")));
 }
 
 #[test]

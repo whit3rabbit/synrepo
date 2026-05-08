@@ -64,6 +64,7 @@ pub(super) fn write_explain_totals(repo: &std::path::Path, totals: &ExplainTotal
     .unwrap();
 }
 
+mod agent_integrations;
 mod freshness;
 mod initialization;
 mod repair_audit;

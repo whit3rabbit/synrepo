@@ -1,4 +1,4 @@
-//! Header widget: repo path, reconcile/watch/lock/MCP status row, and a
+//! Header widget: repo path, reconcile/watch/lock/integration status row, and a
 //! hand-rolled braille spinner that animates while a reconcile pass is in
 //! flight. The spinner frame index lives on `AppState::frame`; the widget
 //! stays stateless and picks a glyph from `SPINNER_FRAMES` modulo the
@@ -61,7 +61,7 @@ pub fn spinner_glyph(frame: u32) -> &'static str {
     SPINNER_FRAMES[(frame as usize) % SPINNER_FRAMES.len()]
 }
 
-/// Header widget showing repo path, mode, reconcile/watch/lock/MCP states,
+/// Header widget showing repo path, mode, reconcile/watch/lock/integration states,
 /// plus a spinner when `reconcile_active` is true.
 pub struct HeaderWidget<'a> {
     /// Header view model built from the status snapshot + probe report.
@@ -169,7 +169,7 @@ impl Widget for HeaderWidget<'_> {
             spans: vec![
                 Span::raw("  "),
                 severity_span(
-                    &format!("mcp: {}", self.vm.mcp_label),
+                    &format!("integrations: {}", self.vm.mcp_label),
                     self.vm.mcp_severity,
                     self.theme,
                 ),

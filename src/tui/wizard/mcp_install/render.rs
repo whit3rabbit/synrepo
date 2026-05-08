@@ -1,4 +1,4 @@
-//! Repo-local MCP install picker rendering.
+//! Repo-local integration install picker rendering.
 
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::text::{Line, Span};
@@ -9,7 +9,7 @@ use crate::tui::app::poll_key;
 use crate::tui::theme::Theme;
 use crate::tui::wizard::{enter_tui, leave_tui, WizardTerminal};
 
-/// Run the repo-local MCP install picker until completion or cancellation.
+/// Run the repo-local integration install picker until completion or cancellation.
 pub fn run_mcp_install_wizard_loop(
     theme: Theme,
     repo_root: &std::path::Path,
@@ -58,9 +58,9 @@ fn draw(frame: &mut ratatui::Frame, state: &McpInstallWizardState, theme: &Theme
 
     let title = Paragraph::new(Line::from(Span::styled(
         match state.step {
-            McpInstallStep::SelectTarget => " synrepo mcp install: step 1/2 target ",
-            McpInstallStep::Confirm => " synrepo mcp install: step 2/2 confirm ",
-            McpInstallStep::Complete => " synrepo mcp install: done ",
+            McpInstallStep::SelectTarget => " synrepo integration install: step 1/2 target ",
+            McpInstallStep::Confirm => " synrepo integration install: step 2/2 confirm ",
+            McpInstallStep::Complete => " synrepo integration install: done ",
         },
         theme.agent_style(),
     )))
@@ -99,7 +99,7 @@ fn draw_target_step(
     if state.rows().is_empty() {
         let lines = vec![
             Line::from(""),
-            Line::from("  no local MCP-capable targets found."),
+            Line::from("  no project integration targets found."),
             Line::from("  Press Esc to cancel."),
         ];
         frame.render_widget(
@@ -169,7 +169,7 @@ fn draw_confirm_step(
         )),
         Line::from(""),
         Line::from(Span::styled(
-            "The picker will install project-local agent context:",
+            "The picker will install project-local agent integration:",
             theme.base_style(),
         )),
         Line::from(Span::styled(
@@ -183,6 +183,10 @@ fn draw_confirm_step(
         Line::from(Span::styled(
             "  3. Register command: synrepo mcp --repo .",
             theme.base_style(),
+        )),
+        Line::from(Span::styled(
+            "  4. Leave hooks unchanged (use Integrations or --agent-hooks to add them)",
+            theme.muted_style(),
         )),
         Line::from(""),
         Line::from(Span::styled(format!("Config: {path}"), theme.muted_style())),
@@ -202,7 +206,7 @@ fn draw_confirm_step(
 
 fn target_block(theme: &Theme) -> Block<'_> {
     Block::default()
-        .title(" local MCP target ")
+        .title(" project integration target ")
         .borders(Borders::ALL)
         .border_style(theme.border_style())
 }

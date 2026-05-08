@@ -39,7 +39,7 @@ use crate::bootstrap::runtime_probe::AgentIntegration;
 use crate::pipeline::explain::telemetry::ExplainEvent;
 use crate::pipeline::watch::WatchEvent;
 use crate::surface::refactor_suggestions::RefactorSuggestionReport;
-use crate::tui::mcp_status::McpDisplayRow;
+use crate::tui::agent_integrations::AgentInstallDisplayRow;
 use crate::tui::probe::HeaderVm;
 use crate::tui::projects::ProjectRef;
 use crate::tui::theme::Theme;
@@ -129,8 +129,8 @@ pub struct AppState {
     pub log: EventLog,
     /// Quick actions for the current mode.
     pub quick_actions: Vec<QuickAction>,
-    /// Preformatted active-project MCP rows for render-time display.
-    pub mcp_display_rows: Vec<McpDisplayRow>,
+    /// Preformatted active-project integration rows for render-time display.
+    pub integration_display_rows: Vec<AgentInstallDisplayRow>,
     /// Cached large-file refactor suggestions for render-time display.
     pub suggestion_report: Option<RefactorSuggestionReport>,
     /// Registry-backed project rows shown by the Repos tab.
@@ -146,7 +146,7 @@ pub struct AppState {
     /// When set, the caller should launch the integration sub-wizard after the
     /// render loop unwinds. See [`DashboardExit`].
     pub launch_integration: bool,
-    /// When set, the caller should launch the project-local MCP install
+    /// When set, the caller should launch the project-local integration
     /// picker after the render loop unwinds.
     pub launch_project_mcp_install: bool,
     /// When set, the caller should launch the explain setup sub-wizard.
@@ -262,7 +262,8 @@ pub enum DashboardExit {
     /// Operator asked for the integration sub-wizard; caller should launch it
     /// and then re-open the dashboard.
     LaunchIntegration,
-    /// Operator asked for repo-local MCP install from the MCP tab.
+    /// Operator asked for repo-local integration install from the
+    /// Integrations tab.
     LaunchProjectMcpInstall,
     /// Operator asked for the explain setup sub-wizard.
     LaunchExplainSetup,

@@ -7,7 +7,7 @@ use std::time::{Duration, Instant};
 
 use crossbeam_channel::{Receiver, TryRecvError};
 
-use super::render_cache::{build_initial_header_vm, build_initial_mcp_display_rows};
+use super::render_cache::{build_initial_header_vm, build_initial_integration_display_rows};
 use super::{
     ActiveTab, AppMode, AppState, DashboardExit, EventLog, PendingEmbeddingBuild, PendingExplainRun,
 };
@@ -17,8 +17,8 @@ use crate::pipeline::explain::telemetry;
 use crate::pipeline::watch::{watch_service_status, WatchEvent, WatchServiceStatus};
 use crate::surface::status_snapshot::{build_status_snapshot, StatusOptions};
 use crate::tui::actions::{materialize_now, now_rfc3339, ActionContext};
+use crate::tui::agent_integrations::build_agent_install_statuses;
 use crate::tui::materializer::{MaterializeOutcome, MaterializeState, MaterializerSupervisor};
-use crate::tui::mcp_status::build_mcp_status_rows;
 use crate::tui::probe::Severity;
 use crate::tui::theme::Theme;
 use crate::tui::widgets::LogEntry;
@@ -95,16 +95,17 @@ impl AppState {
         let auto_sync_enabled = Config::load(repo_root)
             .map(|c| c.auto_sync_enabled)
             .unwrap_or(true);
-        let mcp_status_rows = build_mcp_status_rows(repo_root);
+        let integration_status_rows = build_agent_install_statuses(repo_root);
         let header_vm = build_initial_header_vm(
             repo_root,
             None,
             &snapshot,
             &integration,
             auto_sync_enabled,
-            &mcp_status_rows,
+            &integration_status_rows,
         );
-        let mcp_display_rows = build_initial_mcp_display_rows(&mcp_status_rows);
+        let integration_display_rows =
+            build_initial_integration_display_rows(&integration_status_rows);
         let mut log = EventLog::default();
         for entry in startup_logs {
             log.push(entry);
@@ -120,7 +121,7 @@ impl AppState {
             header_vm,
             log,
             quick_actions,
-            mcp_display_rows,
+            integration_display_rows,
             suggestion_report: None,
             explore_projects: Vec::new(),
             explore_projects_loaded_at: None,

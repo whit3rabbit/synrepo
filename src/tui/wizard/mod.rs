@@ -161,3 +161,20 @@ pub fn target_tier(t: AgentTargetKind) -> AgentTargetTier {
         AgentTargetTier::ShimOnly
     }
 }
+
+/// Default setup scope used by scripted setup when `--project` is not passed:
+/// global when the target supports it, otherwise project-local.
+pub(crate) fn target_default_scope_label(t: AgentTargetKind) -> &'static str {
+    agent_config::mcp_by_id(t.as_str())
+        .map(|installer| {
+            if installer
+                .supported_mcp_scopes()
+                .contains(&agent_config::ScopeKind::Global)
+            {
+                "global"
+            } else {
+                "project"
+            }
+        })
+        .unwrap_or("project")
+}

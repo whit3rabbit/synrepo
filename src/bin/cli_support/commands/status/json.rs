@@ -1,6 +1,7 @@
 //! JSON formatter for `synrepo status --json`.
 
 use std::fmt::Write;
+use std::path::Path;
 
 use synrepo::{
     pipeline::context_metrics::ContextMetrics,
@@ -9,12 +10,14 @@ use synrepo::{
     surface::status_snapshot::{
         CommentaryCoverage, ExplainDisplay, GraphSnapshotStatus, RepairAuditState, StatusSnapshot,
     },
+    tui::agent_integrations::build_agent_install_statuses,
 };
 
 use super::helpers;
 
 pub(super) fn write_status_json(
     out: &mut String,
+    repo_root: &Path,
     snapshot: &StatusSnapshot,
     readiness: Option<&ReadinessMatrix>,
 ) -> anyhow::Result<()> {
@@ -78,6 +81,7 @@ pub(super) fn write_status_json(
 
     let repair_audit_json = repair_audit_json(&snapshot.repair_audit);
     let commentary_json = commentary_json(&snapshot.commentary_coverage);
+    let agent_integrations = build_agent_install_statuses(repo_root);
 
     let output = serde_json::json!({
         "initialized": true,
@@ -145,6 +149,7 @@ pub(super) fn write_status_json(
         "recent_activity": activity_json,
         "last_compaction_timestamp": snapshot.last_compaction.map(|ts| ts.to_string()),
         "repair_audit": repair_audit_json,
+        "agent_integrations": agent_integrations,
         "capability_readiness": readiness.map(readiness_matrix_json),
     });
 

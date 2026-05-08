@@ -24,7 +24,7 @@ pub enum ActiveTab {
     Explain,
     /// Next-actions + quick-actions.
     Actions,
-    /// Active-project MCP registration status.
+    /// Active-project agent integration status.
     Mcp,
     /// Large-file refactor suggestions.
     Suggestion,
@@ -39,7 +39,7 @@ impl fmt::Display for ActiveTab {
             ActiveTab::Trust => write!(f, "Trust"),
             ActiveTab::Explain => write!(f, "Explain"),
             ActiveTab::Actions => write!(f, "Actions"),
-            ActiveTab::Mcp => write!(f, "MCP"),
+            ActiveTab::Mcp => write!(f, "Integrations"),
             ActiveTab::Suggestion => write!(f, "Suggestion"),
         }
     }

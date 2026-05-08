@@ -1,34 +1,34 @@
-//! MCP tab widget.
+//! Integrations tab widget.
 
 use ratatui::buffer::Buffer;
-use ratatui::layout::Rect;
+use ratatui::layout::{Constraint, Rect};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph, Widget};
+use ratatui::widgets::{Block, Borders, Cell, Paragraph, Row, Table, Widget};
 
-use crate::tui::mcp_status::McpDisplayRow;
+use crate::tui::agent_integrations::AgentInstallDisplayRow;
 use crate::tui::theme::Theme;
 use crate::tui::widgets::severity_span;
 
-/// Render active-project MCP registration status.
-pub struct McpTabWidget<'a> {
+/// Render active-project agent integration status.
+pub struct IntegrationsTabWidget<'a> {
     /// Rows resolved for the active project.
-    pub rows: &'a [McpDisplayRow],
+    pub rows: &'a [AgentInstallDisplayRow],
     /// Active theme.
     pub theme: &'a Theme,
 }
 
-impl Widget for McpTabWidget<'_> {
+impl Widget for IntegrationsTabWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
         let block = Block::default()
-            .title(" mcp ")
+            .title(" integrations ")
             .borders(Borders::ALL)
             .border_style(self.theme.border_style());
         if self.rows.is_empty() {
             let lines = vec![
                 Line::from(""),
-                Line::from("  no MCP integrations detected."),
+                Line::from("  no agent integrations detected."),
                 Line::from(""),
-                Line::from("  press [i] to install repo MCP,"),
+                Line::from("  press [i] to install project integration,"),
                 Line::from("  or run: synrepo setup <tool> --project"),
             ];
             Paragraph::new(lines)
@@ -37,26 +37,119 @@ impl Widget for McpTabWidget<'_> {
                 .render(area, buf);
             return;
         }
-        let items: Vec<ListItem> = self
-            .rows
-            .iter()
-            .map(|row| row_item(row, self.theme))
-            .collect();
-        List::new(items)
-            .block(block)
-            .style(self.theme.base_style())
-            .render(area, buf);
+        let header = Row::new(vec![
+            Cell::from("agent"),
+            Cell::from("overall"),
+            Cell::from("context"),
+            Cell::from("mcp"),
+            Cell::from("hooks"),
+            Cell::from("next"),
+        ])
+        .style(self.theme.muted_style());
+        let rows = self.rows.iter().map(|row| table_row(row, self.theme));
+        Table::new(
+            rows,
+            [
+                Constraint::Length(18),
+                Constraint::Length(10),
+                Constraint::Percentage(24),
+                Constraint::Percentage(24),
+                Constraint::Percentage(18),
+                Constraint::Percentage(20),
+            ],
+        )
+        .header(header)
+        .block(block)
+        .style(self.theme.base_style())
+        .render(area, buf);
     }
 }
 
-fn row_item(row: &McpDisplayRow, theme: &Theme) -> ListItem<'static> {
-    let status = severity_span(row.status_label, row.status_severity, theme);
-    ListItem::new(Line::from(vec![
-        Span::styled(row.agent_cell.clone(), theme.base_style()),
-        Span::styled(" status:", theme.muted_style()),
-        status,
-        Span::styled(row.scope_cell.clone(), theme.muted_style()),
-        Span::styled(row.source_cell.clone(), theme.muted_style()),
-        Span::styled(row.path_cell.clone(), theme.muted_style()),
-    ]))
+fn table_row(row: &AgentInstallDisplayRow, theme: &Theme) -> Row<'static> {
+    Row::new(vec![
+        Cell::from(row.agent.clone()),
+        Cell::from(Line::from(vec![severity_span(
+            row.overall_label,
+            row.overall_severity,
+            theme,
+        )])),
+        Cell::from(Line::from(vec![severity_span(
+            &row.context,
+            row.context_severity,
+            theme,
+        )])),
+        Cell::from(Line::from(vec![severity_span(
+            &row.mcp,
+            row.mcp_severity,
+            theme,
+        )])),
+        Cell::from(Line::from(vec![severity_span(
+            &row.hooks,
+            row.hooks_severity,
+            theme,
+        )])),
+        Cell::from(Span::styled(row.next_action.clone(), theme.muted_style())),
+    ])
+}
+
+#[cfg(test)]
+mod tests {
+    use ratatui::buffer::Buffer;
+
+    use super::*;
+    use crate::tui::probe::Severity;
+
+    fn render_text(width: u16) -> String {
+        let area = Rect::new(0, 0, width, 8);
+        let mut buf = Buffer::empty(area);
+        let rows = vec![AgentInstallDisplayRow {
+            agent: "Codex CLI".to_string(),
+            overall_label: "complete",
+            overall_severity: Severity::Healthy,
+            context: "skill installed project agent-config owned .agents/skills/synrepo/SKILL.md"
+                .to_string(),
+            context_severity: Severity::Healthy,
+            mcp: "mcp installed project agent-config owned .codex/config.toml".to_string(),
+            mcp_severity: Severity::Healthy,
+            hooks: "missing_optional optional .codex/hooks.json".to_string(),
+            hooks_severity: Severity::Healthy,
+            next_action: "optional: synrepo setup codex --agent-hooks".to_string(),
+        }];
+        IntegrationsTabWidget {
+            rows: &rows,
+            theme: &Theme::plain(),
+        }
+        .render(area, &mut buf);
+        (0..area.height)
+            .map(|y| {
+                (0..area.width)
+                    .map(|x| buf[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn integrations_tab_renders_columns_at_normal_width() {
+        let text = render_text(120);
+        assert!(text.contains("integrations"));
+        assert!(text.contains("agent"));
+        assert!(text.contains("overall"));
+        assert!(text.contains("context"));
+        assert!(text.contains("mcp"));
+        assert!(text.contains("hooks"));
+        assert!(text.contains("Codex CLI"));
+    }
+
+    #[test]
+    fn integrations_tab_clips_cleanly_at_narrow_width() {
+        let text = render_text(60);
+        assert!(text.contains("integrations"));
+        assert!(text.contains("agent"));
+        assert!(text.contains("overall"));
+        for line in text.lines() {
+            assert_eq!(line.chars().count(), 60);
+        }
+    }
 }

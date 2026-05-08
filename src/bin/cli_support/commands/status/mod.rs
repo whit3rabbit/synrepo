@@ -42,7 +42,7 @@ pub(crate) fn status_output(
     });
     let mut out = String::new();
     if json {
-        json::write_status_json(&mut out, &snapshot, matrix.as_ref())?;
+        json::write_status_json(&mut out, repo_root, &snapshot, matrix.as_ref())?;
     } else {
         text::write_status_text(&mut out, &snapshot, matrix.as_ref(), full);
     }

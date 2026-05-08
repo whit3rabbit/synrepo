@@ -4,19 +4,17 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
 
+mod confirm;
 mod embeddings;
 mod explain;
 #[cfg(test)]
 mod tests;
 
-use super::explain::{CloudCredentialSource, ExplainChoice, ExplainWizardSupport};
+use super::explain::ExplainWizardSupport;
 use super::state::{SetupStep, SetupWizardState, WIZARD_TARGETS};
 use crate::tui::app::poll_key;
 use crate::tui::theme::Theme;
-use crate::tui::wizard::{
-    enter_tui, leave_tui, target_artifact_label, target_label, target_tier, AgentTargetTier,
-    WizardTerminal,
-};
+use crate::tui::wizard::{enter_tui, leave_tui, target_label, WizardTerminal};
 
 /// Run the setup wizard until Complete or cancellation.
 pub fn run_setup_wizard_loop(
@@ -145,7 +143,7 @@ fn draw(frame: &mut ratatui::Frame, state: &SetupWizardState, theme: &Theme) {
         SetupStep::ReviewExplainPlan => {
             explain::draw_review_explain_plan_step(frame, outer[1], state, theme)
         }
-        SetupStep::Confirm => draw_confirm_step(frame, outer[1], state, theme),
+        SetupStep::Confirm => confirm::draw_confirm_step(frame, outer[1], state, theme),
         SetupStep::Complete => {}
     }
 
@@ -283,126 +281,4 @@ fn draw_target_step(
         .borders(Borders::ALL)
         .border_style(theme.border_style());
     frame.render_widget(List::new(items).block(block), area);
-}
-
-fn draw_confirm_step(
-    frame: &mut ratatui::Frame,
-    area: Rect,
-    state: &SetupWizardState,
-    theme: &Theme,
-) {
-    let mut lines: Vec<Line> = Vec::new();
-    lines.push(Line::from(Span::styled(
-        "The wizard will run the following steps:",
-        theme.base_style(),
-    )));
-    lines.push(Line::from(Span::raw("")));
-    let mut step_no: usize = 1;
-    lines.push(Line::from(Span::styled(
-        format!("  {step_no}. init .synrepo/ in {} mode", state.mode),
-        theme.base_style(),
-    )));
-    step_no += 1;
-    if let Some(target) = state.target {
-        lines.push(Line::from(Span::styled(
-            format!(
-                "  {step_no}. write {} {}",
-                target_label(target),
-                target_artifact_label(target)
-            ),
-            theme.base_style(),
-        )));
-        step_no += 1;
-        lines.push(Line::from(Span::styled(
-            match target_tier(target) {
-                AgentTargetTier::Automated => {
-                    format!(
-                        "  {step_no}. register MCP server for {}",
-                        target_label(target)
-                    )
-                }
-                AgentTargetTier::ShimOnly => format!(
-                    "  {step_no}. write manual MCP setup instructions for {}",
-                    target_label(target)
-                ),
-            },
-            theme.base_style(),
-        )));
-        step_no += 1;
-    }
-    let (embedding_line, embedding_style) = match state.embedding_setup {
-        super::EmbeddingSetupChoice::Disabled => (
-            format!("  {step_no}. leave embeddings disabled (optional)"),
-            theme.muted_style(),
-        ),
-        super::EmbeddingSetupChoice::Onnx => (
-            format!("  {step_no}. enable ONNX embeddings for semantic routing and hybrid search"),
-            theme.base_style(),
-        ),
-        super::EmbeddingSetupChoice::Ollama => (
-            format!("  {step_no}. enable Ollama embeddings (all-minilm at http://localhost:11434)"),
-            theme.base_style(),
-        ),
-    };
-    lines.push(Line::from(Span::styled(embedding_line, embedding_style)));
-    step_no += 1;
-    match &state.explain {
-        Some(ExplainChoice::Cloud {
-            provider,
-            credential_source,
-            ..
-        }) => {
-            lines.push(Line::from(Span::styled(
-                match credential_source {
-                    CloudCredentialSource::Env => format!(
-                        "  {step_no}. enable explain via {} (use {} from the current shell)",
-                        provider.config_value(),
-                        explain::provider_env_var(*provider),
-                    ),
-                    CloudCredentialSource::SavedGlobal => format!(
-                        "  {step_no}. enable explain via {} (reuse saved key from ~/.synrepo/config.toml)",
-                        provider.config_value(),
-                    ),
-                    CloudCredentialSource::EnteredGlobal => format!(
-                        "  {step_no}. enable explain via {} and save its API key in ~/.synrepo/config.toml",
-                        provider.config_value(),
-                    ),
-                },
-                theme.base_style(),
-            )));
-            step_no += 1;
-        }
-        Some(ExplainChoice::Local { preset, endpoint }) => {
-            lines.push(Line::from(Span::styled(
-                format!(
-                    "  {step_no}. enable local explain ({} at {endpoint}) and save the endpoint in ~/.synrepo/config.toml",
-                    preset.config_value()
-                ),
-                theme.base_style(),
-            )));
-            step_no += 1;
-        }
-        None => {
-            lines.push(Line::from(Span::styled(
-                format!("  {step_no}. leave explain disabled (no [explain] block)"),
-                theme.muted_style(),
-            )));
-            step_no += 1;
-        }
-    }
-    lines.push(Line::from(Span::styled(
-        format!("  {step_no}. run first reconcile pass"),
-        theme.base_style(),
-    )));
-    lines.push(Line::from(Span::raw("")));
-    lines.push(Line::from(Span::styled(
-        "No files have been written yet. Press Enter to apply or b to go back.",
-        theme.muted_style(),
-    )));
-
-    let block = Block::default()
-        .title(" confirm ")
-        .borders(Borders::ALL)
-        .border_style(theme.border_style());
-    frame.render_widget(Paragraph::new(lines).block(block), area);
 }

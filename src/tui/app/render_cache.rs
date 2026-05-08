@@ -8,9 +8,9 @@ use crate::surface::refactor_suggestions::{
     collect_refactor_suggestions_for_repo, RefactorSuggestionOptions,
 };
 use crate::surface::status_snapshot::{build_status_snapshot, StatusOptions};
-use crate::tui::mcp_status::{
-    build_mcp_display_rows, build_mcp_status_rows, summarize_mcp_status_rows, McpDisplayRow,
-    McpStatusRow,
+use crate::tui::agent_integrations::{
+    build_agent_install_display_rows, build_agent_install_statuses,
+    summarize_agent_install_statuses, AgentInstallDisplayRow, AgentInstallStatus,
 };
 use crate::tui::probe::{build_header_vm, display_repo_path, HeaderVm};
 use crate::tui::widgets::LogEntry;
@@ -21,7 +21,7 @@ pub(super) fn build_initial_header_vm(
     snapshot: &crate::surface::status_snapshot::StatusSnapshot,
     integration: &crate::bootstrap::runtime_probe::AgentIntegration,
     auto_sync_enabled: bool,
-    mcp_status_rows: &[McpStatusRow],
+    integration_status_rows: &[AgentInstallStatus],
 ) -> HeaderVm {
     let mut header = build_header_vm(
         repo_display(repo_root, project_name),
@@ -29,14 +29,16 @@ pub(super) fn build_initial_header_vm(
         integration,
         Some(auto_sync_enabled),
     );
-    let summary = summarize_mcp_status_rows(mcp_status_rows);
+    let summary = summarize_agent_install_statuses(integration_status_rows);
     header.mcp_label = summary.label;
     header.mcp_severity = summary.severity;
     header
 }
 
-pub(super) fn build_initial_mcp_display_rows(rows: &[McpStatusRow]) -> Vec<McpDisplayRow> {
-    build_mcp_display_rows(rows)
+pub(super) fn build_initial_integration_display_rows(
+    rows: &[AgentInstallStatus],
+) -> Vec<AgentInstallDisplayRow> {
+    build_agent_install_display_rows(rows)
 }
 
 /// Compose the header repo label as `"<project>  <path>"` when a project name
@@ -53,16 +55,16 @@ impl AppState {
     /// Rebuild header labels after snapshot, project identity, or auto-sync
     /// state changes. The draw loop only reads this cached view model.
     pub(crate) fn rebuild_header_vm(&mut self) {
-        let mcp_status_rows = build_mcp_status_rows(&self.repo_root);
+        let integration_status_rows = build_agent_install_statuses(&self.repo_root);
         self.header_vm = build_initial_header_vm(
             &self.repo_root,
             self.project_name.as_deref(),
             &self.snapshot,
             &self.integration,
             self.auto_sync_enabled,
-            &mcp_status_rows,
+            &integration_status_rows,
         );
-        self.mcp_display_rows = build_mcp_display_rows(&mcp_status_rows);
+        self.integration_display_rows = build_agent_install_display_rows(&integration_status_rows);
     }
 
     /// Load suggestion rows only when the tab needs them.

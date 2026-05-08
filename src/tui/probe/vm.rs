@@ -44,9 +44,9 @@ pub struct HeaderVm {
     pub lock_label: String,
     /// Writer-lock severity.
     pub lock_severity: Severity,
-    /// MCP readiness label ("registered", "instructions only", "absent", "n/a").
+    /// Agent integration readiness label.
     pub mcp_label: String,
-    /// MCP severity.
+    /// Agent integration severity.
     pub mcp_severity: Severity,
     /// Cached auto-sync flag from the dashboard runtime. `None` for non-TUI
     /// callers (e.g. `synrepo doctor`) that have no live atomic to read.

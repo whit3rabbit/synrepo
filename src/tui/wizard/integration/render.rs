@@ -10,8 +10,8 @@ use super::state::{
 use crate::tui::app::poll_key;
 use crate::tui::theme::Theme;
 use crate::tui::wizard::{
-    enter_tui, leave_tui, target_artifact_label, target_label, target_tier, AgentTargetTier,
-    WizardTerminal,
+    enter_tui, leave_tui, target_artifact_label, target_default_scope_label, target_label,
+    target_tier, AgentTargetTier, WizardTerminal,
 };
 
 /// Run the integration sub-wizard until Complete or cancellation.
@@ -163,7 +163,7 @@ fn draw_actions_step(
             let check = if checked { "[x]" } else { "[ ]" };
             let label: &str = match row {
                 ActionRow::WriteShim => write_label.as_str(),
-                ActionRow::RegisterMcp => "Register MCP and ensure paired agent context",
+                ActionRow::RegisterMcp => "Register MCP and paired agent context (default scope)",
                 ActionRow::OverwriteShim => overwrite_label.as_str(),
                 ActionRow::InstallAgentHooks if agent_hooks_supported(state.target) => {
                     "Install local synrepo nudge hooks"
@@ -211,20 +211,22 @@ fn draw_confirm_step(
     let mut step = 1usize;
     if state.write_shim {
         let artifact = target_artifact_label(state.target);
+        let scope = target_default_scope_label(state.target);
         let suffix = if state.overwrite_shim {
             format!(" (may overwrite existing {artifact} if content differs)")
         } else {
             format!(" (skip if {artifact} already up to date)")
         };
         lines.push(Line::from(Span::styled(
-            format!("  {step}. Write or update the agent {artifact}{suffix}"),
+            format!("  {step}. Write or update the agent {artifact} (scope: {scope}){suffix}"),
             theme.base_style(),
         )));
         step += 1;
     }
     if state.register_mcp {
+        let scope = target_default_scope_label(state.target);
         lines.push(Line::from(Span::styled(
-            format!("  {step}. Register MCP and ensure paired agent context"),
+            format!("  {step}. Register MCP and paired agent context (scope: {scope})"),
             theme.base_style(),
         )));
         if !state.write_shim {
@@ -247,8 +249,13 @@ fn draw_confirm_step(
     }
     if state.install_agent_hooks {
         lines.push(Line::from(Span::styled(
-            format!("  {step}. Install local synrepo nudge hooks"),
+            format!("  {step}. Install local synrepo nudge hooks (scope: project)"),
             theme.base_style(),
+        )));
+    } else {
+        lines.push(Line::from(Span::styled(
+            "  Hooks are unchanged; they are installed only when selected here or with --agent-hooks.",
+            theme.muted_style(),
         )));
     }
     lines.push(Line::from(Span::raw("")));

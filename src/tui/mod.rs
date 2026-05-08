@@ -1,23 +1,4 @@
-//! Interactive terminal surface for synrepo.
-//!
-//! Hosts the operator dashboard and the guided setup, repair, and integration
-//! wizards. All rendering sits on `ratatui` + `crossterm`; the core runtime
-//! surface is plain subcommands and remains callable without the TUI.
-//!
-//! Entry points used by the bare-`synrepo` router (`src/bin/cli.rs`):
-//!
-//! - [`run_dashboard`] — poll-mode dashboard on a `Ready` repo.
-//! - [`run_setup_wizard`] — guided first-run setup for `Uninitialized` repos.
-//! - [`run_repair_wizard`] — guided fixes for `Partial` repos.
-//! - [`run_integration_wizard`] — agent-integration sub-flow launched from the
-//!   dashboard quick action.
-//! - [`run_live_watch_dashboard`] — live-mode dashboard hosted by foreground
-//!   `synrepo watch` when stdout is a TTY.
-//!
-//! Every entry point short-circuits to a plain-text fallback (or exits
-//! non-zero with a pointer to the explicit subcommand) when stdout is not a
-//! TTY, so pipes, redirects, and CI are never forced into the alternate
-//! screen. See the `runtime-probe` and `dashboard` specs for the contract.
+//! Interactive terminal surface for synrepo dashboards and wizards.
 
 use std::path::Path;
 
@@ -35,6 +16,7 @@ pub use self::wizard::{
 };
 
 pub mod actions;
+pub mod agent_integrations;
 pub mod app;
 pub mod dashboard;
 mod dashboard_tabs;
@@ -59,9 +41,7 @@ pub struct TuiOptions {
     pub no_color: bool,
 }
 
-/// Dashboard-specific options. Extends [`TuiOptions`] with a one-shot welcome
-/// banner flag that the setup-wizard dispatcher sets on the first successful
-/// wizard → dashboard transition.
+/// Dashboard-specific options.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct DashboardOptions {
     /// Drop all styling even if the terminal supports color.
@@ -79,35 +59,24 @@ impl From<TuiOptions> for DashboardOptions {
     }
 }
 
-/// Human-readable outcome of a TUI entry point. The bare-`synrepo` router
-/// uses this to pick an exit code and avoid re-entering the TUI on shutdown.
+/// Human-readable outcome of a TUI entry point.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TuiOutcome {
     /// User exited normally.
     Exited,
-    /// Entry-point was skipped because stdout is not a TTY; a plain-text
-    /// summary was printed to stdout in its place.
+    /// Entry-point was skipped because stdout is not a TTY.
     NonTtyFallback,
-    /// A wizard ran to completion and the caller should re-run the probe and
-    /// potentially transition to the dashboard.
+    /// A wizard ran to completion.
     WizardCompleted,
     /// Wizard was cancelled before any writes; caller should exit zero.
     WizardCancelled,
     /// Dashboard exited with a request to launch the integration sub-wizard.
-    /// The caller should run `run_integration_wizard` and — on successful
-    /// completion — re-open the dashboard.
     LaunchIntegrationRequested,
-    /// Dashboard exited with a request to install repo-local MCP from the MCP
-    /// tab. The caller should run the MCP install picker, execute the returned
-    /// project-scope plan, and re-open the dashboard.
+    /// Dashboard exited with a request to install project integration.
     LaunchProjectMcpInstallRequested,
     /// Dashboard exited with a request to launch the explain setup wizard.
-    /// The caller should run `run_explain_only_wizard` and then re-open the
-    /// dashboard.
     LaunchExplainSetupRequested,
     /// Dashboard exited with a request to launch the embeddings setup picker.
-    /// The caller should run `run_embeddings_only_wizard` and then re-open
-    /// the dashboard.
     LaunchEmbeddingsSetupRequested,
     /// Dashboard exited with a request to build embeddings in normal terminal
     /// output, then re-open the dashboard.
@@ -309,7 +278,8 @@ pub fn run_integration_wizard(
     wizard::run_integration_wizard_loop(theme, integration, probe_report.detected_agent_targets)
 }
 
-/// Open the repo-local MCP install picker launched from the dashboard MCP tab.
+/// Open the repo-local integration picker launched from the dashboard
+/// Integrations tab.
 ///
 /// Returns an [`McpInstallWizardOutcome`] so the caller can execute the
 /// resulting project-scope MCP registration after the TUI alternate-screen has
