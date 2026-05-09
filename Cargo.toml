@@ -4,7 +4,7 @@ members = ["."]
 
 [package]
 name = "synrepo"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2021"
 description = "A context compiler for AI coding agents"
 license = "MIT"
@@ -116,7 +116,7 @@ tiny_http = { version = "0.12", optional = true }
 
 # ONNX runtime for embedding-based semantic triage. Only compiled
 # when the `semantic-triage` feature is enabled.
-ort = { version = "2.0.0-rc.12", optional = true, features = ["ndarray"] }
+ort = { version = "2.0.0-rc.12", optional = true, default-features = false, features = ["api-24", "copy-dylibs", "download-binaries", "ndarray", "std", "tls-rustls", "tracing"] }
 tokenizers = { version = "0.23.1", optional = true }
 ndarray = { version = "0.17.2", optional = true }
 

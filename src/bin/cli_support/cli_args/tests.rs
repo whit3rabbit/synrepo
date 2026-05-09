@@ -1,5 +1,14 @@
 use super::{Cli, Command};
-use clap::Parser;
+use clap::{CommandFactory, Parser};
+
+#[test]
+fn root_help_includes_cargo_package_version() {
+    let help = Cli::command().render_help().to_string();
+    assert!(
+        help.starts_with(&format!("synrepo {}", env!("CARGO_PKG_VERSION"))),
+        "{help}"
+    );
+}
 
 #[test]
 fn init_force_flag_defaults_off_and_sets_on_request() {

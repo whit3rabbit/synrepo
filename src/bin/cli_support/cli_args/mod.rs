@@ -23,7 +23,8 @@ pub(crate) use subcommands::*;
 #[command(name = "synrepo")]
 #[command(
     about = "A local repository map for AI coding agents",
-    long_about = None
+    long_about = None,
+    help_template = "{name} {version}\n{about}\n\n{usage-heading} {usage}\n\n{all-args}{after-help}"
 )]
 #[command(version)]
 pub(crate) struct Cli {
