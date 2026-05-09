@@ -79,7 +79,8 @@ impl SetupWizardState {
             }
             KeyCode::Enter => {
                 self.target = WIZARD_TARGETS.get(self.target_cursor).copied();
-                self.step = SetupStep::SelectEmbeddings;
+                self.reseed_target_actions();
+                self.step = SetupStep::SelectActions;
                 true
             }
             _ => false,
@@ -109,7 +110,7 @@ impl SetupWizardState {
                 if self.embeddings_only {
                     return false;
                 }
-                self.step = SetupStep::SelectTarget;
+                self.step = SetupStep::SelectActions;
                 true
             }
             KeyCode::Enter => {
@@ -347,9 +348,11 @@ impl SetupWizardState {
                 true
             }
             KeyCode::Esc | KeyCode::Char('b') => {
-                // Back one step: to the review screen when a provider was
-                // chosen, otherwise all the way to the explain list.
-                self.step = if self.explain.is_some() {
+                // Back one step: to actions in follow-up mode, to the review
+                // screen when a provider was chosen, otherwise to explain.
+                self.step = if self.flow == super::SetupFlow::FollowUp {
+                    SetupStep::SelectActions
+                } else if self.explain.is_some() {
                     SetupStep::ReviewExplainPlan
                 } else {
                     SetupStep::SelectExplain

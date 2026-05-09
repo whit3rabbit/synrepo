@@ -5,11 +5,14 @@ use crossterm::event::{KeyCode, KeyModifiers};
 
 use super::explain::{ExplainWizardSupport, TextInputField, LOCAL_PRESETS};
 pub use super::state_types::{
-    EmbeddingSetupChoice, SetupPlan, SetupStep, SetupWizardOutcome, SetupWizardState,
-    WIZARD_TARGETS,
+    EmbeddingSetupChoice, SetupActionRow, SetupFlow, SetupPlan, SetupStep, SetupWizardOutcome,
+    SetupWizardState, SETUP_ACTION_ROWS, WIZARD_TARGETS,
 };
+use crate::bootstrap::runtime_probe::{AgentIntegration, AgentTargetKind};
 use crate::config::Mode;
+use crate::tui::wizard::{target_tier, AgentTargetTier};
 
+mod actions;
 mod transitions;
 
 impl SetupWizardState {
@@ -33,17 +36,42 @@ impl SetupWizardState {
     /// observed env/global config support from the caller.
     pub fn with_explain_support(
         default_mode: Mode,
-        detected_targets: Vec<crate::bootstrap::runtime_probe::AgentTargetKind>,
+        detected_targets: Vec<AgentTargetKind>,
+        explain_support: ExplainWizardSupport,
+    ) -> Self {
+        Self::with_setup_context(
+            default_mode,
+            detected_targets,
+            AgentIntegration::Absent,
+            SetupFlow::Full,
+            false,
+            explain_support,
+        )
+    }
+
+    /// Build a state with caller-provided setup context. Full setup starts at
+    /// Splash; follow-up setup starts at target selection.
+    pub fn with_setup_context(
+        default_mode: Mode,
+        detected_targets: Vec<AgentTargetKind>,
+        current_integration: AgentIntegration,
+        flow: SetupFlow,
+        root_gitignore_present: bool,
         explain_support: ExplainWizardSupport,
     ) -> Self {
         let mode_cursor = match default_mode {
             Mode::Auto => 0,
             Mode::Curated => 1,
         };
-        let target_cursor = detected_targets
-            .first()
-            .and_then(|t| WIZARD_TARGETS.iter().position(|wt| wt == t))
+        let seed_target = current_integration
+            .target()
+            .or_else(|| detected_targets.first().copied());
+        let target_cursor = seed_target
+            .and_then(|t| WIZARD_TARGETS.iter().position(|wt| *wt == t))
             .unwrap_or(0);
+        let target = Some(WIZARD_TARGETS[target_cursor]);
+        let (write_agent_shim, register_mcp) =
+            default_agent_actions_for(&current_integration, target);
         let local_preset = explain_support.local_preset();
         let local_preset_cursor = LOCAL_PRESETS
             .iter()
@@ -53,14 +81,25 @@ impl SetupWizardState {
             .local_endpoint()
             .unwrap_or(local_preset.default_endpoint());
         Self {
-            step: SetupStep::Splash,
+            step: match flow {
+                SetupFlow::Full => SetupStep::Splash,
+                SetupFlow::FollowUp => SetupStep::SelectTarget,
+            },
             mode_cursor,
             target_cursor,
+            action_cursor: 0,
             embeddings_cursor: 0,
             explain_cursor: 0,
             local_preset_cursor,
             mode: default_mode,
-            target: None,
+            target,
+            flow,
+            current_integration,
+            root_gitignore_present,
+            add_root_gitignore: !root_gitignore_present,
+            write_agent_shim,
+            register_mcp,
+            install_agent_hooks: false,
             embedding_setup: EmbeddingSetupChoice::Disabled,
             embeddings_only: false,
             explain: None,
@@ -98,6 +137,9 @@ impl SetupWizardState {
         let mut s = Self::with_explain_support(Mode::Auto, vec![], ExplainWizardSupport::default());
         s.step = SetupStep::SelectEmbeddings;
         s.embeddings_only = true;
+        s.add_root_gitignore = false;
+        s.write_agent_shim = false;
+        s.register_mcp = false;
         s
     }
 
@@ -110,6 +152,7 @@ impl SetupWizardState {
             SetupStep::Splash => self.handle_splash_key(code, modifiers),
             SetupStep::SelectMode => self.handle_select_mode_key(code, modifiers),
             SetupStep::SelectTarget => self.handle_select_target_key(code, modifiers),
+            SetupStep::SelectActions => self.handle_select_actions_key(code, modifiers),
             SetupStep::SelectEmbeddings => self.handle_select_embeddings_key(code, modifiers),
             SetupStep::ExplainExplain => self.handle_explain_explain_key(code, modifiers),
             SetupStep::SelectExplain => self.handle_select_explain_key(code, modifiers),
@@ -141,11 +184,33 @@ impl SetupWizardState {
             return None;
         }
         Some(SetupPlan {
+            flow: self.flow,
             mode: self.mode,
             target: self.target,
+            add_root_gitignore: self.add_root_gitignore,
+            write_agent_shim: self.write_agent_shim,
+            register_mcp: self.register_mcp,
+            install_agent_hooks: self.install_agent_hooks,
             embedding_setup: self.embedding_setup,
             explain: self.explain.clone(),
-            reconcile_after: true,
+            reconcile_after: self.flow.initializes_runtime(),
         })
     }
+}
+
+fn default_agent_actions_for(
+    current: &AgentIntegration,
+    target: Option<AgentTargetKind>,
+) -> (bool, bool) {
+    let Some(target) = target else {
+        return (false, false);
+    };
+    let (write_agent_shim, register_mcp) = match current {
+        AgentIntegration::Complete { target: t } if *t == target => (false, false),
+        AgentIntegration::Partial { target: t } if *t == target => (false, true),
+        AgentIntegration::McpOnly { target: t } if *t == target => (true, false),
+        _ => (true, true),
+    };
+    let register_mcp = register_mcp && target_tier(target) == AgentTargetTier::Automated;
+    (write_agent_shim, register_mcp)
 }

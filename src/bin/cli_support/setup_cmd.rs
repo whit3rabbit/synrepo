@@ -4,21 +4,18 @@ use std::path::Path;
 use toml_edit::{DocumentMut, Item, Value as TomlValue};
 
 use synrepo::bootstrap::runtime_probe::{probe, RoutingDecision, RuntimeClassification};
-use synrepo::config::{Mode, SemanticEmbeddingProvider, SemanticProviderSource};
+use synrepo::config::Mode;
 use synrepo::tui::{
     run_embeddings_only_wizard, run_explain_only_wizard, run_setup_wizard, stdout_is_tty,
-    DashboardOptions, EmbeddingSetupChoice, SetupPlan, SetupWizardOutcome, TuiOptions,
+    DashboardOptions, EmbeddingSetupChoice, SetupWizardOutcome, TuiOptions,
 };
 
-use super::agent_shims::{registry as shim_registry, AgentTool, AutomationTier};
-use super::apply_report::{show_apply_report_popup, ApplyReport, ApplyReportError};
-use super::commands::{
-    resolve_setup_scope, step_apply_explain, step_apply_integration, step_backup_mcp_config,
-    step_ensure_ready, step_init_with_config,
-};
+use super::apply_report::show_apply_report_popup;
+use super::commands::step_apply_explain;
 use super::entry::{bare_ready_summary, bare_uninitialized_fallback};
 use super::explain_cmd::print_explain_discovery_hint;
 use super::repair_cmd::run_dashboard_with_sub_wizards;
+pub(crate) use super::setup_plan::execute_setup_plan;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum InitEntryMode {
@@ -52,20 +49,22 @@ pub(crate) fn init_entry_mode(
     is_tty: bool,
 ) -> InitEntryMode {
     let has_init_flags = has_mode_flag || gitignore || force;
-    if !has_init_flags
-        && is_tty
-        && matches!(
-            probe(repo_root).classification,
-            RuntimeClassification::Uninitialized
-        )
-    {
-        InitEntryMode::GuidedSetup
-    } else {
-        InitEntryMode::RawInit
+    if has_init_flags || !is_tty {
+        return InitEntryMode::RawInit;
+    }
+    let report = probe(repo_root);
+    match report.classification {
+        RuntimeClassification::Uninitialized => InitEntryMode::GuidedSetup,
+        RuntimeClassification::Ready if synrepo::tui::setup_followup_needed(repo_root, &report) => {
+            InitEntryMode::GuidedSetup
+        }
+        RuntimeClassification::Ready | RuntimeClassification::Partial { .. } => {
+            InitEntryMode::RawInit
+        }
     }
 }
 
-/// Run the TUI setup wizard and apply its [`SetupPlan`] outcome. Shared by the
+/// Run the TUI setup wizard and apply its setup plan outcome. Shared by the
 /// bare-entrypoint OpenSetup arm and the explicit `synrepo setup` command when
 /// invoked without a `<tool>` argument. Caller is responsible for the non-TTY
 /// short-circuit before calling -- this helper still handles the wizard's own
@@ -89,107 +88,6 @@ pub(crate) fn run_wizard_and_apply(repo_root: &Path, opts: TuiOptions) -> anyhow
         SetupWizardOutcome::NonTty => {
             eprint!("{}", bare_uninitialized_fallback());
             std::process::exit(2);
-        }
-    }
-}
-
-/// Execute a completed [`SetupPlan`] after the TUI alt-screen has been torn
-/// down. All file-system writes happen here, not inside the library.
-pub(crate) fn execute_setup_plan(
-    repo_root: &Path,
-    plan: SetupPlan,
-) -> Result<ApplyReport, ApplyReportError> {
-    let mut report = ApplyReport::new("setup complete");
-    println!("synrepo setup: applying plan.");
-    report.record_step("Runtime", || {
-        step_init_with_config(repo_root, Some(plan.mode), false, false, |config| {
-            seed_optional_setup_config(config, &plan);
-        })
-    })?;
-    report.add_line(format!("Mode: {:?}", plan.mode));
-    match plan.embedding_setup {
-        EmbeddingSetupChoice::Disabled => report.add_line("Embeddings: disabled"),
-        EmbeddingSetupChoice::Onnx => report.add_line("Embeddings: ONNX enabled"),
-        EmbeddingSetupChoice::Ollama => report.add_line("Embeddings: Ollama enabled"),
-    }
-    if let Some(target) = plan.target {
-        let tool = AgentTool::from_target_kind(target);
-        let scope = resolve_setup_scope(repo_root, tool, false);
-        let backup = if matches!(scope, agent_config::Scope::Local(_)) {
-            report.record_value("MCP backup", || {
-                step_backup_mcp_config(repo_root, tool, &scope)
-            })?
-        } else {
-            None
-        };
-        report.add_backup(backup.as_deref());
-        report.record_step("Agent integration", || {
-            step_apply_integration(repo_root, tool, false, &scope)
-        })?;
-        let wrote_mcp = matches!(tool.automation_tier(), AutomationTier::Automated);
-        shim_registry::record_install_best_effort(repo_root, tool, &scope, wrote_mcp, backup);
-    } else {
-        report.add_line("Agent integration: skipped");
-    }
-    if plan.explain.is_some() {
-        report.record_step("Explain", || {
-            step_apply_explain(repo_root, plan.explain.as_ref())
-        })?;
-        print_explain_discovery_hint();
-    } else {
-        report.add_line("Explain: skipped");
-    }
-    if plan.reconcile_after {
-        // Setup promises an operationally ready repo, not just a populated
-        // graph. The shared helper runs the first reconcile only when the
-        // reconcile-state file is still missing.
-        report.record_step("Ready check", || step_ensure_ready(repo_root))?;
-    } else {
-        report.add_line("Ready check: skipped");
-    }
-    report.record_value("Project registry", || {
-        synrepo::registry::record_project(repo_root)
-    })?;
-    report.add_line("Project registry: recorded");
-    println!("Setup complete. Repo is ready.");
-    report.add_success("Setup complete. Repo is ready.");
-    Ok(report)
-}
-
-fn seed_optional_setup_config(config: &mut synrepo::config::Config, plan: &SetupPlan) {
-    apply_embedding_setup_to_config(config, plan.embedding_setup);
-    if let Some(choice) = &plan.explain {
-        config.explain.enabled = true;
-        config.explain.provider = Some(
-            match choice {
-                synrepo::tui::ExplainChoice::Cloud { provider, .. } => provider.config_value(),
-                synrepo::tui::ExplainChoice::Local { .. } => "local",
-            }
-            .to_string(),
-        );
-    }
-}
-
-pub(crate) fn apply_embedding_setup_to_config(
-    config: &mut synrepo::config::Config,
-    choice: EmbeddingSetupChoice,
-) {
-    config.enable_semantic_triage = choice.is_enabled();
-    match choice {
-        EmbeddingSetupChoice::Disabled => {}
-        EmbeddingSetupChoice::Onnx => {
-            config.semantic_embedding_provider = SemanticEmbeddingProvider::Onnx;
-            config.semantic_embedding_provider_source = SemanticProviderSource::Explicit;
-            config.semantic_model = "all-MiniLM-L6-v2".to_string();
-            config.embedding_dim = 384;
-        }
-        EmbeddingSetupChoice::Ollama => {
-            config.semantic_embedding_provider = SemanticEmbeddingProvider::Ollama;
-            config.semantic_embedding_provider_source = SemanticProviderSource::Explicit;
-            config.semantic_model = "all-minilm".to_string();
-            config.embedding_dim = 384;
-            config.semantic_ollama_endpoint = "http://localhost:11434".to_string();
-            config.semantic_embedding_batch_size = 128;
         }
     }
 }

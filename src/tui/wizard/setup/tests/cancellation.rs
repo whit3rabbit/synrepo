@@ -36,3 +36,16 @@ fn cancel_at_target_leaves_tree_byte_identical() {
         s.handle_key(KeyCode::Esc, KeyModifiers::empty());
     });
 }
+
+#[test]
+fn cancel_at_actions_leaves_tree_byte_identical() {
+    drive_cancel_and_assert_no_writes(|s| {
+        s.handle_key(KeyCode::Enter, KeyModifiers::empty()); // splash → mode
+        s.handle_key(KeyCode::Enter, KeyModifiers::empty()); // mode → target
+        s.handle_key(KeyCode::Enter, KeyModifiers::empty()); // target → actions
+        assert_eq!(s.step, SetupStep::SelectActions);
+        s.handle_key(KeyCode::Esc, KeyModifiers::empty());
+        assert_eq!(s.step, SetupStep::SelectTarget);
+        s.handle_key(KeyCode::Char('q'), KeyModifiers::empty());
+    });
+}

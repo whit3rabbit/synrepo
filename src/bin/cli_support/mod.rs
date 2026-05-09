@@ -8,6 +8,7 @@ mod graph;
 pub(crate) mod repair_cmd;
 pub(crate) mod setup_cmd;
 pub(crate) mod setup_dispatch;
+pub(crate) mod setup_plan;
 
 #[cfg(test)]
 mod tests;

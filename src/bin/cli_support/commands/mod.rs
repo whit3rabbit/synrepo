@@ -102,8 +102,8 @@ pub(crate) use setup::{
     render_client_setup_summary, ClientBefore, ClientSetupEntry, McpRegistration, ShimFreshness,
 };
 pub(crate) use setup::{
-    resolve_setup_scope, step_apply_integration, step_ensure_ready, step_init,
-    step_init_with_config, step_install_agent_hooks, step_register_mcp, step_write_shim,
+    resolve_setup_scope, step_add_root_gitignore, step_apply_integration, step_ensure_ready,
+    step_init, step_init_with_config, step_install_agent_hooks, step_register_mcp, step_write_shim,
     StepOutcome,
 };
 pub(crate) use setup_explain::step_apply_explain;

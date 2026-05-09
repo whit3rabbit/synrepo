@@ -3,7 +3,7 @@
 use super::explain::{
     CloudProvider, ExplainChoice, ExplainWizardSupport, LocalPreset, TextInputField,
 };
-use crate::bootstrap::runtime_probe::AgentTargetKind;
+use crate::bootstrap::runtime_probe::{AgentIntegration, AgentTargetKind};
 use crate::config::Mode;
 
 /// Embedding setup decision made by the wizard.
@@ -24,14 +24,62 @@ impl EmbeddingSetupChoice {
     }
 }
 
+/// Setup wizard shape. Full setup initializes runtime and optional providers;
+/// follow-up setup only offers repo-local integration and gitignore actions.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SetupFlow {
+    /// First-run or explicit full setup.
+    Full,
+    /// Ready repo follow-up for missing integration, hooks, or root gitignore.
+    FollowUp,
+}
+
+impl SetupFlow {
+    /// Whether this flow should initialize or refresh `.synrepo/`.
+    pub fn initializes_runtime(self) -> bool {
+        matches!(self, Self::Full)
+    }
+}
+
+/// Action rows on the setup wizard's repo-local action step.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SetupActionRow {
+    /// Add `.synrepo/` to the repository root `.gitignore`.
+    AddRootGitignore,
+    /// Write the agent skill or instructions file.
+    WriteAgentShim,
+    /// Register the repo-local MCP server for automated targets.
+    RegisterMcp,
+    /// Install local client nudge hooks.
+    InstallAgentHooks,
+}
+
+/// Fixed action row order used by state and rendering.
+pub const SETUP_ACTION_ROWS: &[SetupActionRow] = &[
+    SetupActionRow::AddRootGitignore,
+    SetupActionRow::WriteAgentShim,
+    SetupActionRow::RegisterMcp,
+    SetupActionRow::InstallAgentHooks,
+];
+
 /// Plan produced by a completed setup wizard. Executed by the bin-side
 /// dispatcher after the TUI alternate-screen has been torn down.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SetupPlan {
+    /// Wizard shape that produced this plan.
+    pub flow: SetupFlow,
     /// Config mode to write into `.synrepo/config.toml`.
     pub mode: Mode,
     /// Optional agent-integration target. `None` means the user chose "skip".
     pub target: Option<AgentTargetKind>,
+    /// Add `.synrepo/` to the repository root `.gitignore`.
+    pub add_root_gitignore: bool,
+    /// Write or preserve the selected agent skill/instructions.
+    pub write_agent_shim: bool,
+    /// Register a repo-local MCP server for the selected agent.
+    pub register_mcp: bool,
+    /// Install local nudge hooks for supported agents.
+    pub install_agent_hooks: bool,
     /// Optional embedding backend to configure for semantic routing and
     /// hybrid search in this repository.
     pub embedding_setup: EmbeddingSetupChoice,
@@ -71,6 +119,8 @@ pub enum SetupStep {
     SelectMode,
     /// Pick agent-integration target or "skip".
     SelectTarget,
+    /// Pick repo-local integration actions and root gitignore handling.
+    SelectActions,
     /// Pick optional embeddings setup or leave semantic triage disabled.
     SelectEmbeddings,
     /// Static explainer: what explain produces, how it is triggered, what it
@@ -135,6 +185,8 @@ pub struct SetupWizardState {
     pub mode_cursor: usize,
     /// Cursor index in the target list: 0..N for targets, N for "Skip".
     pub target_cursor: usize,
+    /// Cursor index in the repo-local actions list.
+    pub action_cursor: usize,
     /// Cursor index in the embeddings list: 0 = Skip, 1 = ONNX, 2 = Ollama.
     pub embeddings_cursor: usize,
     /// Cursor index into [`crate::tui::wizard::setup::EXPLAIN_ROWS`].
@@ -145,6 +197,20 @@ pub struct SetupWizardState {
     pub mode: Mode,
     /// Committed target (set on Enter at `SelectTarget`). `None` means skip.
     pub target: Option<AgentTargetKind>,
+    /// Setup wizard shape.
+    pub flow: SetupFlow,
+    /// Probe-derived current integration state for default action selection.
+    pub current_integration: AgentIntegration,
+    /// Whether the root `.gitignore` already contains `.synrepo/`.
+    pub root_gitignore_present: bool,
+    /// Committed gitignore action.
+    pub add_root_gitignore: bool,
+    /// Committed action: write/preserve the selected agent shim.
+    pub write_agent_shim: bool,
+    /// Committed action: register repo-local MCP for selected target.
+    pub register_mcp: bool,
+    /// Committed action: install local nudge hooks.
+    pub install_agent_hooks: bool,
     /// Committed embeddings choice.
     pub embedding_setup: EmbeddingSetupChoice,
     /// True when running only the embeddings setup sub-flow.

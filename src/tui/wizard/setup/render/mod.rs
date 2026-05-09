@@ -4,6 +4,7 @@ use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
 
+mod actions;
 mod confirm;
 mod embeddings;
 mod explain;
@@ -11,7 +12,8 @@ mod explain;
 mod tests;
 
 use super::explain::ExplainWizardSupport;
-use super::state::{SetupStep, SetupWizardState, WIZARD_TARGETS};
+use super::state::{SetupFlow, SetupStep, SetupWizardState, WIZARD_TARGETS};
+use crate::bootstrap::runtime_probe::{AgentIntegration, AgentTargetKind};
 use crate::tui::app::poll_key;
 use crate::tui::theme::Theme;
 use crate::tui::wizard::{enter_tui, leave_tui, target_label, WizardTerminal};
@@ -20,12 +22,18 @@ use crate::tui::wizard::{enter_tui, leave_tui, target_label, WizardTerminal};
 pub fn run_setup_wizard_loop(
     theme: Theme,
     default_mode: crate::config::Mode,
-    detected_targets: Vec<crate::bootstrap::runtime_probe::AgentTargetKind>,
+    detected_targets: Vec<AgentTargetKind>,
+    current_integration: AgentIntegration,
+    flow: SetupFlow,
+    root_gitignore_present: bool,
 ) -> anyhow::Result<super::SetupWizardOutcome> {
     let mut terminal = enter_tui()?;
-    let mut state = SetupWizardState::with_explain_support(
+    let mut state = SetupWizardState::with_setup_context(
         default_mode,
         detected_targets,
+        current_integration,
+        flow,
+        root_gitignore_present,
         ExplainWizardSupport::detect(),
     );
     let result = render_loop(&mut terminal, &mut state, &theme);
@@ -97,20 +105,30 @@ fn draw(frame: &mut ratatui::Frame, state: &SetupWizardState, theme: &Theme) {
 
     let title = Paragraph::new(Line::from(Span::styled(
         match state.step {
-            SetupStep::Splash => " synrepo setup: step 1/6 welcome ",
-            SetupStep::SelectMode => " synrepo setup: step 2/6 graph mode ",
-            SetupStep::SelectTarget => " synrepo setup: step 3/6 agent integration ",
+            SetupStep::Splash => " synrepo setup: step 1/7 welcome ",
+            SetupStep::SelectMode => " synrepo setup: step 2/7 graph mode ",
+            SetupStep::SelectTarget if state.flow == SetupFlow::FollowUp => {
+                " synrepo setup: step 1/3 agent target "
+            }
+            SetupStep::SelectTarget => " synrepo setup: step 3/7 agent target ",
+            SetupStep::SelectActions if state.flow == SetupFlow::FollowUp => {
+                " synrepo setup: step 2/3 actions "
+            }
+            SetupStep::SelectActions => " synrepo setup: step 4/7 repo actions ",
             SetupStep::SelectEmbeddings if state.embeddings_only => {
                 " synrepo embeddings setup: provider "
             }
-            SetupStep::SelectEmbeddings => " synrepo setup: step 4/6 embeddings ",
-            SetupStep::ExplainExplain => " synrepo setup: step 5/6 what explain does ",
-            SetupStep::SelectExplain => " synrepo setup: step 5/6 LLM explain ",
+            SetupStep::SelectEmbeddings => " synrepo setup: step 5/7 embeddings ",
+            SetupStep::ExplainExplain => " synrepo setup: step 6/7 what explain does ",
+            SetupStep::SelectExplain => " synrepo setup: step 6/7 LLM explain ",
             SetupStep::EditCloudApiKey => " synrepo setup: step 5a cloud API key ",
             SetupStep::SelectLocalPreset => " synrepo setup: step 5a local LLM preset ",
             SetupStep::EditLocalEndpoint => " synrepo setup: step 5b local endpoint ",
             SetupStep::ReviewExplainPlan => " synrepo setup: step 5c review explain plan ",
-            SetupStep::Confirm => " synrepo setup: step 6/6 confirm ",
+            SetupStep::Confirm if state.flow == SetupFlow::FollowUp => {
+                " synrepo setup: step 3/3 confirm "
+            }
+            SetupStep::Confirm => " synrepo setup: step 7/7 confirm ",
             SetupStep::Complete => " synrepo setup: done ",
         },
         theme.agent_style(),
@@ -126,6 +144,7 @@ fn draw(frame: &mut ratatui::Frame, state: &SetupWizardState, theme: &Theme) {
         SetupStep::Splash => draw_splash_step(frame, outer[1], theme),
         SetupStep::SelectMode => draw_mode_step(frame, outer[1], state, theme),
         SetupStep::SelectTarget => draw_target_step(frame, outer[1], state, theme),
+        SetupStep::SelectActions => actions::draw_actions_step(frame, outer[1], state, theme),
         SetupStep::SelectEmbeddings => {
             embeddings::draw_embeddings_step(frame, outer[1], state, theme)
         }
@@ -153,6 +172,7 @@ fn draw(frame: &mut ratatui::Frame, state: &SetupWizardState, theme: &Theme) {
         | SetupStep::SelectTarget
         | SetupStep::SelectExplain
         | SetupStep::SelectLocalPreset => " ↑/↓ move  Enter select  Esc cancel ",
+        SetupStep::SelectActions => " ↑/↓ move  Space toggle  Enter continue  b back ",
         SetupStep::SelectEmbeddings if state.embeddings_only => {
             " ↑/↓ move  Enter select  Esc cancel "
         }

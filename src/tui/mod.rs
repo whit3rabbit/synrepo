@@ -3,7 +3,6 @@
 use std::path::Path;
 
 use crate::bootstrap::runtime_probe::{probe, AgentIntegration, AgentTargetKind, Missing};
-use crate::config::Mode;
 use crate::pipeline::watch::{watch_service_status, WatchServiceStatus};
 use crate::tui::actions::{outcome_to_log, start_watch_daemon, ActionContext, ActionOutcome};
 use crate::tui::widgets::LogEntry;
@@ -11,8 +10,8 @@ use crate::tui::widgets::LogEntry;
 pub use self::wizard::{
     CloudCredentialSource, EmbeddingSetupChoice, ExplainChoice, ExplainWizardSupport,
     IntegrationPlan, IntegrationWizardOutcome, McpInstallPlan, McpInstallWizardOutcome, RepairPlan,
-    RepairWizardOutcome, SetupPlan, SetupWizardOutcome, UninstallActionKind, UninstallPlan,
-    UninstallWizardOutcome,
+    RepairWizardOutcome, SetupFlow, SetupPlan, SetupWizardOutcome, UninstallActionKind,
+    UninstallPlan, UninstallWizardOutcome,
 };
 
 pub mod actions;
@@ -27,12 +26,14 @@ pub(crate) mod materializer;
 pub mod mcp_status;
 pub mod probe;
 pub mod projects;
+mod setup_flow;
 pub mod theme;
 mod watcher;
 pub mod widgets;
 pub mod wizard;
 
 pub use graph_view::run_graph_view;
+pub use setup_flow::setup_followup_needed;
 
 /// Options controlling how a TUI entry point renders and exits.
 #[derive(Clone, Copy, Debug, Default)]
@@ -189,12 +190,16 @@ pub fn run_setup_wizard(repo_root: &Path, opts: TuiOptions) -> anyhow::Result<Se
     // Seed mode default from observational signal: curated when the repo has
     // concept directories populated, otherwise auto.
     let probe_report = probe(repo_root);
-    let default_mode = if has_concept_directory(repo_root) {
-        Mode::Curated
-    } else {
-        Mode::Auto
-    };
-    wizard::run_setup_wizard_loop(theme, default_mode, probe_report.detected_agent_targets)
+    let default_mode = setup_flow::default_mode(repo_root);
+    let selection = setup_flow::select_setup_flow(repo_root, &probe_report);
+    wizard::run_setup_wizard_loop(
+        theme,
+        default_mode,
+        probe_report.detected_agent_targets,
+        probe_report.agent_integration,
+        selection.flow,
+        selection.root_gitignore_present,
+    )
 }
 
 /// Open the explain-only sub-wizard. Used by `synrepo setup --explain`
@@ -221,14 +226,6 @@ pub fn run_embeddings_only_wizard(opts: TuiOptions) -> anyhow::Result<SetupWizar
     }
     let theme = theme::Theme::from_no_color(opts.no_color);
     wizard::run_embeddings_only_wizard_loop(theme)
-}
-
-/// Detect whether the repo contains any of the canonical concept / ADR
-/// directories. Used by the wizard to bias the default mode cursor.
-fn has_concept_directory(repo_root: &Path) -> bool {
-    ["docs/concepts", "docs/adr", "docs/decisions"]
-        .iter()
-        .any(|p| repo_root.join(p).is_dir())
 }
 
 /// Open the guided repair wizard on a partial repo.

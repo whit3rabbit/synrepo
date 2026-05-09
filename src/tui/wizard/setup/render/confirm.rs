@@ -2,12 +2,12 @@ use ratatui::layout::Rect;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 
-use super::super::{CloudCredentialSource, EmbeddingSetupChoice, ExplainChoice, SetupWizardState};
+use super::super::{
+    CloudCredentialSource, EmbeddingSetupChoice, ExplainChoice, SetupFlow, SetupWizardState,
+};
 use super::explain::provider_env_var;
 use crate::tui::theme::Theme;
-use crate::tui::wizard::{
-    target_artifact_label, target_default_scope_label, target_label, target_tier, AgentTargetTier,
-};
+use crate::tui::wizard::{target_artifact_label, target_label, target_tier, AgentTargetTier};
 
 pub(super) fn draw_confirm_step(
     frame: &mut ratatui::Frame,
@@ -22,19 +22,24 @@ pub(super) fn draw_confirm_step(
     )));
     lines.push(Line::from(Span::raw("")));
     let mut step_no: usize = 1;
-    lines.push(Line::from(Span::styled(
-        format!("  {step_no}. init .synrepo/ in {} mode", state.mode),
-        theme.base_style(),
-    )));
-    step_no += 1;
+    if state.flow == SetupFlow::Full {
+        lines.push(Line::from(Span::styled(
+            format!("  {step_no}. init .synrepo/ in {} mode", state.mode),
+            theme.base_style(),
+        )));
+        step_no += 1;
+    }
+    push_gitignore_step(&mut lines, state, theme, &mut step_no);
     push_agent_steps(&mut lines, state, theme, &mut step_no);
-    push_embedding_step(&mut lines, state, theme, step_no);
-    step_no += 1;
-    push_explain_step(&mut lines, state, theme, &mut step_no);
-    lines.push(Line::from(Span::styled(
-        format!("  {step_no}. run first reconcile pass"),
-        theme.base_style(),
-    )));
+    if state.flow == SetupFlow::Full {
+        push_embedding_step(&mut lines, state, theme, step_no);
+        step_no += 1;
+        push_explain_step(&mut lines, state, theme, &mut step_no);
+        lines.push(Line::from(Span::styled(
+            format!("  {step_no}. run first reconcile pass"),
+            theme.base_style(),
+        )));
+    }
     lines.push(Line::from(Span::raw("")));
     lines.push(Line::from(Span::styled(
         "No files have been written yet. Press Enter to apply or b to go back.",
@@ -48,6 +53,31 @@ pub(super) fn draw_confirm_step(
     frame.render_widget(Paragraph::new(lines).block(block), area);
 }
 
+fn push_gitignore_step(
+    lines: &mut Vec<Line>,
+    state: &SetupWizardState,
+    theme: &Theme,
+    step_no: &mut usize,
+) {
+    if state.add_root_gitignore {
+        lines.push(Line::from(Span::styled(
+            format!("  {step_no}. add .synrepo/ to root .gitignore"),
+            theme.base_style(),
+        )));
+        *step_no += 1;
+    } else if state.root_gitignore_present {
+        lines.push(Line::from(Span::styled(
+            "     root .gitignore already contains .synrepo/",
+            theme.muted_style(),
+        )));
+    } else {
+        lines.push(Line::from(Span::styled(
+            "     root .gitignore unchanged",
+            theme.muted_style(),
+        )));
+    }
+}
+
 fn push_agent_steps(
     lines: &mut Vec<Line>,
     state: &SetupWizardState,
@@ -55,35 +85,53 @@ fn push_agent_steps(
     step_no: &mut usize,
 ) {
     let Some(target) = state.target else {
+        lines.push(Line::from(Span::styled(
+            "     agent integration skipped",
+            theme.muted_style(),
+        )));
         return;
     };
-    lines.push(Line::from(Span::styled(
-        format!(
-            "  {step_no}. write {} {} (scope: {})",
-            target_label(target),
-            target_artifact_label(target),
-            target_default_scope_label(target)
-        ),
-        theme.base_style(),
-    )));
-    *step_no += 1;
-    let mcp_line = match target_tier(target) {
-        AgentTargetTier::Automated => format!(
-            "  {step_no}. register MCP server for {} (scope: {})",
-            target_label(target),
-            target_default_scope_label(target)
-        ),
-        AgentTargetTier::ShimOnly => format!(
-            "  {step_no}. write manual MCP setup instructions for {} (scope: project)",
-            target_label(target)
-        ),
-    };
-    lines.push(Line::from(Span::styled(mcp_line, theme.base_style())));
-    *step_no += 1;
-    lines.push(Line::from(Span::styled(
-        "     hooks are not installed unless Integrations or --agent-hooks selects them",
-        theme.muted_style(),
-    )));
+    if state.write_agent_shim {
+        lines.push(Line::from(Span::styled(
+            format!(
+                "  {step_no}. write {} {} (scope: project)",
+                target_label(target),
+                target_artifact_label(target)
+            ),
+            theme.base_style(),
+        )));
+        *step_no += 1;
+    }
+    if state.register_mcp {
+        let mcp_line = match target_tier(target) {
+            AgentTargetTier::Automated => format!(
+                "  {step_no}. register MCP server for {} (scope: project)",
+                target_label(target)
+            ),
+            AgentTargetTier::ShimOnly => format!(
+                "  {step_no}. print manual MCP setup instructions for {}",
+                target_label(target)
+            ),
+        };
+        lines.push(Line::from(Span::styled(mcp_line, theme.base_style())));
+        *step_no += 1;
+    }
+    if state.install_agent_hooks {
+        lines.push(Line::from(Span::styled(
+            format!(
+                "  {step_no}. install local nudge hooks for {}",
+                target_label(target)
+            ),
+            theme.base_style(),
+        )));
+        *step_no += 1;
+    }
+    if !state.write_agent_shim && !state.register_mcp && !state.install_agent_hooks {
+        lines.push(Line::from(Span::styled(
+            "     agent integration unchanged",
+            theme.muted_style(),
+        )));
+    }
 }
 
 fn push_embedding_step(

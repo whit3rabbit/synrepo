@@ -16,7 +16,12 @@ use crate::util::atomic_write;
 use super::mode_inspect::inspect_repository_mode;
 use super::report::{BootstrapAction, BootstrapHealth, BootstrapReport};
 
+mod gitignore;
 mod readiness;
+use gitignore::write_synrepo_gitignore;
+pub use gitignore::{
+    ensure_root_gitignore_entry, remove_from_root_gitignore, root_gitignore_contains_synrepo,
+};
 use readiness::collect_degraded_capabilities;
 
 #[cfg(test)]
@@ -141,7 +146,7 @@ where
     write_synrepo_gitignore(&synrepo_dir)?;
     let mut root_gitignore_added_now = false;
     if update_gitignore {
-        root_gitignore_added_now = append_to_root_gitignore(repo_root)?;
+        root_gitignore_added_now = ensure_root_gitignore_entry(repo_root)?;
     }
     let repaired = runtime_already_existed
         && (layout_changed || remediated || !had_existing_config || !had_gitignore);
@@ -294,84 +299,6 @@ fn load_existing_config(config_path: &Path, synrepo_dir: &Path) -> anyhow::Resul
             "fix or remove it, then rerun `synrepo init`.",
         )
     })
-}
-
-fn write_synrepo_gitignore(synrepo_dir: &Path) -> anyhow::Result<()> {
-    let gitignore_path = synrepo_dir.join(".gitignore");
-    atomic_write_file(
-        &gitignore_path,
-        b"# Gitignore everything in .synrepo/\n\
-         *\n\
-         !.gitignore\n\
-         # Generated vectors directory (semantic-triage)\n\
-         index/vectors/\n",
-    )?;
-    Ok(())
-}
-
-/// Append `.synrepo/` to the root `.gitignore` if it is not already present.
-///
-/// Returns `true` when this call actually wrote the line (so the caller can
-/// record ownership in the install registry), `false` when the user's
-/// `.gitignore` already contained the entry (in which case the user owns the
-/// line and the removal path must not strip it).
-fn append_to_root_gitignore(repo_root: &Path) -> anyhow::Result<bool> {
-    let gitignore_path = repo_root.join(".gitignore");
-    let entry = ".synrepo/";
-
-    if gitignore_path.exists() {
-        let content = std::fs::read_to_string(&gitignore_path)?;
-        if content.lines().any(|l| l.trim() == entry) {
-            return Ok(false);
-        }
-        let mut new_content = content;
-        if !new_content.ends_with('\n') {
-            new_content.push('\n');
-        }
-        new_content.push_str(entry);
-        new_content.push('\n');
-        std::fs::write(&gitignore_path, new_content)?;
-    } else {
-        std::fs::write(&gitignore_path, format!("{entry}\n"))?;
-    }
-    Ok(true)
-}
-
-/// Remove a line matching `entry` from the root `.gitignore`.
-///
-/// Strictly line-exact (trim-compared) so neighbouring lines the user wrote
-/// are preserved byte-for-byte. Returns `true` when a line was stripped,
-/// `false` when no matching line existed. Missing `.gitignore` is not an
-/// error — it yields `false`.
-///
-/// Invariant: callers should only invoke this when the install registry
-/// recorded `root_gitignore_entry_added = true` (or the export equivalent).
-/// Stripping a line we did not add is how users lose their config.
-pub fn remove_from_root_gitignore(repo_root: &Path, entry: &str) -> anyhow::Result<bool> {
-    let gitignore_path = repo_root.join(".gitignore");
-    if !gitignore_path.exists() {
-        return Ok(false);
-    }
-    let content = std::fs::read_to_string(&gitignore_path)?;
-    let had_trailing_newline = content.ends_with('\n');
-    let mut removed = false;
-    let mut kept = Vec::with_capacity(content.lines().count());
-    for line in content.lines() {
-        if !removed && line.trim() == entry {
-            removed = true;
-            continue;
-        }
-        kept.push(line);
-    }
-    if !removed {
-        return Ok(false);
-    }
-    let mut new_content = kept.join("\n");
-    if had_trailing_newline && !new_content.is_empty() {
-        new_content.push('\n');
-    }
-    std::fs::write(&gitignore_path, new_content)?;
-    Ok(true)
 }
 
 /// Delegate to the canonical `util::atomic_write`, but ensure the parent

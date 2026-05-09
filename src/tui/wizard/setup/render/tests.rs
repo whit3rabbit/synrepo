@@ -62,11 +62,27 @@ fn first_run_confirm_lists_concrete_mcp_setup_plan() {
     let screen = render_state(&state);
 
     assert!(screen.contains("init .synrepo/ in auto mode"));
+    assert!(screen.contains("add .synrepo/ to root .gitignore"));
     assert!(screen.contains("write Claude Code skill"));
+    assert!(screen.contains("scope: project"));
     assert!(screen.contains("register MCP server for Claude Code"));
     assert!(screen.contains("leave embeddings disabled"));
     assert!(screen.contains("leave explain disabled"));
     assert!(screen.contains("No files have been written yet"));
+}
+
+#[test]
+fn actions_step_renders_gitignore_and_hook_toggles() {
+    let mut state = SetupWizardState::new(Mode::Auto, vec![AgentTargetKind::Codex]);
+    state.step = SetupStep::SelectActions;
+
+    let screen = render_state(&state);
+
+    assert!(screen.contains("[x] Add .synrepo/ to root .gitignore"));
+    assert!(screen.contains("[x] Write or update Codex CLI skill"));
+    assert!(screen.contains("[x] Register repo-local MCP server for Codex CLI"));
+    assert!(screen.contains("[ ] Install local nudge hooks for Codex CLI"));
+    assert!(screen.contains("Space toggle"));
 }
 
 #[test]

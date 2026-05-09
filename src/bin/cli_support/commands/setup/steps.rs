@@ -168,6 +168,16 @@ where
     }
 }
 
+pub(crate) fn step_add_root_gitignore(repo_root: &Path) -> anyhow::Result<StepOutcome> {
+    let added = synrepo::bootstrap::ensure_root_gitignore_entry(repo_root)?;
+    if added {
+        synrepo::registry::record_install(repo_root, true)?;
+        Ok(StepOutcome::Applied)
+    } else {
+        Ok(StepOutcome::AlreadyCurrent)
+    }
+}
+
 /// Write the agent integration shim for `target`.
 ///
 /// Missing shims are always written. Existing shims are preserved unless the

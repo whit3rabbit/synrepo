@@ -9,7 +9,9 @@ use crate::tui::wizard::setup::state::{EmbeddingSetupChoice, SetupStep, SetupWiz
 fn drive_to_embeddings(s: &mut SetupWizardState) {
     press(s, KeyCode::Enter); // splash -> mode
     press(s, KeyCode::Enter); // mode -> target
-    press(s, KeyCode::Enter); // target -> embeddings
+    press(s, KeyCode::Enter); // target -> actions
+    assert_eq!(s.step, SetupStep::SelectActions);
+    press(s, KeyCode::Enter); // actions -> embeddings
     assert_eq!(s.step, SetupStep::SelectEmbeddings);
 }
 
@@ -41,13 +43,13 @@ fn embeddings_enable_is_recorded_in_plan() {
 }
 
 #[test]
-fn embeddings_b_returns_to_target_selection() {
+fn embeddings_b_returns_to_actions() {
     let mut s = SetupWizardState::new(Mode::Auto, vec![]);
     drive_to_embeddings(&mut s);
 
     press(&mut s, KeyCode::Char('b'));
 
-    assert_eq!(s.step, SetupStep::SelectTarget);
+    assert_eq!(s.step, SetupStep::SelectActions);
     assert!(!s.cancelled);
 }
 

@@ -22,6 +22,6 @@ pub use render::{
     run_embeddings_only_wizard_loop, run_explain_only_wizard_loop, run_setup_wizard_loop,
 };
 pub use state_types::{
-    EmbeddingSetupChoice, SetupPlan, SetupStep, SetupWizardOutcome, SetupWizardState,
-    WIZARD_TARGETS,
+    EmbeddingSetupChoice, SetupActionRow, SetupFlow, SetupPlan, SetupStep, SetupWizardOutcome,
+    SetupWizardState, SETUP_ACTION_ROWS, WIZARD_TARGETS,
 };
