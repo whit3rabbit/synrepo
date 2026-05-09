@@ -6,15 +6,22 @@
 //!
 //! Rules (applied in order; first match wins):
 //!
-//! 1. Binary — `qualified_name == "main"` in Rust binary paths or Dart app paths
+//! 1. Binary — `qualified_name == "main"` in Rust binary paths or Dart app paths,
+//!    or an Android launcher activity declared by `AndroidManifest.xml`
 //! 2. CliCommand — `SymbolKind::Function` in a file whose path segment is `cli`, `command`, or `cmd`
 //! 3. HttpHandler — name prefix `handle_`/`serve_`/`route_`, or path segment `handler`/`route`/`router`
 //! 4. LibRoot — top-level item in `src/lib.rs` or any `mod.rs`
 
-use std::collections::HashMap;
+use std::{
+    collections::{BTreeSet, HashMap},
+    path::Path,
+};
 
 use crate::{
-    core::ids::{FileNodeId, NodeId},
+    core::{
+        ids::{FileNodeId, NodeId},
+        project_layout::android_launcher_activities,
+    },
     structure::graph::{EdgeKind, GraphReader, SymbolKind},
     surface::card::{
         truncate_chars,
@@ -28,6 +35,7 @@ pub(super) fn entry_point_card_impl(
     graph: &dyn GraphReader,
     scope: Option<&str>,
     budget: Budget,
+    repo_root: Option<&Path>,
 ) -> crate::Result<EntryPointCard> {
     // Build a fast file-id → path lookup to avoid O(N) get_file calls.
     let file_path_map: HashMap<FileNodeId, String> = graph
@@ -38,6 +46,9 @@ pub(super) fn entry_point_card_impl(
 
     let symbols_summary = graph.all_symbols_summary()?;
     let mut entry_points: Vec<EntryPoint> = Vec::new();
+    let android_launchers = repo_root
+        .map(android_launcher_activities)
+        .unwrap_or_default();
 
     for (sym_id, file_id, qname, kind_label, _body_hash) in &symbols_summary {
         let Some(path) = file_path_map.get(file_id) else {
@@ -55,7 +66,8 @@ pub(super) fn entry_point_card_impl(
             continue;
         };
 
-        let Some(kind) = classify_kind(qname, path, sym_kind) else {
+        let Some(kind) = classify_kind_with_context(qname, path, sym_kind, &android_launchers)
+        else {
             continue;
         };
 
@@ -131,8 +143,23 @@ pub(super) fn entry_point_card_impl(
 
 /// Apply the four detection rules in priority order; return the first match.
 pub(super) fn classify_kind(qname: &str, path: &str, kind: SymbolKind) -> Option<EntryPointKind> {
+    classify_kind_with_context(qname, path, kind, &BTreeSet::new())
+}
+
+fn classify_kind_with_context(
+    qname: &str,
+    path: &str,
+    kind: SymbolKind,
+    android_launchers: &BTreeSet<String>,
+) -> Option<EntryPointKind> {
     // Rule 1: Binary
     if qname == "main" && is_binary_path(path) {
+        return Some(EntryPointKind::Binary);
+    }
+    if kind == SymbolKind::Class
+        && is_android_main_source_path(path)
+        && android_launchers.contains(simple_symbol_name(qname))
+    {
         return Some(EntryPointKind::Binary);
     }
 
@@ -172,6 +199,17 @@ fn is_binary_path(path: &str) -> bool {
 
 fn path_has_segment(path: &str, segments: &[&str]) -> bool {
     path.split('/').any(|seg| segments.contains(&seg))
+}
+
+fn is_android_main_source_path(path: &str) -> bool {
+    path.contains("/src/main/java/")
+        || path.contains("/src/main/kotlin/")
+        || path.starts_with("src/main/java/")
+        || path.starts_with("src/main/kotlin/")
+}
+
+fn simple_symbol_name(qname: &str) -> &str {
+    qname.rsplit("::").next().unwrap_or(qname)
 }
 
 fn kind_order(kind: EntryPointKind) -> u8 {

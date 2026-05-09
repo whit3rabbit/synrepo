@@ -332,8 +332,9 @@ impl CardCompiler for GraphCardCompiler {
         scope: Option<&str>,
         budget: Budget,
     ) -> crate::Result<EntryPointCard> {
-        let result =
-            self.with_reader(|graph| entry_point::entry_point_card_impl(graph, scope, budget));
+        let result = self.with_reader(|graph| {
+            entry_point::entry_point_card_impl(graph, scope, budget, self.repo_root.as_deref())
+        });
         self.git_cache.on_compile_cycle_end();
         result
     }

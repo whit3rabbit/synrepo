@@ -187,12 +187,42 @@ fn find_test_symbols(
             .filter(|sym| sym.qualified_name == "main")
             .collect();
     }
+    if test_symbols.is_empty() && is_android_jvm_test_path(file_path) {
+        test_symbols = graph
+            .symbols_for_file(file_id)?
+            .into_iter()
+            .filter(|sym| matches!(sym.kind, SymbolKind::Function | SymbolKind::Method))
+            .collect();
+    }
 
     Ok(test_symbols)
 }
 
 fn is_dart_test_path(path: &str) -> bool {
     path.starts_with("test/") && path.ends_with("_test.dart")
+}
+
+fn is_android_jvm_test_path(path: &str) -> bool {
+    let is_test_root = path.contains("/src/test/java/")
+        || path.contains("/src/test/kotlin/")
+        || path.contains("/src/androidTest/java/")
+        || path.contains("/src/androidTest/kotlin/")
+        || path.starts_with("src/test/java/")
+        || path.starts_with("src/test/kotlin/")
+        || path.starts_with("src/androidTest/java/")
+        || path.starts_with("src/androidTest/kotlin/");
+    if !is_test_root {
+        return false;
+    }
+    let Some(name) = path.rsplit('/').next() else {
+        return false;
+    };
+    name.ends_with("Test.java")
+        || name.ends_with("Tests.java")
+        || name.ends_with("InstrumentedTest.java")
+        || name.ends_with("Test.kt")
+        || name.ends_with("Tests.kt")
+        || name.ends_with("InstrumentedTest.kt")
 }
 
 /// Compute the association field.

@@ -74,6 +74,47 @@ fn binary_rule_matches_dart_bin_main() {
 }
 
 #[test]
+fn binary_rule_matches_android_launcher_activity() {
+    let repo = tempdir().unwrap();
+    fs::create_dir_all(repo.path().join("app/src/main/java/com/example")).unwrap();
+    fs::write(
+        repo.path().join("app/src/main/AndroidManifest.xml"),
+        r#"<manifest package="com.example">
+  <application>
+    <activity android:name=".MainActivity">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN" />
+        <category android:name="android.intent.category.LAUNCHER" />
+      </intent-filter>
+    </activity>
+  </application>
+</manifest>"#,
+    )
+    .unwrap();
+    fs::write(
+        repo.path()
+            .join("app/src/main/java/com/example/MainActivity.java"),
+        "package com.example;\npublic class MainActivity {}\n",
+    )
+    .unwrap();
+
+    let graph = bootstrap(&repo);
+    let compiler = GraphCardCompiler::new(Box::new(graph), Some(repo.path()));
+    let card = compiler.entry_point_card(None, Budget::Tiny).unwrap();
+
+    assert!(
+        card.entry_points.iter().any(|e| {
+            e.kind == EntryPointKind::Binary
+                && e.qualified_name == "MainActivity"
+                && e.location
+                    .starts_with("app/src/main/java/com/example/MainActivity.java:")
+        }),
+        "expected Android launcher entrypoint in {:?}",
+        card.entry_points
+    );
+}
+
+#[test]
 fn binary_rule_does_not_match_main_in_lib_rs() {
     let repo = tempdir().unwrap();
     fs::create_dir_all(repo.path().join("src")).unwrap();

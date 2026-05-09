@@ -6,6 +6,9 @@ pub(crate) fn matches_path_convention(test_path: &str, source_path: &str) -> boo
     if matches_dart_lib_test_convention(test_path, source_path) {
         return true;
     }
+    if matches_android_jvm_test_convention(test_path, source_path) {
+        return true;
+    }
 
     let source = Path::new(source_path);
     let Some(source_stem) = source.file_stem().and_then(|stem| stem.to_str()) else {
@@ -53,6 +56,47 @@ fn matches_dart_lib_test_convention(test_path: &str, source_path: &str) -> bool 
     source_body == test_body
 }
 
+fn matches_android_jvm_test_convention(test_path: &str, source_path: &str) -> bool {
+    let Some((source_module, source_body)) =
+        split_android_source_path(source_path, &["src/main/java/", "src/main/kotlin/"])
+    else {
+        return false;
+    };
+    let Some((test_module, test_body)) = split_android_source_path(
+        test_path,
+        &[
+            "src/test/java/",
+            "src/test/kotlin/",
+            "src/androidTest/java/",
+            "src/androidTest/kotlin/",
+        ],
+    ) else {
+        return false;
+    };
+    if source_module != test_module {
+        return false;
+    }
+
+    ["Test", "Tests", "InstrumentedTest"]
+        .iter()
+        .any(|suffix| test_body == format!("{source_body}{suffix}"))
+}
+
+fn split_android_source_path<'a>(path: &'a str, markers: &[&str]) -> Option<(&'a str, String)> {
+    for marker in markers {
+        let Some(marker_start) = path.find(marker) else {
+            continue;
+        };
+        let module = path[..marker_start].trim_end_matches('/');
+        let body = &path[marker_start + marker.len()..];
+        let body = body
+            .strip_suffix(".java")
+            .or_else(|| body.strip_suffix(".kt"))?;
+        return Some((module, body.to_string()));
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::matches_path_convention;
@@ -71,6 +115,14 @@ mod tests {
         assert!(matches_path_convention(
             "test/src/main_test.dart",
             "lib/src/main.dart"
+        ));
+        assert!(matches_path_convention(
+            "app/src/test/java/com/example/ShellTest.java",
+            "app/src/main/kotlin/com/example/Shell.kt"
+        ));
+        assert!(matches_path_convention(
+            "app/src/androidTest/kotlin/com/example/ShellInstrumentedTest.kt",
+            "app/src/main/java/com/example/Shell.java"
         ));
     }
 

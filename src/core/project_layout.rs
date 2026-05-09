@@ -7,9 +7,13 @@ use std::{
     path::{Path, PathBuf},
 };
 
+mod android;
+
 /// Project family inferred from a repository manifest or conventional layout.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ProjectProfileKind {
+    /// Android Gradle application or library.
+    Android,
     /// Flutter application or package.
     Flutter,
     /// Dart package without a Flutter dependency.
@@ -28,6 +32,7 @@ impl ProjectProfileKind {
     /// Stable lowercase label for status/readiness surfaces.
     pub fn as_str(self) -> &'static str {
         match self {
+            ProjectProfileKind::Android => "android",
             ProjectProfileKind::Flutter => "flutter",
             ProjectProfileKind::Dart => "dart",
             ProjectProfileKind::Rust => "rust",
@@ -127,6 +132,8 @@ pub fn detect_project_layout(repo_root: &Path, configured_roots: &[String]) -> P
         add_existing(repo_root, &mut source_roots, &["lib", "bin"]);
         add_existing(repo_root, &mut test_roots, &["test"]);
     }
+
+    android::add_android_layout(repo_root, &mut profiles, &mut source_roots, &mut test_roots);
 
     if repo_root.join("Cargo.toml").is_file() {
         profiles.push(ProjectProfile {
@@ -280,6 +287,8 @@ fn into_sorted(roots: BTreeSet<String>) -> Vec<String> {
     roots.into_iter().collect()
 }
 
+pub(crate) use android::android_launcher_activities;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -339,5 +348,38 @@ mod tests {
         assert!(layout.source_roots.contains(&"mypkg".to_string()));
         assert!(layout.test_roots.contains(&"tests".to_string()));
         assert!(layout.excluded_roots.is_empty());
+    }
+
+    #[test]
+    fn project_layout_detects_android_gradle_roots_and_exclusions() {
+        let repo = tempdir().unwrap();
+        fs::write(repo.path().join("settings.gradle"), "pluginManagement {}\n").unwrap();
+        fs::create_dir_all(repo.path().join("app/src/main/java/com/example")).unwrap();
+        fs::create_dir_all(repo.path().join("app/src/main/kotlin/com/example")).unwrap();
+        fs::create_dir_all(repo.path().join("app/src/test/java/com/example")).unwrap();
+        fs::create_dir_all(repo.path().join("app/src/androidTest/kotlin/com/example")).unwrap();
+        fs::write(
+            repo.path().join("app/src/main/AndroidManifest.xml"),
+            r#"<manifest package="com.example"><application /></manifest>"#,
+        )
+        .unwrap();
+
+        let layout = detect_project_layout(repo.path(), &["app/src/main/java".to_string()]);
+
+        assert_eq!(layout.profiles[0].kind, ProjectProfileKind::Android);
+        assert_eq!(
+            layout.source_roots,
+            vec![
+                "app/src/main/java".to_string(),
+                "app/src/main/kotlin".to_string()
+            ]
+        );
+        assert!(layout.test_roots.contains(&"app/src/test/java".to_string()));
+        assert!(layout
+            .test_roots
+            .contains(&"app/src/androidTest/kotlin".to_string()));
+        assert!(layout
+            .excluded_roots
+            .contains(&"app/src/main/kotlin".to_string()));
     }
 }

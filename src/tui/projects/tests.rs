@@ -16,7 +16,8 @@ fn home_guard() -> (
 ) {
     let lock = crate::test_support::global_test_lock(crate::config::test_home::HOME_ENV_TEST_LOCK);
     let home = tempdir().unwrap();
-    let guard = crate::config::test_home::HomeEnvGuard::redirect_to(home.path());
+    let canonical_home = home.path().canonicalize().unwrap();
+    let guard = crate::config::test_home::HomeEnvGuard::redirect_to(&canonical_home);
     (lock, home, guard)
 }
 
@@ -249,6 +250,32 @@ fn load_project_refs_hides_uninitialized_and_keeps_ready_and_partial() {
     assert!(ids.contains(&ready_entry.id.as_str()), "{ids:?}");
     assert!(ids.contains(&partial_entry.id.as_str()), "{ids:?}");
     assert!(!ids.contains(&uninitialized_entry.id.as_str()), "{ids:?}");
+}
+
+#[test]
+fn project_ref_integration_uses_install_matrix_summary() {
+    let (_lock, _home, _guard) = home_guard();
+    let repo = tempdir().unwrap();
+    make_partial_project(repo.path());
+    std::fs::write(
+        repo.path().join(".mcp.json"),
+        r#"{"mcpServers":{"synrepo":{"command":"synrepo","args":["mcp","--repo","."]}}}"#,
+    )
+    .unwrap();
+    let skill = agent_config::skill_by_id("claude").unwrap();
+    let spec = agent_config::SkillSpec::builder("synrepo")
+        .owner("synrepo")
+        .description("Use when a repository has synrepo context available.")
+        .body("# Synrepo\n")
+        .build();
+    let _ = skill
+        .install_skill(&agent_config::Scope::Global, &spec)
+        .unwrap();
+    let entry = registry::record_project(repo.path()).unwrap();
+
+    let project = ProjectRef::from_entry(&entry).unwrap();
+
+    assert_eq!(project.integration, "complete (claude)");
 }
 
 #[test]

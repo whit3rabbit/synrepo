@@ -18,6 +18,9 @@ use crate::config::Config;
 use crate::pipeline::watch::{watch_service_status, WatchServiceStatus};
 use crate::pipeline::writer::live_owner_pid;
 use crate::registry::{self, ProjectEntry};
+use crate::tui::agent_integrations::{
+    build_agent_install_statuses, summarize_agent_install_statuses,
+};
 use crate::tui::app::{ActiveTab, AppState};
 use crate::tui::theme::Theme;
 
@@ -55,6 +58,8 @@ impl ProjectRef {
         let lock = live_owner_pid(&synrepo_dir)
             .map(|pid| format!("pid:{pid}"))
             .unwrap_or_else(|| "free".to_string());
+        let integration_summary =
+            summarize_agent_install_statuses(&build_agent_install_statuses(&entry.path));
         Some(Self {
             id: entry.effective_id(),
             name: entry.display_name(),
@@ -62,7 +67,7 @@ impl ProjectRef {
             health,
             watch,
             lock,
-            integration: format!("{:?}", report.agent_integration).to_lowercase(),
+            integration: integration_summary.label,
             last_opened_at: entry.last_opened_at.clone(),
         })
     }

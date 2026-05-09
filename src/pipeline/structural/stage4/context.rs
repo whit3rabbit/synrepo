@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
     path::{Path, PathBuf},
 };
 
@@ -58,6 +58,8 @@ pub(super) struct ResolverContext {
     pub(super) rust_crate_src_by_dir: HashMap<PathBuf, Option<Vec<String>>>,
     /// `package:<name>/` prefix precomputed for Dart package imports.
     pub(super) dart_package_prefix: Option<String>,
+    /// Java/Kotlin source roots keyed by discovery root ID.
+    pub(super) jvm_source_roots: HashMap<String, Vec<String>>,
 }
 
 /// Pending cross-file resolution work for one file parsed this cycle.
@@ -131,6 +133,7 @@ pub(super) fn build_indices(
         }
         file_index.insert((root_id, path), file_id);
     }
+    let jvm_source_roots = collect_jvm_source_roots(&file_index);
 
     let go_module_prefix = load_go_module_prefix(repo_root);
     let go_module_prefix_slash = go_module_prefix.as_deref().map(|p| format!("{p}/"));
@@ -165,7 +168,54 @@ pub(super) fn build_indices(
         go_module_prefix_slash,
         rust_crate_src_by_dir,
         dart_package_prefix,
+        jvm_source_roots,
     };
 
     Ok((ctx, name_index, symbol_meta, caller_index))
+}
+
+const JVM_SOURCE_MARKERS: &[&str] = &[
+    "src/main/java",
+    "src/main/kotlin",
+    "src/test/java",
+    "src/test/kotlin",
+    "src/androidTest/java",
+    "src/androidTest/kotlin",
+];
+
+fn collect_jvm_source_roots(
+    file_index: &HashMap<(String, String), FileNodeId>,
+) -> HashMap<String, Vec<String>> {
+    let mut roots: HashMap<String, BTreeSet<String>> = HashMap::new();
+    for (root_id, path) in file_index.keys() {
+        if !(path.ends_with(".java") || path.ends_with(".kt")) {
+            continue;
+        }
+        let Some(source_root) = jvm_source_root_for_path(path) else {
+            continue;
+        };
+        roots
+            .entry(root_id.clone())
+            .or_default()
+            .insert(source_root);
+    }
+    roots
+        .into_iter()
+        .map(|(root_id, roots)| (root_id, roots.into_iter().collect()))
+        .collect()
+}
+
+fn jvm_source_root_for_path(path: &str) -> Option<String> {
+    for marker in JVM_SOURCE_MARKERS {
+        let marker_with_slash = format!("{marker}/");
+        if path.starts_with(&marker_with_slash) {
+            return Some((*marker).to_string());
+        }
+        let infix = format!("/{marker}/");
+        if let Some(pos) = path.find(&infix) {
+            let end = pos + 1 + marker.len();
+            return Some(path[..end].to_string());
+        }
+    }
+    None
 }

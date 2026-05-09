@@ -1,3 +1,4 @@
+mod android;
 mod common;
 mod dart;
 mod go;

@@ -110,6 +110,7 @@ pub(super) fn emit_imports_for_file(
 /// - Python dotted imports (`foo.bar` -> `foo/bar.py`).
 /// - Go imports whose prefix matches the local `go.mod` module declaration,
 ///   fanned out across every `.go` file in the resolved package directory.
+/// - Java/Kotlin imports resolved against conventional JVM source roots.
 pub(super) fn resolve_import_ref(
     module_ref: &str,
     importing_file: &str,
@@ -136,6 +137,9 @@ pub(super) fn resolve_import_ref(
             return resolve_go_import(stripped, root_id, ctx);
         }
         Some(Language::Dart) => return resolve_dart_import(module_ref, importing_file, ctx),
+        Some(Language::Java) | Some(Language::Kotlin) => {
+            return resolve_jvm_import(module_ref, root_id, ctx);
+        }
         _ => {}
     }
 
@@ -234,6 +238,94 @@ fn dart_file_candidates(base: &str) -> Vec<String> {
     } else {
         vec![format!("{base}.dart")]
     }
+}
+
+/// Resolve Java/Kotlin imports to class source files under known JVM roots.
+fn resolve_jvm_import(module_ref: &str, root_id: &str, ctx: &ResolverContext) -> Vec<String> {
+    let module_ref = module_ref
+        .trim()
+        .trim_end_matches(';')
+        .strip_prefix("static ")
+        .unwrap_or_else(|| module_ref.trim().trim_end_matches(';'));
+    if module_ref.is_empty()
+        || !module_ref
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '*'))
+    {
+        return Vec::new();
+    }
+
+    let Some(source_roots) = ctx.jvm_source_roots.get(root_id) else {
+        return Vec::new();
+    };
+
+    if let Some(package_ref) = module_ref.strip_suffix(".*") {
+        return resolve_jvm_wildcard_import(package_ref, root_id, source_roots, ctx);
+    }
+
+    let slash_path = module_ref.replace('.', "/");
+    let mut candidates = Vec::new();
+    push_jvm_file_candidates(&mut candidates, source_roots, &slash_path);
+    if let Some(parent) = slash_path.rsplit_once('/').map(|(parent, _)| parent) {
+        push_jvm_file_candidates(&mut candidates, source_roots, parent);
+    }
+    candidates.sort();
+    candidates.dedup();
+    candidates
+}
+
+fn resolve_jvm_wildcard_import(
+    package_ref: &str,
+    root_id: &str,
+    source_roots: &[String],
+    ctx: &ResolverContext,
+) -> Vec<String> {
+    let package_dir = package_ref.replace('.', "/");
+    let mut candidates = Vec::new();
+    for source_root in source_roots {
+        let dir = join_graph_path(source_root, &package_dir);
+        let Some(files) = ctx.files_by_dir.get(&(root_id.to_string(), dir.clone())) else {
+            continue;
+        };
+        for file in files {
+            if is_jvm_source_file(file) {
+                candidates.push(join_graph_path(&dir, file));
+            }
+        }
+    }
+    candidates.sort();
+    candidates.dedup();
+    candidates
+}
+
+fn push_jvm_file_candidates(
+    candidates: &mut Vec<String>,
+    source_roots: &[String],
+    slash_path: &str,
+) {
+    for source_root in source_roots {
+        let base = join_graph_path(source_root, slash_path);
+        candidates.push(format!("{base}.java"));
+        candidates.push(format!("{base}.kt"));
+    }
+}
+
+fn join_graph_path(left: &str, right: &str) -> String {
+    if left.is_empty() {
+        right.to_string()
+    } else if right.is_empty() {
+        left.to_string()
+    } else {
+        format!(
+            "{}/{}",
+            left.trim_end_matches('/'),
+            right.trim_start_matches('/')
+        )
+    }
+}
+
+fn is_jvm_source_file(file_name: &str) -> bool {
+    file_name.ends_with(".java") || file_name.ends_with(".kt")
 }
 
 /// Resolve a Go import string to every `.go` file in the target package.

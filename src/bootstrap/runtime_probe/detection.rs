@@ -2,6 +2,8 @@
 
 use std::path::{Path, PathBuf};
 
+use agent_config::{InstallStatus, Scope, ScopeKind};
+
 use crate::agent_install::{skill_manifest_path, SYNREPO_INSTALL_NAME, SYNREPO_INSTALL_OWNER};
 
 use super::types::{AgentIntegration, AgentTargetKind};
@@ -21,17 +23,24 @@ pub fn detect_agent_integration(
         detected_targets.to_vec()
     };
 
+    let mut best = AgentIntegration::Absent;
     for target in probe_order {
         let shim = shim_exists(repo_root, target);
         let mcp = mcp_registration_present(repo_root, target);
-        match (shim, mcp) {
-            (true, true) => return AgentIntegration::Complete { target },
-            (true, false) => return AgentIntegration::Partial { target },
-            (false, true) => return AgentIntegration::McpOnly { target },
+        let current = match (shim, mcp) {
+            (true, true) => AgentIntegration::Complete { target },
+            (true, false) => AgentIntegration::Partial { target },
+            (false, true) => AgentIntegration::McpOnly { target },
             (false, false) => continue,
+        };
+        if matches!(current, AgentIntegration::Complete { .. }) {
+            return current;
+        }
+        if matches!(best, AgentIntegration::Absent) {
+            best = current;
         }
     }
-    AgentIntegration::Absent
+    best
 }
 
 /// All known agent target kinds in stable order.
@@ -65,7 +74,7 @@ pub fn all_agent_targets() -> &'static [AgentTargetKind] {
 }
 
 fn shim_exists(repo_root: &Path, target: AgentTargetKind) -> bool {
-    shim_output_path(repo_root, target).exists()
+    context_registration_present(repo_root, target) || shim_output_path(repo_root, target).exists()
 }
 
 /// Path to the shim output file for the given target.
@@ -95,6 +104,33 @@ fn agent_config_shim_output_path(
             .and_then(|report| report.config_path);
     }
     None
+}
+
+fn context_registration_present(repo_root: &Path, target: AgentTargetKind) -> bool {
+    let id = agent_config_id(target);
+    if let Some(skill) = agent_config::skill_by_id(id) {
+        for scope in scopes(repo_root, skill.supported_skill_scopes()) {
+            if let Ok(report) =
+                skill.skill_status(&scope, SYNREPO_INSTALL_NAME, SYNREPO_INSTALL_OWNER)
+            {
+                if installed(&report.status) {
+                    return true;
+                }
+            }
+        }
+    }
+    if let Some(instruction) = agent_config::instruction_by_id(id) {
+        for scope in scopes(repo_root, instruction.supported_instruction_scopes()) {
+            if let Ok(report) =
+                instruction.instruction_status(&scope, SYNREPO_INSTALL_NAME, SYNREPO_INSTALL_OWNER)
+            {
+                if installed(&report.status) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 fn agent_config_id(target: AgentTargetKind) -> &'static str {
@@ -135,18 +171,42 @@ fn legacy_shim_output_path(repo_root: &Path, target: AgentTargetKind) -> PathBuf
 fn mcp_registration_present(repo_root: &Path, target: AgentTargetKind) -> bool {
     let id = target.as_str();
     if let Some(installer) = agent_config::mcp_by_id(id) {
-        let scope = agent_config::Scope::Local(repo_root.to_path_buf());
-        if let Ok(report) =
-            installer.mcp_status(&scope, SYNREPO_INSTALL_NAME, SYNREPO_INSTALL_OWNER)
-        {
-            return matches!(
-                report.status,
-                agent_config::InstallStatus::InstalledOwned { .. }
-                    | agent_config::InstallStatus::PresentUnowned
-            );
+        let mut checked = false;
+        for scope in scopes(repo_root, installer.supported_mcp_scopes()) {
+            if let Ok(report) =
+                installer.mcp_status(&scope, SYNREPO_INSTALL_NAME, SYNREPO_INSTALL_OWNER)
+            {
+                checked = true;
+                if installed(&report.status) {
+                    return true;
+                }
+            }
+        }
+        if checked {
+            return false;
         }
     }
     shim_exists(repo_root, target)
+}
+
+fn scopes(repo_root: &Path, supported: &[ScopeKind]) -> Vec<Scope> {
+    let mut out = Vec::new();
+    if supported.contains(&ScopeKind::Local) {
+        out.push(Scope::Local(repo_root.to_path_buf()));
+    }
+    if supported.contains(&ScopeKind::Global) {
+        out.push(Scope::Global);
+    }
+    out
+}
+
+fn installed(status: &InstallStatus) -> bool {
+    matches!(
+        status,
+        InstallStatus::InstalledOwned { .. }
+            | InstallStatus::PresentUnowned
+            | InstallStatus::InstalledOtherOwner { .. }
+    )
 }
 
 /// Detect agent targets via observational hints in the repo and home directory.

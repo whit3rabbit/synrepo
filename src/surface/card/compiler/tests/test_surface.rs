@@ -85,6 +85,42 @@ fn test_surface_card_finds_flutter_test_main_harness() {
 }
 
 #[test]
+fn test_surface_card_finds_android_junit_method_without_test_name() {
+    let repo = tempdir().unwrap();
+    fs::create_dir_all(repo.path().join("app/src/main/kotlin/com/example")).unwrap();
+    fs::create_dir_all(repo.path().join("app/src/test/java/com/example")).unwrap();
+
+    fs::write(
+        repo.path().join("app/src/main/kotlin/com/example/Shell.kt"),
+        "package com.example\nclass Shell { fun run() {} }\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.path()
+            .join("app/src/test/java/com/example/ShellTest.java"),
+        "package com.example;\npublic class ShellTest { public void usesShell() {} }\n",
+    )
+    .unwrap();
+
+    let graph = bootstrap(&repo);
+    let compiler = make_compiler(graph, &repo);
+
+    let card = compiler
+        .test_surface_card("app/src/main/kotlin/com/example/Shell.kt", Budget::Normal)
+        .unwrap();
+
+    assert_eq!(card.test_file_count, 1);
+    assert!(
+        card.tests.iter().any(|entry| {
+            entry.file_path == "app/src/test/java/com/example/ShellTest.java"
+                && entry.qualified_name == "ShellTest::usesShell"
+        }),
+        "expected Android JUnit method fallback in {:?}",
+        card.tests
+    );
+}
+
+#[test]
 fn test_surface_card_tiny_budget_returns_counts_only() {
     let repo = tempdir().unwrap();
     fs::create_dir_all(repo.path().join("src")).unwrap();
