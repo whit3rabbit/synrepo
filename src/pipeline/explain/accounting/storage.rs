@@ -1,6 +1,8 @@
+use std::collections::BTreeMap;
 use std::fs::{File, OpenOptions};
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
@@ -8,9 +10,13 @@ use super::super::telemetry::{ExplainEvent, Outcome, UsageSource};
 use super::record::record_for_event;
 use super::types::{ExplainCallRecord, ExplainTotals};
 use crate::util::atomic_write::atomic_write;
+use crate::util::file_lock::exclusive_file_lock;
 
 const LOG_FILENAME: &str = "explain-log.jsonl";
 const TOTALS_FILENAME: &str = "explain-totals.json";
+const LOCK_FILENAME: &str = "explain-accounting.lock";
+static EXPLAIN_ACCOUNTING_LOCKS: OnceLock<Mutex<BTreeMap<PathBuf, Arc<Mutex<()>>>>> =
+    OnceLock::new();
 
 /// Path of the explain append-only log for a given `.synrepo/` dir.
 pub fn log_path(synrepo_dir: &Path) -> PathBuf {
@@ -22,6 +28,10 @@ pub fn totals_path(synrepo_dir: &Path) -> PathBuf {
     synrepo_dir.join("state").join(TOTALS_FILENAME)
 }
 
+fn lock_path(synrepo_dir: &Path) -> PathBuf {
+    synrepo_dir.join("state").join(LOCK_FILENAME)
+}
+
 /// Synchronously record a explain event: append a JSONL line for
 /// lifecycle-terminal events, then rewrite the totals snapshot.
 ///
@@ -30,14 +40,19 @@ pub fn record_event(synrepo_dir: &Path, event: &ExplainEvent) -> std::io::Result
     let Some(record) = record_for_event(event) else {
         return Ok(());
     };
-    append_record(synrepo_dir, &record)?;
-    update_totals(synrepo_dir, &record)?;
-    Ok(())
+    with_accounting_lock(synrepo_dir, || {
+        append_record(synrepo_dir, &record)?;
+        update_totals(synrepo_dir, &record)
+    })
 }
 
 /// Reset the JSONL log and totals snapshot. The existing log is rotated to
 /// `explain-log.jsonl.<rfc3339>.bak` so nothing is lost.
 pub fn reset(synrepo_dir: &Path) -> std::io::Result<()> {
+    with_accounting_lock(synrepo_dir, || reset_locked(synrepo_dir))
+}
+
+fn reset_locked(synrepo_dir: &Path) -> std::io::Result<()> {
     let state_dir = synrepo_dir.join("state");
     std::fs::create_dir_all(&state_dir)?;
 
@@ -60,6 +75,29 @@ pub fn reset(synrepo_dir: &Path) -> std::io::Result<()> {
         ..ExplainTotals::default()
     };
     atomic_write_json(&totals_path(synrepo_dir), &totals)
+}
+
+fn with_accounting_lock<T>(
+    synrepo_dir: &Path,
+    work: impl FnOnce() -> std::io::Result<T>,
+) -> std::io::Result<T> {
+    let repo_lock = explain_repo_mutex(synrepo_dir);
+    let _process_guard = repo_lock
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    let _file_guard = exclusive_file_lock(&lock_path(synrepo_dir))?;
+    work()
+}
+
+fn explain_repo_mutex(synrepo_dir: &Path) -> Arc<Mutex<()>> {
+    let mut locks = EXPLAIN_ACCOUNTING_LOCKS
+        .get_or_init(|| Mutex::new(BTreeMap::new()))
+        .lock()
+        .unwrap_or_else(|poison| poison.into_inner());
+    locks
+        .entry(synrepo_dir.to_path_buf())
+        .or_insert_with(|| Arc::new(Mutex::new(())))
+        .clone()
 }
 
 /// Read the current totals snapshot, if any.

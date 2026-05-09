@@ -51,11 +51,11 @@ fn watch_auto_sync_repairs_stale_export_after_startup_reconcile() {
 
     let manifest = load_manifest(&repo, &config).expect("export manifest should exist");
     assert_ne!(manifest.last_reconcile_at, "stale-epoch");
+    wait_for_auto_sync_outcome(&synrepo_dir, "completed");
     let state = request_watch_status(&synrepo_dir);
     assert!(state.auto_sync_enabled);
     assert!(!state.auto_sync_running);
     assert!(!state.auto_sync_paused);
-    assert_eq!(state.auto_sync_last_outcome.as_deref(), Some("completed"));
 
     let _ = request_watch_control(&synrepo_dir, WatchControlRequest::Stop);
     handle.join().unwrap();
@@ -102,9 +102,9 @@ fn watch_auto_sync_repairs_only_cheap_surfaces_after_manual_reconcile() {
 
     let manifest = load_manifest(&repo, &config).expect("export manifest should exist");
     assert_ne!(manifest.last_reconcile_at, "stale-epoch");
+    wait_for_auto_sync_outcome(&synrepo_dir, "completed");
     let state = request_watch_status(&synrepo_dir);
     assert!(state.auto_sync_enabled);
-    assert_eq!(state.auto_sync_last_outcome.as_deref(), Some("completed"));
 
     let _ = request_watch_control(&synrepo_dir, WatchControlRequest::Stop);
     handle.join().unwrap();
@@ -224,6 +224,18 @@ fn request_watch_status(synrepo_dir: &std::path::Path) -> WatchDaemonState {
         WatchControlResponse::Status { snapshot } => snapshot,
         other => panic!("expected status response, got {other:?}"),
     }
+}
+
+fn wait_for_auto_sync_outcome(synrepo_dir: &std::path::Path, expected: &str) {
+    wait_for(
+        || {
+            request_watch_status(synrepo_dir)
+                .auto_sync_last_outcome
+                .as_deref()
+                == Some(expected)
+        },
+        Duration::from_secs(5),
+    );
 }
 
 fn write_stale_export_manifest(repo: &std::path::Path, config: &Config) {

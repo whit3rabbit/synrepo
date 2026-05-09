@@ -7,7 +7,9 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
+use crate::pipeline::repair::repair_log_lock_path;
 use crate::util::atomic_write::atomic_write;
+use crate::util::file_lock::exclusive_file_lock;
 
 /// Subset of a repair-log JSONL line we read during rotation. Typed
 /// deserialization is roughly an order of magnitude cheaper than `Value`
@@ -68,6 +70,7 @@ pub fn rotate_repair_log(
     synrepo_dir: &Path,
     policy: &crate::pipeline::maintenance::CompactPolicy,
 ) -> crate::Result<crate::pipeline::maintenance::CompactSummary> {
+    let _lock = exclusive_file_lock(&repair_log_lock_path(synrepo_dir))?;
     let log_path = synrepo_dir.join("state/repair-log.jsonl");
     if !log_path.exists() {
         return Ok(crate::pipeline::maintenance::CompactSummary::default());

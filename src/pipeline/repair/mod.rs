@@ -34,6 +34,7 @@ mod types;
 mod tests;
 
 pub use commentary::{resolve_commentary_node, CommentaryNodeSnapshot};
+pub(crate) use log::repair_log_lock_path;
 pub use log::{
     append_resolution_log, read_repair_log_degraded_marker, repair_log_degraded_marker_path,
     repair_log_path, RepairLogDegraded,

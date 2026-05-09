@@ -2,8 +2,8 @@ use serde_json::json;
 
 use crate::{
     pipeline::watch::{
-        cleanup_stale_watch_artifacts, persist_reconcile_state, request_watch_control,
-        run_reconcile_pass, watch_service_status, ReconcileOutcome, WatchControlRequest,
+        cleanup_stale_watch_artifacts, persist_reconcile_attempt_state, request_watch_control,
+        run_reconcile_attempt, watch_service_status, ReconcileOutcome, WatchControlRequest,
         WatchControlResponse, WatchServiceStatus,
     },
     surface::mcp::SynrepoState,
@@ -82,8 +82,9 @@ fn reconcile_after_edit(state: &SynrepoState, synrepo_dir: &std::path::Path) -> 
 }
 
 fn run_local_reconcile(state: &SynrepoState, synrepo_dir: &std::path::Path) -> serde_json::Value {
-    let outcome = run_reconcile_pass(&state.repo_root, &state.config, synrepo_dir, false);
-    persist_reconcile_state(synrepo_dir, &outcome, 0);
+    let attempt = run_reconcile_attempt(&state.repo_root, &state.config, synrepo_dir, false);
+    let outcome = attempt.outcome.clone();
+    persist_reconcile_attempt_state(synrepo_dir, &attempt, 0);
     json!({
         "status": "local",
         "outcome": reconcile_outcome_json(&outcome),

@@ -76,6 +76,8 @@ fn drain_events_pulls_all_pending_into_log() {
     tx.send(WatchEvent::ReconcileStarted {
         at: "t0".to_string(),
         triggering_events: 0,
+        full: true,
+        reason: None,
     })
     .unwrap();
     tx.send(WatchEvent::Error {
@@ -227,6 +229,8 @@ fn scroll_up_holds_offset_against_new_entries() {
     tx.send(WatchEvent::ReconcileStarted {
         at: "t0".to_string(),
         triggering_events: 0,
+        full: true,
+        reason: None,
     })
     .unwrap();
     state.drain_events();
@@ -264,6 +268,8 @@ fn reconcile_active_toggles_on_started_and_finished() {
     tx.send(WatchEvent::ReconcileStarted {
         at: "t0".to_string(),
         triggering_events: 0,
+        full: true,
+        reason: None,
     })
     .unwrap();
     state.drain_events();
@@ -284,6 +290,8 @@ fn reconcile_active_clears_on_error_event() {
     tx.send(WatchEvent::ReconcileStarted {
         at: "t0".to_string(),
         triggering_events: 0,
+        full: true,
+        reason: None,
     })
     .unwrap();
     state.drain_events();

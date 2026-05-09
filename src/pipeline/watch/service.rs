@@ -23,9 +23,8 @@ use super::{
     filter::{collect_repo_paths, ignored_generated_dirs},
     lease::{acquire_watch_daemon_lease, WatchServiceMode},
     pending::PendingWatchChanges,
-    reconcile::{
-        persist_reconcile_state, run_reconcile_pass, run_reconcile_pass_with_touched_paths,
-    },
+    reconcile::{run_reconcile_attempt, run_reconcile_attempt_with_touched_paths},
+    reconcile_state::persist_reconcile_attempt_state,
     suppression::SuppressedPaths,
     sync::{
         emit_event, maybe_run_post_reconcile_auto_sync, run_sync_under_watch_lock, WatchSyncContext,
@@ -101,9 +100,12 @@ pub fn run_watch_service(
     emit_event(&events, |now| WatchEvent::ReconcileStarted {
         at: now,
         triggering_events: 0,
+        full: true,
+        reason: None,
     });
-    let startup = run_reconcile_pass(repo_root, config, synrepo_dir, false);
-    persist_reconcile_state(synrepo_dir, &startup, 0);
+    let startup_attempt = run_reconcile_attempt(repo_root, config, synrepo_dir, false);
+    let startup = startup_attempt.outcome.clone();
+    persist_reconcile_attempt_state(synrepo_dir, &startup_attempt, 0);
     state_handle.note_reconcile(&startup, 0);
     tracing::info!(outcome = %startup.as_str(), "startup reconcile complete");
     emit_event(&events, |now| WatchEvent::ReconcileFinished {
@@ -234,19 +236,30 @@ pub fn run_watch_service(
 
                 let event_count = batch.event_count;
                 tracing::debug!(events = event_count, keepalive, "running reconcile pass");
+                let force_full_reconcile = batch.force_full_reconcile;
+                let reason = force_full_reconcile
+                    .then_some(super::events::ReconcileStartReason::WatchPathOverflow);
                 emit_event(&events, |now| WatchEvent::ReconcileStarted {
                     at: now,
                     triggering_events: event_count,
+                    full: force_full_reconcile || batch.touched_paths.is_empty(),
+                    reason,
                 });
                 // Keepalive is fast: refresh the timestamp and auto-sync hook.
-                let outcome = run_reconcile_pass_with_touched_paths(
+                let touched_paths = if force_full_reconcile || batch.touched_paths.is_empty() {
+                    None
+                } else {
+                    Some(batch.touched_paths.as_slice())
+                };
+                let attempt = run_reconcile_attempt_with_touched_paths(
                     repo_root,
                     config,
                     synrepo_dir,
-                    (!batch.touched_paths.is_empty()).then_some(batch.touched_paths.as_slice()),
+                    touched_paths,
                     keepalive,
                 );
-                persist_reconcile_state(synrepo_dir, &outcome, event_count);
+                let outcome = attempt.outcome.clone();
+                persist_reconcile_attempt_state(synrepo_dir, &attempt, event_count);
                 state_handle.note_reconcile(&outcome, event_count);
                 last_reconcile_at = std::time::Instant::now();
                 tracing::info!(
@@ -285,9 +298,12 @@ pub fn run_watch_service(
                 emit_event(&events, |now| WatchEvent::ReconcileStarted {
                     at: now,
                     triggering_events: 0,
+                    full: true,
+                    reason: None,
                 });
-                let outcome = run_reconcile_pass(repo_root, config, synrepo_dir, fast);
-                persist_reconcile_state(synrepo_dir, &outcome, 0);
+                let attempt = run_reconcile_attempt(repo_root, config, synrepo_dir, fast);
+                let outcome = attempt.outcome.clone();
+                persist_reconcile_attempt_state(synrepo_dir, &attempt, 0);
                 state_handle.note_reconcile(&outcome, 0);
                 last_reconcile_at = std::time::Instant::now();
                 emit_event(&events, |now| WatchEvent::ReconcileFinished {

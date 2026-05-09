@@ -50,6 +50,30 @@ fn completed_event_appends_and_updates_totals() {
 }
 
 #[test]
+fn concurrent_completed_events_do_not_lose_total_updates() {
+    let dir = tempdir().unwrap();
+    let synrepo = std::sync::Arc::new(dir.path().to_path_buf());
+
+    let handles: Vec<_> = (0..16)
+        .map(|id| {
+            let synrepo = std::sync::Arc::clone(&synrepo);
+            std::thread::spawn(move || {
+                record_event(&synrepo, &completed(id + 1, TokenUsage::reported(10, 10))).unwrap();
+            })
+        })
+        .collect();
+    for handle in handles {
+        handle.join().unwrap();
+    }
+
+    let log = std::fs::read_to_string(log_path(&synrepo)).unwrap();
+    let totals = load_totals(&synrepo).unwrap().unwrap();
+
+    assert_eq!(log.lines().count() as u64, totals.calls);
+    assert_eq!(totals.calls, 16);
+}
+
+#[test]
 fn estimated_usage_flips_any_estimated_bit() {
     let dir = tempdir().unwrap();
     record_event(dir.path(), &completed(1, TokenUsage::estimated(100, 100))).unwrap();

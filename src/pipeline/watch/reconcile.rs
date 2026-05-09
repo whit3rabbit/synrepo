@@ -1,8 +1,4 @@
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    sync::atomic::{AtomicU64, Ordering},
-};
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -13,9 +9,6 @@ use super::super::{
     writer::{acquire_writer_lock, now_rfc3339, LockError},
 };
 use super::post_compile::{finish_runtime_surfaces, RepoIndexStrategy};
-
-const RECONCILE_STATE_FILENAME: &str = "reconcile-state.json";
-static NEXT_RECONCILE_STATE_TMP_ID: AtomicU64 = AtomicU64::new(0);
 
 /// Outcome of a reconcile pass, written to reconcile-state.json.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -32,6 +25,15 @@ pub enum ReconcileOutcome {
     Failed(String),
 }
 
+/// A reconcile outcome paired with the timestamp from before lock acquisition.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReconcileAttempt {
+    /// RFC 3339 UTC timestamp captured before attempting to acquire the writer lock.
+    pub started_at: String,
+    /// Outcome produced by the reconcile pass.
+    pub outcome: ReconcileOutcome,
+}
+
 impl ReconcileOutcome {
     /// Stable string identifier for this outcome variant.
     pub fn as_str(&self) -> &'static str {
@@ -41,32 +43,6 @@ impl ReconcileOutcome {
             ReconcileOutcome::Failed(_) => "failed",
         }
     }
-}
-
-/// Persisted reconcile state written to `.synrepo/state/reconcile-state.json`.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ReconcileState {
-    /// RFC 3339 UTC timestamp of the last reconcile attempt.
-    pub last_reconcile_at: String,
-    /// Outcome string: "completed", "lock-conflict", or "failed".
-    pub last_outcome: String,
-    /// Error message when the last reconcile failed, otherwise absent.
-    pub last_error: Option<String>,
-    /// Number of filesystem events that triggered this pass (0 = startup).
-    pub triggering_events: usize,
-    /// File count from the last completed compile; absent if not completed.
-    pub files_discovered: Option<usize>,
-    /// Symbol count from the last completed compile; absent if not completed.
-    pub symbols_extracted: Option<usize>,
-}
-
-/// Reason reconcile state could not be loaded.
-#[derive(Debug, Eq, PartialEq)]
-pub enum ReconcileStateError {
-    /// No reconcile state file exists.
-    NotFound,
-    /// The state file exists but is unreadable or malformed.
-    Malformed(String),
 }
 
 /// Run one full reconcile pass against the structural compile path.
@@ -80,10 +56,53 @@ pub fn run_reconcile_pass(
     synrepo_dir: &Path,
     fast: bool,
 ) -> ReconcileOutcome {
-    run_reconcile_pass_with_touched_paths(repo_root, config, synrepo_dir, None, fast)
+    run_reconcile_attempt(repo_root, config, synrepo_dir, fast).outcome
 }
 
+/// Run one full reconcile pass and return its attempt start timestamp.
+pub fn run_reconcile_attempt(
+    repo_root: &Path,
+    config: &Config,
+    synrepo_dir: &Path,
+    fast: bool,
+) -> ReconcileAttempt {
+    run_reconcile_attempt_with_touched_paths(repo_root, config, synrepo_dir, None, fast)
+}
+
+#[cfg(test)]
 pub(crate) fn run_reconcile_pass_with_touched_paths(
+    repo_root: &Path,
+    config: &Config,
+    synrepo_dir: &Path,
+    touched_paths: Option<&[PathBuf]>,
+    fast: bool,
+) -> ReconcileOutcome {
+    run_reconcile_attempt_with_touched_paths(repo_root, config, synrepo_dir, touched_paths, fast)
+        .outcome
+}
+
+pub(crate) fn run_reconcile_attempt_with_touched_paths(
+    repo_root: &Path,
+    config: &Config,
+    synrepo_dir: &Path,
+    touched_paths: Option<&[PathBuf]>,
+    fast: bool,
+) -> ReconcileAttempt {
+    let started_at = now_rfc3339();
+    let outcome = run_reconcile_pass_with_touched_paths_inner(
+        repo_root,
+        config,
+        synrepo_dir,
+        touched_paths,
+        fast,
+    );
+    ReconcileAttempt {
+        started_at,
+        outcome,
+    }
+}
+
+fn run_reconcile_pass_with_touched_paths_inner(
     repo_root: &Path,
     config: &Config,
     synrepo_dir: &Path,
@@ -252,84 +271,4 @@ fn file_index_for_root(
         }
     }
     Ok(file_index)
-}
-
-/// Persist a reconcile outcome to `.synrepo/state/reconcile-state.json`.
-pub fn persist_reconcile_state(
-    synrepo_dir: &Path,
-    outcome: &ReconcileOutcome,
-    triggering_events: usize,
-) {
-    let (last_error, files_discovered, symbols_extracted) = match outcome {
-        ReconcileOutcome::Completed(summary) => (
-            None,
-            Some(summary.files_discovered),
-            Some(summary.symbols_extracted),
-        ),
-        ReconcileOutcome::Failed(message) => (Some(message.clone()), None, None),
-        ReconcileOutcome::LockConflict { .. } => (None, None, None),
-    };
-
-    let state = ReconcileState {
-        last_reconcile_at: now_rfc3339(),
-        last_outcome: outcome.as_str().to_string(),
-        last_error,
-        triggering_events,
-        files_discovered,
-        symbols_extracted,
-    };
-
-    let json = match serde_json::to_string(&state) {
-        Ok(json) => json,
-        Err(error) => {
-            tracing::warn!(error = %error, "failed to serialize reconcile state");
-            return;
-        }
-    };
-
-    let state_dir = synrepo_dir.join("state");
-    if let Err(error) = fs::create_dir_all(&state_dir) {
-        tracing::warn!(
-            path = ?state_dir,
-            error = %error,
-            "failed to create state dir for reconcile state"
-        );
-        return;
-    }
-
-    let final_path = state_dir.join(RECONCILE_STATE_FILENAME);
-    let tmp_path = reconcile_state_tmp_path(&state_dir);
-    if let Err(error) =
-        fs::write(&tmp_path, json.as_bytes()).and_then(|_| fs::rename(&tmp_path, &final_path))
-    {
-        tracing::warn!(path = ?final_path, error = %error, "failed to persist reconcile state");
-        let _ = fs::remove_file(&tmp_path);
-    }
-}
-
-/// Load the persisted reconcile state, if present and readable.
-pub fn load_reconcile_state(synrepo_dir: &Path) -> Result<ReconcileState, ReconcileStateError> {
-    let path = reconcile_state_path(synrepo_dir);
-    let text = std::fs::read_to_string(&path).map_err(|e| {
-        if e.kind() == std::io::ErrorKind::NotFound {
-            ReconcileStateError::NotFound
-        } else {
-            ReconcileStateError::Malformed(e.to_string())
-        }
-    })?;
-    serde_json::from_str(&text).map_err(|e| ReconcileStateError::Malformed(e.to_string()))
-}
-
-/// Canonical path of the reconcile state file.
-pub fn reconcile_state_path(synrepo_dir: &Path) -> PathBuf {
-    synrepo_dir.join("state").join(RECONCILE_STATE_FILENAME)
-}
-
-fn reconcile_state_tmp_path(state_dir: &Path) -> PathBuf {
-    let id = NEXT_RECONCILE_STATE_TMP_ID.fetch_add(1, Ordering::Relaxed);
-    state_dir.join(format!(
-        "{RECONCILE_STATE_FILENAME}.tmp.{}.{}",
-        std::process::id(),
-        id
-    ))
 }

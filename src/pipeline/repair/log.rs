@@ -4,13 +4,19 @@ use serde::{Deserialize, Serialize};
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
 use super::ResolutionLogEntry;
+use crate::util::file_lock::exclusive_file_lock;
 
 const REPAIR_LOG_FILENAME: &str = "repair-log.jsonl";
+const REPAIR_LOG_LOCK_FILENAME: &str = "repair-log.lock";
 const REPAIR_LOG_DEGRADED_MARKER: &str = "repair-log-degraded.flag";
 
 /// Canonical path of the repair resolution log.
 pub fn repair_log_path(synrepo_dir: &Path) -> PathBuf {
     synrepo_dir.join("state").join(REPAIR_LOG_FILENAME)
+}
+
+pub(crate) fn repair_log_lock_path(synrepo_dir: &Path) -> PathBuf {
+    synrepo_dir.join("state").join(REPAIR_LOG_LOCK_FILENAME)
 }
 
 /// Sticky marker written when an audit-log write fails; cleared on the next
@@ -58,6 +64,14 @@ pub fn read_repair_log_degraded_marker(
 /// so `synrepo status` can surface the signal on the next invocation. A
 /// successful write clears any previous marker.
 pub fn append_resolution_log(synrepo_dir: &Path, entry: &ResolutionLogEntry) {
+    let _lock = match exclusive_file_lock(&repair_log_lock_path(synrepo_dir)) {
+        Ok(lock) => lock,
+        Err(e) => {
+            tracing::warn!(error = %e, "failed to acquire repair-log lock");
+            mark_repair_log_degraded(synrepo_dir, &format!("lock failed: {e}"));
+            return;
+        }
+    };
     let Ok(line) = serde_json::to_string(entry) else {
         return;
     };

@@ -218,6 +218,58 @@ fn rapid_records_flush_after_bounded_updates() {
 }
 
 #[test]
+fn cross_process_flushes_do_not_lose_updates() {
+    let repo = tempfile::tempdir().unwrap();
+    let synrepo_dir = repo.path().join(".synrepo");
+    let exe = std::env::current_exe().unwrap();
+
+    let mut children = Vec::new();
+    for _ in 0..2 {
+        children.push(
+            std::process::Command::new(&exe)
+                .arg("--exact")
+                .arg("pipeline::context_metrics::tests::context_metrics_child_records")
+                .arg("--nocapture")
+                .env("SYNREPO_CONTEXT_METRICS_CHILD_DIR", &synrepo_dir)
+                .env("SYNREPO_CONTEXT_METRICS_CHILD_COUNT", "100")
+                .spawn()
+                .unwrap(),
+        );
+    }
+
+    for child in children {
+        let output = child.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "child failed: stdout={} stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    let metrics = load(&synrepo_dir).unwrap();
+    assert_eq!(metrics.mcp_requests_total, 200);
+    assert_eq!(metrics.mcp_resource_reads_total, 200);
+}
+
+#[test]
+fn context_metrics_child_records() {
+    let Ok(synrepo_dir) = std::env::var("SYNREPO_CONTEXT_METRICS_CHILD_DIR") else {
+        return;
+    };
+    let count = std::env::var("SYNREPO_CONTEXT_METRICS_CHILD_COUNT")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(100);
+    let synrepo_dir = std::path::PathBuf::from(synrepo_dir);
+
+    for _ in 0..count {
+        record_mcp_resource_read_best_effort(&synrepo_dir);
+    }
+    persistence::flush_for_tests(&synrepo_dir).unwrap();
+}
+
+#[test]
 fn flush_merges_pending_delta_with_current_disk_metrics() {
     let repo = tempfile::tempdir().unwrap();
     let synrepo_dir = repo.path().join(".synrepo");

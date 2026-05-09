@@ -8,7 +8,8 @@ use crate::{
     pipeline::{
         structural::CompileSummary,
         watch::{
-            load_reconcile_state, persist_reconcile_state, run_reconcile_pass, ReconcileOutcome,
+            load_reconcile_state, persist_reconcile_state, run_reconcile_pass, ReconcileAttempt,
+            ReconcileOutcome,
         },
     },
     store::overlay::SqliteOverlayStore,
@@ -176,6 +177,32 @@ fn persist_reconcile_state_records_lock_conflict() {
     let state = load_reconcile_state(&synrepo_dir).expect("must load reconcile state");
     assert_eq!(state.last_outcome, "lock-conflict");
     assert_eq!(state.triggering_events, 1);
+}
+
+#[test]
+fn stale_lock_conflict_does_not_overwrite_newer_completed_state() {
+    let synrepo_dir = tempfile::tempdir().unwrap().path().join(".synrepo");
+    let completed = ReconcileAttempt {
+        started_at: "2026-01-01T00:00:01Z".to_string(),
+        outcome: ReconcileOutcome::Completed(CompileSummary {
+            files_discovered: 7,
+            symbols_extracted: 11,
+            ..CompileSummary::default()
+        }),
+    };
+    let stale_conflict = ReconcileAttempt {
+        started_at: "2026-01-01T00:00:00Z".to_string(),
+        outcome: ReconcileOutcome::LockConflict { holder_pid: 42 },
+    };
+
+    crate::pipeline::watch::persist_reconcile_attempt_state(&synrepo_dir, &completed, 3);
+    crate::pipeline::watch::persist_reconcile_attempt_state(&synrepo_dir, &stale_conflict, 1);
+
+    let state = load_reconcile_state(&synrepo_dir).expect("must load reconcile state");
+    assert_eq!(state.last_outcome, "completed");
+    assert_eq!(state.files_discovered, Some(7));
+    assert_eq!(state.symbols_extracted, Some(11));
+    assert_eq!(state.triggering_events, 3);
 }
 
 #[test]

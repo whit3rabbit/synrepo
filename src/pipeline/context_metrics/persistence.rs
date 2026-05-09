@@ -8,10 +8,12 @@ use std::time::{Duration, Instant};
 
 use crate::surface::card::ContextAccounting;
 use crate::surface::task_route::TaskRoute;
+use crate::util::file_lock::exclusive_file_lock;
 
 use super::ContextMetrics;
 
 const METRICS_FILE: &str = "context-metrics.json";
+const METRICS_LOCK_FILE: &str = "context-metrics.lock";
 const FLUSH_AFTER_UPDATES: u64 = 16;
 const FLUSH_INTERVAL: Duration = Duration::from_secs(5);
 
@@ -60,7 +62,8 @@ pub fn load_optional(synrepo_dir: &Path) -> anyhow::Result<Option<ContextMetrics
 
 /// Save context metrics.
 pub fn save(synrepo_dir: &Path, metrics: &ContextMetrics) -> anyhow::Result<()> {
-    write_to_disk(synrepo_dir, metrics)?;
+    let _lock = exclusive_file_lock(&metrics_lock_path(synrepo_dir))?;
+    write_to_disk_unlocked(synrepo_dir, metrics)?;
     discard_pending(synrepo_dir);
     Ok(())
 }
@@ -273,9 +276,10 @@ fn flush_slot(synrepo_dir: &Path, slot: &mut PendingMetrics) -> anyhow::Result<(
         slot.updates_since_flush = 0;
         return Ok(());
     }
+    let _lock = exclusive_file_lock(&metrics_lock_path(synrepo_dir))?;
     let mut metrics = read_from_disk(synrepo_dir)?.unwrap_or_default();
     metrics.merge_from(&slot.delta);
-    write_to_disk(synrepo_dir, &metrics)?;
+    write_to_disk_unlocked(synrepo_dir, &metrics)?;
     slot.delta = ContextMetrics::default();
     slot.updates_since_flush = 0;
     Ok(())
@@ -311,7 +315,7 @@ fn read_from_disk(synrepo_dir: &Path) -> anyhow::Result<Option<ContextMetrics>> 
     Ok(Some(serde_json::from_slice(&bytes)?))
 }
 
-fn write_to_disk(synrepo_dir: &Path, metrics: &ContextMetrics) -> anyhow::Result<()> {
+fn write_to_disk_unlocked(synrepo_dir: &Path, metrics: &ContextMetrics) -> anyhow::Result<()> {
     let state_dir = synrepo_dir.join("state");
     fs::create_dir_all(&state_dir)?;
     let bytes = serde_json::to_vec_pretty(metrics)?;
@@ -321,6 +325,10 @@ fn write_to_disk(synrepo_dir: &Path, metrics: &ContextMetrics) -> anyhow::Result
 
 fn metrics_path(synrepo_dir: &Path) -> PathBuf {
     synrepo_dir.join("state").join(METRICS_FILE)
+}
+
+fn metrics_lock_path(synrepo_dir: &Path) -> PathBuf {
+    synrepo_dir.join("state").join(METRICS_LOCK_FILE)
 }
 
 #[cfg(test)]

@@ -127,6 +127,51 @@ fn rotate_repair_log_uses_atomic_file_rewrite() {
 }
 
 #[test]
+fn repair_log_append_survives_concurrent_rotation() {
+    let dir = tempdir().unwrap();
+    let synrepo_dir = dir.path().join(".synrepo");
+    let state_dir = synrepo_dir.join("state");
+    std::fs::create_dir_all(&state_dir).unwrap();
+
+    let old_ts = (OffsetDateTime::now_utc() - time::Duration::days(60))
+        .format(&time::format_description::well_known::Rfc3339)
+        .unwrap();
+    let log_path = state_dir.join("repair-log.jsonl");
+    std::fs::write(
+        &log_path,
+        format!(r#"{{"timestamp":"{old_ts}","surface":"graph","action":"retire_edges"}}"#) + "\n",
+    )
+    .unwrap();
+
+    let rotate_dir = synrepo_dir.clone();
+    let rotate = std::thread::spawn(move || {
+        ops::rotate_repair_log(
+            &rotate_dir,
+            &crate::pipeline::maintenance::CompactPolicy::Default,
+        )
+        .unwrap()
+    });
+
+    crate::pipeline::repair::append_resolution_log(
+        &synrepo_dir,
+        &crate::pipeline::repair::ResolutionLogEntry {
+            synced_at: "2026-01-01T00:00:00Z".to_string(),
+            source_revision: None,
+            requested_scope: vec![],
+            findings_considered: vec![],
+            actions_taken: vec!["fresh append".to_string()],
+            outcome: crate::pipeline::repair::SyncOutcome::Completed,
+        },
+    );
+
+    let summary = rotate.join().unwrap();
+    assert_eq!(summary.repair_log_summarized, 1);
+    let content = std::fs::read_to_string(&log_path).unwrap();
+    assert!(content.contains("fresh append"));
+    assert!(content.starts_with('#'));
+}
+
+#[test]
 fn wal_checkpoint_completes_without_error() {
     let dir = tempdir().unwrap();
     let synrepo_dir = dir.path().join(".synrepo");

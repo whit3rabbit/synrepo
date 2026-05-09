@@ -3,6 +3,14 @@ use crate::pipeline::{
     watch::reconcile::ReconcileOutcome,
 };
 
+/// Why a reconcile pass chose full rebuild instead of scoped incremental work.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ReconcileStartReason {
+    /// The debounced watch batch exceeded the incremental touched-path cap.
+    WatchPathOverflow,
+}
+
 /// Why a sync pass is running inside the watch service.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -25,6 +33,10 @@ pub enum WatchEvent {
         at: String,
         /// Number of debounced filesystem events that triggered this pass.
         triggering_events: usize,
+        /// True when this pass is a full reconcile rather than scoped to touched paths.
+        full: bool,
+        /// Optional reason a full reconcile was forced.
+        reason: Option<ReconcileStartReason>,
     },
     /// Emitted after a reconcile pass completes with its outcome.
     ReconcileFinished {

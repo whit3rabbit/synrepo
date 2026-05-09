@@ -289,3 +289,70 @@ fn write_admission_succeeds_after_stale_watch_cleanup() {
     assert!(lock.path().exists());
     drop(lock);
 }
+
+#[test]
+fn mutating_entrypoints_have_explicit_lock_coverage() {
+    let cases = [
+        (
+            "src/pipeline/compact/mod.rs",
+            "execute_compact",
+            "acquire_write_admission",
+        ),
+        (
+            "src/pipeline/repair/sync/mod.rs",
+            "execute_sync",
+            "acquire_write_admission",
+        ),
+        (
+            "src/pipeline/watch/reconcile.rs",
+            "run_reconcile_pass_with_touched_paths_inner",
+            "acquire_writer_lock",
+        ),
+        (
+            "src/pipeline/explain/accounting/storage.rs",
+            "record_event",
+            "exclusive_file_lock(&lock_path(synrepo_dir))",
+        ),
+        (
+            "src/pipeline/context_metrics/persistence.rs",
+            "flush_slot",
+            "exclusive_file_lock(&metrics_lock_path(synrepo_dir))",
+        ),
+        (
+            "src/pipeline/repair/log.rs",
+            "append_resolution_log",
+            "exclusive_file_lock(&repair_log_lock_path(synrepo_dir))",
+        ),
+        (
+            "src/pipeline/compact/ops.rs",
+            "rotate_repair_log",
+            "exclusive_file_lock(&repair_log_lock_path(synrepo_dir))",
+        ),
+        (
+            "src/pipeline/watch/reconcile_state.rs",
+            "persist_reconcile_attempt_state",
+            "exclusive_file_lock(&reconcile_state_lock_path(synrepo_dir))",
+        ),
+    ];
+
+    for (path, entrypoint, lock_signal) in cases {
+        let text = read_repo_file(path);
+        assert!(
+            text.contains(entrypoint),
+            "{path} should define or mention {entrypoint}"
+        );
+        assert!(
+            text.contains(lock_signal),
+            "{path} should contain lock signal {lock_signal}"
+        );
+    }
+
+    let reconcile = read_repo_file("src/pipeline/watch/reconcile.rs");
+    let post_compile = read_repo_file("src/pipeline/watch/post_compile.rs");
+    assert!(reconcile.contains("finish_runtime_surfaces"));
+    assert!(post_compile.contains("sync_commentary_index"));
+}
+
+fn read_repo_file(path: &str) -> String {
+    std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(path)).unwrap()
+}

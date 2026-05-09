@@ -216,9 +216,10 @@ pub(crate) fn reconcile(repo_root: &Path, fast: bool) -> anyhow::Result<()> {
             )),
         }
     } else {
-        let outcome =
-            synrepo::pipeline::watch::run_reconcile_pass(repo_root, &config, &synrepo_dir, fast);
-        synrepo::pipeline::watch::persist_reconcile_state(&synrepo_dir, &outcome, 0);
+        let attempt =
+            synrepo::pipeline::watch::run_reconcile_attempt(repo_root, &config, &synrepo_dir, fast);
+        let outcome = attempt.outcome.clone();
+        synrepo::pipeline::watch::persist_reconcile_attempt_state(&synrepo_dir, &attempt, 0);
         report_reconcile_outcome(&outcome, 0)
     }
 }

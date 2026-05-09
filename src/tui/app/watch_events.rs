@@ -3,7 +3,7 @@
 //! unit tests without constructing an `AppState`.
 
 use crate::pipeline::repair::SyncProgress;
-use crate::pipeline::watch::{ReconcileOutcome, SyncTrigger, WatchEvent};
+use crate::pipeline::watch::{ReconcileOutcome, ReconcileStartReason, SyncTrigger, WatchEvent};
 use crate::tui::probe::Severity;
 use crate::tui::widgets::LogEntry;
 
@@ -14,14 +14,12 @@ pub fn watch_event_to_log_entry(event: WatchEvent) -> LogEntry {
         WatchEvent::ReconcileStarted {
             at,
             triggering_events,
+            full,
+            reason,
         } => LogEntry {
             timestamp: at,
             tag,
-            message: if triggering_events == 0 {
-                "reconcile started".to_string()
-            } else {
-                format!("reconcile started ({triggering_events} events)")
-            },
+            message: reconcile_started_message(triggering_events, full, reason),
             severity: Severity::Healthy,
         },
         WatchEvent::ReconcileFinished {
@@ -107,6 +105,27 @@ pub fn watch_event_to_log_entry(event: WatchEvent) -> LogEntry {
             message: format!("watch error: {message}"),
             severity: Severity::Blocked,
         },
+    }
+}
+
+fn reconcile_started_message(
+    triggering_events: usize,
+    full: bool,
+    reason: Option<ReconcileStartReason>,
+) -> String {
+    if reason == Some(ReconcileStartReason::WatchPathOverflow) {
+        return format!("reconcile started ({triggering_events} events, full: path cap exceeded)");
+    }
+    if triggering_events == 0 {
+        if full {
+            "reconcile started".to_string()
+        } else {
+            "reconcile started (incremental)".to_string()
+        }
+    } else if full {
+        format!("reconcile started ({triggering_events} events, full)")
+    } else {
+        format!("reconcile started ({triggering_events} events)")
     }
 }
 
@@ -211,10 +230,25 @@ mod tests {
         let entry = watch_event_to_log_entry(WatchEvent::ReconcileStarted {
             at: "2026-04-17T22:00:00Z".to_string(),
             triggering_events: 0,
+            full: true,
+            reason: None,
         });
         assert_eq!(entry.tag, "watch");
         assert_eq!(entry.timestamp, "2026-04-17T22:00:00Z");
         assert_eq!(entry.message, "reconcile started");
+        assert!(matches!(entry.severity, Severity::Healthy));
+    }
+
+    #[test]
+    fn reconcile_started_overflow_names_full_reconcile_reason() {
+        let entry = watch_event_to_log_entry(WatchEvent::ReconcileStarted {
+            at: "2026-04-17T22:00:00Z".to_string(),
+            triggering_events: 3,
+            full: true,
+            reason: Some(ReconcileStartReason::WatchPathOverflow),
+        });
+
+        assert!(entry.message.contains("full: path cap exceeded"));
         assert!(matches!(entry.severity, Severity::Healthy));
     }
 
