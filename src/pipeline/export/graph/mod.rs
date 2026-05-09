@@ -1,90 +1,23 @@
 //! Canonical graph export rendering.
 
 mod html;
+mod payload;
+mod types;
 
-use std::collections::{BTreeMap, HashMap};
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
-use serde::Serialize;
-use serde_json::{json, Value};
+use crate::{structure::graph::GraphReader, surface::card::Budget};
 
-use crate::{
-    core::{
-        ids::{EdgeId, NodeId},
-        provenance::Provenance,
-    },
-    store::compatibility::GRAPH_FORMAT_VERSION,
-    structure::graph::{ConceptNode, Edge, Epistemic, FileNode, GraphReader, SymbolNode},
-    surface::card::Budget,
-};
+use payload::GraphExportContext;
 
-const GRAPH_EXPORT_SCHEMA_VERSION: u32 = 1;
 const GRAPH_JSON_FILENAME: &str = "graph.json";
 
+#[derive(Clone, Copy)]
 pub(super) struct GraphExportStats {
     pub(super) node_count: usize,
     pub(super) edge_count: usize,
-}
-
-#[derive(Serialize)]
-struct GraphExport {
-    generated_note: &'static str,
-    schema_version: u32,
-    graph_schema_version: u32,
-    budget: &'static str,
-    counts: GraphCounts,
-    nodes: Vec<GraphExportNode>,
-    edges: Vec<GraphExportEdge>,
-}
-
-#[derive(Serialize)]
-struct GraphCounts {
-    nodes: usize,
-    edges: usize,
-    files: usize,
-    symbols: usize,
-    concepts: usize,
-    edges_by_kind: BTreeMap<String, usize>,
-}
-
-#[derive(Clone, Copy, Default, Serialize)]
-struct GraphDegree {
-    inbound: usize,
-    outbound: usize,
-    total: usize,
-}
-
-#[derive(Serialize)]
-struct GraphExportNode {
-    id: String,
-    #[serde(rename = "type")]
-    node_type: &'static str,
-    label: String,
-    path: Option<String>,
-    root_id: Option<String>,
-    file_id: Option<String>,
-    language: Option<String>,
-    symbol_kind: Option<String>,
-    visibility: Option<String>,
-    degree: GraphDegree,
-    epistemic: Epistemic,
-    provenance: Provenance,
-    metadata: Value,
-}
-
-#[derive(Serialize)]
-struct GraphExportEdge {
-    id: String,
-    from: String,
-    to: String,
-    kind: String,
-    label: String,
-    owner_file_id: Option<String>,
-    drift_score: f32,
-    epistemic: Epistemic,
-    provenance: Provenance,
 }
 
 pub(super) fn write_graph_json(
@@ -92,9 +25,10 @@ pub(super) fn write_graph_json(
     graph: &dyn GraphReader,
     budget: Budget,
 ) -> crate::Result<GraphExportStats> {
-    let export = build_graph_export(graph, budget)?;
-    write_graph_json_file(export_dir, &export)?;
-    Ok(export.stats())
+    let context = GraphExportContext::load(graph, budget)?;
+    let stats = context.stats();
+    write_graph_json_file(export_dir, &context)?;
+    Ok(stats)
 }
 
 pub(super) fn write_graph_html(
@@ -102,271 +36,18 @@ pub(super) fn write_graph_html(
     graph: &dyn GraphReader,
     budget: Budget,
 ) -> crate::Result<GraphExportStats> {
-    let export = build_graph_export(graph, budget)?;
-    write_graph_json_file(export_dir, &export)?;
-    html::write_graph_html_file(export_dir, &export)?;
-    Ok(export.stats())
+    let context = GraphExportContext::load(graph, budget)?;
+    let stats = context.stats();
+    write_graph_json_file(export_dir, &context)?;
+    html::write_graph_html_file(export_dir, |writer| context.write_compact_json(writer))?;
+    Ok(stats)
 }
 
-fn build_graph_export(graph: &dyn GraphReader, budget: Budget) -> crate::Result<GraphExport> {
-    let file_ids: Vec<_> = graph
-        .all_file_paths()?
-        .into_iter()
-        .map(|(_, id)| id)
-        .collect();
-    let symbol_ids: Vec<_> = graph
-        .all_symbol_names()?
-        .into_iter()
-        .map(|(id, _, _)| id)
-        .collect();
-    let concept_ids: Vec<_> = graph
-        .all_concept_paths()?
-        .into_iter()
-        .map(|(_, id)| id)
-        .collect();
-
-    let mut files = graph.get_files(&file_ids)?;
-    files.sort_by(|a, b| a.path.cmp(&b.path));
-    let mut symbols = graph.get_symbols(&symbol_ids)?;
-    symbols.sort_by(|a, b| a.qualified_name.cmp(&b.qualified_name));
-    let mut concepts = graph.get_concepts(&concept_ids)?;
-    concepts.sort_by(|a, b| a.path.cmp(&b.path));
-
-    let edges = graph.all_edges()?;
-    let drift_scores = current_drift_scores(graph)?;
-    let (degree_by_node, edges_by_kind) = summarize_edges(&edges);
-
-    let mut nodes = Vec::with_capacity(files.len() + symbols.len() + concepts.len());
-    nodes.extend(
-        files
-            .into_iter()
-            .map(|file| file_node(file, budget, &degree_by_node)),
-    );
-    nodes.extend(
-        symbols
-            .into_iter()
-            .map(|symbol| symbol_node(symbol, budget, &degree_by_node)),
-    );
-    nodes.extend(
-        concepts
-            .into_iter()
-            .map(|concept| concept_node(concept, budget, &degree_by_node)),
-    );
-
-    let edges = edges
-        .into_iter()
-        .map(|edge| export_edge(edge, &drift_scores))
-        .collect::<Vec<_>>();
-
-    let counts = GraphCounts {
-        nodes: nodes.len(),
-        edges: edges.len(),
-        files: nodes.iter().filter(|n| n.node_type == "file").count(),
-        symbols: nodes.iter().filter(|n| n.node_type == "symbol").count(),
-        concepts: nodes.iter().filter(|n| n.node_type == "concept").count(),
-        edges_by_kind,
-    };
-
-    Ok(GraphExport {
-        generated_note: "Generated by `synrepo export`. Convenience output only; not graph truth or explain input.",
-        schema_version: GRAPH_EXPORT_SCHEMA_VERSION,
-        graph_schema_version: GRAPH_FORMAT_VERSION,
-        budget: budget_label(budget),
-        counts,
-        nodes,
-        edges,
-    })
-}
-
-fn file_node(
-    file: FileNode,
-    budget: Budget,
-    degree_by_node: &HashMap<String, GraphDegree>,
-) -> GraphExportNode {
-    let id = NodeId::File(file.id).to_string();
-    let metadata = match budget {
-        Budget::Deep => json!({
-            "content_hash": file.content_hash,
-            "size_bytes": file.size_bytes,
-            "path_history": file.path_history,
-            "inline_decisions": file.inline_decisions,
-            "last_observed_rev": file.last_observed_rev,
-        }),
-        Budget::Tiny | Budget::Normal => json!({
-            "content_hash": file.content_hash,
-            "size_bytes": file.size_bytes,
-        }),
-    };
-
-    GraphExportNode {
-        id: id.clone(),
-        node_type: "file",
-        label: file.path.clone(),
-        path: Some(file.path),
-        root_id: Some(file.root_id),
-        file_id: None,
-        language: file.language,
-        symbol_kind: None,
-        visibility: None,
-        degree: degree_for(&id, degree_by_node),
-        epistemic: file.epistemic,
-        provenance: file.provenance,
-        metadata,
-    }
-}
-
-fn symbol_node(
-    symbol: SymbolNode,
-    budget: Budget,
-    degree_by_node: &HashMap<String, GraphDegree>,
-) -> GraphExportNode {
-    let id = NodeId::Symbol(symbol.id).to_string();
-    let metadata = match budget {
-        Budget::Deep => json!({
-            "display_name": symbol.display_name,
-            "body_byte_range": symbol.body_byte_range,
-            "body_hash": symbol.body_hash,
-            "signature": symbol.signature,
-            "doc_comment": symbol.doc_comment,
-            "first_seen_rev": symbol.first_seen_rev,
-            "last_modified_rev": symbol.last_modified_rev,
-            "last_observed_rev": symbol.last_observed_rev,
-        }),
-        Budget::Tiny | Budget::Normal => json!({
-            "display_name": symbol.display_name,
-            "body_hash": symbol.body_hash,
-            "signature": symbol.signature,
-        }),
-    };
-
-    GraphExportNode {
-        id: id.clone(),
-        node_type: "symbol",
-        label: symbol.qualified_name.clone(),
-        path: None,
-        root_id: None,
-        file_id: Some(NodeId::File(symbol.file_id).to_string()),
-        language: None,
-        symbol_kind: Some(symbol.kind.as_str().to_string()),
-        visibility: Some(symbol.visibility.as_str().to_string()),
-        degree: degree_for(&id, degree_by_node),
-        epistemic: symbol.epistemic,
-        provenance: symbol.provenance,
-        metadata,
-    }
-}
-
-fn concept_node(
-    concept: ConceptNode,
-    budget: Budget,
-    degree_by_node: &HashMap<String, GraphDegree>,
-) -> GraphExportNode {
-    let id = NodeId::Concept(concept.id).to_string();
-    let metadata = match budget {
-        Budget::Deep => json!({
-            "aliases": concept.aliases,
-            "summary": concept.summary,
-            "status": concept.status,
-            "decision_body": concept.decision_body,
-            "last_observed_rev": concept.last_observed_rev,
-        }),
-        Budget::Tiny | Budget::Normal => json!({
-            "summary": concept.summary,
-            "status": concept.status,
-        }),
-    };
-
-    GraphExportNode {
-        id: id.clone(),
-        node_type: "concept",
-        label: concept.title,
-        path: Some(concept.path),
-        root_id: None,
-        file_id: None,
-        language: None,
-        symbol_kind: None,
-        visibility: None,
-        degree: degree_for(&id, degree_by_node),
-        epistemic: concept.epistemic,
-        provenance: concept.provenance,
-        metadata,
-    }
-}
-
-fn export_edge(edge: Edge, drift_scores: &HashMap<EdgeId, f32>) -> GraphExportEdge {
-    GraphExportEdge {
-        id: edge.id.to_string(),
-        from: edge.from.to_string(),
-        to: edge.to.to_string(),
-        kind: edge.kind.as_str().to_string(),
-        label: edge.kind.as_str().to_string(),
-        owner_file_id: edge
-            .owner_file_id
-            .map(|file_id| NodeId::File(file_id).to_string()),
-        drift_score: drift_scores.get(&edge.id).copied().unwrap_or(0.0),
-        epistemic: edge.epistemic,
-        provenance: edge.provenance,
-    }
-}
-
-fn summarize_edges(edges: &[Edge]) -> (HashMap<String, GraphDegree>, BTreeMap<String, usize>) {
-    let mut degree_by_node = HashMap::<String, GraphDegree>::new();
-    let mut edges_by_kind = BTreeMap::<String, usize>::new();
-
-    for edge in edges {
-        let from = edge.from.to_string();
-        let to = edge.to.to_string();
-
-        let from_degree = degree_by_node.entry(from).or_default();
-        from_degree.outbound += 1;
-        from_degree.total += 1;
-
-        let to_degree = degree_by_node.entry(to).or_default();
-        to_degree.inbound += 1;
-        to_degree.total += 1;
-
-        *edges_by_kind
-            .entry(edge.kind.as_str().to_string())
-            .or_insert(0) += 1;
-    }
-
-    (degree_by_node, edges_by_kind)
-}
-
-fn current_drift_scores(graph: &dyn GraphReader) -> crate::Result<HashMap<EdgeId, f32>> {
-    let Some(revision) = graph.latest_drift_revision()? else {
-        return Ok(HashMap::new());
-    };
-    Ok(graph.read_drift_scores(&revision)?.into_iter().collect())
-}
-
-fn degree_for(id: &str, degree_by_node: &HashMap<String, GraphDegree>) -> GraphDegree {
-    degree_by_node.get(id).copied().unwrap_or_default()
-}
-
-fn write_graph_json_file(export_dir: &Path, export: &GraphExport) -> crate::Result<()> {
+fn write_graph_json_file(export_dir: &Path, context: &GraphExportContext<'_>) -> crate::Result<()> {
     let path = export_dir.join(GRAPH_JSON_FILENAME);
     let mut writer = BufWriter::new(File::create(path)?);
-    serde_json::to_writer_pretty(&mut writer, export)
-        .map_err(|e| crate::Error::Other(anyhow::anyhow!("graph JSON serialize failed: {e}")))?;
+    context.write_pretty_json(&mut writer)?;
     writer.write_all(b"\n")?;
     writer.flush()?;
     Ok(())
-}
-
-fn budget_label(budget: Budget) -> &'static str {
-    match budget {
-        Budget::Tiny => "tiny",
-        Budget::Normal => "normal",
-        Budget::Deep => "deep",
-    }
-}
-
-impl GraphExport {
-    fn stats(&self) -> GraphExportStats {
-        GraphExportStats {
-            node_count: self.counts.nodes,
-            edge_count: self.counts.edges,
-        }
-    }
 }

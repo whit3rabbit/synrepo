@@ -7,24 +7,27 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::Path;
 
-use super::GraphExport;
-
 const GRAPH_HTML_FILENAME: &str = "graph.html";
 
-pub(super) fn write_graph_html_file(export_dir: &Path, graph: &GraphExport) -> crate::Result<()> {
+pub(super) fn write_graph_html_file<F>(export_dir: &Path, write_payload: F) -> crate::Result<()>
+where
+    F: FnOnce(&mut dyn Write) -> crate::Result<()>,
+{
     let mut writer = BufWriter::new(File::create(export_dir.join(GRAPH_HTML_FILENAME))?);
-    write_graph_html_to_writer(&mut writer, graph)?;
+    write_graph_html_to_writer(&mut writer, write_payload)?;
     writer.flush()?;
     Ok(())
 }
 
-fn write_graph_html_to_writer<W: Write>(writer: &mut W, graph: &GraphExport) -> crate::Result<()> {
+fn write_graph_html_to_writer<W, F>(writer: &mut W, write_payload: F) -> crate::Result<()>
+where
+    W: Write,
+    F: FnOnce(&mut dyn Write) -> crate::Result<()>,
+{
     writer.write_all(shell::HTML_PREFIX.as_bytes())?;
     {
         let mut escaping = HtmlJsonEscapingWriter::new(&mut *writer);
-        serde_json::to_writer(&mut escaping, graph).map_err(|e| {
-            crate::Error::Other(anyhow::anyhow!("graph HTML data serialize failed: {e}"))
-        })?;
+        write_payload(&mut escaping)?;
         escaping.finish()?;
     }
     for chunk in script::HTML_SUFFIX {
@@ -89,12 +92,8 @@ impl<W: Write> Write for HtmlJsonEscapingWriter<W> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::BTreeMap;
 
-    use crate::core::provenance::Provenance;
-    use crate::structure::graph::Epistemic;
-
-    use super::super::{GraphCounts, GraphDegree, GraphExportNode};
+    use serde::Serialize;
 
     #[test]
     fn html_json_escaping_handles_split_script_close() {
@@ -126,44 +125,13 @@ mod tests {
         const NODE_COUNT: usize = 200;
         const SINGLE_WRITE_BUDGET: usize = 64 * 1024;
 
-        let nodes = (0..NODE_COUNT)
-            .map(|index| GraphExportNode {
-                id: format!("file:{index}"),
-                node_type: "file",
-                label: "large-label-fragment".repeat(80),
-                path: Some(format!("src/file_{index}.rs")),
-                root_id: Some("primary".to_string()),
-                file_id: None,
-                language: Some("rust".to_string()),
-                symbol_kind: None,
-                visibility: None,
-                degree: GraphDegree::default(),
-                epistemic: Epistemic::ParserObserved,
-                provenance: Provenance::structural("test", "rev", Vec::new()),
-                metadata: serde_json::json!({
-                    "payload": "large-metadata-fragment".repeat(80),
-                }),
-            })
-            .collect::<Vec<_>>();
-        let graph = GraphExport {
-            generated_note: "test",
-            schema_version: 1,
-            graph_schema_version: 1,
-            budget: "normal",
-            counts: GraphCounts {
-                nodes: NODE_COUNT,
-                edges: 0,
-                files: NODE_COUNT,
-                symbols: 0,
-                concepts: 0,
-                edges_by_kind: BTreeMap::new(),
-            },
-            nodes,
-            edges: Vec::new(),
-        };
-
         let mut writer = CountingWriter::new();
-        write_graph_html_to_writer(&mut writer, &graph).unwrap();
+        write_graph_html_to_writer(&mut writer, |payload_writer| {
+            serde_json::to_writer(payload_writer, &LargePayload { nodes: NODE_COUNT }).map_err(
+                |e| crate::Error::Other(anyhow::anyhow!("graph HTML data serialize failed: {e}")),
+            )
+        })
+        .unwrap();
 
         assert!(writer.total_bytes > SINGLE_WRITE_BUDGET);
         assert!(
@@ -197,6 +165,48 @@ mod tests {
 
         fn flush(&mut self) -> std::io::Result<()> {
             Ok(())
+        }
+    }
+
+    struct LargePayload {
+        nodes: usize,
+    }
+
+    impl Serialize for LargePayload {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            use serde::ser::SerializeStruct;
+
+            let mut state = serializer.serialize_struct("LargePayload", 1)?;
+            state.serialize_field("nodes", &LargeNodes { count: self.nodes })?;
+            state.end()
+        }
+    }
+
+    struct LargeNodes {
+        count: usize,
+    }
+
+    impl Serialize for LargeNodes {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer,
+        {
+            use serde::ser::SerializeSeq;
+
+            let mut seq = serializer.serialize_seq(Some(self.count))?;
+            for index in 0..self.count {
+                seq.serialize_element(&serde_json::json!({
+                    "id": format!("file:{index}"),
+                    "label": "large-label-fragment".repeat(80),
+                    "metadata": {
+                        "payload": "large-metadata-fragment".repeat(80),
+                    },
+                }))?;
+            }
+            seq.end()
         }
     }
 }
