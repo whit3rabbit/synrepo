@@ -14,6 +14,7 @@ mod budget;
 #[cfg(unix)]
 mod path_safety;
 mod watch;
+mod worktrees;
 
 fn state_with_files(files: &[(&str, &str)]) -> (tempfile::TempDir, SynrepoState) {
     let dir = tempdir().unwrap();

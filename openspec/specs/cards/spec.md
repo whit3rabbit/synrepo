@@ -9,6 +9,19 @@ synrepo SHALL define card contracts for the core structural card types that agen
 - **THEN** the cards spec defines the required structural fields for the returned card type
 - **AND** the response can be understood without reading arbitrary source files first
 
+### Requirement: Surface discovery root identity on file and symbol cards
+`FileCard` SHALL include `root_id` and `is_primary_root`. `SymbolCard` SHALL include `file_id`, `path`, `root_id`, and `is_primary_root` for the symbol's containing file. These fields SHALL use the graph/discovery root discriminator and SHALL NOT expose absolute worktree or submodule paths.
+
+#### Scenario: Card identifies a worktree file
+- **WHEN** an agent requests a card for a file observed in a linked worktree
+- **THEN** the card includes the worktree `root_id`
+- **AND** `is_primary_root` is false
+
+#### Scenario: Symbol card identifies its containing root
+- **WHEN** an agent requests a symbol card
+- **THEN** the card includes the containing `file_id`, relative `path`, `root_id`, and `is_primary_root`
+- **AND** those fields are sufficient to disambiguate identical relative paths across discovery roots
+
 ### Requirement: Define budget tiers and truncation priority
 synrepo SHALL define explicit card budget tiers and the order in which lower-priority card fields are truncated when a response must fit a token budget. Budget tiers SHALL be documented as a three-surface progressive-disclosure protocol — `tiny` for orientation, `normal` for local understanding, `deep` for fetch-on-demand — not as an internal truncation knob, so agents escalate intentionally rather than defaulting to the largest tier.
 
@@ -329,4 +342,3 @@ Default status SHALL be allowed to show estimated commentary freshness fields wi
 - **WHEN** status runs without `--full` and commentary rows exist
 - **THEN** `fresh` remains absent
 - **AND** estimated freshness fields may be populated with a confidence label
-

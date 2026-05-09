@@ -7,6 +7,7 @@ pub mod discover;
 pub mod hybrid;
 pub mod incremental;
 pub mod index;
+pub mod rooted_search;
 
 pub mod embedding;
 
@@ -15,6 +16,7 @@ pub use discover::{discover, discover_roots, DiscoveredFile, DiscoveryRoot, Disc
 pub use hybrid::{hybrid_search, HybridSearchReport, HybridSearchRow, HybridSearchSource};
 pub use incremental::{sync_index_incremental, IndexSyncMode, IndexSyncReport};
 pub use index::{build_index, search, search_with_options, IndexBuildReport};
+pub use rooted_search::{search_rooted_with_options, RootedSearchMatch};
 
 #[cfg(feature = "semantic-triage")]
 pub use embedding::chunk::{ChunkId, EmbeddingChunk, EmbeddingChunkSource};

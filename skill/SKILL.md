@@ -27,7 +27,7 @@ The required sequence for codebase questions, reviews, search routing, and edits
 
 1. Start with `synrepo_orient` before reading the repo cold. It is a small routing summary, not the full dashboard.
 2. Use `synrepo_ask` for broad plain-language tasks that need one bounded, cited task-context packet.
-3. Use `synrepo_task_route` when only classification is needed, then choose between `synrepo_find`, `synrepo_where_to_edit`, and `synrepo_search`.
+3. Use `synrepo_task_route` when only classification is needed, then choose between `synrepo_ask`, `synrepo_find`, `synrepo_where_to_edit`, and `synrepo_search`.
 4. Use `tiny` cards to route and `normal` cards to understand. Use `synrepo_minimum_context` as the bounded neighborhood step when a focal target is known but the surrounding risk is unclear, especially for file reviews and codebase questions.
 5. Use `synrepo_impact` or `synrepo_risks` before editing or reviewing risky files.
 6. Use `synrepo_tests` before claiming done.
@@ -51,9 +51,9 @@ Load only the reference file that matches the immediate task:
 
 For exact symbols, tool names, function names, flags, JSON keys, CLI args, error strings, or file paths, prefer:
 
-- `synrepo_search(query, limit?, output_mode?, budget_tokens?)`
+- `synrepo_search(query, literal?, limit?, output_mode?, budget_tokens?)`
 
-Use `output_mode: "compact"` for orientation. Do not use a full sentence when an exact token or string literal is known. For plain-language edit or investigation tasks, call:
+Use `output_mode: "compact"` for orientation. Search rows and compact file groups may include `root_id`, `is_primary_root`, `file_id`, and root-aware `suggested_card_requests`; use those fields when the same relative path appears in both the primary checkout and a linked worktree. Do not use a full sentence when an exact token or string literal is known. Set `literal: true` for code strings that contain regex metacharacters, for example `Error::Other(anyhow`. If a regex-like query fails to compile, `synrepo_search` retries as a literal and reports `pattern_mode: "literal_fallback"` with a warning. For plain-language edit or investigation tasks, call:
 
 - `synrepo_ask(ask, scope?, shape?, ground?, budget?)`
 - `synrepo_task_route(task, path?)`
@@ -89,6 +89,7 @@ Client-side nudge hooks for Codex and Claude may remind agents to use synrepo be
 - Do not trigger explain (`--generate-cross-links`, deep commentary refresh) unless the task justifies the cost.
 - Do not expect watch or background behavior unless `synrepo watch` is explicitly running.
 - Do not call `synrepo_apply_anchor_edits` without a fresh `synrepo_prepare_edit_context` response.
+- Do not drop `root_id` from search or prepare results when editing worktree files; omitted `root_id` means the primary checkout.
 - Do not expect synrepo MCP edit tools to run shell commands. Command execution is unavailable.
 - Do not retry the same failed broad `synrepo_find` query repeatedly. Convert it to exact `synrepo_search` probes.
 - Do not claim validation from search hits alone. Confirm with cards, source, or tests.

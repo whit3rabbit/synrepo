@@ -9,3 +9,4 @@ mod semantic;
 mod state;
 mod support;
 mod watch_keys;
+mod worktrees;

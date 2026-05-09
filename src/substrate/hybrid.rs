@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use syntext::SearchOptions;
 
-use crate::config::Config;
+use crate::{config::Config, core::ids::FileNodeId};
 
 const LEXICAL_TOP_K: usize = 100;
 #[cfg(feature = "semantic-triage")]
@@ -40,6 +40,15 @@ impl HybridSearchSource {
 pub struct HybridSearchRow {
     /// Repo-relative path when known.
     pub path: Option<String>,
+    /// Root discriminator when known.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub root_id: Option<String>,
+    /// Whether the result belongs to the primary checkout when known.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_primary_root: Option<bool>,
+    /// File node identifier when known.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub file_id: Option<FileNodeId>,
     /// 1-based line number for lexical rows.
     pub line: Option<u32>,
     /// Line content for lexical rows.
@@ -90,7 +99,7 @@ pub fn hybrid_search(
     let mut lexical_options = options.clone();
     lexical_options.max_results = Some(LEXICAL_TOP_K.max(final_limit));
     let lexical =
-        crate::substrate::index::search_with_options(config, repo_root, query, &lexical_options)?;
+        crate::substrate::search_rooted_with_options(config, repo_root, query, &lexical_options)?;
 
     let mut rows = HashMap::<String, Accumulator>::new();
     for (rank, item) in lexical.into_iter().enumerate() {
@@ -104,6 +113,9 @@ pub fn hybrid_search(
             Accumulator {
                 row: HybridSearchRow {
                     path: Some(path),
+                    root_id: Some(item.root_id),
+                    is_primary_root: Some(item.is_primary_root),
+                    file_id: None,
                     line: Some(item.line_number),
                     content: Some(content),
                     source: HybridSearchSource::Lexical,
@@ -188,6 +200,9 @@ fn add_semantic_rows(
             .or_insert_with(|| Accumulator {
                 row: HybridSearchRow {
                     path: None,
+                    root_id: None,
+                    is_primary_root: None,
+                    file_id: None,
                     line: None,
                     content: None,
                     source: HybridSearchSource::Semantic,

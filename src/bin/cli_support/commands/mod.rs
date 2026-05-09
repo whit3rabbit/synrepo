@@ -173,13 +173,23 @@ pub(crate) fn search_output_with_mode(
     }
 
     if mode == crate::cli_support::cli_args::SearchModeArg::Lexical {
-        let matches = synrepo::substrate::search_with_options(&config, repo_root, query, &options)?;
+        let matches =
+            synrepo::substrate::search_rooted_with_options(&config, repo_root, query, &options)?;
         let mut out = String::new();
         for search_match in &matches {
+            let display_path = if search_match.is_primary_root {
+                search_match.path.display().to_string()
+            } else {
+                format!(
+                    "{} [root_id={}]",
+                    search_match.path.display(),
+                    search_match.root_id
+                )
+            };
             writeln!(
                 out,
                 "{}:{}: {}",
-                search_match.path.display(),
+                display_path,
                 search_match.line_number,
                 String::from_utf8_lossy(&search_match.line_content).trim_end()
             )

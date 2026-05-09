@@ -224,6 +224,7 @@ impl AppState {
                 self.queue_embedding_build();
                 true
             }
+            KeyCode::Char('W') => self.open_quick_confirm(PendingQuickConfirm::ToggleWorktrees),
             KeyCode::Char('M') | KeyCode::Char('m') => {
                 if can_generate_graph(&self.snapshot) {
                     self.open_quick_confirm(PendingQuickConfirm::MaterializeGraph)
@@ -282,6 +283,9 @@ impl AppState {
             PendingQuickConfirm::ToggleEmbeddings => {
                 "embeddings toggle: Enter to apply, Esc to cancel"
             }
+            PendingQuickConfirm::ToggleWorktrees => {
+                "worktrees toggle: Enter to apply, Esc to cancel"
+            }
             PendingQuickConfirm::ApplyCompatibility => {
                 "compatibility apply: Enter to apply, Esc to cancel"
             }
@@ -306,6 +310,7 @@ impl AppState {
                     Some(PendingQuickConfirm::ToggleEmbeddings) => {
                         self.handle_toggle_semantic_triage()
                     }
+                    Some(PendingQuickConfirm::ToggleWorktrees) => self.handle_toggle_worktrees(),
                     Some(PendingQuickConfirm::ApplyCompatibility) => {
                         self.handle_apply_compatibility_now()
                     }

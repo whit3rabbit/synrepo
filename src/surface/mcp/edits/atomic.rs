@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use serde_json::json;
 
 pub(super) struct PlannedFile {
+    pub(super) root_id: String,
     pub(super) path: String,
     pub(super) abs_path: PathBuf,
     pub(super) original: Vec<u8>,
@@ -28,18 +29,21 @@ pub(super) fn write_planned_files(planned: &[PlannedFile]) -> WriteOutcome {
             file_results.extend(written.iter().map(|written| {
                 json!({
                     "path": written.path,
+                    "root_id": written.root_id,
                     "status": if rollback.ok { "rolled_back" } else { "rollback_failed" },
                     "new_content_hash": written.new_hash,
                 })
             }));
             file_results.push(json!({
                 "path": file.path,
+                "root_id": file.root_id,
                 "status": "rejected",
                 "error": error.to_string(),
             }));
             file_results.extend(planned.iter().skip(idx + 1).map(|remaining| {
                 json!({
                     "path": remaining.path,
+                    "root_id": remaining.root_id,
                     "status": "not_applied",
                     "reason": "cross_file_atomic_write_failed",
                 })
@@ -64,6 +68,7 @@ pub(super) fn write_planned_files(planned: &[PlannedFile]) -> WriteOutcome {
     file_results.extend(planned.iter().map(|file| {
         json!({
             "path": file.path,
+            "root_id": file.root_id,
             "status": "applied",
             "new_content_hash": file.new_hash,
         })

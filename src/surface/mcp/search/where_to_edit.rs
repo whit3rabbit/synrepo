@@ -7,6 +7,7 @@ use syntext::SearchOptions;
 use crate::surface::card::{Budget, CardCompiler};
 
 use super::super::card_set::apply_card_set_cap;
+use super::super::limits::DEFAULT_RESPONSE_TOKEN_CAP;
 use super::SynrepoState;
 
 mod recommend;
@@ -29,30 +30,47 @@ pub fn handle_where_to_edit(
     let start = Instant::now();
     let result: anyhow::Result<serde_json::Value> = (|| {
         let routing = find_candidate_matches(state, &task, limit)?;
-        let compiler = state
-            .create_read_compiler()
+        let query_attempts = routing.query_attempts;
+        let fallback_used = routing.fallback_used;
+        let matches = routing.matches;
+
+        let (mut cards, matched_index_rows, suggestion_targets) = state
+            .with_read_compiler(|compiler| {
+                let mut seen = HashSet::new();
+                let mut cards = Vec::new();
+                let mut suggestion_targets = Vec::new();
+                let mut matched_index_rows = 0usize;
+
+                for matched in matches {
+                    matched_index_rows += matched.result_count;
+                    let key = format!("{}\0{}", matched.root_id, matched.path);
+                    if !seen.insert(key) {
+                        continue;
+                    }
+
+                    if let Some(file) = compiler
+                        .reader()
+                        .file_by_root_path(&matched.root_id, &matched.path)?
+                    {
+                        let card = compiler.file_card(file.id, Budget::Tiny)?;
+                        let value = serde_json::to_value(&card)
+                            .map_err(|err| crate::Error::Other(anyhow::anyhow!(err)))?;
+                        cards.push(value);
+                        suggestion_targets.push(matched.path.clone());
+                    }
+
+                    if cards.len() >= limit as usize {
+                        break;
+                    }
+                }
+
+                Ok((cards, matched_index_rows, suggestion_targets))
+            })
             .map_err(|e| anyhow::anyhow!(e))?;
-        let mut seen = HashSet::new();
-        let mut cards = Vec::new();
-        let mut matched_index_rows = 0usize;
 
-        for (path, result_count) in routing.matches {
-            matched_index_rows += result_count;
-            if !seen.insert(path.clone()) {
-                continue;
-            }
-
-            if let Some(file) = compiler.reader().file_by_path(&path)? {
-                let card = compiler.file_card(file.id, Budget::Tiny)?;
-                cards.push(serde_json::to_value(&card)?);
-            }
-
-            if cards.len() >= limit as usize {
-                break;
-            }
-        }
-
+        let budget_tokens = budget_tokens.or(Some(DEFAULT_RESPONSE_TOKEN_CAP));
         let (truncation_applied, accountings) = apply_card_set_cap(&mut cards, budget_tokens);
+        let omitted = omitted_suggestions(&suggestion_targets, cards.len());
         let synrepo_dir = crate::config::Config::synrepo_dir(&state.repo_root);
         let latency_ms = start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
         crate::pipeline::context_metrics::record_cards_best_effort(
@@ -75,8 +93,9 @@ pub fn handle_where_to_edit(
             "task": task,
             "suggestions": cards,
             "truncation_applied": truncation_applied,
-            "query_attempts": query_attempts_json(&routing.query_attempts),
-            "fallback_used": routing.fallback_used,
+            "omitted": omitted,
+            "query_attempts": query_attempts_json(&query_attempts),
+            "fallback_used": fallback_used,
             "miss_reason": miss_reason,
             "recommended_next_queries": recommended_next_queries,
             "recommended_tool": recommended_tool,
@@ -87,9 +106,16 @@ pub fn handle_where_to_edit(
 
 #[derive(Debug)]
 struct RoutingMatches {
-    matches: Vec<(String, usize)>,
+    matches: Vec<RoutingMatch>,
     query_attempts: Vec<QueryAttempt>,
     fallback_used: bool,
+}
+
+#[derive(Debug)]
+struct RoutingMatch {
+    path: String,
+    root_id: String,
+    result_count: usize,
 }
 
 fn find_candidate_matches(
@@ -151,13 +177,13 @@ fn find_candidate_matches(
 fn search_task_query(
     state: &SynrepoState,
     query: &str,
-) -> anyhow::Result<Vec<syntext::SearchMatch>> {
+) -> anyhow::Result<Vec<crate::substrate::RootedSearchMatch>> {
     let options = SearchOptions {
         max_results: Some(MAX_MATCHES_PER_QUERY),
         case_insensitive: true,
         ..SearchOptions::default()
     };
-    Ok(crate::substrate::search_with_options(
+    Ok(crate::substrate::search_rooted_with_options(
         &state.config,
         &state.repo_root,
         query,
@@ -165,15 +191,36 @@ fn search_task_query(
     )?)
 }
 
-fn push_unique_match_paths(matches: &mut Vec<(String, usize)>, found: Vec<syntext::SearchMatch>) {
+fn push_unique_match_paths(
+    matches: &mut Vec<RoutingMatch>,
+    found: Vec<crate::substrate::RootedSearchMatch>,
+) {
     let count = found.len();
     let mut seen_in_query = HashSet::new();
     for m in found {
         let path = m.path.to_string_lossy().to_string();
-        if seen_in_query.insert(path.clone()) {
-            matches.push((path, count));
+        let root_id = m.root_id;
+        if seen_in_query.insert(format!("{root_id}\0{path}")) {
+            matches.push(RoutingMatch {
+                path,
+                root_id,
+                result_count: count,
+            });
         }
     }
+}
+
+fn omitted_suggestions(targets: &[String], returned_count: usize) -> Vec<Value> {
+    targets
+        .iter()
+        .skip(returned_count)
+        .map(|target| {
+            json!({
+                "target": target,
+                "reason": "budget_tokens_exceeded",
+            })
+        })
+        .collect()
 }
 
 fn fallback_queries(task: &str) -> Vec<String> {

@@ -137,6 +137,8 @@ pub(super) fn file_card(
     let mut card = FileCard {
         file: id,
         path: file.path.clone(),
+        root_id: file.root_id.clone(),
+        is_primary_root: file.root_id == "primary",
         symbols,
         imported_by,
         imports,

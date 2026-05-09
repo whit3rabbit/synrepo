@@ -17,6 +17,14 @@ synrepo SHALL define lexical indexing as an exact search substrate that supports
 - **THEN** the substrate contract guarantees deterministic exact-search behavior
 - **AND** it does not require Explain to answer the query
 
+### Requirement: Keep root-aware lexical lookup deterministic
+The primary checkout SHALL be indexed through syntext. Discovered non-primary roots such as linked worktrees SHALL be searchable through a bounded direct scan that uses the same discovery classification, path filters, file type filters, exclude filters, case-sensitivity option, and result limits as primary-root lexical search. Non-primary roots SHALL NOT be inserted into the primary syntext index while syntext stores paths relative to the primary repo root.
+
+#### Scenario: Search finds a worktree-only token
+- **WHEN** a linked worktree is included in discovery and contains a unique token
+- **THEN** root-aware lexical lookup returns the worktree match
+- **AND** the match includes the worktree root discriminator without exposing the absolute worktree path
+
 ### Requirement: Allow incremental lexical index maintenance for watch mode
 synrepo SHALL allow watch-driven lexical index maintenance from a bounded touched-path set when the watch service has a trustworthy coalesced batch of repo-relative file changes. The incremental path SHALL skip `.synrepo/` and `.git/`, ignore directories, respect configured roots and redaction policy, and evict entries whose paths are now out of policy or deleted. When no trustworthy touched-path set exists, or when the underlying syntext index is missing, corrupt, lock-conflicted, or overlay-full, synrepo SHALL fall back to a full rebuild.
 
@@ -92,4 +100,3 @@ When semantic triage builds symbol chunks, each symbol chunk SHALL include quali
 - **WHEN** an embedding chunk is extracted for a documented symbol
 - **THEN** the chunk text includes the symbol's qualified name, kind, file path, signature, and doc comment
 - **AND** changing the chunk text format invalidates the prior vector index format
-

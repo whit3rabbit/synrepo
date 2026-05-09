@@ -21,6 +21,7 @@ mod reconcile;
 mod semantic;
 mod sync;
 mod watch;
+mod worktrees;
 
 pub use auto_sync::set_auto_sync;
 pub use compatibility::apply_compatibility_now;
@@ -31,6 +32,7 @@ pub use reconcile::reconcile_now;
 pub use semantic::{semantic_feature_compiled, set_semantic_triage};
 pub use sync::sync_now;
 pub use watch::{start_watch_daemon, stop_watch};
+pub use worktrees::set_worktrees_enabled;
 
 /// Context passed to every action dispatcher. Keeps the callsite in the render
 /// loop narrow; callers build this once per app state transition.

@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::core::path_safety::safe_join_in_repo;
 
@@ -9,11 +9,11 @@ use crate::core::path_safety::safe_join_in_repo;
 /// follow absolute or traversing paths so Deep-budget card compilation cannot
 /// be turned into an arbitrary-file-read primitive.
 pub(super) fn read_symbol_body(
-    repo_root: &Option<PathBuf>,
+    repo_root: Option<&Path>,
     file_path: &str,
     byte_range: (u32, u32),
 ) -> Option<String> {
-    let root = repo_root.as_deref().unwrap_or(Path::new("."));
+    let root = repo_root.unwrap_or(Path::new("."));
     let full_path = safe_join_in_repo(root, file_path)?;
     let content = std::fs::read(&full_path).ok()?;
     let start = byte_range.0 as usize;
@@ -37,18 +37,17 @@ mod tests {
         // Sibling file the attacker wants to exfiltrate.
         fs::write(outer.path().join("secret.txt"), b"top secret").unwrap();
 
-        let root = Some(repo.clone());
-        assert!(read_symbol_body(&root, "../secret.txt", (0, 10)).is_none());
+        assert!(read_symbol_body(Some(&repo), "../secret.txt", (0, 10)).is_none());
     }
 
     #[test]
     fn read_symbol_body_refuses_absolute_path() {
         let repo = tempdir().unwrap();
-        let root = Some(repo.path().to_path_buf());
+        let root = repo.path().to_path_buf();
         // On Unix `/etc/passwd` is the canonical probe. On Windows `is_absolute`
         // also refuses `\\server\share\x` and `C:\...`, covered by unit tests
         // in core::path_safety.
-        assert!(read_symbol_body(&root, "/etc/passwd", (0, 10)).is_none());
+        assert!(read_symbol_body(Some(&root), "/etc/passwd", (0, 10)).is_none());
     }
 
     #[test]
@@ -58,8 +57,7 @@ mod tests {
         fs::create_dir_all(file_path.parent().unwrap()).unwrap();
         fs::write(&file_path, b"fn ok() {}").unwrap();
 
-        let root = Some(repo.path().to_path_buf());
-        let got = read_symbol_body(&root, "src/lib.rs", (0, 10)).unwrap();
+        let got = read_symbol_body(Some(repo.path()), "src/lib.rs", (0, 10)).unwrap();
         assert_eq!(got, "fn ok() {}");
     }
 }

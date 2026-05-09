@@ -57,18 +57,18 @@ fn build_index_once(
     let discovered = crate::substrate::discover::discover(repo_root, config)?;
     let records = discovered
         .iter()
+        .filter(|file| file.root_discriminant == "primary")
         .map(|file| ExternalFileRecord {
             absolute_path: file.absolute_path.clone(),
             relative_path: PathBuf::from(&file.relative_path),
             size_bytes: file.size_bytes,
         })
-        .collect();
+        .collect::<Vec<_>>();
+    let indexed_files = records.len();
     Index::build_from_file_records(syntext_config(config, repo_root), records)
         .map_err(map_index_error)?;
 
-    Ok(IndexBuildReport {
-        indexed_files: discovered.len(),
-    })
+    Ok(IndexBuildReport { indexed_files })
 }
 
 fn is_lock_conflict(error: &crate::Error) -> bool {

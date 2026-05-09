@@ -7,6 +7,8 @@ expression: tiny
   "focal_card": {
     "file": "file_da7126252fc52382b57d357eb90beb47",
     "path": "src/lib.rs",
+    "root_id": "primary",
+    "is_primary_root": true,
     "symbols": [
       {
         "id": "sym_0428e9f2f46549976b560f5b402d03ee",

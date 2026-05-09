@@ -40,6 +40,7 @@ fn params(query: &str) -> SearchParams {
         output_mode: OutputMode::Default,
         budget_tokens: None,
         mode: SearchMode::Auto,
+        literal: false,
     }
 }
 

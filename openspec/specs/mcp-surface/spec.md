@@ -618,22 +618,23 @@ If a future synrepo MCP spec ever supplies an environment value to the installer
 - **THEN** `synrepo setup` aborts with the integration ID and env-key name
 - **AND** no partial config is left on disk
 
-### Requirement: Expose filtered syntext search through MCP
-The MCP server SHALL expose `synrepo_search` as an exact lexical search tool backed by the syntext substrate index. The tool SHALL accept `query`, optional `limit`, optional `path_filter`, optional `file_type`, optional `exclude_type`, and optional `case_insensitive`; it SHALL also accept `ignore_case` as an alias for `case_insensitive`. The tool SHALL preserve the existing `query` and `results` response fields, and each result SHALL include `path`, `line`, and `content`.
+### Requirement: Expose filtered lexical search through MCP
+The MCP server SHALL expose `synrepo_search` as an exact lexical search tool backed by the syntext substrate index for the primary checkout and a bounded direct scan for discovered non-primary roots. The tool SHALL accept `query`, optional `limit`, optional `path_filter`, optional `file_type`, optional `exclude_type`, and optional `case_insensitive`; it SHALL also accept `ignore_case` as an alias for `case_insensitive`. The tool SHALL preserve the existing `query` and `results` response fields, and each graph-enriched result SHALL include `path`, `root_id`, `is_primary_root`, `file_id`, `line`, and `content`.
 
 #### Scenario: Existing minimal search remains valid
 - **WHEN** an agent invokes `synrepo_search` with only `query` and `limit`
-- **THEN** the tool returns exact lexical matches from the syntext substrate index
+- **THEN** the tool returns exact lexical matches from the primary-root substrate index and configured non-primary root scan
 - **AND** the response still includes `query` and `results`
 
 #### Scenario: Agent scopes search with filters
 - **WHEN** an agent invokes `synrepo_search` with `path_filter`, `file_type`, `exclude_type`, or `case_insensitive`
-- **THEN** the tool applies those options through the syntext substrate search path
+- **THEN** the tool applies those options through the primary index path and non-primary direct scan path
 - **AND** the response contains only matching entries
 
 #### Scenario: Agent inspects search provenance
 - **WHEN** an agent invokes `synrepo_search`
-- **THEN** the response includes `engine: "syntext"`, `source_store: "substrate_index"`, `limit`, `filters`, and `result_count`
+- **THEN** the response includes `engine`, `source_store`, `limit`, `filters`, and `result_count`
+- **AND** `source_store` identifies when non-primary roots contributed direct-scan rows
 
 ### Requirement: Keep MCP search freshness explicit
 The MCP server SHALL keep `synrepo_search` read-only. Search calls MUST NOT trigger reconcile, start watch, rebuild the index, or mutate repo-tracked files or synrepo runtime stores. Index freshness SHALL be maintained by explicit init, reconcile, sync, or watch flows.
@@ -714,13 +715,14 @@ Search compact output is no longer only opt-in. `synrepo_search` SHALL default t
 
 #### Scenario: Default search returns compact output
 - **WHEN** an agent invokes `synrepo_search` without `output_mode`
-- **THEN** the response groups results by file path and returns short line previews instead of the full raw result array
-- **AND** the response includes `suggested_card_targets` so the caller can escalate to cards for bounded detail
+- **THEN** the response groups results by `(root_id, path)` and returns short line previews instead of the full raw result array
+- **AND** the response includes compatibility `suggested_card_targets` plus root-aware `suggested_card_requests` so the caller can escalate to cards for bounded detail
 
 #### Scenario: Explicit default search remains compatible
 - **WHEN** an agent invokes `synrepo_search` with `output_mode = "default"`
 - **THEN** the response preserves bounded raw result rows
 - **AND** each result still includes `path`, `line`, and `content` when available
+- **AND** graph-enriched rows include `root_id`, `is_primary_root`, and `file_id`
 
 #### Scenario: Compact search applies a token cap
 - **WHEN** an agent invokes compact `synrepo_search` with `budget_tokens`

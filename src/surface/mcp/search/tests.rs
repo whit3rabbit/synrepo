@@ -12,6 +12,8 @@ use super::{
     SearchParams,
 };
 
+mod worktrees;
+
 fn make_state() -> (tempfile::TempDir, SynrepoState) {
     let home = tempdir().unwrap();
     let _home_guard = crate::config::test_home::HomeEnvGuard::redirect_to(home.path());
@@ -48,6 +50,7 @@ fn search_params(output_mode: OutputMode, budget_tokens: Option<usize>) -> Searc
         output_mode,
         budget_tokens,
         mode: super::SearchMode::Auto,
+        literal: false,
     }
 }
 

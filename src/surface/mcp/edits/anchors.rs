@@ -12,6 +12,7 @@ use serde::Serialize;
 #[derive(Clone, Debug, Eq)]
 struct AnchorKey {
     repo_root: PathBuf,
+    root_id: String,
     task_id: String,
     path: String,
     content_hash: String,
@@ -21,6 +22,7 @@ struct AnchorKey {
 impl PartialEq for AnchorKey {
     fn eq(&self, other: &Self) -> bool {
         self.repo_root == other.repo_root
+            && self.root_id == other.root_id
             && self.task_id == other.task_id
             && self.path == other.path
             && self.content_hash == other.content_hash
@@ -31,6 +33,7 @@ impl PartialEq for AnchorKey {
 impl Hash for AnchorKey {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.repo_root.hash(state);
+        self.root_id.hash(state);
         self.task_id.hash(state);
         self.path.hash(state);
         self.content_hash.hash(state);
@@ -48,6 +51,7 @@ pub struct AnchorLine {
 #[derive(Clone, Debug)]
 pub struct PreparedAnchorState {
     pub repo_root: PathBuf,
+    pub root_id: String,
     pub task_id: String,
     pub path: String,
     pub content_hash: String,
@@ -90,11 +94,15 @@ impl AnchorManager {
     pub fn next_version(
         &self,
         repo_root: &std::path::Path,
+        root_id: &str,
         path: &str,
         content_hash: &str,
     ) -> String {
         let counter = self.next_version.fetch_add(1, Ordering::Relaxed);
-        let seed = format!("{}:{path}:{content_hash}:{counter}", repo_root.display());
+        let seed = format!(
+            "{}:{root_id}:{path}:{content_hash}:{counter}",
+            repo_root.display()
+        );
         let digest = blake3::hash(seed.as_bytes()).to_hex().to_string();
         format!("asv-{}", &digest[..16])
     }
@@ -116,6 +124,7 @@ impl AnchorManager {
     pub fn get(
         &self,
         repo_root: &std::path::Path,
+        root_id: &str,
         task_id: &str,
         path: &str,
         content_hash: &str,
@@ -124,6 +133,7 @@ impl AnchorManager {
         let now = Instant::now();
         let key = AnchorKey {
             repo_root: repo_root.to_path_buf(),
+            root_id: root_id.to_string(),
             task_id: task_id.to_string(),
             path: path.to_string(),
             content_hash: content_hash.to_string(),
@@ -152,6 +162,7 @@ impl AnchorManager {
 fn key_for(state: &PreparedAnchorState) -> AnchorKey {
     AnchorKey {
         repo_root: state.repo_root.clone(),
+        root_id: state.root_id.clone(),
         task_id: state.task_id.clone(),
         path: state.path.clone(),
         content_hash: state.content_hash.clone(),
@@ -188,6 +199,7 @@ mod tests {
     fn state(index: usize) -> PreparedAnchorState {
         PreparedAnchorState {
             repo_root: PathBuf::from("/repo"),
+            root_id: "primary".to_string(),
             task_id: format!("task-{index}"),
             path: "src/lib.rs".to_string(),
             content_hash: "hash".to_string(),
@@ -210,6 +222,7 @@ mod tests {
         assert!(manager
             .get(
                 PathBuf::from("/repo").as_path(),
+                "primary",
                 "task-1",
                 "src/lib.rs",
                 "hash",
@@ -219,6 +232,7 @@ mod tests {
         assert!(manager
             .get(
                 PathBuf::from("/repo").as_path(),
+                "primary",
                 "task-2",
                 "src/lib.rs",
                 "hash",
@@ -228,6 +242,7 @@ mod tests {
         assert!(manager
             .get(
                 PathBuf::from("/repo").as_path(),
+                "primary",
                 "task-3",
                 "src/lib.rs",
                 "hash",

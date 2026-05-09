@@ -47,6 +47,25 @@ pub(super) fn quick_actions_for(mode: &AppMode, snapshot: &StatusSnapshot) -> Ve
         });
     }
     if snapshot.initialized {
+        let worktrees_enabled = snapshot
+            .config
+            .as_ref()
+            .map(|config| config.include_worktrees)
+            .unwrap_or_else(|| crate::config::Config::default().include_worktrees);
+        let worktrees_label = if worktrees_enabled {
+            "disable linked worktrees"
+        } else {
+            "enable linked worktrees"
+        };
+        actions.push(QuickAction {
+            key: "W".to_string(),
+            label: worktrees_label.to_string(),
+            disabled: false,
+            requires_confirm: true,
+            destructive: false,
+            expensive: true,
+            command_label: Some(worktrees_label.to_string()),
+        });
         let embeddings_enabled = snapshot
             .config
             .as_ref()

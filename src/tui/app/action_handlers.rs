@@ -10,7 +10,8 @@ use crate::structure::graph::with_graph_read_snapshot;
 use crate::tui::actions::{
     apply_compatibility_now, materialize_now, outcome_to_log, outcome_to_project_log,
     reconcile_now, semantic_feature_compiled, set_auto_sync, set_semantic_triage,
-    start_watch_daemon, stop_watch, sync_now, ActionContext, ActionOutcome, ProjectActionContext,
+    set_worktrees_enabled, start_watch_daemon, stop_watch, sync_now, ActionContext, ActionOutcome,
+    ProjectActionContext,
 };
 
 use super::{
@@ -127,6 +128,23 @@ impl AppState {
 
         self.launch_embeddings_setup = true;
         self.should_exit = true;
+        true
+    }
+
+    pub(super) fn handle_toggle_worktrees(&mut self) -> bool {
+        let ctx = self.action_context();
+        let enabled = self
+            .snapshot
+            .config
+            .as_ref()
+            .map(|config| config.include_worktrees)
+            .unwrap_or_else(|| Config::default().include_worktrees);
+        let outcome = set_worktrees_enabled(&ctx, !enabled);
+        self.set_toast(self.action_toast("worktrees", &outcome));
+        self.log_action_outcome("worktrees", &outcome);
+        if matches!(outcome, ActionOutcome::Completed { .. }) {
+            self.refresh_now();
+        }
         true
     }
 

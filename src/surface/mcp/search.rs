@@ -3,7 +3,6 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use syntext::SearchOptions;
 
-use crate::core::ids::SymbolNodeId;
 use crate::surface::changed::git_changed_files;
 
 use super::compact::{self, OutputMode};
@@ -17,6 +16,7 @@ use super::SynrepoState;
 mod cards_mode;
 mod impact;
 mod overview;
+mod rooted_rows;
 mod where_to_edit;
 use cards_mode::search_cards_response;
 pub use impact::{
@@ -55,6 +55,9 @@ pub struct SearchParams {
     /// Search mode. `auto` uses hybrid search when local semantic assets load.
     #[serde(default)]
     pub mode: SearchMode,
+    /// Treat the query as a literal string instead of a syntext/regex pattern.
+    #[serde(default)]
+    pub literal: bool,
 }
 
 pub fn default_limit() -> u32 {
@@ -94,8 +97,16 @@ impl SearchParams {
             "file_type": self.file_type.clone(),
             "exclude_type": self.exclude_type.clone(),
             "case_insensitive": self.case_insensitive,
+            "literal": self.literal,
         })
     }
+}
+
+struct SearchExecution {
+    items: Vec<Value>,
+    engine: String,
+    source_store: String,
+    semantic_available: bool,
 }
 
 /// Parameters for the `synrepo_where_to_edit` tool.
@@ -138,41 +149,36 @@ pub fn handle_search(state: &SynrepoState, params: SearchParams) -> String {
         }
         let budget_tokens = params.budget_tokens.or(Some(DEFAULT_SEARCH_BUDGET_TOKENS));
         let options = params.search_options();
-        let (items, engine, source_store, semantic_available) = match params.mode {
-            SearchMode::Lexical => {
-                let matches = crate::substrate::search_with_options(
-                    &state.config,
-                    &state.repo_root,
-                    &params.query,
-                    &options,
-                )?;
-                (lexical_items(matches), "syntext", "substrate_index", false)
-            }
-            SearchMode::Auto => {
-                let report = crate::substrate::hybrid_search(
-                    &state.config,
-                    &state.repo_root,
-                    &params.query,
-                    &options,
-                )?;
-                let items = hybrid_items(state, report.rows);
-                let source_store = if report.semantic_available {
-                    "substrate_index+vector_index"
-                } else {
-                    "substrate_index"
-                };
-                (
-                    items,
-                    report.engine,
-                    source_store,
-                    report.semantic_available,
-                )
-            }
+        let mut warnings = Vec::new();
+        let mut pattern_mode = if params.literal { "literal" } else { "regex" };
+        let mut effective_query = if params.literal {
+            escape_search_pattern(&params.query)
+        } else {
+            params.query.clone()
         };
+        let execution = match run_search(state, &params, &effective_query, &options) {
+            Ok(execution) => execution,
+            Err(error) if !params.literal && is_invalid_search_pattern(&error) => {
+                pattern_mode = "literal_fallback";
+                warnings.push(format!(
+                    "query was not a valid search pattern and was retried as a literal string: {error}"
+                ));
+                effective_query = escape_search_pattern(&params.query);
+                run_search(state, &params, &effective_query, &options)?
+            }
+            Err(error) => return Err(error),
+        };
+        let SearchExecution {
+            items,
+            engine,
+            source_store,
+            semantic_available,
+        } = execution;
+        let source_store = root_aware_source_store(&source_store, &items);
         let result_count = items.len();
         let filters = params.filters_json();
 
-        let response = json!({
+        let mut response = json!({
             "query": params.query,
             "results": items,
             "engine": engine,
@@ -185,7 +191,13 @@ pub fn handle_search(state: &SynrepoState, params: SearchParams) -> String {
             "limit": effective_limit,
             "filters": filters,
             "result_count": result_count,
+            "pattern_mode": pattern_mode,
         });
+        if !warnings.is_empty() {
+            if let Some(obj) = response.as_object_mut() {
+                obj.insert("warnings".to_string(), json!(warnings));
+            }
+        }
 
         Ok(match output_mode {
             OutputMode::Default => response,
@@ -200,75 +212,81 @@ pub fn handle_search(state: &SynrepoState, params: SearchParams) -> String {
     render_result(result)
 }
 
-fn lexical_items(matches: Vec<syntext::SearchMatch>) -> Vec<serde_json::Value> {
-    matches
-        .into_iter()
-        .map(|m| {
-            json!({
-                "path": m.path.to_string_lossy(),
-                "line": m.line_number,
-                "content": String::from_utf8_lossy(&m.line_content).trim_end().to_string(),
-                "source": "lexical",
-                "fusion_score": serde_json::Value::Null,
-                "semantic_score": serde_json::Value::Null,
-            })
-        })
-        .collect()
-}
-
-fn hybrid_items(
+fn run_search(
     state: &SynrepoState,
-    rows: Vec<crate::substrate::HybridSearchRow>,
-) -> Vec<serde_json::Value> {
-    let needs_graph = rows
-        .iter()
-        .any(|row| row.path.is_none() && row.symbol_id.is_some());
-    if needs_graph {
-        let fallback_rows = rows.clone();
-        state
-            .with_read_compiler(|compiler| Ok(hybrid_items_with_compiler(rows, Some(compiler))))
-            .unwrap_or_else(|_| hybrid_items_with_compiler(fallback_rows, None))
-    } else {
-        hybrid_items_with_compiler(rows, None)
+    params: &SearchParams,
+    query: &str,
+    options: &SearchOptions,
+) -> anyhow::Result<SearchExecution> {
+    Ok(match params.mode {
+        SearchMode::Lexical => {
+            let matches = crate::substrate::search_rooted_with_options(
+                &state.config,
+                &state.repo_root,
+                query,
+                options,
+            )?;
+            SearchExecution {
+                items: rooted_rows::lexical_items(state, matches),
+                engine: "syntext".to_string(),
+                source_store: "substrate_index".to_string(),
+                semantic_available: false,
+            }
+        }
+        SearchMode::Auto => {
+            let report =
+                crate::substrate::hybrid_search(&state.config, &state.repo_root, query, options)?;
+            let items = rooted_rows::hybrid_items(state, report.rows);
+            let source_store = if report.semantic_available {
+                "substrate_index+vector_index"
+            } else {
+                "substrate_index"
+            };
+            SearchExecution {
+                items,
+                engine: report.engine.to_string(),
+                source_store: source_store.to_string(),
+                semantic_available: report.semantic_available,
+            }
+        }
+    })
+}
+
+fn is_invalid_search_pattern(error: &anyhow::Error) -> bool {
+    let rendered = format!("{error:#}");
+    rendered.contains("regex parse error") || rendered.contains("invalid pattern")
+}
+
+fn escape_search_pattern(query: &str) -> String {
+    let mut escaped = String::with_capacity(query.len());
+    for ch in query.chars() {
+        if matches!(
+            ch,
+            '\\' | '.' | '+' | '*' | '?' | '(' | ')' | '|' | '[' | ']' | '{' | '}' | '^' | '$'
+        ) {
+            escaped.push('\\');
+        }
+        escaped.push(ch);
     }
+    escaped
 }
 
-fn hybrid_items_with_compiler(
-    rows: Vec<crate::substrate::HybridSearchRow>,
-    compiler: Option<&crate::surface::card::compiler::GraphCardCompiler>,
-) -> Vec<serde_json::Value> {
-    rows.into_iter()
-        .map(|row| {
-            let path = row
-                .path
-                .clone()
-                .or_else(|| row.symbol_id.and_then(|id| symbol_path(compiler, id)));
-            json!({
-                "path": path,
-                "line": row.line,
-                "content": row.content,
-                "source": row.source.as_str(),
-                "fusion_score": row.fusion_score,
-                "semantic_score": row.semantic_score,
-                "chunk_id": row.chunk_id,
-                "symbol_id": row.symbol_id,
-            })
-        })
-        .collect()
-}
-
-fn symbol_path(
-    compiler: Option<&crate::surface::card::compiler::GraphCardCompiler>,
-    id: SymbolNodeId,
-) -> Option<String> {
-    let compiler = compiler?;
-    let symbol = compiler.reader().get_symbol(id).ok().flatten()?;
-    compiler
-        .reader()
-        .get_file(symbol.file_id)
-        .ok()
-        .flatten()
-        .map(|file| file.path)
+fn root_aware_source_store(source_store: &str, items: &[Value]) -> &'static str {
+    let has_non_primary = items.iter().any(|item| {
+        item.get("is_primary_root")
+            .and_then(Value::as_bool)
+            .is_some_and(|is_primary| !is_primary)
+    });
+    match (source_store, has_non_primary) {
+        ("substrate_index", true) => "substrate_index+direct_roots",
+        ("substrate_index+vector_index", true) => "substrate_index+vector_index+direct_roots",
+        ("substrate_index+direct_roots", _) => "substrate_index+direct_roots",
+        ("substrate_index+vector_index+direct_roots", _) => {
+            "substrate_index+vector_index+direct_roots"
+        }
+        ("substrate_index+vector_index", _) => "substrate_index+vector_index",
+        _ => "substrate_index",
+    }
 }
 
 pub fn handle_changed(state: &SynrepoState) -> String {

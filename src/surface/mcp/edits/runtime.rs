@@ -1,20 +1,15 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde_json::json;
 
-use crate::{
-    pipeline::{
-        watch::{
-            request_watch_control, watch_service_status, WatchControlRequest, WatchServiceStatus,
-        },
-        writer::LockError,
-    },
-    surface::mcp::SynrepoState,
+use crate::pipeline::{
+    watch::{request_watch_control, watch_service_status, WatchControlRequest, WatchServiceStatus},
+    writer::LockError,
 };
 
 const EDIT_SUPPRESSION_TTL_MS: u64 = 15_000;
 
-pub(super) fn suppress_watch_events(state: &SynrepoState, synrepo_dir: &Path, paths: &[String]) {
+pub(super) fn suppress_watch_events(synrepo_dir: &Path, paths: &[PathBuf]) {
     if !matches!(
         watch_service_status(synrepo_dir),
         WatchServiceStatus::Running(_)
@@ -23,9 +18,8 @@ pub(super) fn suppress_watch_events(state: &SynrepoState, synrepo_dir: &Path, pa
     }
     let mut watch_paths = Vec::with_capacity(paths.len() * 2);
     for path in paths {
-        let abs_path = state.repo_root.join(path);
-        watch_paths.push(abs_path.clone());
-        if let Some(parent) = abs_path.parent() {
+        watch_paths.push(path.clone());
+        if let Some(parent) = path.parent() {
             watch_paths.push(parent.to_path_buf());
         }
     }

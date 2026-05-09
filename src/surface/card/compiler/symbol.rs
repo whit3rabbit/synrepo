@@ -60,7 +60,8 @@ pub(super) fn symbol_card(
 
     // Source body: only for Deep budget.
     let source_body = if budget == Budget::Deep {
-        read_symbol_body(ctx.repo_root, &file.path, symbol.body_byte_range)
+        let source_root = ctx.compiler.source_root_for(&file.root_id);
+        read_symbol_body(source_root.as_deref(), &file.path, symbol.body_byte_range)
     } else {
         None
     };
@@ -86,6 +87,10 @@ pub(super) fn symbol_card(
         name: symbol.display_name.clone(),
         qualified_name: symbol.qualified_name.clone(),
         defined_at,
+        file_id: file.id,
+        path: file.path.clone(),
+        root_id: file.root_id.clone(),
+        is_primary_root: file.root_id == "primary",
         signature: symbol.signature.clone(),
         doc_comment,
         callers,

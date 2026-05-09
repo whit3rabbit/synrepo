@@ -6,12 +6,22 @@ Anchors are short-lived operational state for source edits, not canonical graph
 facts, overlay content, commentary, or agent memory.
 ## Requirements
 ### Requirement: Prepare session-scoped source anchors from current graph facts
-synrepo SHALL prepare line anchors as session-scoped operational state for edit workflows. Prepared anchor state SHALL include an opaque `anchor_state_version` and SHALL be based on current repository facts where available, including `graph_epoch`, file ID, symbol ID, content hash, and source hash. Prepared line anchors SHALL NOT be stored as canonical graph facts, overlay content, commentary, or agent memory.
+synrepo SHALL prepare line anchors as session-scoped operational state for edit workflows. Prepared anchor state SHALL include an opaque `anchor_state_version` and SHALL be based on current repository facts where available, including `graph_epoch`, root ID, file ID, symbol ID, content hash, and source hash. Prepared line anchors SHALL NOT be stored as canonical graph facts, overlay content, commentary, or agent memory.
 
 #### Scenario: Prepare anchors for a file target
 - **WHEN** an edit-enabled MCP client requests edit context for a file path
 - **THEN** synrepo returns compact source context with line anchors
-- **AND** the response includes `task_id`, `anchor_state_version`, `path`, `file_id`, `content_hash`, `source_hash`, and `graph_epoch` when those values are available
+- **AND** the response includes `task_id`, `anchor_state_version`, `path`, `root_id`, `is_primary_root`, `file_id`, `content_hash`, `source_hash`, and `graph_epoch` when those values are available
+
+#### Scenario: Prepare anchors for a worktree path
+- **WHEN** an edit-enabled MCP client requests edit context with `root_id` for a linked worktree
+- **THEN** synrepo resolves the relative path inside that worktree root
+- **AND** the response includes the same `root_id` with `is_primary_root = false`
+
+#### Scenario: Mismatched root rejects a graph target
+- **WHEN** an edit-enabled MCP client requests a file or symbol node ID with a different `root_id` than the graph file owns
+- **THEN** synrepo rejects the request before reading or writing source
+- **AND** no source file is modified
 
 #### Scenario: Prepared anchors expire or are evicted
 - **WHEN** an anchor session has expired or been evicted from the operational cache
@@ -46,8 +56,8 @@ synrepo SHALL validate every anchored edit against the current file content befo
 - **THEN** synrepo rejects the edit as stale or conflicted
 - **AND** no source file is modified
 
-### Requirement: Apply edit batches atomically per file
-synrepo SHALL treat one file as the first atomicity boundary for anchored edit batches. A batch containing multiple edits for one file SHALL validate against one current file snapshot and either write that file once or not at all. A batch containing multiple files MAY return mixed per-file outcomes and SHALL NOT claim cross-file transaction semantics.
+### Requirement: Apply edit batches atomically across selected roots and files
+synrepo SHALL treat `(root_id, path)` as the file identity for anchored edit batches. Omitted `root_id` SHALL mean the primary checkout. A batch containing multiple edits for one file SHALL validate against one current file snapshot and either write that file once or not at all. A batch containing multiple files SHALL preflight every file before writing, restore prior originals if a later write fails, and report `atomicity.cross_file = true`.
 
 #### Scenario: One file batch succeeds as one write
 - **WHEN** a batch contains multiple non-overlapping edits for one file
@@ -64,9 +74,15 @@ synrepo SHALL treat one file as the first atomicity boundary for anchored edit b
 #### Scenario: Multi-file batch returns per-file outcomes
 - **WHEN** a batch contains edits for two files
 - **AND** the first file validates but the second file fails validation
-- **THEN** synrepo may apply the first file and reject the second file
+- **THEN** synrepo rejects the batch before writing either file
 - **AND** the response reports separate per-file success and failure
-- **AND** the response does not describe the batch as cross-file atomic
+- **AND** the response describes the batch as cross-file atomic
+
+#### Scenario: Apply writes the selected worktree file
+- **WHEN** a prepared edit request includes a linked-worktree `root_id`
+- **THEN** synrepo validates the prepared anchor state for that root and relative path
+- **AND** writes only the selected worktree file
+- **AND** a same-path file in the primary checkout is not modified
 
 ### Requirement: Return bounded post-edit diagnostics
 After a successful anchored edit write, synrepo SHALL return bounded diagnostics covering validation status, write status, reconcile or watch-delegation status, and changed test-surface recommendations. The diagnostics SHALL NOT require arbitrary command execution.
@@ -109,4 +125,3 @@ The TypeScript/TSX `var-to-const` eligibility helper SHALL report eligible only 
 #### Scenario: Variable is reassigned
 - **WHEN** the helper inspects `let value = 1; value = 2;`
 - **THEN** it reports `eligible = false`
-

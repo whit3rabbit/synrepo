@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::core::ids::{NodeId, SymbolNodeId};
+use crate::core::ids::{FileNodeId, NodeId, SymbolNodeId};
 use crate::overlay::{ConfidenceTier, CrossLinkFreshness, OverlayEdgeKind};
 use crate::structure::graph::Epistemic;
 
@@ -19,6 +19,14 @@ pub struct SymbolCard {
     pub qualified_name: String,
     /// File and line where defined.
     pub defined_at: String,
+    /// File node containing the symbol.
+    pub file_id: FileNodeId,
+    /// Path relative to the owning root.
+    pub path: String,
+    /// Discovery root discriminator that owns the containing file.
+    pub root_id: String,
+    /// True when this symbol belongs to the primary checkout.
+    pub is_primary_root: bool,
     /// One-line signature.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub signature: Option<String>,

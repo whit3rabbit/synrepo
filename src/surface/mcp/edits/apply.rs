@@ -13,11 +13,13 @@ use crate::{config::Config, pipeline::context_metrics, pipeline::writer::acquire
 use super::atomic::{write_planned_files, PlannedFile};
 use super::caps::validate_edit_caps;
 use super::diagnostics::post_edit_diagnostics;
+use super::plan::{reject_overlaps, PlannedEdit};
+use super::roots::{resolve_edit_path, PRIMARY_ROOT_ID};
 use super::runtime::{suppress_watch_events, writer_lock_conflict_json};
 use super::{anchor_manager, PreparedAnchorState};
 use crate::surface::mcp::{helpers::render_result, SynrepoState};
 
-use super::prepare::{hash_bytes, resolve_edit_path};
+use super::prepare::hash_bytes;
 
 const DEFAULT_MAX_LINES: usize = 1_000;
 const HARD_MAX_LINES: usize = 5_000;
@@ -38,6 +40,8 @@ pub struct AnchorEditRequest {
     pub task_id: String,
     pub anchor_state_version: String,
     pub path: String,
+    #[serde(default)]
+    pub root_id: Option<String>,
     pub content_hash: String,
     pub anchor: String,
     #[serde(default)]
@@ -45,6 +49,12 @@ pub struct AnchorEditRequest {
     pub edit_type: String,
     #[serde(default)]
     pub text: Option<String>,
+}
+
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+struct EditFileKey {
+    root_id: String,
+    path: String,
 }
 
 pub fn handle_apply_anchor_edits(state: &SynrepoState, params: ApplyAnchorEditsParams) -> String {
@@ -77,21 +87,25 @@ fn apply_anchor_edits(
     }
 
     let synrepo_dir = Config::synrepo_dir(&state.repo_root);
-    let mut groups: BTreeMap<String, Vec<AnchorEditRequest>> = BTreeMap::new();
-    let mut resolved_paths: BTreeMap<String, PathBuf> = BTreeMap::new();
+    let mut groups: BTreeMap<EditFileKey, Vec<AnchorEditRequest>> = BTreeMap::new();
+    let mut resolved_paths: BTreeMap<EditFileKey, PathBuf> = BTreeMap::new();
     for edit in params.edits {
-        let resolved = resolve_edit_path(&state.repo_root, &edit.path)?;
-        let path = resolved.relative;
+        let resolved = resolve_edit_path(state, &edit.path, edit.root_id.as_deref())?;
+        let key = EditFileKey {
+            root_id: resolved.root_id.clone(),
+            path: resolved.relative.clone(),
+        };
         resolved_paths
-            .entry(path.clone())
-            .or_insert(resolved.absolute);
-        groups.entry(path).or_default().push(AnchorEditRequest {
-            path: edit.path,
+            .entry(key.clone())
+            .or_insert(resolved.absolute.clone());
+        groups.entry(key).or_default().push(AnchorEditRequest {
+            path: resolved.relative,
+            root_id: Some(resolved.root_id),
             ..edit
         });
     }
     let requested_edits_total = groups.values().map(Vec::len).sum::<usize>() as u64;
-    let paths_to_suppress = groups.keys().cloned().collect::<Vec<_>>();
+    let paths_to_suppress = resolved_paths.values().cloned().collect::<Vec<_>>();
 
     let lock = match acquire_writer_lock(&synrepo_dir) {
         Ok(lock) => lock,
@@ -105,18 +119,25 @@ fn apply_anchor_edits(
         }
     };
 
-    suppress_watch_events(state, &synrepo_dir, &paths_to_suppress);
+    suppress_watch_events(&synrepo_dir, &paths_to_suppress);
 
     let mut file_results = Vec::new();
     let mut planned_files = Vec::new();
     let mut preflight_failed = false;
-    for (path, edits) in groups {
-        match plan_one_file(state, &path, &resolved_paths[&path], &edits) {
+    for (key, edits) in groups {
+        match plan_one_file(
+            state,
+            &key.root_id,
+            &key.path,
+            &resolved_paths[&key],
+            &edits,
+        ) {
             Ok(planned) => planned_files.push(planned),
             Err(err) => {
                 preflight_failed = true;
                 file_results.push(json!({
-                    "path": path,
+                    "path": key.path,
+                    "root_id": key.root_id,
                     "status": "rejected",
                     "error": err.to_string(),
                 }));
@@ -127,6 +148,7 @@ fn apply_anchor_edits(
         file_results.extend(planned_files.iter().map(|planned| {
             json!({
                 "path": planned.path,
+                "root_id": planned.root_id,
                 "status": "not_applied",
                 "reason": "cross_file_preflight_failed",
             })
@@ -188,11 +210,12 @@ fn apply_anchor_edits(
 
 fn plan_one_file(
     state: &SynrepoState,
+    root_id: &str,
     path: &str,
     prepared_abs_path: &Path,
     edits: &[AnchorEditRequest],
 ) -> anyhow::Result<PlannedFile> {
-    let resolved = resolve_edit_path(&state.repo_root, path)?;
+    let resolved = resolve_edit_path(state, path, Some(root_id))?;
     if resolved.absolute != prepared_abs_path {
         anyhow::bail!("resolved path changed before edit apply for {path}");
     }
@@ -206,7 +229,7 @@ fn plan_one_file(
 
     let mut planned = Vec::new();
     for edit in edits {
-        let state = prepared_state(state, path, edit)?;
+        let state = prepared_state(state, root_id, path, edit)?;
         if edit.content_hash != current_hash || state.content_hash != current_hash {
             anyhow::bail!("stale content hash for {path}");
         }
@@ -230,7 +253,7 @@ fn plan_one_file(
     }
     reject_overlaps(&planned)?;
 
-    planned.sort_by(|a, b| b.start.cmp(&a.start).then_with(|| b.end.cmp(&a.end)));
+    planned.sort_by_key(|edit| std::cmp::Reverse(edit.descending_apply_key()));
     for edit in planned {
         edit.apply(&mut lines);
     }
@@ -241,6 +264,7 @@ fn plan_one_file(
     }
     let new_hash = hash_bytes(next.as_bytes());
     Ok(PlannedFile {
+        root_id: root_id.to_string(),
         path: path.to_string(),
         abs_path,
         original,
@@ -252,12 +276,18 @@ fn plan_one_file(
 
 fn prepared_state(
     state: &SynrepoState,
+    root_id: &str,
     path: &str,
     edit: &AnchorEditRequest,
 ) -> anyhow::Result<PreparedAnchorState> {
+    let requested_root = edit.root_id.as_deref().unwrap_or(PRIMARY_ROOT_ID);
+    if requested_root != root_id {
+        anyhow::bail!("root_id changed before edit apply for {path}");
+    }
     anchor_manager()
         .get(
             &state.repo_root,
+            root_id,
             &edit.task_id,
             path,
             &edit.content_hash,
@@ -286,92 +316,6 @@ fn verify_line(
     };
     if actual != expected {
         anyhow::bail!("anchor {anchor} boundary text no longer matches current file");
-    }
-    Ok(())
-}
-
-#[derive(Clone, Debug)]
-enum PlannedKind {
-    InsertBefore,
-    InsertAfter,
-    Replace,
-    Delete,
-}
-
-#[derive(Clone, Debug)]
-struct PlannedEdit {
-    start: usize,
-    end: usize,
-    kind: PlannedKind,
-    text: Vec<String>,
-}
-
-impl PlannedEdit {
-    fn from_request(edit: &AnchorEditRequest, start: usize, end: usize) -> anyhow::Result<Self> {
-        let kind = match edit.edit_type.as_str() {
-            "insert" | "insert_after" => PlannedKind::InsertAfter,
-            "insert_before" => PlannedKind::InsertBefore,
-            "replace" => PlannedKind::Replace,
-            "delete" => PlannedKind::Delete,
-            other => anyhow::bail!("unsupported edit_type: {other}"),
-        };
-        let text = match kind {
-            PlannedKind::Delete => Vec::new(),
-            _ => edit
-                .text
-                .as_deref()
-                .ok_or_else(|| anyhow::anyhow!("text is required for {}", edit.edit_type))?
-                .lines()
-                .map(ToString::to_string)
-                .collect(),
-        };
-        Ok(Self {
-            start,
-            end,
-            kind,
-            text,
-        })
-    }
-
-    fn interval(&self) -> (usize, usize) {
-        match self.kind {
-            PlannedKind::InsertBefore => (self.start, self.start),
-            PlannedKind::InsertAfter => (self.start + 1, self.start + 1),
-            PlannedKind::Replace | PlannedKind::Delete => (self.start, self.end + 1),
-        }
-    }
-
-    fn apply(self, lines: &mut Vec<String>) {
-        match self.kind {
-            PlannedKind::InsertBefore => {
-                lines.splice(self.start..self.start, self.text);
-            }
-            PlannedKind::InsertAfter => {
-                let idx = self.start + 1;
-                lines.splice(idx..idx, self.text);
-            }
-            PlannedKind::Replace => {
-                lines.splice(self.start..=self.end, self.text);
-            }
-            PlannedKind::Delete => {
-                lines.drain(self.start..=self.end);
-            }
-        }
-    }
-}
-
-fn reject_overlaps(planned: &[PlannedEdit]) -> anyhow::Result<()> {
-    let mut intervals = planned
-        .iter()
-        .map(PlannedEdit::interval)
-        .collect::<Vec<_>>();
-    intervals.sort();
-    for pair in intervals.windows(2) {
-        let (a_start, a_end) = pair[0];
-        let (b_start, b_end) = pair[1];
-        if a_end > b_start || (a_start == a_end && b_start == b_end && a_start == b_start) {
-            anyhow::bail!("overlapping edits in one file are not allowed");
-        }
     }
     Ok(())
 }

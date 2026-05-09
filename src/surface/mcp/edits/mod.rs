@@ -9,7 +9,9 @@ mod apply;
 mod atomic;
 mod caps;
 mod diagnostics;
+mod plan;
 mod prepare;
+mod roots;
 mod runtime;
 
 pub use apply::{handle_apply_anchor_edits, ApplyAnchorEditsParams};

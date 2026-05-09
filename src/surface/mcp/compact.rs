@@ -59,6 +59,9 @@ impl OutputAccounting {
 #[derive(Clone, Debug)]
 struct SearchGroup {
     path: String,
+    root_id: Option<String>,
+    is_primary_root: Option<bool>,
+    file_id: Option<String>,
     match_count: usize,
     lines: Vec<Value>,
 }
@@ -175,13 +178,24 @@ fn grouped_search_rows(response: &Value) -> Vec<SearchGroup> {
         let Some(path) = row.get("path").and_then(Value::as_str) else {
             continue;
         };
-        let idx = if let Some(idx) = indexes.get(path) {
+        let root_id = row
+            .get("root_id")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        let key = format!("{}\0{path}", root_id.as_deref().unwrap_or("primary"));
+        let idx = if let Some(idx) = indexes.get(&key) {
             *idx
         } else {
             let idx = groups.len();
-            indexes.insert(path.to_string(), idx);
+            indexes.insert(key, idx);
             groups.push(SearchGroup {
                 path: path.to_string(),
+                root_id,
+                is_primary_root: row.get("is_primary_root").and_then(Value::as_bool),
+                file_id: row
+                    .get("file_id")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
                 match_count: 0,
                 lines: Vec::new(),
             });
@@ -217,6 +231,8 @@ fn compact_payload(
         "source_store": original.get("source_store").cloned().unwrap_or(Value::Null),
         "mode": original.get("mode").cloned().unwrap_or(Value::Null),
         "semantic_available": original.get("semantic_available").cloned().unwrap_or(Value::Null),
+        "pattern_mode": original.get("pattern_mode").cloned().unwrap_or(Value::Null),
+        "warnings": original.get("warnings").cloned().unwrap_or(Value::Null),
         "limit": original.get("limit").cloned().unwrap_or(Value::Null),
         "filters": original.get("filters").cloned().unwrap_or(Value::Null),
         "result_count": original.get("result_count").cloned().unwrap_or(Value::Null),
@@ -225,6 +241,10 @@ fn compact_payload(
         "suggested_card_targets": kept_groups
             .iter()
             .map(|g| g.path.clone())
+            .collect::<Vec<_>>(),
+        "suggested_card_requests": kept_groups
+            .iter()
+            .map(card_request_json)
             .collect::<Vec<_>>(),
         "omitted": {
             "match_count": omitted_count,
@@ -240,6 +260,8 @@ fn minimal_miss_payload(original: &Value) -> Value {
         "source_store": original.get("source_store").cloned().unwrap_or(Value::Null),
         "mode": original.get("mode").cloned().unwrap_or(Value::Null),
         "semantic_available": original.get("semantic_available").cloned().unwrap_or(Value::Null),
+        "pattern_mode": original.get("pattern_mode").cloned().unwrap_or(Value::Null),
+        "warnings": original.get("warnings").cloned().unwrap_or(Value::Null),
         "result_count": 0,
         "output_mode": "compact",
         "suggested_card_targets": [],
@@ -283,10 +305,22 @@ fn attach_accounting(
 fn group_json(group: &SearchGroup) -> Value {
     json!({
         "path": group.path,
+        "root_id": group.root_id,
+        "is_primary_root": group.is_primary_root,
+        "file_id": group.file_id,
         "match_count": group.match_count,
         "returned_line_count": group.lines.len(),
         "lines": group.lines,
         "card_target": group.path,
+    })
+}
+
+fn card_request_json(group: &SearchGroup) -> Value {
+    json!({
+        "target": group.file_id.as_deref().unwrap_or(&group.path),
+        "path": group.path,
+        "root_id": group.root_id,
+        "file_id": group.file_id,
     })
 }
 

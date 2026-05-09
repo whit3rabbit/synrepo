@@ -65,6 +65,7 @@ enum PendingQuickConfirm {
     DocsCleanApply,
     ToggleAutoSync,
     ToggleEmbeddings,
+    ToggleWorktrees,
     ApplyCompatibility,
 }
 

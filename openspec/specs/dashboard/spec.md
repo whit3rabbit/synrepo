@@ -277,6 +277,15 @@ The dashboard SHALL bind uppercase `R` to reconcile-now, uppercase `S` to sync-n
 - **WHEN** the dashboard is running with a live watch service and the user presses `A`
 - **THEN** the dashboard sends `set_auto_sync { enabled: !current }` and updates the header indicator on ack
 
+### Requirement: Dashboard exposes persistent worktree discovery toggle
+The dashboard Actions tab SHALL expose uppercase `W` as a confirmed toggle for the repo-local `include_worktrees` config field. `include_worktrees` SHALL remain enabled by default. The toggle SHALL persist to `.synrepo/config.toml`, refresh the dashboard snapshot, and tell the operator to run reconcile; it SHALL NOT run reconcile automatically.
+
+#### Scenario: User disables linked worktrees
+- **WHEN** the dashboard is opened for an initialized repo with `include_worktrees = true`
+- **AND** the user presses `W` and confirms
+- **THEN** `.synrepo/config.toml` contains `include_worktrees = false`
+- **AND** the dashboard logs the action and refreshes the quick-action label
+
 ### Requirement: Dashboard header shows auto-sync state
 The dashboard header SHALL render the current auto-sync state as `auto-sync:on` or `auto-sync:off` next to the watch indicator when watch is active, and SHALL render `auto-sync:inactive` (or omit the segment) when watch is not active.
 

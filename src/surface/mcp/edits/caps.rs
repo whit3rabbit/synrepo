@@ -18,7 +18,10 @@ pub(super) fn validate_edit_caps(edits: &[AnchorEditRequest]) -> anyhow::Result<
     let mut paths = BTreeSet::new();
     let mut total_text_bytes = 0usize;
     for edit in edits {
-        paths.insert(edit.path.as_str());
+        paths.insert((
+            edit.root_id.as_deref().unwrap_or("primary"),
+            edit.path.as_str(),
+        ));
         let edit_bytes = serde_json::to_vec(edit)?.len();
         if edit_bytes > HARD_MAX_EDIT_BYTES {
             anyhow::bail!(

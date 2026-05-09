@@ -7,12 +7,9 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::{
-    core::{ids::NodeId, path_safety::resolve_existing_path_in_repo},
-    structure::graph::snapshot,
-    surface::card::CardCompiler,
-};
+use crate::{core::ids::NodeId, structure::graph::snapshot, surface::card::CardCompiler};
 
+use super::roots::{require_matching_root, resolve_edit_path};
 use super::{anchor_manager, AnchorLine, PreparedAnchorState};
 use crate::surface::mcp::{helpers::render_result, SynrepoState};
 
@@ -21,6 +18,9 @@ pub struct PrepareEditContextParams {
     pub repo_root: Option<PathBuf>,
     /// File path, symbol name, node ID, or path used with start_line/end_line.
     pub target: String,
+    /// Optional discovery root discriminator. Defaults to the primary checkout.
+    #[serde(default)]
+    pub root_id: Option<String>,
     /// Optional target kind: file/path, symbol, or range.
     #[serde(default)]
     pub target_kind: Option<String>,
@@ -49,10 +49,19 @@ fn prepare_edit_context(
     state: &SynrepoState,
     params: PrepareEditContextParams,
 ) -> anyhow::Result<serde_json::Value> {
-    let compiler = state
-        .create_read_compiler()
-        .map_err(|e| anyhow::anyhow!(e))?;
-    let target = resolve_prepare_target(state, &compiler, &params)?;
+    state
+        .with_read_compiler(|compiler| {
+            Ok(prepare_edit_context_with_compiler(state, compiler, params))
+        })
+        .map_err(|e| anyhow::anyhow!(e))?
+}
+
+fn prepare_edit_context_with_compiler(
+    state: &SynrepoState,
+    compiler: &crate::surface::card::compiler::GraphCardCompiler,
+    params: PrepareEditContextParams,
+) -> anyhow::Result<serde_json::Value> {
+    let target = resolve_prepare_target(state, compiler, &params)?;
     let content = fs::read_to_string(&target.absolute_path)
         .map_err(|err| anyhow::anyhow!("failed to read {}: {err}", target.path))?;
     let current_content_hash = hash_bytes(content.as_bytes());
@@ -82,8 +91,12 @@ fn prepare_edit_context(
         .to_string();
         format!("task-{}", &digest[..12])
     });
-    let anchor_state_version =
-        anchor_manager().next_version(&state.repo_root, &target.path, &current_content_hash);
+    let anchor_state_version = anchor_manager().next_version(
+        &state.repo_root,
+        &target.root_id,
+        &target.path,
+        &current_content_hash,
+    );
     let source_text = anchors
         .iter()
         .map(|line| line.text.as_str())
@@ -93,6 +106,7 @@ fn prepare_edit_context(
 
     anchor_manager().insert(PreparedAnchorState {
         repo_root: state.repo_root.clone(),
+        root_id: target.root_id.clone(),
         task_id: task_id.clone(),
         path: target.path.clone(),
         content_hash: current_content_hash.clone(),
@@ -106,6 +120,8 @@ fn prepare_edit_context(
         "repo_root": state.repo_root,
         "graph_epoch": graph_epoch(&state.repo_root),
         "path": target.path,
+        "root_id": target.root_id,
+        "is_primary_root": target.is_primary_root,
         "file_id": target.file_id,
         "symbol_id": target.symbol_id,
         "content_hash": current_content_hash,
@@ -125,6 +141,8 @@ fn prepare_edit_context(
 
 struct PrepareTarget {
     path: String,
+    root_id: String,
+    is_primary_root: bool,
     absolute_path: PathBuf,
     file_id: Option<String>,
     symbol_id: Option<String>,
@@ -144,11 +162,15 @@ fn resolve_prepare_target(
         .unwrap_or("")
         .to_ascii_lowercase();
     if kind == "range" || params.start_line.is_some() || params.end_line.is_some() {
-        let resolved = resolve_edit_path(&state.repo_root, &params.target)?;
+        let resolved = resolve_edit_path(state, &params.target, params.root_id.as_deref())?;
         let path = resolved.relative;
-        let file = compiler.reader().file_by_path(&path)?;
+        let file = compiler
+            .reader()
+            .file_by_root_path(&resolved.root_id, &path)?;
         return Ok(PrepareTarget {
             absolute_path: resolved.absolute,
+            root_id: resolved.root_id,
+            is_primary_root: resolved.is_primary_root,
             path,
             file_id: file.as_ref().map(|f| f.id.to_string()),
             symbol_id: None,
@@ -159,11 +181,34 @@ fn resolve_prepare_target(
     }
 
     if kind == "file" || kind == "path" {
-        let resolved = resolve_edit_path(&state.repo_root, &params.target)?;
+        let resolved = resolve_edit_path(state, &params.target, params.root_id.as_deref())?;
         let path = resolved.relative;
-        let file = compiler.reader().file_by_path(&path)?;
+        let file = compiler
+            .reader()
+            .file_by_root_path(&resolved.root_id, &path)?;
         return Ok(PrepareTarget {
             absolute_path: resolved.absolute,
+            root_id: resolved.root_id,
+            is_primary_root: resolved.is_primary_root,
+            path,
+            file_id: file.as_ref().map(|f| f.id.to_string()),
+            symbol_id: None,
+            graph_content_hash: file.map(|f| f.content_hash),
+            start_line: 1,
+            end_line: usize::MAX,
+        });
+    }
+
+    if params.root_id.is_some() && looks_like_path(&params.target) {
+        let resolved = resolve_edit_path(state, &params.target, params.root_id.as_deref())?;
+        let path = resolved.relative;
+        let file = compiler
+            .reader()
+            .file_by_root_path(&resolved.root_id, &path)?;
+        return Ok(PrepareTarget {
+            absolute_path: resolved.absolute,
+            root_id: resolved.root_id,
+            is_primary_root: resolved.is_primary_root,
             path,
             file_id: file.as_ref().map(|f| f.id.to_string()),
             symbol_id: None,
@@ -182,9 +227,12 @@ fn resolve_prepare_target(
                 .reader()
                 .get_file(file_id)?
                 .ok_or_else(|| anyhow::anyhow!("file not found for id {file_id}"))?;
-            let resolved = resolve_edit_path(&state.repo_root, &file.path)?;
+            require_matching_root(params.root_id.as_deref(), &file.root_id)?;
+            let resolved = resolve_edit_path(state, &file.path, Some(&file.root_id))?;
             Ok(PrepareTarget {
                 path: resolved.relative,
+                root_id: resolved.root_id,
+                is_primary_root: resolved.is_primary_root,
                 absolute_path: resolved.absolute,
                 file_id: Some(file.id.to_string()),
                 symbol_id: None,
@@ -202,11 +250,14 @@ fn resolve_prepare_target(
                 .reader()
                 .get_file(symbol.file_id)?
                 .ok_or_else(|| anyhow::anyhow!("file not found for symbol {symbol_id}"))?;
-            let resolved = resolve_edit_path(&state.repo_root, &file.path)?;
+            require_matching_root(params.root_id.as_deref(), &file.root_id)?;
+            let resolved = resolve_edit_path(state, &file.path, Some(&file.root_id))?;
             let content = fs::read_to_string(&resolved.absolute)?;
             let (start_line, end_line) = byte_range_to_lines(&content, symbol.body_byte_range);
             Ok(PrepareTarget {
                 path: resolved.relative,
+                root_id: resolved.root_id,
+                is_primary_root: resolved.is_primary_root,
                 absolute_path: resolved.absolute,
                 file_id: Some(file.id.to_string()),
                 symbol_id: Some(symbol.id.to_string()),
@@ -219,11 +270,8 @@ fn resolve_prepare_target(
     }
 }
 
-pub(crate) fn resolve_edit_path(
-    repo_root: &Path,
-    input: &str,
-) -> anyhow::Result<crate::core::path_safety::ResolvedRepoPath> {
-    resolve_existing_path_in_repo(repo_root, input).map_err(|err| anyhow::anyhow!(err))
+fn looks_like_path(target: &str) -> bool {
+    target.contains('/') || target.contains('\\') || target.contains('.')
 }
 
 fn byte_range_to_lines(content: &str, range: (u32, u32)) -> (usize, usize) {

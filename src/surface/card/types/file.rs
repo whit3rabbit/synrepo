@@ -15,6 +15,10 @@ pub struct FileCard {
     pub file: FileNodeId,
     /// Path relative to the repo root.
     pub path: String,
+    /// Discovery root discriminator that owns this file.
+    pub root_id: String,
+    /// True when this file belongs to the primary checkout.
+    pub is_primary_root: bool,
     /// Top-level symbols in the file.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub symbols: Vec<SymbolRef>,

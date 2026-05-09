@@ -1,7 +1,9 @@
 use std::collections::HashSet;
+use std::str::FromStr;
 
 use serde_json::{json, Value};
 
+use crate::core::ids::FileNodeId;
 use crate::surface::card::{Budget, CardCompiler};
 
 use crate::surface::mcp::{
@@ -34,16 +36,34 @@ pub(super) fn search_cards_response(
                     }));
                     continue;
                 };
-                if !seen.insert(path.to_string()) {
+                let root_id = row
+                    .get("root_id")
+                    .and_then(|value| value.as_str())
+                    .unwrap_or("primary");
+                let seen_key = format!("{root_id}\0{path}");
+                if !seen.insert(seen_key) {
                     continue;
                 }
-                match compiler.reader().file_by_path(path)? {
+                let file = row
+                    .get("file_id")
+                    .and_then(|value| value.as_str())
+                    .and_then(|raw| FileNodeId::from_str(raw).ok())
+                    .and_then(|id| compiler.reader().get_file(id).ok().flatten())
+                    .or_else(|| {
+                        compiler
+                            .reader()
+                            .file_by_root_path(root_id, path)
+                            .ok()
+                            .flatten()
+                    });
+                match file {
                     Some(file) => cards.push(
                         serde_json::to_value(compiler.file_card(file.id, Budget::Tiny)?)
                             .map_err(|err| crate::Error::Other(anyhow::anyhow!(err)))?,
                     ),
                     None => unresolved.push(json!({
                         "path": path,
+                        "root_id": root_id,
                         "reason": "path_not_in_graph",
                     })),
                 }
@@ -64,6 +84,8 @@ pub(super) fn search_cards_response(
         "search_source_store": response.get("source_store").cloned().unwrap_or(Value::Null),
         "mode": response.get("mode").cloned().unwrap_or(Value::Null),
         "semantic_available": response.get("semantic_available").cloned().unwrap_or(Value::Null),
+        "pattern_mode": response.get("pattern_mode").cloned().unwrap_or(Value::Null),
+        "warnings": response.get("warnings").cloned().unwrap_or(Value::Null),
         "output_mode": "cards",
         "cards": cards,
         "card_count": cards.len(),

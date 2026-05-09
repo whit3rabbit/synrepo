@@ -213,6 +213,18 @@ impl GraphCardCompiler {
         self.git_cache.resolve_path(repo_root, config, path)
     }
 
+    pub(crate) fn source_root_for(&self, root_id: &str) -> Option<PathBuf> {
+        let repo_root = self.repo_root.as_ref()?;
+        if root_id == "primary" {
+            return Some(repo_root.clone());
+        }
+        let config = self.config.as_ref()?;
+        crate::substrate::discover_roots(repo_root, config)
+            .into_iter()
+            .find(|root| root.discriminant == root_id)
+            .map(|root| root.absolute_path)
+    }
+
     /// Explicitly refresh commentary for a node using the provided generator.
     ///
     /// This is the only path that writes to the overlay for commentary. It
