@@ -1,4 +1,5 @@
 mod common;
+mod dart;
 mod go;
 mod python;
 mod retirement;

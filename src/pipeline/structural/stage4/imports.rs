@@ -135,6 +135,7 @@ pub(super) fn resolve_import_ref(
                 .unwrap_or(module_ref);
             return resolve_go_import(stripped, root_id, ctx);
         }
+        Some(Language::Dart) => return resolve_dart_import(module_ref, importing_file, ctx),
         _ => {}
     }
 
@@ -192,6 +193,47 @@ pub(super) fn resolve_import_ref(
     }
 
     vec![]
+}
+
+/// Resolve Dart `package:` and relative URI imports.
+fn resolve_dart_import(
+    module_ref: &str,
+    importing_file: &str,
+    ctx: &ResolverContext,
+) -> Vec<String> {
+    let module_ref = module_ref.trim_matches(['"', '\'']);
+    if module_ref.is_empty() || module_ref.starts_with("dart:") {
+        return Vec::new();
+    }
+
+    if let Some(package_prefix) = ctx.dart_package_prefix.as_deref() {
+        if let Some(rest) = module_ref.strip_prefix(package_prefix) {
+            return dart_file_candidates(&format!("lib/{rest}"));
+        }
+    }
+
+    if module_ref.contains(':') {
+        return Vec::new();
+    }
+
+    let Some(dir) = Path::new(importing_file).parent() else {
+        return Vec::new();
+    };
+    let Some(normalized) = normalize_path(&dir.join(module_ref)) else {
+        return Vec::new();
+    };
+    let Some(base) = normalized.to_str() else {
+        return Vec::new();
+    };
+    dart_file_candidates(&base.replace('\\', "/"))
+}
+
+fn dart_file_candidates(base: &str) -> Vec<String> {
+    if base.ends_with(".dart") {
+        vec![base.to_string()]
+    } else {
+        vec![format!("{base}.dart")]
+    }
 }
 
 /// Resolve a Go import string to every `.go` file in the target package.

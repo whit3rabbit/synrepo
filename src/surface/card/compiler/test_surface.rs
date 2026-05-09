@@ -48,7 +48,7 @@ pub(super) fn test_surface_card_impl(
             };
 
             // Get test symbols from the test file.
-            let test_symbols = find_test_symbols(graph, test_file_id)?;
+            let test_symbols = find_test_symbols(graph, test_file_id, &test_file_path)?;
 
             for symbol in test_symbols {
                 let association = compute_association(&symbol.kind, &test_file_path, source_path);
@@ -173,14 +173,26 @@ fn find_associated_test_files(
 fn find_test_symbols(
     graph: &dyn GraphReader,
     file_id: FileNodeId,
+    file_path: &str,
 ) -> crate::Result<Vec<SymbolNode>> {
     let all_symbols = graph.symbols_for_file(file_id)?;
-    let test_symbols = all_symbols
+    let mut test_symbols: Vec<_> = all_symbols
         .into_iter()
         .filter(|sym| is_test_symbol(&sym.qualified_name))
         .collect();
+    if test_symbols.is_empty() && is_dart_test_path(file_path) {
+        test_symbols = graph
+            .symbols_for_file(file_id)?
+            .into_iter()
+            .filter(|sym| sym.qualified_name == "main")
+            .collect();
+    }
 
     Ok(test_symbols)
+}
+
+fn is_dart_test_path(path: &str) -> bool {
+    path.starts_with("test/") && path.ends_with("_test.dart")
 }
 
 /// Compute the association field.

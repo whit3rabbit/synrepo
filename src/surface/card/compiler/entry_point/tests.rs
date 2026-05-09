@@ -30,6 +30,50 @@ fn binary_rule_matches_main_in_src_main() {
 }
 
 #[test]
+fn binary_rule_matches_flutter_main_in_lib_main_dart() {
+    let repo = tempdir().unwrap();
+    fs::create_dir_all(repo.path().join("lib")).unwrap();
+    fs::write(repo.path().join("pubspec.yaml"), "name: app\n").unwrap();
+    fs::write(repo.path().join("lib/main.dart"), "void main() {}\n").unwrap();
+
+    let graph = bootstrap(&repo);
+    let compiler = GraphCardCompiler::new(Box::new(graph), Some(repo.path()));
+    let card = compiler.entry_point_card(None, Budget::Tiny).unwrap();
+
+    let binary = card
+        .entry_points
+        .iter()
+        .find(|e| e.kind == EntryPointKind::Binary)
+        .expect("expected Flutter lib/main.dart entrypoint");
+    assert_eq!(binary.qualified_name, "main");
+    assert!(
+        binary.location.starts_with("lib/main.dart:"),
+        "unexpected binary location: {}",
+        binary.location
+    );
+}
+
+#[test]
+fn binary_rule_matches_dart_bin_main() {
+    let repo = tempdir().unwrap();
+    fs::create_dir_all(repo.path().join("bin")).unwrap();
+    fs::write(repo.path().join("pubspec.yaml"), "name: tool\n").unwrap();
+    fs::write(repo.path().join("bin/tool.dart"), "void main() {}\n").unwrap();
+
+    let graph = bootstrap(&repo);
+    let compiler = GraphCardCompiler::new(Box::new(graph), Some(repo.path()));
+    let card = compiler.entry_point_card(None, Budget::Tiny).unwrap();
+
+    assert!(
+        card.entry_points
+            .iter()
+            .any(|e| e.kind == EntryPointKind::Binary && e.location.starts_with("bin/tool.dart:")),
+        "expected Dart bin/tool.dart entrypoint in {:?}",
+        card.entry_points
+    );
+}
+
+#[test]
 fn binary_rule_does_not_match_main_in_lib_rs() {
     let repo = tempdir().unwrap();
     fs::create_dir_all(repo.path().join("src")).unwrap();

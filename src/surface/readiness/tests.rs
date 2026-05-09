@@ -23,6 +23,8 @@ use crate::{
     },
 };
 
+mod project_layout;
+
 fn repo_root() -> PathBuf {
     PathBuf::from("/tmp/readiness-fixture")
 }
@@ -121,6 +123,7 @@ fn all_capabilities_have_stable_labels() {
     let caps = [
         (Capability::Parser, "parser"),
         (Capability::GitIntelligence, "git-intelligence"),
+        (Capability::ProjectLayout, "project-layout"),
         (Capability::Embeddings, "embeddings"),
         (Capability::Watch, "watch"),
         (Capability::IndexFreshness, "index-freshness"),
@@ -133,7 +136,7 @@ fn all_capabilities_have_stable_labels() {
 }
 
 #[test]
-fn matrix_contains_all_seven_rows_in_stable_order() {
+fn matrix_contains_all_rows_in_stable_order() {
     let snapshot = base_snapshot(base_diagnostics());
     let matrix =
         ReadinessMatrix::build(&repo_root(), &ready_probe(), &snapshot, &Config::default());
@@ -143,6 +146,7 @@ fn matrix_contains_all_seven_rows_in_stable_order() {
         vec![
             "parser",
             "git-intelligence",
+            "project-layout",
             "embeddings",
             "watch",
             "index-freshness",

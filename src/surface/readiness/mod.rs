@@ -7,12 +7,14 @@
 //! diagnostics that normalizes labels, severities, and next actions so every
 //! renderer shows the same degradation story.
 
+mod project_layout;
 mod rows;
 
 use crate::tui::probe::Severity;
 use crate::{
     bootstrap::runtime_probe::ProbeReport, config::Config, surface::status_snapshot::StatusSnapshot,
 };
+use project_layout::project_layout_row;
 use rows::{
     compatibility_row, embeddings_row, git_row, index_freshness_row, overlay_row, parser_row,
     watch_row,
@@ -28,6 +30,8 @@ pub enum Capability {
     Parser,
     /// Git-derived history/ownership/co-change intelligence.
     GitIntelligence,
+    /// Manifest-backed source/test layout detection.
+    ProjectLayout,
     /// Embedding index / semantic triage.
     Embeddings,
     /// File watcher / reconcile daemon.
@@ -46,6 +50,7 @@ impl Capability {
         match self {
             Capability::Parser => "parser",
             Capability::GitIntelligence => "git-intelligence",
+            Capability::ProjectLayout => "project-layout",
             Capability::Embeddings => "embeddings",
             Capability::Watch => "watch",
             Capability::IndexFreshness => "index-freshness",
@@ -58,6 +63,7 @@ impl Capability {
         match self {
             Capability::Parser => "parser",
             Capability::GitIntelligence => "git intelligence",
+            Capability::ProjectLayout => "project layout",
             Capability::Embeddings => "embeddings",
             Capability::Watch => "watch",
             Capability::IndexFreshness => "index freshness",
@@ -137,7 +143,7 @@ impl ReadinessRow {
 
 /// Ordered matrix of capability readiness rows.
 ///
-/// The order is fixed (parser, git, embeddings, watch, index freshness,
+/// The order is fixed (parser, git, project layout, embeddings, watch, index freshness,
 /// overlay, compatibility) so renderers and tests can rely on it.
 #[derive(Clone, Debug)]
 pub struct ReadinessMatrix {
@@ -159,6 +165,7 @@ impl ReadinessMatrix {
         let rows = vec![
             parser_row(snapshot),
             git_row(repo_root, config),
+            project_layout_row(repo_root, config),
             embeddings_row(snapshot, config),
             watch_row(snapshot),
             index_freshness_row(snapshot),

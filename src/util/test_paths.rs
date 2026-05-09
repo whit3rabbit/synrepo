@@ -3,6 +3,10 @@
 use std::path::Path;
 
 pub(crate) fn matches_path_convention(test_path: &str, source_path: &str) -> bool {
+    if matches_dart_lib_test_convention(test_path, source_path) {
+        return true;
+    }
+
     let source = Path::new(source_path);
     let Some(source_stem) = source.file_stem().and_then(|stem| stem.to_str()) else {
         return false;
@@ -33,6 +37,22 @@ pub(crate) fn matches_path_convention(test_path: &str, source_path: &str) -> boo
         || test_path.starts_with(&format!("{source_dir}/__tests__/"))
 }
 
+fn matches_dart_lib_test_convention(test_path: &str, source_path: &str) -> bool {
+    let Some(source_body) = source_path
+        .strip_prefix("lib/")
+        .and_then(|path| path.strip_suffix(".dart"))
+    else {
+        return false;
+    };
+    let Some(test_body) = test_path
+        .strip_prefix("test/")
+        .and_then(|path| path.strip_suffix("_test.dart"))
+    else {
+        return false;
+    };
+    source_body == test_body
+}
+
 #[cfg(test)]
 mod tests {
     use super::matches_path_convention;
@@ -48,6 +68,10 @@ mod tests {
         assert!(matches_path_convention("src/parser/main_test.go", source));
         assert!(matches_path_convention("tests/main.rs", source));
         assert!(matches_path_convention("tests/main.py", source));
+        assert!(matches_path_convention(
+            "test/src/main_test.dart",
+            "lib/src/main.dart"
+        ));
     }
 
     #[test]

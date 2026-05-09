@@ -1,3 +1,4 @@
+use crate::core::source_language::language_label_for_extension;
 use crate::structure::graph::SymbolKind;
 
 /// Supported languages with a tree-sitter grammar wired in.
@@ -85,21 +86,21 @@ impl Language {
 
     /// Resolve a file extension to a `Language`, if supported.
     pub fn from_extension(ext: &str) -> Option<Language> {
-        match ext {
-            "rs" => Some(Language::Rust),
-            "py" => Some(Language::Python),
-            "ts" => Some(Language::TypeScript),
+        match language_label_for_extension(ext)? {
+            "rust" => Some(Language::Rust),
+            "python" => Some(Language::Python),
+            "typescript" => Some(Language::TypeScript),
             "tsx" => Some(Language::Tsx),
             "go" => Some(Language::Go),
-            "js" | "jsx" | "mjs" | "cjs" => Some(Language::JavaScript),
+            "javascript" => Some(Language::JavaScript),
             "java" => Some(Language::Java),
-            "kt" | "kts" => Some(Language::Kotlin),
-            "cs" => Some(Language::CSharp),
+            "kotlin" => Some(Language::Kotlin),
+            "csharp" => Some(Language::CSharp),
             "php" => Some(Language::Php),
-            "rb" => Some(Language::Ruby),
+            "ruby" => Some(Language::Ruby),
             "swift" => Some(Language::Swift),
-            "c" | "h" => Some(Language::C),
-            "cpp" | "hpp" | "cc" | "cxx" => Some(Language::Cpp),
+            "c" => Some(Language::C),
+            "cpp" => Some(Language::Cpp),
             "dart" => Some(Language::Dart),
             _ => None,
         }

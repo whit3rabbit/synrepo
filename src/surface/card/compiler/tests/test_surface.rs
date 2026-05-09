@@ -50,6 +50,41 @@ fn test_surface_card_finds_sibling_test_file() {
 }
 
 #[test]
+fn test_surface_card_finds_flutter_test_main_harness() {
+    let repo = tempdir().unwrap();
+    fs::write(repo.path().join("pubspec.yaml"), "name: app\n").unwrap();
+    fs::create_dir_all(repo.path().join("lib/src")).unwrap();
+    fs::create_dir_all(repo.path().join("test/src")).unwrap();
+
+    fs::write(
+        repo.path().join("lib/src/shell.dart"),
+        "class Shell { void run() {} }\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.path().join("test/src/shell_test.dart"),
+        "import 'package:app/src/shell.dart';\nvoid main() { Shell().run(); }\n",
+    )
+    .unwrap();
+
+    let graph = bootstrap(&repo);
+    let compiler = make_compiler(graph, &repo);
+
+    let card = compiler
+        .test_surface_card("lib/src/shell.dart", Budget::Normal)
+        .unwrap();
+
+    assert_eq!(card.test_file_count, 1);
+    assert!(
+        card.tests.iter().any(|entry| {
+            entry.file_path == "test/src/shell_test.dart" && entry.qualified_name == "main"
+        }),
+        "expected Dart test main harness in {:?}",
+        card.tests
+    );
+}
+
+#[test]
 fn test_surface_card_tiny_budget_returns_counts_only() {
     let repo = tempdir().unwrap();
     fs::create_dir_all(repo.path().join("src")).unwrap();

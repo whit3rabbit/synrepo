@@ -5,7 +5,7 @@
 //! applied; `classify()` is the pure content-and-path classifier that can be
 //! tested in isolation.
 
-use crate::config::Config;
+use crate::{config::Config, core::source_language::language_label_for_extension};
 use std::path::Path;
 
 const SNIFF_BYTES: usize = 8 * 1024;
@@ -68,15 +68,14 @@ pub fn classify(path: &Path, size_bytes: u64, first_bytes: &[u8]) -> FileClass {
     }
 
     match lower_extension(path).as_deref() {
-        Some("rs") => FileClass::SupportedCode { language: "rust" },
-        Some("py") => FileClass::SupportedCode { language: "python" },
-        Some("ts") => FileClass::SupportedCode {
-            language: "typescript",
+        Some(ext) => match language_label_for_extension(ext) {
+            Some(language) => FileClass::SupportedCode { language },
+            None => match ext {
+                "md" | "mdx" | "markdown" => FileClass::Markdown,
+                "ipynb" => FileClass::Jupyter,
+                _ => FileClass::TextCode,
+            },
         },
-        Some("tsx") => FileClass::SupportedCode { language: "tsx" },
-        Some("go") => FileClass::SupportedCode { language: "go" },
-        Some("md" | "mdx" | "markdown") => FileClass::Markdown,
-        Some("ipynb") => FileClass::Jupyter,
         _ => FileClass::TextCode,
     }
 }
@@ -154,6 +153,24 @@ mod tests {
                 b"export const App = () => null;"
             ),
             FileClass::SupportedCode { language: "tsx" }
+        );
+        assert_eq!(
+            classify(Path::new("lib/main.dart"), 14, b"void main() {}"),
+            FileClass::SupportedCode { language: "dart" }
+        );
+        assert_eq!(
+            classify(Path::new("web/app.jsx"), 24, b"export function App() {}"),
+            FileClass::SupportedCode {
+                language: "javascript"
+            }
+        );
+        assert_eq!(
+            classify(
+                Path::new("ios/AppDelegate.swift"),
+                20,
+                b"class AppDelegate {}"
+            ),
+            FileClass::SupportedCode { language: "swift" }
         );
         assert_eq!(
             classify(Path::new("README.md"), 8, b"# hello\n"),

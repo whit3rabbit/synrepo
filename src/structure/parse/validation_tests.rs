@@ -9,7 +9,12 @@
 //! slot, so drift fails CI loud instead of degrading silently.
 
 use super::Language;
-use crate::structure::graph::SymbolKind;
+use crate::{
+    core::source_language::SOURCE_LANGUAGE_SPECS,
+    structure::graph::SymbolKind,
+    substrate::{classify as classify_file, FileClass},
+};
+use std::path::Path;
 
 /// Role of the query inside a single-language validation check, used for
 /// diagnostics so a failure identifies both the language and which query
@@ -94,6 +99,26 @@ fn import_queries_compile_and_expose_import_ref() {
     for &lang in Language::supported() {
         let query = compile_query(lang, QueryRole::Import);
         assert_capture_present(&query, "import_ref", lang, QueryRole::Import);
+    }
+}
+
+#[test]
+fn classifier_and_parser_share_supported_language_registry() {
+    for spec in SOURCE_LANGUAGE_SPECS {
+        for ext in spec.extensions {
+            let path = format!("fixture.{ext}");
+            assert_eq!(
+                classify_file(Path::new(&path), 12, b"void main() {}"),
+                FileClass::SupportedCode {
+                    language: spec.label
+                },
+                "{path} must classify as supported code"
+            );
+            assert!(
+                Language::from_extension(ext).is_some(),
+                "{path} must also resolve to a parser language"
+            );
+        }
     }
 }
 

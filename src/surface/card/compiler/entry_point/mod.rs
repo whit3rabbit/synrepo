@@ -6,7 +6,7 @@
 //!
 //! Rules (applied in order; first match wins):
 //!
-//! 1. Binary — `qualified_name == "main"` in `src/main.rs` or `src/bin/`
+//! 1. Binary — `qualified_name == "main"` in Rust binary paths or Dart app paths
 //! 2. CliCommand — `SymbolKind::Function` in a file whose path segment is `cli`, `command`, or `cmd`
 //! 3. HttpHandler — name prefix `handle_`/`serve_`/`route_`, or path segment `handler`/`route`/`router`
 //! 4. LibRoot — top-level item in `src/lib.rs` or any `mod.rs`
@@ -164,7 +164,10 @@ pub(super) fn classify_kind(qname: &str, path: &str, kind: SymbolKind) -> Option
 }
 
 fn is_binary_path(path: &str) -> bool {
-    path == "src/main.rs" || (path.starts_with("src/bin/") && path.ends_with(".rs"))
+    path == "src/main.rs"
+        || (path.starts_with("src/bin/") && path.ends_with(".rs"))
+        || path == "lib/main.dart"
+        || (path.starts_with("bin/") && path.ends_with(".dart"))
 }
 
 fn path_has_segment(path: &str, segments: &[&str]) -> bool {

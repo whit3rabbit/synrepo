@@ -5,7 +5,10 @@ use std::{
 
 use super::{imports::load_go_module_prefix, rust_paths::rust_crate_src_walk};
 use crate::{
-    core::ids::{FileNodeId, SymbolNodeId},
+    core::{
+        ids::{FileNodeId, SymbolNodeId},
+        project_layout::load_pubspec_info,
+    },
     structure::{
         graph::{GraphStore, SymbolKind, Visibility},
         parse::{ExtractedCallRef, ExtractedImportRef},
@@ -53,6 +56,8 @@ pub(super) struct ResolverContext {
     /// Populated up-front for every Rust file in `pending`; all other Rust
     /// files inside a walked dir reuse the cached answer.
     pub(super) rust_crate_src_by_dir: HashMap<PathBuf, Option<Vec<String>>>,
+    /// `package:<name>/` prefix precomputed for Dart package imports.
+    pub(super) dart_package_prefix: Option<String>,
 }
 
 /// Pending cross-file resolution work for one file parsed this cycle.
@@ -129,6 +134,10 @@ pub(super) fn build_indices(
 
     let go_module_prefix = load_go_module_prefix(repo_root);
     let go_module_prefix_slash = go_module_prefix.as_deref().map(|p| format!("{p}/"));
+    let dart_package_name = load_pubspec_info(repo_root).and_then(|info| info.name);
+    let dart_package_prefix = dart_package_name
+        .as_deref()
+        .map(|name| format!("package:{name}/"));
 
     // Precompute Rust `rust_crate_src` per unique parent directory of pending
     // `.rs` files. `rust_crate_src` walks up the filesystem looking for
@@ -155,6 +164,7 @@ pub(super) fn build_indices(
         go_module_prefix,
         go_module_prefix_slash,
         rust_crate_src_by_dir,
+        dart_package_prefix,
     };
 
     Ok((ctx, name_index, symbol_meta, caller_index))
