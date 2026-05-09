@@ -254,7 +254,7 @@ fn load_project_refs_hides_uninitialized_and_keeps_ready_and_partial() {
 
 #[test]
 fn project_ref_integration_uses_install_matrix_summary() {
-    let (_lock, _home, _guard) = home_guard();
+    let (_lock, home, _guard) = home_guard();
     let repo = tempdir().unwrap();
     make_partial_project(repo.path());
     std::fs::write(
@@ -262,15 +262,9 @@ fn project_ref_integration_uses_install_matrix_summary() {
         r#"{"mcpServers":{"synrepo":{"command":"synrepo","args":["mcp","--repo","."]}}}"#,
     )
     .unwrap();
-    let skill = agent_config::skill_by_id("claude").unwrap();
-    let spec = agent_config::SkillSpec::builder("synrepo")
-        .owner("synrepo")
-        .description("Use when a repository has synrepo context available.")
-        .body("# Synrepo\n")
-        .build();
-    let _ = skill
-        .install_skill(&agent_config::Scope::Global, &spec)
-        .unwrap();
+    let skill_dir = home.path().join(".claude").join("skills").join("synrepo");
+    std::fs::create_dir_all(&skill_dir).unwrap();
+    std::fs::write(skill_dir.join("SKILL.md"), "# Synrepo\n").unwrap();
     let entry = registry::record_project(repo.path()).unwrap();
 
     let project = ProjectRef::from_entry(&entry).unwrap();
