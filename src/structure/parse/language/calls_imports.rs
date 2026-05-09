@@ -183,10 +183,18 @@ const CPP_IMPORT_QUERY: &str = r#"
 "#;
 
 const DART_CALL_QUERY: &str = r#"
-(unconditional_assignable_selector (identifier) @callee)
-(assignable_expression (identifier) @callee)
+(call_expression function: (identifier) @callee)
+(call_expression function: [
+  (member_expression property: (identifier) @callee)
+  (null_aware_member_expression property: (identifier) @callee)
+])
+(cascade_call_expression property: (identifier) @callee)
 "#;
-const DART_CALL_MODE_MAP: &[super::CallMode] = &[super::CallMode::Method, super::CallMode::Free];
+const DART_CALL_MODE_MAP: &[super::CallMode] = &[
+    super::CallMode::Free,
+    super::CallMode::Method,
+    super::CallMode::Method,
+];
 const DART_IMPORT_QUERY: &str = r#"
 (uri) @import_ref
 "#;
