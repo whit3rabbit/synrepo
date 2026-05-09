@@ -229,7 +229,7 @@ mod tests {
         assert!(parsed["systemMessage"]
             .as_str()
             .unwrap()
-            .contains("broad questions and reviews start with synrepo_ask"));
+            .contains("broad -> synrepo_ask"));
         assert!(
             parsed.get("hookSpecificOutput").is_none(),
             "Codex prompt hooks should use common output fields"
@@ -245,7 +245,7 @@ mod tests {
         let message = parsed["systemMessage"].as_str().unwrap();
 
         assert!(message.contains("synrepo_search"), "{message}");
-        assert!(message.contains("exact identifiers and code strings use synrepo_search"));
+        assert!(message.contains("exact -> synrepo_search"));
     }
 
     #[test]

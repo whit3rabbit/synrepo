@@ -3,7 +3,8 @@ use synrepo::surface::task_route::{TaskRoute, SIGNAL_DETERMINISTIC_EDIT_CANDIDAT
 
 use super::{HookClient, HookEvent};
 
-const NUDGE: &str = "synrepo hint: broad questions and reviews start with synrepo_ask; exact identifiers and code strings use synrepo_search. Read full source only when compact context is insufficient.";
+const NUDGE: &str =
+    "synrepo hint: broad -> synrepo_ask; exact -> synrepo_search; read source after compact context.";
 
 pub(super) fn render_nudge(
     client: HookClient,

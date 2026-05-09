@@ -67,6 +67,21 @@ struct SearchGroup {
 }
 
 pub fn compact_search_response(default_response: &Value, budget_tokens: Option<usize>) -> Value {
+    compact_search_response_inner(default_response, budget_tokens, true)
+}
+
+pub fn compact_search_response_forced(
+    default_response: &Value,
+    budget_tokens: Option<usize>,
+) -> Value {
+    compact_search_response_inner(default_response, budget_tokens, false)
+}
+
+fn compact_search_response_inner(
+    default_response: &Value,
+    budget_tokens: Option<usize>,
+    allow_smaller_raw: bool,
+) -> Value {
     let original_token_estimate = estimate_json_tokens(default_response);
     let groups = grouped_search_rows(default_response);
     let total_matches = default_response
@@ -100,7 +115,7 @@ pub fn compact_search_response(default_response: &Value, budget_tokens: Option<u
         omitted_count,
         budget_truncated || omitted_count > 0,
     );
-    if total_matches <= 3 {
+    if allow_smaller_raw && total_matches <= 3 {
         let fallback = attach_accounting(
             adaptive_raw_payload(default_response),
             original_token_estimate,
@@ -225,14 +240,13 @@ fn compact_payload(
     omitted_count: usize,
 ) -> Value {
     let omitted_file_count = all_groups.len().saturating_sub(kept_groups.len());
-    json!({
+    let mut payload = json!({
         "query": original.get("query").cloned().unwrap_or(Value::Null),
         "engine": original.get("engine").cloned().unwrap_or(Value::Null),
         "source_store": original.get("source_store").cloned().unwrap_or(Value::Null),
         "mode": original.get("mode").cloned().unwrap_or(Value::Null),
         "semantic_available": original.get("semantic_available").cloned().unwrap_or(Value::Null),
         "pattern_mode": original.get("pattern_mode").cloned().unwrap_or(Value::Null),
-        "warnings": original.get("warnings").cloned().unwrap_or(Value::Null),
         "limit": original.get("limit").cloned().unwrap_or(Value::Null),
         "filters": original.get("filters").cloned().unwrap_or(Value::Null),
         "result_count": original.get("result_count").cloned().unwrap_or(Value::Null),
@@ -250,23 +264,35 @@ fn compact_payload(
             "match_count": omitted_count,
             "file_count": omitted_file_count,
         },
-    })
+    });
+    copy_optional_field(&mut payload, original, "warnings");
+    payload
 }
 
 fn minimal_miss_payload(original: &Value) -> Value {
-    json!({
+    let mut payload = json!({
         "query": original.get("query").cloned().unwrap_or(Value::Null),
         "engine": original.get("engine").cloned().unwrap_or(Value::Null),
         "source_store": original.get("source_store").cloned().unwrap_or(Value::Null),
         "mode": original.get("mode").cloned().unwrap_or(Value::Null),
         "semantic_available": original.get("semantic_available").cloned().unwrap_or(Value::Null),
         "pattern_mode": original.get("pattern_mode").cloned().unwrap_or(Value::Null),
-        "warnings": original.get("warnings").cloned().unwrap_or(Value::Null),
         "result_count": 0,
         "output_mode": "compact",
         "suggested_card_targets": [],
         "miss_reason": "no_matches",
-    })
+    });
+    copy_optional_field(&mut payload, original, "warnings");
+    payload
+}
+
+fn copy_optional_field(payload: &mut Value, original: &Value, field: &str) {
+    let Some(value) = original.get(field) else {
+        return;
+    };
+    if let Some(obj) = payload.as_object_mut() {
+        obj.insert(field.to_string(), value.clone());
+    }
 }
 
 fn adaptive_raw_payload(original: &Value) -> Value {

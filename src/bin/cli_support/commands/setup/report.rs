@@ -350,7 +350,7 @@ pub(crate) fn codex_global_skill_warnings() -> Vec<CodexSkillWarning> {
     paths.dedup();
     paths
         .into_iter()
-        .filter_map(|path| codex_skill_warning_for_path(path))
+        .filter_map(codex_skill_warning_for_path)
         .collect()
 }
 

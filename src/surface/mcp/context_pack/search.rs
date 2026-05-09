@@ -60,11 +60,14 @@ pub(super) fn search_artifact(
             "results": content["results"].clone(),
             "engine": content["engine"].clone(),
             "source_store": content["source_store"].clone(),
+            "mode": content["mode"].clone(),
+            "semantic_available": content["semantic_available"].clone(),
+            "pattern_mode": "regex",
             "limit": limit,
             "filters": Value::Null,
             "result_count": result_count,
         });
-        content = compact::compact_search_response(&compact_source, budget_tokens);
+        content = compact::compact_search_response_forced(&compact_source, budget_tokens);
         compact::record_output_accounting(state, &content);
     }
     attach_estimated_accounting(&mut content, Budget::Tiny);

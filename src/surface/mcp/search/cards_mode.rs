@@ -77,7 +77,7 @@ pub(super) fn search_cards_response(
     let latency_ms = start.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
     record_card_set_metrics(state, &accountings, latency_ms, false);
 
-    Ok(json!({
+    let mut output = json!({
         "query": response.get("query").cloned().unwrap_or(Value::Null),
         "engine": response.get("engine").cloned().unwrap_or(Value::Null),
         "source_store": "graph",
@@ -85,7 +85,6 @@ pub(super) fn search_cards_response(
         "mode": response.get("mode").cloned().unwrap_or(Value::Null),
         "semantic_available": response.get("semantic_available").cloned().unwrap_or(Value::Null),
         "pattern_mode": response.get("pattern_mode").cloned().unwrap_or(Value::Null),
-        "warnings": response.get("warnings").cloned().unwrap_or(Value::Null),
         "output_mode": "cards",
         "cards": cards,
         "card_count": cards.len(),
@@ -94,5 +93,11 @@ pub(super) fn search_cards_response(
             "card_count": original_count.saturating_sub(cards.len()),
         },
         "unresolved": unresolved,
-    }))
+    });
+    if let Some(warnings) = response.get("warnings") {
+        if let Some(obj) = output.as_object_mut() {
+            obj.insert("warnings".to_string(), warnings.clone());
+        }
+    }
+    Ok(output)
 }
