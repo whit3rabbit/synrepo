@@ -345,7 +345,7 @@ fn context_pack_supports_task_context_artifact_kinds() {
             "entrypoints",
             "public_api",
             "change_risk",
-            "error",
+            "findings",
             "recent_activity"
         ]
     );

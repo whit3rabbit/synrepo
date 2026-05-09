@@ -33,11 +33,21 @@ pub(crate) fn run_init_or_setup(
     mode: Option<Mode>,
     gitignore: bool,
     force: bool,
+    generate_commentary: bool,
     opts: TuiOptions,
 ) -> anyhow::Result<()> {
-    match init_entry_mode(repo_root, mode.is_some(), gitignore, force, stdout_is_tty()) {
+    match init_entry_mode(
+        repo_root,
+        mode.is_some(),
+        gitignore,
+        force,
+        generate_commentary,
+        stdout_is_tty(),
+    ) {
         InitEntryMode::GuidedSetup => run_wizard_and_apply(repo_root, opts),
-        InitEntryMode::RawInit => super::commands::init(repo_root, mode, gitignore, force),
+        InitEntryMode::RawInit => {
+            super::commands::init(repo_root, mode, gitignore, force, generate_commentary)
+        }
     }
 }
 
@@ -46,9 +56,10 @@ pub(crate) fn init_entry_mode(
     has_mode_flag: bool,
     gitignore: bool,
     force: bool,
+    generate_commentary: bool,
     is_tty: bool,
 ) -> InitEntryMode {
-    let has_init_flags = has_mode_flag || gitignore || force;
+    let has_init_flags = has_mode_flag || gitignore || force || generate_commentary;
     if has_init_flags || !is_tty {
         return InitEntryMode::RawInit;
     }

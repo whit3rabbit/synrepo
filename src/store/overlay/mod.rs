@@ -97,8 +97,9 @@ pub struct SqliteOverlayStore {
 impl SqliteOverlayStore {
     /// Open or create the overlay store inside `.synrepo/overlay/`.
     ///
-    /// Creates the directory and the `overlay.db` file on first use; the
-    /// store is otherwise lazy (never materialized during `synrepo init`).
+    /// Creates the directory and the `overlay.db` file on first use. Bootstrap
+    /// opens the store during `synrepo init` so the empty schema exists before
+    /// any optional commentary, cross-link, or note writes.
     pub fn open(overlay_dir: &Path) -> crate::Result<Self> {
         fs::create_dir_all(overlay_dir)?;
         Self::open_db(&overlay_dir.join(OVERLAY_DB_FILENAME))
@@ -164,6 +165,26 @@ impl SqliteOverlayStore {
                 row_usize(row, 0)
             })?,
         )
+    }
+
+    /// Return the total number of content/audit rows stored in the overlay.
+    pub fn stored_row_count(&self) -> crate::Result<usize> {
+        const TABLES: [&str; 6] = [
+            "commentary",
+            "cross_links",
+            "cross_link_audit",
+            "agent_notes",
+            "agent_note_transitions",
+            "agent_note_links",
+        ];
+        let conn = self.conn.lock();
+        let mut total = 0usize;
+        for table in TABLES {
+            total += conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+                row_usize(row, 0)
+            })?;
+        }
+        Ok(total)
     }
 
     /// Return every `(node_id, source_content_hash)` pair from the commentary

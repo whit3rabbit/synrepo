@@ -10,9 +10,11 @@ use crate::pipeline::explain::{ExplainPreviewGroup, ExplainStatus};
 use crate::surface::status_snapshot::StatusSnapshot;
 use crate::tui::app::{
     ConfirmStopWatchState, ExplainPreviewPanel, ExplainPreviewState, FolderPickerState,
+    GenerateCommentaryState,
 };
 use crate::tui::theme::Theme;
 use crate::tui::widgets::confirm_stop_watch::render_confirm_stop_watch;
+use crate::tui::widgets::explain_generate::render_generate_commentary;
 
 /// Explain tab widget. Branches on `ExplainStatus` to render either the
 /// empty-state onboarding hint or the configured status + action menu. When
@@ -24,6 +26,8 @@ pub struct ExplainTabWidget<'a> {
     pub snapshot: &'a StatusSnapshot,
     /// Active folder-picker state, when the sub-view is open.
     pub picker: Option<&'a FolderPickerState>,
+    /// Active explicit-generate modal state, when the sub-view is open.
+    pub generate_commentary: Option<&'a GenerateCommentaryState>,
     /// Active confirm-stop-watch modal state, when the sub-view is open.
     pub confirm_stop_watch: Option<&'a ConfirmStopWatchState>,
     /// Cached queued-work preview for the tab.
@@ -41,6 +45,8 @@ impl Widget for ExplainTabWidget<'_> {
 
         let lines = if let Some(confirm) = self.confirm_stop_watch {
             render_confirm_stop_watch(confirm, self.theme)
+        } else if let Some(generate) = self.generate_commentary {
+            render_generate_commentary(generate, self.theme)
         } else if let Some(picker) = self.picker {
             render_folder_picker(picker, self.theme)
         } else {
@@ -122,15 +128,28 @@ fn render_configured(
     lines.push(Line::from(""));
     lines.push(Line::from(Span::styled("Actions:", theme.muted_style())));
     lines.push(Line::from(Span::styled(
-        "  Running a / c / f opens an in-dashboard Explain progress view.".to_string(),
+        "  Running a / c / f / g opens an in-dashboard Explain progress view.".to_string(),
         theme.muted_style(),
     )));
     lines.push(action_line("r", "Refresh Explain status", theme));
-    lines.push(action_line("a", "Refresh all stale commentary", theme));
-    lines.push(action_line("f", "Refresh specific folders...", theme));
+    lines.push(action_line(
+        "a",
+        "Generate/refresh all stale commentary",
+        theme,
+    ));
+    lines.push(action_line(
+        "f",
+        "Generate/refresh specific folders...",
+        theme,
+    ));
     lines.push(action_line(
         "c",
-        "Refresh changed files only (last 50 commits)",
+        "Generate/refresh changed files only (last 50 commits)",
+        theme,
+    ));
+    lines.push(action_line(
+        "g",
+        "Generate commentary for target/file/directory...",
         theme,
     ));
     lines.push(action_line(
@@ -180,7 +199,7 @@ fn append_preview_panel(
 
     append_preview_scope(
         lines,
-        "[r] whole repo",
+        "[a] whole repo",
         &preview_panel.whole_repo,
         true,
         theme,
@@ -269,7 +288,7 @@ fn compact_group_label(label: &str) -> &'static str {
 fn render_folder_picker(picker: &FolderPickerState, theme: &Theme) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = vec![
         Line::from(Span::styled(
-            "Refresh explain for which folders?".to_string(),
+            "Generate/refresh explain for which folders?".to_string(),
             theme.base_style(),
         )),
         Line::from(Span::styled(

@@ -10,8 +10,8 @@ use crate::pipeline::diagnostics::{
 use crate::pipeline::watch::{WatchDaemonState, WatchServiceMode, WatchServiceStatus};
 use crate::store::sqlite::PersistedGraphStats;
 use crate::surface::status_snapshot::{
-    CommentaryCoverage, ExportState, ExportStatus, GraphSnapshotStatus, RepairAuditState,
-    StatusSnapshot,
+    CommentaryCoverage, ExportState, ExportStatus, GraphSnapshotStatus, OverlayState,
+    RepairAuditState, StatusSnapshot,
 };
 
 use super::{build_next_actions_with_context, NextActionRuntime};
@@ -54,6 +54,7 @@ fn snapshot_for_store_guidance(watch_status: WatchServiceStatus, guidance: &str)
             budget: Some("normal".to_string()),
         },
         overlay_cost_summary: "0".to_string(),
+        overlay_state: OverlayState::Error,
         commentary_coverage: CommentaryCoverage {
             total: None,
             fresh: None,

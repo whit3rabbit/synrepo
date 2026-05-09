@@ -25,6 +25,11 @@ impl AppState {
                 return consumed;
             }
         }
+        if self.generate_commentary.is_some() {
+            if let Some(consumed) = self.handle_generate_commentary_key(code, modifiers) {
+                return consumed;
+            }
+        }
         // Folder-picker modal: consumes navigation/toggle/commit/cancel keys
         // before anything else. Global quit (q/Ctrl-C) and tab switches still
         // fall through below so the operator is never trapped.
@@ -107,6 +112,7 @@ impl AppState {
         //   a — run `synrepo explain` against all stale entries
         //   c — run with `--changed` (recent hotspots)
         //   f — open folder picker sub-view (in-tab, no dashboard exit)
+        //   g — open explicit target/file/directory generation prompt
         //   d — export docs from overlay without model calls
         //   D — force rebuild docs/index from overlay
         //   x — preview clean of materialized docs/index
@@ -133,6 +139,10 @@ impl AppState {
                 }
                 KeyCode::Char('f') => {
                     self.open_folder_picker();
+                    return true;
+                }
+                KeyCode::Char('g') => {
+                    self.open_generate_commentary();
                     return true;
                 }
                 KeyCode::Char('d') => {

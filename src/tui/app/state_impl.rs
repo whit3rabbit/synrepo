@@ -138,6 +138,7 @@ impl AppState {
             confirm_stop_watch: None,
             pending_quick_confirm: None,
             picker: None,
+            generate_commentary: None,
             explain_preview: None,
             active_tab: ActiveTab::Live,
             scroll_offset: 0,

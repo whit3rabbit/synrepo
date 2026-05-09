@@ -15,13 +15,26 @@ fn init_force_flag_defaults_off_and_sets_on_request() {
     let default = Cli::try_parse_from(["synrepo", "init"]).unwrap();
     assert!(matches!(
         default.command,
-        Some(Command::Init { force: false, .. })
+        Some(Command::Init {
+            force: false,
+            generate_commentary: false,
+            ..
+        })
     ));
 
     let forced = Cli::try_parse_from(["synrepo", "init", "--force"]).unwrap();
     assert!(matches!(
         forced.command,
         Some(Command::Init { force: true, .. })
+    ));
+
+    let generate = Cli::try_parse_from(["synrepo", "init", "--generate-commentary"]).unwrap();
+    assert!(matches!(
+        generate.command,
+        Some(Command::Init {
+            generate_commentary: true,
+            ..
+        })
     ));
 }
 

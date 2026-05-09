@@ -18,11 +18,12 @@ use crate::{
         watch::{ReconcileState, WatchServiceStatus},
     },
     surface::status_snapshot::{
-        CommentaryCoverage, ExportState, ExportStatus, GraphSnapshotStatus, RepairAuditState,
-        StatusSnapshot,
+        CommentaryCoverage, ExportState, ExportStatus, GraphSnapshotStatus, OverlayState,
+        RepairAuditState, StatusSnapshot,
     },
 };
 
+mod overlay;
 mod project_layout;
 
 fn repo_root() -> PathBuf {
@@ -70,6 +71,7 @@ fn base_snapshot(diag: RuntimeDiagnostics) -> StatusSnapshot {
             budget: Some("normal".to_string()),
         },
         overlay_cost_summary: "0 LLM calls".to_string(),
+        overlay_state: OverlayState::ReadyEmpty,
         commentary_coverage: CommentaryCoverage {
             total: Some(0),
             fresh: None,
@@ -200,23 +202,6 @@ fn index_freshness_row_reports_stale_for_old_reconcile() {
     let row = find_row(&matrix, Capability::IndexFreshness);
     assert_eq!(row.state, ReadinessState::Stale);
     assert_eq!(row.next_action.as_deref(), Some("run `synrepo reconcile`"));
-}
-
-#[test]
-fn overlay_row_reports_unavailable_when_commentary_reports_unavailable() {
-    let mut snapshot = base_snapshot(base_diagnostics());
-    snapshot.commentary_coverage = CommentaryCoverage {
-        total: None,
-        fresh: None,
-        estimated_fresh: None,
-        estimated_stale_ratio: None,
-        estimate_confidence: None,
-        display: "unavailable (open failed)".to_string(),
-    };
-    let matrix =
-        ReadinessMatrix::build(&repo_root(), &ready_probe(), &snapshot, &Config::default());
-    let row = find_row(&matrix, Capability::Overlay);
-    assert_eq!(row.state, ReadinessState::Unavailable);
 }
 
 #[test]

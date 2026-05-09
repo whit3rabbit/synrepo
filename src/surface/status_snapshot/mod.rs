@@ -83,16 +83,13 @@ pub struct CommentaryCoverage {
 
 impl CommentaryCoverage {
     pub(super) fn not_initialized() -> Self {
-        // `overlay.db` is created lazily on the first commentary or cross-link
-        // write. An empty overlay after `synrepo init` is the expected
-        // baseline; `not initialized` would imply a setup error.
         Self {
             total: None,
             fresh: None,
             estimated_fresh: None,
             estimated_stale_ratio: None,
             estimate_confidence: None,
-            display: "no overlay writes yet".to_string(),
+            display: "overlay store missing (run `synrepo init`)".to_string(),
         }
     }
 
@@ -186,6 +183,31 @@ pub enum OverlayHandle {
     Open(crate::store::overlay::SqliteOverlayStore),
 }
 
+/// Materialization and row-health state of `.synrepo/overlay/overlay.db`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OverlayState {
+    /// No overlay database exists at the canonical path.
+    Missing,
+    /// The overlay database exists but could not be opened or queried.
+    Error,
+    /// The overlay database exists and all overlay tables are empty.
+    ReadyEmpty,
+    /// The overlay database exists and contains at least one overlay row.
+    Ready,
+}
+
+impl OverlayState {
+    /// Stable wire value used by JSON/MCP readiness surfaces.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Missing => "missing",
+            Self::Error => "error",
+            Self::ReadyEmpty => "ready_empty",
+            Self::Ready => "ready",
+        }
+    }
+}
+
 /// Full operational status snapshot. Captures everything the CLI `status`
 /// command or the runtime dashboard needs to render without re-querying.
 #[derive(Clone, Debug)]
@@ -206,6 +228,8 @@ pub struct StatusSnapshot {
     pub export_status: ExportStatus,
     /// Overlay LLM-cost summary line.
     pub overlay_cost_summary: String,
+    /// Overlay store state, distinct from commentary coverage.
+    pub overlay_state: OverlayState,
     /// Commentary coverage.
     pub commentary_coverage: CommentaryCoverage,
     /// Agent-note lifecycle counts when the overlay is readable.

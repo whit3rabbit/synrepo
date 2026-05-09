@@ -75,7 +75,7 @@ fn skill_md_includes_doctrine_lines_verbatim() {
         "Read full source files or request `deep` cards only after bounded cards identify the target or when the card content is insufficient.",
         "Do not open large files first. Start at `tiny` and escalate only when a specific field forces it.",
         "Do not treat overlay commentary, explain docs, or proposed cross-links as canonical source truth.",
-        "Do not trigger explain (`--generate-cross-links`, deep commentary refresh) unless the task justifies the cost.",
+        "Do not trigger explain (`--generate-cross-links`, commentary generate/refresh) unless the task justifies the cost.",
         "Do not expect watch or background behavior unless `synrepo watch` is explicitly running.",
         "synrepo stores code facts and bounded operational memory. It is not a task tracker, not session memory, and not cross-session agent memory.",
         "Any handoff or next-action list is a derived recommendation regenerated from repo state. External task systems own assignment, status, and collaboration.",

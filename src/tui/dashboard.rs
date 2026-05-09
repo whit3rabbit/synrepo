@@ -290,6 +290,7 @@ fn draw_dashboard(frame: &mut ratatui::Frame, state: &mut AppState) {
             let explain = ExplainTabWidget {
                 snapshot: &state.snapshot,
                 picker: state.picker.as_ref(),
+                generate_commentary: state.generate_commentary.as_ref(),
                 confirm_stop_watch: state.confirm_stop_watch.as_ref(),
                 preview_panel: state.explain_preview.as_ref(),
                 theme: &state.theme,

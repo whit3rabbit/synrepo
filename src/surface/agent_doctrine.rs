@@ -50,7 +50,7 @@ Client-side hooks for Codex and Claude may nudge agents before direct grep, read
 - Do not open large files first. Start at `tiny` and escalate only when a specific field forces it.
 - Do not read a full source file before synrepo routing identifies it; full-file reads are explicit escalation.
 - Do not treat overlay commentary, explain docs, or proposed cross-links as canonical source truth. They are advisory prose layered on structural cards.
-- Do not trigger explain (`--generate-cross-links`, deep commentary refresh) unless the task justifies the cost.
+- Do not trigger explain (`--generate-cross-links`, commentary generate/refresh) unless the task justifies the cost.
 - Do not ask the user to repeat stale repo context until `synrepo_resume_context` has been tried.
 - Do not expect watch or background behavior unless `synrepo watch` is explicitly running.
 - Do not mistake client-side hook nudges for MCP enforcement.

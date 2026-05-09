@@ -11,6 +11,7 @@ use crate::tui::theme::Theme;
 pub mod actions;
 pub(crate) mod confirm_stop_watch;
 pub mod explain;
+pub(crate) mod explain_generate;
 pub(crate) mod explore;
 pub mod footer;
 pub mod header;

@@ -1,6 +1,10 @@
 use std::{fs, path::Path};
 
 use synrepo::config::{Config, Mode};
+use synrepo::pipeline::explain::telemetry;
+use synrepo::pipeline::maintenance::plan_maintenance;
+use synrepo::pipeline::repair::{refresh_commentary, ActionContext};
+use synrepo::pipeline::writer::{acquire_write_admission, map_lock_error};
 use synrepo::surface::card::{Budget, CardCompiler};
 
 use agent_config::{AgentConfigError, InstallReport, Scope};
@@ -24,6 +28,7 @@ pub(crate) fn init(
     requested_mode: Option<Mode>,
     gitignore: bool,
     force: bool,
+    generate_commentary: bool,
 ) -> anyhow::Result<()> {
     let synrepo_dir = Config::synrepo_dir(repo_root);
     ensure_watch_not_running(&synrepo_dir, "init")?;
@@ -31,6 +36,43 @@ pub(crate) fn init(
     let report =
         synrepo::bootstrap::bootstrap_with_force(repo_root, requested_mode, gitignore, force)?;
     print!("{}", report.render());
+    if generate_commentary {
+        generate_commentary_after_init(repo_root, &synrepo_dir)?;
+    }
+    Ok(())
+}
+
+fn generate_commentary_after_init(repo_root: &Path, synrepo_dir: &Path) -> anyhow::Result<()> {
+    println!(
+        "Generating commentary because --generate-commentary was set. \
+         This may call the configured explain provider with repository context."
+    );
+    let config = Config::load(repo_root)?;
+    let _writer_lock = acquire_write_admission(synrepo_dir, "init --generate-commentary")
+        .map_err(|err| map_lock_error("init --generate-commentary", err))?;
+    let maint_plan = plan_maintenance(synrepo_dir, &config);
+    let context = ActionContext {
+        repo_root,
+        synrepo_dir,
+        config: &config,
+        maint_plan: &maint_plan,
+    };
+    let mut actions_taken = Vec::new();
+    let result = telemetry::with_synrepo_dir(synrepo_dir, || {
+        refresh_commentary(&context, &mut actions_taken, None, None, None)
+    });
+    synrepo::pipeline::context_metrics::record_commentary_refresh_best_effort(
+        synrepo_dir,
+        result.is_err(),
+    );
+    result?;
+    if actions_taken.is_empty() {
+        println!("  Commentary generation completed; no targets needed generation.");
+    } else {
+        for action in actions_taken {
+            println!("  {action}");
+        }
+    }
     Ok(())
 }
 

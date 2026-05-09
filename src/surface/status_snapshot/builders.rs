@@ -20,7 +20,8 @@ use crate::{
 
 use super::{
     build_export_status, CommentaryCoverage, ExplainDisplay, ExportState, ExportStatus,
-    GraphSnapshotStatus, OverlayHandle, RepairAuditState, StatusOptions, StatusSnapshot,
+    GraphSnapshotStatus, OverlayHandle, OverlayState, RepairAuditState, StatusOptions,
+    StatusSnapshot,
 };
 
 pub(super) fn current_graph_snapshot_status(repo_root: &Path) -> GraphSnapshotStatus {
@@ -111,6 +112,20 @@ pub fn overlay_cost_summary(overlay: &OverlayHandle) -> String {
             String::new()
         }
     )
+}
+
+/// Classify the overlay store without treating an empty schema as degraded.
+pub fn overlay_state(overlay: &OverlayHandle) -> OverlayState {
+    let overlay = match overlay {
+        OverlayHandle::NotInitialized => return OverlayState::Missing,
+        OverlayHandle::Unavailable(_) => return OverlayState::Error,
+        OverlayHandle::Open(store) => store,
+    };
+    match with_overlay_read_snapshot(overlay, |overlay| overlay.stored_row_count()) {
+        Ok(0) => OverlayState::ReadyEmpty,
+        Ok(_) => OverlayState::Ready,
+        Err(_) => OverlayState::Error,
+    }
 }
 
 /// Summarize commentary coverage. When `full` is false, avoids opening the
@@ -254,6 +269,7 @@ pub fn build_status_snapshot(repo_root: &Path, opts: StatusOptions) -> StatusSna
                     budget: None,
                 },
                 overlay_cost_summary: String::new(),
+                overlay_state: OverlayState::Missing,
                 commentary_coverage: CommentaryCoverage::unavailable("not initialized"),
                 agent_note_counts: None,
                 explain_provider: None,
@@ -282,6 +298,7 @@ pub fn build_status_snapshot(repo_root: &Path, opts: StatusOptions) -> StatusSna
     let export_freshness = export_status.display.clone();
     let graph_snapshot = current_graph_snapshot_status(repo_root);
     let overlay = open_status_overlay(&synrepo_dir);
+    let overlay_state = overlay_state(&overlay);
     let overlay_cost_summary = overlay_cost_summary(&overlay);
     let commentary_coverage = commentary_coverage(&synrepo_dir, opts.full, &overlay);
     let agent_note_counts = match &overlay {
@@ -323,6 +340,7 @@ pub fn build_status_snapshot(repo_root: &Path, opts: StatusOptions) -> StatusSna
         export_freshness,
         export_status,
         overlay_cost_summary,
+        overlay_state,
         commentary_coverage,
         agent_note_counts,
         explain_provider,

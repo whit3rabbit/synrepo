@@ -5,6 +5,7 @@
 mod action_handlers;
 mod confirm_stop_watch;
 mod explain_events;
+mod explain_generate;
 mod explain_picker;
 mod explain_preview;
 mod explore;
@@ -21,6 +22,7 @@ pub use confirm_stop_watch::{
     PendingStopWatchAction,
 };
 pub use explain_events::explain_event_to_log_entry;
+pub use explain_generate::{GenerateCommentaryScope, GenerateCommentaryState};
 pub use explain_picker::{FolderEntry, FolderPickerState};
 pub use explain_preview::{ExplainPreviewPanel, ExplainPreviewState};
 pub use key_handlers::poll_key;
@@ -172,6 +174,8 @@ pub struct AppState {
     /// which top-level directories to scope the next Explain run to; cleared
     /// on Esc, Enter, or any tab switch.
     pub picker: Option<FolderPickerState>,
+    /// Explicit commentary-generation modal state.
+    pub(crate) generate_commentary: Option<GenerateCommentaryState>,
     /// Cached explain-status preview used by the Explain tab.
     pub explain_preview: Option<ExplainPreviewPanel>,
     /// Currently selected dashboard tab.
@@ -238,6 +242,13 @@ pub enum ExplainMode {
     Changed,
     /// Refresh entries under the given repo-relative path prefixes.
     Paths(Vec<String>),
+    /// Generate commentary for an explicit target, file, or directory scope.
+    Generate {
+        /// Scope of the explicit generation request.
+        scope: GenerateCommentaryScope,
+        /// Path, symbol name, or node ID typed by the operator.
+        target: String,
+    },
 }
 
 /// Queued in-dashboard explain run.

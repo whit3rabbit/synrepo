@@ -53,6 +53,7 @@ impl AppState {
         if self.active_tab != tab {
             self.active_tab = tab;
             self.picker = None;
+            self.generate_commentary = None;
             if matches!(tab, ActiveTab::Explain) {
                 self.refresh_explain_preview(false);
             } else if matches!(tab, ActiveTab::Repos) {

@@ -23,6 +23,7 @@ use crate::tui::dashboard::DashboardTerminal;
 use crate::tui::probe::Severity;
 use crate::tui::widgets::LogEntry;
 
+mod nodes;
 mod view;
 
 use view::{draw_progress, ExplainRunUi};
@@ -36,6 +37,9 @@ pub(crate) fn run_explain_in_dashboard(
     let mut ui = match ExplainRunContext::load(&repo_root, pending.mode) {
         Ok(context) if context.changed_scope_is_empty() => {
             ExplainRunUi::message("Explain", "No changed files found in the last 50 commits.")
+        }
+        Ok(context) if context.generate_scope_is_empty() => {
+            ExplainRunUi::message("Explain", "No commentary targets matched that scope.")
         }
         Ok(context) => run_context(terminal, state, &repo_root, context, pending.stopped_watch)?,
         Err(error) => ExplainRunUi::error(format!("{error:#}")),
@@ -93,7 +97,9 @@ fn run_context(
             config: &context.config,
             maint_plan: &maint_plan,
         };
-        let scope_paths = context.scope.as_deref();
+        let task = context.task.clone();
+        let config_for_nodes = context.config.clone();
+        let synrepo_dir_for_nodes = context.synrepo_dir.clone();
         let cancel_for_worker = Arc::clone(&cancel);
         let event_tx_for_worker = event_tx;
         let actions_ref = &mut actions_taken;
@@ -103,13 +109,34 @@ fn run_context(
             let mut progress = |event: CommentaryProgressEvent| {
                 let _ = event_tx_for_worker.send(event);
             };
-            refresh_commentary(
-                &action_context,
-                actions_ref,
-                scope_paths,
-                Some(&mut progress),
-                Some(&mut should_stop),
-            )
+            match &task {
+                ExplainRunTask::WorkPlan { scope, .. } => refresh_commentary(
+                    &action_context,
+                    actions_ref,
+                    scope.as_deref(),
+                    Some(&mut progress),
+                    Some(&mut should_stop),
+                ),
+                ExplainRunTask::Nodes {
+                    scope,
+                    target,
+                    nodes,
+                } => {
+                    nodes::run_scoped_nodes(
+                        repo_root,
+                        &config_for_nodes,
+                        &synrepo_dir_for_nodes,
+                        nodes,
+                        &event_tx_for_worker,
+                        &cancel_for_worker,
+                    )?;
+                    actions_ref.push(format!(
+                        "generated/refreshed {} commentary for {target}",
+                        scope.as_str()
+                    ));
+                    Ok(())
+                }
+            }
         });
 
         let mut last_frame = Instant::now();
@@ -190,8 +217,20 @@ fn log_entry(tag: &str, message: String, severity: Severity) -> LogEntry {
 struct ExplainRunContext {
     config: Config,
     synrepo_dir: PathBuf,
-    scope: Option<Vec<PathBuf>>,
-    changed: bool,
+    task: ExplainRunTask,
+}
+
+#[derive(Clone, Debug)]
+enum ExplainRunTask {
+    WorkPlan {
+        scope: Option<Vec<PathBuf>>,
+        changed: bool,
+    },
+    Nodes {
+        scope: crate::tui::app::GenerateCommentaryScope,
+        target: String,
+        nodes: Vec<crate::core::ids::NodeId>,
+    },
 }
 
 impl ExplainRunContext {
@@ -199,29 +238,60 @@ impl ExplainRunContext {
         let config = Config::load(repo_root)
             .map_err(|error| anyhow::anyhow!("explain: not initialized ({error})"))?;
         let synrepo_dir = Config::synrepo_dir(repo_root);
-        let (paths, changed) = match mode {
-            ExplainMode::AllStale => (Vec::new(), false),
-            ExplainMode::Changed => (Vec::new(), true),
-            ExplainMode::Paths(paths) => (paths, false),
+        let task = match mode {
+            ExplainMode::AllStale => ExplainRunTask::WorkPlan {
+                scope: None,
+                changed: false,
+            },
+            ExplainMode::Changed => ExplainRunTask::WorkPlan {
+                scope: compute_scope(repo_root, &config, Vec::new(), true)?,
+                changed: true,
+            },
+            ExplainMode::Paths(paths) => ExplainRunTask::WorkPlan {
+                scope: compute_scope(repo_root, &config, paths, false)?,
+                changed: false,
+            },
+            ExplainMode::Generate { scope, target } => {
+                let nodes =
+                    nodes::resolve_scoped_nodes(repo_root, &config, &synrepo_dir, scope, &target)?;
+                ExplainRunTask::Nodes {
+                    scope,
+                    target,
+                    nodes,
+                }
+            }
         };
-        let scope = compute_scope(repo_root, &config, paths, changed)?;
         Ok(Self {
             config,
             synrepo_dir,
-            scope,
-            changed,
+            task,
         })
     }
 
     fn changed_scope_is_empty(&self) -> bool {
-        self.changed && matches!(&self.scope, Some(scope) if scope.is_empty())
+        matches!(
+            &self.task,
+            ExplainRunTask::WorkPlan {
+                scope: Some(scope),
+                changed: true
+            } if scope.is_empty()
+        )
+    }
+
+    fn generate_scope_is_empty(&self) -> bool {
+        matches!(&self.task, ExplainRunTask::Nodes { nodes, .. } if nodes.is_empty())
     }
 
     fn scope_label(&self) -> String {
-        if self.changed {
-            "files changed in the last 50 commits".to_string()
-        } else {
-            match &self.scope {
+        match &self.task {
+            ExplainRunTask::WorkPlan {
+                scope: _,
+                changed: true,
+            } => "files changed in the last 50 commits".to_string(),
+            ExplainRunTask::WorkPlan {
+                scope,
+                changed: false,
+            } => match scope {
                 None => "the whole repository".to_string(),
                 Some(scope) if scope.is_empty() => "no matching files".to_string(),
                 Some(scope) => format!(
@@ -232,6 +302,9 @@ impl ExplainRunContext {
                         .collect::<Vec<_>>()
                         .join(", ")
                 ),
+            },
+            ExplainRunTask::Nodes { scope, target, .. } => {
+                format!("{} scope: {target}", scope.as_str())
             }
         }
     }

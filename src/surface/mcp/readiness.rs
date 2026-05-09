@@ -117,17 +117,7 @@ fn graph_status(snapshot: &StatusSnapshot, db_path: &Path) -> &'static str {
 }
 
 fn overlay_status(snapshot: &StatusSnapshot) -> &'static str {
-    if !snapshot.initialized {
-        "missing"
-    } else if snapshot
-        .commentary_coverage
-        .display
-        .starts_with("unavailable")
-    {
-        "error"
-    } else {
-        "ready"
-    }
+    snapshot.overlay_state.as_str()
 }
 
 fn index_status(manifest_exists: bool, reconcile: Option<&ReconcileHealth>) -> &'static str {
@@ -254,7 +244,7 @@ mod tests {
 
         assert_eq!(value["ok"], true, "{output}");
         assert_eq!(value["graph"], "ready", "{output}");
-        assert_eq!(value["overlay"], "ready", "{output}");
+        assert_eq!(value["overlay"], "ready_empty", "{output}");
         assert_eq!(value["index"], "ready", "{output}");
         assert_eq!(value["watch"], "inactive", "{output}");
         assert_eq!(value["reconcile"], "fresh", "{output}");
@@ -293,5 +283,37 @@ mod tests {
             value["details"]["index"]["manifest_exists"], false,
             "{output}"
         );
+    }
+
+    #[test]
+    fn readiness_reports_missing_overlay_store() {
+        let fixture = ready_state();
+        let overlay_db = SqliteOverlayStore::db_path(
+            &Config::synrepo_dir(&fixture.state.repo_root).join("overlay"),
+        );
+        fs::remove_file(&overlay_db).unwrap();
+
+        let output = handle_readiness(&fixture.state, false, false);
+        let value: serde_json::Value = serde_json::from_str(&output).unwrap();
+
+        assert_eq!(value["overlay"], "missing", "{output}");
+        assert_eq!(
+            value["details"]["overlay"]["materialized"], false,
+            "{output}"
+        );
+    }
+
+    #[test]
+    fn readiness_reports_corrupt_overlay_store() {
+        let fixture = ready_state();
+        let overlay_db = SqliteOverlayStore::db_path(
+            &Config::synrepo_dir(&fixture.state.repo_root).join("overlay"),
+        );
+        fs::write(&overlay_db, b"not sqlite").unwrap();
+
+        let output = handle_readiness(&fixture.state, false, false);
+        let value: serde_json::Value = serde_json::from_str(&output).unwrap();
+
+        assert_eq!(value["overlay"], "error", "{output}");
     }
 }

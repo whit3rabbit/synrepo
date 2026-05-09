@@ -1,20 +1,17 @@
-use std::path::PathBuf;
-
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::json;
 
 use crate::{
-    core::ids::{FileNodeId, NodeId},
+    core::ids::NodeId,
     pipeline::{
         explain::{build_commentary_generator, telemetry},
-        repair::load_commentary_work_plan,
         writer::{acquire_write_admission, map_lock_error},
     },
-    surface::card::CardCompiler,
+    surface::commentary_scope::{self, CommentaryRefreshScope},
 };
 
-use super::{error::McpError, helpers::render_result, SynrepoState};
+use super::{helpers::render_result, SynrepoState};
 
 /// Parameters for the `synrepo_refresh_commentary` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -120,79 +117,13 @@ fn resolve_refresh_nodes(
     compiler: &crate::surface::card::compiler::GraphCardCompiler,
     params: &RefreshCommentaryParams,
 ) -> anyhow::Result<Vec<NodeId>> {
-    match params.scope {
-        RefreshScope::Target => {
-            let target = required_target(params)?;
-            let node_id = compiler
-                .resolve_target(target)?
-                .ok_or_else(|| McpError::not_found(format!("target not found: {target}")))?;
-            Ok(vec![node_id])
-        }
-        RefreshScope::File => file_scope_nodes(compiler, required_target(params)?),
-        RefreshScope::Directory => directory_scope_nodes(state, required_target(params)?),
-        RefreshScope::Stale => stale_scope_nodes(state),
-    }
-}
-
-fn required_target(params: &RefreshCommentaryParams) -> anyhow::Result<&str> {
-    params
-        .target
-        .as_deref()
-        .filter(|target| !target.trim().is_empty())
-        .ok_or_else(|| McpError::invalid_parameter("target is required for this scope").into())
-}
-
-fn file_scope_nodes(
-    compiler: &crate::surface::card::compiler::GraphCardCompiler,
-    target: &str,
-) -> anyhow::Result<Vec<NodeId>> {
-    let node_id = compiler
-        .resolve_target(target)?
-        .ok_or_else(|| McpError::not_found(format!("target not found: {target}")))?;
-    let file_id = match node_id {
-        NodeId::File(file_id) => file_id,
-        NodeId::Symbol(sym_id) => compiler
-            .reader()
-            .get_symbol(sym_id)?
-            .map(|symbol| symbol.file_id)
-            .ok_or_else(|| McpError::not_found(format!("symbol not found: {target}")))?,
-        NodeId::Concept(_) => {
-            return Err(
-                McpError::invalid_parameter("file scope requires a file or symbol target").into(),
-            )
-        }
-    };
-    file_and_symbol_nodes(compiler, file_id)
-}
-
-fn file_and_symbol_nodes(
-    compiler: &crate::surface::card::compiler::GraphCardCompiler,
-    file_id: FileNodeId,
-) -> anyhow::Result<Vec<NodeId>> {
-    let mut nodes = vec![NodeId::File(file_id)];
-    for symbol in compiler.reader().symbols_for_file(file_id)? {
-        nodes.push(NodeId::Symbol(symbol.id));
-    }
-    Ok(nodes)
-}
-
-fn directory_scope_nodes(state: &SynrepoState, target: &str) -> anyhow::Result<Vec<NodeId>> {
     let synrepo_dir = crate::config::Config::synrepo_dir(&state.repo_root);
-    let scope = [PathBuf::from(target)];
-    let plan = load_commentary_work_plan(&synrepo_dir, Some(&scope))?;
-    Ok(plan
-        .refresh
-        .into_iter()
-        .chain(plan.file_seeds)
-        .chain(plan.symbol_seed_candidates)
-        .map(|item| item.node_id)
-        .collect())
-}
-
-fn stale_scope_nodes(state: &SynrepoState) -> anyhow::Result<Vec<NodeId>> {
-    let synrepo_dir = crate::config::Config::synrepo_dir(&state.repo_root);
-    let plan = load_commentary_work_plan(&synrepo_dir, None)?;
-    Ok(plan.refresh.into_iter().map(|item| item.node_id).collect())
+    commentary_scope::resolve_refresh_nodes(
+        compiler,
+        &synrepo_dir,
+        params.scope.into(),
+        params.target.as_deref(),
+    )
 }
 
 fn emit_progress(
@@ -212,11 +143,17 @@ fn emit_progress(
 
 impl RefreshScope {
     fn as_str(self) -> &'static str {
-        match self {
-            Self::Target => "target",
-            Self::File => "file",
-            Self::Directory => "directory",
-            Self::Stale => "stale",
+        CommentaryRefreshScope::from(self).as_str()
+    }
+}
+
+impl From<RefreshScope> for CommentaryRefreshScope {
+    fn from(scope: RefreshScope) -> Self {
+        match scope {
+            RefreshScope::Target => Self::Target,
+            RefreshScope::File => Self::File,
+            RefreshScope::Directory => Self::Directory,
+            RefreshScope::Stale => Self::Stale,
         }
     }
 }

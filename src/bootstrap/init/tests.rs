@@ -5,6 +5,8 @@ use crate::store::compatibility::{self, StoreId, GRAPH_FORMAT_VERSION};
 use crate::store::sqlite::SqliteGraphStore;
 use tempfile::tempdir;
 
+mod overlay;
+
 struct IsolatedHome {
     _lock: crate::test_support::GlobalTestLock,
     _home: tempfile::TempDir,

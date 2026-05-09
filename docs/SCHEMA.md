@@ -245,6 +245,11 @@ Physically separate from the graph database. Holds advisory machine-authored
 material plus advisory human-authored notes. Never the source of truth for any
 graph fact.
 
+`synrepo init` materializes this database and its empty schema tables by
+default. It does not insert commentary, cross-links, or notes unless the
+operator explicitly opts into generation, for example with
+`synrepo init --generate-commentary` or an Explain-tab generation action.
+
 PRAGMAs are identical to the graph store. There is no version stamp:
 `CREATE TABLE IF NOT EXISTS` runs unconditionally.
 

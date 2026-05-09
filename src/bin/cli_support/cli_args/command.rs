@@ -34,6 +34,11 @@ pub(crate) enum Command {
         /// lock and active-watch gates are still enforced.
         #[arg(long)]
         force: bool,
+        /// Generate commentary after bootstrap. This may call the configured
+        /// explain provider with repository context; default init creates only
+        /// empty overlay tables.
+        #[arg(long)]
+        generate_commentary: bool,
     },
     /// Verify repo health, freshness, and readiness for agent use.
     Status {

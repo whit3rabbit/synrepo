@@ -234,6 +234,80 @@ fn explain_tab_a_queues_all_stale_run() {
 }
 
 #[test]
+fn explain_tab_g_queues_target_generation() {
+    let (_repo, mut state) = make_ready_poll_state();
+    state.set_tab(ActiveTab::Explain);
+
+    assert!(state.handle_key(KeyCode::Char('g'), KeyModifiers::NONE));
+    type_text(&mut state, "src/lib.rs");
+    assert!(state.handle_key(KeyCode::Enter, KeyModifiers::NONE));
+
+    assert!(state.generate_commentary.is_none());
+    assert!(matches!(
+        state.pending_explain.front(),
+        Some(PendingExplainRun {
+            mode: ExplainMode::Generate {
+                scope: GenerateCommentaryScope::Target,
+                target,
+            },
+            stopped_watch: false,
+        }) if target == "src/lib.rs"
+    ));
+}
+
+#[test]
+fn explain_tab_g_cycles_to_file_and_directory_generation() {
+    let (_repo, mut state) = make_ready_poll_state();
+    state.set_tab(ActiveTab::Explain);
+
+    assert!(state.handle_key(KeyCode::Char('g'), KeyModifiers::NONE));
+    assert!(state.handle_key(KeyCode::Down, KeyModifiers::NONE));
+    type_text(&mut state, "src/lib.rs");
+    assert!(state.handle_key(KeyCode::Enter, KeyModifiers::NONE));
+
+    assert!(matches!(
+        state.pending_explain.front(),
+        Some(PendingExplainRun {
+            mode: ExplainMode::Generate {
+                scope: GenerateCommentaryScope::File,
+                target,
+            },
+            stopped_watch: false,
+        }) if target == "src/lib.rs"
+    ));
+
+    assert!(state.handle_key(KeyCode::Char('g'), KeyModifiers::NONE));
+    assert!(state.handle_key(KeyCode::Down, KeyModifiers::NONE));
+    assert!(state.handle_key(KeyCode::Down, KeyModifiers::NONE));
+    type_text(&mut state, "src");
+    assert!(state.handle_key(KeyCode::Enter, KeyModifiers::NONE));
+
+    assert!(matches!(
+        state.pending_explain.get(1),
+        Some(PendingExplainRun {
+            mode: ExplainMode::Generate {
+                scope: GenerateCommentaryScope::Directory,
+                target,
+            },
+            stopped_watch: false,
+        }) if target == "src"
+    ));
+}
+
+#[test]
+fn explain_tab_g_cancel_clears_without_queueing() {
+    let (_repo, mut state) = make_ready_poll_state();
+    state.set_tab(ActiveTab::Explain);
+
+    assert!(state.handle_key(KeyCode::Char('g'), KeyModifiers::NONE));
+    type_text(&mut state, "src/lib.rs");
+    assert!(state.handle_key(KeyCode::Esc, KeyModifiers::NONE));
+
+    assert!(state.generate_commentary.is_none());
+    assert!(state.pending_explain.is_empty());
+}
+
+#[test]
 fn explain_tab_docs_clean_previews_before_apply() {
     let (repo, mut state) = make_ready_poll_state();
     state.set_tab(ActiveTab::Explain);
@@ -265,4 +339,10 @@ fn explain_tab_docs_clean_previews_before_apply() {
     assert!(state.handle_key(KeyCode::Enter, KeyModifiers::NONE));
     assert!(!doc_path.exists(), "clean apply must remove docs");
     assert!(!index_path.exists(), "clean apply must remove index");
+}
+
+fn type_text(state: &mut AppState, text: &str) {
+    for ch in text.chars() {
+        assert!(state.handle_key(KeyCode::Char(ch), KeyModifiers::NONE));
+    }
 }

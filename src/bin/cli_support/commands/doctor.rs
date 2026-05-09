@@ -162,7 +162,8 @@ mod tests {
     use synrepo::bootstrap::runtime_probe::AgentIntegration;
     use synrepo::pipeline::context_metrics::ContextMetrics;
     use synrepo::surface::status_snapshot::{
-        CommentaryCoverage, ExportState, ExportStatus, GraphSnapshotStatus, RepairAuditState,
+        CommentaryCoverage, ExportState, ExportStatus, GraphSnapshotStatus, OverlayState,
+        RepairAuditState,
     };
 
     fn fixture_snapshot(stale_responses: u64, explain: Option<SnapshotExplain>) -> StatusSnapshot {
@@ -192,6 +193,7 @@ mod tests {
                 budget: Some("normal".to_string()),
             },
             overlay_cost_summary: "0".to_string(),
+            overlay_state: OverlayState::Error,
             commentary_coverage: CommentaryCoverage {
                 total: None,
                 fresh: None,

@@ -6,7 +6,7 @@ use crate::{
         git::{GitDegradedReason, GitIntelligenceContext, GitIntelligenceReadiness},
         watch::WatchServiceStatus,
     },
-    surface::status_snapshot::StatusSnapshot,
+    surface::status_snapshot::{OverlayState, StatusSnapshot},
 };
 
 use super::{Capability, ReadinessRow, ReadinessState};
@@ -293,33 +293,31 @@ pub(super) fn index_freshness_row(snapshot: &StatusSnapshot) -> ReadinessRow {
 }
 
 pub(super) fn overlay_row(snapshot: &StatusSnapshot) -> ReadinessRow {
-    let display = &snapshot.commentary_coverage.display;
-    if display.starts_with("unavailable") {
-        ReadinessRow {
+    match snapshot.overlay_state {
+        OverlayState::Ready => ReadinessRow {
+            capability: Capability::Overlay,
+            state: ReadinessState::Supported,
+            detail: snapshot.commentary_coverage.display.clone(),
+            next_action: None,
+        },
+        OverlayState::ReadyEmpty => ReadinessRow {
+            capability: Capability::Overlay,
+            state: ReadinessState::Supported,
+            detail: "ready_empty; no overlay entries yet".to_string(),
+            next_action: None,
+        },
+        OverlayState::Missing => ReadinessRow {
             capability: Capability::Overlay,
             state: ReadinessState::Unavailable,
-            detail: display.clone(),
+            detail: "overlay store missing".to_string(),
+            next_action: Some("run `synrepo init`".to_string()),
+        },
+        OverlayState::Error => ReadinessRow {
+            capability: Capability::Overlay,
+            state: ReadinessState::Blocked,
+            detail: snapshot.commentary_coverage.display.clone(),
             next_action: Some("run `synrepo check` to evaluate repair actions".to_string()),
-        }
-    } else if display.starts_with("not initialized") || display.starts_with("no overlay writes") {
-        // The overlay directory is created by `synrepo init`, but `overlay.db`
-        // is materialized lazily on the first commentary or cross-link write.
-        // An empty overlay is the expected post-init baseline, not a failure
-        // mode — surface it as Supported so the readiness matrix does not
-        // contradict a clean bootstrap.
-        ReadinessRow {
-            capability: Capability::Overlay,
-            state: ReadinessState::Supported,
-            detail: "no overlay writes yet".to_string(),
-            next_action: None,
-        }
-    } else {
-        ReadinessRow {
-            capability: Capability::Overlay,
-            state: ReadinessState::Supported,
-            detail: display.clone(),
-            next_action: None,
-        }
+        },
     }
 }
 

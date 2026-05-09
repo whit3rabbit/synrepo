@@ -9,6 +9,8 @@ use time::OffsetDateTime;
 
 use super::{seed_graph, status_output, write_explain_totals, EnvGuard};
 
+mod overlay_state;
+
 #[test]
 fn status_reports_graph_counts_after_bootstrap() {
     let repo = tempdir().unwrap();
@@ -25,6 +27,7 @@ fn status_reports_graph_counts_after_bootstrap() {
     assert_eq!(json["graph"]["symbol_nodes"], 1);
     assert_eq!(json["graph"]["concept_nodes"], 1);
     assert_eq!(json["mode"], "auto");
+    assert_eq!(json["overlay_state"], "ready_empty");
 
     let text = status_output(repo.path(), false, false, false).unwrap();
     assert!(
@@ -260,6 +263,14 @@ fn status_overlay_cost_surfaces_query_failure() {
         !text.contains("overlay cost: no overlay") && !text.contains("overlay cost: 0 LLM calls"),
         "overlay-cost line must not collapse a query failure to zero, got: {text}"
     );
+
+    let json: serde_json::Value = serde_json::from_str(
+        status_output(repo.path(), true, false, false)
+            .unwrap()
+            .trim(),
+    )
+    .unwrap();
+    assert_eq!(json["overlay_state"], "error", "{json}");
 }
 
 #[test]
@@ -342,6 +353,12 @@ fn status_reports_capability_readiness_matrix_in_text_and_json() {
     assert!(labels.contains(&"project-layout"));
     assert!(labels.contains(&"overlay"));
     assert!(labels.contains(&"compatibility"));
+    let overlay_row = rows
+        .iter()
+        .find(|row| row["capability"] == "overlay")
+        .expect("overlay row");
+    assert_eq!(overlay_row["state"], "supported");
+    assert_eq!(overlay_row["detail"], "ready_empty; no overlay entries yet");
 }
 
 #[test]

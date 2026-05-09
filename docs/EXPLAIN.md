@@ -92,7 +92,17 @@ It Fits, Associated Nodes, Important Gotchas, Associated Tests, TODOs / Dead
 Code / Unfinished Work, Security Notes, and Context Confidence. Older free-form
 overlay commentary remains valid until refreshed.
 
-The dashboard Explain tab exposes the same maintenance actions: `d` exports docs without model calls, `D` force-rebuilds docs and the docs index, `x` previews a clean, and `X` removes the exported docs/index while leaving overlay commentary intact.
+Commentary generation is opt-in. Default `synrepo init` creates the empty
+overlay store only. Use `synrepo init --generate-commentary` when bootstrap
+should immediately run the commentary pipeline after setup.
+
+The dashboard Explain tab exposes the same maintenance actions: `g` generates
+commentary for an explicit target, file, or directory after showing the
+cost/privacy reminder, `a` and `f` generate/refresh whole-repo or folder-scoped
+commentary, `c` generate/refreshes recently changed files, `d` exports docs
+without model calls, `D` force-rebuilds docs and the docs index, `x` previews a
+clean, and `X` removes the exported docs/index while leaving overlay
+commentary intact.
 
 ## Telemetry
 

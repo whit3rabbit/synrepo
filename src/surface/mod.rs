@@ -3,6 +3,7 @@
 pub mod agent_doctrine;
 pub mod card;
 pub mod changed;
+pub(crate) mod commentary_scope;
 pub mod context;
 pub mod graph_view;
 pub mod handoffs;

@@ -82,9 +82,17 @@ fn dispatch(
             mode,
             gitignore,
             force,
+            generate_commentary,
         } => {
             let mode = mode.map(Into::into);
-            cli_support::setup_cmd::run_init_or_setup(repo_root, mode, gitignore, force, tui_opts)
+            cli_support::setup_cmd::run_init_or_setup(
+                repo_root,
+                mode,
+                gitignore,
+                force,
+                generate_commentary,
+                tui_opts,
+            )
         }
         Command::Status { json, recent, full } => status(repo_root, json, recent, full),
         Command::Project(ProjectCommand::Add { path }) => project_add(repo_root, path),

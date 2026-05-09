@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use crate::overlay::AgentNoteCounts;
 use crate::pipeline::context_metrics::ContextMetrics;
 use crate::surface::status_snapshot::{
-    CommentaryCoverage, ExportState, ExportStatus, GraphSnapshotStatus, RepairAuditState,
-    StatusSnapshot,
+    CommentaryCoverage, ExportState, ExportStatus, GraphSnapshotStatus, OverlayState,
+    RepairAuditState, StatusSnapshot,
 };
 
 use super::{build_trust_vm, Severity};
@@ -34,6 +34,11 @@ fn snapshot(metrics: Option<ContextMetrics>, notes: Option<AgentNoteCounts>) -> 
             budget: Some("normal".to_string()),
         },
         overlay_cost_summary: "0".to_string(),
+        overlay_state: if notes.is_some() {
+            OverlayState::ReadyEmpty
+        } else {
+            OverlayState::Missing
+        },
         commentary_coverage: CommentaryCoverage {
             total: None,
             fresh: None,
@@ -80,6 +85,24 @@ fn healthy_metrics_include_context_and_overlay_rows() {
     assert!(vm.context_rows.iter().any(|r| r.label == "saved context"));
     assert!(vm.overlay_rows.iter().any(|r| r.label == "active"));
     assert!(vm.change_rows.iter().any(|r| r.label == "changed files"));
+}
+
+#[test]
+fn empty_materialized_overlay_renders_zero_count_healthy_note_rows() {
+    let vm = build_trust_vm(&snapshot(None, Some(AgentNoteCounts::default())));
+
+    assert!(vm
+        .overlay_rows
+        .iter()
+        .any(|row| row.label == "active" && row.value == "0"));
+    assert!(vm
+        .overlay_rows
+        .iter()
+        .all(|row| row.severity == Severity::Healthy));
+    assert!(!vm
+        .degraded_rows
+        .iter()
+        .any(|row| row.label == "agent notes"));
 }
 
 #[test]

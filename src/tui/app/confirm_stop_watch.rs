@@ -140,6 +140,9 @@ pub fn describe_pending_mode(mode: &ExplainMode) -> String {
                 paths.join(", ")
             }
         }
+        ExplainMode::Generate { scope, target } => {
+            format!("{} commentary for {target}", scope.as_str())
+        }
     }
 }
 

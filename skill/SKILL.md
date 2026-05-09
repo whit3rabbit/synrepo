@@ -86,7 +86,7 @@ Client-side nudge hooks for Codex and Claude may remind agents to use synrepo be
 
 - Do not open large files first. Start at `tiny` and escalate only when a specific field forces it.
 - Do not treat overlay commentary, explain docs, or proposed cross-links as canonical source truth.
-- Do not trigger explain (`--generate-cross-links`, deep commentary refresh) unless the task justifies the cost.
+- Do not trigger explain (`--generate-cross-links`, commentary generate/refresh) unless the task justifies the cost.
 - Do not expect watch or background behavior unless `synrepo watch` is explicitly running.
 - Do not call `synrepo_apply_anchor_edits` without a fresh `synrepo_prepare_edit_context` response.
 - Do not drop `root_id` from search or prepare results when editing worktree files; omitted `root_id` means the primary checkout.
