@@ -18,16 +18,16 @@ pub enum ActiveTab {
     Live,
     /// System-health pane.
     Health,
-    /// Trust signals for context quality and advisory overlay freshness.
-    Trust,
+    /// Runnable dashboard commands and next-action guidance.
+    Actions,
     /// Explain status, totals, and refresh actions.
     Explain,
-    /// Next-actions + quick-actions.
-    Actions,
     /// Active-project agent integration status.
     Mcp,
     /// Large-file refactor suggestions.
     Suggestion,
+    /// Trust signals for context quality and advisory overlay freshness.
+    Trust,
 }
 
 impl fmt::Display for ActiveTab {
@@ -36,11 +36,11 @@ impl fmt::Display for ActiveTab {
             ActiveTab::Repos => write!(f, "Repos"),
             ActiveTab::Live => write!(f, "Live"),
             ActiveTab::Health => write!(f, "Health"),
-            ActiveTab::Trust => write!(f, "Trust"),
-            ActiveTab::Explain => write!(f, "Explain"),
             ActiveTab::Actions => write!(f, "Actions"),
+            ActiveTab::Explain => write!(f, "Explain"),
             ActiveTab::Mcp => write!(f, "Integrations"),
             ActiveTab::Suggestion => write!(f, "Suggestion"),
+            ActiveTab::Trust => write!(f, "Trust"),
         }
     }
 }
@@ -73,12 +73,12 @@ impl AppState {
         let next = match self.active_tab {
             ActiveTab::Repos => ActiveTab::Live,
             ActiveTab::Live => ActiveTab::Health,
-            ActiveTab::Health => ActiveTab::Trust,
-            ActiveTab::Trust => ActiveTab::Explain,
-            ActiveTab::Explain => ActiveTab::Actions,
-            ActiveTab::Actions => ActiveTab::Mcp,
+            ActiveTab::Health => ActiveTab::Actions,
+            ActiveTab::Actions => ActiveTab::Explain,
+            ActiveTab::Explain => ActiveTab::Mcp,
             ActiveTab::Mcp => ActiveTab::Suggestion,
-            ActiveTab::Suggestion => ActiveTab::Repos,
+            ActiveTab::Suggestion => ActiveTab::Trust,
+            ActiveTab::Trust => ActiveTab::Repos,
         };
         self.set_tab(next);
     }
@@ -86,14 +86,14 @@ impl AppState {
     /// Reverse of `cycle_tab`. Used by Shift-Tab and Left arrow.
     pub fn cycle_tab_back(&mut self) {
         let prev = match self.active_tab {
-            ActiveTab::Repos => ActiveTab::Suggestion,
+            ActiveTab::Repos => ActiveTab::Trust,
             ActiveTab::Live => ActiveTab::Repos,
             ActiveTab::Health => ActiveTab::Live,
-            ActiveTab::Trust => ActiveTab::Health,
-            ActiveTab::Explain => ActiveTab::Trust,
-            ActiveTab::Actions => ActiveTab::Explain,
-            ActiveTab::Mcp => ActiveTab::Actions,
+            ActiveTab::Actions => ActiveTab::Health,
+            ActiveTab::Explain => ActiveTab::Actions,
+            ActiveTab::Mcp => ActiveTab::Explain,
             ActiveTab::Suggestion => ActiveTab::Mcp,
+            ActiveTab::Trust => ActiveTab::Suggestion,
         };
         self.set_tab(prev);
     }

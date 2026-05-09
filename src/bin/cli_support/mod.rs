@@ -1,4 +1,5 @@
 pub(crate) mod agent_shims;
+pub(crate) mod apply_report;
 pub(crate) mod cli_args;
 pub(crate) mod commands;
 pub(crate) mod entry;

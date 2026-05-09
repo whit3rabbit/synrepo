@@ -127,6 +127,16 @@ pub fn run_dashboard(
     }
 }
 
+/// Show a short post-apply result popup. Non-TTY callers skip the popup so
+/// scripted setup and integration commands keep normal terminal behavior.
+pub fn run_result_popup(opts: TuiOptions, title: &str, lines: &[String]) -> anyhow::Result<()> {
+    if !stdout_is_tty() {
+        return Ok(());
+    }
+    let theme = theme::Theme::from_no_color(opts.no_color);
+    wizard::run_result_popup_loop(theme, title, lines)
+}
+
 /// Open the registry-backed global project dashboard.
 pub fn run_global_dashboard(
     cwd: &Path,

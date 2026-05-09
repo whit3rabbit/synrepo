@@ -61,9 +61,9 @@ impl Widget for ActionsTabWidget<'_> {
             .collect();
         List::new(next_items).block(next_block).render(rows[0], buf);
 
-        // Bottom: quick actions.
+        // Bottom: runnable commands.
         let quick_block = Block::default()
-            .title(" quick actions ")
+            .title(" run commands ")
             .borders(Borders::ALL)
             .border_style(self.theme.border_style());
         let quick_items: Vec<ListItem> = self
@@ -130,5 +130,29 @@ mod tests {
         assert_eq!(quick_action_prefix(&a), "!");
         a.disabled = true;
         assert_eq!(quick_action_prefix(&a), "x");
+    }
+
+    #[test]
+    fn actions_tab_labels_quick_actions_as_runnable_commands() {
+        let area = Rect::new(0, 0, 80, 12);
+        let mut buf = Buffer::empty(area);
+        let actions = vec![action()];
+        ActionsTabWidget {
+            next_actions: &[],
+            quick_actions: &actions,
+            confirm_stop_watch: None,
+            theme: &Theme::plain(),
+        }
+        .render(area, &mut buf);
+
+        let text = (0..area.height)
+            .map(|y| {
+                (0..area.width)
+                    .map(|x| buf[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(text.contains("run commands"));
     }
 }

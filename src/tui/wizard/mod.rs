@@ -25,6 +25,7 @@ use crate::bootstrap::runtime_probe::AgentTargetKind;
 pub mod integration;
 pub mod mcp_install;
 pub mod repair;
+pub mod result;
 pub mod setup;
 pub mod uninstall;
 
@@ -39,6 +40,7 @@ pub use repair::{
     run_repair_wizard_loop, ActionRow as RepairActionRow, RepairActionKind, RepairPlan, RepairStep,
     RepairWizardOutcome, RepairWizardState,
 };
+pub use result::run_result_popup_loop;
 pub use setup::{
     run_embeddings_only_wizard_loop, run_explain_only_wizard_loop, run_setup_wizard_loop,
     CloudCredentialSource, EmbeddingSetupChoice, ExplainChoice, ExplainWizardSupport, SetupPlan,

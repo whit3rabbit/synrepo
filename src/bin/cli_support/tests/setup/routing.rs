@@ -84,7 +84,7 @@ fn wizard_plan_execution_registers_project() {
     let repo = tempdir().unwrap();
     fs::write(repo.path().join("README.md"), "setup registry test\n").unwrap();
 
-    execute_setup_plan(
+    let report = execute_setup_plan(
         repo.path(),
         SetupPlan {
             mode: Mode::Auto,
@@ -96,6 +96,16 @@ fn wizard_plan_execution_registers_project() {
     )
     .unwrap();
 
+    assert!(report.lines().contains(&"Runtime: applied".to_string()));
+    assert!(report
+        .lines()
+        .contains(&"Agent integration: skipped".to_string()));
+    assert!(report
+        .lines()
+        .contains(&"Project registry: recorded".to_string()));
+    assert!(report
+        .lines()
+        .contains(&"Status: Setup complete. Repo is ready.".to_string()));
     assert!(synrepo::registry::get(repo.path()).unwrap().is_some());
 }
 

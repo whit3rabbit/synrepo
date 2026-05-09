@@ -1,10 +1,17 @@
+mod codex_warnings;
+mod render;
+mod status;
+
 use std::path::{Path, PathBuf};
 
-use agent_config::{InstallStatus, Scope};
+use agent_config::Scope;
 
-use crate::cli_support::agent_shims::{
-    AgentTool, AutomationTier, SYNREPO_INSTALL_NAME, SYNREPO_INSTALL_OWNER,
-};
+use crate::cli_support::agent_shims::AgentTool;
+
+pub(crate) use render::{render_client_setup_summary, render_detected_client_summary};
+pub(crate) use status::{classify_mcp_registration, classify_shim_freshness};
+
+use status::{mcp_path, shim_path};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ClientOutcome {
@@ -222,189 +229,6 @@ pub(crate) fn entry_after_failure(
     }
 }
 
-pub(crate) fn classify_shim_freshness(
-    repo_root: &Path,
-    tool: AgentTool,
-    scope: &Scope,
-) -> ShimFreshness {
-    let path = shim_path(repo_root, tool, scope);
-    if !path.exists() {
-        return ShimFreshness::Missing;
-    }
-    match std::fs::read_to_string(&path) {
-        Ok(existing) if existing == tool.shim_content() => ShimFreshness::Current,
-        Ok(existing) if existing.contains(tool.shim_spec_body()) => ShimFreshness::Current,
-        Ok(_) | Err(_) => ShimFreshness::Stale,
-    }
-}
-
-pub(crate) fn classify_mcp_registration(
-    repo_root: &Path,
-    tool: AgentTool,
-    scope: &Scope,
-) -> McpRegistration {
-    if matches!(tool.automation_tier(), AutomationTier::ShimOnly) {
-        return McpRegistration::Unsupported;
-    }
-    if mcp_registered(repo_root, tool, scope) {
-        McpRegistration::Registered
-    } else {
-        McpRegistration::Missing
-    }
-}
-
-pub(crate) fn render_detected_client_summary(
-    detected: &[AgentTool],
-    selected: &[AgentTool],
-    skipped: &[AgentTool],
-) -> String {
-    let mut out = String::new();
-    out.push_str("Detected clients: ");
-    out.push_str(&render_tool_list(detected));
-    out.push('\n');
-    out.push_str("Selected clients: ");
-    out.push_str(&render_tool_list(selected));
-    out.push('\n');
-    if !skipped.is_empty() {
-        out.push_str("Skipped clients: ");
-        out.push_str(&render_tool_list(skipped));
-        out.push('\n');
-    }
-    out
-}
-
-pub(crate) fn render_client_setup_summary(
-    repo_root: &Path,
-    kind: &str,
-    entries: &[ClientSetupEntry],
-) -> String {
-    if entries.is_empty() {
-        return String::new();
-    }
-    let mut out = format!("Client {kind} summary:\n");
-    for entry in entries {
-        let outcomes = entry
-            .outcomes
-            .iter()
-            .map(|outcome| outcome.as_str())
-            .collect::<Vec<_>>()
-            .join(", ");
-        out.push_str(&format!(
-            "  - {} [{}]\n",
-            entry.tool.display_name(),
-            outcomes
-        ));
-        out.push_str(&format!(
-            "    shim: {} ({})\n",
-            entry.shim_path.render(repo_root),
-            entry.shim.as_str()
-        ));
-        match &entry.mcp_path {
-            Some(path) => out.push_str(&format!(
-                "    mcp: {} ({})\n",
-                path.render(repo_root),
-                entry.mcp.as_str()
-            )),
-            None => out.push_str(&format!("    mcp: {}\n", entry.mcp.as_str())),
-        }
-        if entry.shim == ShimFreshness::Stale {
-            out.push_str(&format!(
-                "    next: run `synrepo agent-setup {} --regen` to refresh the shim\n",
-                entry.tool.canonical_name()
-            ));
-        }
-        if entry.tool == AgentTool::Codex {
-            for warning in codex_global_skill_warnings() {
-                out.push_str(&format!(
-                    "    warning: global Codex skill {} {}.\n",
-                    warning.path.display(),
-                    codex_skill_warning_reason(&warning)
-                ));
-                out.push_str(
-                    "    next: run `synrepo setup codex --force` for global setup, or `synrepo agent-setup codex --regen` for a project-local refresh\n",
-                );
-            }
-        }
-        if let Some(error) = &entry.error {
-            out.push_str(&format!("    error: {error}\n"));
-        }
-    }
-    out
-}
-
-pub(crate) fn codex_global_skill_warnings() -> Vec<CodexSkillWarning> {
-    let mut paths = Vec::new();
-    if let Some(path) = AgentTool::Codex.resolved_shim_output_path(&Scope::Global) {
-        paths.push(path);
-    }
-    if let Some(home) = std::env::var_os("HOME") {
-        paths.push(
-            PathBuf::from(home)
-                .join(".agents")
-                .join("skills")
-                .join("synrepo")
-                .join("SKILL.md"),
-        );
-    }
-    paths.sort();
-    paths.dedup();
-    paths
-        .into_iter()
-        .filter_map(codex_skill_warning_for_path)
-        .collect()
-}
-
-fn codex_skill_warning_for_path(path: PathBuf) -> Option<CodexSkillWarning> {
-    let existing = std::fs::read_to_string(&path).ok()?;
-    codex_skill_warning_for_content(&existing).map(|(content_differs, duplicate_frontmatter)| {
-        CodexSkillWarning {
-            path,
-            content_differs,
-            duplicate_frontmatter,
-        }
-    })
-}
-
-fn codex_skill_warning_for_content(content: &str) -> Option<(bool, bool)> {
-    let content_differs = content != AgentTool::Codex.shim_content();
-    let duplicate_frontmatter = has_duplicate_frontmatter(content);
-    if content_differs || duplicate_frontmatter {
-        Some((content_differs, duplicate_frontmatter))
-    } else {
-        None
-    }
-}
-
-fn has_duplicate_frontmatter(content: &str) -> bool {
-    content
-        .lines()
-        .filter(|line| line.trim() == "---")
-        .take(4)
-        .count()
-        >= 4
-}
-
-fn codex_skill_warning_reason(warning: &CodexSkillWarning) -> &'static str {
-    match (warning.content_differs, warning.duplicate_frontmatter) {
-        (true, true) => "differs from the generated shim and has duplicate frontmatter",
-        (true, false) => "differs from the generated shim",
-        (false, true) => "has duplicate frontmatter",
-        (false, false) => "needs review",
-    }
-}
-
-fn render_tool_list(tools: &[AgentTool]) -> String {
-    if tools.is_empty() {
-        "none".to_string()
-    } else {
-        tools
-            .iter()
-            .map(|tool| tool.canonical_name())
-            .collect::<Vec<_>>()
-            .join(", ")
-    }
-}
-
 fn push_if(outcomes: &mut Vec<ClientOutcome>, condition: bool, outcome: ClientOutcome) {
     if condition {
         outcomes.push(outcome);
@@ -423,38 +247,9 @@ fn dedup_outcomes(outcomes: &mut Vec<ClientOutcome>) {
     });
 }
 
-fn shim_path(repo_root: &Path, tool: AgentTool, scope: &Scope) -> PathBuf {
-    tool.resolved_shim_output_path(scope)
-        .unwrap_or_else(|| tool.output_path(repo_root))
-}
-
-fn mcp_path(repo_root: &Path, tool: AgentTool, scope: &Scope) -> Option<PathBuf> {
-    tool.resolved_mcp_config_path(scope).or_else(|| {
-        tool.mcp_config_relative_path()
-            .map(|rel| repo_root.join(rel))
-    })
-}
-
-fn mcp_registered(repo_root: &Path, tool: AgentTool, scope: &Scope) -> bool {
-    if let Some(installer) = tool.agent_config_id().and_then(agent_config::mcp_by_id) {
-        return installer
-            .mcp_status(scope, SYNREPO_INSTALL_NAME, SYNREPO_INSTALL_OWNER)
-            .map(|report| {
-                matches!(report.status, InstallStatus::InstalledOwned { ref owner } if owner == SYNREPO_INSTALL_OWNER)
-            })
-            .unwrap_or(false);
-    }
-    mcp_path(repo_root, tool, scope)
-        .as_deref()
-        .map(crate::cli_support::commands::mcp_config_has_synrepo)
-        .transpose()
-        .ok()
-        .flatten()
-        .unwrap_or(false)
-}
-
 #[cfg(test)]
 mod tests {
+    use super::codex_warnings::codex_skill_warning_for_content;
     use super::*;
 
     #[test]

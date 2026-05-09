@@ -12,8 +12,9 @@ pub(super) fn draw_help(frame: &mut ratatui::Frame, theme: Theme) {
         .borders(Borders::ALL)
         .border_style(theme.border_style());
     let lines = vec![
-        Line::from("[p] projects    [?] help    [:] commands    [q] quit"),
+        Line::from("[p] projects    [?] help    [:] command launcher    [q] quit"),
         Line::from("[Tab/Shift-Tab/Left/Right/1-8] tabs  [Esc] Live/cancel  [r] refresh"),
+        Line::from("Actions [4]: run dashboard commands and review next actions"),
         Line::from("Explain: r refresh, a all stale, c changed, f folders, d/D/x/X docs"),
         Line::from(
             "Project picker: filter, Enter switch, r rename, a add cwd, d detach confirm, w watch",

@@ -1,4 +1,4 @@
-//! Active-project MCP registration status for the dashboard MCP tab.
+//! Active-project MCP registration status for the dashboard Integrations tab.
 
 use std::path::{Path, PathBuf};
 

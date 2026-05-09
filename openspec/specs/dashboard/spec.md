@@ -347,23 +347,23 @@ The dashboard SHALL provide a project picker opened by `[p]`. The picker SHALL l
 - **THEN** the registry entry is removed
 - **AND** repository-local state is left untouched
 
-### Requirement: Provide persistent MCP and Explore tabs
-The dashboard SHALL include dedicated MCP and Explore tabs after Actions while preserving the existing first five tab numbers. The MCP tab SHALL report active-project MCP enablement across known agent targets, including scope, source trigger, and config path. The Explore tab SHALL list registry-managed projects only and allow switching the active project.
+### Requirement: Provide persistent Integrations and Repos tabs
+The dashboard SHALL order tabs as `[1] Repos`, `[2] Live`, `[3] Health`, `[4] Actions`, `[5] Explain`, `[6] Integrations`, `[7] Suggestion`, and `[8] Trust`. The Integrations tab SHALL report active-project MCP enablement across known agent targets, including scope, source trigger, and config path. The Repos tab SHALL list registry-managed projects only and allow switching the active project.
 
-#### Scenario: MCP tab reports active project registration
-- **WHEN** the dashboard renders the MCP tab for an active project
+#### Scenario: Integrations tab reports active project registration
+- **WHEN** the dashboard renders the Integrations tab for an active project
 - **THEN** each row shows agent, status, scope, trigger/source, and config path when known
 - **AND** the dashboard does not launch or host the MCP stdio server
 
-#### Scenario: MCP tab installs repo-local MCP
-- **WHEN** the user presses `i` on the MCP tab and confirms a target
+#### Scenario: Integrations tab installs repo-local MCP
+- **WHEN** the user presses `i` on the Integrations tab and confirms a target
 - **THEN** synrepo writes or preserves that target's project skill or instruction through agent-config
 - **AND** synrepo registers that target's MCP config in project scope through agent-config
 - **AND** the registered server command is `synrepo mcp --repo .`
-- **AND** pressing `i` outside the MCP tab still launches the generic integration wizard
+- **AND** pressing `i` outside the Integrations tab still launches the generic integration wizard
 
-#### Scenario: Explore tab switches projects
-- **WHEN** the dashboard renders the Explore tab
+#### Scenario: Repos tab switches projects
+- **WHEN** the dashboard renders the Repos tab
 - **THEN** rows come from the managed-project registry with health, watch, lock, integration, and path
 - **AND** Enter switches to the selected project without scanning unrelated filesystem paths
 

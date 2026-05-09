@@ -77,7 +77,7 @@ impl AppState {
                 return true;
             }
             KeyCode::Char('4') => {
-                self.set_tab(ActiveTab::Trust);
+                self.set_tab(ActiveTab::Actions);
                 return true;
             }
             KeyCode::Char('5') => {
@@ -85,15 +85,15 @@ impl AppState {
                 return true;
             }
             KeyCode::Char('6') => {
-                self.set_tab(ActiveTab::Actions);
-                return true;
-            }
-            KeyCode::Char('7') => {
                 self.set_tab(ActiveTab::Mcp);
                 return true;
             }
-            KeyCode::Char('8') => {
+            KeyCode::Char('7') => {
                 self.set_tab(ActiveTab::Suggestion);
+                return true;
+            }
+            KeyCode::Char('8') => {
+                self.set_tab(ActiveTab::Trust);
                 return true;
             }
             _ => {}
@@ -242,14 +242,12 @@ impl AppState {
             }
             KeyCode::Char('?') => {
                 self.set_tab(ActiveTab::Actions);
-                self.set_toast("Actions tab shows the available keymap");
+                self.set_toast("Actions tab runs dashboard commands");
                 true
             }
             KeyCode::Char(':') => {
                 self.set_tab(ActiveTab::Actions);
-                self.set_toast(
-                    "Use Actions quick actions; global dashboard has searchable commands",
-                );
+                self.set_toast("Command palette launches the dashboard commands shown on Actions");
                 true
             }
             KeyCode::Char('i') => {

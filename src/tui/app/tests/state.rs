@@ -108,7 +108,7 @@ fn handle_key_switches_tabs() {
     state.handle_key(KeyCode::Char('3'), KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Health);
     state.handle_key(KeyCode::Char('4'), KeyModifiers::NONE);
-    assert_eq!(state.active_tab, ActiveTab::Trust);
+    assert_eq!(state.active_tab, ActiveTab::Actions);
     state.handle_key(KeyCode::Char('5'), KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Explain);
     assert!(
@@ -116,11 +116,11 @@ fn handle_key_switches_tabs() {
         "entering the Explain tab should load the inline preview"
     );
     state.handle_key(KeyCode::Char('6'), KeyModifiers::NONE);
-    assert_eq!(state.active_tab, ActiveTab::Actions);
-    state.handle_key(KeyCode::Char('7'), KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Mcp);
-    state.handle_key(KeyCode::Char('8'), KeyModifiers::NONE);
+    state.handle_key(KeyCode::Char('7'), KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Suggestion);
+    state.handle_key(KeyCode::Char('8'), KeyModifiers::NONE);
+    assert_eq!(state.active_tab, ActiveTab::Trust);
     state.handle_key(KeyCode::Tab, KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Repos);
     state.handle_key(KeyCode::Tab, KeyModifiers::NONE);
@@ -128,15 +128,15 @@ fn handle_key_switches_tabs() {
     state.handle_key(KeyCode::Tab, KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Health);
     state.handle_key(KeyCode::Tab, KeyModifiers::NONE);
-    assert_eq!(state.active_tab, ActiveTab::Trust);
+    assert_eq!(state.active_tab, ActiveTab::Actions);
     state.handle_key(KeyCode::Tab, KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Explain);
-    state.handle_key(KeyCode::Tab, KeyModifiers::NONE);
-    assert_eq!(state.active_tab, ActiveTab::Actions);
     state.handle_key(KeyCode::Tab, KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Mcp);
     state.handle_key(KeyCode::Tab, KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Suggestion);
+    state.handle_key(KeyCode::Tab, KeyModifiers::NONE);
+    assert_eq!(state.active_tab, ActiveTab::Trust);
     state.handle_key(KeyCode::Char('p'), KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Repos);
 }
@@ -148,7 +148,7 @@ fn arrow_keys_cycle_tabs_in_both_directions() {
     state.handle_key(KeyCode::Right, KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Health);
     state.handle_key(KeyCode::Right, KeyModifiers::NONE);
-    assert_eq!(state.active_tab, ActiveTab::Trust);
+    assert_eq!(state.active_tab, ActiveTab::Actions);
     state.handle_key(KeyCode::Left, KeyModifiers::NONE);
     assert_eq!(state.active_tab, ActiveTab::Health);
     state.handle_key(KeyCode::Left, KeyModifiers::NONE);
@@ -158,9 +158,9 @@ fn arrow_keys_cycle_tabs_in_both_directions() {
     assert_eq!(state.active_tab, ActiveTab::Repos);
     // BackTab (Shift-Tab) shares the backward path.
     state.handle_key(KeyCode::BackTab, KeyModifiers::NONE);
-    assert_eq!(state.active_tab, ActiveTab::Suggestion);
+    assert_eq!(state.active_tab, ActiveTab::Trust);
     state.handle_key(KeyCode::Left, KeyModifiers::NONE);
-    assert_eq!(state.active_tab, ActiveTab::Mcp);
+    assert_eq!(state.active_tab, ActiveTab::Suggestion);
 }
 
 #[test]

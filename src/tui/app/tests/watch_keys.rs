@@ -112,7 +112,7 @@ fn quick_confirm_tab_switches_and_clears_modal() {
     assert!(state.handle_key(KeyCode::Tab, KeyModifiers::NONE));
 
     assert_eq!(state.pending_quick_confirm, None);
-    assert_eq!(state.active_tab, ActiveTab::Trust);
+    assert_eq!(state.active_tab, ActiveTab::Actions);
 }
 
 #[test]

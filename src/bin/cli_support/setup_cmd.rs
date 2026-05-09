@@ -11,6 +11,7 @@ use synrepo::tui::{
 };
 
 use super::agent_shims::{registry as shim_registry, AgentTool, AutomationTier};
+use super::apply_report::{show_apply_report_popup, ApplyReport, ApplyReportError};
 use super::commands::{
     resolve_setup_scope, step_apply_explain, step_apply_integration, step_backup_mcp_config,
     step_ensure_ready, step_init_with_config,
@@ -72,7 +73,13 @@ pub(crate) fn init_entry_mode(
 pub(crate) fn run_wizard_and_apply(repo_root: &Path, opts: TuiOptions) -> anyhow::Result<()> {
     match run_setup_wizard(repo_root, opts)? {
         SetupWizardOutcome::Completed { plan } => {
-            execute_setup_plan(repo_root, plan)?;
+            match execute_setup_plan(repo_root, plan) {
+                Ok(report) => show_apply_report_popup(opts, &report)?,
+                Err(error) => {
+                    show_apply_report_popup(opts, error.report())?;
+                    return Err(error.into_anyhow());
+                }
+            }
             open_dashboard_after_wizard(repo_root, opts)
         }
         SetupWizardOutcome::Cancelled => {
@@ -88,36 +95,65 @@ pub(crate) fn run_wizard_and_apply(repo_root: &Path, opts: TuiOptions) -> anyhow
 
 /// Execute a completed [`SetupPlan`] after the TUI alt-screen has been torn
 /// down. All file-system writes happen here, not inside the library.
-pub(crate) fn execute_setup_plan(repo_root: &Path, plan: SetupPlan) -> anyhow::Result<()> {
+pub(crate) fn execute_setup_plan(
+    repo_root: &Path,
+    plan: SetupPlan,
+) -> Result<ApplyReport, ApplyReportError> {
+    let mut report = ApplyReport::new("setup complete");
     println!("synrepo setup: applying plan.");
-    step_init_with_config(repo_root, Some(plan.mode), false, false, |config| {
-        seed_optional_setup_config(config, &plan);
+    report.record_step("Runtime", || {
+        step_init_with_config(repo_root, Some(plan.mode), false, false, |config| {
+            seed_optional_setup_config(config, &plan);
+        })
     })?;
+    report.add_line(format!("Mode: {:?}", plan.mode));
+    match plan.embedding_setup {
+        EmbeddingSetupChoice::Disabled => report.add_line("Embeddings: disabled"),
+        EmbeddingSetupChoice::Onnx => report.add_line("Embeddings: ONNX enabled"),
+        EmbeddingSetupChoice::Ollama => report.add_line("Embeddings: Ollama enabled"),
+    }
     if let Some(target) = plan.target {
         let tool = AgentTool::from_target_kind(target);
         let scope = resolve_setup_scope(repo_root, tool, false);
         let backup = if matches!(scope, agent_config::Scope::Local(_)) {
-            step_backup_mcp_config(repo_root, tool, &scope)?
+            report.record_value("MCP backup", || {
+                step_backup_mcp_config(repo_root, tool, &scope)
+            })?
         } else {
             None
         };
-        step_apply_integration(repo_root, tool, false, &scope)?;
+        report.add_backup(backup.as_deref());
+        report.record_step("Agent integration", || {
+            step_apply_integration(repo_root, tool, false, &scope)
+        })?;
         let wrote_mcp = matches!(tool.automation_tier(), AutomationTier::Automated);
         shim_registry::record_install_best_effort(repo_root, tool, &scope, wrote_mcp, backup);
+    } else {
+        report.add_line("Agent integration: skipped");
     }
     if plan.explain.is_some() {
-        step_apply_explain(repo_root, plan.explain.as_ref())?;
+        report.record_step("Explain", || {
+            step_apply_explain(repo_root, plan.explain.as_ref())
+        })?;
         print_explain_discovery_hint();
+    } else {
+        report.add_line("Explain: skipped");
     }
     if plan.reconcile_after {
         // Setup promises an operationally ready repo, not just a populated
         // graph. The shared helper runs the first reconcile only when the
         // reconcile-state file is still missing.
-        step_ensure_ready(repo_root)?;
+        report.record_step("Ready check", || step_ensure_ready(repo_root))?;
+    } else {
+        report.add_line("Ready check: skipped");
     }
-    synrepo::registry::record_project(repo_root)?;
+    report.record_value("Project registry", || {
+        synrepo::registry::record_project(repo_root)
+    })?;
+    report.add_line("Project registry: recorded");
     println!("Setup complete. Repo is ready.");
-    Ok(())
+    report.add_success("Setup complete. Repo is ready.");
+    Ok(report)
 }
 
 fn seed_optional_setup_config(config: &mut synrepo::config::Config, plan: &SetupPlan) {

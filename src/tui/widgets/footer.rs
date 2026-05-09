@@ -46,7 +46,7 @@ impl Widget for FooterWidget<'_> {
                 Span::styled("[p]", self.theme.agent_style()),
                 Span::styled("  help ", self.theme.muted_style()),
                 Span::styled("[?]", self.theme.agent_style()),
-                Span::styled("  commands ", self.theme.muted_style()),
+                Span::styled("  run ", self.theme.muted_style()),
                 Span::styled("[:]", self.theme.agent_style()),
                 Span::styled("  quit ", self.theme.muted_style()),
                 Span::styled("[q]", self.theme.agent_style()),
@@ -103,7 +103,7 @@ impl FooterWidget<'_> {
             HintGroup {
                 priority: 0,
                 spans: vec![
-                    Span::styled("  cmds ", self.theme.muted_style()),
+                    Span::styled("  run ", self.theme.muted_style()),
                     Span::styled("[:]", self.theme.agent_style()),
                 ],
             },

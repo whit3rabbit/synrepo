@@ -8,6 +8,10 @@ use crate::cli_support::agent_shims::{AgentTool, SYNREPO_INSTALL_NAME, SYNREPO_I
 use crate::cli_support::commands::{remove_apply_plan, remove_build_plan, RemoveAction};
 use crate::cli_support::repair_cmd::{execute_integration_plan, execute_project_mcp_install_plan};
 
+fn has_line(report: &crate::cli_support::apply_report::ApplyReport, expected: &str) -> bool {
+    report.lines().iter().any(|line| line == expected)
+}
+
 fn isolated_home() -> (
     tempfile::TempDir,
     synrepo::config::test_home::HomeEnvGuard,
@@ -27,13 +31,19 @@ fn claude_dashboard_mcp_install_pairs_repo_local_mcp_with_skill() {
     let repo = tempdir().unwrap();
     let repo_root = crate::cli_support::tests::support::canonicalize_no_verbatim(repo.path());
 
-    execute_project_mcp_install_plan(
+    let report = execute_project_mcp_install_plan(
         &repo_root,
         McpInstallPlan {
             target: "claude".to_string(),
         },
     )
     .unwrap();
+    assert!(has_line(&report, "Shim: applied"));
+    assert!(report.lines().iter().any(|line| line.starts_with("MCP: ")));
+    assert!(report
+        .lines()
+        .iter()
+        .any(|line| line.starts_with("Backup: ")));
 
     let parsed: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(repo_root.join(".mcp.json")).unwrap()).unwrap();
@@ -66,7 +76,7 @@ fn integration_plan_mcp_only_still_writes_skill() {
     let repo = tempdir().unwrap();
     let repo_root = crate::cli_support::tests::support::canonicalize_no_verbatim(repo.path());
 
-    execute_integration_plan(
+    let report = execute_integration_plan(
         &repo_root,
         IntegrationPlan {
             target: AgentTargetKind::Claude,
@@ -77,6 +87,9 @@ fn integration_plan_mcp_only_still_writes_skill() {
         },
     )
     .unwrap();
+    assert!(has_line(&report, "Shim: applied"));
+    assert!(report.lines().iter().any(|line| line.starts_with("MCP: ")));
+    assert!(has_line(&report, "Hooks: unchanged"));
 
     assert!(
         home_root
@@ -90,6 +103,48 @@ fn integration_plan_mcp_only_still_writes_skill() {
     let parsed: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(home_root.join(".claude.json")).unwrap()).unwrap();
     assert_eq!(parsed["mcpServers"]["synrepo"]["command"], "synrepo");
+}
+
+#[test]
+fn integration_plan_reports_agent_hooks_applied_and_current() {
+    let (_home, _guard, _lock) = isolated_home();
+    let repo = tempdir().unwrap();
+    let repo_root = crate::cli_support::tests::support::canonicalize_no_verbatim(repo.path());
+    let plan = IntegrationPlan {
+        target: AgentTargetKind::Claude,
+        write_shim: false,
+        register_mcp: false,
+        overwrite_shim: false,
+        install_agent_hooks: true,
+    };
+
+    let first = execute_integration_plan(&repo_root, plan.clone()).unwrap();
+    assert!(has_line(&first, "Shim: unchanged"));
+    assert!(has_line(&first, "MCP: skipped"));
+    assert!(has_line(&first, "Hooks: applied"));
+
+    let second = execute_integration_plan(&repo_root, plan).unwrap();
+    assert!(has_line(&second, "Hooks: already current"));
+}
+
+#[test]
+fn project_mcp_install_reports_current_second_run() {
+    let (_home, _guard, _lock) = isolated_home();
+    let repo = tempdir().unwrap();
+    let repo_root = crate::cli_support::tests::support::canonicalize_no_verbatim(repo.path());
+    let plan = McpInstallPlan {
+        target: "claude".to_string(),
+    };
+
+    execute_project_mcp_install_plan(&repo_root, plan.clone()).unwrap();
+    let second = execute_project_mcp_install_plan(&repo_root, plan).unwrap();
+
+    assert!(has_line(&second, "Shim: already current"));
+    assert!(has_line(&second, "MCP: already current"));
+    assert!(second
+        .lines()
+        .iter()
+        .any(|line| line.starts_with("Backup: ")));
 }
 
 #[test]

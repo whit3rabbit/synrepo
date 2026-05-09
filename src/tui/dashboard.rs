@@ -265,24 +265,6 @@ fn draw_dashboard(frame: &mut ratatui::Frame, state: &mut AppState) {
             };
             frame.render_widget(health, content_area);
         }
-        ActiveTab::Trust => {
-            let trust_vm = build_trust_vm(&state.snapshot);
-            let trust = TrustWidget {
-                vm: &trust_vm,
-                theme: &state.theme,
-            };
-            frame.render_widget(trust, content_area);
-        }
-        ActiveTab::Explain => {
-            let explain = ExplainTabWidget {
-                snapshot: &state.snapshot,
-                picker: state.picker.as_ref(),
-                confirm_stop_watch: state.confirm_stop_watch.as_ref(),
-                preview_panel: state.explain_preview.as_ref(),
-                theme: &state.theme,
-            };
-            frame.render_widget(explain, content_area);
-        }
         ActiveTab::Actions => {
             let next_actions = build_next_actions_with_context(
                 &state.snapshot,
@@ -303,6 +285,16 @@ fn draw_dashboard(frame: &mut ratatui::Frame, state: &mut AppState) {
                 theme: &state.theme,
             };
             frame.render_widget(actions, content_area);
+        }
+        ActiveTab::Explain => {
+            let explain = ExplainTabWidget {
+                snapshot: &state.snapshot,
+                picker: state.picker.as_ref(),
+                confirm_stop_watch: state.confirm_stop_watch.as_ref(),
+                preview_panel: state.explain_preview.as_ref(),
+                theme: &state.theme,
+            };
+            frame.render_widget(explain, content_area);
         }
         ActiveTab::Mcp => {
             let integrations = IntegrationsTabWidget {
@@ -327,6 +319,14 @@ fn draw_dashboard(frame: &mut ratatui::Frame, state: &mut AppState) {
                 theme: &state.theme,
             };
             frame.render_widget(explore, content_area);
+        }
+        ActiveTab::Trust => {
+            let trust_vm = build_trust_vm(&state.snapshot);
+            let trust = TrustWidget {
+                vm: &trust_vm,
+                theme: &state.theme,
+            };
+            frame.render_widget(trust, content_area);
         }
     }
 

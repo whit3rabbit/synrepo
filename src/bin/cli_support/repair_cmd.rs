@@ -14,6 +14,7 @@ use synrepo::tui::{
 };
 
 use super::agent_shims::{registry as shim_registry, AgentTool, AutomationTier};
+use super::apply_report::{show_apply_report_popup, ApplyReport, ApplyReportError};
 use super::commands::{
     embeddings_build_human, reconcile, resolve_setup_scope, step_apply_integration,
     step_backup_mcp_config, step_init, step_install_agent_hooks, step_register_mcp,
@@ -49,7 +50,13 @@ pub(crate) fn run_dashboard_with_sub_wizards(
                 };
                 match run_integration_wizard(&current_root, integration.clone(), tui_opts)? {
                     IntegrationWizardOutcome::Completed { plan } => {
-                        execute_integration_plan(&current_root, plan)?;
+                        match execute_integration_plan(&current_root, plan) {
+                            Ok(report) => show_apply_report_popup(tui_opts, &report)?,
+                            Err(error) => {
+                                show_apply_report_popup(tui_opts, error.report())?;
+                                return Err(error.into_anyhow());
+                            }
+                        }
                     }
                     IntegrationWizardOutcome::Cancelled => {
                         println!("integration wizard cancelled; no changes applied.");
@@ -69,7 +76,13 @@ pub(crate) fn run_dashboard_with_sub_wizards(
                 };
                 match run_mcp_install_wizard(&current_root, tui_opts)? {
                     McpInstallWizardOutcome::Completed { plan } => {
-                        execute_project_mcp_install_plan(&current_root, plan)?;
+                        match execute_project_mcp_install_plan(&current_root, plan) {
+                            Ok(report) => show_apply_report_popup(tui_opts, &report)?,
+                            Err(error) => {
+                                show_apply_report_popup(tui_opts, error.report())?;
+                                return Err(error.into_anyhow());
+                            }
+                        }
                     }
                     McpInstallWizardOutcome::Cancelled => {
                         println!("project integration install cancelled; no changes applied.");
@@ -207,30 +220,47 @@ pub(crate) fn execute_repair_plan(repo_root: &Path, plan: RepairPlan) -> anyhow:
 pub(crate) fn execute_integration_plan(
     repo_root: &Path,
     plan: IntegrationPlan,
-) -> anyhow::Result<()> {
+) -> Result<ApplyReport, ApplyReportError> {
+    let mut report = ApplyReport::new("integration complete");
     let tool = AgentTool::from_target_kind(plan.target);
     let scope = resolve_setup_scope(repo_root, tool, false);
     if plan.write_shim {
-        step_write_shim(repo_root, tool, &scope, plan.overwrite_shim)?;
+        report.record_step("Shim", || {
+            step_write_shim(repo_root, tool, &scope, plan.overwrite_shim)
+        })?;
+    } else if plan.register_mcp {
+        report.add_line("Shim: deferred until MCP registration");
+    } else {
+        report.add_line("Shim: unchanged");
     }
     let mut backup: Option<String> = None;
     if plan.register_mcp {
         if !plan.write_shim {
-            step_write_shim(repo_root, tool, &scope, plan.overwrite_shim)?;
+            report.record_step("Shim", || {
+                step_write_shim(repo_root, tool, &scope, plan.overwrite_shim)
+            })?;
         }
         if matches!(scope, agent_config::Scope::Local(_)) {
-            backup = step_backup_mcp_config(repo_root, tool, &scope)?;
+            backup = report.record_value("MCP backup", || {
+                step_backup_mcp_config(repo_root, tool, &scope)
+            })?;
+            report.add_backup(backup.as_deref());
         }
-        step_register_mcp(repo_root, tool, &scope)?;
+        report.record_step("MCP", || step_register_mcp(repo_root, tool, &scope))?;
+    } else {
+        report.add_line("MCP: skipped");
     }
     if plan.install_agent_hooks {
-        step_install_agent_hooks(repo_root, tool)?;
+        report.record_step("Hooks", || step_install_agent_hooks(repo_root, tool))?;
+    } else {
+        report.add_line("Hooks: unchanged");
     }
     let wrote_mcp =
         plan.register_mcp && matches!(tool.automation_tier(), AutomationTier::Automated);
     shim_registry::record_install_best_effort(repo_root, tool, &scope, wrote_mcp, backup);
     println!("Integration complete.");
-    Ok(())
+    report.add_success("Integration complete.");
+    Ok(report)
 }
 
 /// Execute a completed project integration install plan from the dashboard
@@ -240,9 +270,14 @@ pub(crate) fn execute_integration_plan(
 pub(crate) fn execute_project_mcp_install_plan(
     repo_root: &Path,
     plan: McpInstallPlan,
-) -> anyhow::Result<()> {
-    let tool = AgentTool::from_agent_config_id(&plan.target)
-        .ok_or_else(|| anyhow::anyhow!("unsupported agent-config target: {}", plan.target))?;
+) -> Result<ApplyReport, ApplyReportError> {
+    let mut report = ApplyReport::new("project integration complete");
+    let Some(tool) = AgentTool::from_agent_config_id(&plan.target) else {
+        return Err(report.failure(
+            "Target",
+            anyhow::anyhow!("unsupported agent-config target: {}", plan.target),
+        ));
+    };
     let scope = agent_config::Scope::Local(repo_root.to_path_buf());
     println!(
         "Installing project-local synrepo integration for {}...",
@@ -252,16 +287,26 @@ pub(crate) fn execute_project_mcp_install_plan(
         "  Hooks: unchanged; use `synrepo setup {} --agent-hooks` to add them.",
         tool.canonical_name()
     );
-    step_write_shim(repo_root, tool, &scope, false)?;
-    let backup = step_backup_mcp_config(repo_root, tool, &scope)?;
-    match step_register_mcp(repo_root, tool, &scope)? {
-        StepOutcome::NotAutomated => anyhow::bail!(
-            "{} does not support automated repo-local MCP registration",
-            tool.display_name()
-        ),
+    report.record_step("Shim", || step_write_shim(repo_root, tool, &scope, false))?;
+    let backup = report.record_value("MCP backup", || {
+        step_backup_mcp_config(repo_root, tool, &scope)
+    })?;
+    report.add_backup(backup.as_deref());
+    match report.record_step("MCP", || step_register_mcp(repo_root, tool, &scope))? {
+        StepOutcome::NotAutomated => {
+            return Err(report.failure(
+                "MCP",
+                anyhow::anyhow!(
+                    "{} does not support automated repo-local MCP registration",
+                    tool.display_name()
+                ),
+            ));
+        }
         StepOutcome::Applied | StepOutcome::AlreadyCurrent | StepOutcome::Updated => {}
     }
+    report.add_line("Hooks: unchanged");
     shim_registry::record_install_best_effort(repo_root, tool, &scope, true, backup);
     println!("Project integration install complete.");
-    Ok(())
+    report.add_success("Project integration install complete.");
+    Ok(report)
 }

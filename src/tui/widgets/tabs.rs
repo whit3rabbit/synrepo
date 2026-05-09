@@ -28,11 +28,11 @@ impl Widget for DashboardTabsWidget<'_> {
             ("1", "Repos", ActiveTab::Repos),
             ("2", "Live", ActiveTab::Live),
             ("3", "Health", ActiveTab::Health),
-            ("4", "Trust", ActiveTab::Trust),
+            ("4", "Actions", ActiveTab::Actions),
             ("5", "Explain", ActiveTab::Explain),
-            ("6", "Actions", ActiveTab::Actions),
-            ("7", "Integrations", ActiveTab::Mcp),
-            ("8", "Suggestion", ActiveTab::Suggestion),
+            ("6", "Integrations", ActiveTab::Mcp),
+            ("7", "Suggestion", ActiveTab::Suggestion),
+            ("8", "Trust", ActiveTab::Trust),
         ]
         .into_iter()
         .map(|(key, label, _)| {
@@ -48,11 +48,11 @@ impl Widget for DashboardTabsWidget<'_> {
                 ActiveTab::Repos => 0,
                 ActiveTab::Live => 1,
                 ActiveTab::Health => 2,
-                ActiveTab::Trust => 3,
+                ActiveTab::Actions => 3,
                 ActiveTab::Explain => 4,
-                ActiveTab::Actions => 5,
-                ActiveTab::Mcp => 6,
-                ActiveTab::Suggestion => 7,
+                ActiveTab::Mcp => 5,
+                ActiveTab::Suggestion => 6,
+                ActiveTab::Trust => 7,
             })
             .style(self.theme.base_style())
             .highlight_style(self.theme.selected_style())
@@ -85,6 +85,8 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n");
-        assert!(text.contains("[7] Integrations"));
+        assert!(text.contains("[4] Actions"));
+        assert!(text.contains("[6] Integrations"));
+        assert!(text.contains("[8] Trust"));
     }
 }
