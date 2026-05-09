@@ -22,6 +22,8 @@ cargo install --path . --features semantic-triage
 
 This pulls in the `ort` (ONNX Runtime), `tokenizers`, and `ndarray` dependencies.
 
+Official release binaries are base builds without `semantic-triage`. Use a source or Cargo install with the feature enabled when embeddings are required.
+
 ## Gates
 
 Embeddings only participate when all gates are open:
