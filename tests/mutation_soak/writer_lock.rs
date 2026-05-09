@@ -81,7 +81,7 @@ fn mutation_commands_fail_fast_under_writer_lock_and_recover_after_release() {
     let _ = run_ok(repo_path, &["sync"]);
 
     let export = run_ok(repo_path, &["export"]);
-    assert!(export.contains("Export complete"));
+    assert!(export.contains("Context export complete"));
     assert!(
         manifest.exists(),
         "export should write a manifest after recovery"
