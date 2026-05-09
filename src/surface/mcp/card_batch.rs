@@ -6,7 +6,7 @@ use super::{
     card_render::render_card_target,
     cards::CardParams,
     helpers::{parse_budget, render_result},
-    limits::{MAX_CARD_TARGETS, MAX_DEEP_CARD_TARGETS},
+    limits::{DEFAULT_RESPONSE_TOKEN_CAP, MAX_CARD_TARGETS, MAX_DEEP_CARD_TARGETS},
     response_budget::estimate_json_tokens,
     SynrepoState,
 };
@@ -127,7 +127,8 @@ pub fn handle_card_params(state: &SynrepoState, params: CardParams) -> String {
             })
             .map_err(|err| anyhow::anyhow!(err))?;
         let original_count = rendered.len();
-        let (cards, omitted, batch_truncated) = apply_batch_cap(rendered, params.budget_tokens);
+        let batch_budget_tokens = params.budget_tokens.or(Some(DEFAULT_RESPONSE_TOKEN_CAP));
+        let (cards, omitted, batch_truncated) = apply_batch_cap(rendered, batch_budget_tokens);
         let card_count = cards.len();
         let batch_token_estimate = estimate_json_tokens(&json!({ "cards": &cards }));
         Ok(json!({
@@ -213,10 +214,18 @@ mod tests {
         let dir = tempdir().unwrap();
         let repo = dir.path();
         fs::create_dir_all(repo.join("src")).unwrap();
+        fs::create_dir_all(repo.join("notes")).unwrap();
         for idx in 0..4 {
             fs::write(
                 repo.join(format!("src/file{idx}.rs")),
                 format!("pub fn unique_card_batch_{idx}() {{}}\n"),
+            )
+            .unwrap();
+        }
+        for idx in 0..10 {
+            fs::write(
+                repo.join(format!("notes/file{idx}.txt")),
+                format!("# Note {idx}\n{}\n", "alpha ".repeat(1000)),
             )
             .unwrap();
         }
@@ -272,6 +281,57 @@ mod tests {
 
         assert_eq!(value["cards"].as_array().unwrap().len(), 1);
         assert_eq!(value["omitted"][0]["target"], "src/file1.rs");
+        assert_eq!(value["context_accounting"]["truncation_applied"], true);
+    }
+
+    #[test]
+    fn directory_target_routes_to_module_card() {
+        let (_dir, state) = make_state();
+        let mut request = params(Vec::new(), "tiny", None);
+        request.target = Some("src".to_string());
+        let value: serde_json::Value =
+            serde_json::from_str(&handle_card_params(&state, request)).unwrap();
+
+        assert_eq!(value["path"], "src/");
+        assert_eq!(value["source_store"], "graph");
+        assert!(value["files"].as_array().is_some_and(|files| files.len() == 4));
+    }
+
+    #[test]
+    fn existing_non_graph_text_file_returns_filesystem_fallback() {
+        let (_dir, state) = make_state();
+        let mut request = params(Vec::new(), "tiny", None);
+        request.target = Some("notes/file0.txt".to_string());
+        let value: serde_json::Value =
+            serde_json::from_str(&handle_card_params(&state, request)).unwrap();
+
+        assert_eq!(value["card_type"], "filesystem_fallback");
+        assert_eq!(value["graph_backed"], false);
+        assert_eq!(value["path"], "notes/file0.txt");
+        assert!(value["headings"]
+            .as_array()
+            .is_some_and(|headings| headings.iter().any(|heading| heading == "Note 0")));
+    }
+
+    #[test]
+    fn card_batch_defaults_to_internal_cap_and_omits_targets() {
+        let (_dir, state) = make_state();
+        let targets = (0..10)
+            .map(|idx| format!("notes/file{idx}.txt"))
+            .collect::<Vec<_>>();
+        let request = CardParams {
+            repo_root: None,
+            target: None,
+            targets,
+            budget: "normal".to_string(),
+            budget_tokens: None,
+            include_notes: false,
+        };
+        let value: serde_json::Value =
+            serde_json::from_str(&handle_card_params(&state, request)).unwrap();
+
+        assert!(value["cards"].as_array().unwrap().len() < 10, "{value}");
+        assert!(value["omitted"].as_array().is_some_and(|items| !items.is_empty()));
         assert_eq!(value["context_accounting"]["truncation_applied"], true);
     }
 }

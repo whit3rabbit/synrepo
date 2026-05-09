@@ -71,7 +71,7 @@ pub fn classify_task_route(task: &str, path: Option<&str>) -> TaskRoute {
         return route(
             "llm-required",
             0.86,
-            &["synrepo_orient", "synrepo_find", "synrepo_minimum_context"],
+            &["synrepo_orient", "synrepo_ask", "synrepo_minimum_context"],
             "normal",
             true,
             "task requires semantic transformation beyond deterministic synrepo proof",
@@ -134,6 +134,7 @@ pub fn classify_task_route(task: &str, path: Option<&str>) -> TaskRoute {
                 0.78,
                 &[
                     "synrepo_orient",
+                    "synrepo_ask",
                     "synrepo_find",
                     "synrepo_minimum_context",
                     "synrepo_risks",
@@ -141,9 +142,40 @@ pub fn classify_task_route(task: &str, path: Option<&str>) -> TaskRoute {
                 ],
                 "normal",
                 false,
-                "review and risk tasks should start with graph-backed context",
+                "review and risk tasks should start with graph-backed synthesis before broad find",
             ),
             &[SIGNAL_CONTEXT_FAST_PATH, SIGNAL_LLM_NOT_REQUIRED],
+        );
+    }
+
+    if has_any(
+        &text,
+        &[
+            "architecture",
+            "architectural",
+            "design",
+            "compare",
+            "proposal",
+            "proposed",
+            "improvement",
+            "improvements",
+        ],
+    ) {
+        return with_signals(
+            route(
+                "broad-context-question",
+                0.74,
+                &[
+                    "synrepo_orient",
+                    "synrepo_ask",
+                    "synrepo_search(output_mode=\"compact\")",
+                    "synrepo_minimum_context",
+                ],
+                "normal",
+                true,
+                "broad architecture questions need synthesized graph context before exact searches",
+            ),
+            &[SIGNAL_CONTEXT_FAST_PATH],
         );
     }
 
@@ -305,6 +337,7 @@ fn route_for_semantic_intent(intent: &str, path: Option<&str>) -> Option<TaskRou
                         edit_confidence(intent, path).max(0.7),
                         &[
                             "synrepo_orient",
+                            "synrepo_ask",
                             "synrepo_find",
                             "synrepo_prepare_edit_context",
                             "synrepo_apply_anchor_edits",
@@ -340,6 +373,7 @@ fn route_for_semantic_intent(intent: &str, path: Option<&str>) -> Option<TaskRou
                 0.78,
                 &[
                     "synrepo_orient",
+                    "synrepo_ask",
                     "synrepo_find",
                     "synrepo_minimum_context",
                     "synrepo_risks",

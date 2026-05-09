@@ -12,6 +12,40 @@ fn classifies_context_fast_path() {
 }
 
 #[test]
+fn broad_architecture_prompts_recommend_ask_before_find() {
+    let route = classify_task_route(
+        "compare agent memory architecture and validate proposed improvements",
+        None,
+    );
+
+    assert_eq!(route.intent, "broad-context-question");
+    assert!(route
+        .recommended_tools
+        .iter()
+        .position(|tool| tool == "synrepo_ask")
+        < route
+            .recommended_tools
+            .iter()
+            .position(|tool| tool.starts_with("synrepo_search")));
+    assert!(route.llm_required);
+}
+
+#[test]
+fn exact_code_identifiers_recommend_search_before_find() {
+    let route = classify_task_route("find Error::Other(anyhow", None);
+
+    assert_eq!(route.intent, "context-search");
+    assert!(route
+        .recommended_tools
+        .iter()
+        .position(|tool| tool.starts_with("synrepo_search"))
+        < route
+            .recommended_tools
+            .iter()
+            .position(|tool| tool == "synrepo_find"));
+}
+
+#[test]
 fn classifies_unsupported_semantic_transform_as_llm_required() {
     let route = classify_task_route("add TypeScript type annotations", Some("src/app.ts"));
     assert_eq!(route.intent, "llm-required");

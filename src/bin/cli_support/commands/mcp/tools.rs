@@ -23,7 +23,7 @@ impl SynrepoServer {
         self.with_tool_state_blocking("synrepo_card", params.repo_root.clone(), move |state| card_batch::handle_card_params(&state, params)).await
     }
 
-    #[tool(name = "synrepo_search", description = "Search the repository using lexical queries. Best for exact symbols, string literals, CLI flags, MCP tool names, schema keys, file paths, and code-review validation. Prefer output_mode=\"compact\" for orientation; use suggested_card_targets for follow-up cards. Adaptive output may return grouped previews, a minimal miss, or smaller raw rows with output_accounting.")]
+    #[tool(name = "synrepo_search", description = "Search the repository using lexical queries. Best for exact symbols, string literals, CLI flags, MCP tool names, schema keys, file paths, and code-review validation. Set literal=true for exact code strings with regex metacharacters; invalid regex patterns fall back to literal search with pattern_mode and warnings. Prefer output_mode=\"compact\" for orientation; use suggested_card_targets for follow-up cards. Adaptive output may return grouped previews, a minimal miss, or smaller raw rows with output_accounting.")]
     async fn synrepo_search(&self, Parameters(params): Parameters<search::SearchParams>) -> String {
         let repo_root = params.repo_root.clone();
         self.with_tool_state_blocking("synrepo_search", repo_root, move |state| search::handle_search(&state, params)).await

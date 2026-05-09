@@ -22,7 +22,7 @@ fn make_state() -> (tempfile::TempDir, SynrepoState) {
     fs::create_dir_all(repo.join("src")).unwrap();
     fs::write(
         repo.join("src/lib.rs"),
-        "pub fn alpha() {}\nalpha one\nalpha two\nalpha three\nalpha four\nalpha five\nalpha six\n",
+        "pub fn alpha() {}\nlet marker = \"Error::Other(anyhow\";\nalpha one\nalpha two\nalpha three\nalpha four\nalpha five\nalpha six\n",
     )
     .unwrap();
     fs::write(
@@ -79,6 +79,43 @@ fn search_defaults_to_adaptive_and_bounded() {
 }
 
 #[test]
+fn invalid_regex_query_retries_as_literal() {
+    let (_dir, state) = make_state();
+    let mut params = search_params(OutputMode::Default, None);
+    params.query = "Error::Other(anyhow".to_string();
+    params.mode = super::SearchMode::Lexical;
+    let value: serde_json::Value = serde_json::from_str(&handle_search(&state, params)).unwrap();
+
+    assert_eq!(value["pattern_mode"], "literal_fallback");
+    assert!(value["warnings"]
+        .as_array()
+        .is_some_and(|warnings| !warnings.is_empty()));
+    assert!(value["results"].as_array().unwrap().iter().any(|row| {
+        row["content"]
+            .as_str()
+            .is_some_and(|content| content.contains("Error::Other(anyhow"))
+    }));
+}
+
+#[test]
+fn explicit_literal_search_escapes_code_strings() {
+    let (_dir, state) = make_state();
+    let mut params = search_params(OutputMode::Default, None);
+    params.query = "Error::Other(anyhow".to_string();
+    params.literal = true;
+    params.mode = super::SearchMode::Lexical;
+    let value: serde_json::Value = serde_json::from_str(&handle_search(&state, params)).unwrap();
+
+    assert_eq!(value["pattern_mode"], "literal");
+    assert!(value.get("warnings").is_none(), "{value}");
+    assert!(value["results"].as_array().unwrap().iter().any(|row| {
+        row["content"]
+            .as_str()
+            .is_some_and(|content| content.contains("Error::Other(anyhow"))
+    }));
+}
+
+#[test]
 fn orient_is_routing_summary_not_full_dashboard() {
     let (_dir, state) = make_state();
     let value: serde_json::Value = serde_json::from_str(&handle_orient(&state)).unwrap();
@@ -89,6 +126,10 @@ fn orient_is_routing_summary_not_full_dashboard() {
     assert!(value.get("explain").is_none(), "{value}");
     assert!(value.get("overlay_cost").is_none(), "{value}");
     assert!(value["graph"].get("edges_by_kind").is_none(), "{value}");
+    assert!(
+        serde_json::to_string(&value).unwrap().len() < 2500,
+        "{value}"
+    );
 }
 
 #[test]

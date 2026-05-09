@@ -107,7 +107,7 @@ fn skill_teaches_exact_identifier_search_before_task_routing() {
     let root_required = [
         "See [`references/search-routing.md`](references/search-routing.md) for examples, fallback rules, and phrase-to-probe mappings.",
         "For exact symbols, tool names, function names, flags, JSON keys, CLI args, error strings, or file paths, prefer:",
-        "`synrepo_search(query, limit?, output_mode?, budget_tokens?)`",
+        "`synrepo_search(query, literal?, limit?, output_mode?, budget_tokens?)`",
         "Use `output_mode: \"compact\"` for orientation.",
         "Do not use a full sentence when an exact token or string literal is known.",
         "For plain-language edit or investigation tasks, call:",

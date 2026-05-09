@@ -46,9 +46,9 @@ If `miss_reason` is `matches_not_in_graph`, use `synrepo_search` or CLI search t
 
 For exact symbols, tool names, function names, flags, JSON keys, CLI args, error strings, or file paths, prefer:
 
-- `synrepo_search(query, limit?, output_mode?, budget_tokens?)`
+- `synrepo_search(query, literal?, limit?, output_mode?, budget_tokens?)`
 
-Use `output_mode: "compact"` for orientation. Adaptive compact output may return grouped previews, a minimal miss, or smaller raw rows for tiny result sets; read `output_accounting` before escalating. Use `output_mode: "cards"` when you would otherwise call `synrepo_card` for each matched file.
+Use `output_mode: "compact"` for orientation. Set `literal: true` when an exact code string contains regex metacharacters, for example `Error::Other(anyhow`. If a regex-shaped query fails to compile, search retries as an escaped literal and returns `pattern_mode: "literal_fallback"` plus `warnings`. Adaptive compact output may return grouped previews, a minimal miss, or smaller raw rows for tiny result sets; read `output_accounting` before escalating. Use `output_mode: "cards"` when you would otherwise call `synrepo_card` for each matched file.
 
 Prefer exact probes over broad natural language when the task includes identifiers or likely identifiers.
 

@@ -120,6 +120,13 @@ pub(crate) struct ClientSetupEntry {
     pub error: Option<String>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CodexSkillWarning {
+    pub path: PathBuf,
+    pub content_differs: bool,
+    pub duplicate_frontmatter: bool,
+}
+
 impl ClientSetupEntry {
     pub(crate) fn skipped(
         repo_root: &Path,
@@ -306,11 +313,84 @@ pub(crate) fn render_client_setup_summary(
                 entry.tool.canonical_name()
             ));
         }
+        if entry.tool == AgentTool::Codex {
+            for warning in codex_global_skill_warnings() {
+                out.push_str(&format!(
+                    "    warning: global Codex skill {} {}.\n",
+                    warning.path.display(),
+                    codex_skill_warning_reason(&warning)
+                ));
+                out.push_str(
+                    "    next: run `synrepo setup codex --force` for global setup, or `synrepo agent-setup codex --regen` for a project-local refresh\n",
+                );
+            }
+        }
         if let Some(error) = &entry.error {
             out.push_str(&format!("    error: {error}\n"));
         }
     }
     out
+}
+
+pub(crate) fn codex_global_skill_warnings() -> Vec<CodexSkillWarning> {
+    let mut paths = Vec::new();
+    if let Some(path) = AgentTool::Codex.resolved_shim_output_path(&Scope::Global) {
+        paths.push(path);
+    }
+    if let Some(home) = std::env::var_os("HOME") {
+        paths.push(
+            PathBuf::from(home)
+                .join(".agents")
+                .join("skills")
+                .join("synrepo")
+                .join("SKILL.md"),
+        );
+    }
+    paths.sort();
+    paths.dedup();
+    paths
+        .into_iter()
+        .filter_map(|path| codex_skill_warning_for_path(path))
+        .collect()
+}
+
+fn codex_skill_warning_for_path(path: PathBuf) -> Option<CodexSkillWarning> {
+    let existing = std::fs::read_to_string(&path).ok()?;
+    codex_skill_warning_for_content(&existing).map(|(content_differs, duplicate_frontmatter)| {
+        CodexSkillWarning {
+            path,
+            content_differs,
+            duplicate_frontmatter,
+        }
+    })
+}
+
+fn codex_skill_warning_for_content(content: &str) -> Option<(bool, bool)> {
+    let content_differs = content != AgentTool::Codex.shim_content();
+    let duplicate_frontmatter = has_duplicate_frontmatter(content);
+    if content_differs || duplicate_frontmatter {
+        Some((content_differs, duplicate_frontmatter))
+    } else {
+        None
+    }
+}
+
+fn has_duplicate_frontmatter(content: &str) -> bool {
+    content
+        .lines()
+        .filter(|line| line.trim() == "---")
+        .take(4)
+        .count()
+        >= 4
+}
+
+fn codex_skill_warning_reason(warning: &CodexSkillWarning) -> &'static str {
+    match (warning.content_differs, warning.duplicate_frontmatter) {
+        (true, true) => "differs from the generated shim and has duplicate frontmatter",
+        (true, false) => "differs from the generated shim",
+        (false, true) => "has duplicate frontmatter",
+        (false, false) => "needs review",
+    }
 }
 
 fn render_tool_list(tools: &[AgentTool]) -> String {
@@ -371,4 +451,66 @@ fn mcp_registered(repo_root: &Path, tool: AgentTool, scope: &Scope) -> bool {
         .ok()
         .flatten()
         .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn codex_skill_warning_detects_duplicate_frontmatter() {
+        let content = format!(
+            "---\nname: synrepo\n---\n{}",
+            AgentTool::Codex.shim_content()
+        );
+        let warning = codex_skill_warning_for_content(&content).expect("warning");
+
+        assert_eq!(warning, (true, true));
+    }
+
+    #[test]
+    fn codex_skill_warning_accepts_current_generated_skill() {
+        assert!(codex_skill_warning_for_content(AgentTool::Codex.shim_content()).is_none());
+    }
+
+    #[test]
+    fn setup_summary_reports_stale_global_codex_skill() {
+        let home = tempfile::tempdir().unwrap();
+        let _home_guard = synrepo::config::test_home::HomeEnvGuard::redirect_to(home.path());
+        let skill_path = home
+            .path()
+            .join(".agents")
+            .join("skills")
+            .join("synrepo")
+            .join("SKILL.md");
+        std::fs::create_dir_all(skill_path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &skill_path,
+            format!(
+                "---\nname: synrepo\n---\n{}",
+                AgentTool::Codex.shim_content()
+            ),
+        )
+        .unwrap();
+        let repo = tempfile::tempdir().unwrap();
+        let entry = ClientSetupEntry {
+            tool: AgentTool::Codex,
+            outcomes: vec![ClientOutcome::Skipped],
+            shim: ShimFreshness::Current,
+            shim_path: SetupPath {
+                scope: SetupScope::Project,
+                path: repo.path().join(".agents/skills/synrepo/SKILL.md"),
+            },
+            mcp: McpRegistration::Missing,
+            mcp_path: None,
+            error: None,
+        };
+
+        let summary = render_client_setup_summary(repo.path(), "setup", &[entry]);
+
+        assert!(summary.contains("global Codex skill"), "{summary}");
+        assert!(summary.contains("duplicate frontmatter"), "{summary}");
+        assert!(summary.contains("synrepo setup codex --force"), "{summary}");
+        assert!(summary.contains("synrepo agent-setup codex --regen"), "{summary}");
+    }
 }

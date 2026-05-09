@@ -27,11 +27,11 @@ synrepo is a local, deterministic code-context compiler: `repo files -> graph fa
 
 ### Default path
 
-For questions, reviews, search routing, and edits: orient, ask or find, impact or risks, edit, tests, changed.
+For questions, reviews, search routing, and edits: orient, ask or search, cards, impact or risks, edit, tests, changed.
 
 1. Start with `synrepo_orient` before reading the repo cold.
 2. Use `synrepo_ask` for broad plain-language tasks needing one bounded, cited task-context packet.
-3. Use `synrepo_find` for broad tasks, or `synrepo_search` for exact files, symbols, strings, flags, and tool names. For broad lexical searches, prefer `output_mode: "compact"`.
+3. Use `synrepo_find` only for bounded file-routing suggestions after broad task context is clear. Use `synrepo_search` for exact files, symbols, strings, flags, code-shaped errors, and tool names. For broad lexical searches, prefer `output_mode: "compact"`.
 4. Use `tiny` cards to route and `normal` cards to understand. Use `synrepo_minimum_context` once a focal target is known and neighborhood risk is unclear.
 5. Use `synrepo_impact` (or `synrepo_risks`) before risky edits or reviews, and `synrepo_tests` before claiming done.
 6. Use `synrepo_changed` after edits to review changed context and validation commands.
@@ -70,7 +70,7 @@ Client-side hooks for Codex and Claude may nudge agents before direct grep, read
 - `synrepo_readiness()` - cheap read-only preflight for graph, overlay, index, watch, reconcile, and edit-mode status
 - `synrepo_orient()` - workflow step 1: small routing summary before reading the repo cold
 - `synrepo_ask(ask, scope?, shape?, ground?, budget?)` - default high-level front door for one bounded, cited task-context packet
-- `synrepo_search(query, limit?, output_mode?, budget_tokens?)` - exact lexical search for symbols, flags, schema keys, file paths, and validation
+- `synrepo_search(query, literal?, limit?, output_mode?, budget_tokens?)` - exact lexical search for symbols, flags, code strings, schema keys, file paths, and validation
 - `synrepo_card(target?, targets?, budget?, budget_tokens?)` - structured card for one file or symbol, or a small batch
 - `synrepo_context_pack(goal?, targets?, budget?, budget_tokens?, output_mode?, include_tests?, include_notes?, limit?)` - batch known read-only code artifacts and task-context pieces into one token-accounted response
 - `synrepo_task_route(task, path?)` - cheap route classification when only intent, budget, and next tools are needed

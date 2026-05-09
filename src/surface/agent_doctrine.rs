@@ -24,11 +24,11 @@ synrepo is a local, deterministic code-context compiler: `repo files -> graph fa
 
 ### Default path
 
-For questions, reviews, search routing, and edits: orient, ask or find, impact or risks, edit, tests, changed.
+For questions, reviews, search routing, and edits: orient, ask or search, cards, impact or risks, edit, tests, changed.
 
 1. Start with `synrepo_orient` before reading the repo cold.
 2. Use `synrepo_ask` for broad plain-language tasks needing one bounded, cited task-context packet.
-3. Use `synrepo_find` for broad tasks, or `synrepo_search` for exact files, symbols, strings, flags, and tool names. For broad lexical searches, prefer `output_mode: \"compact\"`.
+3. Use `synrepo_find` only for bounded file-routing suggestions after broad task context is clear. Use `synrepo_search` for exact files, symbols, strings, flags, code-shaped errors, and tool names. For broad lexical searches, prefer `output_mode: \"compact\"`.
 4. Use `tiny` cards to route and `normal` cards to understand. Use `synrepo_minimum_context` once a focal target is known and neighborhood risk is unclear.
 5. Use `synrepo_impact` (or `synrepo_risks`) before risky edits or reviews, and `synrepo_tests` before claiming done.
 6. Use `synrepo_changed` after edits to review changed context and validation commands.
