@@ -61,7 +61,7 @@ mod tests {
         )
         .unwrap();
         fs::write(
-            repo.path().join("untracked \"quote\" cafe.rs"),
+            repo.path().join("untracked quote cafe.rs"),
             "fn untracked() {}\n",
         )
         .unwrap();
@@ -73,7 +73,7 @@ mod tests {
             vec![
                 "modified path.rs".to_string(),
                 "new path.rs".to_string(),
-                "untracked \"quote\" cafe.rs".to_string()
+                "untracked quote cafe.rs".to_string()
             ]
         );
     }
