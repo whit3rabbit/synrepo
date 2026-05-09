@@ -33,8 +33,9 @@ pub fn run_graph_snapshot_commit(
             file_count = snapshot_graph.files.len(),
             symbol_count = snapshot_graph.symbols.len(),
             edge_count = snapshot_graph.all_edges()?.len(),
-            "graph snapshot exceeds configured memory ceiling"
+            "graph snapshot exceeds configured memory ceiling; skipping snapshot publication"
         );
+        return Ok(());
     }
 
     snapshot::publish(repo_root, snapshot_graph);

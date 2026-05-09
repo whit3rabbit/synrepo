@@ -8,6 +8,9 @@ use std::path::{Path, PathBuf};
 use syntext::index::{ExternalFileRecord, Index};
 use syntext::{Config as SyntextConfig, SearchOptions};
 
+const GLOB_FILTER_OVERFETCH_LIMIT: usize = 10_000;
+const GLOB_FILTER_OVERFETCH_MULTIPLIER: usize = 200;
+
 /// Summary of a persisted substrate rebuild.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct IndexBuildReport {
@@ -132,14 +135,14 @@ pub fn search_with_options(
         (None, None)
     };
 
-    // If we have a matcher, we must disable syntext's max_results during the
-    // index phase to ensure we don't truncate valid matches before post-filtering.
+    // Glob filters need overfetch so valid post-filter matches are not clipped
+    // too early, but the index phase must still be bounded on broad globs.
     let effective_options = SearchOptions {
         path_filter: prefix,
         file_type: options.file_type.clone(),
         exclude_type: options.exclude_type.clone(),
         max_results: if matcher.is_some() {
-            None
+            Some(glob_filter_overfetch_limit(options.max_results))
         } else {
             options.max_results
         },
@@ -182,6 +185,15 @@ fn extract_non_glob_prefix(filter: &str) -> String {
 
 fn contains_glob_chars(s: &str) -> bool {
     s.contains('*') || s.contains('?') || s.contains('[') || s.contains('{')
+}
+
+fn glob_filter_overfetch_limit(max_results: Option<usize>) -> usize {
+    match max_results {
+        Some(limit) => limit
+            .saturating_mul(GLOB_FILTER_OVERFETCH_MULTIPLIER)
+            .min(GLOB_FILTER_OVERFETCH_LIMIT),
+        None => GLOB_FILTER_OVERFETCH_LIMIT,
+    }
 }
 
 fn syntext_config(config: &crate::config::Config, repo_root: &Path) -> SyntextConfig {
@@ -370,5 +382,7 @@ mod tests {
         assert_eq!(extract_non_glob_prefix("src/**/*.rs"), "src/");
         assert_eq!(extract_non_glob_prefix("**/src/*.rs"), "");
         assert_eq!(extract_non_glob_prefix("docs/"), "docs/");
+        assert_eq!(glob_filter_overfetch_limit(Some(10)), 2_000);
+        assert_eq!(glob_filter_overfetch_limit(Some(10_000)), 10_000);
     }
 }

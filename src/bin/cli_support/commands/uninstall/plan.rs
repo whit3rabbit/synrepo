@@ -5,9 +5,8 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 use synrepo::config::Config;
-use synrepo::registry::{self, HookEntry, ProjectEntry, Registry};
+use synrepo::registry::{self, ProjectEntry, Registry};
 
-use crate::cli_support::commands::hooks::HOOK_NAMES;
 use crate::cli_support::commands::remove::{build_plan as build_remove_plan, RemoveAction};
 
 use super::binary::{classify as classify_binary, detect as detect_binary, BinaryTeardown};
@@ -48,6 +47,11 @@ pub(crate) enum UninstallAction {
         name: String,
         path: PathBuf,
         mode: String,
+    },
+    RemoveAgentHook {
+        project: PathBuf,
+        tool: String,
+        path: PathBuf,
     },
     DeleteProjectSynrepoDir {
         project: PathBuf,
@@ -181,13 +185,25 @@ fn build_project_plan(
                     remove_action: action,
                 }));
             }
+            RemoveAction::RemoveGitHook { name, path, mode } => {
+                actions.push(enabled(UninstallAction::RemoveHook {
+                    project: project.to_path_buf(),
+                    name,
+                    path,
+                    mode,
+                }));
+            }
+            RemoveAction::RemoveAgentHook { tool, path } => {
+                actions.push(enabled(UninstallAction::RemoveAgentHook {
+                    project: project.to_path_buf(),
+                    tool,
+                    path,
+                }));
+            }
             RemoveAction::RemoveGitignoreLine { .. } | RemoveAction::DeleteSynrepoDir => {}
         }
     }
 
-    for hook in hook_actions(project, entry) {
-        actions.push(enabled(hook));
-    }
     add_data_actions(project, entry, delete_data, &mut actions);
 
     Ok(ProjectUninstallPlan {
@@ -196,58 +212,6 @@ fn build_project_plan(
         actions,
         preserved: remove_plan.preserved,
     })
-}
-
-fn hook_actions(project: &Path, entry: Option<&ProjectEntry>) -> Vec<UninstallAction> {
-    let mut hooks = Vec::new();
-    let mut seen = BTreeSet::new();
-    if let Some(entry) = entry {
-        for hook in &entry.hooks {
-            add_hook_action(project, hook, &mut seen, &mut hooks);
-        }
-    }
-    for hook in scan_project_hooks(project) {
-        add_hook_action(project, &hook, &mut seen, &mut hooks);
-    }
-    hooks
-}
-
-fn add_hook_action(
-    project: &Path,
-    hook: &HookEntry,
-    seen: &mut BTreeSet<PathBuf>,
-    hooks: &mut Vec<UninstallAction>,
-) {
-    let path = registry_path(project, &hook.path);
-    if !path.exists() || !seen.insert(path.clone()) {
-        return;
-    }
-    hooks.push(UninstallAction::RemoveHook {
-        project: project.to_path_buf(),
-        name: hook.name.clone(),
-        path,
-        mode: hook.mode.clone(),
-    });
-}
-
-fn scan_project_hooks(project: &Path) -> Vec<HookEntry> {
-    let Ok(repo) = synrepo::pipeline::git::open_repo(project) else {
-        return Vec::new();
-    };
-    let hooks_dir = repo.git_dir().join("hooks");
-    HOOK_NAMES
-        .iter()
-        .filter_map(|name| {
-            let path = hooks_dir.join(name);
-            let content = std::fs::read_to_string(&path).ok()?;
-            content.contains("synrepo reconcile").then(|| HookEntry {
-                name: (*name).to_string(),
-                path: path.to_string_lossy().into_owned(),
-                mode: "legacy".to_string(),
-                installed_at: String::new(),
-            })
-        })
-        .collect()
 }
 
 fn add_data_actions(
@@ -294,10 +258,14 @@ fn add_data_actions(
                 true,
             ));
         }
+        let entry = entry
+            .and_then(|e| e.export_gitignore_entry.as_deref())
+            .map(str::to_string)
+            .unwrap_or_else(|| export_gitignore_entry(project));
         actions.push(planned(
             UninstallAction::RemoveProjectGitignoreLine {
                 project: project.to_path_buf(),
-                entry: export_gitignore_entry(project),
+                entry,
             },
             delete_data,
             false,
@@ -359,15 +327,6 @@ fn planned(action: UninstallAction, enabled: bool, destructive: bool) -> Planned
         action,
         enabled,
         destructive,
-    }
-}
-
-fn registry_path(repo_root: &Path, stored: &str) -> PathBuf {
-    let path = PathBuf::from(stored);
-    if path.is_absolute() {
-        path
-    } else {
-        repo_root.join(path)
     }
 }
 

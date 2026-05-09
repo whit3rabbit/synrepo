@@ -7,6 +7,8 @@ use super::chunk::{ChunkId, EmbeddingChunk, EmbeddingChunkSource};
 use super::model::{EmbeddingSession, ModelResolution};
 
 mod persistence;
+#[cfg(test)]
+mod persistence_tests;
 mod scoring;
 
 use persistence::INDEX_FORMAT_VERSION;

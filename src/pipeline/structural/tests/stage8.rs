@@ -67,7 +67,7 @@ fn structural_compile_publishes_graph_snapshot() {
 }
 
 #[test]
-fn structural_compile_warns_when_snapshot_exceeds_memory_ceiling() {
+fn structural_compile_skips_snapshot_when_it_exceeds_memory_ceiling() {
     let repo = tempdir().unwrap();
     fs::create_dir_all(repo.path().join("src")).unwrap();
     fs::write(repo.path().join("src/lib.rs"), "pub fn too_big() {}\n").unwrap();
@@ -89,10 +89,8 @@ fn structural_compile_warns_when_snapshot_exceeds_memory_ceiling() {
     let mut graph = open_graph(&repo);
     run_structural_compile(repo.path(), &config, &mut graph).unwrap();
 
-    let published = snapshot::current(repo.path()).expect("snapshot should be published");
-    assert!(published.snapshot_epoch > 0);
-    assert!(published.files.len() >= 1);
-    assert!(logs
-        .contents()
-        .contains("graph snapshot exceeds configured memory ceiling"));
+    let published = snapshot::current(repo.path()).expect("previous snapshot should remain");
+    assert_eq!(published.snapshot_epoch, 0);
+    assert!(published.files.is_empty());
+    assert!(logs.contents().contains("skipping snapshot publication"));
 }

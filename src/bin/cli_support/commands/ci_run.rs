@@ -4,10 +4,11 @@ use std::sync::Arc;
 
 use serde::Serialize;
 use synrepo::config::Config;
-use synrepo::structure::graph::GraphReader;
 use synrepo::surface::card::{Budget, CardCompiler, ChangeRiskCard};
 
 use crate::cli_support::cli_args::CiRunArgs;
+
+const DEFAULT_TARGET_LIMIT: usize = 500;
 
 #[derive(Clone, Debug)]
 pub(crate) struct CiRunOptions {
@@ -45,6 +46,25 @@ pub(crate) fn ci_run(repo_root: &Path, args: CiRunArgs) -> anyhow::Result<()> {
 
 pub(crate) fn ci_run_output(repo_root: &Path, options: CiRunOptions) -> anyhow::Result<String> {
     let config = load_ci_config(repo_root)?;
+    let budget = parse_budget(options.budget.as_deref())?;
+    let targets = resolve_targets(
+        repo_root,
+        &config,
+        &options.targets,
+        options.changed_from.as_deref(),
+    )?;
+    if targets.is_empty() {
+        let report = CiRunReport {
+            mode: "ci-run",
+            store: "memory",
+            compile: synrepo::pipeline::structural::CompileSummary::default(),
+            targets,
+            unresolved_targets: Vec::new(),
+            cards: Vec::new(),
+        };
+        return finish_report(&report, options.json);
+    }
+
     let mut store = synrepo::structure::graph::MemGraphStore::new();
     let compile =
         synrepo::pipeline::structural::run_structural_compile(repo_root, &config, &mut store)?;
@@ -54,17 +74,6 @@ pub(crate) fn ci_run_output(repo_root: &Path, options: CiRunOptions) -> anyhow::
         Some(repo_root),
     )
     .with_config(config);
-
-    let budget = parse_budget(options.budget.as_deref())?;
-    let mut targets = options.targets;
-    if let Some(base) = options.changed_from.as_deref() {
-        targets.extend(changed_file_targets(repo_root, base)?);
-    }
-    if targets.is_empty() {
-        targets.extend(graph.all_file_paths()?.into_iter().map(|(path, _)| path));
-    }
-    targets.sort();
-    targets.dedup();
 
     let mut cards = Vec::new();
     let mut unresolved_targets = Vec::new();
@@ -84,11 +93,48 @@ pub(crate) fn ci_run_output(repo_root: &Path, options: CiRunOptions) -> anyhow::
         cards,
     };
 
-    if options.json {
-        return Ok(format!("{}\n", serde_json::to_string_pretty(&report)?));
-    }
+    finish_report(&report, options.json)
+}
 
-    Ok(render_markdown(&report))
+fn finish_report(report: &CiRunReport, json: bool) -> anyhow::Result<String> {
+    if json {
+        return Ok(format!("{}\n", serde_json::to_string_pretty(report)?));
+    }
+    Ok(render_markdown(report))
+}
+
+fn resolve_targets(
+    repo_root: &Path,
+    config: &Config,
+    explicit_targets: &[String],
+    changed_from: Option<&str>,
+) -> anyhow::Result<Vec<String>> {
+    let mut targets = explicit_targets.to_vec();
+    if let Some(base) = changed_from {
+        targets.extend(changed_file_targets(repo_root, base)?);
+    }
+    if targets.is_empty() && changed_from.is_none() {
+        targets.extend(default_targets(repo_root, config)?);
+    }
+    targets.sort();
+    targets.dedup();
+    Ok(targets)
+}
+
+fn default_targets(repo_root: &Path, config: &Config) -> anyhow::Result<Vec<String>> {
+    let mut targets = Vec::new();
+    for file in synrepo::substrate::discover(repo_root, config)? {
+        if file.root_discriminant != "primary" {
+            continue;
+        }
+        targets.push(file.relative_path);
+        if targets.len() > DEFAULT_TARGET_LIMIT {
+            anyhow::bail!(
+                "ci-run default target set exceeds {DEFAULT_TARGET_LIMIT} files; pass --target or --changed-from to keep memory bounded"
+            );
+        }
+    }
+    Ok(targets)
 }
 
 fn load_ci_config(repo_root: &Path) -> anyhow::Result<Config> {

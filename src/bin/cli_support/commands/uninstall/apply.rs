@@ -7,7 +7,7 @@ use anyhow::Context;
 use serde::Serialize;
 use synrepo::pipeline::watch::{watch_service_status, WatchServiceStatus};
 
-use crate::cli_support::commands::hooks::{full_hook_script, HOOK_BEGIN, HOOK_END};
+use crate::cli_support::commands::remove::hook_artifacts::{remove_agent_hook, remove_git_hook};
 use crate::cli_support::commands::remove::{apply_plan, RemoveAction, RemovePlan};
 
 use super::plan::{
@@ -27,6 +27,16 @@ pub(crate) struct AppliedUninstallAction {
     pub succeeded: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+}
+
+#[derive(Default)]
+struct ProjectProgress {
+    agent_candidates: BTreeSet<String>,
+    agent_failures: BTreeSet<String>,
+    removed_hooks: BTreeSet<String>,
+    removed_agent_hooks: BTreeSet<String>,
+    root_gitignore_removed: bool,
+    export_gitignore_removed: bool,
 }
 
 pub(crate) fn apply_uninstall_plan(
@@ -82,11 +92,7 @@ fn apply_project(
         .filter(|item| !item.enabled)
         .filter_map(|item| project_remove_tool(&item.action))
         .collect::<BTreeSet<_>>();
-    let mut agent_candidates = BTreeSet::new();
-    let mut agent_failures = BTreeSet::new();
-    let mut removed_hooks = BTreeSet::new();
-    let mut root_gitignore_removed = false;
-    let mut export_gitignore_removed = false;
+    let mut progress = ProjectProgress::default();
 
     for item in project.actions.iter().filter(|item| item.enabled) {
         selected = true;
@@ -111,15 +117,7 @@ fn apply_project(
             }
             _ => {
                 let succeeded = apply_one(&item.action, force, summary);
-                record_progress_candidate(
-                    &item.action,
-                    succeeded,
-                    &mut agent_candidates,
-                    &mut agent_failures,
-                    &mut removed_hooks,
-                    &mut root_gitignore_removed,
-                    &mut export_gitignore_removed,
-                );
+                record_progress_candidate(&item.action, succeeded, &mut progress);
                 if succeeded
                     && matches!(item.action, UninstallAction::DeleteProjectSynrepoDir { .. })
                 {
@@ -133,16 +131,26 @@ fn apply_project(
     }
 
     if selected {
+        let ProjectProgress {
+            agent_candidates,
+            agent_failures,
+            removed_hooks,
+            removed_agent_hooks,
+            root_gitignore_removed,
+            export_gitignore_removed,
+        } = progress;
         let removed_agents = agent_candidates
             .difference(&agent_failures)
             .filter(|tool| !disabled_agents.contains(*tool))
             .cloned()
             .collect::<Vec<_>>();
         let removed_hooks = removed_hooks.into_iter().collect::<Vec<_>>();
+        let removed_agent_hooks = removed_agent_hooks.into_iter().collect::<Vec<_>>();
         if let Err(err) = synrepo::registry::record_uninstall_progress(
             &project.path,
             &removed_agents,
             &removed_hooks,
+            &removed_agent_hooks,
             root_gitignore_removed,
             export_gitignore_removed,
             synrepo_deleted,
@@ -167,11 +175,7 @@ fn project_remove_tool(action: &UninstallAction) -> Option<String> {
 fn record_progress_candidate(
     action: &UninstallAction,
     succeeded: bool,
-    agent_candidates: &mut BTreeSet<String>,
-    agent_failures: &mut BTreeSet<String>,
-    removed_hooks: &mut BTreeSet<String>,
-    root_gitignore_removed: &mut bool,
-    export_gitignore_removed: &mut bool,
+    progress: &mut ProjectProgress,
 ) {
     match action {
         UninstallAction::ProjectRemove {
@@ -180,19 +184,22 @@ fn record_progress_candidate(
             ..
         } => {
             if succeeded {
-                agent_candidates.insert(tool.clone());
+                progress.agent_candidates.insert(tool.clone());
             } else {
-                agent_failures.insert(tool.clone());
+                progress.agent_failures.insert(tool.clone());
             }
         }
         UninstallAction::RemoveHook { name, .. } if succeeded => {
-            removed_hooks.insert(name.clone());
+            progress.removed_hooks.insert(name.clone());
+        }
+        UninstallAction::RemoveAgentHook { tool, .. } if succeeded => {
+            progress.removed_agent_hooks.insert(tool.clone());
         }
         UninstallAction::RemoveProjectGitignoreLine { entry, .. } if succeeded => {
             if entry == ".synrepo/" {
-                *root_gitignore_removed = true;
+                progress.root_gitignore_removed = true;
             } else {
-                *export_gitignore_removed = true;
+                progress.export_gitignore_removed = true;
             }
         }
         _ => {}
@@ -205,7 +212,8 @@ fn apply_one(action: &UninstallAction, force: bool, summary: &mut UninstallSumma
             project,
             remove_action,
         } => apply_remove_action(project, remove_action),
-        UninstallAction::RemoveHook { path, mode, .. } => remove_hook(path, mode),
+        UninstallAction::RemoveHook { path, mode, .. } => remove_git_hook(path, mode),
+        UninstallAction::RemoveAgentHook { tool, path, .. } => remove_agent_hook(tool, path),
         UninstallAction::DeleteProjectSynrepoDir { project, path } => {
             guard_project_watch(project, path, force).and_then(|_| remove_dir(path))
         }
@@ -274,57 +282,6 @@ fn remove_dir(path: &Path) -> anyhow::Result<()> {
             .with_context(|| format!("failed to delete {}", path.display()))?;
     }
     Ok(())
-}
-
-fn remove_hook(path: &Path, mode: &str) -> anyhow::Result<()> {
-    if !path.exists() {
-        return Ok(());
-    }
-    let raw = std::fs::read_to_string(path)
-        .with_context(|| format!("failed to read hook {}", path.display()))?;
-    if mode == "full_file" && raw == full_hook_script() {
-        std::fs::remove_file(path)
-            .with_context(|| format!("failed to delete hook {}", path.display()))?;
-        return Ok(());
-    }
-    let stripped = if raw.contains(HOOK_BEGIN) && raw.contains(HOOK_END) {
-        strip_marked_hook(&raw)
-    } else {
-        strip_legacy_hook(&raw)
-    };
-    if stripped.trim().is_empty() {
-        std::fs::remove_file(path)
-            .with_context(|| format!("failed to delete empty hook {}", path.display()))?;
-    } else {
-        synrepo::util::atomic_write(path, stripped.as_bytes())
-            .with_context(|| format!("failed to write hook {}", path.display()))?;
-    }
-    Ok(())
-}
-
-fn strip_marked_hook(raw: &str) -> String {
-    let Some(begin) = raw.find(HOOK_BEGIN) else {
-        return raw.to_string();
-    };
-    let Some(end_rel) = raw[begin..].find(HOOK_END) else {
-        return raw.to_string();
-    };
-    let end = begin + end_rel + HOOK_END.len();
-    let mut out = String::new();
-    out.push_str(raw[..begin].trim_end());
-    out.push('\n');
-    out.push_str(raw[end..].trim_start());
-    out
-}
-
-fn strip_legacy_hook(raw: &str) -> String {
-    raw.lines()
-        .filter(|line| {
-            let trimmed = line.trim();
-            trimmed != "# synrepo hook" && !trimmed.contains("synrepo reconcile --fast")
-        })
-        .collect::<Vec<_>>()
-        .join("\n")
 }
 
 fn push_failure(summary: &mut UninstallSummary, item: &PlannedAction, error: &str) {

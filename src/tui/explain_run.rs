@@ -28,6 +28,8 @@ mod view;
 
 use view::{draw_progress, ExplainRunUi};
 
+const EXPLAIN_PROGRESS_CHANNEL_CAPACITY: usize = 128;
+
 pub(crate) fn run_explain_in_dashboard(
     terminal: &mut DashboardTerminal,
     state: &mut AppState,
@@ -87,7 +89,8 @@ fn run_context(
     // q / Esc / Ctrl-C would queue silently in the crossterm input buffer)
     // for the duration of each provider call.
     let cancel = Arc::new(AtomicBool::new(false));
-    let (event_tx, event_rx) = crossbeam_channel::unbounded::<CommentaryProgressEvent>();
+    let (event_tx, event_rx) =
+        crossbeam_channel::bounded::<CommentaryProgressEvent>(EXPLAIN_PROGRESS_CHANNEL_CAPACITY);
     let mut actions_taken: Vec<String> = Vec::new();
 
     let result: crate::Result<()> = std::thread::scope(|scope_handle| {
@@ -107,7 +110,7 @@ fn run_context(
         let worker = scope_handle.spawn(move || -> crate::Result<()> {
             let mut should_stop = || cancel_for_worker.load(Ordering::Relaxed);
             let mut progress = |event: CommentaryProgressEvent| {
-                let _ = event_tx_for_worker.send(event);
+                report_progress(&event_tx_for_worker, event);
             };
             match &task {
                 ExplainRunTask::WorkPlan { scope, .. } => refresh_commentary(
@@ -211,6 +214,13 @@ fn log_entry(tag: &str, message: String, severity: Severity) -> LogEntry {
         message,
         severity,
     }
+}
+
+fn report_progress(
+    sender: &crossbeam_channel::Sender<CommentaryProgressEvent>,
+    event: CommentaryProgressEvent,
+) {
+    let _ = sender.try_send(event);
 }
 
 #[derive(Clone, Debug)]
@@ -330,6 +340,34 @@ impl ExplainRunContext {
             ExplainStatus::DisabledKeyDetected { env_var } => {
                 format!("provider calls are off, ${env_var} is detected but explain is disabled")
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn explain_progress_channel_drops_events_when_full() {
+        let (sender, receiver) = crossbeam_channel::bounded(EXPLAIN_PROGRESS_CHANNEL_CAPACITY);
+
+        for index in 0..(EXPLAIN_PROGRESS_CHANNEL_CAPACITY + 10) {
+            report_progress(&sender, scan_event(index));
+        }
+
+        assert_eq!(
+            receiver.try_iter().count(),
+            EXPLAIN_PROGRESS_CHANNEL_CAPACITY
+        );
+    }
+
+    fn scan_event(index: usize) -> CommentaryProgressEvent {
+        CommentaryProgressEvent::ScanProgress {
+            files_scanned: index,
+            files_total: EXPLAIN_PROGRESS_CHANNEL_CAPACITY + 10,
+            symbols_scanned: 0,
+            symbols_total: 0,
         }
     }
 }

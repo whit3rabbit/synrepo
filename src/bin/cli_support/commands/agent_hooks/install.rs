@@ -2,6 +2,8 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context};
 use serde_json::{json, Value};
+use synrepo::pipeline::writer::now_rfc3339;
+use synrepo::registry::{self, AgentHookEntry};
 
 use crate::cli_support::agent_shims::AgentTool;
 use crate::cli_support::commands::setup::{load_json_config, write_json_config, StepOutcome};
@@ -13,26 +15,16 @@ pub(crate) fn install_agent_hooks(
     repo_root: &Path,
     tool: AgentTool,
 ) -> anyhow::Result<StepOutcome> {
-    let (path, client, matcher) = match tool {
-        AgentTool::Codex => (
-            repo_root.join(".codex/hooks.json"),
-            "codex",
-            "Bash|apply_patch|mcp__.*",
-        ),
-        AgentTool::Claude => (
-            repo_root.join(".claude/settings.local.json"),
-            "claude",
-            "Read|Grep|Glob|Edit|Write|Bash|mcp__.*",
-        ),
-        _ => anyhow::bail!(
+    let Some(target) = agent_hook_target(repo_root, tool) else {
+        anyhow::bail!(
             "{} does not support synrepo agent nudge hooks",
             tool.display_name()
-        ),
+        );
     };
 
-    let mut config = load_json_config(&path)?;
-    let changed = merge_hook_config(&mut config, client, matcher)
-        .with_context(|| format!("failed to merge {}", path.display()))?;
+    let mut config = load_json_config(&target.path)?;
+    let changed = merge_hook_config(&mut config, target.client, target.matcher)
+        .with_context(|| format!("failed to merge {}", target.path.display()))?;
     if !changed {
         println!(
             "  synrepo nudge hooks already installed for {}.",
@@ -41,23 +33,63 @@ pub(crate) fn install_agent_hooks(
         if matches!(tool, AgentTool::Codex) {
             println!("  {CODEX_FEATURE_MESSAGE}");
         }
+        record_agent_hook_best_effort(repo_root, tool, &target.path);
         return Ok(StepOutcome::AlreadyCurrent);
     }
 
-    if let Some(parent) = path.parent() {
+    if let Some(parent) = target.path.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("failed to create {}", parent.display()))?;
     }
-    write_json_config(&path, &config)?;
+    write_json_config(&target.path, &config)?;
     println!(
         "  Installed synrepo nudge hooks for {}: {}",
         tool.display_name(),
-        display_path(&path, repo_root)
+        display_path(&target.path, repo_root)
     );
     if matches!(tool, AgentTool::Codex) {
         println!("  {CODEX_FEATURE_MESSAGE}");
     }
+    record_agent_hook_best_effort(repo_root, tool, &target.path);
     Ok(StepOutcome::Applied)
+}
+
+pub(crate) struct AgentHookTarget {
+    pub(crate) path: PathBuf,
+    pub(crate) client: &'static str,
+    pub(crate) matcher: &'static str,
+}
+
+pub(crate) fn agent_hook_target(repo_root: &Path, tool: AgentTool) -> Option<AgentHookTarget> {
+    match tool {
+        AgentTool::Codex => Some(AgentHookTarget {
+            path: repo_root.join(".codex/hooks.json"),
+            client: "codex",
+            matcher: "Bash|apply_patch|mcp__.*",
+        }),
+        AgentTool::Claude => Some(AgentHookTarget {
+            path: repo_root.join(".claude/settings.local.json"),
+            client: "claude",
+            matcher: "Read|Grep|Glob|Edit|Write|Bash|mcp__.*",
+        }),
+        _ => None,
+    }
+}
+
+pub(crate) fn agent_hook_commands_for_tool(tool: AgentTool) -> Option<[String; 2]> {
+    let client = match tool {
+        AgentTool::Codex => "codex",
+        AgentTool::Claude => "claude",
+        _ => return None,
+    };
+    Some(agent_hook_commands(client))
+}
+
+pub(crate) fn agent_hook_commands(client: &str) -> [String; 2] {
+    [
+        format!("synrepo agent-hook nudge --client {client} --event UserPromptSubmit"),
+        format!("synrepo agent-hook nudge --client {client} --event PreToolUse"),
+    ]
 }
 
 fn display_path(path: &Path, repo_root: &Path) -> String {
@@ -73,9 +105,7 @@ pub(crate) fn merge_hook_config(
     client: &str,
     pre_tool_matcher: &str,
 ) -> anyhow::Result<bool> {
-    let command_prompt =
-        format!("synrepo agent-hook nudge --client {client} --event UserPromptSubmit");
-    let command_pretool = format!("synrepo agent-hook nudge --client {client} --event PreToolUse");
+    let [command_prompt, command_pretool] = agent_hook_commands(client);
 
     let root = config
         .as_object_mut()
@@ -94,6 +124,29 @@ pub(crate) fn merge_hook_config(
         &command_pretool,
     )?;
     Ok(changed)
+}
+
+fn record_agent_hook_best_effort(repo_root: &Path, tool: AgentTool, path: &Path) {
+    let entry = AgentHookEntry {
+        tool: tool.canonical_name().to_string(),
+        path: registry_path_string(repo_root, path),
+        installed_at: now_rfc3339(),
+    };
+    if let Err(err) = registry::record_agent_hooks(repo_root, vec![entry]) {
+        tracing::warn!(
+            error = %err,
+            tool = tool.canonical_name(),
+            "install registry update skipped after {} agent hook install",
+            tool.display_name()
+        );
+    }
+}
+
+fn registry_path_string(repo_root: &Path, path: &Path) -> String {
+    match path.strip_prefix(repo_root).map(PathBuf::from) {
+        Ok(rel) => rel.to_string_lossy().into_owned(),
+        Err(_) => path.to_string_lossy().into_owned(),
+    }
 }
 
 fn add_event_hook(
@@ -174,6 +227,10 @@ mod tests {
 
     #[test]
     fn installer_writes_client_local_paths() {
+        let _lock =
+            synrepo::test_support::global_test_lock(synrepo::config::test_home::HOME_ENV_TEST_LOCK);
+        let home = tempdir().unwrap();
+        let _guard = synrepo::config::test_home::HomeEnvGuard::redirect_to(home.path());
         let repo = tempdir().unwrap();
         install_agent_hooks(repo.path(), AgentTool::Codex).unwrap();
         install_agent_hooks(repo.path(), AgentTool::Claude).unwrap();
@@ -184,6 +241,8 @@ mod tests {
             install_agent_hooks(repo.path(), AgentTool::Codex).unwrap(),
             StepOutcome::AlreadyCurrent
         );
+        let entry = synrepo::registry::get(repo.path()).unwrap().unwrap();
+        assert_eq!(entry.agent_hooks.len(), 2);
     }
 
     #[test]

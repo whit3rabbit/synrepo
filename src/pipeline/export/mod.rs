@@ -234,7 +234,14 @@ pub fn write_exports(
 
     // Manage .gitignore: append <export_dir>/ unless --commit is set.
     if !commit {
-        ensure_gitignored(repo_root, &config.export_dir)?;
+        if let Some(entry) = ensure_gitignored(repo_root, &config.export_dir)? {
+            if let Err(err) = crate::registry::record_export_gitignore(repo_root, &entry) {
+                tracing::warn!(
+                    error = %err,
+                    "export gitignore ownership registry update skipped"
+                );
+            }
+        }
     }
 
     let last_reconcile_at = load_reconcile_state(synrepo_dir)
@@ -285,7 +292,7 @@ pub fn load_manifest(repo_root: &Path, config: &Config) -> Option<ExportManifest
 }
 
 /// Append `<export_dir>/` to the repo-root `.gitignore` if not already present.
-fn ensure_gitignored(repo_root: &Path, export_dir: &str) -> crate::Result<()> {
+fn ensure_gitignored(repo_root: &Path, export_dir: &str) -> crate::Result<Option<String>> {
     let gitignore_path = repo_root.join(".gitignore");
     let entry = format!("{export_dir}/");
 
@@ -298,7 +305,7 @@ fn ensure_gitignored(repo_root: &Path, export_dir: &str) -> crate::Result<()> {
                 || t == format!("/{entry}")
                 || t == format!("/{export_dir}")
         }) {
-            return Ok(());
+            return Ok(None);
         }
         let append = if content.ends_with('\n') {
             format!("{entry}\n")
@@ -311,5 +318,5 @@ fn ensure_gitignored(repo_root: &Path, export_dir: &str) -> crate::Result<()> {
     } else {
         std::fs::write(&gitignore_path, format!("{entry}\n").as_bytes())?;
     }
-    Ok(())
+    Ok(Some(entry))
 }

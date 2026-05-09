@@ -13,7 +13,7 @@ use synrepo::surface::task_route::{classify_task_route, TaskRoute};
 
 use crate::cli_support::agent_shims::AgentTool;
 
-pub(crate) use install::install_agent_hooks;
+pub(crate) use install::{agent_hook_commands_for_tool, agent_hook_target, install_agent_hooks};
 
 const MAX_STDIN_BYTES: usize = 256 * 1024;
 

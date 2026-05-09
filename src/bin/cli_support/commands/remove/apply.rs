@@ -20,6 +20,7 @@ use crate::cli_support::agent_shims::{
 use crate::cli_support::commands::mcp_config_has_synrepo;
 use crate::cli_support::commands::setup::{load_json_config, write_json_config};
 
+use super::hook_artifacts::{remove_agent_hook, remove_git_hook};
 use super::{AppliedAction, ApplySummary, RemoveAction, RemovePlan};
 
 pub(crate) fn apply_plan(repo_root: &Path, plan: &RemovePlan) -> anyhow::Result<ApplySummary> {
@@ -33,6 +34,8 @@ pub(crate) fn apply_plan(repo_root: &Path, plan: &RemovePlan) -> anyhow::Result<
             RemoveAction::RemoveGitignoreLine { entry } => {
                 synrepo::bootstrap::remove_from_root_gitignore(repo_root, entry).map(|_| ())
             }
+            RemoveAction::RemoveGitHook { path, mode, .. } => remove_git_hook(path, mode),
+            RemoveAction::RemoveAgentHook { tool, path } => remove_agent_hook(tool, path),
             RemoveAction::DeleteSynrepoDir => {
                 let synrepo_dir = Config::synrepo_dir(repo_root);
                 if synrepo_dir.exists() {

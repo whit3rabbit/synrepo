@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use tempfile::tempdir;
 
-use super::{io, AgentEntry, HookEntry, ProjectEntry, Registry, SCHEMA_VERSION};
+use super::{io, AgentEntry, AgentHookEntry, HookEntry, ProjectEntry, Registry, SCHEMA_VERSION};
 
 fn sample_project(path: &Path) -> ProjectEntry {
     ProjectEntry {
@@ -18,6 +18,7 @@ fn sample_project(path: &Path) -> ProjectEntry {
         synrepo_dir: ".synrepo".to_string(),
         root_gitignore_entry_added: true,
         export_gitignore_entry_added: false,
+        export_gitignore_entry: None,
         agents: vec![AgentEntry {
             tool: "claude".to_string(),
             scope: "project".to_string(),
@@ -27,6 +28,7 @@ fn sample_project(path: &Path) -> ProjectEntry {
             installed_at: "2026-04-19T00:00:05Z".to_string(),
         }],
         hooks: Vec::new(),
+        agent_hooks: Vec::new(),
     }
 }
 
@@ -130,6 +132,7 @@ fn agent_entry_omits_optional_fields_when_none() {
         synrepo_dir: ".synrepo".to_string(),
         root_gitignore_entry_added: false,
         export_gitignore_entry_added: false,
+        export_gitignore_entry: None,
         agents: vec![AgentEntry {
             tool: "copilot".to_string(),
             scope: "project".to_string(),
@@ -139,6 +142,7 @@ fn agent_entry_omits_optional_fields_when_none() {
             installed_at: "2026-04-19T00:00:00Z".to_string(),
         }],
         hooks: Vec::new(),
+        agent_hooks: Vec::new(),
     });
     io::save_to(&path, &registry).unwrap();
     let text = fs::read_to_string(&path).unwrap();
@@ -167,6 +171,32 @@ fn hook_entries_round_trip() {
     let reloaded = io::load_from(&path).unwrap();
     assert_eq!(reloaded.projects[0].hooks.len(), 1);
     assert_eq!(reloaded.projects[0].hooks[0].name, "post-commit");
+}
+
+#[test]
+fn agent_hook_entries_and_export_gitignore_round_trip() {
+    let dir = tempdir().unwrap();
+    let path = dir.path().join("projects.toml");
+    let mut project = sample_project(dir.path());
+    project.export_gitignore_entry_added = true;
+    project.export_gitignore_entry = Some("custom-context/".to_string());
+    project.agent_hooks.push(AgentHookEntry {
+        tool: "codex".to_string(),
+        path: ".codex/hooks.json".to_string(),
+        installed_at: "2026-04-29T00:00:00Z".to_string(),
+    });
+    let mut registry = Registry::default();
+    registry.projects.push(project);
+
+    io::save_to(&path, &registry).unwrap();
+    let reloaded = io::load_from(&path).unwrap();
+    let project = &reloaded.projects[0];
+    assert_eq!(
+        project.export_gitignore_entry.as_deref(),
+        Some("custom-context/")
+    );
+    assert_eq!(project.agent_hooks.len(), 1);
+    assert_eq!(project.agent_hooks[0].tool, "codex");
 }
 
 #[test]
@@ -218,7 +248,9 @@ fn load_project_entry_with_missing_defaulted_fields() {
         super::default_project_name(dir.path())
     );
     assert!(!project.root_gitignore_entry_added);
+    assert!(project.export_gitignore_entry.is_none());
     assert!(project.agents.is_empty());
+    assert!(project.agent_hooks.is_empty());
 }
 
 #[test]

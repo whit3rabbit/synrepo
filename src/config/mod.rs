@@ -66,8 +66,8 @@ pub struct Config {
     #[serde(default = "default_max_file_size")]
     pub max_file_size_bytes: u64,
 
-    /// Advisory ceiling for the in-memory graph snapshot. `0` disables
-    /// snapshot publication entirely.
+    /// Hard publication ceiling for the in-memory graph snapshot. `0` disables
+    /// snapshot publication entirely; oversized snapshots stay on SQLite.
     #[serde(default = "default_max_graph_snapshot_bytes")]
     pub max_graph_snapshot_bytes: usize,
 

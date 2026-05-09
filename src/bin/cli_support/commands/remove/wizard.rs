@@ -51,7 +51,10 @@ pub(super) fn apply_wizard_plan(
 /// [`UninstallActionKind`]s for the wizard. The two enums are shape-identical;
 /// only the variant names differ (`DeleteShim` vs `RemoveShim`,
 /// `StripMcpEntry` vs `RemoveMcpEntry`).
-pub(super) fn to_uninstall_kinds(actions: &[RemoveAction]) -> Vec<UninstallActionKind> {
+pub(super) fn to_uninstall_kinds(
+    repo_root: &Path,
+    actions: &[RemoveAction],
+) -> Vec<UninstallActionKind> {
     actions
         .iter()
         .map(|a| match a {
@@ -68,6 +71,16 @@ pub(super) fn to_uninstall_kinds(actions: &[RemoveAction]) -> Vec<UninstallActio
                     entry: entry.clone(),
                 }
             }
+            RemoveAction::RemoveGitHook { name, path, mode } => UninstallActionKind::RemoveHook {
+                project: repo_root.to_path_buf(),
+                name: name.clone(),
+                path: path.clone(),
+                mode: mode.clone(),
+            },
+            RemoveAction::RemoveAgentHook { tool, path } => UninstallActionKind::RemoveAgentHook {
+                tool: tool.clone(),
+                path: path.clone(),
+            },
             RemoveAction::DeleteSynrepoDir => UninstallActionKind::DeleteSynrepoDir,
         })
         .collect()
@@ -88,6 +101,12 @@ pub(super) fn from_uninstall_kinds(actions: Vec<UninstallActionKind>) -> Vec<Rem
             }
             UninstallActionKind::RemoveGitignoreLine { entry } => {
                 RemoveAction::RemoveGitignoreLine { entry }
+            }
+            UninstallActionKind::RemoveHook {
+                name, path, mode, ..
+            } => RemoveAction::RemoveGitHook { name, path, mode },
+            UninstallActionKind::RemoveAgentHook { tool, path } => {
+                RemoveAction::RemoveAgentHook { tool, path }
             }
             UninstallActionKind::DeleteSynrepoDir => RemoveAction::DeleteSynrepoDir,
             other => panic!("unsupported action returned to synrepo remove: {other:?}"),

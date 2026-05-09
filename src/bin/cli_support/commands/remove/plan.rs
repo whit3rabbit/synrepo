@@ -16,6 +16,7 @@ use synrepo::registry::{self, AgentEntry, ProjectEntry};
 use crate::cli_support::agent_shims::AgentTool;
 use crate::cli_support::commands::mcp_config_has_synrepo;
 
+use super::hook_artifacts;
 use super::{all_agent_tools, RemoveAction, RemovePlan};
 
 /// Build a [`RemovePlan`] by combining the registry entry for this project
@@ -50,7 +51,8 @@ pub(crate) fn build_plan(
                     .unwrap_or(false);
                 let has_shim = t.output_path(repo_root).exists();
                 let has_mcp = agent_config_mcp_path(repo_root, t).is_some();
-                if !has_registry_entry && !has_shim && !has_mcp {
+                let has_agent_hook = hook_artifacts::has_agent_hook(repo_root, t, project.as_ref());
+                if !has_registry_entry && !has_shim && !has_mcp && !has_agent_hook {
                     continue;
                 }
                 add_agent_actions(
@@ -62,6 +64,7 @@ pub(crate) fn build_plan(
                     &mut mcp_check_cache,
                 );
             }
+            hook_artifacts::add_git_hook_actions(repo_root, project.as_ref(), &mut plan);
 
             // Catch lingering synrepo entries in MCP configs the per-agent loop
             // skipped (shim deleted but MCP entry left, or pre-existing installs
@@ -115,14 +118,19 @@ pub(crate) fn build_plan(
                     entry: ".synrepo/".to_string(),
                 });
             }
+            let export_gitignore_entry = project
+                .as_ref()
+                .filter(|p| p.export_gitignore_entry_added)
+                .and_then(|p| p.export_gitignore_entry.as_deref())
+                .unwrap_or("synrepo-context/");
             if project
                 .as_ref()
                 .map(|p| p.export_gitignore_entry_added)
                 .unwrap_or(false)
-                && gitignore_contains_line(repo_root, "synrepo-context/")
+                && gitignore_contains_line(repo_root, export_gitignore_entry)
             {
                 plan.actions.push(RemoveAction::RemoveGitignoreLine {
-                    entry: "synrepo-context/".to_string(),
+                    entry: export_gitignore_entry.to_string(),
                 });
             }
 
@@ -194,6 +202,7 @@ fn add_agent_actions(
             plan.preserved.push(bak);
         }
     }
+    hook_artifacts::add_agent_hook_action(repo_root, tool, project, plan);
 }
 
 fn agent_config_mcp_path(repo_root: &Path, tool: AgentTool) -> Option<PathBuf> {

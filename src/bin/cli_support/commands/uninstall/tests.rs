@@ -8,8 +8,10 @@ use super::apply::apply_uninstall_plan;
 use super::plan::{
     build_uninstall_plan, PlannedAction, ProjectUninstallPlan, UninstallAction, UninstallPlan,
 };
+use crate::cli_support::agent_shims::AgentTool;
 use crate::cli_support::commands::hooks::{full_hook_script, marked_hook_block};
 use crate::cli_support::commands::remove::RemoveAction;
+use crate::cli_support::commands::step_install_agent_hooks;
 use crate::cli_support::repair_cmd::execute_project_mcp_install_plan;
 use synrepo::registry::HookEntry;
 
@@ -196,6 +198,31 @@ fn applying_hook_keeps_project_data_tracking_until_data_is_deleted() {
     assert!(entry.root_gitignore_entry_added);
     assert!(entry.hooks.is_empty());
     assert!(project.path().join(".synrepo").exists());
+}
+
+#[test]
+fn applying_agent_hook_keeps_project_data_tracking_until_data_is_deleted() {
+    let (_home, _guard, _lock) = isolated_home();
+    let project = tempdir().unwrap();
+    record_project_with_data(project.path());
+    step_install_agent_hooks(project.path(), AgentTool::Codex).unwrap();
+
+    let plan = build_uninstall_plan(project.path(), false, true).unwrap();
+    assert!(
+        plan.projects[0].actions.iter().any(|item| matches!(
+            &item.action,
+            UninstallAction::RemoveAgentHook { tool, .. } if tool == "codex"
+        ) && item.enabled),
+        "full uninstall should include tracked Codex nudge hook removal"
+    );
+
+    apply_uninstall_plan(&plan, false).unwrap();
+
+    let entry = synrepo::registry::get(project.path()).unwrap().unwrap();
+    assert!(entry.agent_hooks.is_empty());
+    assert!(entry.root_gitignore_entry_added);
+    let raw = fs::read_to_string(project.path().join(".codex/hooks.json")).unwrap();
+    assert!(!raw.contains("synrepo agent-hook nudge"));
 }
 
 #[test]

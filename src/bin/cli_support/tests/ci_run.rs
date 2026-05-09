@@ -50,3 +50,29 @@ fn ci_run_markdown_reports_unresolved_targets() {
     assert!(out.contains("Unresolved: missing.rs"));
     assert!(out.contains("No risk cards produced."));
 }
+
+#[test]
+fn ci_run_caps_default_all_file_targets() {
+    let repo = tempdir().unwrap();
+    fs::create_dir_all(repo.path().join("src")).unwrap();
+    for index in 0..501 {
+        fs::write(
+            repo.path().join("src").join(format!("file_{index}.rs")),
+            format!("pub fn ci_target_{index}() {{}}\n"),
+        )
+        .unwrap();
+    }
+
+    let err = ci_run_output(
+        repo.path(),
+        CiRunOptions {
+            targets: vec![],
+            changed_from: None,
+            budget: None,
+            json: false,
+        },
+    )
+    .unwrap_err();
+
+    assert!(err.to_string().contains("default target set exceeds"));
+}

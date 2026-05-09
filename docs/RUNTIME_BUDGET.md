@@ -28,9 +28,9 @@ coverage, span coverage, and wrong-context rate when the fixture defines
 
 ## Graph Snapshot Budget
 
-`Config.max_graph_snapshot_bytes` defaults to `128 MiB`. This is advisory:
-oversized snapshots may still publish with a warning, and `0` disables snapshot
-publication.
+`Config.max_graph_snapshot_bytes` defaults to `128 MiB`. This is a hard
+publication ceiling: oversized snapshots are skipped and readers use the SQLite
+path. `0` disables snapshot publication entirely.
 
 Review expectations:
 

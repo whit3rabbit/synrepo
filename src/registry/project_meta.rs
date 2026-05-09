@@ -3,8 +3,8 @@ use std::path::{Path, PathBuf};
 use crate::pipeline::writer::now_rfc3339;
 
 use super::{
-    canonicalize, default_synrepo_dir, io, registry_path, AgentEntry, HookEntry, ProjectEntry,
-    Registry, SCHEMA_VERSION,
+    canonicalize, default_synrepo_dir, io, registry_path, AgentEntry, AgentHookEntry, HookEntry,
+    ProjectEntry, Registry, SCHEMA_VERSION,
 };
 
 /// Derive the stable registry project ID for a canonical project path.
@@ -53,6 +53,7 @@ impl ProjectEntry {
                 .unwrap_or(false)
             || !self.agents.is_empty()
             || !self.hooks.is_empty()
+            || !self.agent_hooks.is_empty()
     }
 }
 
@@ -66,8 +67,10 @@ pub(super) fn new_project_entry(path: PathBuf, root_gitignore_entry_added: bool)
         synrepo_dir: default_synrepo_dir(),
         root_gitignore_entry_added,
         export_gitignore_entry_added: false,
+        export_gitignore_entry: None,
         agents: Vec::<AgentEntry>::new(),
         hooks: Vec::<HookEntry>::new(),
+        agent_hooks: Vec::<AgentHookEntry>::new(),
     }
 }
 

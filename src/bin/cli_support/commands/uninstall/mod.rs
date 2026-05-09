@@ -94,7 +94,10 @@ fn plan_with_wizard_selection(
 
 fn action_to_wizard_kind(action: &UninstallAction) -> Option<UninstallActionKind> {
     match action {
-        UninstallAction::ProjectRemove { remove_action, .. } => match remove_action {
+        UninstallAction::ProjectRemove {
+            project,
+            remove_action,
+        } => match remove_action {
             RemoveAction::DeleteShim { tool, path } => Some(UninstallActionKind::RemoveShim {
                 tool: tool.clone(),
                 path: path.clone(),
@@ -110,18 +113,40 @@ fn action_to_wizard_kind(action: &UninstallAction) -> Option<UninstallActionKind
                     entry: entry.clone(),
                 })
             }
+            RemoveAction::RemoveGitHook { name, path, mode } => {
+                Some(UninstallActionKind::RemoveHook {
+                    project: project.clone(),
+                    name: name.clone(),
+                    path: path.clone(),
+                    mode: mode.clone(),
+                })
+            }
+            RemoveAction::RemoveAgentHook { tool, path } => {
+                Some(UninstallActionKind::RemoveAgentHook {
+                    tool: tool.clone(),
+                    path: path.clone(),
+                })
+            }
             RemoveAction::DeleteSynrepoDir => Some(UninstallActionKind::DeleteSynrepoDir),
         },
         UninstallAction::RemoveHook {
             project,
             name,
             path,
+            mode,
             ..
         } => Some(UninstallActionKind::RemoveHook {
             project: project.clone(),
             name: name.clone(),
             path: path.clone(),
+            mode: mode.clone(),
         }),
+        UninstallAction::RemoveAgentHook { tool, path, .. } => {
+            Some(UninstallActionKind::RemoveAgentHook {
+                tool: tool.clone(),
+                path: path.clone(),
+            })
+        }
         UninstallAction::DeleteProjectSynrepoDir { project, path } => {
             Some(UninstallActionKind::DeleteProjectSynrepoDir {
                 project: project.clone(),
@@ -207,10 +232,19 @@ fn action_label(action: &UninstallAction) -> String {
             RemoveAction::RemoveGitignoreLine { entry } => {
                 format!("remove `{entry}` from .gitignore")
             }
+            RemoveAction::RemoveGitHook { name, path, .. } => {
+                format!("remove {name} Git hook at {}", path.display())
+            }
+            RemoveAction::RemoveAgentHook { tool, path } => {
+                format!("remove {tool} agent nudge hooks from {}", path.display())
+            }
             RemoveAction::DeleteSynrepoDir => "delete .synrepo/".to_string(),
         },
         UninstallAction::RemoveHook { name, path, .. } => {
             format!("remove {name} Git hook at {}", path.display())
+        }
+        UninstallAction::RemoveAgentHook { tool, path, .. } => {
+            format!("remove {tool} agent nudge hooks from {}", path.display())
         }
         UninstallAction::DeleteProjectSynrepoDir { path, .. } => {
             format!("delete project data at {}", path.display())

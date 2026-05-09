@@ -51,6 +51,15 @@ pub enum UninstallActionKind {
         name: String,
         /// Absolute hook path.
         path: PathBuf,
+        /// Installation mode: "full_file", "marked_block", or "legacy".
+        mode: String,
+    },
+    /// Remove local client-side agent nudge hooks.
+    RemoveAgentHook {
+        /// Canonical tool name, for example "codex".
+        tool: String,
+        /// Absolute hook config path.
+        path: PathBuf,
     },
     /// Delete one project's `.synrepo/` directory. Destructive; defaults off.
     DeleteProjectSynrepoDir {
@@ -279,12 +288,16 @@ fn render_label(kind: &UninstallActionKind) -> String {
             project,
             name,
             path,
+            ..
         } => {
             format!(
                 "Remove {name} hook for {} ({})",
                 project.display(),
                 path.display()
             )
+        }
+        UninstallActionKind::RemoveAgentHook { tool, path } => {
+            format!("Remove {tool} agent nudge hooks ({})", path.display())
         }
         UninstallActionKind::DeleteProjectSynrepoDir { project, path } => {
             format!(

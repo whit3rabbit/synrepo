@@ -53,7 +53,7 @@ pub(crate) enum ShimPlacement {
         placement: agent_config::InstructionPlacement,
     },
     /// Synrepo-local fallback for targets not yet covered by agent-config.
-    /// Today this covers `Generic`, `Goose`, `Kiro`, and `Tabnine`.
+    /// Today this covers `Generic`, `Goose`, and `Kiro`.
     Local,
 }
 

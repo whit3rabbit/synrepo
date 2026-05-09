@@ -11,7 +11,9 @@
 //! sources and feed it to [`apply_plan`].
 
 mod apply;
+pub(crate) mod hook_artifacts;
 mod plan;
+mod registry_progress;
 mod wizard;
 
 use std::path::{Path, PathBuf};
@@ -19,7 +21,6 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use synrepo::config::Config;
 use synrepo::pipeline::watch::{watch_service_status, WatchServiceStatus};
-use synrepo::registry;
 use synrepo::tui::{run_uninstall_wizard, stdout_is_tty, TuiOptions, UninstallWizardOutcome};
 
 use crate::cli_support::agent_shims::AgentTool;
@@ -50,6 +51,22 @@ pub(crate) enum RemoveAction {
     RemoveGitignoreLine {
         /// The literal line, e.g. `.synrepo/`.
         entry: String,
+    },
+    /// Remove one synrepo-owned Git hook from `.git/hooks`.
+    RemoveGitHook {
+        /// Hook name, e.g. "post-commit".
+        name: String,
+        /// Absolute hook path.
+        path: PathBuf,
+        /// Installation mode: "full_file", "marked_block", or "legacy".
+        mode: String,
+    },
+    /// Remove one local client-side agent nudge hook config entry.
+    RemoveAgentHook {
+        /// Canonical tool name, e.g. "codex" or "claude".
+        tool: String,
+        /// Absolute hook config path.
+        path: PathBuf,
     },
     /// Delete the `.synrepo/` directory and everything inside it.
     DeleteSynrepoDir,
@@ -109,7 +126,7 @@ pub(crate) fn remove(
     let wizard_consent =
         !apply && !json && tool.is_none() && !plan.is_empty() && stdout_is_tty() && !force;
     if wizard_consent {
-        let installed = to_uninstall_kinds(&plan.actions);
+        let installed = to_uninstall_kinds(repo_root, &plan.actions);
         match run_uninstall_wizard(installed, plan.preserved.clone(), TuiOptions::default())? {
             UninstallWizardOutcome::NonTty => {
                 // Fallthrough: render table, dry-run hint.
@@ -203,15 +220,7 @@ pub(super) fn finalize_remove(
         render_summary(&summary);
     }
 
-    // Best-effort registry cleanup: filesystem state has already changed, so
-    // a write failure here is logged and swallowed.
-    if let Some(t) = tool {
-        if let Err(err) = registry::record_agent_uninstall(repo_root, t.canonical_name()) {
-            tracing::warn!(error = %err, "registry update skipped after per-agent remove");
-        }
-    } else if let Err(err) = registry::record_uninstall(repo_root) {
-        tracing::warn!(error = %err, "registry update skipped after bulk remove");
-    }
+    registry_progress::record_registry_progress(repo_root, tool, &summary);
     Ok(())
 }
 
@@ -274,6 +283,12 @@ fn render_plan_table(plan: &RemovePlan, per_agent: bool) {
                 ("strip-mcp-entry", tool.as_str(), path.display().to_string())
             }
             RemoveAction::RemoveGitignoreLine { entry } => ("gitignore-line", "-", entry.clone()),
+            RemoveAction::RemoveGitHook { name, path, .. } => {
+                ("git-hook", name.as_str(), path.display().to_string())
+            }
+            RemoveAction::RemoveAgentHook { tool, path } => {
+                ("agent-hook", tool.as_str(), path.display().to_string())
+            }
             RemoveAction::DeleteSynrepoDir => ("delete-synrepo-dir", "-", ".synrepo/".to_string()),
         };
         println!("{kind:<22} {tool:<26} {target}");
@@ -307,6 +322,12 @@ pub(super) fn render_summary(summary: &ApplySummary) {
             }
             RemoveAction::RemoveGitignoreLine { entry } => {
                 format!("removed `{entry}` from root .gitignore")
+            }
+            RemoveAction::RemoveGitHook { name, path, .. } => {
+                format!("removed {name} Git hook ({})", path.display())
+            }
+            RemoveAction::RemoveAgentHook { tool, path } => {
+                format!("removed {tool} agent nudge hooks ({})", path.display())
             }
             RemoveAction::DeleteSynrepoDir => "deleted .synrepo/".to_string(),
         };

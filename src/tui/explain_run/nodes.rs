@@ -181,7 +181,7 @@ fn fallback_work_item(node_id: NodeId) -> CommentaryWorkItem {
 }
 
 fn emit(event_tx: &Sender<CommentaryProgressEvent>, event: CommentaryProgressEvent) {
-    let _ = event_tx.send(event);
+    let _ = event_tx.try_send(event);
 }
 
 fn emit_finished(

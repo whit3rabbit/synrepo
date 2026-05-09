@@ -17,8 +17,8 @@ pub mod io;
 mod project_meta;
 
 pub use install_records::{
-    record_binary, record_binary_uninstall, record_hooks, record_hooks_uninstall,
-    record_uninstall_progress,
+    record_agent_hooks, record_binary, record_binary_uninstall, record_hooks,
+    record_hooks_uninstall, record_uninstall_progress,
 };
 pub use project_meta::{
     default_project_name, derive_project_id, mark_project_opened, rename_project, resolve_project,
@@ -78,12 +78,20 @@ pub struct ProjectEntry {
     /// .gitignore. Same removal rule as above.
     #[serde(default)]
     pub export_gitignore_entry_added: bool,
+    /// Exact `.gitignore` entry appended by `synrepo export`, if known.
+    /// Older registries only have `export_gitignore_entry_added`; removal
+    /// falls back to `synrepo-context/` for those legacy rows.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub export_gitignore_entry: Option<String>,
     /// Per-agent install records (one per successful `setup` / `agent-setup`).
     #[serde(default, rename = "agents")]
     pub agents: Vec<AgentEntry>,
     /// Per-project Git hooks installed by `synrepo install-hooks`.
     #[serde(default, rename = "hooks")]
     pub hooks: Vec<HookEntry>,
+    /// Per-agent local nudge hooks installed by `synrepo setup --agent-hooks`.
+    #[serde(default, rename = "agent_hooks")]
+    pub agent_hooks: Vec<AgentHookEntry>,
 }
 
 /// One per-agent install record inside a [`ProjectEntry`].
@@ -124,6 +132,18 @@ pub struct HookEntry {
     /// Installation mode: "full_file", "marked_block", or "legacy".
     pub mode: String,
     /// ISO 8601 UTC timestamp of the latest install for this hook.
+    pub installed_at: String,
+}
+
+/// One local client-side nudge hook config installed by synrepo.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+pub struct AgentHookEntry {
+    /// Agent tool canonical name, for example "codex" or "claude".
+    pub tool: String,
+    /// Hook config path. Project-local paths are stored relative to the
+    /// project root when possible.
+    pub path: String,
+    /// ISO 8601 UTC timestamp of the latest install for this hook config.
     pub installed_at: String,
 }
 
@@ -277,9 +297,9 @@ pub fn record_agent(project: &Path, agent: AgentEntry) -> anyhow::Result<()> {
     io::save_to(&path, &registry)
 }
 
-/// Mark that `synrepo export` appended `synrepo-context/` to the root
+/// Mark that `synrepo export` appended an export directory entry to the root
 /// .gitignore. No-op if the project is not tracked yet.
-pub fn record_export_gitignore(project: &Path) -> anyhow::Result<()> {
+pub fn record_export_gitignore(project: &Path, entry_line: &str) -> anyhow::Result<()> {
     let Some(path) = registry_path() else {
         return Ok(());
     };
@@ -288,6 +308,7 @@ pub fn record_export_gitignore(project: &Path) -> anyhow::Result<()> {
     if let Some(entry) = find_project_mut(&mut registry, &canonical) {
         ensure_project_identity(entry);
         entry.export_gitignore_entry_added = true;
+        entry.export_gitignore_entry = Some(entry_line.to_string());
         io::save_to(&path, &registry)?;
     }
     Ok(())

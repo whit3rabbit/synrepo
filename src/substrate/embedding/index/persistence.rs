@@ -22,6 +22,14 @@ use super::{ChunkMeta, FlatVecIndex};
 /// budget used by local providers such as Ollama.
 pub(super) const INDEX_FORMAT_VERSION: u16 = 5;
 
+pub(super) const MAX_INDEX_METADATA_LEN: usize = 1_000_000;
+pub(super) const MAX_INDEX_MODEL_NAME_BYTES: usize = 4 * 1024;
+pub(super) const MAX_INDEX_CHUNK_TEXT_BYTES: usize = 64 * 1024;
+pub(super) const MAX_INDEX_VECTOR_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+const FIXED_HEADER_BYTES: u64 = 2 + 4 + 2 + 4 + 1;
+const CHUNK_FIXED_BYTES: u64 = 16 + 1 + 4;
+const F32_BYTES: u64 = 4;
+
 impl FlatVecIndex {
     /// Save the index to disk.
     pub fn save(&self, path: &std::path::Path) -> crate::Result<()> {
@@ -67,11 +75,15 @@ impl FlatVecIndex {
     /// Load the index from disk.
     pub fn load(path: &std::path::Path, expected_dim: u16) -> crate::Result<Self> {
         let mut file = BufReader::new(File::open(path)?);
+        let file_len = file.get_ref().metadata()?.len();
+        let mut bytes_read = 0_u64;
         let mut buf4 = [0u8; 4];
         let mut buf2 = [0u8; 2];
 
+        ensure_available(file_len, bytes_read, FIXED_HEADER_BYTES, "fixed header")?;
+
         // Read version
-        file.read_exact(&mut buf2)?;
+        read_exact_counted(&mut file, &mut buf2, &mut bytes_read)?;
         let version = u16::from_le_bytes(buf2);
         if version != INDEX_FORMAT_VERSION {
             return Err(crate::Error::Other(anyhow::anyhow!(
@@ -82,11 +94,16 @@ impl FlatVecIndex {
         }
 
         // Read metadata length
-        file.read_exact(&mut buf4)?;
+        read_exact_counted(&mut file, &mut buf4, &mut bytes_read)?;
         let metadata_len = u32::from_le_bytes(buf4) as usize;
+        if metadata_len > MAX_INDEX_METADATA_LEN {
+            return Err(invalid_index(format!(
+                "metadata count {metadata_len} exceeds limit {MAX_INDEX_METADATA_LEN}"
+            )));
+        }
 
         // Read dimension
-        file.read_exact(&mut buf2)?;
+        read_exact_counted(&mut file, &mut buf2, &mut bytes_read)?;
         let dim = u16::from_le_bytes(buf2);
         if dim != expected_dim {
             return Err(crate::Error::Other(anyhow::anyhow!(
@@ -97,32 +114,87 @@ impl FlatVecIndex {
         }
 
         // Read model name
-        file.read_exact(&mut buf4)?;
+        read_exact_counted(&mut file, &mut buf4, &mut bytes_read)?;
         let model_name_len = u32::from_le_bytes(buf4) as usize;
+        if model_name_len > MAX_INDEX_MODEL_NAME_BYTES {
+            return Err(invalid_index(format!(
+                "model name length {model_name_len} exceeds limit {MAX_INDEX_MODEL_NAME_BYTES}"
+            )));
+        }
+        ensure_available(
+            file_len,
+            bytes_read,
+            to_u64(model_name_len, "model name length")?
+                .checked_add(1)
+                .ok_or_else(|| invalid_index("model name length overflows u64"))?,
+            "model name and normalization flag",
+        )?;
         let mut model_name_buf = vec![0u8; model_name_len];
-        file.read_exact(&mut model_name_buf)?;
+        read_exact_counted(&mut file, &mut model_name_buf, &mut bytes_read)?;
         let model_name = String::from_utf8(model_name_buf)
             .map_err(|e| crate::Error::Other(anyhow::anyhow!("Invalid model name: {}", e)))?;
 
         // Read normalization flag
         let mut norm_buf = [0u8; 1];
-        file.read_exact(&mut norm_buf)?;
+        read_exact_counted(&mut file, &mut norm_buf, &mut bytes_read)?;
         let normalized = norm_buf[0] != 0;
+
+        let vector_len = metadata_len
+            .checked_mul(dim as usize)
+            .ok_or_else(|| invalid_index("metadata count * dimension overflows usize"))?;
+        let vector_bytes = to_u64(vector_len, "vector length")?
+            .checked_mul(F32_BYTES)
+            .ok_or_else(|| invalid_index("vector payload byte length overflows u64"))?;
+        if vector_bytes > MAX_INDEX_VECTOR_BYTES {
+            return Err(invalid_index(format!(
+                "vector payload {vector_bytes} bytes exceeds limit {MAX_INDEX_VECTOR_BYTES}"
+            )));
+        }
+        let min_chunk_bytes = to_u64(metadata_len, "metadata count")?
+            .checked_mul(CHUNK_FIXED_BYTES)
+            .ok_or_else(|| invalid_index("chunk metadata byte length overflows u64"))?;
+        ensure_available(
+            file_len,
+            bytes_read,
+            min_chunk_bytes
+                .checked_add(vector_bytes)
+                .ok_or_else(|| invalid_index("minimum payload byte length overflows u64"))?,
+            "chunk metadata and vector payload",
+        )?;
 
         // Read chunks
         let mut chunks = Vec::with_capacity(metadata_len);
         let mut buf16 = [0u8; 16];
-        for _ in 0..metadata_len {
-            file.read_exact(&mut buf16)?;
+        for chunk_index in 0..metadata_len {
+            ensure_available(file_len, bytes_read, CHUNK_FIXED_BYTES, "chunk header")?;
+            read_exact_counted(&mut file, &mut buf16, &mut bytes_read)?;
             let chunk_id = u128::from_le_bytes(buf16);
 
             let mut variant_tag = [0u8; 1];
-            file.read_exact(&mut variant_tag)?;
+            read_exact_counted(&mut file, &mut variant_tag, &mut bytes_read)?;
 
-            file.read_exact(&mut buf4)?;
+            read_exact_counted(&mut file, &mut buf4, &mut bytes_read)?;
             let text_len = u32::from_le_bytes(buf4) as usize;
+            if text_len > MAX_INDEX_CHUNK_TEXT_BYTES {
+                return Err(invalid_index(format!(
+                    "chunk text length {text_len} exceeds limit {MAX_INDEX_CHUNK_TEXT_BYTES}"
+                )));
+            }
+            let remaining_chunk_headers = metadata_len - chunk_index - 1;
+            let min_after_text = to_u64(remaining_chunk_headers, "remaining metadata count")?
+                .checked_mul(CHUNK_FIXED_BYTES)
+                .and_then(|bytes| bytes.checked_add(vector_bytes))
+                .ok_or_else(|| invalid_index("remaining payload byte length overflows u64"))?;
+            ensure_available(
+                file_len,
+                bytes_read,
+                to_u64(text_len, "chunk text length")?
+                    .checked_add(min_after_text)
+                    .ok_or_else(|| invalid_index("chunk text byte length overflows u64"))?,
+                "chunk text and vector payload",
+            )?;
             let mut text_buf = vec![0u8; text_len];
-            file.read_exact(&mut text_buf)?;
+            read_exact_counted(&mut file, &mut text_buf, &mut bytes_read)?;
             let text = String::from_utf8(text_buf)
                 .map_err(|e| crate::Error::Other(anyhow::anyhow!("Invalid chunk text: {}", e)))?;
 
@@ -148,11 +220,11 @@ impl FlatVecIndex {
         }
 
         // Read vectors
-        let vector_len = metadata_len * dim as usize;
+        ensure_available(file_len, bytes_read, vector_bytes, "vector payload")?;
         let mut vectors = vec![0f32; vector_len];
         for v in &mut vectors {
             let mut bits = [0u8; 4];
-            file.read_exact(&mut bits)?;
+            read_exact_counted(&mut file, &mut bits, &mut bytes_read)?;
             *v = f32::from_le_bytes(bits);
         }
 
@@ -177,6 +249,44 @@ impl FlatVecIndex {
         index.session = Some(EmbeddingSession::new_from_resolution(model_res)?);
         Ok(index)
     }
+}
+
+fn read_exact_counted<R: Read>(
+    reader: &mut R,
+    buf: &mut [u8],
+    bytes_read: &mut u64,
+) -> crate::Result<()> {
+    reader.read_exact(buf)?;
+    *bytes_read = bytes_read
+        .checked_add(to_u64(buf.len(), "read length")?)
+        .ok_or_else(|| invalid_index("read offset overflows u64"))?;
+    Ok(())
+}
+
+fn ensure_available(
+    file_len: u64,
+    bytes_read: u64,
+    bytes_needed: u64,
+    label: &str,
+) -> crate::Result<()> {
+    let remaining = file_len
+        .checked_sub(bytes_read)
+        .ok_or_else(|| invalid_index("read offset exceeds file length"))?;
+    if remaining < bytes_needed {
+        return Err(invalid_index(format!(
+            "truncated before {label}: need at least {bytes_needed} bytes, have {remaining}"
+        )));
+    }
+    Ok(())
+}
+
+fn to_u64(value: usize, label: &str) -> crate::Result<u64> {
+    u64::try_from(value)
+        .map_err(|_| invalid_index(format!("{label} exceeds u64 addressable range")))
+}
+
+fn invalid_index(message: impl std::fmt::Display) -> crate::Error {
+    crate::Error::Other(anyhow::anyhow!("invalid embedding index: {message}"))
 }
 
 #[cfg(test)]

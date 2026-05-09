@@ -145,12 +145,14 @@ Use `synrepo_minimum_context` when a focal target is known but the surrounding n
 
 | Tier | Tools | What synrepo does | What you do |
 |---|---|---|---|
-| Automated MCP | `claude`, `codex`, `cursor`, `copilot`, `gemini`, `junie`, `open-code`, `qwen`, `roo`, `tabnine`, `windsurf` | Initializes `.synrepo/`, writes the skill or instructions, records the project, runs first reconcile, and registers MCP through `agent-config` | Start the agent in the repo |
-| Shim or instructions only | `generic`, `goose`, `kiro`, `trae` | Initializes `.synrepo/`, writes the skill or instructions, records the project, and runs first reconcile | Point the agent at `synrepo mcp --repo .` in that tool's own MCP config if it supports MCP |
+| Automated MCP | `amp`, `antigravity`, `claude`, `cline`, `codex`, `copilot`, `crush`, `cursor`, `forge`, `gemini`, `hermes`, `iflow`, `junie`, `kilocode`, `open-code`, `openclaw`, `pi`, `qodercli`, `qwen`, `roo`, `tabnine`, `windsurf` | Initializes `.synrepo/`, writes the skill or instructions where supported, records the project, runs first reconcile, and registers MCP through `agent-config` | Start the agent in the repo |
+| Shim or instructions only | `code-buddy`, `generic`, `goose`, `kiro`, `trae` | Initializes `.synrepo/`, writes the skill or instructions, records the project, and runs first reconcile | Point the agent at `synrepo mcp --repo .` in that tool's own MCP config if it supports MCP |
 
 `synrepo setup <tool>` prefers the agent's global config when `agent-config` supports it. Global MCP entries launch `synrepo mcp`; repo-local entries launch `synrepo mcp --repo .`. Pass `--project` when you want repo-local MCP config. Legacy unowned setup artifacts can be adopted into the ownership ledger with `synrepo upgrade --apply`.
 
 Global MCP serves managed projects only. `synrepo setup <tool>` records the current repo automatically. Later, use `synrepo project add <path>` for additional repos and `synrepo project prune-missing --apply` to clean registry entries for paths that no longer exist.
+
+Codex and Claude can also install local non-blocking nudge hooks with `synrepo setup codex --agent-hooks` or `synrepo setup claude --agent-hooks`. These local hook config entries are tracked in `~/.synrepo/projects.toml` and removed by `synrepo remove` or `synrepo uninstall` without deleting unrelated user hooks.
 
 MCP usage details, including resources, advisory overlay tools, and edit-gated tools, live in [docs/MCP.md](docs/MCP.md).
 
@@ -158,7 +160,7 @@ Use `synrepo agent-setup <tool>` if you only want to regenerate the skill or ins
 
 ## Remove Or Uninstall
 
-Use `synrepo remove` to plan removal of synrepo-owned artifacts from the current repo without uninstalling the binary. Pass `--apply` to execute the plan. Bulk `synrepo remove` targets tracked or detected agent skills, instructions, MCP entries, Git hooks, root `.gitignore` lines synrepo added, registry rows, and optionally `.synrepo/` itself.
+Use `synrepo remove` to plan removal of synrepo-owned artifacts from the current repo without uninstalling the binary. Pass `--apply` to execute the plan. Bulk `synrepo remove` targets tracked or detected agent skills, instructions, MCP entries, Codex/Claude nudge hooks, Git hooks, root `.gitignore` lines synrepo added for `.synrepo/` and export output, registry rows, and optionally `.synrepo/` itself. Export `.gitignore` removal uses the exact line recorded when `synrepo export` appended it.
 
 Use `synrepo uninstall` for the guided full teardown across projects, integrations, global state, data, and binary removal. Project `.synrepo/` directories and `~/.synrepo` database/cache files are kept by default; pass `--delete-data` after reviewing the dry run to include them. Direct binaries installed by the script can be deleted at the end when the path is safe, while Homebrew and Cargo installs print the exact uninstall command.
 
