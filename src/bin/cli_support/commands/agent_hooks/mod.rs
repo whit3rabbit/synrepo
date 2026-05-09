@@ -206,6 +206,10 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("[SYNREPO_CONTEXT_FAST_PATH]"));
+        assert!(parsed["hookSpecificOutput"]["additionalContext"]
+            .as_str()
+            .unwrap()
+            .contains("synrepo_ask"));
     }
 
     #[test]
@@ -222,10 +226,26 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("[SYNREPO_CONTEXT_FAST_PATH]"));
+        assert!(parsed["systemMessage"]
+            .as_str()
+            .unwrap()
+            .contains("broad questions and reviews start with synrepo_ask"));
         assert!(
             parsed.get("hookSpecificOutput").is_none(),
             "Codex prompt hooks should use common output fields"
         );
+    }
+
+    #[test]
+    fn exact_identifier_prompt_recommends_search() {
+        let body = json!({"prompt": "find Error::Other(anyhow"}).to_string();
+        let output = nudge_output(HookClient::Codex, HookEvent::UserPromptSubmit, &body)
+            .expect("exact search prompt should nudge");
+        let parsed: Value = serde_json::from_str(&output).unwrap();
+        let message = parsed["systemMessage"].as_str().unwrap();
+
+        assert!(message.contains("synrepo_search"), "{message}");
+        assert!(message.contains("exact identifiers and code strings use synrepo_search"));
     }
 
     #[test]

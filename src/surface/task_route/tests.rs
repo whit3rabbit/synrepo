@@ -19,14 +19,17 @@ fn broad_architecture_prompts_recommend_ask_before_find() {
     );
 
     assert_eq!(route.intent, "broad-context-question");
-    assert!(route
+    let ask_idx = route
         .recommended_tools
         .iter()
         .position(|tool| tool == "synrepo_ask")
-        < route
-            .recommended_tools
-            .iter()
-            .position(|tool| tool.starts_with("synrepo_search")));
+        .expect("ask recommended");
+    let search_idx = route
+        .recommended_tools
+        .iter()
+        .position(|tool| tool.starts_with("synrepo_search"))
+        .expect("search recommended");
+    assert!(ask_idx < search_idx);
     assert!(route.llm_required);
 }
 
@@ -35,14 +38,17 @@ fn exact_code_identifiers_recommend_search_before_find() {
     let route = classify_task_route("find Error::Other(anyhow", None);
 
     assert_eq!(route.intent, "context-search");
-    assert!(route
+    let search_idx = route
         .recommended_tools
         .iter()
         .position(|tool| tool.starts_with("synrepo_search"))
-        < route
-            .recommended_tools
-            .iter()
-            .position(|tool| tool == "synrepo_find"));
+        .expect("search recommended");
+    let find_idx = route
+        .recommended_tools
+        .iter()
+        .position(|tool| tool == "synrepo_find")
+        .expect("find recommended");
+    assert!(search_idx < find_idx);
 }
 
 #[test]

@@ -511,6 +511,9 @@ mod tests {
         assert!(summary.contains("global Codex skill"), "{summary}");
         assert!(summary.contains("duplicate frontmatter"), "{summary}");
         assert!(summary.contains("synrepo setup codex --force"), "{summary}");
-        assert!(summary.contains("synrepo agent-setup codex --regen"), "{summary}");
+        assert!(
+            summary.contains("synrepo agent-setup codex --regen"),
+            "{summary}"
+        );
     }
 }

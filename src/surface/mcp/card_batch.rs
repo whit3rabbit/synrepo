@@ -294,7 +294,9 @@ mod tests {
 
         assert_eq!(value["path"], "src/");
         assert_eq!(value["source_store"], "graph");
-        assert!(value["files"].as_array().is_some_and(|files| files.len() == 4));
+        assert!(value["files"]
+            .as_array()
+            .is_some_and(|files| files.len() == 4));
     }
 
     #[test]
@@ -331,7 +333,9 @@ mod tests {
             serde_json::from_str(&handle_card_params(&state, request)).unwrap();
 
         assert!(value["cards"].as_array().unwrap().len() < 10, "{value}");
-        assert!(value["omitted"].as_array().is_some_and(|items| !items.is_empty()));
+        assert!(value["omitted"]
+            .as_array()
+            .is_some_and(|items| !items.is_empty()));
         assert_eq!(value["context_accounting"]["truncation_applied"], true);
     }
 }
