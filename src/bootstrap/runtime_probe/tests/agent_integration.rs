@@ -18,6 +18,7 @@ fn isolated_home() -> (
 
 #[test]
 fn agent_integration_codex_mcp_only_reports_shim_missing() {
+    let (_lock, _home, home_path, _guard) = isolated_home();
     let dir = tempdir().unwrap();
     let codex = dir.path().join(".codex");
     fs::create_dir_all(&codex).unwrap();
@@ -32,7 +33,7 @@ fn agent_integration_codex_mcp_only_reports_shim_missing() {
     )
     .unwrap();
 
-    let report = probe_with_home(dir.path(), None);
+    let report = probe_with_home(dir.path(), Some(&home_path));
     assert_eq!(
         report.agent_integration,
         AgentIntegration::McpOnly {
@@ -72,6 +73,7 @@ fn agent_integration_global_claude_skill_with_project_mcp_is_complete() {
 
 #[test]
 fn agent_integration_prefers_complete_target_over_earlier_mcp_only_hint() {
+    let (_lock, _home, home_path, _guard) = isolated_home();
     let dir = tempdir().unwrap();
     fs::write(dir.path().join("CLAUDE.md"), "Claude hint\n").unwrap();
     fs::write(
@@ -90,7 +92,7 @@ fn agent_integration_prefers_complete_target_over_earlier_mcp_only_hint() {
     fs::create_dir_all(&codex_skill).unwrap();
     fs::write(codex_skill.join("SKILL.md"), b"shim").unwrap();
 
-    let report = probe_with_home(dir.path(), None);
+    let report = probe_with_home(dir.path(), Some(&home_path));
 
     assert_eq!(
         report.agent_integration,

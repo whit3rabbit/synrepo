@@ -7,6 +7,19 @@ use tempfile::tempdir;
 #[path = "tests/agent_integration.rs"]
 mod agent_integration;
 
+fn isolated_home() -> (
+    crate::test_support::GlobalTestLock,
+    tempfile::TempDir,
+    PathBuf,
+    crate::config::test_home::HomeEnvGuard,
+) {
+    let lock = crate::test_support::global_test_lock(crate::config::test_home::HOME_ENV_TEST_LOCK);
+    let home = tempdir().unwrap();
+    let canonical_home = home.path().canonicalize().unwrap();
+    let guard = crate::config::test_home::HomeEnvGuard::redirect_to(&canonical_home);
+    (lock, home, canonical_home, guard)
+}
+
 fn snapshot_dir_bytes(root: &Path) -> BTreeMap<PathBuf, Vec<u8>> {
     let mut out = BTreeMap::new();
     if !root.exists() {
@@ -244,20 +257,22 @@ fn routing_ready_opens_dashboard_with_integration() {
 
 #[test]
 fn agent_integration_absent_on_empty_repo() {
+    let (_lock, _home, home_path, _guard) = isolated_home();
     let dir = tempdir().unwrap();
-    let report = probe_with_home(dir.path(), None);
+    let report = probe_with_home(dir.path(), Some(&home_path));
     assert_eq!(report.agent_integration, AgentIntegration::Absent);
     assert!(report.detected_agent_targets.is_empty());
 }
 
 #[test]
 fn agent_integration_partial_when_only_shim_present_for_cursor() {
+    let (_lock, _home, home_path, _guard) = isolated_home();
     let dir = tempdir().unwrap();
     let cursor_skill = dir.path().join(".cursor").join("skills").join("synrepo");
     fs::create_dir_all(&cursor_skill).unwrap();
     fs::write(cursor_skill.join("SKILL.md"), b"stub shim").unwrap();
 
-    let report = probe_with_home(dir.path(), None);
+    let report = probe_with_home(dir.path(), Some(&home_path));
     assert_eq!(
         report.agent_integration,
         AgentIntegration::Partial {
@@ -269,12 +284,13 @@ fn agent_integration_partial_when_only_shim_present_for_cursor() {
 
 #[test]
 fn agent_integration_partial_claude_shim_without_mcp_registration() {
+    let (_lock, _home, home_path, _guard) = isolated_home();
     let dir = tempdir().unwrap();
     let claude_skill = dir.path().join(".claude").join("skills").join("synrepo");
     fs::create_dir_all(&claude_skill).unwrap();
     fs::write(claude_skill.join("SKILL.md"), b"shim").unwrap();
 
-    let report = probe_with_home(dir.path(), None);
+    let report = probe_with_home(dir.path(), Some(&home_path));
     assert_eq!(
         report.agent_integration,
         AgentIntegration::Partial {
@@ -329,12 +345,13 @@ fn agent_integration_complete_codex_requires_toml_entry() {
 
 #[test]
 fn agent_integration_codex_shim_only_is_partial() {
+    let (_lock, _home, home_path, _guard) = isolated_home();
     let dir = tempdir().unwrap();
     let codex_skill = dir.path().join(".agents").join("skills").join("synrepo");
     fs::create_dir_all(&codex_skill).unwrap();
     fs::write(codex_skill.join("SKILL.md"), b"shim").unwrap();
 
-    let report = probe_with_home(dir.path(), None);
+    let report = probe_with_home(dir.path(), Some(&home_path));
     assert_eq!(
         report.agent_integration,
         AgentIntegration::Partial {

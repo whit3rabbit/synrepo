@@ -31,6 +31,12 @@ When `.synrepo/` exists and synrepo MCP tools are available, use them before rea
 
 Workflows live in `.github/workflows/`: `ci.yml` (push/PR) and `release.yml` (tag trigger).
 
+Versioning rules:
+- `Cargo.toml` `[package].version` is the source of truth for the product version. The CLI derives its displayed version through Clap's `#[command(version)]`; do not hard-code release numbers in help or version text.
+- After changing `[package].version`, verify the displayed version with `cargo run -- --version` and check the help surface with `cargo run -- --help`.
+- Release tags must match the Cargo version exactly: `v<package.version>`. Push the version bump commit to `main`, wait for the push workflow to pass, then create and push the matching tag (`git tag vX.Y.Z && git push origin vX.Y.Z`) from that tested commit.
+- `release.yml` runs from the tag push. If the release workflow fails after artifacts are published, fix forward with a new version instead of silently reusing a released tag.
+
 Secrets required in **this repo only** (Settings > Secrets and variables > Actions):
 - `CARGO_REGISTRY_TOKEN` — crates.io token (scopes: publish-new, publish-update)
 - `HOMEBREW_TAP_TOKEN` — GitHub PAT with repo scope on `whit3rabbit/homebrew-tap`
