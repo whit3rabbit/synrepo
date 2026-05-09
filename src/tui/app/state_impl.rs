@@ -122,13 +122,14 @@ impl AppState {
             log,
             quick_actions,
             integration_display_rows,
+            integration_selected: 0,
             suggestion_report: None,
             explore_projects: Vec::new(),
             explore_projects_loaded_at: None,
             explore_selected: 0,
             switch_project_root: None,
             should_exit: false,
-            launch_integration: false,
+            launch_integration: None,
             launch_project_mcp_install: false,
             launch_explain_setup: false,
             launch_embeddings_setup: false,
@@ -191,8 +192,8 @@ impl AppState {
         if self.launch_project_mcp_install {
             return DashboardExit::LaunchProjectMcpInstall;
         }
-        if self.launch_integration {
-            return DashboardExit::LaunchIntegration;
+        if let Some(request) = &self.launch_integration {
+            return DashboardExit::LaunchIntegration(request.clone());
         }
         DashboardExit::Quit
     }

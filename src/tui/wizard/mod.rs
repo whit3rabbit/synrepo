@@ -30,8 +30,9 @@ pub mod setup;
 pub mod uninstall;
 
 pub use integration::{
-    run_integration_wizard_loop, ActionRow as IntegrationActionRow, IntegrationPlan,
-    IntegrationWizardOutcome, IntegrationWizardState,
+    run_integration_wizard_loop, run_integration_wizard_loop_with_initial_target,
+    ActionRow as IntegrationActionRow, IntegrationPlan, IntegrationWizardOutcome,
+    IntegrationWizardState,
 };
 pub use mcp_install::{
     run_mcp_install_wizard_loop, McpInstallPlan, McpInstallWizardOutcome, McpInstallWizardState,

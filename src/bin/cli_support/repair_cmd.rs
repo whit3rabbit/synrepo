@@ -8,9 +8,9 @@ use crossterm::{
 };
 use synrepo::bootstrap::runtime_probe::{probe, AgentIntegration};
 use synrepo::tui::{
-    run_dashboard, run_integration_wizard, run_mcp_install_wizard, DashboardOptions,
-    IntegrationPlan, IntegrationWizardOutcome, McpInstallPlan, McpInstallWizardOutcome, RepairPlan,
-    TuiOptions, TuiOutcome,
+    run_dashboard, run_integration_wizard_with_initial_target, run_mcp_install_wizard,
+    DashboardOptions, IntegrationPlan, IntegrationWizardOutcome, McpInstallPlan,
+    McpInstallWizardOutcome, RepairPlan, TuiOptions, TuiOutcome,
 };
 
 use super::agent_shims::{registry as shim_registry, AgentTool, AutomationTier};
@@ -42,13 +42,18 @@ pub(crate) fn run_dashboard_with_sub_wizards(
                 integration = report.agent_integration;
                 opts.welcome_banner = false;
             }
-            TuiOutcome::LaunchIntegrationRequested => {
+            TuiOutcome::LaunchIntegrationRequested(request) => {
                 // Tear-down of the alt-screen has already happened inside
                 // `run_dashboard`; safe to print and prompt now.
                 let tui_opts = TuiOptions {
                     no_color: opts.no_color,
                 };
-                match run_integration_wizard(&current_root, integration.clone(), tui_opts)? {
+                match run_integration_wizard_with_initial_target(
+                    &current_root,
+                    integration.clone(),
+                    tui_opts,
+                    request.initial_target,
+                )? {
                     IntegrationWizardOutcome::Completed { plan } => {
                         match execute_integration_plan(&current_root, plan) {
                             Ok(report) => show_apply_report_popup(tui_opts, &report)?,

@@ -160,6 +160,15 @@ impl FooterWidget<'_> {
                 ],
             });
         }
+        if matches!(self.active, ActiveTab::Mcp) {
+            groups.push(HintGroup {
+                priority: 4,
+                spans: vec![
+                    Span::styled("  integrations ", self.theme.muted_style()),
+                    Span::styled("[Up/Down Enter]", self.theme.agent_style()),
+                ],
+            });
+        }
         groups.push(HintGroup {
             priority: 0,
             spans: vec![

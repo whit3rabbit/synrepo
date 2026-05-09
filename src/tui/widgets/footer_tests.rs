@@ -104,6 +104,17 @@ fn explain_tab_shows_explain_and_docs_hints_when_wide() {
 }
 
 #[test]
+fn integrations_tab_shows_selection_hint_when_wide() {
+    let (groups, _) = footer(ActiveTab::Mcp, false, None);
+    let spans = fit_groups(groups, 200);
+    let text = rendered_text(&spans);
+    assert!(
+        text.contains("[Up/Down Enter]"),
+        "missing integrations hint: {text:?}"
+    );
+}
+
+#[test]
 fn explain_tab_drops_explain_hints_on_narrow_terminal() {
     let (groups, _) = footer(ActiveTab::Explain, false, None);
     let spans = fit_groups(groups, 50);

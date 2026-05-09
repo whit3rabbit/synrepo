@@ -185,6 +185,11 @@ impl AppState {
                 _ => {}
             }
         }
+        if matches!(self.active_tab, ActiveTab::Mcp)
+            && self.handle_integrations_key(code, modifiers)
+        {
+            return true;
+        }
         match code {
             KeyCode::Char('r') => {
                 if matches!(self.active_tab, ActiveTab::Suggestion) {
@@ -254,7 +259,8 @@ impl AppState {
                 if matches!(self.active_tab, ActiveTab::Mcp) {
                     self.launch_project_mcp_install = true;
                 } else {
-                    self.launch_integration = true;
+                    self.request_integration_launch(None);
+                    return true;
                 }
                 self.should_exit = true;
                 true

@@ -105,20 +105,36 @@ pub struct IntegrationWizardState {
 impl IntegrationWizardState {
     /// Build a fresh state seeded from `current` and `detected_targets`.
     pub fn new(current: AgentIntegration, detected_targets: Vec<AgentTargetKind>) -> Self {
+        Self::new_with_initial_target(current, detected_targets, None)
+    }
+
+    /// Build a fresh state, optionally starting on actions for a preselected target.
+    pub fn new_with_initial_target(
+        current: AgentIntegration,
+        detected_targets: Vec<AgentTargetKind>,
+        initial_target: Option<AgentTargetKind>,
+    ) -> Self {
         // Import WIZARD_TARGETS from setup module
         use crate::tui::wizard::setup::WIZARD_TARGETS;
         // Pre-highlight the configured target when one exists, otherwise the
         // first detected target, otherwise position 0.
         let configured = current.target();
+        let initial_cursor =
+            initial_target.and_then(|t| WIZARD_TARGETS.iter().position(|wt| wt == &t));
         let seed = configured.or_else(|| detected_targets.first().copied());
-        let target_cursor = seed
-            .and_then(|t| WIZARD_TARGETS.iter().position(|wt| wt == &t))
+        let target_cursor = initial_cursor
+            .or_else(|| seed.and_then(|t| WIZARD_TARGETS.iter().position(|wt| wt == &t)))
             .unwrap_or(0);
+        let step = if initial_cursor.is_some() {
+            IntegrationStep::SelectActions
+        } else {
+            IntegrationStep::SelectTarget
+        };
         let target = WIZARD_TARGETS[target_cursor];
 
         let (write_shim, register_mcp) = default_actions_for(&current, target);
         Self {
-            step: IntegrationStep::SelectTarget,
+            step,
             current,
             detected_targets,
             target_cursor,

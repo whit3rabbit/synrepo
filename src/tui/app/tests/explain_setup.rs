@@ -38,7 +38,7 @@ fn mcp_tab_i_launches_project_mcp_install() {
     assert!(consumed, "MCP-tab 'i' should consume the key event");
     assert!(state.should_exit);
     assert!(state.launch_project_mcp_install);
-    assert!(!state.launch_integration);
+    assert!(state.launch_integration.is_none());
     assert_eq!(state.exit_intent(), DashboardExit::LaunchProjectMcpInstall);
 }
 
@@ -51,9 +51,19 @@ fn non_mcp_tab_i_still_launches_integration() {
 
     assert!(consumed, "non-MCP 'i' should consume the key event");
     assert!(state.should_exit);
-    assert!(state.launch_integration);
+    assert_eq!(
+        state.launch_integration,
+        Some(IntegrationLaunchRequest {
+            initial_target: None,
+        })
+    );
     assert!(!state.launch_project_mcp_install);
-    assert_eq!(state.exit_intent(), DashboardExit::LaunchIntegration);
+    assert_eq!(
+        state.exit_intent(),
+        DashboardExit::LaunchIntegration(IntegrationLaunchRequest {
+            initial_target: None,
+        })
+    );
 }
 
 #[test]

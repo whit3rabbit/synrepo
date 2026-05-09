@@ -107,7 +107,7 @@ fn global_i_launches_integration_for_active_project() {
     assert!(state.handle_key(KeyCode::Char('i'), KeyModifiers::NONE));
 
     let active = state.active_state().unwrap();
-    assert!(active.launch_integration);
+    assert!(active.launch_integration.is_some());
     assert!(state.should_exit);
 }
 
@@ -131,7 +131,7 @@ fn command_palette_filters_and_launches_active_action() {
     assert_eq!(labels, vec!["agent integration".to_string()]);
     assert!(state.handle_key(KeyCode::Enter, KeyModifiers::NONE));
 
-    assert!(state.active_state().unwrap().launch_integration);
+    assert!(state.active_state().unwrap().launch_integration.is_some());
     assert!(state.should_exit);
 }
 

@@ -12,7 +12,7 @@ pub mod render;
 pub mod state;
 mod tests;
 
-pub use render::run_integration_wizard_loop;
+pub use render::{run_integration_wizard_loop, run_integration_wizard_loop_with_initial_target};
 pub use state::{
     ActionRow, IntegrationPlan, IntegrationStep, IntegrationWizardOutcome, IntegrationWizardState,
 };

@@ -3,6 +3,7 @@
 
 mod explain_modal;
 mod explain_setup;
+mod integrations;
 mod materialize;
 mod picker;
 mod semantic;

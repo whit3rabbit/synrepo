@@ -32,7 +32,9 @@ pub(super) fn run(repo_root: &Path, opts: TuiOptions) -> anyhow::Result<TuiOutco
 
     match intent {
         DashboardExit::Quit => Ok(TuiOutcome::Exited),
-        DashboardExit::LaunchIntegration => Ok(TuiOutcome::LaunchIntegrationRequested),
+        DashboardExit::LaunchIntegration(request) => {
+            Ok(TuiOutcome::LaunchIntegrationRequested(request))
+        }
         DashboardExit::LaunchProjectMcpInstall => Ok(TuiOutcome::LaunchProjectMcpInstallRequested),
         DashboardExit::LaunchExplainSetup => Ok(TuiOutcome::LaunchExplainSetupRequested),
         DashboardExit::LaunchEmbeddingsSetup => Ok(TuiOutcome::LaunchEmbeddingsSetupRequested),

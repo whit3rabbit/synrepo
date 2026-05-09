@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use crate::bootstrap::runtime_probe::{probe, AgentIntegration, Missing};
+use crate::bootstrap::runtime_probe::{probe, AgentIntegration, AgentTargetKind, Missing};
 use crate::config::Mode;
 use crate::pipeline::watch::{watch_service_status, WatchServiceStatus};
 use crate::tui::actions::{outcome_to_log, start_watch_daemon, ActionContext, ActionOutcome};
@@ -71,7 +71,7 @@ pub enum TuiOutcome {
     /// Wizard was cancelled before any writes; caller should exit zero.
     WizardCancelled,
     /// Dashboard exited with a request to launch the integration sub-wizard.
-    LaunchIntegrationRequested,
+    LaunchIntegrationRequested(app::IntegrationLaunchRequest),
     /// Dashboard exited with a request to install project integration.
     LaunchProjectMcpInstallRequested,
     /// Dashboard exited with a request to launch the explain setup wizard.
@@ -110,21 +110,7 @@ pub fn run_dashboard(
         None,
         startup_logs,
     )?;
-    match intent {
-        app::DashboardExit::Quit => Ok(TuiOutcome::Exited),
-        app::DashboardExit::LaunchIntegration => Ok(TuiOutcome::LaunchIntegrationRequested),
-        app::DashboardExit::LaunchProjectMcpInstall => {
-            Ok(TuiOutcome::LaunchProjectMcpInstallRequested)
-        }
-        app::DashboardExit::LaunchExplainSetup => Ok(TuiOutcome::LaunchExplainSetupRequested),
-        app::DashboardExit::LaunchEmbeddingsSetup => Ok(TuiOutcome::LaunchEmbeddingsSetupRequested),
-        app::DashboardExit::LaunchEmbeddingBuild(pending) => {
-            Ok(TuiOutcome::LaunchEmbeddingBuildRequested(pending))
-        }
-        app::DashboardExit::SwitchProject(repo_root) => {
-            Ok(TuiOutcome::SwitchProjectRequested(repo_root))
-        }
-    }
+    Ok(tui_outcome(intent))
 }
 
 /// Show a short post-apply result popup. Non-TTY callers skip the popup so
@@ -148,19 +134,27 @@ pub fn run_global_dashboard(
     }
     let opts = opts.into();
     let theme = theme::Theme::from_no_color(opts.no_color);
-    match dashboard::run_global_dashboard(cwd, theme, open_picker)? {
-        app::DashboardExit::Quit => Ok(TuiOutcome::Exited),
-        app::DashboardExit::LaunchIntegration => Ok(TuiOutcome::LaunchIntegrationRequested),
-        app::DashboardExit::LaunchProjectMcpInstall => {
-            Ok(TuiOutcome::LaunchProjectMcpInstallRequested)
+    Ok(tui_outcome(dashboard::run_global_dashboard(
+        cwd,
+        theme,
+        open_picker,
+    )?))
+}
+
+fn tui_outcome(intent: app::DashboardExit) -> TuiOutcome {
+    match intent {
+        app::DashboardExit::Quit => TuiOutcome::Exited,
+        app::DashboardExit::LaunchIntegration(request) => {
+            TuiOutcome::LaunchIntegrationRequested(request)
         }
-        app::DashboardExit::LaunchExplainSetup => Ok(TuiOutcome::LaunchExplainSetupRequested),
-        app::DashboardExit::LaunchEmbeddingsSetup => Ok(TuiOutcome::LaunchEmbeddingsSetupRequested),
+        app::DashboardExit::LaunchProjectMcpInstall => TuiOutcome::LaunchProjectMcpInstallRequested,
+        app::DashboardExit::LaunchExplainSetup => TuiOutcome::LaunchExplainSetupRequested,
+        app::DashboardExit::LaunchEmbeddingsSetup => TuiOutcome::LaunchEmbeddingsSetupRequested,
         app::DashboardExit::LaunchEmbeddingBuild(pending) => {
-            Ok(TuiOutcome::LaunchEmbeddingBuildRequested(pending))
+            TuiOutcome::LaunchEmbeddingBuildRequested(pending)
         }
         app::DashboardExit::SwitchProject(repo_root) => {
-            Ok(TuiOutcome::SwitchProjectRequested(repo_root))
+            TuiOutcome::SwitchProjectRequested(repo_root)
         }
     }
 }
@@ -268,24 +262,33 @@ pub fn run_repair_wizard(
     )
 }
 
-/// Open the agent-integration sub-wizard. Launchable from the dashboard quick
-/// action or directly via a dedicated CLI surface.
-///
-/// Returns an [`IntegrationWizardOutcome`] so the caller can execute the
-/// resulting [`IntegrationPlan`] after the TUI alternate-screen has been torn
-/// down. Like the other wizards, this library-side entry point never calls
-/// bin-side step helpers directly; the caller runs the real I/O.
+/// Open the agent-integration sub-wizard.
 pub fn run_integration_wizard(
     repo_root: &Path,
     integration: AgentIntegration,
     opts: TuiOptions,
+) -> anyhow::Result<IntegrationWizardOutcome> {
+    run_integration_wizard_with_initial_target(repo_root, integration, opts, None)
+}
+
+/// Open the agent-integration wizard with an optional preselected target.
+pub fn run_integration_wizard_with_initial_target(
+    repo_root: &Path,
+    integration: AgentIntegration,
+    opts: TuiOptions,
+    initial_target: Option<AgentTargetKind>,
 ) -> anyhow::Result<IntegrationWizardOutcome> {
     if !stdout_is_tty() {
         return Ok(IntegrationWizardOutcome::NonTty);
     }
     let theme = theme::Theme::from_no_color(opts.no_color);
     let probe_report = probe(repo_root);
-    wizard::run_integration_wizard_loop(theme, integration, probe_report.detected_agent_targets)
+    wizard::run_integration_wizard_loop_with_initial_target(
+        theme,
+        integration,
+        probe_report.detected_agent_targets,
+        initial_target,
+    )
 }
 
 /// Open the repo-local integration picker launched from the dashboard

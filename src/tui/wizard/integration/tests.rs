@@ -24,6 +24,20 @@ mod tests {
     }
 
     #[test]
+    fn initial_target_starts_on_actions_for_that_target() {
+        let s = IntegrationWizardState::new_with_initial_target(
+            absent(),
+            vec![],
+            Some(AgentTargetKind::Codex),
+        );
+
+        assert_eq!(s.step, IntegrationStep::SelectActions);
+        assert_eq!(s.target, AgentTargetKind::Codex);
+        assert!(s.write_shim);
+        assert!(s.register_mcp);
+    }
+
+    #[test]
     fn absent_seeds_write_shim_and_register_mcp_on() {
         let s = IntegrationWizardState::new(absent(), vec![]);
         assert_eq!(s.step, IntegrationStep::SelectTarget);

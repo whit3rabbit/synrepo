@@ -13,6 +13,8 @@ use crate::tui::widgets::severity_span;
 pub struct IntegrationsTabWidget<'a> {
     /// Rows resolved for the active project.
     pub rows: &'a [AgentInstallDisplayRow],
+    /// Selected row index, clamped at render time.
+    pub selected: usize,
     /// Active theme.
     pub theme: &'a Theme,
 }
@@ -46,11 +48,16 @@ impl Widget for IntegrationsTabWidget<'_> {
             Cell::from("next"),
         ])
         .style(self.theme.muted_style());
-        let rows = self.rows.iter().map(|row| table_row(row, self.theme));
+        let selected = self.selected.min(self.rows.len().saturating_sub(1));
+        let rows = self
+            .rows
+            .iter()
+            .enumerate()
+            .map(|(idx, row)| table_row(row, idx == selected, self.theme));
         Table::new(
             rows,
             [
-                Constraint::Length(18),
+                Constraint::Length(20),
                 Constraint::Length(10),
                 Constraint::Percentage(24),
                 Constraint::Percentage(24),
@@ -65,9 +72,15 @@ impl Widget for IntegrationsTabWidget<'_> {
     }
 }
 
-fn table_row(row: &AgentInstallDisplayRow, theme: &Theme) -> Row<'static> {
+fn table_row(row: &AgentInstallDisplayRow, selected: bool, theme: &Theme) -> Row<'static> {
+    let marker = if selected { "> " } else { "  " };
+    let style = if selected {
+        theme.agent_style()
+    } else {
+        theme.base_style()
+    };
     Row::new(vec![
-        Cell::from(row.agent.clone()),
+        Cell::from(Span::styled(format!("{marker}{}", row.agent), style)),
         Cell::from(Line::from(vec![severity_span(
             row.overall_label,
             row.overall_severity,
@@ -100,23 +113,19 @@ mod tests {
     use crate::tui::probe::Severity;
 
     fn render_text(width: u16) -> String {
+        render_text_selected(width, 0)
+    }
+
+    fn render_text_selected(width: u16, selected: usize) -> String {
         let area = Rect::new(0, 0, width, 8);
         let mut buf = Buffer::empty(area);
-        let rows = vec![AgentInstallDisplayRow {
-            agent: "Codex CLI".to_string(),
-            overall_label: "complete",
-            overall_severity: Severity::Healthy,
-            context: "skill installed project agent-config owned .agents/skills/synrepo/SKILL.md"
-                .to_string(),
-            context_severity: Severity::Healthy,
-            mcp: "mcp installed project agent-config owned .codex/config.toml".to_string(),
-            mcp_severity: Severity::Healthy,
-            hooks: "missing_optional optional .codex/hooks.json".to_string(),
-            hooks_severity: Severity::Healthy,
-            next_action: "optional: synrepo setup codex --agent-hooks".to_string(),
-        }];
+        let rows = vec![
+            display_row("codex", "Codex CLI"),
+            display_row("claude", "Claude Code"),
+        ];
         IntegrationsTabWidget {
             rows: &rows,
+            selected,
             theme: &Theme::plain(),
         }
         .render(area, &mut buf);
@@ -130,6 +139,23 @@ mod tests {
             .join("\n")
     }
 
+    fn display_row(tool: &str, agent: &str) -> AgentInstallDisplayRow {
+        AgentInstallDisplayRow {
+            tool: tool.to_string(),
+            agent: agent.to_string(),
+            overall_label: "complete",
+            overall_severity: Severity::Healthy,
+            context: "skill installed project agent-config owned .agents/skills/synrepo/SKILL.md"
+                .to_string(),
+            context_severity: Severity::Healthy,
+            mcp: "mcp installed project agent-config owned .codex/config.toml".to_string(),
+            mcp_severity: Severity::Healthy,
+            hooks: "missing_optional optional .codex/hooks.json".to_string(),
+            hooks_severity: Severity::Healthy,
+            next_action: "optional: synrepo setup codex --agent-hooks".to_string(),
+        }
+    }
+
     #[test]
     fn integrations_tab_renders_columns_at_normal_width() {
         let text = render_text(120);
@@ -140,6 +166,12 @@ mod tests {
         assert!(text.contains("mcp"));
         assert!(text.contains("hooks"));
         assert!(text.contains("Codex CLI"));
+    }
+
+    #[test]
+    fn integrations_tab_marks_selected_row() {
+        let text = render_text_selected(120, 1);
+        assert!(text.contains("> Claude Code"));
     }
 
     #[test]

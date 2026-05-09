@@ -55,6 +55,10 @@ impl AppState {
     /// Rebuild header labels after snapshot, project identity, or auto-sync
     /// state changes. The draw loop only reads this cached view model.
     pub(crate) fn rebuild_header_vm(&mut self) {
+        let selected_tool = self
+            .integration_display_rows
+            .get(self.integration_selected_index())
+            .map(|row| row.tool.clone());
         let integration_status_rows = build_agent_install_statuses(&self.repo_root);
         self.header_vm = build_initial_header_vm(
             &self.repo_root,
@@ -65,6 +69,7 @@ impl AppState {
             &integration_status_rows,
         );
         self.integration_display_rows = build_agent_install_display_rows(&integration_status_rows);
+        self.preserve_integration_selection(selected_tool.as_deref());
     }
 
     /// Load suggestion rows only when the tab needs them.

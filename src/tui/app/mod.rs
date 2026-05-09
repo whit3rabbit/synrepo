@@ -8,6 +8,7 @@ mod explain_events;
 mod explain_picker;
 mod explain_preview;
 mod explore;
+mod integrations;
 mod key_handlers;
 mod quick_actions;
 mod render_cache;
@@ -35,7 +36,7 @@ use std::time::{Duration, Instant};
 
 use crossbeam_channel::Receiver;
 
-use crate::bootstrap::runtime_probe::AgentIntegration;
+use crate::bootstrap::runtime_probe::{AgentIntegration, AgentTargetKind};
 use crate::pipeline::explain::telemetry::ExplainEvent;
 use crate::pipeline::watch::WatchEvent;
 use crate::surface::refactor_suggestions::RefactorSuggestionReport;
@@ -132,6 +133,8 @@ pub struct AppState {
     pub quick_actions: Vec<QuickAction>,
     /// Preformatted active-project integration rows for render-time display.
     pub integration_display_rows: Vec<AgentInstallDisplayRow>,
+    /// Selected Integrations-tab row.
+    pub(crate) integration_selected: usize,
     /// Cached large-file refactor suggestions for render-time display.
     pub suggestion_report: Option<RefactorSuggestionReport>,
     /// Registry-backed project rows shown by the Repos tab.
@@ -146,7 +149,7 @@ pub struct AppState {
     pub should_exit: bool,
     /// When set, the caller should launch the integration sub-wizard after the
     /// render loop unwinds. See [`DashboardExit`].
-    pub launch_integration: bool,
+    pub launch_integration: Option<IntegrationLaunchRequest>,
     /// When set, the caller should launch the project-local integration
     /// picker after the render loop unwinds.
     pub launch_project_mcp_install: bool,
@@ -253,6 +256,13 @@ pub struct PendingEmbeddingBuild {
     pub stopped_watch: bool,
 }
 
+/// Dashboard request to launch the integration wizard.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IntegrationLaunchRequest {
+    /// Optional initial target selected before leaving the dashboard.
+    pub initial_target: Option<AgentTargetKind>,
+}
+
 /// Post-loop intent expressed by the dashboard when it exits. The caller maps
 /// this to either "fully done" or "re-enter the dashboard after running a
 /// sub-wizard".
@@ -262,7 +272,7 @@ pub enum DashboardExit {
     Quit,
     /// Operator asked for the integration sub-wizard; caller should launch it
     /// and then re-open the dashboard.
-    LaunchIntegration,
+    LaunchIntegration(IntegrationLaunchRequest),
     /// Operator asked for repo-local integration install from the
     /// Integrations tab.
     LaunchProjectMcpInstall,

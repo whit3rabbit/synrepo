@@ -8,6 +8,8 @@ use super::{
 /// Preformatted row cells used by the dashboard render path.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AgentInstallDisplayRow {
+    /// Stable tool id such as `claude` or `codex`.
+    pub tool: String,
     /// Agent cell.
     pub agent: String,
     /// Overall status label.
@@ -42,6 +44,7 @@ pub struct AgentInstallSummary {
 impl AgentInstallDisplayRow {
     fn from_status(row: &AgentInstallStatus) -> Self {
         Self {
+            tool: row.tool.clone(),
             agent: format!("{}{}", row.display_name, detected_suffix(row.detected)),
             overall_label: row.overall.as_str(),
             overall_severity: overall_severity(row.overall),

@@ -7,6 +7,7 @@ use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
 use super::state::{
     agent_hooks_supported, ActionRow, IntegrationStep, IntegrationWizardState, ACTION_ROWS,
 };
+use crate::bootstrap::runtime_probe::AgentTargetKind;
 use crate::tui::app::poll_key;
 use crate::tui::theme::Theme;
 use crate::tui::wizard::{
@@ -20,8 +21,22 @@ pub fn run_integration_wizard_loop(
     current: crate::bootstrap::runtime_probe::AgentIntegration,
     detected_targets: Vec<crate::bootstrap::runtime_probe::AgentTargetKind>,
 ) -> anyhow::Result<super::IntegrationWizardOutcome> {
+    run_integration_wizard_loop_with_initial_target(theme, current, detected_targets, None)
+}
+
+/// Run the integration sub-wizard with an optional preselected target.
+pub fn run_integration_wizard_loop_with_initial_target(
+    theme: Theme,
+    current: crate::bootstrap::runtime_probe::AgentIntegration,
+    detected_targets: Vec<crate::bootstrap::runtime_probe::AgentTargetKind>,
+    initial_target: Option<AgentTargetKind>,
+) -> anyhow::Result<super::IntegrationWizardOutcome> {
     let mut terminal = enter_tui()?;
-    let mut state = super::state::IntegrationWizardState::new(current, detected_targets);
+    let mut state = super::state::IntegrationWizardState::new_with_initial_target(
+        current,
+        detected_targets,
+        initial_target,
+    );
     let result = render_loop(&mut terminal, &mut state, &theme);
     leave_tui(&mut terminal)?;
     result?;

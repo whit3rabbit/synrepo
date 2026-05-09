@@ -299,6 +299,7 @@ fn draw_dashboard(frame: &mut ratatui::Frame, state: &mut AppState) {
         ActiveTab::Mcp => {
             let integrations = IntegrationsTabWidget {
                 rows: &state.integration_display_rows,
+                selected: state.integration_selected_index(),
                 theme: &state.theme,
             };
             frame.render_widget(integrations, content_area);
