@@ -34,6 +34,22 @@ fn broad_architecture_prompts_recommend_ask_before_find() {
 }
 
 #[test]
+fn high_level_review_prompts_route_to_deeper_context() {
+    for prompt in [
+        "review payment module",
+        "refactor parser module",
+        "security review auth flow",
+        "audit vulnerable request handling",
+    ] {
+        let route = classify_task_route(prompt, None);
+        assert_eq!(route.intent, "risk-review", "{prompt}");
+    }
+
+    let route = classify_task_route("design auth architecture", None);
+    assert_eq!(route.intent, "broad-context-question");
+}
+
+#[test]
 fn exact_code_identifiers_recommend_search_before_find() {
     let route = classify_task_route("find Error::Other(anyhow", None);
 

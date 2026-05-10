@@ -10,8 +10,9 @@ pub(super) fn render_nudge(
     client: HookClient,
     event: HookEvent,
     route: Option<&TaskRoute>,
+    existing_explain_available: bool,
 ) -> String {
-    let message = render_message(route);
+    let message = render_message(route, existing_explain_available);
     let value = match (client, event) {
         (HookClient::Codex, _) => json!({
             "systemMessage": message
@@ -32,7 +33,14 @@ pub(super) fn render_nudge(
     serde_json::to_string_pretty(&value).expect("nudge JSON should serialize")
 }
 
-fn render_message(route: Option<&TaskRoute>) -> String {
+pub(super) fn route_prefers_existing_explain(route: &TaskRoute) -> bool {
+    matches!(
+        route.intent.as_str(),
+        "risk-review" | "broad-context-question"
+    )
+}
+
+fn render_message(route: Option<&TaskRoute>, existing_explain_available: bool) -> String {
     let Some(route) = route.filter(|route| !route.signals.is_empty()) else {
         return NUDGE.to_string();
     };
@@ -60,5 +68,49 @@ fn render_message(route: Option<&TaskRoute>) -> String {
     }
     message.push_str("\nRecommended tools: ");
     message.push_str(&route.recommended_tools.join(", "));
+    if existing_explain_available && route_prefers_existing_explain(route) {
+        message.push_str("\nExisting explain: use synrepo_explain budget=deep for 1-3 focal targets; use synrepo_docs_search for design/why questions. Do not refresh from hooks.");
+    }
     message
+}
+
+#[cfg(test)]
+mod tests {
+    use synrepo::surface::task_route::classify_task_route;
+
+    use super::*;
+
+    #[test]
+    fn high_level_routes_include_existing_explain_when_available() {
+        for prompt in [
+            "review this module for regressions",
+            "design the parser architecture",
+            "refactor the sync pipeline",
+            "security review auth flow",
+        ] {
+            let route = classify_task_route(prompt, None);
+            let output = render_nudge(
+                HookClient::Codex,
+                HookEvent::UserPromptSubmit,
+                Some(&route),
+                true,
+            );
+            assert!(output.contains("synrepo_explain budget=deep"), "{output}");
+            assert!(output.contains("synrepo_docs_search"), "{output}");
+            assert!(!output.contains("synrepo_refresh_commentary"), "{output}");
+        }
+    }
+
+    #[test]
+    fn exact_search_routes_do_not_include_existing_explain_hint() {
+        let route = classify_task_route("find Error::Other(anyhow", None);
+        let output = render_nudge(
+            HookClient::Codex,
+            HookEvent::UserPromptSubmit,
+            Some(&route),
+            true,
+        );
+
+        assert!(!output.contains("Existing explain:"), "{output}");
+    }
 }

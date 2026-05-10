@@ -11,7 +11,7 @@ Use these as the primary read interface when the synrepo MCP server is available
 - `synrepo_find(task, limit?, budget_tokens?)`: task-oriented routing for plain-language questions. Best for "where should I look?" Not the best first tool for exact symbols, string literals, flags, schema fields, tool names, or file paths.
 - `synrepo_where_to_edit(task, limit?)`: ranked edit candidates for plain-language edit tasks. Inspect diagnostics and switch to exact search when broad routing misses.
 - `synrepo_search(query, limit?, output_mode?, budget_tokens?)`: lexical search. Best for exact symbols, string literals, CLI flags, MCP tool names, schema keys, file paths, and code-review validation. Use `output_mode: "compact"` for adaptive compact output with `output_accounting`; use `output_mode: "cards"` to return tiny file cards directly.
-- `synrepo_explain(target, budget?, budget_tokens?)`: workflow alias for bounded card lookup.
+- `synrepo_explain(target, budget?, budget_tokens?)`: workflow alias for bounded card lookup. Use `budget=deep` for 1-3 focal targets when existing overlay commentary would help a review, refactor, security pass, or unfamiliar subsystem change; this does not refresh commentary.
 - `synrepo_card(target?, targets?, budget?, budget_tokens?)`: card for one symbol/file, or up to 10 cards in one batch.
 - `synrepo_minimum_context(target, budget?)`: bounded neighborhood step before deep inspection or full-file reads.
 - `synrepo_context_pack(goal?, targets?, budget?, budget_tokens?, output_mode?, include_tests?, include_notes?, limit?)`: batch read-only context artifacts into one token-accounted response; target kinds include `file`, `symbol`, `directory`, `minimum_context`, `test_surface`, `call_path`, `search`, `entrypoints`, `public_api`, `change_risk`, `findings`, and `recent_activity`; compact mode applies to search artifacts.
@@ -24,7 +24,7 @@ Use these as the primary read interface when the synrepo MCP server is available
 - `synrepo_changed()`: workflow alias for changed-context review.
 - `synrepo_resume_context(limit?, since_days?, budget_tokens?, include_notes?)`: advisory repo-scoped resume packet for stale work, assembled from existing repo state without prompt logs, chat history, or raw tool-output capture.
 - `synrepo_task_route(task, path?)`: classify a task into the cheapest safe route and stable hook signals.
-- `synrepo_docs_search(query, limit?)`: advisory commentary search.
+- `synrepo_docs_search(query, limit?)`: advisory search over existing materialized explain docs for architecture, intent, gotchas, and "why" questions. This does not refresh commentary.
 - `synrepo_notes(include_hidden?)`: read advisory overlay notes.
 - `synrepo_refactor_suggestions(min_lines?, limit?, path_filter?)`: large non-test source files with modularity hints.
 - `synrepo_entrypoints(scope?, budget?)`: entrypoint discovery.

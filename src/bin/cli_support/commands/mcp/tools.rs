@@ -35,7 +35,7 @@ impl SynrepoServer {
         self.with_tool_state_blocking("synrepo_task_route", repo_root, move |state| task_route::handle_task_route(&state, params)).await
     }
 
-    #[tool(name = "synrepo_docs_search", description = "Search advisory explained commentary docs materialized under .synrepo/. Results are overlay-backed, freshness-labeled, and never canonical graph facts.")]
+    #[tool(name = "synrepo_docs_search", description = "Search existing advisory explained commentary docs materialized under .synrepo/. Results are overlay-backed, freshness-labeled, never canonical graph facts, and never generated or refreshed by this read.")]
     async fn synrepo_docs_search(&self, Parameters(params): Parameters<docs::DocsSearchParams>) -> String {
         self.with_tool_state_blocking("synrepo_docs_search", params.repo_root.clone(), move |state| docs::handle_docs_search(&state, params.query, params.limit)).await
     }
@@ -229,7 +229,7 @@ impl SynrepoServer {
         }).await
     }
 
-    #[tool(name = "synrepo_explain", description = "Workflow step 3: bounded card lookup for a file or symbol. Prefer this over a full-file read; full-file reads are an explicit escalation.")]
+    #[tool(name = "synrepo_explain", description = "Workflow step 3: bounded card lookup for a file or symbol. Use budget=deep for 1-3 focal targets when existing overlay commentary would help; this read never generates or refreshes commentary.")]
     async fn synrepo_explain(&self, Parameters(params): Parameters<cards::CardParams>) -> String {
         self.with_tool_state_blocking("synrepo_explain", params.repo_root.clone(), move |state| {
             record_workflow(&state, "explain");

@@ -68,7 +68,18 @@ pub fn classify_task_route(task: &str, path: Option<&str>) -> TaskRoute {
 
     if has_any(
         &text,
-        &["risk", "impact", "break", "depend", "review", "audit"],
+        &[
+            "risk",
+            "impact",
+            "break",
+            "depend",
+            "review",
+            "audit",
+            "security",
+            "threat model",
+            "vulnerab",
+            "refactor",
+        ],
     ) {
         return with_signals(
             route(

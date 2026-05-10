@@ -29,7 +29,7 @@ The default path for codebase questions, file reviews, broad search, impact chec
 1. `synrepo_orient` before reading the repo cold. It is a routing summary, not the full dashboard.
 2. `synrepo_ask` for a bounded, cited task-context packet when the task is plain-language or workflow-shaped.
 3. `synrepo_ask`, `synrepo_find`, or `synrepo_search` to drill down. Broad reviews and architecture questions start with `synrepo_ask`; exact identifiers and code strings start with `synrepo_search`. `synrepo_find` is for bounded file-routing suggestions.
-4. `synrepo_explain` for bounded details on a file or symbol.
+4. `synrepo_explain` for bounded details on a file or symbol; `budget=deep` can surface existing overlay commentary without refreshing it.
 5. `synrepo_minimum_context` when a focal target is known but surrounding risk is unclear.
 6. `synrepo_impact` or `synrepo_risks` before edits or risky file reviews.
 7. `synrepo_tests` before claiming done.
@@ -50,7 +50,7 @@ Use compact output for broad searches where routing matters more than raw snippe
 
 MCP search is read-only. It searches the persisted substrate indexes as-is and does not reconcile, rebuild indexes, download semantic models, start watch, or silently refresh state. Use `synrepo watch`, `synrepo reconcile`, `synrepo sync`, or initialization flows when you want structural and lexical indexes updated after source changes; use `synrepo embeddings build` when you explicitly want semantic vectors rebuilt. Clients should treat `semantic_available` and `routing_strategy` as runtime availability signals, not as configuration promises.
 
-Use `synrepo_readiness` when an agent needs a cheap preflight instead of the full orientation dashboard. It returns `graph`, `overlay`, `index`, `watch`, `reconcile`, and `edit_mode` status fields, plus capability rows with severity and next-action text. It is read-only, never starts watch, never reconciles, and reports whether overlay writes and source edits were enabled for this MCP process.
+Use `synrepo_readiness` when an agent needs a cheap preflight instead of the full orientation dashboard. It returns `graph`, `overlay`, `index`, `watch`, `reconcile`, `explain_hint`, and `edit_mode` status fields, plus capability rows with severity and next-action text. It is read-only, never starts watch, never reconciles, and reports whether overlay writes and source edits were enabled for this MCP process.
 
 Use `synrepo_resume_context` when an agent resumes stale work and needs a compact repo-scoped packet before asking the user to repeat context. It accepts optional `repo_root`, `limit` (default `10`, capped at `50`), `since_days` (default `14`, capped at `365`), `budget_tokens` (default `2000`, clamped by the normal MCP response limits), and `include_notes` (default `true`). It returns `schema_version: 1`, `packet_type: "repo_resume_context"`, `context_state`, `sections`, `detail_pointers`, and `omitted`. The packet is derived from current changed files, next actions, recent activity, explicit overlay note summaries, validation commands, and context metrics. Notes are summary-only: note id, target, status, confidence, updated time, and a short claim preview. The tool is advisory and regeneratable. It does not store prompt logs, chat history, raw tool outputs, caller identity, response bodies, or generic session memory.
 
@@ -102,6 +102,8 @@ Overlay-write tools, present only under `synrepo mcp --allow-overlay-writes`:
 - `synrepo_note_forget`
 - `synrepo_note_verify`
 
+`synrepo_docs_search` searches existing materialized explain docs. It is read-only and does not generate or refresh commentary.
+
 `synrepo_refresh_commentary` accepts `scope: "target" | "file" | "directory" | "stale"`. `target` preserves one-node refresh behavior. `file` refreshes file commentary plus file symbols. `directory` uses the existing commentary work-plan scoping for that tree. `stale` refreshes stale existing commentary without seeding missing entries. When the MCP client supplies a progress token, the server sends progress notifications around the blocking refresh.
 
 Advisory agent note tools:
@@ -125,7 +127,7 @@ Use `synrepo_refactor_suggestions` when an agent or operator asks whether large 
 
 `synrepo_overview` keeps the compatibility `mode` and `graph` fields and adds the full orientation dashboard: readiness rows, watch status, reconcile and writer state, export freshness, explain provider state, commentary and overlay state, agent integration readiness, metrics summary, and recent activity. On a global/defaultless server where repository prep fails, overview returns degraded probe data with a structured initialization error rather than failing the whole response.
 
-`synrepo_readiness` returns a compact preflight: `graph: "ready|missing|error"`, `overlay: "ready|ready_empty|missing|error"`, `index: "ready|stale|missing"`, `watch: "active|inactive|starting|stale|error"`, `reconcile: "fresh|stale|missing|error"`, and `edit_mode: { overlay_writes, source_edits }`. `ready_empty` means `.synrepo/overlay/overlay.db` exists with empty schema tables and no advisory rows yet. The `details.capabilities` array mirrors the readiness matrix used by `synrepo_overview`.
+`synrepo_readiness` returns a compact preflight: `graph: "ready|missing|error"`, `overlay: "ready|ready_empty|missing|error"`, `index: "ready|stale|missing"`, `watch: "active|inactive|starting|stale|error"`, `reconcile: "fresh|stale|missing|error"`, `explain_hint`, and `edit_mode: { overlay_writes, source_edits }`. `ready_empty` means `.synrepo/overlay/overlay.db` exists with empty schema tables and no advisory rows yet. When overlay commentary exists, `explain_hint` tells agents they can read it with `synrepo_explain budget=deep` or `synrepo_docs_search`, and whether refresh is unavailable because `overlay_writes=false`. The `details.capabilities` array mirrors the readiness matrix used by `synrepo_overview`.
 
 `synrepo_card` accepts either `target` or `targets`. `targets` batches up to 10 files or symbols under one read epoch and returns per-target errors so one missing card does not fail the whole batch. Deep card batches are capped at 3 targets. `FileCard` includes `root_id` and `is_primary_root`; `SymbolCard` includes `file_id`, `path`, `root_id`, and `is_primary_root`. When search returns duplicate relative paths from different roots, prefer the returned `file_id` or `suggested_card_requests` entry over a bare path target. A single card with `budget_tokens` retries smaller budget tiers before marking truncation; batch calls also apply the token cap to the whole response and report omitted targets. Path-like card targets can return a degraded file stub with existence and Git status when repository prep fails. Mutating tools never degrade. Cards remain the current serialized packet for compiled code artifacts and task contexts; `synrepo_ask` is the high-level task-context front door over those existing packets.
 
@@ -174,7 +176,7 @@ Graph-backed structural facts are authoritative. They come from parsers, Git, an
 
 Overlay content is advisory. Commentary, explained docs, proposed cross-links, and agent notes are labeled as overlay-backed and freshness-sensitive. If graph facts and overlay prose disagree, trust the graph. If the overlay store becomes unavailable at runtime, graph card responses may continue with `overlay_state: "unavailable"` and `overlay_error`; overlay-backed tools return structured errors instead of silently pretending the overlay is absent.
 
-Freshness is explicit. A stale label is information, not an error, and synrepo does not silently refresh commentary just because an API key exists. Start MCP with `--allow-overlay-writes` and use `synrepo_refresh_commentary` only when fresh advisory prose is required.
+Freshness is explicit. A stale label is information, not an error, and synrepo does not silently refresh commentary just because an API key exists. Reading existing commentary through `synrepo_explain` or `synrepo_docs_search` is separate from generation. Start MCP with `--allow-overlay-writes` and use `synrepo_refresh_commentary` only when fresh advisory prose is required.
 
 Explain credentials and endpoints are operator secrets. Cloud API keys saved by setup live as plaintext in `~/.synrepo/config.toml`; use environment variables instead on shared hosts. Local explain endpoints receive source and context snippets when commentary is refreshed, so do not point MCP-accessible refresh workflows at untrusted local or remote LLM servers.
 

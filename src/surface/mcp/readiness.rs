@@ -59,6 +59,7 @@ fn build_readiness(
         "reconcile": diagnostics
             .map(|diag| reconcile_status(&diag.reconcile_health))
             .unwrap_or("missing"),
+        "explain_hint": explain_hint(&snapshot, overlay_writes),
         "edit_mode": {
             "overlay_writes": overlay_writes,
             "source_edits": source_edits,
@@ -157,6 +158,22 @@ fn reconcile_status(status: &ReconcileHealth) -> &'static str {
     }
 }
 
+fn explain_hint(snapshot: &StatusSnapshot, overlay_writes: bool) -> Option<String> {
+    let total = snapshot.commentary_coverage.total?;
+    if total == 0 {
+        return None;
+    }
+
+    let refresh = if overlay_writes {
+        "refresh is available in this MCP session"
+    } else {
+        "refresh is unavailable because overlay_writes=false; start synrepo mcp --allow-overlay-writes to enable it"
+    };
+    Some(format!(
+        "{total} overlay commentary entries exist; read them with synrepo_explain budget=deep or synrepo_docs_search; {refresh}"
+    ))
+}
+
 fn watch_detail(status: &WatchServiceStatus) -> serde_json::Value {
     match status {
         WatchServiceStatus::Running(state) => json!({
@@ -208,6 +225,8 @@ mod tests {
     use crate::{
         bootstrap::bootstrap,
         config::{test_home, Config},
+        core::ids::{NodeId, SymbolNodeId},
+        overlay::{CommentaryEntry, CommentaryProvenance, OverlayStore},
     };
 
     struct ReadyState {
@@ -236,6 +255,23 @@ mod tests {
         }
     }
 
+    fn seed_commentary(fixture: &ReadyState) {
+        let overlay_dir = Config::synrepo_dir(&fixture.state.repo_root).join("overlay");
+        let mut store = SqliteOverlayStore::open(&overlay_dir).unwrap();
+        store
+            .insert_commentary(CommentaryEntry {
+                node_id: NodeId::Symbol(SymbolNodeId(0xfeed)),
+                text: "Cached advisory explanation.".to_string(),
+                provenance: CommentaryProvenance {
+                    source_content_hash: "hash-v1".to_string(),
+                    pass_id: "commentary-test".to_string(),
+                    model_identity: "test-model".to_string(),
+                    generated_at: time::OffsetDateTime::from_unix_timestamp(1_712_000_000).unwrap(),
+                },
+            })
+            .unwrap();
+    }
+
     #[test]
     fn readiness_reports_core_status_and_default_modes() {
         let fixture = ready_state();
@@ -250,6 +286,7 @@ mod tests {
         assert_eq!(value["reconcile"], "fresh", "{output}");
         assert_eq!(value["edit_mode"]["overlay_writes"], false, "{output}");
         assert_eq!(value["edit_mode"]["source_edits"], false, "{output}");
+        assert!(value["explain_hint"].is_null(), "{output}");
         assert!(value["details"]["capabilities"]
             .as_array()
             .unwrap()
@@ -265,6 +302,35 @@ mod tests {
 
         assert_eq!(value["edit_mode"]["overlay_writes"], true, "{output}");
         assert_eq!(value["edit_mode"]["source_edits"], false, "{output}");
+    }
+
+    #[test]
+    fn readiness_reports_commentary_read_hint_when_overlay_writes_are_disabled() {
+        let fixture = ready_state();
+        seed_commentary(&fixture);
+
+        let output = handle_readiness(&fixture.state, false, false);
+        let value: serde_json::Value = serde_json::from_str(&output).unwrap();
+        let hint = value["explain_hint"].as_str().unwrap();
+
+        assert!(hint.contains("synrepo_explain budget=deep"), "{hint}");
+        assert!(hint.contains("synrepo_docs_search"), "{hint}");
+        assert!(hint.contains("overlay_writes=false"), "{hint}");
+        assert!(hint.contains("--allow-overlay-writes"), "{hint}");
+    }
+
+    #[test]
+    fn readiness_reports_commentary_refresh_available_when_enabled() {
+        let fixture = ready_state();
+        seed_commentary(&fixture);
+
+        let output = handle_readiness(&fixture.state, true, false);
+        let value: serde_json::Value = serde_json::from_str(&output).unwrap();
+        let hint = value["explain_hint"].as_str().unwrap();
+
+        assert!(hint.contains("synrepo_explain budget=deep"), "{hint}");
+        assert!(hint.contains("refresh is available"), "{hint}");
+        assert!(!hint.contains("overlay_writes=false"), "{hint}");
     }
 
     #[test]

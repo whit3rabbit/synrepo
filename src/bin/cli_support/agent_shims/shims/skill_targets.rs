@@ -115,6 +115,8 @@ args = [\"mcp\", \"--repo\", \".\"]
 - `synrepo_orient()` - workflow step 1: small routing summary before reading the repo cold
 - `synrepo_ask(ask, scope?, shape?, ground?, budget?)` - default high-level front door for one bounded, cited task-context packet
 - `synrepo_search(query, literal?, limit?, output_mode?, budget_tokens?)` - exact lexical search for symbols, flags, code strings, schema keys, file paths, and validation
+- `synrepo_explain(target, budget?)` - bounded card lookup; use `budget=deep` for 1-3 focal targets when existing overlay commentary would help
+- `synrepo_docs_search(query, limit?)` - advisory search over existing materialized explain docs for architecture, intent, gotchas, and why questions
 - `synrepo_card(target?, targets?, budget?, budget_tokens?)` - structured card for one file or symbol, or a small batch
 - `synrepo_context_pack(goal?, targets?, budget?, budget_tokens?, output_mode?, include_tests?, include_notes?, limit?)` - batch known read-only code artifacts and task-context pieces into one token-accounted response
 - `synrepo_task_route(task, path?)` - cheap route classification when only intent, budget, and next tools are needed

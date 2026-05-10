@@ -74,13 +74,13 @@ The path is:
 3. `normal` cards to understand a neighborhood,
 4. impact, risks, and tests before edits or risky reviews,
 5. `deep` cards only before writing code or when exact source or body details matter,
-6. overlay commentary is optional, labeled machine-authored, and freshness-sensitive. Request freshness explicitly when it matters.
+6. existing overlay commentary is optional, labeled machine-authored, and freshness-sensitive; read it when useful and request freshness explicitly when it matters.
 
 Do-not rules, asserted uniformly across surfaces:
 
 - do not open large files first;
 - do not treat commentary as canonical;
-- do not trigger explain unless the task justifies it;
+- do not generate or refresh explain unless the task justifies the cost; cached explain reads are allowed;
 - do not expect watch or background behavior unless explicitly enabled;
 - do not treat client-side nudge hooks as MCP interception or enforcement;
 - **explicit refresh required for fresh commentary**: tools return stale content with tag, never blocking for new explain.

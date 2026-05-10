@@ -50,7 +50,7 @@ Current registrations (see `mcp.rs` for schemas):
 
 `synrepo_orient` is the small routing summary for first contact. `synrepo_overview` keeps `mode` and `graph`, then adds readiness, watch, reconcile, export freshness, explain provider, commentary/overlay, agent integration, metrics, and recent activity summaries. Degraded overview and path-like card stubs can be returned when global/defaultless repository prep fails. Mutating tools return initialization errors instead.
 
-`synrepo_readiness` is the cheap read-only preflight for agents that only need operational trust signals. It returns top-level `graph`, `overlay`, `index`, `watch`, `reconcile`, and `edit_mode` fields, plus `details.capabilities` rows from the shared readiness matrix. Overlay wire values are `ready`, `ready_empty`, `missing`, and `error`; `ready_empty` is the healthy post-init state before commentary, cross-links, or notes are generated. It does not start watch, run reconcile, refresh commentary, or write overlay/source state.
+`synrepo_readiness` is the cheap read-only preflight for agents that only need operational trust signals. It returns top-level `graph`, `overlay`, `index`, `watch`, `reconcile`, `explain_hint`, and `edit_mode` fields, plus `details.capabilities` rows from the shared readiness matrix. Overlay wire values are `ready`, `ready_empty`, `missing`, and `error`; `ready_empty` is the healthy post-init state before commentary, cross-links, or notes are generated. When overlay commentary exists, `explain_hint` points agents to `synrepo_explain budget=deep` and `synrepo_docs_search`, and reports when refresh is unavailable because `overlay_writes=false`. It does not start watch, run reconcile, refresh commentary, or write overlay/source state.
 
 `synrepo_resume_context` returns a repo-scoped resume packet for stale resumes before an agent asks the user to repeat context. It summarizes changed files, next actions, recent activity, explicit saved note summaries, validation commands, detail pointers, and context accounting under a bounded token budget. It is read-only and regeneratable. It does not store prompt logs, chat history, raw tool outputs, caller identity, response bodies, or generic session memory.
 
@@ -63,6 +63,8 @@ Current registrations (see `mcp.rs` for schemas):
 
 **Overlay-write only (`synrepo mcp --allow-overlay-writes`):**
 `synrepo_refresh_commentary`, `synrepo_note_add`, `synrepo_note_link`, `synrepo_note_supersede`, `synrepo_note_forget`, `synrepo_note_verify`
+
+`synrepo_docs_search` searches existing materialized explain docs. It is read-only and does not generate or refresh commentary.
 
 `synrepo_refresh_commentary` accepts `scope: "target" | "file" | "directory" | "stale"` and emits MCP progress notifications when a client supplies a progress token.
 
@@ -112,7 +114,7 @@ The overview blurb in `mcp.rs`, `skill/SKILL.md`, and `docs/MCP.md` are the surf
 - Overlay write tools require an explicit `--allow-overlay-writes` process gate and are hidden by default.
 - Source edit tools require an explicit `--allow-source-edits` process gate and are hidden by default.
 - Prepared anchors are session-scoped operational state, not canonical graph facts or agent memory.
-- `synrepo_docs_search` returns advisory explained commentary only. It is searchable overlay output, not canonical graph state or explain input.
+- `synrepo_docs_search` returns advisory explained commentary only. It is searchable overlay output, not canonical graph state or explain input, and it does not refresh commentary.
 - Graph card responses may continue with `overlay_state: "unavailable"` and `overlay_error` when the overlay store cannot be opened. Overlay-backed tools return structured errors in that state.
 - Multi-query reads run under `with_graph_read_snapshot` / `with_overlay_read_snapshot`. The re-entrant depth counter lets handlers and card compilers nest snapshots safely (see hard invariant 8 in the root `AGENTS.md`).
 - MCP read snapshots are capped per repository so concurrent clients return `BUSY` instead of opening unbounded WAL readers.

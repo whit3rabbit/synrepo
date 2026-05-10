@@ -15,6 +15,8 @@ Synrepo is a local, deterministic code-context compiler. Its product model is `r
 
 Use `synrepo_ask(ask, scope?, shape?, ground?, budget?)` as the default high-level front door for one bounded, cited task-context packet. It returns `answer`, `cards_used`, `evidence`, `grounding`, `omitted_context_notes`, `next_best_tools`, and `context_packet`. Its grounding policy accepts `mode` or `citations`, `include_spans`, and `allow_overlay`; default to graph facts as authoritative observed source truth. Overlay commentary, explain docs, and notes are advisory; LLM-authored output never mutates the canonical graph. Embeddings are optional routing/search helpers.
 
+Existing explain reads are safe when useful: use `synrepo_explain` with `budget=deep` for 1-3 focal symbols/files before non-trivial implementation, review, security work, or unfamiliar subsystem changes; use `synrepo_docs_search` for architecture, intent, gotchas, or "why is this like this" questions. These read cached overlay output; they do not generate or refresh commentary.
+
 ## Use when
 
 Use synrepo for orientation, codebase questions, reviews, broad search before opening files, exact lexical search, edit routing, first-pass impact, entrypoint discovery, test-surface discovery, and high-level subsystem understanding.
@@ -68,7 +70,7 @@ See [`references/search-routing.md`](references/search-routing.md) for examples,
 
 Graph content is primary. Overlay content is advisory. Materialized advisory explain docs are overlay output, not canonical graph facts. Prepared edit anchors are session-scoped operational state. They are not graph facts, overlay content, commentary, agent notes, or agent memory.
 
-If overlay and graph disagree, trust the graph. Freshness is explicit. A stale label is information, not an error; it is not silently refreshed on read.
+If overlay and graph disagree, trust the graph. Existing explain reads use cached overlay output. Freshness is explicit. A stale label is information, not an error; it is not silently refreshed on read.
 
 Global MCP configs that launch `synrepo mcp` serve registered projects by absolute path. In global or defaultless contexts, pass the current workspace's absolute path as `repo_root` to repo-addressable tools, or call `synrepo_use_project(repo_root)` once to set the session default.
 
@@ -86,7 +88,7 @@ Client-side nudge hooks for Codex and Claude may remind agents to use synrepo be
 
 - Do not open large files first. Start at `tiny` and escalate only when a specific field forces it.
 - Do not treat overlay commentary, explain docs, or proposed cross-links as canonical source truth.
-- Do not trigger explain (`--generate-cross-links`, commentary generate/refresh) unless the task justifies the cost.
+- Do not generate or refresh explain (`--generate-cross-links`, commentary generate/refresh) unless the task justifies the cost; cached explain reads are allowed.
 - Do not expect watch or background behavior unless `synrepo watch` is explicitly running.
 - Do not call `synrepo_apply_anchor_edits` without a fresh `synrepo_prepare_edit_context` response.
 - Do not drop `root_id` from search or prepare results when editing worktree files; omitted `root_id` means the primary checkout.

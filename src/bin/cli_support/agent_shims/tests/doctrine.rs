@@ -52,6 +52,8 @@ fn doctrine_block_covers_required_sections() {
     assert!(DOCTRINE_BLOCK.contains("`deep`"));
     assert!(DOCTRINE_BLOCK.contains("not a task tracker"));
     assert!(DOCTRINE_BLOCK.contains("Refresh is explicit"));
+    assert!(DOCTRINE_BLOCK.contains("Existing explain reads are safe when useful"));
+    assert!(DOCTRINE_BLOCK.contains("`synrepo_docs_search`"));
     assert!(DOCTRINE_BLOCK.contains("### MCP repository selection"));
     assert!(DOCTRINE_BLOCK.contains("synrepo project add <path>"));
 }
@@ -75,7 +77,9 @@ fn skill_md_includes_doctrine_lines_verbatim() {
         "Read full source files or request `deep` cards only after bounded cards identify the target or when the card content is insufficient.",
         "Do not open large files first. Start at `tiny` and escalate only when a specific field forces it.",
         "Do not treat overlay commentary, explain docs, or proposed cross-links as canonical source truth.",
-        "Do not trigger explain (`--generate-cross-links`, commentary generate/refresh) unless the task justifies the cost.",
+        "Existing explain reads are safe when useful: use `synrepo_explain` with `budget=deep` for 1-3 focal symbols/files",
+        "use `synrepo_docs_search` for architecture, intent, gotchas, or \"why is this like this\" questions.",
+        "Do not generate or refresh explain (`--generate-cross-links`, commentary generate/refresh) unless the task justifies the cost; cached explain reads are allowed.",
         "Do not expect watch or background behavior unless `synrepo watch` is explicitly running.",
         "synrepo stores code facts and bounded operational memory. It is not a task tracker, not session memory, and not cross-session agent memory.",
         "Any handoff or next-action list is a derived recommendation regenerated from repo state. External task systems own assignment, status, and collaboration.",
@@ -171,6 +175,8 @@ fn skill_surfaces_teach_context_compiler_front_door() {
         "`mode` or `citations`, `include_spans`, and `allow_overlay`",
         "Graph facts are authoritative observed source truth",
         "Overlay commentary, explain docs, and notes are advisory",
+        "Existing explain reads are safe when useful",
+        "`synrepo_docs_search`",
         "LLM-authored output never mutates the canonical graph",
         "Embeddings are optional routing/search helpers",
     ];
@@ -278,6 +284,14 @@ fn mcp_tool_descriptions_distinguish_exact_search_from_task_routing() {
         assert!(window.contains("If the user mentions exact identifiers"));
         assert!(window.contains("call synrepo_search first"));
     }
+
+    let explain_window = tool_window(&source, "synrepo_explain");
+    assert!(explain_window.contains("existing overlay commentary"));
+    assert!(explain_window.contains("never generates or refreshes commentary"));
+
+    let docs_window = tool_window(&source, "synrepo_docs_search");
+    assert!(docs_window.contains("existing advisory explained commentary docs"));
+    assert!(docs_window.contains("never generated or refreshed"));
 }
 
 fn tool_window<'a>(source: &'a str, tool: &str) -> &'a str {

@@ -31,8 +31,13 @@ pub(super) fn prompt_needs_synrepo(prompt: &str) -> bool {
         "how",
     ];
     let strong_workflow_terms = [
+        "architecture",
+        "design",
         "review",
         "audit",
+        "security",
+        "threat model",
+        "vulnerab",
         "grep",
         "trace",
         "call path",
@@ -122,6 +127,8 @@ mod tests {
         for prompt in [
             "answer a question about this codebase",
             "review src/lib.rs",
+            "design the parser architecture",
+            "security review auth flow",
             "trace where handle_query is called",
             "what tests cover this file?",
             "find the CLI entrypoint",

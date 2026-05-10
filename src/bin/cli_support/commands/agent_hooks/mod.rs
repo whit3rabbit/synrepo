@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 use synrepo::pipeline::context_metrics;
+use synrepo::store::overlay::SqliteOverlayStore;
 use synrepo::surface::task_route::{classify_task_route, TaskRoute};
 
 use crate::cli_support::agent_shims::AgentTool;
@@ -91,7 +92,15 @@ pub(crate) fn nudge_output(client: HookClient, event: HookEvent, body: &str) -> 
         return None;
     }
     record_hook_route_best_effort(route.as_ref());
-    Some(render::render_nudge(client, event, route.as_ref()))
+    let existing_explain_available = route.as_ref().is_some_and(|route| {
+        render::route_prefers_existing_explain(route) && overlay_commentary_available()
+    });
+    Some(render::render_nudge(
+        client,
+        event,
+        route.as_ref(),
+        existing_explain_available,
+    ))
 }
 
 pub(crate) fn agent_hooks_supported(tool: AgentTool) -> bool {
@@ -173,6 +182,13 @@ fn discover_synrepo_dir() -> Option<PathBuf> {
 
 fn is_synrepo_dir(path: &Path) -> bool {
     path.is_dir()
+}
+
+fn overlay_commentary_available() -> bool {
+    discover_synrepo_dir()
+        .and_then(|dir| SqliteOverlayStore::open_existing(&dir.join("overlay")).ok())
+        .and_then(|store| store.commentary_count().ok())
+        .is_some_and(|count| count > 0)
 }
 
 #[cfg(test)]
