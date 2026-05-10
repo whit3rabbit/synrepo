@@ -1,6 +1,6 @@
 # Adding a new language
 
-Structural parsing currently supports Rust, Python, TypeScript, TSX, and Go. Adding a new language is surface-enforced: validation and fixture tests compile-break or fail loud if any required update is missed. Parser invariants are documented in the `src/structure/parse/mod.rs` module doc.
+Structural parsing currently supports Rust, Python, TypeScript, TSX, Go, JavaScript, Java, Kotlin, C#, PHP, Ruby, Swift, C, C++, and Dart. Adding a new language is surface-enforced: validation and fixture tests compile-break or fail loud if any required update is missed. Parser invariants are documented in the `src/structure/parse/mod.rs` module doc.
 
 ## Files you MUST touch
 
@@ -24,7 +24,7 @@ Multi-root discovery does not change per-language fixture shape. Parser fixtures
 ## Files you PROBABLY need to touch
 
 5. **`src/structure/parse/extract/docs.rs`** — add `match` arms for the new variant in `extract_doc_comment` and `extract_signature` if you want doc-comment and signature extraction. Without this, the new language gets `None` for both (Go is the current example of an unwired language here).
-6. **`src/pipeline/structural/stage4.rs::resolve_import_ref`** — if you want cross-file `Imports` edges resolved for this language, extend the path/extension dispatch. Without this, `import_refs` are still captured by the parser but stage 4 silently skips resolution (phase-1 boundary; Rust and Go sit here today).
+6. **`src/pipeline/structural/stage4/imports.rs::resolve_import_ref`** — if you want cross-file `Imports` edges resolved for this language, extend the path/extension dispatch. Without this, `import_refs` are still captured by the parser but stage 4 silently skips resolution. Current resolvers cover TypeScript/JavaScript relative imports, Python dotted modules, Rust paths, Go module imports, Dart package/relative imports, and Java/Kotlin source-root imports.
 
 ## Tests you SHOULD add
 
@@ -32,10 +32,10 @@ Multi-root discovery does not change per-language fixture shape. Parser fixtures
 8. **`src/structure/parse/qualname_tests.rs`** — add an edge-case test for the language's fragile qualname constructs (nested scopes, impl-style blocks, class expressions, etc.).
 9. **`src/structure/parse/refs_tests.rs`** — add positive `call_refs`/`import_refs` tests and negative tests for intentionally unsupported forms.
 10. **`src/structure/parse/malformed_tests.rs`** — add a malformed-source test and extend `empty_input_returns_some_with_no_symbols_per_language` to cover the new extension.
-11. **`src/pipeline/structural/tests/edges.rs`** — if you wired stage-4 resolution in step 5, add an import-resolution contract test.
+11. **`src/pipeline/structural/tests/`** — if you wired stage-4 resolution in step 6, add an import-resolution contract test in the relevant structural test module.
 
 ## Verification
 
 - `cargo test --lib structure::parse::` — full parse-layer test suite.
-- `cargo test --lib pipeline::structural::tests::edges::` — stage-4 integration tests.
+- `cargo test --lib pipeline::structural::tests::` — stage-4 integration tests.
 - A broken query capture name fails `validation_tests` with a message naming the language, the query role (definition/call/import), and the missing capture — use this as your feedback loop.

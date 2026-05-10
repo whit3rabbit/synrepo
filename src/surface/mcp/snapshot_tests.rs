@@ -20,7 +20,7 @@ use time::OffsetDateTime;
 static SNAPSHOT_ENV_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 #[test]
-#[ignore = "snapshot parity uses the process-global ArcSwap<Graph>; run explicitly to avoid parallel-suite interference"]
+#[ignore = "snapshot parity uses process-global per-repo graph snapshots; run explicitly to avoid parallel-suite interference"]
 fn migrated_read_tools_match_snapshot_and_sqlite_outputs() {
     let _env_guard = SNAPSHOT_ENV_LOCK
         .get_or_init(|| Mutex::new(()))

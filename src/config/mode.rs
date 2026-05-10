@@ -8,9 +8,9 @@ use serde::{Deserialize, Serialize};
 pub enum Mode {
     /// Bootstrap defaults here when repository inspection does not find
     /// rationale markdown under the configured concept directories.
-    /// Explain runs automatically in the background and writes to the
-    /// overlay. Concept nodes are disabled unless human-authored concept
-    /// directories exist.
+    /// Explain output is optional and explicitly requested; when generated,
+    /// it writes to the overlay. Concept nodes are disabled unless
+    /// human-authored concept directories exist.
     #[default]
     Auto,
     /// Bootstrap recommends or selects this when repository inspection

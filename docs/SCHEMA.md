@@ -444,9 +444,10 @@ the user.
 
 | File | Struct (file:line) | Lifecycle |
 |---|---|---|
-| `writer.lock` | `WriterOwnership` (`src/pipeline/writer/mod.rs:53`) | Kernel advisory flock; JSON body records pid + RFC 3339 acquired_at; held only during mutating operations. |
+| `writer.lock` | `WriterOwnership` (`src/pipeline/writer/mod.rs:53`) | Writer ownership metadata; JSON body records pid + RFC 3339 acquired_at while a writer is active. |
+| `writer.lock.flock` | (no struct) | Kernel advisory flock sentinel for `writer.lock`; companion file used so metadata remains readable cross-platform. |
 | `watch-daemon.json` | `WatchDaemonState` (`src/pipeline/watch/lease/types.rs:32`) | Long-lived watch ownership (pid, mode, last events). |
-| `watch-daemon.lock` | (no struct) | Kernel flock on a separate fd; companion to `watch-daemon.json`. Unix only. |
+| `watch-daemon.json.flock` | (no struct) | Watch lease sentinel flock file; companion to `watch-daemon.json`. |
 | `reconcile-state.json` | `ReconcileState` (`src/pipeline/watch/reconcile.rs`) | Last reconcile outcome and triggering events. |
 | `compact-state.json` | `CompactState` (`src/pipeline/compact/ops.rs`) | Last compaction timestamp. |
 | `repair-log.jsonl` | `ResolutionLogRecord` per line (`src/pipeline/repair/types/models.rs`) | Append-only; rotated by age via `repair_log_retention_days`. |
@@ -484,9 +485,9 @@ per-repo cleanup.
 7. Every list / traversal read filters `retired_at_rev IS NULL`.
 8. Reader snapshots are re-entrant (depth counter; `BEGIN DEFERRED` only on
    the outermost call).
-9. The writer lock at `state/writer.lock` is a kernel advisory flock
-   (`fs2`), not file existence. Stamped JSON inside the file is metadata,
-   not the lock.
+9. The writer lock is a kernel advisory flock (`fs2`) on
+   `state/writer.lock.flock`, not file existence. Stamped JSON in
+   `state/writer.lock` is metadata, not the lock.
 10. `synrepo init` blocks when the on-disk graph version exceeds
     `GRAPH_FORMAT_VERSION`.
 

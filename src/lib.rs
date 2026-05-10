@@ -1,7 +1,9 @@
 //! synrepo — a context compiler for AI coding agents
 //!
-//! Architecture (four layers, bottom to top):
+//! Architecture (five product layers plus runtime/orchestration modules):
 //!
+//! 0. **Core layer** — shared IDs, provenance, source-language metadata, path
+//!    safety, and project-layout detection.
 //! 1. **Substrate layer** — file discovery, classification, and [`syntext`] n-gram index.
 //!    - [`mod@substrate::discover`] walks the filesystem
 //!    - [`mod@substrate::classify`] maps files to content tiers
@@ -13,8 +15,8 @@
 //!    - [`structure::drift`] scores per-edge Jaccard distance over persisted structural
 //!      fingerprints (stage 7 — implemented, sidecar `edge_drift` / `file_fingerprints` tables).
 //!    - [`structure::graph::snapshot`] publishes the immutable in-memory `Graph` after each successful compile.
-//! 3. **Overlay layer** — LLM-authored content, physically separate from the graph.
-//!    Phase 4+ only; module exists to enforce the architectural boundary. See [`overlay`].
+//! 3. **Overlay layer** — machine-authored and advisory content, physically
+//!    separate from the graph. See [`overlay`].
 //! 4. **Surface layer** — CLI (`src/bin/cli.rs`), MCP server (`synrepo mcp` subcommand),
 //!    and skill bundle (`skill/SKILL.md`). MCP tool handlers live in [`surface::mcp`].
 //!
@@ -26,7 +28,7 @@
 //! and explain queries filter at the retrieval layer so the explain
 //! pipeline never reads its own previous output.
 //!
-//! See `docs/FOUNDATION.md` and `docs/FOUNDATION-SPEC.md` for design documentation.
+//! See `docs/ARCHITECTURE.md` and `docs/FOUNDATION.md` for design documentation.
 
 // Crate-wide ban on unsafe code. `deny` (not `forbid`) so we can scope
 // narrow, audited exceptions — currently only the Windows `is_process_alive`

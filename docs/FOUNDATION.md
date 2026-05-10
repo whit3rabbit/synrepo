@@ -16,7 +16,7 @@ The product wedge is concrete: **fewer blind reads, fewer wrong-file edits, lowe
 
 ## Who synrepo is for
 
-**The primary user is the vibe coder** — someone who builds software primarily by directing an AI coding agent, often working solo or in a small team, often on projects whose entire codebase they did not personally write. They want their agent to understand the project as well as a senior contributor would. They will not write documentation. They will not read `findings.md`. They will not promote concept drafts via CLI. They want to install synrepo, point it at their repo, and have their coding agent immediately start producing better code with no ceremony.
+**The primary user is the vibe coder** — someone who builds software primarily by directing an AI coding agent, often working solo or in a small team, often on projects whose entire codebase they did not personally write. They want their agent to understand the project as well as a senior contributor would. They will not write documentation. They will not read long audit reports. They will not promote concept drafts via CLI. They want to install synrepo, point it at their repo, and have their coding agent immediately start producing better code with no ceremony.
 
 **The secondary user is the disciplined team** — engineers in an organization that already invests in ADRs, design docs, and architectural rationale, and that wants a tool to keep those artifacts queryable, fresh, and connected to code. For this audience, a review surface is a feature. They will use it.
 
@@ -26,8 +26,8 @@ synrepo handles both with two modes selected at `synrepo init`:
 | --- | --- | --- |
 | Concept nodes | Disabled unless `docs/concepts/` or similar exists | Enabled when human-authored ADR directories are present |
 | Cross-link proposals | Land in the overlay store, queryable via MCP | Same overlay, plus explicit promotion workflow |
-| Bootstrap | Runs automatically; structural cards first, overlay cross-links in the background | Generates draft queue requiring explicit promotion |
-| Findings | Surfaced via MCP only when asked | Also written to `findings.md` for review |
+| Bootstrap | Runs automatically; structural cards first, overlay generation is explicit | Generates reviewable overlay candidates requiring explicit promotion |
+| Findings | Surfaced via MCP and audit tools when asked | Surfaced via MCP, audit tools, and curated review flows |
 | Default card tier | `tiny` | `tiny` |
 
 The **hard invariant** survives in both modes: the explain layer never reads its own previous output as retrieval input. This is enforced physically (graph and overlay are separate sqlite stores) and reinforced at the retrieval layer (explain queries filter on `source_store = graph`). LLM-authored content sits in the overlay where agents can see it, but the explain pipeline cannot. The contamination guarantee is structural, not merely labeled.
@@ -182,15 +182,17 @@ If an agent needs a richer card than the structural data supports — say, "what
 
 ## Architecture
 
-Four layers, bottom to top.
+Five product layers, plus runtime/orchestration modules.
 
-**Substrate layer.** syntext as a Rust library dependency. Provides the n-gram index over the entire corpus — code files, markdown files, everything textual. Provides `commit_batch` semantics so structural updates and citation verification are consistent within milliseconds.
+**Core layer.** Shared low-level IDs, provenance, source-language metadata, path safety, and project-layout detection.
 
-**Structure layer.** The unified graph for code and prose. Code symbols from tree-sitter via per-language Rust crates. Prose links from a Markdown parser (standard links, wiki-links, anchors, frontmatter). The graph store is sqlite, single source of truth, no in-memory mirror in v1. SQLite handles two-hop queries in milliseconds and is fine for the vast majority of MCP traversals. If a specific query class crosses a measured latency threshold, an in-memory petgraph layer can be added *later* for that specific query type without rearchitecting. Single source of truth saves debugging weeks.
+**Substrate layer.** syntext as a Rust library dependency. Provides the n-gram index over the admitted textual corpus. Discovery respects `.gitignore`, `.synignore`, redaction globs, configured roots, linked worktrees by default, and initialized submodules when enabled. Optional semantic triage adds local vector artifacts, but graph-backed structural facts remain the trust source.
 
-**Overlay layer.** LLM-authored content lives here, physically separate from the graph. The overlay holds proposed cross-links (with cited evidence and confidence), optional card commentary tiers, and findings. The overlay is queryable via MCP so agents can see it, but the explain pipeline never reads it as input for subsequent passes. This is the contamination invariant.
+**Structure layer.** The unified graph for code and prose. Code symbols come from tree-sitter via per-language Rust crates and in-repo query constants. Concept nodes come only from configured human-authored markdown directories. The graph store is SQLite and is the source of truth. A per-repo in-memory `Graph` snapshot may be published after a successful compile when it fits the configured memory budget; it accelerates reads but does not replace SQLite as canonical storage.
 
-**Surface layer.** The CLI, the MCP server, and a thin skill bundle for Claude. The CLI is for humans and CI. The MCP server is a separate stdio server that serves cards and graph primitives to agents. Optional watch mode is a per-repo local service started explicitly with `synrepo watch` or `synrepo watch --daemon`. The skill is a discoverability layer that tells Claude when to reach for the MCP server.
+**Overlay layer.** Machine-authored and advisory content lives here, physically separate from the graph. The overlay holds proposed cross-links with cited evidence and confidence, optional card commentary tiers, advisory notes, lifecycle transitions, and audit rows. The overlay is queryable via MCP so agents can see it, but the explain pipeline never reads it as input for subsequent passes. This is the contamination invariant.
+
+**Surface layer.** The CLI, MCP server, agent shims, and skill bundle. The CLI is for humans and CI. The MCP server is the `synrepo mcp` stdio subcommand that serves cards, task contexts, graph primitives, audit surfaces, and operational state to agents. Optional watch mode is a per-repo local service started explicitly with `synrepo watch` or `synrepo watch --daemon`.
 
 ---
 
@@ -202,13 +204,13 @@ The graph holds only what was directly observed. Everything inferred lives in th
 
 Three node types, all with `epistemic_status` ∈ `{parser_observed, human_declared, git_observed}`. Machine-authored content does not exist in the graph.
 
-- **File nodes** — anything on disk. Identity is content-hash plus path-history, with AST-based rename detection as the primary mechanism.
+- **File nodes** — anything on disk. Identity is root-scoped and stable across content edits; new files derive identity from first-seen content hash, while existing file IDs are reused and rename detection records path history.
 - **Symbol nodes** — functions, classes, methods, types, exports. Extracted via tree-sitter queries. Identity is `(file_node_id, qualified_name, kind, body_hash)`.
 - **Concept nodes** — *only* created from human-authored Markdown files in configured directories (default `docs/concepts/`, `docs/adr/`, `docs/decisions/`). **The explain layer cannot mint concept nodes in any mode.** For vibe coder repos with no concept directories, concept nodes simply don't exist — and that's fine, because cards cover the common case without needing an ontology layer.
 
 ### Graph edges (canonical)
 
-Restricted to observed types: `imports`, `calls`, `inherits`, `defines`, `references` (parser-observed); `mentions` (markdown link parser); `co_changes_with` (git-observed); `governs` (only when declared in ADR frontmatter or inline marker, never inferred). Each edge carries provenance, an `epistemic_status` from the observed-only spectrum, and a `drift_score` updated on every commit by the structural pipeline.
+Restricted to observed types: `imports`, `calls`, `inherits`, `defines`, `references` (parser-observed); `mentions` (markdown link parser); `co_changes_with` (git-observed); `governs` (only when declared in ADR frontmatter or inline marker, never inferred). Each edge carries provenance and an `epistemic_status` from the observed-only spectrum. Drift scores are stored in sidecar tables keyed by edge and revision, not as mutable edge fields.
 
 ### Overlay contents
 
@@ -238,19 +240,19 @@ What it explicitly is not:
 - cross-session memory of prior conversations
 - a vehicle for reintroducing auto-captured activity that would blur the graph-versus-overlay boundary
 
-The data already exists: `.synrepo/state/reconcile-state.json`, `.synrepo/state/repair-log.jsonl`, the overlay cross-link store, the overlay commentary store, and `pipeline::git_intelligence` hotspot output. This is a surface-layer exposure of persisted operational events, not new telemetry. See `synrepo_recent_activity` in FOUNDATION-SPEC §12.
+The data already exists: `.synrepo/state/reconcile-state.json`, `.synrepo/state/repair-log.jsonl`, the overlay cross-link store, the overlay commentary store, and `pipeline::git_intelligence` hotspot output. This is a surface-layer exposure of persisted operational events, not new telemetry.
 
 ---
 
 ## The two pipelines
 
-**Structural pipeline (hot path, no LLM).** Runs on every change, synchronously, seconds even on thousand-file refactors. Walks the configured roots, parses code via tree-sitter (supporting Rust, Python, TypeScript/TSX, and Go), parses prose via the Markdown parser, mines git history, computes derived structural facts (reachability, dead code, hidden coupling, drift scores), commits to sqlite and syntext. Stage 4 resolution is **scoped and scored (`stage4-call-scope-narrowing-v1`)**, using a rubric (same file, imports, visibility, kind, prefix) to drastically narrow `Calls` edges. Calls with an enclosing function or method now also emit symbol-to-symbol edges, while module-scope calls remain file-scoped. Visibility (`Public`, `Crate`, `Private`) is a first-class, cross-language field (`cross-language-symbol-visibility-v1`). Changed files are upserted in place (preserving stable node identity), and stale observations are soft-retired rather than cascade-deleted, so drift scoring and provenance remain coherent across revisions. That's the whole critical path — no cascade budget, no deferral, no nightly queue. A 1,000-file refactor gets its graph updated in a few seconds of tree-sitter plus the graph write. Agents never read stale structural state.
+**Structural pipeline (hot path, no LLM).** Runs on every change, synchronously, seconds even on thousand-file refactors. Walks the configured roots, parses code via tree-sitter for every wired supported language, parses prose from configured markdown concept directories, mines git history, computes derived structural facts, commits to sqlite and syntext, scores drift in sidecar tables, and publishes an in-memory graph snapshot when it fits the configured budget. Stage 4 resolution is **scoped and scored (`stage4-call-scope-narrowing-v1`)**, using a rubric (same file, imports, visibility, kind, prefix) to drastically narrow `Calls` edges. Calls with an enclosing function or method now also emit symbol-to-symbol edges, while module-scope calls remain file-scoped. Visibility (`Public`, `Crate`, `Private`) is a first-class, cross-language field (`cross-language-symbol-visibility-v1`). Changed files are upserted in place (preserving stable node identity), and stale observations are soft-retired rather than cascade-deleted, so drift scoring and provenance remain coherent across revisions. That's the whole critical path: no cascade budget, no deferral, no nightly queue.
 
-**Explain pipeline (cold path, LLM-driven, lazy).** Never blocks the structural pipeline. Never blocks MCP queries. Runs in three triggering modes: on-demand (an MCP tool asked for commentary or a card at `deep` tier), background (low-priority worker regenerating overlay during idle time), or explicit (the user ran `synrepo sync --generate-cross-links`). Produces card commentary, proposes cross-links, runs lint. Everything it produces goes into the overlay. Input never includes other overlay content, enforced at the retrieval layer.
+**Explain pipeline (cold path, LLM-driven, explicit).** Never blocks the structural pipeline. Never blocks MCP queries. Runs only when a command or MCP tool explicitly requests commentary refresh, docs export/import work, or cross-link generation. Produces card commentary and proposed cross-links. Everything it produces goes into the overlay. Input never includes other overlay content, enforced at the retrieval layer.
 
-*Current shape.* `src/pipeline/explain/` defines two trait boundaries: `CommentaryGenerator` and `CrossLinkGenerator`. Default installs use `NoOpGenerator` and `NoOpCrossLinkGenerator` (both return empty results), so the product stays deterministic and LLM-free out of the box. Setting `SYNREPO_ANTHROPIC_API_KEY` swaps in `ClaudeCommentaryGenerator` and the Claude-backed cross-link generator. The trait boundary is a real improvement over the earlier "stub" posture: it lets an operator opt into explain without threading a new code path through the rest of the pipeline, and it keeps every test fixture LLM-free by default.
+*Current shape.* `src/pipeline/explain/` defines two trait boundaries: `CommentaryGenerator` and `CrossLinkGenerator`. Default installs use `NoOpGenerator` and `NoOpCrossLinkGenerator` (both return empty results), so the product stays deterministic and LLM-free out of the box. Setting `ANTHROPIC_API_KEY` (or the legacy `SYNREPO_ANTHROPIC_API_KEY`) enables the Anthropic/Claude commentary and cross-link providers. The trait boundary is a real improvement over the earlier "stub" posture: it lets an operator opt into explain without threading a new code path through the rest of the pipeline, and it keeps every test fixture LLM-free by default.
 
-Staleness is explicit. Every overlay entry carries the content hash of the sources it was generated from. If the sources have changed, the card response marks the entry as `stale`. Agents can request fresh explain explicitly via the `synrepo_refresh_commentary` tool. **The default behavior is non-blocking stale retrieval; lazy background explain is not part of the v1 contract to keep the read path deterministic.**
+Staleness is explicit. Every overlay entry carries the content hash of the sources it was generated from. If the sources have changed, the card response marks the entry as `stale`. Agents can request fresh explain explicitly via the `synrepo_refresh_commentary` tool. **The default behavior is non-blocking stale retrieval; reads do not implicitly generate fresh commentary.**
 
 ---
 
@@ -314,7 +316,7 @@ Then verification proceeds: does the target node exist? Do both cited spans pass
 
 ### Stage 4 — Lint and classification
 
-A final LLM pass scans the new overlay entries for contradictions, cluster anomalies, and low-evidence patterns (same generic rationale across many candidates is a signature of lazy proposal). Findings go to `findings.md` in curated mode or the overlay `findings/` store in auto mode. Never auto-applied.
+A final review surface scans the new overlay entries for contradictions, cluster anomalies, and low-evidence patterns (same generic rationale across many candidates is a signature of lazy proposal). Findings are exposed through MCP/CLI audit surfaces and overlay state. Never auto-applied.
 
 ### What evidence verification actually proves
 
@@ -324,17 +326,18 @@ Cited-evidence verification is a strong improvement over "the target node exists
 
 ## Identity and stability
 
-AST-based rename detection as the primary mechanism, with content hash and `git log --follow` as fallbacks. This is the single most important correctness problem: if file node identity breaks, every inbound edge breaks and the graph rots.
+Root-scoped identity preservation is the single most important correctness problem: if file node identity breaks, every inbound edge breaks and the graph rots.
 
 **File identity.** `FileNodeId` is stable across renames, splits, merges, and in-place content edits (`structural-resilience-v1` & `v2`). For new files, it is derived from the content hash of the first-seen version; for existing files, the stored ID is always reused. A content-hash change advances the `content_hash` version field on the file node without triggering node deletion or invalidating inbound edges. This prevents the graph from rotting during rapid local saves.
 
 When the structural pipeline detects a file disappearance and one or more new files in the same compile cycle, it runs the **Identity Cascade (shipped in Stage 6)**:
 
-1. **AST symbol-set match.** For each new file, compute the set of `(qualified_name, body_hash)` tuples for its top-level symbols. If a disappeared file's symbol set overlaps substantially (threshold configurable), treat it as a rename: preserve the file node ID, append the new path to path history, log the rename. Catches simple renames cleanly.
-2. **Symbol-set split.** If a disappeared file's symbols are split across multiple new files (e.g. `auth.rs` -> `jwt.rs` + `session.rs`), split the file node. The original retains its ID and points to the largest-overlap new file; a new node is created for the other with `split_from` provenance edges. Refactors heal automatically when there's structural evidence.
-3. **Symbol-set merge.** Symmetric: multiple disappeared files' symbols all in one new file -> new node with `merged_from` edges.
-4. **Git rename fallback.** When symbol evidence is inconclusive, fall back to a deterministic `gix` rename detection pass.
-5. **Accept breakage as last resort.** When neither symbol nor git evidence connects an old file to a new one, treat it as delete + add. Log a finding. The system is designed to tolerate this gracefully: broken edges become candidates for the next explain pass.
+1. **Exact content-hash rename.** If the same bytes reappear at a new path in the same discovery root, preserve the file node ID and append the old path to `path_history`.
+2. **Edited single-file rename.** For changed files, same-root high symbol-set overlap can preserve identity. Symbol-poor files may use bounded sampled-content shingles under a hard size cap. The hot path never runs full byte LCS.
+3. **Symbol-set split.** If a disappeared file's symbols are split across multiple new files, preserve the strongest match and emit `SplitFrom` edges for the others.
+4. **Symbol-set merge.** Symmetric: multiple disappeared files' symbols all in one new file emit `MergedFrom` edges.
+5. **Git rename fallback.** When structural evidence is inconclusive, fall back to a deterministic `gix` rename detection pass.
+6. **Accept breakage as last resort.** When neither structural nor git evidence connects an old file to a new one, treat it as delete + add. The system is designed to tolerate this gracefully: retired or broken observations surface through repair and explain workflows.
 
 Physical deletion is reserved for files genuinely absent from the repository after the identity cascade, and for the compaction maintenance pass that removes retired observations older than the configured retention window (`retain_retired_revisions`, default 10 compile revisions).
 
@@ -342,7 +345,7 @@ Physical deletion is reserved for files genuinely absent from the repository aft
 
 **Observation lifecycle.** Every parser-emitted symbol and edge carries an `owner_file_id` (the file whose parse pass produced it) and observation-window fields (`last_observed_rev`, `retired_at_rev`). This **soft-retirement lifecycle (`graph-lifecycle-v1`)** ensures that stale observations are marked retired rather than cascade-deleted, preserving the audit trail. Recompiling a file retires only observations owned by that file that were not re-emitted, leaving observations owned by other files untouched. Human-declared facts (`Epistemic::HumanDeclared`) are never retired by a parser pass. Retired observations remain physically present and visible to drift scoring (shipped in Stage 7) until compacted. Drift scoring uses Jaccard distance on persisted structural fingerprints in the sidecar `edge_drift` table.
 
-This is much stronger than a git-only approach but it is not bedrock. Pathological refactors (path moves + symbol renames + body rewrites in one commit) will still defeat it. The system degrades gracefully: broken edges become findings, the explain pipeline can re-propose them lazily.
+This is much stronger than a git-only approach but it is not bedrock. Pathological refactors (path moves + symbol renames + body rewrites in one commit) will still defeat it. The system degrades gracefully: broken or retired observations surface through repair findings, and cross-link repair or regeneration can be requested explicitly.
 
 ---
 
@@ -350,11 +353,11 @@ This is much stronger than a git-only approach but it is not bedrock. Pathologic
 
 | Class | Handling |
 | --- | --- |
-| Code in a supported language (Rust, Python, TypeScript/TSX, Go) | Full pipeline: index + tree-sitter parse + symbol extraction |
+| Code in a supported language (Rust, Python, TypeScript/TSX, Go, JavaScript, Java, Kotlin, C#, PHP, Ruby, Swift, C, C++, Dart) | Full pipeline: index + tree-sitter parse + symbol extraction |
 | Other text code (toml, yaml, sql, shell) | Index only, no symbol extraction |
 | Markdown / mdx | Index + link parse + frontmatter parse |
-| Jupyter notebooks | Extract source cells, ignore output cells |
-| PDF | Extract text via `pdf-extract`, index, no structure (phase 6) |
+| Jupyter notebooks | Classified separately and indexed as admitted text; no symbol extraction |
+| PDF | Skipped unless it passes the text sniff and size policy; no PDF-specific extraction is wired |
 | Images | Skip in v1 |
 | Binary | Skip |
 | Symlinks | Follow once, detect cycles, never outside configured roots |
@@ -391,7 +394,7 @@ Task-first and artifact-centric. The default response unit is a card (or set of 
 | Tool | Status | Purpose | Returns |
 | --- | --- | --- | --- |
 | `synrepo_overview(budget?)` | shipped | First-call orientation on an unfamiliar project | graph counts today; ModuleCards / EntryPointCards to fold in |
-| `synrepo_card(target, type?, budget?, require_freshness?)` | shipped for symbol / file / concept; directory case planned | Card for a specific symbol, file, or module | The requested card at the specified tier |
+| `synrepo_card(target?, targets?, budget?)` | shipped for symbol / file / concept/path targets | Card for one target or a small batch | The requested card at the specified tier |
 | `synrepo_module_card(path, budget?)` | shipped | Directory-targeted ModuleCard; standalone-usable, also exposed via MCP | ModuleCard at the specified tier |
 | `synrepo_task_route(task, path?)` | shipped | Classify a task into the cheapest safe route | Intent, confidence, recommended tools, budget tier, signals |
 | `synrepo_where_to_edit(task_description, budget?)` | shipped | "I want to do X, which files matter?" | Ranked FileCards from lexical matches plus lightweight structural signals |
@@ -404,7 +407,7 @@ Task-first and artifact-centric. The default response unit is a card (or set of 
 | `synrepo_next_actions(limit?, since_days?)` | shipped | prioritized, derived handoffs from repair log, overlay, and git hotspots | prioritized task list |
 | `synrepo_public_api(path, budget?)` | shipped | "What is the public surface of this module?" | PublicAPICard |
 | `synrepo_search(query)` | shipped | Exact n-gram search via syntext | Lexical fallback when name-based lookup fails |
-| `synrepo_findings(scope?)` | shipped | Overlay findings and inconsistencies | Findings with provenance |
+| `synrepo_findings(node_id?, kind?, freshness?, limit?)` | shipped | Cross-link audit findings and inconsistencies | Findings with provenance |
 
 Every tool that returns cards takes a `budget` parameter (`tiny` | `normal` | `deep`, default `tiny`). Budgets are enforced server-side.
 
@@ -424,7 +427,7 @@ Use only when task-shaped tools aren't returning what's needed.
 
 Every card response is tagged with `epistemic_status` (per field) and `source_store` (`graph` or `overlay`). Graph-sourced fields are always fresh. Overlay-sourced commentary is tagged `fresh | stale | missing`.
 
-**Default is non-blocking.** Tools return current cached content immediately with a staleness tag and fire background explain for stale items. The agent passes `require_freshness=true` explicitly when about to write code that depends on fresh commentary. The SKILL.md tells the agent when to escalate. Autonomy goes to the agent because the agent knows what task it is performing; the tool does not.
+**Default is non-blocking.** Tools return current cached content immediately with a staleness tag. Fresh commentary is an explicit follow-up through commentary refresh tooling; reads do not start background generation. The SKILL.md tells the agent when to escalate. Autonomy goes to the agent because the agent knows what task it is performing; the tool does not.
 
 ### Inspectability
 
@@ -432,7 +435,7 @@ Trust requires visible state. synrepo treats inspection surfaces as first-class,
 
 - Every card response is labeled per field with `source_store` (`graph` | `overlay`) and `epistemic_status`, plus freshness state for overlay content. A caller that ignores these labels is visibly choosing to.
 - `synrepo status [--json]` is the operator-facing health surface: mode, counts, last reconcile, writer lock, watch ownership, export freshness, overlay cost. It is meant to be read, not parsed through tracing output.
-- `synrepo_recent_activity` (planned, see above) is the agent-facing history surface for the same data an operator would read from `synrepo status --recent`.
+- `synrepo_recent_activity` is the agent-facing history surface for the same data an operator would read from `synrepo status --recent`.
 - Watch ownership and export freshness are exposed here because invisible background behavior is the specific failure mode synrepo refuses to accept.
 
 ---
@@ -469,7 +472,7 @@ Two hierarchies for two questions.
 - **Overlay never overrides graph.** Ever. Overlay is supplemental. Conflicts silently drop the overlay entry and log.
 - **Within the graph, higher-trust labels override lower.** Parser observations upgrade git-observed inferences in place.
 
-Every resolution writes to `resolutions.log`.
+Resolution and repair outcomes are recorded in `.synrepo/state/repair-log.jsonl`.
 
 ---
 
@@ -477,9 +480,9 @@ Every resolution writes to `resolutions.log`.
 
 **syntext** as a Rust library dependency, pinned by version. Verify syntext's license before writing code: if AGPL, synrepo inherits; if permissive, synrepo picks its own.
 
-**tree-sitter** via the Rust crates, not the JS pipeline. The ecosystem has a well-documented packaging mess on the Node side ([Ayats, 2024](https://ayats.org/blog/tree-sitter-packaging)). The Rust side sidesteps it entirely: each language grammar is a standalone crate (`tree-sitter-rust`, `tree-sitter-python`, `tree-sitter-typescript`) that ships a pre-generated C blob and exposes a `language()` function. No Node, no npm, no vendoring.
+**tree-sitter** via the Rust crates, not the JS pipeline. The ecosystem has a well-documented packaging mess on the Node side ([Ayats, 2024](https://ayats.org/blog/tree-sitter-packaging)). The Rust side sidesteps it entirely: each language grammar is a standalone crate (`tree-sitter-rust`, `tree-sitter-python`, `tree-sitter-typescript`, and the other wired grammar crates) that ships a pre-generated parser and exposes a Rust language constant. No Node, no npm, no vendoring.
 
-**Query files from the crates directly.** Modern `tree-sitter-<lang>` crates expose `HIGHLIGHTS_QUERY`, `INJECTIONS_QUERY`, and `LOCALS_QUERY` as `&'static str` constants — the queries are bundled with the grammar and MIT-licensed alongside it. synrepo reads them via the crate API and adds small per-language `extra.scm` files on top for synrepo-specific captures (docstring spans, decorator metadata, doc-comment positions). No vendoring, no PROVENANCE.md, no AGPL contamination concerns. The thin per-language adapter is the only synrepo-owned query content.
+**Query ownership.** synrepo keeps its structural definition, call, import, visibility, signature, and doc-comment extraction logic in Rust modules under `src/structure/parse/`. The grammar crates provide parsers; synrepo-owned queries and adapters define the product's graph facts.
 
 Caveats: not every grammar crate exposes the constants uniformly (some older or community-maintained crates lag); pin specific versions and CI the merged queries against representative source files per language; TypeScript ships two grammars (`language_typescript()` and `language_tsx()` — pick per file extension); first build compiles non-trivial C blobs per language.
 
@@ -488,30 +491,31 @@ Caveats: not every grammar crate exposes the constants uniformly (some older or 
 ## Storage layout
 
 ```
-.synrepo/                       # gitignored except config.toml and .gitignore
-  config.toml                   # checked into git
+.synrepo/                       # ignored except its own .gitignore
+  config.toml                   # local runtime config, intentionally ignored
   .gitignore                    # the per-dir gitignore the init writes
   index/                        # syntext segments (shipped)
   graph/                        # canonical: parser/git/human facts only
     nodes.db                    # nodes, edges, provenance in one SQLite file
   overlay/                      # machine-authored content, physically separate
-    overlay.db                  # commentary, proposed links, findings in one SQLite file
+    overlay.db                  # commentary, proposed links, notes, and audit rows
   index/vectors/                # optional flat-vector semantic index
   cache/                        # LLM response cache directory (empty today)
   state/
     reconcile-state.json        # last reconcile outcome, timestamp, counts
     repair-log.jsonl            # append-only resolution log written by `synrepo sync`
     storage-compat.json         # storage compatibility snapshot
-    writer.lock                 # (conditional) process-level write lock, PID + timestamp
+    writer.lock                 # (conditional) writer metadata, PID + timestamp
+    writer.lock.flock           # kernel advisory lock sentinel
     watch-daemon.json           # (conditional) watch owner lease + telemetry
-    watch.sock                  # (conditional) local control socket for active daemon
+    watch-daemon.json.flock     # watch lease sentinel
 ```
 
-*Improvement vs the split-store v4 sketch.* Nodes, edges, and provenance live in a single `nodes.db`; commentary, cross-links, and findings live in a single `overlay.db`. Rationale: multi-table reads inside one SQLite file open under a single `BEGIN DEFERRED` snapshot, which is how the reader-snapshot invariant (invariant 8 in `CLAUDE.md`) can hold. Splitting would force either cross-DB attach contortions or coordinated per-store snapshots. The overhead of one extra file isn't worth fracturing atomicity. The graph and overlay stores remain physically separated from each other; the contamination invariant is untouched.
+*Improvement vs the split-store v4 sketch.* Nodes, edges, and provenance live in a single `nodes.db`; commentary, cross-links, notes, and audit rows live in a single `overlay.db`. Rationale: multi-table reads inside one SQLite file open under a single `BEGIN DEFERRED` snapshot, which is how the reader-snapshot invariant can hold. Splitting would force either cross-DB attach contortions or coordinated per-store snapshots. The overhead of one extra file is not worth fracturing atomicity. The graph and overlay stores remain physically separated from each other; the contamination invariant is untouched.
 
-*Laziness drift to call out.* The `cache/` directory is created but unused in the default install as the hook point for the Phase 4 LLM response cache. Optional embeddings now materialize under `index/vectors/` only when semantic triage is enabled and `synrepo embeddings build` builds the vector index.
+*Laziness drift to call out.* The `cache/llm-responses/` directory is a disposable LLM response cache. Optional embeddings materialize under `index/vectors/` only when semantic triage is enabled and `synrepo embeddings build` builds the vector index.
 
-The graph store is canonical. The overlay is physically separate. Nothing in `.synrepo/` is committed except `config.toml` and `.gitignore`.
+The graph store is canonical. The overlay is physically separate. `.synrepo/.gitignore` ignores the runtime tree; project-local `config.toml` is not unignored.
 
 ---
 
@@ -519,7 +523,7 @@ The graph store is canonical. The overlay is physically separate. Nothing in `.s
 
 Single writer, many readers. The stdio MCP server is an agent-facing read surface, not the daemon or authoritative writer. Standalone CLI commands remain the default operational path and acquire `.synrepo/state/writer.lock` only for the duration of an actual write. Optional watch mode is a separate per-repo service started explicitly by the user.
 
-When watch mode is active, `.synrepo/state/watch-daemon.json` records the watch owner and recent telemetry, and `.synrepo/state/watch.sock` provides a local control socket for `status`, `stop`, and `reconcile_now`. The watch lease is long-lived. `writer.lock` remains operation-scoped and still guards each actual mutate step, including watch-triggered reconcile passes.
+When watch mode is active, `.synrepo/state/watch-daemon.json` records the watch owner, recent telemetry, and control endpoint. On Unix the endpoint is a user-owned runtime/cache socket path such as `$HOME/.cache/synrepo-run/<hash>.sock`; on Windows it is a named pipe `synrepo-watch-<hash>`. The watch lease is long-lived. `writer.lock` remains operation-scoped metadata, with the actual advisory flock held on `writer.lock.flock`.
 
 The watch service runs a startup reconcile before attaching steady-state watching. File watching uses `notify` for cross-platform inotify/kqueue/ReadDirectoryChangesW. Events are debounced (default 500 ms), batched, and filtered so `.synrepo/` runtime writes do not trigger self-induced reconcile loops. Watch mode stays a trigger and coalescing layer over the deterministic reconcile path rather than a second source of graph truth.
 
@@ -527,7 +531,7 @@ The watch service runs a startup reconcile before attaching steady-state watchin
 
 ## Auditability and provenance
 
-Every graph row and every overlay entry carries provenance:
+Every graph row carries provenance. Overlay rows carry the fields needed to audit their source, freshness, lifecycle, and reviewer transitions; commentary and cross-link rows carry explicit generation provenance, while advisory notes carry creator, evidence, lifecycle, and verification fields:
 
 ```yaml
 provenance:
@@ -560,7 +564,7 @@ Verbose on purpose. Auditability is the value proposition versus RAG. Every cros
 1. **Wrong links to real nodes with real citations.** Cited-evidence verification proves citations are real, not that the inferred relationship is correct. Defenses: link-type allowlists, confidence scoring, lint anomaly detection, overlay-not-graph placement. Not bulletproof.
 2. **The verbatim citation trap.** LLMs alter whitespace, expand tabs, normalize endings, capitalize quote starts, drop punctuation, smarten quotes. Byte-exact matching produces catastrophic false-rejection. Defense: normalization + fuzzy LCS (default 90%, provider-tunable) + snap-to-actual-span.
 3. **Context window explosion in cross-linking.** Naively passing 20 full candidates is 50–100k tokens. Defense: two-stage triage (signatures → full source for 2–3 picks). ~80% cost reduction.
-4. **Stale-summary agent loops.** Agents reflexively calling explain on every stale item. Defense: non-blocking by default, `require_freshness=true` opt-in, SKILL.md guidance.
+4. **Stale-summary agent loops.** Agents reflexively calling explain on every stale item. Defense: non-blocking reads, explicit commentary refresh, SKILL.md guidance.
 5. **Empty-repository bootstrap.** Code-only repos have no prose side. In auto mode, this is fine because cards cover the common case; concept nodes simply don't exist. No canonical/overlay invariant breakage.
 6. **Feedback contamination.** If explain reads its own output, errors compound. Defense: physical separation (graph vs overlay tables) plus retrieval-layer filter on explain input.
 7. **Canonical vs overlay leakage.** Agents may blur the line. Defense: MCP responses clearly label every field with `source_store` and `epistemic_status`; behavioral metrics track whether agents actually respect the labels.
@@ -568,7 +572,7 @@ Verbose on purpose. Auditability is the value proposition versus RAG. Every cros
 9. **Cost runaway.** `max_cost_per_explain_cycle` hard stop; LLM response cache; two-stage triage; zero-temperature lint.
 10. **Explain write loops.** Content-hash check before every overlay write; `.synrepo/` excluded from the watcher's observed set.
 11. **Stale ADRs.** Drift scoring on `governs` edges, computed by the structural pipeline on every commit, surfaced in card responses. Agent sees drift without any LLM work.
-12. **Heavy-refactor identity breakage.** AST-based detection handles splits, merges, simple renames. Pathological cases produce findings and lazy re-linking.
+12. **Heavy-refactor identity breakage.** The identity cascade handles exact renames, edited single-file renames, splits, merges, and Git rename fallback. Pathological cases produce repair findings and explicit re-linking work.
 13. **Encoding edge cases.** Sniff and skip; never panic.
 14. **PII and secrets.** `.synrepo/redact.toml` for path globs; defaults skip `**/secrets/**`, `**/*.env*`, `**/*-private.md`; embedding respects same redaction.
 15. **Embedding provider drift.** Cache keyed by `(content_hash, model_id)`; model swap triggers targeted re-embed.
@@ -587,7 +591,7 @@ Verbose on purpose. Auditability is the value proposition versus RAG. Every cros
 
 Real problems the design does not fully solve, listed honestly.
 
-**Identity stability under heavy refactor.** AST-based detection raises the floor; pathological refactors still defeat it. Degrades gracefully but produces noisy findings.
+**Identity stability under heavy refactor.** The structural identity cascade raises the floor; pathological refactors still defeat it. Degrades gracefully but produces noisy findings.
 
 **Wrong-but-cited links.** Evidence verification proves citations exist, not that inferred relationships are correct. Small residual failure rate even when all four stages pass.
 
@@ -595,7 +599,7 @@ Real problems the design does not fully solve, listed honestly.
 
 **Embedding model lock-in.** Model changes trigger re-embed. Correct (cache keyed by model ID) but not free.
 
-**Long-tail language support.** v1 ships Rust, Python, TypeScript. Adding a language is a real cost: write the `extra.scm`, test against representative source, handle quirks. Languages without good upstream `locals.scm` in the crate require more work.
+**Long-tail language support.** The current parser set covers Rust, Python, TypeScript/TSX, Go, JavaScript, Java, Kotlin, C#, PHP, Ruby, Swift, C, C++, and Dart. Adding another language is still a real cost: wire the grammar crate, query constants, kind/call-mode maps, fixtures, visibility, docs/signature extraction where useful, and stage-4 import resolution if imports should become graph edges.
 
 **Cross-repo linking.** Out of scope. A multi-repo workspace cannot have synrepo-managed links between components.
 
@@ -605,7 +609,7 @@ Real problems the design does not fully solve, listed honestly.
 
 **Semantic drift not caught by structural drift scoring.** Drift scoring catches prose rot when linked code changes structurally. It will miss cases where code stays structurally similar while meaning changes, or where rationale becomes obsolete because surrounding architecture moved on. Phase 6 may add a "decision relevance decay" signal based on dependency topology and change traffic, but v1 only has structural drift.
 
-**Category drift.** The quiet risk. Adjacent tools in the agent-tooling space make different product bets — session memory, hook-based auto-capture, vector-first retrieval — and their UX patterns are often more immediately magical than synrepo's. The failure mode is absorbing those patterns until synrepo stops being a repo context compiler and becomes a muddier hybrid. Explicit refusals, kept in both FOUNDATION-SPEC §4 non-goals and ROADMAP §9: no generic session memory, no hook-heavy auto-capture as a core value, no invisible background behavior (watch stays explicit and per-repo), no vector-first retrieval as a core dependency, nothing that weakens the graph-versus-overlay separation. Borrowing the progressive-disclosure UX pattern is fine; copying the product center is not.
+**Category drift.** The quiet risk. Adjacent tools in the agent-tooling space make different product bets — session memory, hook-based auto-capture, vector-first retrieval — and their UX patterns are often more immediately magical than synrepo's. The failure mode is absorbing those patterns until synrepo stops being a repo context compiler and becomes a muddier hybrid. Explicit refusals stay in the current doctrine and architecture docs: no generic session memory, no hook-heavy auto-capture as a core value, no invisible background behavior (watch stays explicit and per-repo), no vector-first retrieval as a core dependency, nothing that weakens the graph-versus-overlay separation. Borrowing the progressive-disclosure UX pattern is fine; copying the product center is not.
 
 ---
 
@@ -648,14 +652,14 @@ numbers below live in [docs/RUNTIME_BUDGET.md](RUNTIME_BUDGET.md).
 ### Behavioral metrics (do agents respect the labels?)
 
 - **Overlay-content reliance in high-stakes actions.** What fraction of agent code-write decisions are grounded in overlay content vs graph content? High overlay reliance is a red flag.
-- **`require_freshness=true` rate before writes.** Never-invoked means the SKILL.md is failing; always-invoked means defaults are wrong.
+- **Fresh-commentary refresh rate before writes.** Never-invoked means the SKILL.md may not be teaching freshness escalation; always-invoked means defaults are wrong.
 - **Overlay contradiction rate.** How often machine-authored overlay content gets later contradicted by a graph fact.
 - **Card budget escalation rate.** Fraction of requests escalating `tiny` → `normal` → `deep`. Too high means `tiny` isn't useful; too low means `tiny` is too sparse.
 
 ### Anti-metrics
 
 - Findings growth rate vs resolution rate
-- Background explain queue depth trend
+- Commentary refresh backlog trend
 - Median drift score trend
 - `.synrepo/` disk growth per week
 
@@ -674,9 +678,9 @@ Subsystem benchmarks lie. The validation suite must include ugly repos: huge gen
 | `index/vectors/` | Rebuilt by `synrepo embeddings build`, and refreshed by watch after source changes once the repo is quiet and an index already exists | Config or source drift |
 | `cache/llm-responses/` | LRU at 1 GB cap | Size threshold |
 | `overlay/commentary/` | Keep current; history 30 days | Time |
-| `overlay/cross_links.db` | Expire unpromoted low-confidence at 90 days | Time |
-| `findings.md` | Append; archive monthly | Time |
-| `resolutions.log` | Rotate at 100 MB | Size |
+| `overlay/overlay.db` commentary | Compact stale commentary older than policy retention | Time |
+| `overlay/overlay.db` cross-link audit | Compact promoted/rejected audit rows older than policy retention | Time |
+| `state/repair-log.jsonl` | Summarize entries older than policy retention | Time |
 
 `synrepo compact` is a manual command (users or CI run it). **Shipped in v1.** It merges sqlite WAL, rebuilds indexes, drops orphaned rows, recomputes drift scores. Disk budget warning fires at 80% of cap; writes block at 100% until compact or cap raise.
 
@@ -688,15 +692,15 @@ The key principle: agent usefulness arrives at phase 2 with zero LLM involvement
 
 **Phase 0 — substrate (shipped).** syntext as library dependency. Discover-and-index pipeline with file type handling and encoding robustness. CLI: `synrepo init`, `synrepo search`. No graph, no LLM.
 
-**Phase 1 — structural graph (fully shipped).** tree-sitter parsing via crate-bundled queries plus per-language `extra.scm`. sqlite graph store with observed-only epistemic labels and provenance. Stage 6 split/merge/rename detection, Stage 7 drift scoring, and Stage 8 `ArcSwap<Graph>` snapshot publication are shipped. Structural compile pipeline is LLM-free and synchronous.
+**Phase 1 — structural graph (fully shipped).** tree-sitter parsing via Rust grammar crates and synrepo query constants. sqlite graph store with observed-only epistemic labels and provenance. Stage 6 split/merge/rename detection, Stage 7 drift scoring, and Stage 8 per-repo in-memory graph snapshot publication are shipped. Structural compile pipeline is LLM-free and synchronous.
 
 **Phase 2 — cards and the MCP server (shipped).** Shipped card compiler: SymbolCard, FileCard, ModuleCard, EntryPointCard, DecisionCard, PublicAPICard, CallPathCard, TestSurfaceCard, ChangeRiskCard. Context budget protocol with `tiny` / `normal` / `deep` tiers and server-side enforcement shipped. Shipped MCP tools cover orientation, routing, impact, and search. `FileCard.git_intelligence` and `SymbolCard.last_change` (symbol-level granularity) are fully functional.
 
 **Phase 3 — git intelligence and co-change (shipped).** Shipped: file-scoped history, hotspots, ownership, co-change via `gix`; inline `# DECISION:` marker parsing; DecisionCard; graph-level `CoChangesWith` edges.
 
-**Phase 4 — card commentary tier (shipped).** LLM explain is trait-shaped (`CommentaryGenerator`), defaults to `NoOpGenerator`, opts into `ClaudeCommentaryGenerator` when `SYNREPO_ANTHROPIC_API_KEY` is set. Commentary lands in overlay, never in graph. Freshness labels (fresh / stale / missing / unsupported / invalid / budget_withheld) are enforced at the card surface.
+**Phase 4 — card commentary tier (shipped).** LLM explain is trait-shaped (`CommentaryGenerator`), defaults to `NoOpGenerator`, and opts into the Anthropic/Claude provider when `ANTHROPIC_API_KEY` or legacy `SYNREPO_ANTHROPIC_API_KEY` is set. Commentary lands in overlay, never in graph. Freshness labels (fresh / stale / missing / unsupported / invalid / budget_withheld) are enforced at the card surface.
 
-**Phase 5 — overlay cross-linking (shipped).** Shipped: graph-distance plus prose-identifier candidate triage, two-stage Claude-backed LLM proposal, normalized fuzzy verification (3-stage cascade), confidence tiers, review queue, card surfacing at Deep tier, curated-mode promotion that creates `Governs` edges with `Epistemic::HumanDeclared`. Optional embeddings are fully integrated for semantic triage and hybrid search when the `semantic-triage` feature and repo config enable them.
+**Phase 5 — overlay cross-linking (shipped).** Shipped: graph-distance plus prose-identifier candidate triage, two-stage Anthropic/Claude-backed proposal when configured, normalized fuzzy verification (3-stage cascade), confidence tiers, review queue, card surfacing at Deep tier, curated-mode promotion that creates `Governs` edges with `Epistemic::HumanDeclared`. Optional embeddings are fully integrated for semantic triage and hybrid search when the `semantic-triage` feature and repo config enable them.
 
 **Phase 6 — polish (shipped).** Shipped: `synrepo export`, `synrepo upgrade`, `synrepo status`, `synrepo agent-setup` across agent targets, and dedicated `synrepo compact` (with retention policies and repair-log rotation).
 

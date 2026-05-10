@@ -11,19 +11,21 @@
 //! 3. **Parse prose** — markdown link parser for files in configured concept
 //!    directories, extract concept nodes.
 //!
-//! Stage 4 (cross-file edge resolution) is wired: after stages 1–3 commit,
-//! a name-resolution pass emits `Calls` and `Imports` edges (TS/TSX, Python,
-//! Rust, Go).
+//! Stage 4 (cross-file edge resolution) is wired inside the same transaction:
+//! a name-resolution pass emits `Calls` and `Imports` edges. Import resolvers
+//! currently cover TypeScript/JavaScript relative imports, Python dotted
+//! modules, Rust paths, Go module imports, Dart package/relative imports, and
+//! Java/Kotlin source-root imports.
 //! Stage 5 (git mining) is wired via `pipeline::git` and
 //! `pipeline::git_intelligence`, emitting `CoChangesWith` edges and
 //! per-file history/hotspot/ownership insights.
-//! Stage 6 (identity cascade — content-hash rename, split/merge, git
-//! rename fallback) is wired in `structure::identity`.
+//! Stage 6 (identity cascade — content-hash rename, edited single-file rename,
+//! split/merge, git rename fallback, breakage) is wired in `structure::identity`.
 //! Stage 7 (drift scoring via Jaccard distance on persisted structural
 //! fingerprints) is wired; sidecar `edge_drift` and `file_fingerprints`
 //! tables hold the output.
-//! Stage 8 (ArcSwap publish of the in-memory graph snapshot) is wired after
-//! the SQLite commit and drift scoring complete.
+//! Stage 8 (per-repo in-memory graph snapshot publish) is wired after the
+//! SQLite commit and drift scoring complete.
 //!
 //! ## Relationship to watch and reconcile
 //!
