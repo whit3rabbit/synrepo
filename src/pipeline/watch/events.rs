@@ -2,6 +2,7 @@ use crate::pipeline::{
     repair::{SyncProgress, SyncSummary},
     watch::reconcile::ReconcileOutcome,
 };
+use crate::substrate::embedding::{EmbeddingBuildEvent, EmbeddingBuildSummary};
 
 /// Why a reconcile pass chose full rebuild instead of scoped incremental work.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize)]
@@ -19,6 +20,16 @@ pub enum SyncTrigger {
     Manual,
     /// The reconcile loop opted into auto-sync for cheap surfaces.
     AutoPostReconcile,
+}
+
+/// Why an embedding index job is running inside the watch service.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EmbeddingTrigger {
+    /// CLI or TUI asked watch to build vectors explicitly.
+    Manual,
+    /// Watch refreshed an existing stale vector index after the repo went quiet.
+    AutoRefresh,
 }
 
 /// Event emitted by the watch service for each reconcile attempt and error.
@@ -69,6 +80,33 @@ pub enum WatchEvent {
         trigger: SyncTrigger,
         /// Completed summary.
         summary: SyncSummary,
+    },
+    /// Emitted before an embedding build or refresh starts.
+    EmbeddingStarted {
+        /// RFC 3339 UTC timestamp when the job started.
+        at: String,
+        /// Whether this is explicit or automatic work.
+        trigger: EmbeddingTrigger,
+    },
+    /// Emitted for embedding build progress.
+    EmbeddingProgress {
+        /// RFC 3339 UTC timestamp when the progress event was emitted.
+        at: String,
+        /// Whether this is explicit or automatic work.
+        trigger: EmbeddingTrigger,
+        /// Structured embedding progress payload.
+        progress: EmbeddingBuildEvent,
+    },
+    /// Emitted when an embedding build or refresh finishes.
+    EmbeddingFinished {
+        /// RFC 3339 UTC timestamp when the job finished.
+        at: String,
+        /// Whether this is explicit or automatic work.
+        trigger: EmbeddingTrigger,
+        /// Completed summary when successful.
+        summary: Option<EmbeddingBuildSummary>,
+        /// Human-readable error when the job failed.
+        error: Option<String>,
     },
     /// Emitted for watcher-level errors.
     Error {

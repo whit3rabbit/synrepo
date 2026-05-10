@@ -6,15 +6,13 @@ use synrepo::overlay::{OverlayEdgeKind, OverlayStore};
 use synrepo::store::overlay::{format_candidate_id, SqliteOverlayStore};
 use tempfile::tempdir;
 
-use super::support::seed_graph;
+use super::support::{seed_graph, synthetic_watch_state};
 use super::{commands, sample_link, setup_curated_link_env, write_curated_mode};
 
 #[cfg(unix)]
 #[test]
 fn links_accept_blocked_when_watch_running() {
-    use synrepo::pipeline::watch::{
-        hold_watch_flock_with_state, WatchDaemonState, WatchServiceMode,
-    };
+    use synrepo::pipeline::watch::{hold_watch_flock_with_state, WatchServiceMode};
 
     let repo = tempdir().unwrap();
     let ids = seed_graph(repo.path());
@@ -28,23 +26,12 @@ fn links_accept_blocked_when_watch_running() {
 
     // Hold the kernel flock on the watch sentinel and write a matching state
     // file so ensure_watch_not_running sees Running rather than Stale.
-    let state = WatchDaemonState {
-        pid: std::process::id(),
-        started_at: "2026-04-15T00:00:00Z".to_string(),
-        mode: WatchServiceMode::Foreground,
-        control_endpoint: synrepo_dir.join("state/watch.sock").display().to_string(),
-        last_event_at: None,
-        last_reconcile_at: None,
-        last_reconcile_outcome: None,
-        last_error: None,
-        last_triggering_events: None,
-        auto_sync_enabled: false,
-        auto_sync_running: false,
-        auto_sync_paused: false,
-        auto_sync_last_started_at: None,
-        auto_sync_last_finished_at: None,
-        auto_sync_last_outcome: None,
-    };
+    let state = synthetic_watch_state(
+        WatchServiceMode::Foreground,
+        std::process::id(),
+        "2026-04-15T00:00:00Z",
+        synrepo_dir.join("state/watch.sock").display().to_string(),
+    );
     let _watch = hold_watch_flock_with_state(&synrepo_dir, &state);
 
     let candidate_id = format_candidate_id(from, to, OverlayEdgeKind::References, "test-pass");

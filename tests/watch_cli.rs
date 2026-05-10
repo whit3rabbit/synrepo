@@ -82,6 +82,56 @@ fn wait_for_output(repo: &Path, args: &[&str], needle: &str) {
     );
 }
 
+fn wait_for_search(repo: &Path, query: &str, needle: &str) -> String {
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let mut last_status = None;
+    let mut last_stdout = String::new();
+    let mut last_stderr = String::new();
+    while Instant::now() < deadline {
+        let output = command(repo)
+            .args(["search", query, "--mode", "lexical", "-m", "5"])
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if output.status.success() && stdout.contains(needle) {
+            return stdout.to_string();
+        }
+        last_status = output.status.code();
+        last_stdout = stdout.to_string();
+        last_stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        thread::sleep(Duration::from_millis(50));
+    }
+    panic!(
+        "timed out waiting for search `{query}` to contain `{needle}`; \
+         last_status={last_status:?}; stdout={last_stdout}; stderr={last_stderr}"
+    );
+}
+
+fn wait_for_search_miss(repo: &Path, query: &str) -> String {
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let mut last_status = None;
+    let mut last_stdout = String::new();
+    let mut last_stderr = String::new();
+    while Instant::now() < deadline {
+        let output = command(repo)
+            .args(["search", query, "--mode", "lexical", "-m", "5"])
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        if output.status.success() && stdout.contains("No matches found") {
+            return stdout.to_string();
+        }
+        last_status = output.status.code();
+        last_stdout = stdout.to_string();
+        last_stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        thread::sleep(Duration::from_millis(50));
+    }
+    panic!(
+        "timed out waiting for search `{query}` to miss; \
+         last_status={last_status:?}; stdout={last_stdout}; stderr={last_stderr}"
+    );
+}
+
 fn init_repo() -> IsolatedRepo {
     let lock = global_test_lock(HOME_ENV_TEST_LOCK);
     let home = tempfile::tempdir().unwrap();
@@ -167,6 +217,37 @@ fn daemon_watch_delegates_reconcile_and_surfaces_status() {
 
     let status = run_ok(repo.path(), &["status"]);
     assert!(status.contains("watch:        daemon mode"));
+}
+
+#[cfg(unix)]
+#[test]
+fn daemon_watch_updates_lexical_index_after_source_change() {
+    let repo = init_repo();
+    fs::write(
+        repo.path().join("src/lib.rs"),
+        "pub fn hello() { println!(\"old_watch_token\"); }\n",
+    )
+    .unwrap();
+    run_ok(repo.path(), &["reconcile"]);
+    let old = run_ok(
+        repo.path(),
+        &["search", "old_watch_token", "--mode", "lexical", "-m", "5"],
+    );
+    assert!(old.contains("Found 1 matches."));
+
+    let _guard = WatchGuard::daemon(repo.path());
+
+    fs::write(
+        repo.path().join("src/lib.rs"),
+        "pub fn hello() { println!(\"new_watch_token\"); }\n",
+    )
+    .unwrap();
+
+    let output = wait_for_search(repo.path(), "new_watch_token", "src/lib.rs");
+    assert!(output.contains("Found 1 matches."));
+
+    let stale = wait_for_search_miss(repo.path(), "old_watch_token");
+    assert!(stale.contains("No matches found"));
 }
 
 #[cfg(unix)]

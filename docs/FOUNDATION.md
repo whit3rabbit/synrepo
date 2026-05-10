@@ -671,7 +671,7 @@ Subsystem benchmarks lie. The validation suite must include ugly repos: huge gen
 | --- | --- | --- |
 | `index/` | Compacted on full reindex | Monthly default |
 | `graph/` | Permanent for current schema | Migration only |
-| `index/vectors/` | Rebuilt by `synrepo embeddings build` when embeddings are enabled | Config or source drift |
+| `index/vectors/` | Rebuilt by `synrepo embeddings build`, and refreshed by watch after source changes once the repo is quiet and an index already exists | Config or source drift |
 | `cache/llm-responses/` | LRU at 1 GB cap | Size threshold |
 | `overlay/commentary/` | Keep current; history 30 days | Time |
 | `overlay/cross_links.db` | Expire unpromoted low-confidence at 90 days | Time |

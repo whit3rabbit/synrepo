@@ -1,7 +1,3 @@
-//! AppState constructors, toast management, event draining, and snapshot
-//! refresh. Split out of `app/mod.rs` so the core state machine stays under
-//! the 400-line cap.
-
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -363,7 +359,10 @@ impl AppState {
                         WatchEvent::ReconcileFinished { .. }
                         | WatchEvent::SyncFinished { .. }
                         | WatchEvent::Error { .. } => self.reconcile_active = false,
-                        WatchEvent::SyncProgress { .. } => {}
+                        WatchEvent::SyncProgress { .. }
+                        | WatchEvent::EmbeddingStarted { .. }
+                        | WatchEvent::EmbeddingProgress { .. }
+                        | WatchEvent::EmbeddingFinished { .. } => {}
                     }
                     self.log.push(super::watch_event_to_log_entry(event));
                 }

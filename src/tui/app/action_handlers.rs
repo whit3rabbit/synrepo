@@ -14,9 +14,7 @@ use crate::tui::actions::{
     ProjectActionContext,
 };
 
-use super::{
-    AppMode, AppState, ConfirmStopWatchState, PendingEmbeddingBuild, PendingStopWatchAction,
-};
+use super::{AppMode, AppState, PendingEmbeddingBuild};
 
 impl AppState {
     pub(super) fn handle_docs_export(&mut self, force: bool) -> bool {
@@ -165,17 +163,9 @@ impl AppState {
             return;
         }
 
-        let ctx = self.action_context();
-        match crate::pipeline::watch::watch_service_status(&ctx.synrepo_dir) {
-            WatchServiceStatus::Running(_) | WatchServiceStatus::Starting => {
-                self.confirm_stop_watch = Some(ConfirmStopWatchState {
-                    pending: PendingStopWatchAction::BuildEmbeddings,
-                });
-            }
-            _ => self.launch_embedding_build(PendingEmbeddingBuild {
-                stopped_watch: false,
-            }),
-        }
+        self.launch_embedding_build(PendingEmbeddingBuild {
+            stopped_watch: false,
+        });
     }
 
     pub(super) fn handle_watch_toggle(&mut self) -> bool {

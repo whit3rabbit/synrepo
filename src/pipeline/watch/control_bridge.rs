@@ -22,7 +22,7 @@ use super::{
         read_control_request, write_control_response, WatchControlRequest, WatchControlResponse,
     },
     lease::{watch_control_socket_name, WatchStateHandle},
-    service::LoopMessage,
+    loop_message::LoopMessage,
 };
 use crate::pipeline::repair::SyncOptions;
 
@@ -96,6 +96,9 @@ pub(super) fn spawn_control_listener(
                             }
                             Ok(WatchControlRequest::SyncNow { options }) => {
                                 bridge_sync_request(&tx, options, sync_timeout)
+                            }
+                            Ok(WatchControlRequest::EmbeddingsBuildNow) => {
+                                bridge_embeddings_build_request(&tx, sync_timeout)
                             }
                             Ok(WatchControlRequest::SetAutoSync { enabled }) => {
                                 auto_sync_enabled.store(enabled, Ordering::Relaxed);
@@ -221,5 +224,26 @@ fn bridge_sync_request(
         .recv_timeout(timeout)
         .unwrap_or_else(|_| WatchControlResponse::Error {
             message: "watch loop did not answer the sync request in time".to_string(),
+        })
+}
+
+fn bridge_embeddings_build_request(
+    tx: &mpsc::Sender<LoopMessage>,
+    timeout: Duration,
+) -> WatchControlResponse {
+    let (respond_to, recv_from_loop) = mpsc::channel();
+    if tx
+        .send(LoopMessage::EmbeddingsBuildNow { respond_to })
+        .is_err()
+    {
+        return WatchControlResponse::Error {
+            message: "watch loop is no longer accepting control messages".to_string(),
+        };
+    }
+
+    recv_from_loop
+        .recv_timeout(timeout)
+        .unwrap_or_else(|_| WatchControlResponse::Error {
+            message: "watch loop did not answer the embeddings build request in time".to_string(),
         })
 }

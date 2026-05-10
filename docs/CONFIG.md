@@ -22,7 +22,7 @@ Runtime config lives in `.synrepo/config.toml`; the struct is `Config` in `src/c
 | `semantic_ollama_endpoint` | `"http://localhost:11434"` | Base URL for local Ollama embeddings when `semantic_embedding_provider = "ollama"` |
 | `semantic_embedding_batch_size` | `128` | Number of texts sent per embedding request during vector index builds |
 | `[explain].commentary_concurrency` | `4` | Concurrent commentary provider calls during refresh; clamped to at least `1` |
-| `auto_sync_enabled` | `true` | Run cheap repair surfaces (export regeneration, retired-observation compaction) automatically after every drift-producing reconcile while watch is active |
+| `auto_sync_enabled` | `true` | Run watch-owned automatic maintenance after reconcile: cheap repair surfaces after every completed pass, plus existing embedding-index refresh after source changes once the repo is quiet |
 
 ## Notes
 
@@ -31,9 +31,10 @@ Runtime config lives in `.synrepo/config.toml`; the struct is `Config` in `src/c
 - `include_submodules` is off by default. When enabled, initialized submodules are indexed as separate roots; nested submodules recurse to a bounded depth.
 - `max_graph_snapshot_bytes` is enforced at publication time. Oversized snapshots are not published, so readers fall back to the SQLite path; set to `0` to disable publication entirely.
 - `redact_globs` is hard: matched files are never indexed and never reach any parser, so they cannot leak into cards, exports, or overlay candidates.
-- `auto_sync_enabled` is read once at watch startup and seeds an in-process atomic flag. The dashboard `A` keybinding flips that atomic for the running watch service but does NOT rewrite this file. To change the default persistently, edit `config.toml` and restart watch. The runtime allow-list is hard-coded (`CHEAP_AUTO_SYNC_SURFACES` in `src/pipeline/repair/sync/mod.rs`); commentary refresh and other token-cost surfaces are never auto-run.
+- `auto_sync_enabled` is read once at watch startup and seeds an in-process atomic flag. The dashboard `A` keybinding flips that atomic for the running watch service but does NOT rewrite this file. To change the default persistently, edit `config.toml` and restart watch. The repair allow-list is hard-coded (`CHEAP_AUTO_SYNC_SURFACES` in `src/pipeline/repair/sync/mod.rs`); commentary refresh and other token-cost surfaces are never auto-run.
 - Embeddings are optional and disabled by default. See `docs/EMBEDDINGS.md` for provider setup, dashboard toggling, model choices, and benchmark interpretation.
-- Semantic query paths never download model artifacts. `synrepo embeddings build` is the explicit vector-build surface; `synrepo_task_route` and `synrepo_search` use semantic behavior only when the vector index and configured local backend are available.
+- Semantic query paths never download model artifacts. `synrepo embeddings build` is the explicit first vector-build surface; `synrepo_task_route` and `synrepo_search` use semantic behavior only when the vector index and configured local backend are available.
+- When watch auto-sync is enabled, a successful source-changing reconcile marks an existing embedding index stale. Watch refreshes it after the repo has been quiet for 30 seconds, no sync is running, and the semantic feature, semantic config, and existing vector index are all available. It does not create the first index and uses only cached/local provider assets.
 - ONNX supports the built-in registry only: `all-MiniLM-L6-v2` (384d), `all-MiniLM-L12-v2` (384d), and `all-mpnet-base-v2` (768d). Those ONNX and tokenizer artifacts are fetched from Hugging Face only during `synrepo embeddings build` when embeddings are enabled.
 - Ollama embeddings are local-only. With `semantic_embedding_provider = "ollama"`, `semantic_model = "all-minilm"`, and `embedding_dim = 384`, smoke test the endpoint with `curl http://localhost:11434/api/embed -d '{"model":"all-minilm","input":["First sentence","Second sentence"]}'`.
 - Explain config (`[explain]`) lives in the same file; see `docs/EXPLAIN.md`.

@@ -68,6 +68,36 @@ pub struct WatchDaemonState {
     /// Stable outcome string for the last auto-sync or recovery sync.
     #[serde(default)]
     pub auto_sync_last_outcome: Option<String>,
+    /// True when the existing embedding index is known to lag source changes.
+    #[serde(default)]
+    pub embedding_index_stale: bool,
+    /// True while the watch loop is building or refreshing embeddings.
+    #[serde(default)]
+    pub embedding_running: bool,
+    /// RFC 3339 UTC timestamp of the last embedding job start.
+    #[serde(default)]
+    pub embedding_last_started_at: Option<String>,
+    /// RFC 3339 UTC timestamp of the last embedding job finish.
+    #[serde(default)]
+    pub embedding_last_finished_at: Option<String>,
+    /// Stable outcome string for the last embedding job.
+    #[serde(default)]
+    pub embedding_last_outcome: Option<String>,
+    /// Last embedding error message, if any.
+    #[serde(default)]
+    pub embedding_last_error: Option<String>,
+    /// Current embedding progress phase.
+    #[serde(default)]
+    pub embedding_progress_phase: Option<String>,
+    /// Current embedded chunk count for the running job.
+    #[serde(default)]
+    pub embedding_progress_current: Option<usize>,
+    /// Total chunks planned for the running job.
+    #[serde(default)]
+    pub embedding_progress_total: Option<usize>,
+    /// RFC 3339 UTC timestamp when automatic embedding refresh may retry.
+    #[serde(default)]
+    pub embedding_next_retry_at: Option<String>,
 }
 
 impl WatchDaemonState {
@@ -88,6 +118,16 @@ impl WatchDaemonState {
             auto_sync_last_started_at: None,
             auto_sync_last_finished_at: None,
             auto_sync_last_outcome: None,
+            embedding_index_stale: false,
+            embedding_running: false,
+            embedding_last_started_at: None,
+            embedding_last_finished_at: None,
+            embedding_last_outcome: None,
+            embedding_last_error: None,
+            embedding_progress_phase: None,
+            embedding_progress_current: None,
+            embedding_progress_total: None,
+            embedding_next_retry_at: None,
         }
     }
 

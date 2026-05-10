@@ -9,7 +9,7 @@ use std::fs;
 use synrepo::config::Config;
 use synrepo::pipeline::export::ExportFormat;
 use synrepo::pipeline::watch::{
-    hold_watch_flock_with_state, TestWatchFlockHolder, WatchDaemonState, WatchServiceMode,
+    hold_watch_flock_with_state, TestWatchFlockHolder, WatchServiceMode,
 };
 #[cfg(unix)]
 use synrepo::pipeline::writer::{
@@ -22,26 +22,15 @@ use crate::export;
 #[cfg(unix)]
 use crate::sync;
 
-use super::support::bootstrap_isolated as bootstrap;
+use super::support::{bootstrap_isolated as bootstrap, synthetic_watch_state};
 
 fn hold_live_watch(synrepo_dir: &std::path::Path, pid: u32) -> TestWatchFlockHolder {
-    let state = WatchDaemonState {
+    let state = synthetic_watch_state(
+        WatchServiceMode::Daemon,
         pid,
-        started_at: "2026-01-01T00:00:00Z".to_string(),
-        mode: WatchServiceMode::Daemon,
-        control_endpoint: synrepo_dir.join("state/watch.sock").display().to_string(),
-        last_event_at: None,
-        last_reconcile_at: None,
-        last_reconcile_outcome: None,
-        last_error: None,
-        last_triggering_events: None,
-        auto_sync_enabled: false,
-        auto_sync_running: false,
-        auto_sync_paused: false,
-        auto_sync_last_started_at: None,
-        auto_sync_last_finished_at: None,
-        auto_sync_last_outcome: None,
-    };
+        "2026-01-01T00:00:00Z",
+        synrepo_dir.join("state/watch.sock").display().to_string(),
+    );
     hold_watch_flock_with_state(synrepo_dir, &state)
 }
 

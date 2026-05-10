@@ -10,23 +10,11 @@ use super::super::{load_watch_state, watch_daemon_state_path, WatchDaemonState, 
 use super::setup_test_repo;
 
 fn synthetic_state(pid: u32, started_at: &str, endpoint: &str) -> WatchDaemonState {
-    WatchDaemonState {
-        pid,
-        started_at: started_at.to_string(),
-        mode: WatchServiceMode::Foreground,
-        control_endpoint: endpoint.to_string(),
-        last_event_at: None,
-        last_reconcile_at: None,
-        last_reconcile_outcome: None,
-        last_error: None,
-        last_triggering_events: None,
-        auto_sync_enabled: false,
-        auto_sync_running: false,
-        auto_sync_paused: false,
-        auto_sync_last_started_at: None,
-        auto_sync_last_finished_at: None,
-        auto_sync_last_outcome: None,
-    }
+    let mut state = WatchDaemonState::new(std::path::Path::new("."), WatchServiceMode::Foreground);
+    state.pid = pid;
+    state.started_at = started_at.to_string();
+    state.control_endpoint = endpoint.to_string();
+    state
 }
 
 #[test]

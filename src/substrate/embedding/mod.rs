@@ -18,7 +18,10 @@ pub mod index;
 pub mod model;
 
 #[cfg(feature = "semantic-triage")]
-pub use build::{build_embedding_index_with_progress, EmbeddingBuildEvent, EmbeddingBuildSummary};
+pub use build::{
+    build_embedding_index_with_progress, refresh_existing_embedding_index,
+    refresh_existing_embedding_index_with_progress, EmbeddingBuildEvent, EmbeddingBuildSummary,
+};
 #[cfg(feature = "semantic-triage")]
 pub use chunk::{ChunkId, EmbeddingChunk, EmbeddingChunkSource};
 #[cfg(feature = "semantic-triage")]
@@ -59,6 +62,28 @@ pub fn build_embedding_index_with_progress(
     Err(crate::Error::Other(anyhow::anyhow!(
         "embeddings are optional; this binary was not built with `semantic-triage`"
     )))
+}
+
+/// Existing-index refresh placeholder used when semantic triage is not compiled.
+#[cfg(not(feature = "semantic-triage"))]
+pub fn refresh_existing_embedding_index(
+    _graph: &dyn crate::structure::graph::GraphStore,
+    _config: &Config,
+    _synrepo_dir: &std::path::Path,
+) -> Result<Option<EmbeddingBuildSummary>> {
+    Ok(None)
+}
+
+/// Existing-index refresh placeholder used when semantic triage is not compiled.
+#[cfg(not(feature = "semantic-triage"))]
+pub fn refresh_existing_embedding_index_with_progress(
+    _graph: &dyn crate::structure::graph::GraphStore,
+    _config: &Config,
+    _synrepo_dir: &std::path::Path,
+    _progress: Option<&mut dyn FnMut(EmbeddingBuildEvent)>,
+    _should_stop: Option<&mut dyn FnMut() -> bool>,
+) -> Result<Option<EmbeddingBuildSummary>> {
+    Ok(None)
 }
 
 /// Progress event placeholder used when semantic triage is not compiled.
@@ -126,7 +151,7 @@ pub enum EmbeddingBuildEvent {
 
 /// Build summary placeholder used when semantic triage is not compiled.
 #[cfg(not(feature = "semantic-triage"))]
-#[derive(Clone, Debug, serde::Serialize)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct EmbeddingBuildSummary {
     /// Embedding backend.
     pub provider: String,

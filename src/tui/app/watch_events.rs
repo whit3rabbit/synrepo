@@ -3,7 +3,10 @@
 //! unit tests without constructing an `AppState`.
 
 use crate::pipeline::repair::SyncProgress;
-use crate::pipeline::watch::{ReconcileOutcome, ReconcileStartReason, SyncTrigger, WatchEvent};
+use crate::pipeline::watch::{
+    EmbeddingTrigger, ReconcileOutcome, ReconcileStartReason, SyncTrigger, WatchEvent,
+};
+use crate::substrate::embedding::EmbeddingBuildEvent;
 use crate::tui::probe::Severity;
 use crate::tui::widgets::LogEntry;
 
@@ -99,12 +102,94 @@ pub fn watch_event_to_log_entry(event: WatchEvent) -> LogEntry {
                 severity,
             }
         }
+        WatchEvent::EmbeddingStarted { at, trigger } => LogEntry {
+            timestamp: at,
+            tag,
+            message: format!("{} started", embedding_label(trigger)),
+            severity: Severity::Healthy,
+        },
+        WatchEvent::EmbeddingProgress {
+            at,
+            trigger,
+            progress,
+        } => LogEntry {
+            timestamp: at,
+            tag,
+            message: format!(
+                "{}: {}",
+                embedding_label(trigger),
+                embedding_progress(&progress)
+            ),
+            severity: Severity::Healthy,
+        },
+        WatchEvent::EmbeddingFinished {
+            at,
+            trigger,
+            summary,
+            error,
+        } => {
+            let (message, severity) = match (summary, error) {
+                (Some(summary), None) => (
+                    format!(
+                        "{} finished ({} chunks, {})",
+                        embedding_label(trigger),
+                        summary.chunks,
+                        summary.model
+                    ),
+                    Severity::Healthy,
+                ),
+                (_, Some(error)) => (
+                    format!("{} failed: {error}", embedding_label(trigger)),
+                    Severity::Stale,
+                ),
+                (None, None) => (
+                    format!("{} skipped", embedding_label(trigger)),
+                    Severity::Healthy,
+                ),
+            };
+            LogEntry {
+                timestamp: at,
+                tag,
+                message,
+                severity,
+            }
+        }
         WatchEvent::Error { at, message } => LogEntry {
             timestamp: at,
             tag,
             message: format!("watch error: {message}"),
             severity: Severity::Blocked,
         },
+    }
+}
+
+fn embedding_label(trigger: EmbeddingTrigger) -> &'static str {
+    match trigger {
+        EmbeddingTrigger::Manual => "embedding build",
+        EmbeddingTrigger::AutoRefresh => "embedding refresh",
+    }
+}
+
+fn embedding_progress(progress: &EmbeddingBuildEvent) -> String {
+    match progress {
+        EmbeddingBuildEvent::ResolvingModel {
+            provider,
+            model,
+            dim,
+        } => format!("resolving {provider}/{model} ({dim}d)"),
+        EmbeddingBuildEvent::ModelReady {
+            provider, model, ..
+        } => format!("{provider}/{model} ready"),
+        EmbeddingBuildEvent::InitializingBackend => "initializing backend".to_string(),
+        EmbeddingBuildEvent::PreflightStarted => "running provider preflight".to_string(),
+        EmbeddingBuildEvent::PreflightFinished => "provider preflight ok".to_string(),
+        EmbeddingBuildEvent::ExtractingChunks => "extracting graph chunks".to_string(),
+        EmbeddingBuildEvent::ChunksReady { chunks } => format!("{chunks} chunks ready"),
+        EmbeddingBuildEvent::BatchFinished { current, total } => {
+            format!("embedded {current}/{total} chunks")
+        }
+        EmbeddingBuildEvent::SavingIndex { .. } => "saving index".to_string(),
+        EmbeddingBuildEvent::Finished { chunks, .. } => format!("complete ({chunks} chunks)"),
     }
 }
 

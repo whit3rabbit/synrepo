@@ -17,7 +17,7 @@ use synrepo::{
     },
 };
 
-use super::status::render_watch_summary;
+use super::status::{render_embedding_watch_status, render_watch_summary};
 
 /// Start the watch service in the foreground or daemon mode.
 pub(crate) fn watch(repo_root: &Path, daemon: bool) -> anyhow::Result<()> {
@@ -158,6 +158,9 @@ pub(crate) fn watch_stop(repo_root: &Path) -> anyhow::Result<()> {
                 Ok(WatchControlResponse::Sync { .. }) => Err(anyhow::anyhow!(
                     "stop request returned a sync response instead of an acknowledgement"
                 )),
+                Ok(WatchControlResponse::EmbeddingsBuild { .. }) => Err(anyhow::anyhow!(
+                    "stop request returned an embeddings response instead of an acknowledgement"
+                )),
                 Err(err) => recover_stop_transport_error(&synrepo_dir, err, state.pid),
             }
         }
@@ -267,6 +270,7 @@ fn render_watch_status_snapshot(snapshot: &WatchDaemonState) {
     if let Some(error) = &snapshot.last_error {
         println!("  error:        {error}");
     }
+    println!("  embeddings:  {}", render_embedding_watch_status(snapshot));
 }
 
 fn wait_for_watch_startup_settle(synrepo_dir: &Path) -> anyhow::Result<()> {

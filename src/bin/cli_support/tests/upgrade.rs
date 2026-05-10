@@ -5,7 +5,7 @@ use tempfile::tempdir;
 use synrepo::config::Config;
 use synrepo::store::compatibility::snapshot_path;
 
-use super::support::{bootstrap_isolated as bootstrap, git};
+use super::support::{bootstrap_isolated as bootstrap, git, synthetic_watch_state};
 use crate::upgrade;
 
 /// Minimal repo with a git init, a source file, and a completed bootstrap.
@@ -121,23 +121,12 @@ fn upgrade_apply_blocked_when_watch_running() {
 
     // Plant a live watch-daemon lease (flock + state) so
     // ensure_watch_not_running sees Running rather than Stale.
-    let state = synrepo::pipeline::watch::WatchDaemonState {
-        pid: std::process::id(),
-        started_at: "2026-01-01T00:00:00Z".to_string(),
-        mode: synrepo::pipeline::watch::WatchServiceMode::Daemon,
-        control_endpoint: synrepo_dir.join("state/watch.sock").display().to_string(),
-        last_event_at: None,
-        last_reconcile_at: None,
-        last_reconcile_outcome: None,
-        last_error: None,
-        last_triggering_events: None,
-        auto_sync_enabled: false,
-        auto_sync_running: false,
-        auto_sync_paused: false,
-        auto_sync_last_started_at: None,
-        auto_sync_last_finished_at: None,
-        auto_sync_last_outcome: None,
-    };
+    let state = synthetic_watch_state(
+        synrepo::pipeline::watch::WatchServiceMode::Daemon,
+        std::process::id(),
+        "2026-01-01T00:00:00Z",
+        synrepo_dir.join("state/watch.sock").display().to_string(),
+    );
     let _watch = synrepo::pipeline::watch::hold_watch_flock_with_state(&synrepo_dir, &state);
 
     let err = upgrade(&repo, true).unwrap_err();

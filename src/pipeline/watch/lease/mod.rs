@@ -2,6 +2,7 @@
 // `interprocess::local_socket`, which maps to Unix domain sockets on Unix and
 // to named pipes on Windows. Unix-only helpers remain gated individually.
 
+mod embedding_state;
 mod paths;
 mod types;
 

@@ -5,7 +5,7 @@ use std::time::Duration;
 use time::OffsetDateTime;
 
 use crate::bootstrap::runtime_probe::{AgentIntegration, AgentTargetKind};
-use crate::pipeline::diagnostics::{ReconcileHealth, WriterStatus};
+use crate::pipeline::diagnostics::{EmbeddingHealth, ReconcileHealth, WriterStatus};
 use crate::pipeline::watch::{WatchDaemonState, WatchServiceStatus};
 use crate::surface::status_snapshot::{ExportState, StatusSnapshot};
 use crate::tui::materializer::MaterializeState;
@@ -97,6 +97,8 @@ pub fn build_next_actions_with_context(
         out.push(export_action(snapshot, runtime));
     }
 
+    add_embedding_action(&mut out, snapshot, runtime);
+
     add_integration_action(&mut out, integration);
 
     if out.is_empty() {
@@ -106,6 +108,86 @@ pub fn build_next_actions_with_context(
         });
     }
     out
+}
+
+fn add_embedding_action(
+    out: &mut Vec<NextAction>,
+    snapshot: &StatusSnapshot,
+    runtime: NextActionRuntime<'_>,
+) {
+    let Some(diag) = &snapshot.diagnostics else {
+        return;
+    };
+    match &diag.embedding_health {
+        EmbeddingHealth::Disabled => return,
+        EmbeddingHealth::Degraded { reason, .. } if reason.contains("index missing") => {
+            out.push(NextAction {
+                label: "Embeddings enabled but no vector index, press B to build".to_string(),
+                severity: Severity::Stale,
+            });
+            return;
+        }
+        EmbeddingHealth::Degraded { reason, .. } => {
+            out.push(NextAction {
+                label: format!("Embedding index degraded, press B to rebuild ({reason})"),
+                severity: Severity::Stale,
+            });
+            return;
+        }
+        EmbeddingHealth::Available { .. } => {}
+    }
+
+    let WatchServiceStatus::Running(watch_state) = &diag.watch_status else {
+        return;
+    };
+    if watch_state.embedding_running {
+        out.push(NextAction {
+            label: embedding_running_label(watch_state, runtime),
+            severity: Severity::Stale,
+        });
+    } else if watch_state.embedding_index_stale {
+        out.push(NextAction {
+            label: embedding_stale_label(watch_state, runtime),
+            severity: Severity::Stale,
+        });
+    }
+}
+
+fn embedding_running_label(
+    watch_state: &WatchDaemonState,
+    runtime: NextActionRuntime<'_>,
+) -> String {
+    let started = watch_state
+        .embedding_last_started_at
+        .as_deref()
+        .and_then(|at| elapsed_since(at, runtime.now))
+        .map(elapsed_label)
+        .unwrap_or_else(|| "moments".to_string());
+    if let (Some(current), Some(total)) = (
+        watch_state.embedding_progress_current,
+        watch_state.embedding_progress_total,
+    ) {
+        return format!(
+            "Embedding index refresh running, started {started} ago ({current}/{total})"
+        );
+    }
+    format!("Embedding index refresh running, started {started} ago")
+}
+
+fn embedding_stale_label(watch_state: &WatchDaemonState, runtime: NextActionRuntime<'_>) -> String {
+    if let Some(retry_at) = &watch_state.embedding_next_retry_at {
+        if let Some(error) = &watch_state.embedding_last_error {
+            return format!("Embedding index refresh failed, backed off until {retry_at}: {error}");
+        }
+        return format!("Embedding index refresh backed off until {retry_at}");
+    }
+    let auto_enabled = runtime
+        .auto_sync_enabled
+        .unwrap_or(watch_state.auto_sync_enabled);
+    if auto_enabled && !watch_state.auto_sync_paused {
+        return "Embedding index stale, watch will refresh after the repo is quiet".to_string();
+    }
+    "Embedding index stale, press B to rebuild".to_string()
 }
 
 fn store_compat_action(guidance: &str, watch_status: &WatchServiceStatus) -> NextAction {

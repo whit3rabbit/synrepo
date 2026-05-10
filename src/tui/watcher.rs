@@ -322,23 +322,10 @@ mod tests {
         // Simulate a foreign live daemon: write the state file AND hold
         // the kernel flock on a separate fd so `watch_service_status`
         // reports `Running`.
-        let state = WatchDaemonState {
-            pid: 999_999,
-            started_at: "2026-04-18T00:00:00Z".to_string(),
-            mode: WatchServiceMode::Daemon,
-            control_endpoint: "/tmp/synrepo-fake.sock".to_string(),
-            last_event_at: None,
-            last_reconcile_at: None,
-            last_reconcile_outcome: None,
-            last_error: None,
-            last_triggering_events: None,
-            auto_sync_enabled: false,
-            auto_sync_running: false,
-            auto_sync_paused: false,
-            auto_sync_last_started_at: None,
-            auto_sync_last_finished_at: None,
-            auto_sync_last_outcome: None,
-        };
+        let mut state = WatchDaemonState::new(&synrepo_dir, WatchServiceMode::Daemon);
+        state.pid = 999_999;
+        state.started_at = "2026-04-18T00:00:00Z".to_string();
+        state.control_endpoint = "/tmp/synrepo-fake.sock".to_string();
         let _holder = hold_watch_flock_with_state(&synrepo_dir, &state);
 
         let mut sup = WatcherSupervisor::new(repo.path()).unwrap();

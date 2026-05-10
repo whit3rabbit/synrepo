@@ -7,6 +7,7 @@ use interprocess::local_socket::{traits::Stream as _, Stream};
 use serde::{Deserialize, Serialize};
 
 use crate::pipeline::repair::{SyncOptions, SyncSummary};
+use crate::substrate::embedding::EmbeddingBuildSummary;
 
 use super::lease::{
     watch_control_endpoint, watch_control_socket_name, WatchDaemonError, WatchDaemonState,
@@ -43,6 +44,8 @@ pub enum WatchControlRequest {
         /// it use the in-process entry point directly.
         options: SyncOptions,
     },
+    /// Build or rebuild the optional embedding index under watch ownership.
+    EmbeddingsBuildNow,
     /// Flip the in-memory auto-sync flag. Does not write to `config.toml`.
     SetAutoSync {
         /// Desired runtime state.
@@ -51,6 +54,7 @@ pub enum WatchControlRequest {
 }
 
 /// Control response returned by the watch service.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum WatchControlResponse {
@@ -75,6 +79,11 @@ pub enum WatchControlResponse {
     Sync {
         /// Summary of the completed sync pass.
         summary: SyncSummary,
+    },
+    /// Embedding build outcome.
+    EmbeddingsBuild {
+        /// Summary of the completed embedding build.
+        summary: EmbeddingBuildSummary,
     },
     /// Request failed.
     Error {

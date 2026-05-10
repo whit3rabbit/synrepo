@@ -35,23 +35,10 @@ fn watch_lease_replaces_stale_owner() {
     let socket_path = watch_socket_path(&synrepo_dir);
     fs::write(&socket_path, b"stale socket").unwrap();
 
-    let stale = WatchDaemonState {
-        pid: dead_pid(),
-        started_at: "2026-04-12T00:00:00Z".to_string(),
-        mode: WatchServiceMode::Daemon,
-        control_endpoint: socket_path.display().to_string(),
-        last_event_at: None,
-        last_reconcile_at: None,
-        last_reconcile_outcome: None,
-        last_error: None,
-        last_triggering_events: None,
-        auto_sync_enabled: false,
-        auto_sync_running: false,
-        auto_sync_paused: false,
-        auto_sync_last_started_at: None,
-        auto_sync_last_finished_at: None,
-        auto_sync_last_outcome: None,
-    };
+    let mut stale = WatchDaemonState::new(&synrepo_dir, WatchServiceMode::Daemon);
+    stale.pid = dead_pid();
+    stale.started_at = "2026-04-12T00:00:00Z".to_string();
+    stale.control_endpoint = socket_path.display().to_string();
     fs::write(&state_path, serde_json::to_string(&stale).unwrap()).unwrap();
 
     let (_lease, handle) =
@@ -71,23 +58,10 @@ fn cleanup_stale_watch_artifacts_removes_dead_state_and_socket() {
     let state_path = watch_daemon_state_path(&synrepo_dir);
     let socket_path = watch_socket_path(&synrepo_dir);
 
-    let stale = WatchDaemonState {
-        pid: dead_pid(),
-        started_at: "2026-04-12T00:00:00Z".to_string(),
-        mode: WatchServiceMode::Daemon,
-        control_endpoint: socket_path.display().to_string(),
-        last_event_at: None,
-        last_reconcile_at: None,
-        last_reconcile_outcome: None,
-        last_error: None,
-        last_triggering_events: None,
-        auto_sync_enabled: false,
-        auto_sync_running: false,
-        auto_sync_paused: false,
-        auto_sync_last_started_at: None,
-        auto_sync_last_finished_at: None,
-        auto_sync_last_outcome: None,
-    };
+    let mut stale = WatchDaemonState::new(&synrepo_dir, WatchServiceMode::Daemon);
+    stale.pid = dead_pid();
+    stale.started_at = "2026-04-12T00:00:00Z".to_string();
+    stale.control_endpoint = socket_path.display().to_string();
     fs::write(&state_path, serde_json::to_string(&stale).unwrap()).unwrap();
     fs::write(&socket_path, b"stale socket").unwrap();
 

@@ -2,7 +2,10 @@
 //! in `synrepo::surface::status_snapshot`.
 
 use synrepo::{
-    pipeline::{diagnostics::RuntimeDiagnostics, watch::WatchServiceStatus},
+    pipeline::{
+        diagnostics::RuntimeDiagnostics,
+        watch::{WatchDaemonState, WatchServiceStatus},
+    },
     surface::status_snapshot::RepairAuditState,
 };
 
@@ -19,6 +22,39 @@ pub fn render_watch_summary(status: &WatchServiceStatus) -> String {
         WatchServiceStatus::Stale(None) => "stale watch artifacts".to_string(),
         WatchServiceStatus::Corrupt(e) => format!("corrupt ({e})"),
     }
+}
+
+pub fn render_embedding_watch_status(snapshot: &WatchDaemonState) -> String {
+    if snapshot.embedding_running {
+        let phase = snapshot
+            .embedding_progress_phase
+            .as_deref()
+            .unwrap_or("running");
+        if let (Some(current), Some(total)) = (
+            snapshot.embedding_progress_current,
+            snapshot.embedding_progress_total,
+        ) {
+            return format!("running ({phase}, {current}/{total})");
+        }
+        return format!("running ({phase})");
+    }
+    if snapshot.embedding_index_stale {
+        if let Some(retry) = &snapshot.embedding_next_retry_at {
+            if let Some(error) = &snapshot.embedding_last_error {
+                return format!("stale (retry after {retry}, last error: {error})");
+            }
+            return format!("stale (retry after {retry})");
+        }
+        return "stale (scheduled after repo quiets)".to_string();
+    }
+    if let Some(error) = &snapshot.embedding_last_error {
+        return format!("failed ({error})");
+    }
+    snapshot
+        .embedding_last_outcome
+        .as_ref()
+        .map(|outcome| format!("last {outcome}"))
+        .unwrap_or_else(|| "idle".to_string())
 }
 
 pub fn render_repair_audit(state: &RepairAuditState) -> String {

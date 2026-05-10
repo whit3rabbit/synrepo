@@ -96,23 +96,13 @@ fn runtime() -> NextActionRuntime<'static> {
 }
 
 fn watch_state() -> WatchDaemonState {
-    WatchDaemonState {
-        pid: 42,
-        started_at: "2026-05-01T00:00:00Z".to_string(),
-        mode: WatchServiceMode::Daemon,
-        control_endpoint: "/tmp/synrepo-test.sock".to_string(),
-        last_event_at: None,
-        last_reconcile_at: None,
-        last_reconcile_outcome: None,
-        last_error: None,
-        last_triggering_events: None,
-        auto_sync_enabled: true,
-        auto_sync_running: false,
-        auto_sync_paused: false,
-        auto_sync_last_started_at: None,
-        auto_sync_last_finished_at: None,
-        auto_sync_last_outcome: None,
-    }
+    let mut state =
+        WatchDaemonState::new(std::path::Path::new(".synrepo"), WatchServiceMode::Daemon);
+    state.pid = 42;
+    state.started_at = "2026-05-01T00:00:00Z".to_string();
+    state.control_endpoint = "/tmp/synrepo-test.sock".to_string();
+    state.auto_sync_enabled = true;
+    state
 }
 
 #[test]

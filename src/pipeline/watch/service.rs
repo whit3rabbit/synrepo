@@ -1,7 +1,3 @@
-// The watch service uses `interprocess::local_socket` for its control plane:
-// Unix domain sockets on Unix, Windows named pipes on Windows. One blocking
-// protocol implementation backs both.
-
 use std::{
     path::Path,
     sync::{
@@ -13,15 +9,20 @@ use std::{
 
 use notify_debouncer_full::{new_debouncer, notify::RecursiveMode};
 
-use crate::{config::Config, pipeline::repair::SyncOptions};
+use crate::config::Config;
 
 pub(super) use super::filter::filter_repo_events;
 use super::{
     control::WatchControlResponse,
     control_bridge::spawn_control_listener,
+    embeddings::{
+        run_manual_embedding_build, EmbeddingJobContext, EmbeddingRefreshScheduler,
+        ReconcileEmbeddingObservation,
+    },
     events::{SyncTrigger, WatchEvent},
     filter::{collect_repo_paths, ignored_generated_dirs},
     lease::{acquire_watch_daemon_lease, WatchServiceMode},
+    loop_message::LoopMessage,
     pending::PendingWatchChanges,
     reconcile::{run_reconcile_attempt, run_reconcile_attempt_with_touched_paths},
     reconcile_state::persist_reconcile_attempt_state,
@@ -50,23 +51,6 @@ impl Default for WatchConfig {
     }
 }
 
-pub(super) enum LoopMessage {
-    Stop,
-    ReconcileNow {
-        respond_to: mpsc::Sender<WatchControlResponse>,
-        fast: bool,
-    },
-    SyncNow {
-        respond_to: mpsc::Sender<WatchControlResponse>,
-        options: SyncOptions,
-    },
-    SuppressPaths {
-        respond_to: mpsc::Sender<WatchControlResponse>,
-        paths: Vec<std::path::PathBuf>,
-        ttl: Duration,
-    },
-}
-
 /// Run the watch service in the current process.
 pub fn run_watch_service(
     repo_root: &Path,
@@ -82,10 +66,9 @@ pub fn run_watch_service(
     let stop_flag = Arc::new(AtomicBool::new(false));
     let auto_sync_enabled = Arc::new(AtomicBool::new(config.auto_sync_enabled));
     let auto_sync_blocked = Arc::new(AtomicBool::new(false));
+    let mut embedding_refresh = EmbeddingRefreshScheduler::default();
     state_handle.note_auto_sync_enabled(config.auto_sync_enabled);
     let (tx, rx) = mpsc::channel::<LoopMessage>();
-    // Pin the bind path to the persisted endpoint so env changes cannot
-    // diverge client and server socket paths.
     let control_endpoint = state_handle.snapshot().control_endpoint;
     let socket_thread = spawn_control_listener(
         control_endpoint,
@@ -215,6 +198,30 @@ pub fn run_watch_service(
                 _ => break,
             },
             Err(mpsc::RecvTimeoutError::Timeout) => {
+                embedding_refresh.reap_finished(&state_handle);
+                if embedding_refresh.is_running() {
+                    continue;
+                }
+                let pending_empty = pending_watch
+                    .lock()
+                    .map(|pending| pending.is_empty())
+                    .unwrap_or(false);
+                if pending_empty
+                    && embedding_refresh.maybe_start_auto_refresh(
+                        EmbeddingJobContext::new(
+                            config,
+                            synrepo_dir,
+                            events.clone(),
+                            state_handle.clone(),
+                            stop_flag.clone(),
+                        ),
+                        &auto_sync_enabled,
+                        &auto_sync_blocked,
+                        false,
+                    )
+                {
+                    continue;
+                }
                 let mut keepalive = false;
                 let batch = match pending_watch.lock() {
                     Ok(mut pending) => {
@@ -272,6 +279,17 @@ pub fn run_watch_service(
                     outcome: outcome.clone(),
                     triggering_events: event_count,
                 });
+                embedding_refresh.note_reconcile(
+                    config,
+                    synrepo_dir,
+                    ReconcileEmbeddingObservation {
+                        outcome: &outcome,
+                        triggering_events: event_count,
+                        force_full_reconcile,
+                        keepalive,
+                    },
+                    &state_handle,
+                );
                 maybe_run_post_reconcile_auto_sync(
                     &sync_context,
                     &outcome,
@@ -331,12 +349,33 @@ pub fn run_watch_service(
                     run_sync_under_watch_lock(&sync_context, options, None, SyncTrigger::Manual);
                 let _ = respond_to.send(response);
             }
+            Ok(LoopMessage::EmbeddingsBuildNow { respond_to }) => {
+                let response = if embedding_refresh.is_running() {
+                    WatchControlResponse::Error {
+                        message: "embedding refresh already running".to_string(),
+                    }
+                } else {
+                    let response = run_manual_embedding_build(EmbeddingJobContext::new(
+                        config,
+                        synrepo_dir,
+                        events.clone(),
+                        state_handle.clone(),
+                        stop_flag.clone(),
+                    ));
+                    if matches!(response, WatchControlResponse::EmbeddingsBuild { .. }) {
+                        embedding_refresh.clear_stale(&state_handle);
+                    }
+                    response
+                };
+                let _ = respond_to.send(response);
+            }
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         }
     }
 
     stop_flag.store(true, Ordering::Relaxed);
     drop(debouncer);
+    embedding_refresh.join_on_stop();
     let _ = socket_thread.join();
     Ok(())
 }

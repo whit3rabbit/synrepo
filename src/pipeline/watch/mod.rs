@@ -6,9 +6,11 @@
 
 mod control;
 mod control_bridge;
+mod embeddings;
 mod events;
 mod filter;
 pub(crate) mod lease;
+mod loop_message;
 mod pending;
 mod post_compile;
 pub(crate) mod reconcile;
@@ -21,7 +23,7 @@ mod sync;
 pub use control::{
     control_endpoint_reachable, request_watch_control, WatchControlRequest, WatchControlResponse,
 };
-pub use events::{ReconcileStartReason, SyncTrigger, WatchEvent};
+pub use events::{EmbeddingTrigger, ReconcileStartReason, SyncTrigger, WatchEvent};
 #[doc(hidden)]
 pub use lease::{hold_watch_flock_with_state, TestWatchFlockHolder};
 pub use lease::{

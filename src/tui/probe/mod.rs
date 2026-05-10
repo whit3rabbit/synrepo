@@ -14,6 +14,8 @@ pub use vm::*;
 #[cfg(test)]
 mod header_tests;
 #[cfg(test)]
+mod health_metrics_tests;
+#[cfg(test)]
 mod next_actions_tests;
 #[cfg(test)]
 mod tests;

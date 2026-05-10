@@ -100,7 +100,7 @@ fn pressing_b_without_watch_queues_embedding_build() {
 
 #[test]
 #[cfg(feature = "semantic-triage")]
-fn pressing_b_with_watch_opens_stop_watch_modal() {
+fn pressing_b_with_watch_queues_embedding_build_without_stop_prompt() {
     let _watch_guard = crate::test_support::global_test_lock("tui-app-watch-toggle");
     let (_lock, repo, _guard, _home, mut state) = ready_state();
     enable_embeddings(repo.path());
@@ -114,10 +114,16 @@ fn pressing_b_with_watch_opens_stop_watch_modal() {
 
     assert!(state.handle_key(KeyCode::Char('B'), KeyModifiers::NONE));
     assert_eq!(
-        state.confirm_stop_watch.as_ref().map(|s| &s.pending),
-        Some(&PendingStopWatchAction::BuildEmbeddings)
+        state.exit_intent(),
+        DashboardExit::LaunchEmbeddingBuild(PendingEmbeddingBuild {
+            stopped_watch: false
+        })
     );
-    assert_eq!(state.launch_embedding_build, None);
+    assert!(state.confirm_stop_watch.is_none());
+    assert!(matches!(
+        crate::pipeline::watch::watch_service_status(&ctx.synrepo_dir),
+        crate::pipeline::watch::WatchServiceStatus::Running(_)
+    ));
 
     let stop = stop_watch(&ctx);
     assert!(
@@ -127,36 +133,6 @@ fn pressing_b_with_watch_opens_stop_watch_modal() {
         ),
         "cleanup stop must succeed, got {stop:?}"
     );
-}
-
-#[test]
-#[cfg(feature = "semantic-triage")]
-fn confirming_embedding_stop_watch_queues_build() {
-    let _watch_guard = crate::test_support::global_test_lock("tui-app-watch-toggle");
-    let (_lock, repo, _guard, _home, mut state) = ready_state();
-    enable_embeddings(repo.path());
-    state.refresh_now();
-    let ctx = ActionContext::new(repo.path());
-    let start = crate::tui::actions::start_watch_daemon(&ctx);
-    assert!(
-        matches!(start, ActionOutcome::Ack { .. }),
-        "setup start must succeed, got {start:?}"
-    );
-
-    assert!(state.handle_key(KeyCode::Char('B'), KeyModifiers::NONE));
-    assert!(state.handle_key(KeyCode::Char('y'), KeyModifiers::NONE));
-    assert!(state.confirm_stop_watch.is_none());
-    assert_eq!(
-        state.exit_intent(),
-        DashboardExit::LaunchEmbeddingBuild(PendingEmbeddingBuild {
-            stopped_watch: true
-        })
-    );
-    assert!(state.should_exit);
-    assert!(matches!(
-        crate::pipeline::watch::watch_service_status(&ctx.synrepo_dir),
-        crate::pipeline::watch::WatchServiceStatus::Inactive
-    ));
 }
 
 #[test]

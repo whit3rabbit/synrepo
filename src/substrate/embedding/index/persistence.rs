@@ -33,7 +33,8 @@ const F32_BYTES: u64 = 4;
 impl FlatVecIndex {
     /// Save the index to disk.
     pub fn save(&self, path: &std::path::Path) -> crate::Result<()> {
-        let mut file = BufWriter::new(File::create(path)?);
+        let temp_path = path.with_extension(format!("tmp.{}", std::process::id()));
+        let mut file = BufWriter::new(File::create(&temp_path)?);
 
         // Write version and metadata length
         file.write_all(&INDEX_FORMAT_VERSION.to_le_bytes())?;
@@ -69,6 +70,14 @@ impl FlatVecIndex {
         // Explicit flush so a disk-full / IO failure during the final buffered
         // write surfaces here; BufWriter::drop swallows flush errors.
         file.flush()?;
+        file.get_ref().sync_all()?;
+        drop(file);
+
+        #[cfg(windows)]
+        if path.exists() {
+            std::fs::remove_file(path)?;
+        }
+        std::fs::rename(&temp_path, path)?;
         Ok(())
     }
 

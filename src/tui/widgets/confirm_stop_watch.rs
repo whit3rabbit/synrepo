@@ -17,10 +17,6 @@ pub(crate) fn render_confirm_stop_watch(
             "Explain needs the writer lock, which watch currently holds.",
             "Stop watch and run explain",
         ),
-        PendingStopWatchAction::BuildEmbeddings => (
-            "Embedding build needs the writer lock, which watch currently holds.",
-            "Stop watch and build embeddings",
-        ),
     };
     vec![
         Line::from(Span::styled(

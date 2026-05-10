@@ -16,6 +16,7 @@ use crate::{config::Config, store::compatibility::write_runtime_snapshot};
 
 mod auto_sync;
 mod daemon;
+mod embedding_control;
 mod filter;
 mod keepalive;
 mod lease;

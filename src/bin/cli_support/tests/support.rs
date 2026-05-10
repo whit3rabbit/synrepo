@@ -98,6 +98,41 @@ pub(super) fn bootstrap_isolated(
     bootstrap(repo_root, mode, update_gitignore)
 }
 
+pub(super) fn synthetic_watch_state(
+    mode: synrepo::pipeline::watch::WatchServiceMode,
+    pid: u32,
+    started_at: &str,
+    endpoint: String,
+) -> synrepo::pipeline::watch::WatchDaemonState {
+    synrepo::pipeline::watch::WatchDaemonState {
+        pid,
+        started_at: started_at.to_string(),
+        mode,
+        control_endpoint: endpoint,
+        last_event_at: None,
+        last_reconcile_at: None,
+        last_reconcile_outcome: None,
+        last_error: None,
+        last_triggering_events: None,
+        auto_sync_enabled: false,
+        auto_sync_running: false,
+        auto_sync_paused: false,
+        auto_sync_last_started_at: None,
+        auto_sync_last_finished_at: None,
+        auto_sync_last_outcome: None,
+        embedding_index_stale: false,
+        embedding_running: false,
+        embedding_last_started_at: None,
+        embedding_last_finished_at: None,
+        embedding_last_outcome: None,
+        embedding_last_error: None,
+        embedding_progress_phase: None,
+        embedding_progress_current: None,
+        embedding_progress_total: None,
+        embedding_next_retry_at: None,
+    }
+}
+
 pub(super) struct SeededGraphIds {
     pub(super) file_id: FileNodeId,
     pub(super) symbol_id: SymbolNodeId,

@@ -35,11 +35,13 @@ Embeddings only participate when all gates are open:
 
 If any gate is closed, MCP and CLI search fall back to lexical behavior with `semantic_available: false` or `routing_strategy: "keyword_fallback"`. Query-time surfaces do not download ONNX artifacts, rebuild indexes, or start background work.
 
+After the first explicit build, `synrepo watch` can refresh the existing vector index in the background when `auto_sync_enabled = true`. A successful non-keepalive reconcile with touched source paths, or a path-overflow full reconcile, marks the existing index stale. Watch waits for a 30 second quiet window with no pending filesystem changes, no running sync, and no running embedding job before refreshing. This refresh is conservative: it does not create the first index, does not download ONNX artifacts, and uses only cached ONNX assets or the configured local Ollama endpoint. Failed background refreshes back off before retrying.
+
 ## TUI Management
 
 In the dashboard Actions tab, press `T` to enable or disable embeddings for the current repo. The action writes only `enable_semantic_triage` in `.synrepo/config.toml`.
 
-After enabling, press `B` in the dashboard or run `synrepo embeddings build` to build vectors. The builder shows progress, preflights the provider, and reports failures such as an unavailable Ollama endpoint or wrong vector dimension. If watch is running, the dashboard asks before stopping watch because the build needs the writer lock.
+After enabling, press `B` in the dashboard or run `synrepo embeddings build` to build vectors. The builder shows progress, preflights the provider, and reports failures such as an unavailable Ollama endpoint or wrong vector dimension. If watch is running, explicit builds delegate to the watch service so the daemon remains the write authority.
 
 If the binary was not built with `semantic-triage`, enabling from the TUI reports that embeddings are unavailable. Disabling remains allowed.
 
@@ -64,7 +66,7 @@ Supported built-in models:
 | `all-MiniLM-L12-v2` | Hugging Face ONNX artifact | 384 | Larger MiniLM variant |
 | `all-mpnet-base-v2` | Hugging Face ONNX artifact | 768 | Higher-dimensional, slower and larger |
 
-The built-in registry downloads `model.onnx` and `tokenizer.json` during `synrepo init` or `synrepo reconcile` only when embeddings are enabled. Arbitrary Hugging Face repo IDs are not accepted yet because pooling, tokenizer shape, normalization, and dimensions need an explicit registry entry.
+The built-in registry downloads `model.onnx` and `tokenizer.json` during `synrepo embeddings build` only when embeddings are enabled. Arbitrary Hugging Face repo IDs are not accepted yet because pooling, tokenizer shape, normalization, and dimensions need an explicit registry entry.
 
 ### Ollama
 

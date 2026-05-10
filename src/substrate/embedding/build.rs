@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::config::Config;
 use crate::structure::graph::GraphStore;
@@ -74,7 +74,7 @@ pub enum EmbeddingBuildEvent {
 }
 
 /// Summary returned after a successful explicit embedding build.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct EmbeddingBuildSummary {
     /// Embedding backend, for example `onnx` or `ollama`.
     pub provider: String,
@@ -96,6 +96,49 @@ pub fn build_embedding_index_with_progress(
     progress: Option<&mut dyn FnMut(EmbeddingBuildEvent)>,
     should_stop: Option<&mut dyn FnMut() -> bool>,
 ) -> Result<EmbeddingBuildSummary> {
+    build_embedding_index_inner(graph, config, synrepo_dir, progress, should_stop, true)
+}
+
+/// Refresh an existing embedding index without downloading provider assets.
+///
+/// Returns `Ok(None)` when semantic triage is disabled or no index exists yet.
+pub fn refresh_existing_embedding_index(
+    graph: &dyn GraphStore,
+    config: &Config,
+    synrepo_dir: &Path,
+) -> Result<Option<EmbeddingBuildSummary>> {
+    refresh_existing_embedding_index_with_progress(graph, config, synrepo_dir, None, None)
+}
+
+/// Refresh an existing embedding index without downloading provider assets,
+/// emitting progress and honoring cancellation.
+///
+/// Returns `Ok(None)` when semantic triage is disabled or no index exists yet.
+pub fn refresh_existing_embedding_index_with_progress(
+    graph: &dyn GraphStore,
+    config: &Config,
+    synrepo_dir: &Path,
+    progress: Option<&mut dyn FnMut(EmbeddingBuildEvent)>,
+    should_stop: Option<&mut dyn FnMut() -> bool>,
+) -> Result<Option<EmbeddingBuildSummary>> {
+    if !config.enable_semantic_triage {
+        return Ok(None);
+    }
+    let index_path = synrepo_dir.join("index/vectors/index.bin");
+    if !index_path.exists() {
+        return Ok(None);
+    }
+    build_embedding_index_inner(graph, config, synrepo_dir, progress, should_stop, false).map(Some)
+}
+
+fn build_embedding_index_inner(
+    graph: &dyn GraphStore,
+    config: &Config,
+    synrepo_dir: &Path,
+    progress: Option<&mut dyn FnMut(EmbeddingBuildEvent)>,
+    should_stop: Option<&mut dyn FnMut() -> bool>,
+    allow_download: bool,
+) -> Result<EmbeddingBuildSummary> {
     if !config.enable_semantic_triage {
         return Err(crate::Error::Config(
             "embeddings are disabled; set enable_semantic_triage = true or press T in the dashboard first".to_string(),
@@ -112,7 +155,12 @@ pub fn build_embedding_index_with_progress(
         model: config.semantic_model.clone(),
         dim: config.embedding_dim,
     });
-    let model = ModelResolver::new().resolve(config, synrepo_dir)?;
+    let resolver = ModelResolver::new();
+    let model = if allow_download {
+        resolver.resolve(config, synrepo_dir)?
+    } else {
+        resolver.resolve_existing(config, synrepo_dir)?
+    };
     progress(EmbeddingBuildEvent::ModelReady {
         provider: model.provider_label().to_string(),
         model: model.model_name().to_string(),

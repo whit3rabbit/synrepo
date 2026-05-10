@@ -2,6 +2,7 @@ use std::path::Path;
 
 use synrepo::{
     config::Config,
+    pipeline::watch::{request_watch_control, WatchControlRequest, WatchControlResponse},
     pipeline::writer::{acquire_write_admission, map_lock_error},
     store::sqlite::SqliteGraphStore,
     substrate::embedding::{
@@ -62,7 +63,22 @@ fn build_output(repo_root: &Path, json: bool, stream_progress: bool) -> anyhow::
     }
 
     let synrepo_dir = Config::synrepo_dir(repo_root);
-    let _lock = acquire_write_admission(&synrepo_dir, "embeddings build")
+
+    let summary = if let Some(pid) = super::watch::active_watch_pid(&synrepo_dir)? {
+        build_via_watch(&synrepo_dir, pid, stream_progress)?
+    } else {
+        build_local(&synrepo_dir, &config, stream_progress)?
+    };
+
+    render_summary(&summary, json)
+}
+
+fn build_local(
+    synrepo_dir: &Path,
+    config: &Config,
+    stream_progress: bool,
+) -> anyhow::Result<EmbeddingBuildSummary> {
+    let _lock = acquire_write_admission(synrepo_dir, "embeddings build")
         .map_err(|error| map_lock_error("embeddings build", error))?;
     let graph = SqliteGraphStore::open(&synrepo_dir.join("graph")).map_err(|error| {
         anyhow::anyhow!("embeddings build: could not open graph store ({error})")
@@ -79,10 +95,31 @@ fn build_output(repo_root: &Path, json: bool, stream_progress: bool) -> anyhow::
         None
     };
 
-    let summary =
-        build_embedding_index_with_progress(&graph, &config, &synrepo_dir, progress, None)
-            .map_err(|error| anyhow::anyhow!("embeddings build failed: {error}"))?;
-    render_summary(&summary, json)
+    build_embedding_index_with_progress(&graph, config, synrepo_dir, progress, None)
+        .map_err(|error| anyhow::anyhow!("embeddings build failed: {error}"))
+}
+
+fn build_via_watch(
+    synrepo_dir: &Path,
+    pid: u32,
+    stream_progress: bool,
+) -> anyhow::Result<EmbeddingBuildSummary> {
+    if stream_progress {
+        eprintln!(
+            "Delegated embeddings build to active watch service (pid {pid}); progress will stream to the TUI if attached."
+        );
+    }
+
+    match request_watch_control(synrepo_dir, WatchControlRequest::EmbeddingsBuildNow)? {
+        WatchControlResponse::EmbeddingsBuild { summary } => Ok(summary),
+        WatchControlResponse::Error { message } => Err(anyhow::anyhow!(
+            "embeddings build: watch delegation failed: {message}; if this is an older watch daemon, run `synrepo watch stop` first and retry"
+        )),
+        other => Err(anyhow::anyhow!(
+            "embeddings build: watch delegation returned unexpected response: {:?}",
+            other
+        )),
+    }
 }
 
 fn render_summary(summary: &EmbeddingBuildSummary, json: bool) -> anyhow::Result<String> {

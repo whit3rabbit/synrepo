@@ -6,7 +6,7 @@ mod helpers;
 mod json;
 mod text;
 
-pub(crate) use helpers::render_watch_summary;
+pub(crate) use helpers::{render_embedding_watch_status, render_watch_summary};
 
 use std::path::Path;
 
