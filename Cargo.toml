@@ -23,7 +23,7 @@ path = "src/lib.rs"
 # syntext is the deterministic lexical retrieval layer. Verify publication
 # status on crates.io; if not published, switch to a git dependency pinned to
 # a specific commit hash (never a branch).
-syntext = "1.1.0"
+syntext = "1.1.1"
 
 # --- Tree-sitter via Rust crates (phase 1) ---
 # Per-language crates each ship a pre-generated C grammar and expose
