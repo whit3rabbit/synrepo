@@ -57,16 +57,16 @@ pub(crate) fn apply_plan(repo_root: &Path, plan: &RemovePlan) -> anyhow::Result<
 
 fn uninstall_shim(repo_root: &Path, tool_name: &str, path: &Path) -> anyhow::Result<()> {
     let Some(tool) = agent_tool(tool_name) else {
-        return delete_shim(path);
+        return delete_unknown_legacy_shim(tool_name, path);
     };
     let scope = scope_for_path(repo_root, path);
     let result = match tool.placement_kind() {
         ShimPlacement::Skill { name } => {
             let Some(id) = tool.agent_config_id() else {
-                return delete_shim(path);
+                return delete_legacy_shim(tool, path);
             };
             let Some(installer) = agent_config::skill_by_id(id) else {
-                return delete_shim(path);
+                return delete_legacy_shim(tool, path);
             };
             installer
                 .uninstall_skill(&scope, name, SYNREPO_INSTALL_OWNER)
@@ -74,27 +74,27 @@ fn uninstall_shim(repo_root: &Path, tool_name: &str, path: &Path) -> anyhow::Res
         }
         ShimPlacement::Instruction { name, .. } => {
             let Some(id) = tool.agent_config_id() else {
-                return delete_shim(path);
+                return delete_legacy_shim(tool, path);
             };
             let Some(installer) = agent_config::instruction_by_id(id) else {
-                return delete_shim(path);
+                return delete_legacy_shim(tool, path);
             };
             installer
                 .uninstall_instruction(&scope, name, SYNREPO_INSTALL_OWNER)
                 .map_err(anyhow::Error::new)
         }
-        ShimPlacement::Local => return delete_shim(path),
+        ShimPlacement::Local => return delete_legacy_shim(tool, path),
     };
 
     match result {
         Ok(report) if report_changed_or_gone(&report, path) => Ok(()),
         Ok(_) => {
             warn_legacy_remove(tool_name, path);
-            delete_shim(path)
+            delete_legacy_shim(tool, path)
         }
         Err(err) if is_unowned_agent_config_error(&err) => {
             warn_legacy_remove(tool_name, path);
-            delete_shim(path)
+            delete_legacy_shim(tool, path)
         }
         Err(err) => Err(err).with_context(|| {
             format!(
@@ -103,6 +103,45 @@ fn uninstall_shim(repo_root: &Path, tool_name: &str, path: &Path) -> anyhow::Res
             )
         }),
     }
+}
+
+fn delete_legacy_shim(tool: AgentTool, path: &Path) -> anyhow::Result<()> {
+    if is_shared_instruction_host(tool, path) {
+        return delete_shared_host_if_exact_legacy_shim(tool, path);
+    }
+    delete_shim(path)
+}
+
+fn delete_unknown_legacy_shim(tool_name: &str, path: &Path) -> anyhow::Result<()> {
+    if path.file_name().and_then(|name| name.to_str()) == Some("AGENTS.md") {
+        anyhow::bail!(
+            "refusing to delete shared instruction file {} for unknown legacy tool {}",
+            path.display(),
+            tool_name
+        );
+    }
+    delete_shim(path)
+}
+
+fn is_shared_instruction_host(tool: AgentTool, path: &Path) -> bool {
+    matches!(tool, AgentTool::OpenCode)
+        && path.file_name().and_then(|name| name.to_str()) == Some("AGENTS.md")
+}
+
+fn delete_shared_host_if_exact_legacy_shim(tool: AgentTool, path: &Path) -> anyhow::Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+    let existing =
+        fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))?;
+    if existing.trim_end_matches('\n') == tool.shim_content().trim_end_matches('\n') {
+        return delete_shim(path);
+    }
+    anyhow::bail!(
+        "refusing to delete shared instruction file {}; it is not the exact legacy synrepo {} shim",
+        path.display(),
+        tool.display_name()
+    )
 }
 
 fn uninstall_mcp_entry(repo_root: &Path, tool_name: &str, path: &Path) -> anyhow::Result<()> {
@@ -140,6 +179,9 @@ fn uninstall_mcp_entry(repo_root: &Path, tool_name: &str, path: &Path) -> anyhow
 }
 
 fn agent_tool(tool_name: &str) -> Option<AgentTool> {
+    if tool_name == "opencode" {
+        return Some(AgentTool::OpenCode);
+    }
     <AgentTool as clap::ValueEnum>::from_str(tool_name, false).ok()
 }
 

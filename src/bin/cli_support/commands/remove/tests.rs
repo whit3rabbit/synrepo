@@ -8,7 +8,7 @@ use tempfile::TempDir;
 
 use crate::cli_support::agent_shims::{AgentTool, SYNREPO_INSTALL_NAME, SYNREPO_INSTALL_OWNER};
 
-use super::{apply_plan, build_plan, RemoveAction};
+use super::{apply_plan, build_plan, RemoveAction, RemovePlan};
 
 mod hook_tracking;
 
@@ -217,6 +217,100 @@ fn apply_delete_shim_stops_at_non_empty_parent() {
     assert!(
         !fx.path().join(".claude").join("skills").exists(),
         "empty skills/ tree should still be cleaned"
+    );
+}
+
+#[test]
+fn apply_legacy_opencode_shim_refuses_to_delete_user_agents_md() {
+    let fx = Fixture::new();
+    let agents_path = fx.path().join("AGENTS.md");
+    let user_content = "# Project instructions\n\nKeep this file.\n";
+    fs::write(&agents_path, user_content).unwrap();
+
+    let summary = apply_plan(
+        fx.path(),
+        &RemovePlan {
+            actions: vec![RemoveAction::DeleteShim {
+                tool: "opencode".to_string(),
+                path: agents_path.clone(),
+            }],
+            preserved: Vec::new(),
+        },
+    )
+    .unwrap();
+
+    assert_eq!(
+        fs::read_to_string(&agents_path).unwrap(),
+        user_content,
+        "root AGENTS.md must not be deleted unless it is exactly the legacy shim"
+    );
+    assert_eq!(summary.applied.len(), 1);
+    assert!(
+        !summary.applied[0].succeeded,
+        "unsafe shared-host deletion should be reported as a failed action"
+    );
+    assert!(
+        summary.applied[0]
+            .error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("refusing to delete shared instruction file"),
+        "failure should explain the deny-by-default guard"
+    );
+}
+
+#[test]
+fn apply_legacy_opencode_shim_deletes_exact_generated_agents_md() {
+    let fx = Fixture::new();
+    let agents_path = fx.path().join("AGENTS.md");
+    fs::write(&agents_path, AgentTool::OpenCode.shim_content()).unwrap();
+
+    let summary = apply_plan(
+        fx.path(),
+        &RemovePlan {
+            actions: vec![RemoveAction::DeleteShim {
+                tool: AgentTool::OpenCode.canonical_name().to_string(),
+                path: agents_path.clone(),
+            }],
+            preserved: Vec::new(),
+        },
+    )
+    .unwrap();
+
+    assert!(
+        !agents_path.exists(),
+        "pure legacy OpenCode shim file should still be removable"
+    );
+    assert_eq!(summary.applied.len(), 1);
+    assert!(
+        summary.applied[0].succeeded,
+        "exact legacy shim deletion should succeed"
+    );
+}
+
+#[test]
+fn apply_unknown_legacy_tool_refuses_to_delete_agents_md() {
+    let fx = Fixture::new();
+    let agents_path = fx.path().join("AGENTS.md");
+    fs::write(&agents_path, "# User instructions\n").unwrap();
+
+    let summary = apply_plan(
+        fx.path(),
+        &RemovePlan {
+            actions: vec![RemoveAction::DeleteShim {
+                tool: "old-opencode".to_string(),
+                path: agents_path.clone(),
+            }],
+            preserved: Vec::new(),
+        },
+    )
+    .unwrap();
+
+    assert!(agents_path.exists());
+    assert_eq!(summary.applied.len(), 1);
+    assert!(
+        !summary.applied[0].succeeded,
+        "unknown legacy tool must not be allowed to delete AGENTS.md"
     );
 }
 

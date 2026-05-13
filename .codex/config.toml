@@ -1,5 +1,0 @@
-[mcp_servers]
-
-[mcp_servers.synrepo]
-command = "synrepo"
-args = ["mcp", "--repo", "."]
