@@ -7,11 +7,9 @@ use crate::config::Config;
 use crate::surface::mcp::compact::OutputMode;
 use crate::surface::mcp::SynrepoState;
 
-use super::{
-    default_edit_limit, default_limit, handle_orient, handle_search, handle_where_to_edit,
-    SearchParams,
-};
+use super::{default_limit, handle_orient, handle_search, SearchParams};
 
+mod routing;
 mod worktrees;
 
 fn make_state() -> (tempfile::TempDir, SynrepoState) {
@@ -20,6 +18,8 @@ fn make_state() -> (tempfile::TempDir, SynrepoState) {
     let dir = tempdir().unwrap();
     let repo = dir.path();
     fs::create_dir_all(repo.join("src")).unwrap();
+    fs::create_dir_all(repo.join("docs")).unwrap();
+    fs::create_dir_all(repo.join("docker")).unwrap();
     fs::write(
         repo.join("src/lib.rs"),
         "pub fn alpha() {}\nlet marker = \"Error::Other(anyhow\";\nalpha one\nalpha two\nalpha three\nalpha four\nalpha five\nalpha six\n",
@@ -28,6 +28,12 @@ fn make_state() -> (tempfile::TempDir, SynrepoState) {
     fs::write(
         repo.join("src/other.rs"),
         "// distinct\npub fn alpha_other() {}\n",
+    )
+    .unwrap();
+    fs::write(repo.join("docs/SECURITY.md"), "# Security\n").unwrap();
+    fs::write(
+        repo.join("docker/entrypoint.sh"),
+        "#!/bin/sh\nexec \"$@\"\n",
     )
     .unwrap();
     bootstrap(repo, None, false).unwrap();
@@ -113,6 +119,38 @@ fn explicit_literal_search_escapes_code_strings() {
             .as_str()
             .is_some_and(|content| content.contains("Error::Other(anyhow"))
     }));
+}
+
+#[test]
+fn exact_path_search_returns_discovered_non_graph_file() {
+    let (_dir, state) = make_state();
+    let mut params = search_params(OutputMode::Default, None);
+    params.query = "docs/SECURITY.md".to_string();
+    params.mode = super::SearchMode::Lexical;
+    let value: serde_json::Value = serde_json::from_str(&handle_search(&state, params)).unwrap();
+
+    assert_eq!(value["result_count"], 1);
+    assert!(value["results"].as_array().unwrap().iter().any(|row| {
+        row["path"] == "docs/SECURITY.md" && row["source"] == "path" && row["file_id"].is_null()
+    }));
+}
+
+#[test]
+fn change_risk_distinguishes_existing_non_graph_files() {
+    let (_dir, state) = make_state();
+    let value: serde_json::Value = serde_json::from_str(&super::super::cards::handle_change_risk(
+        &state,
+        "docker/entrypoint.sh".to_string(),
+        "normal".to_string(),
+        None,
+    ))
+    .unwrap();
+
+    assert_eq!(value["ok"], false);
+    assert_eq!(value["error"]["code"], "INVALID_PARAMETER");
+    assert!(value["error"]["message"]
+        .as_str()
+        .is_some_and(|message| message.contains("not graph-backed")));
 }
 
 #[test]
@@ -279,140 +317,4 @@ fn compact_search_metrics_do_not_store_content() {
     let serialized = serde_json::to_string(&metrics).unwrap();
     assert!(!serialized.contains("alpha"));
     assert!(!serialized.contains("src/lib.rs"));
-}
-
-fn make_routing_state() -> (tempfile::TempDir, SynrepoState) {
-    let home = tempdir().unwrap();
-    let _home_guard = crate::config::test_home::HomeEnvGuard::redirect_to(home.path());
-    let dir = tempdir().unwrap();
-    let repo = dir.path();
-    fs::create_dir_all(repo.join("src/bin/cli_support/commands/agent_hooks")).unwrap();
-    fs::create_dir_all(repo.join("src/pipeline/context_metrics")).unwrap();
-    fs::write(
-        repo.join("src/bin/cli_support/commands/agent_hooks/classify.rs"),
-        "pub fn classify_hook_nudge() {}\n// agent_hooks nudge classifier routing\n",
-    )
-    .unwrap();
-    fs::write(
-        repo.join("src/bin/cli_support/commands/agent_hooks/render.rs"),
-        "pub fn render_hook_nudge() {}\n// agent_hooks nudge renderer signals\n",
-    )
-    .unwrap();
-    fs::write(
-        repo.join("src/pipeline/context_metrics/mod.rs"),
-        "pub fn record_context_metric() {}\n// context_metrics budget accounting\n",
-    )
-    .unwrap();
-    bootstrap(repo, None, false).unwrap();
-    let state = SynrepoState {
-        config: Config::load(repo).unwrap(),
-        repo_root: repo.to_path_buf(),
-    };
-    (dir, state)
-}
-
-#[test]
-fn where_to_edit_decomposes_broad_task_into_snake_case_anchors() {
-    let (_dir, state) = make_routing_state();
-    let value: serde_json::Value = serde_json::from_str(&handle_where_to_edit(
-        &state,
-        "agent hook routing recommendations with context metrics".to_string(),
-        default_edit_limit(),
-        None,
-    ))
-    .unwrap();
-
-    assert_eq!(value["fallback_used"], true);
-    assert_eq!(value["miss_reason"], serde_json::Value::Null);
-    let paths = suggestion_paths(&value);
-    assert!(paths
-        .iter()
-        .any(|path| path.ends_with("agent_hooks/classify.rs")));
-    assert!(paths
-        .iter()
-        .any(|path| path.ends_with("context_metrics/mod.rs")));
-    let attempts = value["query_attempts"].as_array().unwrap();
-    assert!(attempts
-        .iter()
-        .any(|attempt| attempt["query"] == "agent_hooks"));
-    assert!(attempts
-        .iter()
-        .any(|attempt| attempt["query"] == "context_metrics"));
-}
-
-#[test]
-fn where_to_edit_handles_observed_agent_hook_miss_phrase() {
-    let (_dir, state) = make_routing_state();
-    let value: serde_json::Value = serde_json::from_str(&handle_where_to_edit(
-        &state,
-        "extend agent hook nudge classifier renderer with structured fast path signals".to_string(),
-        default_edit_limit(),
-        None,
-    ))
-    .unwrap();
-
-    assert_eq!(value["fallback_used"], true);
-    assert_eq!(value["miss_reason"], serde_json::Value::Null);
-    let paths = suggestion_paths(&value);
-    assert!(paths
-        .iter()
-        .any(|path| path.ends_with("agent_hooks/classify.rs")));
-    assert!(paths
-        .iter()
-        .any(|path| path.ends_with("agent_hooks/render.rs")));
-}
-
-#[test]
-fn where_to_edit_reports_zero_match_diagnostics_without_fake_suggestions() {
-    let (_dir, state) = make_routing_state();
-    let value: serde_json::Value = serde_json::from_str(&handle_where_to_edit(
-        &state,
-        "definitely absent qqqqq route".to_string(),
-        default_edit_limit(),
-        None,
-    ))
-    .unwrap();
-
-    assert_eq!(value["fallback_used"], true);
-    assert_eq!(value["miss_reason"], "no_index_matches");
-    assert!(value["suggestions"].as_array().unwrap().is_empty());
-    assert!(value["query_attempts"]
-        .as_array()
-        .is_some_and(|attempts| !attempts.is_empty()));
-    assert_eq!(value["recommended_tool"], serde_json::Value::Null);
-    assert!(value["recommended_next_queries"]
-        .as_array()
-        .is_some_and(|queries| queries.is_empty()));
-}
-
-#[test]
-fn where_to_edit_recommends_exact_queries_on_mcp_review_miss() {
-    let (_dir, state) = make_routing_state();
-    let value: serde_json::Value = serde_json::from_str(&handle_where_to_edit(
-        &state,
-        "review MCP mutability and parameter validation".to_string(),
-        default_edit_limit(),
-        None,
-    ))
-    .unwrap();
-
-    assert_eq!(value["miss_reason"], "no_index_matches");
-    assert_eq!(value["recommended_tool"], "synrepo_search");
-    let queries = value["recommended_next_queries"].as_array().unwrap();
-    assert!(queries
-        .iter()
-        .any(|q| q.as_str() == Some("name = \"synrepo_")));
-    assert!(queries
-        .iter()
-        .any(|q| q.as_str() == Some("allow-source-edits")));
-    assert!(queries.iter().any(|q| q.as_str() == Some("parse_budget")));
-}
-
-fn suggestion_paths(value: &serde_json::Value) -> Vec<String> {
-    value["suggestions"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter_map(|card| card["path"].as_str().map(ToOwned::to_owned))
-        .collect()
 }

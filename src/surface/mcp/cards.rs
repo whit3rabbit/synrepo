@@ -1,5 +1,6 @@
 use schemars::JsonSchema;
 use serde::Deserialize;
+use std::path::Path;
 use std::time::Instant;
 
 use crate::{core::ids::NodeId, surface::card::CardCompiler};
@@ -322,7 +323,7 @@ pub fn handle_change_risk(
     with_mcp_compiler(state, |compiler| {
         let node_id = compiler
             .resolve_target(&target)?
-            .ok_or_else(|| anyhow::anyhow!("target not found: {target}"))?;
+            .ok_or_else(|| change_risk_target_error(state, &target))?;
 
         let card = compiler.change_risk_card(node_id, budget)?;
         Ok(finalize_card_json(
@@ -333,4 +334,39 @@ pub fn handle_change_risk(
             false,
         ))
     })
+}
+
+fn change_risk_target_error(state: &SynrepoState, target: &str) -> anyhow::Error {
+    if let Some(path) = existing_repo_path(&state.repo_root, target) {
+        return super::error::McpError::invalid_parameter(format!(
+            "target exists on disk but is not graph-backed for change risk: {path}"
+        ))
+        .into();
+    }
+    anyhow::anyhow!("target not found: {target}")
+}
+
+fn existing_repo_path(repo_root: &Path, target: &str) -> Option<String> {
+    if target.trim().is_empty() {
+        return None;
+    }
+    let repo_root = repo_root.canonicalize().ok()?;
+    let raw = Path::new(target);
+    let absolute = if raw.is_absolute() {
+        raw.to_path_buf()
+    } else {
+        repo_root.join(raw)
+    }
+    .canonicalize()
+    .ok()?;
+    if !absolute.starts_with(&repo_root) || !absolute.is_file() {
+        return None;
+    }
+    Some(
+        absolute
+            .strip_prefix(&repo_root)
+            .ok()?
+            .to_string_lossy()
+            .replace('\\', "/"),
+    )
 }

@@ -100,7 +100,8 @@ pub fn classify_error(error: &anyhow::Error) -> ErrorCode {
         || message.contains("failed to prepare")
     {
         ErrorCode::NotInitialized
-    } else if message.contains("invalid")
+    } else if message.contains("not graph-backed")
+        || message.contains("invalid")
         || message.contains("must ")
         || message.contains("unsupported")
         || message.contains("required")
@@ -136,6 +137,9 @@ pub fn error_value(err: &anyhow::Error) -> serde_json::Value {
         ErrorCode::RateLimited | ErrorCode::Locked | ErrorCode::Busy | ErrorCode::Timeout
     );
     let next_action = match code {
+        ErrorCode::InvalidParameter if message.contains("not graph-backed") => {
+            "Use synrepo_card for a filesystem fallback preview, or synrepo_search for exact text matches; graph impact requires a graph-backed file or symbol."
+        }
         ErrorCode::NotFound if message.contains("target not found") => {
             "Run synrepo_search with the exact symbol/path, then pass a suggested_card_targets entry or exact path to synrepo_card."
         }

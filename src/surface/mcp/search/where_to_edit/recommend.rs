@@ -36,9 +36,35 @@ pub(super) fn recommended_next_queries(task: &str, miss_reason: Option<&str>) ->
         add_recommendation(&mut queries, &mut seen, "render_error");
         add_recommendation(&mut queries, &mut seen, "error.code");
     }
-    if contains_any(&lower, &["resource", "resources"]) {
+    if contains_any(&lower, &["resource", "resources"])
+        && contains_any(&lower, &["mcp", "uri", "tool"])
+    {
         add_recommendation(&mut queries, &mut seen, "read_resource");
         add_recommendation(&mut queries, &mut seen, "read_resource_blocking");
+    }
+    if contains_any(
+        &lower,
+        &[
+            "memory",
+            "resource leak",
+            "goroutine",
+            "uncaught",
+            "error handling",
+            "long-lived",
+            "pty",
+            "process",
+            "database",
+            "timer",
+            "lifecycle",
+        ],
+    ) {
+        add_recommendation(&mut queries, &mut seen, "goroutine");
+        add_recommendation(&mut queries, &mut seen, "context.With");
+        add_recommendation(&mut queries, &mut seen, "Close");
+        add_recommendation(&mut queries, &mut seen, "Wait");
+        add_recommendation(&mut queries, &mut seen, "panic");
+        add_recommendation(&mut queries, &mut seen, "recover");
+        add_recommendation(&mut queries, &mut seen, "QueryContext");
     }
     if contains_any(&lower, &["agent hook", "agent hooks", "nudge"]) {
         add_recommendation(&mut queries, &mut seen, "agent_hooks");
@@ -70,8 +96,17 @@ fn add_code_shaped_tokens(queries: &mut Vec<String>, seen: &mut HashSet<String>,
 }
 
 fn has_mixed_case(token: &str) -> bool {
+    if is_titlecase_word(token) {
+        return false;
+    }
     token.chars().any(|ch| ch.is_ascii_lowercase())
         && token.chars().any(|ch| ch.is_ascii_uppercase())
+}
+
+fn is_titlecase_word(token: &str) -> bool {
+    let mut chars = token.chars();
+    chars.next().is_some_and(|ch| ch.is_ascii_uppercase())
+        && chars.all(|ch| ch.is_ascii_lowercase())
 }
 
 fn contains_any(haystack: &str, needles: &[&str]) -> bool {

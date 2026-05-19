@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::path::Path;
 
 use schemars::JsonSchema;
 use serde::Deserialize;
@@ -43,14 +44,9 @@ pub fn handle_change_impact_with_direction(
 ) -> String {
     let result: anyhow::Result<serde_json::Value> = state
         .with_read_compiler(|compiler| {
-            let node_id = compiler.resolve_target(&target)?.ok_or_else(|| {
-                crate::Error::Other(
-                    crate::surface::mcp::error::McpError::not_found(format!(
-                        "target not found: {target}"
-                    ))
-                    .into(),
-                )
-            })?;
+            let node_id = compiler
+                .resolve_target(&target)?
+                .ok_or_else(|| change_impact_target_error(&state.repo_root, &target))?;
             let inbound = if matches!(direction, ImpactDirection::Inbound | ImpactDirection::Both) {
                 let imports = compiler
                     .reader()
@@ -91,6 +87,46 @@ pub fn handle_change_impact_with_direction(
         })
         .map_err(|err| anyhow::anyhow!(err));
     render_result(result)
+}
+
+fn change_impact_target_error(repo_root: &Path, target: &str) -> crate::Error {
+    if let Some(path) = existing_repo_path(repo_root, target) {
+        return crate::Error::Other(
+            crate::surface::mcp::error::McpError::invalid_parameter(format!(
+                "target exists on disk but is not graph-backed for change impact: {path}"
+            ))
+            .into(),
+        );
+    }
+    crate::Error::Other(
+        crate::surface::mcp::error::McpError::not_found(format!("target not found: {target}"))
+            .into(),
+    )
+}
+
+fn existing_repo_path(repo_root: &Path, target: &str) -> Option<String> {
+    if target.trim().is_empty() {
+        return None;
+    }
+    let repo_root = repo_root.canonicalize().ok()?;
+    let raw = Path::new(target);
+    let absolute = if raw.is_absolute() {
+        raw.to_path_buf()
+    } else {
+        repo_root.join(raw)
+    }
+    .canonicalize()
+    .ok()?;
+    if !absolute.starts_with(&repo_root) || !absolute.is_file() {
+        return None;
+    }
+    Some(
+        absolute
+            .strip_prefix(&repo_root)
+            .ok()?
+            .to_string_lossy()
+            .replace('\\', "/"),
+    )
 }
 
 impl ImpactDirection {

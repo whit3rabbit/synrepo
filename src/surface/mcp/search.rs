@@ -16,6 +16,7 @@ use super::SynrepoState;
 mod cards_mode;
 mod impact;
 mod overview;
+mod path_matches;
 mod rooted_rows;
 mod where_to_edit;
 use cards_mode::search_cards_response;
@@ -169,11 +170,17 @@ pub fn handle_search(state: &SynrepoState, params: SearchParams) -> String {
             Err(error) => return Err(error),
         };
         let SearchExecution {
-            items,
+            mut items,
             engine,
             source_store,
             semantic_available,
         } = execution;
+        path_matches::prepend_direct_path_matches(
+            state,
+            &params.query,
+            effective_limit,
+            &mut items,
+        )?;
         let source_store = root_aware_source_store(&source_store, &items);
         let result_count = items.len();
         let filters = params.filters_json();

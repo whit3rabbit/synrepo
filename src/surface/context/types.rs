@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+use serde::{de, Deserialize, Deserializer, Serialize};
 
 /// High-level request accepted by the task-context front door.
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq)]
@@ -11,16 +11,16 @@ pub struct ContextAskRequest {
     /// Plain-language task or question to compile into a context packet.
     pub ask: String,
     /// Optional file, symbol, or change-set scope.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_scope")]
     pub scope: ContextScope,
     /// Requested sections or output hints.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_shape")]
     pub shape: ContextShape,
     /// Grounding and overlay inclusion policy.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_ground")]
     pub ground: GroundingOptions,
     /// Token, file, symbol, freshness, and tier limits.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_budget")]
     pub budget: ContextBudget,
 }
 
@@ -238,4 +238,136 @@ pub fn default_max_files() -> usize {
 /// Default maximum symbol scopes for `synrepo_ask`.
 pub fn default_max_symbols() -> usize {
     40
+}
+
+fn deserialize_scope<'de, D>(deserializer: D) -> Result<ContextScope, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    match value {
+        serde_json::Value::Null => Ok(ContextScope::default()),
+        serde_json::Value::String(raw) => Ok(scope_from_string(&raw)),
+        other => ContextScope::deserialize(other).map_err(de::Error::custom),
+    }
+}
+
+fn deserialize_shape<'de, D>(deserializer: D) -> Result<ContextShape, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    match value {
+        serde_json::Value::Null => Ok(ContextShape::default()),
+        serde_json::Value::String(raw) => Ok(ContextShape {
+            sections: split_hint_string(&raw),
+        }),
+        serde_json::Value::Array(items) => {
+            let sections = items
+                .into_iter()
+                .filter_map(|item| item.as_str().map(str::to_string))
+                .filter(|item| !item.trim().is_empty())
+                .collect();
+            Ok(ContextShape { sections })
+        }
+        other => ContextShape::deserialize(other).map_err(de::Error::custom),
+    }
+}
+
+fn deserialize_ground<'de, D>(deserializer: D) -> Result<GroundingOptions, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    match value {
+        serde_json::Value::Null => Ok(GroundingOptions::default()),
+        serde_json::Value::String(raw) => Ok(ground_from_string(&raw)),
+        other => GroundingOptions::deserialize(other).map_err(de::Error::custom),
+    }
+}
+
+fn deserialize_budget<'de, D>(deserializer: D) -> Result<ContextBudget, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    match value {
+        serde_json::Value::Null => Ok(ContextBudget::default()),
+        serde_json::Value::String(raw) => Ok(budget_from_string(&raw)),
+        serde_json::Value::Number(number) => {
+            let mut budget = ContextBudget::default();
+            if let Some(max_tokens) = number.as_u64().and_then(|n| usize::try_from(n).ok()) {
+                budget.max_tokens = max_tokens;
+            }
+            Ok(budget)
+        }
+        other => ContextBudget::deserialize(other).map_err(de::Error::custom),
+    }
+}
+
+fn scope_from_string(raw: &str) -> ContextScope {
+    let trimmed = raw.trim();
+    if trimmed.eq_ignore_ascii_case("working_tree") {
+        return ContextScope {
+            change_set: Some("working_tree".to_string()),
+            ..ContextScope::default()
+        };
+    }
+
+    let paths = trimmed
+        .split_whitespace()
+        .map(|token| {
+            token.trim_matches(|ch: char| {
+                !ch.is_ascii_alphanumeric() && !matches!(ch, '_' | '-' | '/' | '.')
+            })
+        })
+        .filter(|token| token.contains('/') || std::path::Path::new(token).extension().is_some())
+        .map(str::to_string)
+        .collect();
+
+    ContextScope {
+        paths,
+        symbols: Vec::new(),
+        change_set: None,
+    }
+}
+
+fn ground_from_string(raw: &str) -> GroundingOptions {
+    let lower = raw.to_ascii_lowercase();
+    let mode = if contains_any(&lower, &["off", "none", "disabled", "disable"]) {
+        GroundingMode::Off
+    } else if contains_any(&lower, &["preferred", "when available", "advisory"]) {
+        GroundingMode::Preferred
+    } else {
+        GroundingMode::Required
+    };
+    GroundingOptions {
+        mode,
+        include_spans: !contains_any(&lower, &["no spans", "without spans"]),
+        allow_overlay: lower.contains("overlay")
+            && !contains_any(&lower, &["no overlay", "without overlay"]),
+    }
+}
+
+fn budget_from_string(raw: &str) -> ContextBudget {
+    let mut budget = ContextBudget::default();
+    let trimmed = raw.trim();
+    if let Ok(max_tokens) = trimmed.parse::<usize>() {
+        budget.max_tokens = max_tokens;
+    } else if !trimmed.is_empty() {
+        budget.tier = Some(trimmed.to_ascii_lowercase());
+    }
+    budget
+}
+
+fn split_hint_string(raw: &str) -> Vec<String> {
+    raw.split([',', ';'])
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+fn contains_any(haystack: &str, needles: &[&str]) -> bool {
+    needles.iter().any(|needle| haystack.contains(needle))
 }

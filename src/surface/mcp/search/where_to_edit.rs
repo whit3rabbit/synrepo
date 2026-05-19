@@ -10,6 +10,7 @@ use super::super::card_set::apply_card_set_cap;
 use super::super::limits::DEFAULT_RESPONSE_TOKEN_CAP;
 use super::SynrepoState;
 
+mod fallback;
 mod recommend;
 
 const MAX_QUERY_ATTEMPTS: usize = 24;
@@ -151,7 +152,7 @@ fn find_candidate_matches(
     }
 
     let mut fallback_used = false;
-    for query in fallback_queries(original) {
+    for query in fallback::fallback_queries(original) {
         if query_attempts.len() >= MAX_QUERY_ATTEMPTS {
             break;
         }
@@ -223,119 +224,6 @@ fn omitted_suggestions(targets: &[String], returned_count: usize) -> Vec<Value> 
         .collect()
 }
 
-fn fallback_queries(task: &str) -> Vec<String> {
-    let tokens = task_tokens(task);
-    let mut queries = Vec::new();
-    let mut seen = HashSet::new();
-
-    for width in 2..=3 {
-        for window in tokens.windows(width) {
-            add_query_variants(&mut queries, &mut seen, window);
-        }
-    }
-
-    for token in &tokens {
-        add_candidate(&mut queries, &mut seen, token.clone());
-        if let Some(singular) = singularize(token) {
-            add_candidate(&mut queries, &mut seen, singular);
-        }
-    }
-
-    queries
-}
-
-fn add_query_variants(queries: &mut Vec<String>, seen: &mut HashSet<String>, window: &[String]) {
-    let snake = window.join("_");
-    if let Some(plural) = pluralize_phrase_tail(&snake) {
-        add_candidate(queries, seen, plural);
-    }
-    add_candidate(queries, seen, snake.clone());
-
-    let phrase = window.join(" ");
-    if let Some(plural) = pluralize_phrase_tail(&phrase) {
-        add_candidate(queries, seen, plural);
-    }
-    add_candidate(queries, seen, phrase.clone());
-}
-
-fn add_candidate(queries: &mut Vec<String>, seen: &mut HashSet<String>, query: String) {
-    if query.len() < 3 {
-        return;
-    }
-    if seen.insert(query.clone()) {
-        queries.push(query);
-    }
-}
-
-fn task_tokens(task: &str) -> Vec<String> {
-    let mut tokens = Vec::new();
-    let mut current = String::new();
-    for ch in task.chars() {
-        if ch.is_ascii_alphanumeric() {
-            current.push(ch.to_ascii_lowercase());
-        } else {
-            push_token(&mut tokens, &mut current);
-        }
-    }
-    push_token(&mut tokens, &mut current);
-    tokens
-}
-
-fn push_token(tokens: &mut Vec<String>, current: &mut String) {
-    if current.is_empty() {
-        return;
-    }
-    let token = std::mem::take(current);
-    if !is_stopword(&token) {
-        tokens.push(singularize(&token).unwrap_or(token));
-    }
-}
-
-fn is_stopword(token: &str) -> bool {
-    matches!(
-        token,
-        "a" | "an"
-            | "and"
-            | "are"
-            | "as"
-            | "at"
-            | "be"
-            | "by"
-            | "for"
-            | "from"
-            | "in"
-            | "into"
-            | "is"
-            | "it"
-            | "of"
-            | "on"
-            | "or"
-            | "our"
-            | "that"
-            | "the"
-            | "this"
-            | "to"
-            | "with"
-    )
-}
-
-fn singularize(token: &str) -> Option<String> {
-    if token.len() > 4 && token.ends_with("ies") {
-        return Some(format!("{}y", &token[..token.len() - 3]));
-    }
-    if token.len() > 3 && token.ends_with('s') && !token.ends_with("ss") {
-        return Some(token[..token.len() - 1].to_string());
-    }
-    None
-}
-
-fn pluralize_phrase_tail(phrase: &str) -> Option<String> {
-    if phrase.ends_with('s') {
-        return None;
-    }
-    Some(format!("{phrase}s"))
-}
-
 fn query_attempts_json(attempts: &[QueryAttempt]) -> Vec<Value> {
     attempts
         .iter()
@@ -356,26 +244,5 @@ fn miss_reason(cards_empty: bool, matched_index_rows: usize) -> Option<&'static 
         Some("no_index_matches")
     } else {
         Some("matches_not_in_graph")
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{fallback_queries, task_tokens};
-
-    #[test]
-    fn fallback_queries_include_snake_case_plural_forms() {
-        let queries = fallback_queries("agent hook routing with context metrics");
-
-        assert!(queries.iter().any(|q| q == "agent_hooks"));
-        assert!(queries.iter().any(|q| q == "context_metrics"));
-    }
-
-    #[test]
-    fn task_tokens_drop_filler_and_singularize() {
-        assert_eq!(
-            task_tokens("extend the hooks with structured signals"),
-            vec!["extend", "hook", "structured", "signal"]
-        );
     }
 }

@@ -55,7 +55,7 @@ For exact symbols, tool names, function names, flags, JSON keys, CLI args, error
 
 - `synrepo_search(query, literal?, limit?, output_mode?, budget_tokens?)`
 
-Use `output_mode: "compact"` for orientation. Search rows and compact file groups may include `root_id`, `is_primary_root`, `file_id`, and root-aware `suggested_card_requests`; use those fields when the same relative path appears in both the primary checkout and a linked worktree. Do not use a full sentence when an exact token or string literal is known. Set `literal: true` for code strings that contain regex metacharacters, for example `Error::Other(anyhow`. If a regex-like query fails to compile, `synrepo_search` retries as a literal and reports `pattern_mode: "literal_fallback"` with a warning. For plain-language edit or investigation tasks, call:
+Use `output_mode: "compact"` for orientation. Search rows and compact file groups may include `root_id`, `is_primary_root`, `file_id`, and root-aware `suggested_card_requests`; use those fields when the same relative path appears in both the primary checkout and a linked worktree. Exact path-shaped queries can return discovered files that are not graph-backed; use `synrepo_card` for a filesystem fallback preview when `file_id` is null. Do not use a full sentence when an exact token or string literal is known. Set `literal: true` for code strings that contain regex metacharacters, for example `Error::Other(anyhow`. If a regex-like query fails to compile, `synrepo_search` retries as a literal and reports `pattern_mode: "literal_fallback"` with a warning. For plain-language edit or investigation tasks, call:
 
 - `synrepo_ask(ask, scope?, shape?, ground?, budget?)`
 - `synrepo_task_route(task, path?)`
@@ -63,6 +63,8 @@ Use `output_mode: "compact"` for orientation. Search rows and compact file group
 - `synrepo_where_to_edit(task, limit?)`
 
 Read `query_attempts`, `fallback_used`, `miss_reason`, `recommended_next_queries`, `recommended_tool`, `suggested_card_targets`, and `output_accounting` when present. If `miss_reason` is `no_index_matches`, do not retry the same broad sentence. Switch to exact lexical probes.
+
+`synrepo_ask` accepts structured objects and compatibility shorthand such as `budget: "normal"`, `ground: "observed graph/source only"`, `shape: "findings; tests"`, and path strings in `scope`. Prefer structured objects when generating calls yourself.
 
 See [`references/search-routing.md`](references/search-routing.md) for examples, fallback rules, and phrase-to-probe mappings.
 
