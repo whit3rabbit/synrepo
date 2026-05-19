@@ -4,6 +4,7 @@
 
 pub mod classify;
 pub mod discover;
+pub mod external_syntext;
 pub mod hybrid;
 pub mod incremental;
 pub mod index;

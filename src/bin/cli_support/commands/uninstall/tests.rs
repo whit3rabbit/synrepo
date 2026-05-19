@@ -74,6 +74,69 @@ fn delete_data_selects_data_and_gitignore_rows() {
 }
 
 #[test]
+fn planner_removes_only_exact_recorded_syntext_gitignore_line() {
+    let (_home, _guard, _lock) = isolated_home();
+    let project = tempdir().unwrap();
+    fs::write(project.path().join(".gitignore"), ".syntext\n").unwrap();
+
+    let untracked = build_uninstall_plan(project.path(), true, true).unwrap();
+    assert!(!untracked
+        .projects
+        .iter()
+        .flat_map(|project| &project.actions)
+        .any(|item| matches!(
+            &item.action,
+            UninstallAction::RemoveProjectGitignoreLine { entry, .. } if entry == ".syntext/"
+        )));
+
+    synrepo::registry::record_syntext_gitignore(project.path(), true).unwrap();
+    let tracked = build_uninstall_plan(project.path(), true, true).unwrap();
+    assert!(!tracked
+        .projects
+        .iter()
+        .flat_map(|project| &project.actions)
+        .any(|item| matches!(
+            &item.action,
+            UninstallAction::RemoveProjectGitignoreLine { entry, .. } if entry == ".syntext/"
+        ) && item.enabled));
+
+    let exact_project = tempdir().unwrap();
+    fs::write(exact_project.path().join(".gitignore"), ".syntext/\n").unwrap();
+    synrepo::registry::record_syntext_gitignore(exact_project.path(), true).unwrap();
+    let exact = build_uninstall_plan(exact_project.path(), true, true).unwrap();
+    assert!(exact
+        .projects
+        .iter()
+        .flat_map(|project| &project.actions)
+        .any(|item| matches!(
+            &item.action,
+            UninstallAction::RemoveProjectGitignoreLine { entry, .. } if entry == ".syntext/"
+        ) && item.enabled));
+}
+
+#[test]
+fn applying_syntext_gitignore_removal_clears_registry_flag() {
+    let (_home, _guard, _lock) = isolated_home();
+    let project = tempdir().unwrap();
+    fs::write(
+        project.path().join(".gitignore"),
+        "target/\n.syntext/\n!.gitkeep\n",
+    )
+    .unwrap();
+    synrepo::registry::record_syntext_gitignore(project.path(), true).unwrap();
+
+    let mut plan = build_uninstall_plan(project.path(), true, true).unwrap();
+    plan.global.clear();
+    apply_uninstall_plan(&plan, false).unwrap();
+
+    let gitignore = fs::read_to_string(project.path().join(".gitignore")).unwrap();
+    assert_eq!(gitignore, "target/\n!.gitkeep\n");
+    assert!(!gitignore.lines().any(|line| line.trim() == ".syntext/"));
+    let entry = synrepo::registry::get(project.path()).unwrap().unwrap();
+    assert!(!entry.syntext_gitignore_entry_added);
+}
+
+#[test]
 fn missing_registry_projects_are_reported_as_skipped() {
     let (_home, _guard, _lock) = isolated_home();
     let current = tempdir().unwrap();

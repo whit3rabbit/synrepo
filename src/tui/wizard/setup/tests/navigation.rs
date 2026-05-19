@@ -6,8 +6,16 @@ use super::support::{press, support_with_saved_anthropic};
 use crate::bootstrap::runtime_probe::{AgentIntegration, AgentTargetKind};
 use crate::config::Mode;
 use crate::tui::wizard::setup::state::{
-    EmbeddingSetupChoice, SetupFlow, SetupStep, SetupWizardState, WIZARD_TARGETS,
+    EmbeddingSetupChoice, ExternalSyntextSetupStatus, SetupActionRow, SetupFlow, SetupStep,
+    SetupWizardState, SETUP_ACTION_ROWS, WIZARD_TARGETS,
 };
+
+fn action_row_index(row: SetupActionRow) -> usize {
+    SETUP_ACTION_ROWS
+        .iter()
+        .position(|candidate| *candidate == row)
+        .expect("action row present")
+}
 
 #[test]
 fn happy_path_default_auto_claude_target() {
@@ -41,6 +49,7 @@ fn happy_path_default_auto_claude_target() {
     assert_eq!(plan.mode, Mode::Auto);
     assert_eq!(plan.target, Some(AgentTargetKind::Claude));
     assert!(plan.add_root_gitignore);
+    assert!(plan.setup_external_syntext);
     assert!(plan.write_agent_shim);
     assert!(plan.register_mcp);
     assert!(!plan.install_agent_hooks);
@@ -76,6 +85,7 @@ fn select_curated_and_skip_target() {
     assert_eq!(plan.mode, Mode::Curated);
     assert_eq!(plan.target, None);
     assert!(plan.add_root_gitignore);
+    assert!(plan.setup_external_syntext);
     assert_eq!(plan.embedding_setup, EmbeddingSetupChoice::Disabled);
 }
 
@@ -90,7 +100,7 @@ fn action_step_toggles_gitignore_and_supported_hooks_only() {
     press(&mut s, KeyCode::Char(' '));
     assert!(!s.add_root_gitignore);
 
-    s.action_cursor = 3;
+    s.action_cursor = action_row_index(SetupActionRow::InstallAgentHooks);
     press(&mut s, KeyCode::Char(' '));
     assert!(s.install_agent_hooks);
 
@@ -122,7 +132,67 @@ fn followup_mode_skips_first_run_steps() {
     press(&mut s, KeyCode::Enter);
     let plan = s.finalize().expect("plan");
     assert_eq!(plan.flow, SetupFlow::FollowUp);
+    assert!(!plan.setup_external_syntext);
     assert!(!plan.reconcile_after);
+}
+
+#[test]
+fn external_syntext_defaults_selected_when_st_is_available_and_setup_is_missing() {
+    let s = SetupWizardState::with_setup_context_and_syntext(
+        Mode::Auto,
+        vec![AgentTargetKind::Codex],
+        AgentIntegration::Absent,
+        SetupFlow::Full,
+        false,
+        ExternalSyntextSetupStatus {
+            st_available: true,
+            index_present: false,
+            gitignore_present: false,
+        },
+        Default::default(),
+    );
+
+    assert!(s.setup_external_syntext);
+    assert!(s.can_setup_external_syntext());
+}
+
+#[test]
+fn external_syntext_action_is_disabled_when_st_is_missing() {
+    let mut s = SetupWizardState::with_setup_context_and_syntext(
+        Mode::Auto,
+        vec![AgentTargetKind::Codex],
+        AgentIntegration::Absent,
+        SetupFlow::Full,
+        false,
+        ExternalSyntextSetupStatus {
+            st_available: false,
+            index_present: false,
+            gitignore_present: false,
+        },
+        Default::default(),
+    );
+    s.step = SetupStep::SelectActions;
+    s.action_cursor = action_row_index(SetupActionRow::SetupExternalSyntext);
+
+    assert!(!s.setup_external_syntext);
+    press(&mut s, KeyCode::Char(' '));
+
+    assert!(!s.setup_external_syntext);
+    assert!(!s.can_setup_external_syntext());
+}
+
+#[test]
+fn toggling_external_syntext_action_updates_final_plan() {
+    let mut s = SetupWizardState::new(Mode::Auto, vec![AgentTargetKind::Codex]);
+    s.step = SetupStep::SelectActions;
+    s.action_cursor = action_row_index(SetupActionRow::SetupExternalSyntext);
+
+    assert!(s.setup_external_syntext);
+    press(&mut s, KeyCode::Char(' '));
+    s.step = SetupStep::Complete;
+
+    let plan = s.finalize().expect("plan");
+    assert!(!plan.setup_external_syntext);
 }
 
 #[test]

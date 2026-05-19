@@ -45,8 +45,8 @@ pub use result::run_result_popup_loop;
 pub use setup::{
     run_embeddings_only_wizard_loop, run_explain_only_wizard_loop, run_setup_wizard_loop,
     CloudCredentialSource, EmbeddingSetupChoice, ExplainChoice, ExplainWizardSupport,
-    SetupActionRow, SetupFlow, SetupPlan, SetupWizardOutcome, SetupWizardState, SETUP_ACTION_ROWS,
-    WIZARD_TARGETS,
+    ExternalSyntextSetupStatus, SetupActionRow, SetupFlow, SetupPlan, SetupWizardOutcome,
+    SetupWizardState, SETUP_ACTION_ROWS, WIZARD_TARGETS,
 };
 pub use uninstall::{
     run_uninstall_wizard_loop, UninstallActionKind, UninstallActionRow, UninstallPlan,

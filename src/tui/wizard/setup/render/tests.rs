@@ -63,6 +63,7 @@ fn first_run_confirm_lists_concrete_mcp_setup_plan() {
 
     assert!(screen.contains("init .synrepo/ in auto mode"));
     assert!(screen.contains("add .synrepo/ to root .gitignore"));
+    assert!(screen.contains("run st index and add .syntext/ to root .gitignore"));
     assert!(screen.contains("write Claude Code skill"));
     assert!(screen.contains("scope: project"));
     assert!(screen.contains("register MCP server for Claude Code"));
@@ -79,6 +80,7 @@ fn actions_step_renders_gitignore_and_hook_toggles() {
     let screen = render_state(&state);
 
     assert!(screen.contains("[x] Add .synrepo/ to root .gitignore"));
+    assert!(screen.contains("[x] Initialize standalone .syntext index with st and ignore it"));
     assert!(screen.contains("[x] Write or update Codex CLI skill"));
     assert!(screen.contains("[x] Register repo-local MCP server for Codex CLI"));
     assert!(screen.contains("[ ] Install local nudge hooks for Codex CLI"));

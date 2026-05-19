@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use synrepo::config::Config;
 use synrepo::registry::{self, ProjectEntry, Registry};
+use synrepo::substrate::external_syntext::EXTERNAL_SYNTEXT_GITIGNORE_ENTRY;
 
 use crate::cli_support::commands::remove::{build_plan as build_remove_plan, RemoveAction};
 
@@ -244,6 +245,17 @@ fn add_data_actions(
     }
 
     if entry
+        .map(|e| e.syntext_gitignore_entry_added)
+        .unwrap_or(false)
+        && gitignore_contains_line(project, EXTERNAL_SYNTEXT_GITIGNORE_ENTRY)
+    {
+        actions.push(enabled(UninstallAction::RemoveProjectGitignoreLine {
+            project: project.to_path_buf(),
+            entry: EXTERNAL_SYNTEXT_GITIGNORE_ENTRY.to_string(),
+        }));
+    }
+
+    if entry
         .map(|e| e.export_gitignore_entry_added)
         .unwrap_or(false)
     {
@@ -340,4 +352,10 @@ fn export_gitignore_entry(project: &Path) -> String {
     Config::load(project)
         .map(|config| format!("{}/", config.export_dir))
         .unwrap_or_else(|_| "synrepo-context/".to_string())
+}
+
+fn gitignore_contains_line(project: &Path, entry: &str) -> bool {
+    std::fs::read_to_string(project.join(".gitignore"))
+        .map(|content| content.lines().any(|line| line.trim() == entry))
+        .unwrap_or(false)
 }

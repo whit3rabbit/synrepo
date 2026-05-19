@@ -16,6 +16,8 @@ use toml::Value;
 
 const TEST_GLOBAL_CONFIG_PATH_ENV: &str = "SYNREPO_TEST_GLOBAL_CONFIG_PATH";
 
+mod external_syntext;
+
 fn local_scope(repo_root: &Path) -> Scope {
     Scope::Local(repo_root.to_path_buf())
 }

@@ -13,8 +13,10 @@ pub(crate) use report::{
     classify_mcp_registration, classify_shim_freshness, entry_after_failure, entry_after_success,
     render_client_setup_summary, ClientBefore, ClientSetupEntry, McpRegistration, ShimFreshness,
 };
+#[cfg(test)]
+pub(crate) use steps::step_setup_external_syntext_with_program;
 pub(crate) use steps::{
     resolve_setup_scope, step_add_root_gitignore, step_apply_integration, step_ensure_ready,
-    step_init, step_init_with_config, step_install_agent_hooks, step_register_mcp, step_write_shim,
-    StepOutcome,
+    step_init, step_init_with_config, step_install_agent_hooks, step_register_mcp,
+    step_setup_external_syntext, step_write_shim, StepOutcome,
 };

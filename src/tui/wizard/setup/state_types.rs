@@ -5,6 +5,7 @@ use super::explain::{
 };
 use crate::bootstrap::runtime_probe::{AgentIntegration, AgentTargetKind};
 use crate::config::Mode;
+use std::path::Path;
 
 /// Embedding setup decision made by the wizard.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -46,6 +47,8 @@ impl SetupFlow {
 pub enum SetupActionRow {
     /// Add `.synrepo/` to the repository root `.gitignore`.
     AddRootGitignore,
+    /// Build and ignore the standalone `.syntext/` index when `st` is installed.
+    SetupExternalSyntext,
     /// Write the agent skill or instructions file.
     WriteAgentShim,
     /// Register the repo-local MCP server for automated targets.
@@ -57,10 +60,53 @@ pub enum SetupActionRow {
 /// Fixed action row order used by state and rendering.
 pub const SETUP_ACTION_ROWS: &[SetupActionRow] = &[
     SetupActionRow::AddRootGitignore,
+    SetupActionRow::SetupExternalSyntext,
     SetupActionRow::WriteAgentShim,
     SetupActionRow::RegisterMcp,
     SetupActionRow::InstallAgentHooks,
 ];
+
+/// Current readiness for optional standalone `.syntext/` setup.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ExternalSyntextSetupStatus {
+    /// Whether the `st` binary appears runnable.
+    pub st_available: bool,
+    /// Whether `.syntext/manifest.json` already exists.
+    pub index_present: bool,
+    /// Whether root `.gitignore` already contains `.syntext/`.
+    pub gitignore_present: bool,
+}
+
+impl Default for ExternalSyntextSetupStatus {
+    fn default() -> Self {
+        Self {
+            st_available: true,
+            index_present: false,
+            gitignore_present: false,
+        }
+    }
+}
+
+impl ExternalSyntextSetupStatus {
+    /// Detect standalone syntext setup state for a repository.
+    pub fn detect(repo_root: &Path) -> Self {
+        Self {
+            st_available: crate::substrate::external_syntext::st_available(),
+            index_present: crate::substrate::external_syntext::external_syntext_index_exists(
+                repo_root,
+            ),
+            gitignore_present: crate::substrate::external_syntext::root_gitignore_contains_syntext(
+                repo_root,
+            )
+            .unwrap_or(false),
+        }
+    }
+
+    /// Whether setup has any work to do.
+    pub fn needs_setup(self) -> bool {
+        !self.index_present || !self.gitignore_present
+    }
+}
 
 /// Plan produced by a completed setup wizard. Executed by the bin-side
 /// dispatcher after the TUI alternate-screen has been torn down.
@@ -74,6 +120,8 @@ pub struct SetupPlan {
     pub target: Option<AgentTargetKind>,
     /// Add `.synrepo/` to the repository root `.gitignore`.
     pub add_root_gitignore: bool,
+    /// Build `.syntext/` with `st index` and add `.syntext/` to root `.gitignore`.
+    pub setup_external_syntext: bool,
     /// Write or preserve the selected agent skill/instructions.
     pub write_agent_shim: bool,
     /// Register a repo-local MCP server for the selected agent.
@@ -203,8 +251,12 @@ pub struct SetupWizardState {
     pub current_integration: AgentIntegration,
     /// Whether the root `.gitignore` already contains `.synrepo/`.
     pub root_gitignore_present: bool,
+    /// Current standalone `.syntext/` setup state.
+    pub external_syntext_status: ExternalSyntextSetupStatus,
     /// Committed gitignore action.
     pub add_root_gitignore: bool,
+    /// Committed action: build and ignore standalone `.syntext/`.
+    pub setup_external_syntext: bool,
     /// Committed action: write/preserve the selected agent shim.
     pub write_agent_shim: bool,
     /// Committed action: register repo-local MCP for selected target.

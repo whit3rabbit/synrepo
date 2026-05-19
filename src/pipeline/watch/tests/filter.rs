@@ -57,6 +57,32 @@ fn filter_repo_events_ignores_generated_export_bursts() {
 }
 
 #[test]
+fn filter_repo_events_ignores_syntext_only_bursts() {
+    let (_dir, repo, _config, synrepo_dir) = setup_test_repo();
+    let syntext_dir = repo.join(".syntext");
+    fs::create_dir_all(&syntext_dir).unwrap();
+    fs::write(syntext_dir.join("manifest.json"), "{}").unwrap();
+    let runtime_event = debounced_event(
+        Event::new(EventKind::Modify(ModifyKind::Any))
+            .add_path(syntext_dir.join("manifest.json"))
+            .add_path(syntext_dir.join("segment.post")),
+    );
+    let source_event = debounced_event(
+        Event::new(EventKind::Modify(ModifyKind::Any)).add_path(repo.join("src/lib.rs")),
+    );
+
+    let filtered = super::super::filter::filter_repo_events(
+        vec![runtime_event, source_event],
+        std::slice::from_ref(&repo),
+        &repo,
+        &synrepo_dir,
+        &[],
+    );
+    assert_eq!(filtered.len(), 1);
+    assert_eq!(filtered[0].paths[0], repo.join("src/lib.rs"));
+}
+
+#[test]
 fn filter_repo_events_ignores_repo_relative_runtime_paths() {
     let (_dir, repo, _config, synrepo_dir) = setup_test_repo();
     fs::write(synrepo_dir.join("state/noise.txt"), "noise").unwrap();
@@ -64,6 +90,30 @@ fn filter_repo_events_ignores_repo_relative_runtime_paths() {
         Event::new(EventKind::Modify(ModifyKind::Any))
             .add_path(PathBuf::from(".synrepo/state/noise.txt"))
             .add_path(PathBuf::from("state/noise.txt")),
+    );
+    let source_event = debounced_event(
+        Event::new(EventKind::Modify(ModifyKind::Any)).add_path(PathBuf::from("src/lib.rs")),
+    );
+
+    let filtered = super::super::filter::filter_repo_events(
+        vec![runtime_event, source_event],
+        std::slice::from_ref(&repo),
+        &repo,
+        &synrepo_dir,
+        &[],
+    );
+    assert_eq!(filtered.len(), 1);
+    assert_eq!(filtered[0].paths[0], PathBuf::from("src/lib.rs"));
+}
+
+#[test]
+fn filter_repo_events_ignores_repo_relative_syntext_paths() {
+    let (_dir, repo, _config, synrepo_dir) = setup_test_repo();
+    fs::create_dir_all(repo.join(".syntext")).unwrap();
+    fs::write(repo.join(".syntext/manifest.json"), "{}").unwrap();
+    let runtime_event = debounced_event(
+        Event::new(EventKind::Modify(ModifyKind::Any))
+            .add_path(PathBuf::from(".syntext/manifest.json")),
     );
     let source_event = debounced_event(
         Event::new(EventKind::Modify(ModifyKind::Any)).add_path(PathBuf::from("src/lib.rs")),

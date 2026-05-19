@@ -2,6 +2,7 @@ use std::collections::BTreeSet;
 use std::path::Path;
 
 use synrepo::registry;
+use synrepo::substrate::external_syntext::EXTERNAL_SYNTEXT_GITIGNORE_ENTRY;
 
 use crate::cli_support::agent_shims::AgentTool;
 
@@ -17,6 +18,7 @@ pub(super) fn record_registry_progress(
     let mut removed_hooks = BTreeSet::new();
     let mut removed_agent_hooks = BTreeSet::new();
     let mut root_gitignore_removed = false;
+    let mut syntext_gitignore_removed = false;
     let mut export_gitignore_removed = false;
     let mut synrepo_deleted = false;
 
@@ -38,6 +40,8 @@ pub(super) fn record_registry_progress(
             RemoveAction::RemoveGitignoreLine { entry } if item.succeeded => {
                 if entry == ".synrepo/" {
                     root_gitignore_removed = true;
+                } else if entry == EXTERNAL_SYNTEXT_GITIGNORE_ENTRY {
+                    syntext_gitignore_removed = true;
                 } else {
                     export_gitignore_removed = true;
                 }
@@ -63,12 +67,15 @@ pub(super) fn record_registry_progress(
     let removed_agent_hooks = removed_agent_hooks.into_iter().collect::<Vec<_>>();
     if let Err(err) = registry::record_uninstall_progress(
         repo_root,
-        &removed_agents,
-        &removed_hooks,
-        &removed_agent_hooks,
-        root_gitignore_removed,
-        export_gitignore_removed,
-        synrepo_deleted,
+        registry::UninstallProgress {
+            agent_tools: &removed_agents,
+            hook_names: &removed_hooks,
+            agent_hook_tools: &removed_agent_hooks,
+            root_gitignore_removed,
+            syntext_gitignore_removed,
+            export_gitignore_removed,
+            project_data_deleted: synrepo_deleted,
+        },
     ) {
         tracing::warn!(error = %err, "registry update skipped after remove progress");
     }

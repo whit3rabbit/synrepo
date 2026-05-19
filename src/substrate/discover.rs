@@ -89,12 +89,10 @@ fn walk_root(
     walker.require_git(false);
     walker.follow_links(false);
     walker.add_custom_ignore_filename(".synignore");
-    // Never descend into synrepo's own runtime state. Always-on, independent of
-    // `.synrepo/.gitignore` being present. Beyond closing the feedback loop
-    // (indexing our own graph output), this also avoids reading SQLite's WAL
-    // sidecar files (nodes.db-shm / -wal) which hold mandatory byte-range
-    // locks on Windows and would trip ERROR_LOCK_VIOLATION during sniffing.
-    walker.filter_entry(|entry| entry.file_name() != ".synrepo");
+    // Never descend into generated runtime indexes. Always-on, independent of
+    // local ignore files. This closes feedback loops and avoids reading index
+    // sidecars that may be locked by writer processes.
+    walker.filter_entry(|entry| entry.file_name() != ".synrepo" && entry.file_name() != ".syntext");
 
     for result in walker.build() {
         let entry = match result {
@@ -291,13 +289,9 @@ mod tests {
     }
 
     #[test]
-    fn discover_never_walks_into_synrepo_runtime_state() {
+    fn discover_never_walks_into_generated_runtime_state() {
         // Regression guard: substrate::discover must never descend into
-        // `.synrepo/`, independent of whether `.synrepo/.gitignore` exists.
-        // On Windows, SQLite's WAL sidecar files (`nodes.db-shm`, `nodes.db-wal`)
-        // hold mandatory byte-range locks; a sniffer read into those bytes
-        // returns ERROR_LOCK_VIOLATION (os error 33), which surfaced as every
-        // Windows-only reconcile test failure before this filter landed.
+        // generated runtime indexes, independent of local ignore files.
         let repo = tempdir().unwrap();
         fs::create_dir_all(repo.path().join("src")).unwrap();
         fs::write(repo.path().join("src/lib.rs"), "pub fn real_code() {}\n").unwrap();
@@ -315,6 +309,13 @@ mod tests {
             "mode = \"auto\"\n",
         )
         .unwrap();
+        fs::create_dir_all(repo.path().join(".syntext")).unwrap();
+        fs::write(repo.path().join(".syntext/manifest.json"), "{}").unwrap();
+        fs::write(
+            repo.path().join(".syntext/segment.post"),
+            "pub fn external_index_noise() {}\n",
+        )
+        .unwrap();
 
         let discovered = discover(repo.path(), &Config::default()).unwrap();
         let paths: Vec<_> = discovered
@@ -324,6 +325,10 @@ mod tests {
         assert!(
             paths.iter().all(|p| !p.starts_with(".synrepo")),
             "discover must skip .synrepo/ unconditionally, got: {paths:?}"
+        );
+        assert!(
+            paths.iter().all(|p| !p.starts_with(".syntext")),
+            "discover must skip .syntext/ unconditionally, got: {paths:?}"
         );
         assert!(
             paths.contains(&"src/lib.rs"),

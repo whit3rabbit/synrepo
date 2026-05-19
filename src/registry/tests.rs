@@ -8,6 +8,9 @@ use tempfile::tempdir;
 
 use super::{io, AgentEntry, AgentHookEntry, HookEntry, ProjectEntry, Registry, SCHEMA_VERSION};
 
+mod io_basics;
+mod syntext;
+
 fn sample_project(path: &Path) -> ProjectEntry {
     ProjectEntry {
         id: String::new(),
@@ -17,6 +20,7 @@ fn sample_project(path: &Path) -> ProjectEntry {
         initialized_at: "2026-04-19T00:00:00Z".to_string(),
         synrepo_dir: ".synrepo".to_string(),
         root_gitignore_entry_added: true,
+        syntext_gitignore_entry_added: false,
         export_gitignore_entry_added: false,
         export_gitignore_entry: None,
         agents: vec![AgentEntry {
@@ -30,14 +34,6 @@ fn sample_project(path: &Path) -> ProjectEntry {
         hooks: Vec::new(),
         agent_hooks: Vec::new(),
     }
-}
-
-#[test]
-fn load_from_missing_file_returns_empty_registry() {
-    let dir = tempdir().unwrap();
-    let path = dir.path().join("projects.toml");
-    let registry = io::load_from(&path).unwrap();
-    assert!(registry.projects.is_empty());
 }
 
 #[test]
@@ -64,6 +60,7 @@ fn save_then_load_round_trips() {
     let p = &reloaded.projects[0];
     assert_eq!(p.path, PathBuf::from(dir.path()));
     assert!(p.root_gitignore_entry_added);
+    assert!(!p.syntext_gitignore_entry_added);
     assert_eq!(p.agents.len(), 1);
     assert_eq!(p.agents[0].tool, "claude");
     assert_eq!(
@@ -131,6 +128,7 @@ fn agent_entry_omits_optional_fields_when_none() {
         initialized_at: "2026-04-19T00:00:00Z".to_string(),
         synrepo_dir: ".synrepo".to_string(),
         root_gitignore_entry_added: false,
+        syntext_gitignore_entry_added: false,
         export_gitignore_entry_added: false,
         export_gitignore_entry: None,
         agents: vec![AgentEntry {
@@ -248,6 +246,7 @@ fn load_project_entry_with_missing_defaulted_fields() {
         super::default_project_name(dir.path())
     );
     assert!(!project.root_gitignore_entry_added);
+    assert!(!project.syntext_gitignore_entry_added);
     assert!(project.export_gitignore_entry.is_none());
     assert!(project.agents.is_empty());
     assert!(project.agent_hooks.is_empty());

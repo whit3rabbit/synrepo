@@ -44,6 +44,7 @@ pub(super) fn draw_actions_step(
 fn action_checked(state: &SetupWizardState, row: SetupActionRow) -> bool {
     match row {
         SetupActionRow::AddRootGitignore => state.add_root_gitignore,
+        SetupActionRow::SetupExternalSyntext => state.setup_external_syntext,
         SetupActionRow::WriteAgentShim => state.write_agent_shim,
         SetupActionRow::RegisterMcp => state.register_mcp,
         SetupActionRow::InstallAgentHooks => state.install_agent_hooks,
@@ -53,6 +54,7 @@ fn action_checked(state: &SetupWizardState, row: SetupActionRow) -> bool {
 fn action_enabled(state: &SetupWizardState, row: SetupActionRow) -> bool {
     match row {
         SetupActionRow::AddRootGitignore => true,
+        SetupActionRow::SetupExternalSyntext => state.can_setup_external_syntext(),
         SetupActionRow::WriteAgentShim => state.target.is_some(),
         SetupActionRow::RegisterMcp => state.target_can_register_mcp(),
         SetupActionRow::InstallAgentHooks => state.target_supports_hooks(),
@@ -66,6 +68,23 @@ fn action_label(state: &SetupWizardState, row: SetupActionRow) -> String {
                 "Root .gitignore already contains .synrepo/".to_string()
             } else {
                 "Add .synrepo/ to root .gitignore".to_string()
+            }
+        }
+        SetupActionRow::SetupExternalSyntext => {
+            if state.flow != super::super::SetupFlow::Full {
+                "Standalone .syntext setup is only offered during first-run setup".to_string()
+            } else if !state.external_syntext_status.st_available {
+                "Install st to enable standalone .syntext indexing".to_string()
+            } else if state.external_syntext_status.index_present
+                && state.external_syntext_status.gitignore_present
+            {
+                "Standalone .syntext index is already initialized and ignored".to_string()
+            } else if state.external_syntext_status.index_present {
+                "Add existing .syntext/ to root .gitignore".to_string()
+            } else if state.external_syntext_status.gitignore_present {
+                "Initialize standalone .syntext index with st".to_string()
+            } else {
+                "Initialize standalone .syntext index with st and ignore it".to_string()
             }
         }
         SetupActionRow::WriteAgentShim => match state.target {

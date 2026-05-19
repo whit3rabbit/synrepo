@@ -6,6 +6,7 @@ use std::path::Path;
 use anyhow::Context;
 use serde::Serialize;
 use synrepo::pipeline::watch::{watch_service_status, WatchServiceStatus};
+use synrepo::substrate::external_syntext::EXTERNAL_SYNTEXT_GITIGNORE_ENTRY;
 
 use crate::cli_support::commands::remove::hook_artifacts::{remove_agent_hook, remove_git_hook};
 use crate::cli_support::commands::remove::{apply_plan, RemoveAction, RemovePlan};
@@ -36,6 +37,7 @@ struct ProjectProgress {
     removed_hooks: BTreeSet<String>,
     removed_agent_hooks: BTreeSet<String>,
     root_gitignore_removed: bool,
+    syntext_gitignore_removed: bool,
     export_gitignore_removed: bool,
 }
 
@@ -107,7 +109,9 @@ fn apply_project(
                 );
             }
             UninstallAction::RemoveProjectGitignoreLine { entry, .. }
-                if entry != ".synrepo/" && !export_deleted =>
+                if entry != ".synrepo/"
+                    && entry != EXTERNAL_SYNTEXT_GITIGNORE_ENTRY
+                    && !export_deleted =>
             {
                 push_failure(
                     summary,
@@ -137,6 +141,7 @@ fn apply_project(
             removed_hooks,
             removed_agent_hooks,
             root_gitignore_removed,
+            syntext_gitignore_removed,
             export_gitignore_removed,
         } = progress;
         let removed_agents = agent_candidates
@@ -148,12 +153,15 @@ fn apply_project(
         let removed_agent_hooks = removed_agent_hooks.into_iter().collect::<Vec<_>>();
         if let Err(err) = synrepo::registry::record_uninstall_progress(
             &project.path,
-            &removed_agents,
-            &removed_hooks,
-            &removed_agent_hooks,
-            root_gitignore_removed,
-            export_gitignore_removed,
-            synrepo_deleted,
+            synrepo::registry::UninstallProgress {
+                agent_tools: &removed_agents,
+                hook_names: &removed_hooks,
+                agent_hook_tools: &removed_agent_hooks,
+                root_gitignore_removed,
+                syntext_gitignore_removed,
+                export_gitignore_removed,
+                project_data_deleted: synrepo_deleted,
+            },
         ) {
             tracing::warn!(error = %err, "registry update skipped after uninstall progress");
         }
@@ -198,6 +206,8 @@ fn record_progress_candidate(
         UninstallAction::RemoveProjectGitignoreLine { entry, .. } if succeeded => {
             if entry == ".synrepo/" {
                 progress.root_gitignore_removed = true;
+            } else if entry == EXTERNAL_SYNTEXT_GITIGNORE_ENTRY {
+                progress.syntext_gitignore_removed = true;
             } else {
                 progress.export_gitignore_removed = true;
             }

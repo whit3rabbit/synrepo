@@ -9,9 +9,9 @@ use crate::tui::widgets::LogEntry;
 
 pub use self::wizard::{
     CloudCredentialSource, EmbeddingSetupChoice, ExplainChoice, ExplainWizardSupport,
-    IntegrationPlan, IntegrationWizardOutcome, McpInstallPlan, McpInstallWizardOutcome, RepairPlan,
-    RepairWizardOutcome, SetupFlow, SetupPlan, SetupWizardOutcome, UninstallActionKind,
-    UninstallPlan, UninstallWizardOutcome,
+    ExternalSyntextSetupStatus, IntegrationPlan, IntegrationWizardOutcome, McpInstallPlan,
+    McpInstallWizardOutcome, RepairPlan, RepairWizardOutcome, SetupFlow, SetupPlan,
+    SetupWizardOutcome, UninstallActionKind, UninstallPlan, UninstallWizardOutcome,
 };
 
 pub mod actions;
@@ -192,6 +192,7 @@ pub fn run_setup_wizard(repo_root: &Path, opts: TuiOptions) -> anyhow::Result<Se
     let probe_report = probe(repo_root);
     let default_mode = setup_flow::default_mode(repo_root);
     let selection = setup_flow::select_setup_flow(repo_root, &probe_report);
+    let external_syntext_status = wizard::setup::ExternalSyntextSetupStatus::detect(repo_root);
     wizard::run_setup_wizard_loop(
         theme,
         default_mode,
@@ -199,6 +200,7 @@ pub fn run_setup_wizard(repo_root: &Path, opts: TuiOptions) -> anyhow::Result<Se
         probe_report.agent_integration,
         selection.flow,
         selection.root_gitignore_present,
+        external_syntext_status,
     )
 }
 

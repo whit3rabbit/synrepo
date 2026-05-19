@@ -30,6 +30,7 @@ pub(super) fn draw_confirm_step(
         step_no += 1;
     }
     push_gitignore_step(&mut lines, state, theme, &mut step_no);
+    push_external_syntext_step(&mut lines, state, theme, &mut step_no);
     push_agent_steps(&mut lines, state, theme, &mut step_no);
     if state.flow == SetupFlow::Full {
         push_embedding_step(&mut lines, state, theme, step_no);
@@ -73,6 +74,31 @@ fn push_gitignore_step(
     } else {
         lines.push(Line::from(Span::styled(
             "     root .gitignore unchanged",
+            theme.muted_style(),
+        )));
+    }
+}
+
+fn push_external_syntext_step(
+    lines: &mut Vec<Line>,
+    state: &SetupWizardState,
+    theme: &Theme,
+    step_no: &mut usize,
+) {
+    if state.setup_external_syntext {
+        let detail = if state.external_syntext_status.index_present {
+            "add .syntext/ to root .gitignore"
+        } else {
+            "run st index and add .syntext/ to root .gitignore"
+        };
+        lines.push(Line::from(Span::styled(
+            format!("  {step_no}. {detail}"),
+            theme.base_style(),
+        )));
+        *step_no += 1;
+    } else if state.flow == SetupFlow::Full && state.external_syntext_status.st_available {
+        lines.push(Line::from(Span::styled(
+            "     standalone .syntext setup skipped",
             theme.muted_style(),
         )));
     }

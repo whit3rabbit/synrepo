@@ -56,6 +56,9 @@ impl SetupWizardState {
     fn toggle_action_at_cursor(&mut self) {
         match SETUP_ACTION_ROWS[self.action_cursor] {
             SetupActionRow::AddRootGitignore => self.add_root_gitignore = !self.add_root_gitignore,
+            SetupActionRow::SetupExternalSyntext if self.can_setup_external_syntext() => {
+                self.setup_external_syntext = !self.setup_external_syntext
+            }
             SetupActionRow::WriteAgentShim if self.target.is_some() => {
                 self.write_agent_shim = !self.write_agent_shim
             }
@@ -66,6 +69,7 @@ impl SetupWizardState {
                 self.install_agent_hooks = !self.install_agent_hooks
             }
             SetupActionRow::WriteAgentShim
+            | SetupActionRow::SetupExternalSyntext
             | SetupActionRow::RegisterMcp
             | SetupActionRow::InstallAgentHooks => {}
         }
@@ -81,5 +85,11 @@ impl SetupWizardState {
     pub(crate) fn target_can_register_mcp(&self) -> bool {
         self.target
             .is_some_and(|target| target_tier(target) == AgentTargetTier::Automated)
+    }
+
+    pub(crate) fn can_setup_external_syntext(&self) -> bool {
+        self.flow == SetupFlow::Full
+            && self.external_syntext_status.st_available
+            && self.external_syntext_status.needs_setup()
     }
 }

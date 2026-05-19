@@ -8,7 +8,8 @@ use super::agent_shims::{registry as shim_registry, AgentTool, AutomationTier};
 use super::apply_report::{ApplyReport, ApplyReportError};
 use super::commands::{
     step_add_root_gitignore, step_apply_explain, step_backup_mcp_config, step_ensure_ready,
-    step_init_with_config, step_install_agent_hooks, step_register_mcp, step_write_shim,
+    step_init_with_config, step_install_agent_hooks, step_register_mcp,
+    step_setup_external_syntext, step_write_shim,
 };
 use super::explain_cmd::print_explain_discovery_hint;
 
@@ -32,6 +33,11 @@ pub(crate) fn execute_setup_plan(
         report.record_step("Root gitignore", || step_add_root_gitignore(repo_root))?;
     } else {
         report.add_line("Root gitignore: unchanged");
+    }
+    if plan.setup_external_syntext {
+        report.record_step("Syntext index", || step_setup_external_syntext(repo_root))?;
+    } else {
+        report.add_line("Syntext index: skipped");
     }
     apply_setup_integration(repo_root, &plan, &mut report)?;
     if plan.flow == SetupFlow::Full {

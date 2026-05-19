@@ -25,6 +25,8 @@ pub(crate) fn filter_repo_events(
     ignored_dirs: &[PathBuf],
 ) -> Vec<DebouncedEvent> {
     let canonical_synrepo_dir = canonicalize_lossy(synrepo_dir);
+    let syntext_dir = repo_root.join(".syntext");
+    let canonical_syntext_dir = canonicalize_lossy(&syntext_dir);
     let canonical_ignored_dirs: Vec<PathBuf> = ignored_dirs
         .iter()
         .filter_map(|dir| canonicalize_lossy(dir))
@@ -35,6 +37,7 @@ pub(crate) fn filter_repo_events(
             if event.paths.iter().all(|path| {
                 let path = repo_normalized_path(path, repo_root, synrepo_dir);
                 path_matches_runtime(&path, synrepo_dir, canonical_synrepo_dir.as_deref())
+                    || path_matches_runtime(&path, &syntext_dir, canonical_syntext_dir.as_deref())
                     || path_matches_ignored_dir(&path, ignored_dirs, &canonical_ignored_dirs)
             }) {
                 return false;
@@ -62,7 +65,10 @@ pub(crate) fn collect_repo_paths(
             if !path_starts_with_any_root(&path, repo_roots) {
                 continue;
             }
-            if path.starts_with(synrepo_dir) || path_starts_with_any_git_dir(&path, repo_roots) {
+            if path.starts_with(synrepo_dir)
+                || path_starts_with_external_syntext_dir(&path, repo_roots)
+                || path_starts_with_any_git_dir(&path, repo_roots)
+            {
                 continue;
             }
             if ignored_dirs.iter().any(|dir| path.starts_with(dir)) {
@@ -87,7 +93,10 @@ fn is_collectable_repo_path(
     if !path_starts_with_any_root(path, repo_roots) {
         return false;
     }
-    if path.starts_with(synrepo_dir) || path_starts_with_any_git_dir(path, repo_roots) {
+    if path.starts_with(synrepo_dir)
+        || path_starts_with_external_syntext_dir(path, repo_roots)
+        || path_starts_with_any_git_dir(path, repo_roots)
+    {
         return false;
     }
     if ignored_dirs.iter().any(|dir| path.starts_with(dir)) {
@@ -104,6 +113,12 @@ fn path_starts_with_any_git_dir(path: &Path, repo_roots: &[PathBuf]) -> bool {
     repo_roots
         .iter()
         .any(|root| path.starts_with(root.join(".git")))
+}
+
+fn path_starts_with_external_syntext_dir(path: &Path, repo_roots: &[PathBuf]) -> bool {
+    repo_roots
+        .iter()
+        .any(|root| path.starts_with(root.join(".syntext")))
 }
 
 fn is_collectable_existing_or_missing_path(path: &Path, kind: &EventKind) -> bool {

@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use agent_config::{InstallStatus, Scope};
 use synrepo::config::Config;
 use synrepo::registry::{self, AgentEntry, ProjectEntry};
+use synrepo::substrate::external_syntext::EXTERNAL_SYNTEXT_GITIGNORE_ENTRY;
 
 use crate::cli_support::agent_shims::AgentTool;
 use crate::cli_support::commands::mcp_config_has_synrepo;
@@ -116,6 +117,16 @@ pub(crate) fn build_plan(
             {
                 plan.actions.push(RemoveAction::RemoveGitignoreLine {
                     entry: ".synrepo/".to_string(),
+                });
+            }
+            if project
+                .as_ref()
+                .map(|p| p.syntext_gitignore_entry_added)
+                .unwrap_or(false)
+                && gitignore_contains_line(repo_root, EXTERNAL_SYNTEXT_GITIGNORE_ENTRY)
+            {
+                plan.actions.push(RemoveAction::RemoveGitignoreLine {
+                    entry: EXTERNAL_SYNTEXT_GITIGNORE_ENTRY.to_string(),
                 });
             }
             let export_gitignore_entry = project

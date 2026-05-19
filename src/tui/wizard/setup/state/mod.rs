@@ -5,8 +5,8 @@ use crossterm::event::{KeyCode, KeyModifiers};
 
 use super::explain::{ExplainWizardSupport, TextInputField, LOCAL_PRESETS};
 pub use super::state_types::{
-    EmbeddingSetupChoice, SetupActionRow, SetupFlow, SetupPlan, SetupStep, SetupWizardOutcome,
-    SetupWizardState, SETUP_ACTION_ROWS, WIZARD_TARGETS,
+    EmbeddingSetupChoice, ExternalSyntextSetupStatus, SetupActionRow, SetupFlow, SetupPlan,
+    SetupStep, SetupWizardOutcome, SetupWizardState, SETUP_ACTION_ROWS, WIZARD_TARGETS,
 };
 use crate::bootstrap::runtime_probe::{AgentIntegration, AgentTargetKind};
 use crate::config::Mode;
@@ -59,6 +59,28 @@ impl SetupWizardState {
         root_gitignore_present: bool,
         explain_support: ExplainWizardSupport,
     ) -> Self {
+        Self::with_setup_context_and_syntext(
+            default_mode,
+            detected_targets,
+            current_integration,
+            flow,
+            root_gitignore_present,
+            ExternalSyntextSetupStatus::default(),
+            explain_support,
+        )
+    }
+
+    /// Build a state with caller-provided setup context and observed external
+    /// syntext status.
+    pub fn with_setup_context_and_syntext(
+        default_mode: Mode,
+        detected_targets: Vec<AgentTargetKind>,
+        current_integration: AgentIntegration,
+        flow: SetupFlow,
+        root_gitignore_present: bool,
+        external_syntext_status: ExternalSyntextSetupStatus,
+        explain_support: ExplainWizardSupport,
+    ) -> Self {
         let mode_cursor = match default_mode {
             Mode::Auto => 0,
             Mode::Curated => 1,
@@ -96,7 +118,11 @@ impl SetupWizardState {
             flow,
             current_integration,
             root_gitignore_present,
+            external_syntext_status,
             add_root_gitignore: !root_gitignore_present,
+            setup_external_syntext: flow == SetupFlow::Full
+                && external_syntext_status.st_available
+                && external_syntext_status.needs_setup(),
             write_agent_shim,
             register_mcp,
             install_agent_hooks: false,
@@ -120,6 +146,7 @@ impl SetupWizardState {
     pub fn explain_only() -> Self {
         let mut s = Self::with_explain_support(Mode::Auto, vec![], ExplainWizardSupport::default());
         s.step = SetupStep::SelectExplain;
+        s.setup_external_syntext = false;
         s
     }
 
@@ -128,6 +155,7 @@ impl SetupWizardState {
     pub fn explain_only_with_support(explain_support: ExplainWizardSupport) -> Self {
         let mut s = Self::with_explain_support(Mode::Auto, vec![], explain_support);
         s.step = SetupStep::SelectExplain;
+        s.setup_external_syntext = false;
         s
     }
 
@@ -138,6 +166,7 @@ impl SetupWizardState {
         s.step = SetupStep::SelectEmbeddings;
         s.embeddings_only = true;
         s.add_root_gitignore = false;
+        s.setup_external_syntext = false;
         s.write_agent_shim = false;
         s.register_mcp = false;
         s
@@ -188,6 +217,7 @@ impl SetupWizardState {
             mode: self.mode,
             target: self.target,
             add_root_gitignore: self.add_root_gitignore,
+            setup_external_syntext: self.setup_external_syntext,
             write_agent_shim: self.write_agent_shim,
             register_mcp: self.register_mcp,
             install_agent_hooks: self.install_agent_hooks,

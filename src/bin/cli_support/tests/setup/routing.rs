@@ -27,6 +27,7 @@ fn full_setup_plan() -> SetupPlan {
         mode: Mode::Auto,
         target: None,
         add_root_gitignore: true,
+        setup_external_syntext: false,
         write_agent_shim: false,
         register_mcp: false,
         install_agent_hooks: false,

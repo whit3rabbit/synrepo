@@ -17,8 +17,9 @@ pub mod io;
 mod project_meta;
 
 pub use install_records::{
-    record_agent_hooks, record_binary, record_binary_uninstall, record_hooks,
-    record_hooks_uninstall, record_uninstall_progress,
+    record_agent_hooks, record_agent_uninstall, record_binary, record_binary_uninstall,
+    record_hooks, record_hooks_uninstall, record_syntext_gitignore, record_uninstall,
+    record_uninstall_progress, UninstallProgress,
 };
 pub use project_meta::{
     default_project_name, derive_project_id, mark_project_opened, rename_project, resolve_project,
@@ -74,6 +75,11 @@ pub struct ProjectEntry {
     /// is never touched.
     #[serde(default)]
     pub root_gitignore_entry_added: bool,
+    /// True iff synrepo appended `.syntext/` to the project's root .gitignore.
+    /// The external index itself is user/tool data and is never deleted by
+    /// uninstall.
+    #[serde(default)]
+    pub syntext_gitignore_entry_added: bool,
     /// True iff `synrepo export` appended `synrepo-context/` to the root
     /// .gitignore. Same removal rule as above.
     #[serde(default)]
@@ -312,32 +318,6 @@ pub fn record_export_gitignore(project: &Path, entry_line: &str) -> anyhow::Resu
         io::save_to(&path, &registry)?;
     }
     Ok(())
-}
-
-/// Drop a single agent's record from a project entry.
-pub fn record_agent_uninstall(project: &Path, tool: &str) -> anyhow::Result<()> {
-    let Some(path) = registry_path() else {
-        return Ok(());
-    };
-    let mut registry = io::load_from(&path)?;
-    let canonical = canonicalize(project);
-    if let Some(entry) = find_project_mut(&mut registry, &canonical) {
-        ensure_project_identity(entry);
-        entry.agents.retain(|a| a.tool != tool);
-        io::save_to(&path, &registry)?;
-    }
-    Ok(())
-}
-
-/// Drop a project entry entirely (`synrepo remove` bulk path).
-pub fn record_uninstall(project: &Path) -> anyhow::Result<()> {
-    let Some(path) = registry_path() else {
-        return Ok(());
-    };
-    let mut registry = io::load_from(&path)?;
-    let canonical = canonicalize(project);
-    registry.projects.retain(|p| p.path != canonical);
-    io::save_to(&path, &registry)
 }
 
 /// Remove a managed project entry without touching repository-local files.

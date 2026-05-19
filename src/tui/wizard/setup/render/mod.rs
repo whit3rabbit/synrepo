@@ -12,7 +12,9 @@ mod explain;
 mod tests;
 
 use super::explain::ExplainWizardSupport;
-use super::state::{SetupFlow, SetupStep, SetupWizardState, WIZARD_TARGETS};
+use super::state::{
+    ExternalSyntextSetupStatus, SetupFlow, SetupStep, SetupWizardState, WIZARD_TARGETS,
+};
 use crate::bootstrap::runtime_probe::{AgentIntegration, AgentTargetKind};
 use crate::tui::app::poll_key;
 use crate::tui::theme::Theme;
@@ -26,14 +28,16 @@ pub fn run_setup_wizard_loop(
     current_integration: AgentIntegration,
     flow: SetupFlow,
     root_gitignore_present: bool,
+    external_syntext_status: ExternalSyntextSetupStatus,
 ) -> anyhow::Result<super::SetupWizardOutcome> {
     let mut terminal = enter_tui()?;
-    let mut state = SetupWizardState::with_setup_context(
+    let mut state = SetupWizardState::with_setup_context_and_syntext(
         default_mode,
         detected_targets,
         current_integration,
         flow,
         root_gitignore_present,
+        external_syntext_status,
         ExplainWizardSupport::detect(),
     );
     let result = render_loop(&mut terminal, &mut state, &theme);

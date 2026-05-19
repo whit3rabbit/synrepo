@@ -73,7 +73,7 @@ pub fn remove_from_root_gitignore(repo_root: &Path, entry: &str) -> anyhow::Resu
     if had_trailing_newline && !new_content.is_empty() {
         new_content.push('\n');
     }
-    std::fs::write(&gitignore_path, new_content)?;
+    atomic_write(&gitignore_path, new_content.as_bytes())?;
     Ok(true)
 }
 

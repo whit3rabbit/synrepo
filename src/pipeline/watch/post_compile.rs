@@ -39,7 +39,20 @@ pub(crate) fn finish_runtime_surfaces(
 
     prune_overlay_orphans(synrepo_dir, graph);
     sync_commentary_surfaces(synrepo_dir, graph)?;
+    maybe_sync_external_syntext_index(repo_root);
     Ok(())
+}
+
+fn maybe_sync_external_syntext_index(repo_root: &Path) {
+    match crate::substrate::external_syntext::sync_external_syntext_index(repo_root) {
+        Ok(crate::substrate::external_syntext::ExternalSyntextSync::Skipped) => {}
+        Ok(crate::substrate::external_syntext::ExternalSyntextSync::Updated) => {
+            tracing::debug!("external syntext index refreshed");
+        }
+        Err(err) => {
+            tracing::warn!(error = %err, "external syntext index refresh skipped");
+        }
+    }
 }
 
 fn sync_commentary_surfaces(synrepo_dir: &Path, graph: &SqliteGraphStore) -> crate::Result<()> {

@@ -66,6 +66,7 @@ pub(super) fn new_project_entry(path: PathBuf, root_gitignore_entry_added: bool)
         initialized_at: now_rfc3339(),
         synrepo_dir: default_synrepo_dir(),
         root_gitignore_entry_added,
+        syntext_gitignore_entry_added: false,
         export_gitignore_entry_added: false,
         export_gitignore_entry: None,
         agents: Vec::<AgentEntry>::new(),

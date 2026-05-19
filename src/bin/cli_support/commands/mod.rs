@@ -95,6 +95,8 @@ pub(crate) use resume_context::resume_context;
 #[cfg(test)]
 pub(crate) use resume_context::resume_context_output;
 pub(crate) use server::server;
+#[cfg(test)]
+pub(crate) use setup::step_setup_external_syntext_with_program;
 pub(crate) use setup::{agent_setup_many_resolved, resolve_tool_resolution, setup_many_resolved};
 #[cfg(test)]
 pub(crate) use setup::{
@@ -103,8 +105,8 @@ pub(crate) use setup::{
 };
 pub(crate) use setup::{
     resolve_setup_scope, step_add_root_gitignore, step_apply_integration, step_ensure_ready,
-    step_init, step_init_with_config, step_install_agent_hooks, step_register_mcp, step_write_shim,
-    StepOutcome,
+    step_init, step_init_with_config, step_install_agent_hooks, step_register_mcp,
+    step_setup_external_syntext, step_write_shim, StepOutcome,
 };
 pub(crate) use setup_explain::step_apply_explain;
 pub(crate) use setup_mcp_backup::{mcp_config_has_synrepo, step_backup_mcp_config};

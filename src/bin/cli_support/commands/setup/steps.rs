@@ -2,6 +2,7 @@ use agent_config::{Scope, ScopeKind};
 use std::fs;
 use std::path::Path;
 use synrepo::config::{Config, Mode};
+use synrepo::substrate::external_syntext::{self, DEFAULT_ST_TIMEOUT};
 
 use super::mcp_register;
 use crate::cli_support::agent_shims::{
@@ -172,6 +173,50 @@ pub(crate) fn step_add_root_gitignore(repo_root: &Path) -> anyhow::Result<StepOu
     let added = synrepo::bootstrap::ensure_root_gitignore_entry(repo_root)?;
     if added {
         synrepo::registry::record_install(repo_root, true)?;
+        Ok(StepOutcome::Applied)
+    } else {
+        Ok(StepOutcome::AlreadyCurrent)
+    }
+}
+
+/// Initialize the optional standalone `.syntext/` index and ignore it.
+///
+/// External syntext is intentionally best-effort: a missing, failing, or slow
+/// `st index` leaves setup otherwise successful and reports a manual follow-up.
+/// The `.gitignore` write is only attempted after an existing or successfully
+/// created index, and write failures are surfaced to the caller.
+pub(crate) fn step_setup_external_syntext(repo_root: &Path) -> anyhow::Result<StepOutcome> {
+    step_setup_external_syntext_with_program(repo_root, Path::new("st"), DEFAULT_ST_TIMEOUT)
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) fn step_setup_external_syntext_with_program(
+    repo_root: &Path,
+    program: &Path,
+    timeout: std::time::Duration,
+) -> anyhow::Result<StepOutcome> {
+    let index_present = external_syntext::external_syntext_index_exists(repo_root);
+    let gitignore_present = external_syntext::root_gitignore_contains_syntext(repo_root)?;
+    if index_present && gitignore_present {
+        return Ok(StepOutcome::AlreadyCurrent);
+    }
+
+    if !index_present {
+        println!("  Initializing .syntext/ with st index...");
+        if let Err(err) =
+            external_syntext::build_external_syntext_index_with_program(repo_root, program, timeout)
+        {
+            tracing::warn!(error = %err, "external syntext setup requires manual follow-up");
+            return Ok(StepOutcome::NotAutomated);
+        }
+    }
+
+    let added = external_syntext::ensure_root_gitignore_entry(repo_root)?;
+    if added {
+        synrepo::registry::record_syntext_gitignore(repo_root, true)?;
+    }
+
+    if added || !index_present {
         Ok(StepOutcome::Applied)
     } else {
         Ok(StepOutcome::AlreadyCurrent)
