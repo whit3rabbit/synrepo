@@ -35,6 +35,7 @@
 //!    emission to surface regressions.
 
 mod extract;
+mod file_routes;
 mod language;
 
 #[cfg(test)]
@@ -64,6 +65,7 @@ pub enum CallMode {
 }
 
 pub use extract::parse_file;
+pub use file_routes::extract_file_routes;
 pub use language::Language;
 
 /// A symbol the parser extracted from a source file.

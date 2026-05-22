@@ -33,6 +33,16 @@ pub(super) fn collect(collector: &mut RouteCollector<'_>) {
                 line.end,
             );
         }
+        if let Some((path, handler)) = react_router_jsx_route(trimmed) {
+            collector.add_route(
+                "ANY",
+                &path,
+                handler.as_deref(),
+                line.line_no,
+                line.start,
+                line.end,
+            );
+        }
         if let Some(prefix) = controller_decorator(trimmed) {
             pending_controller = Some(prefix);
             continue;
@@ -98,6 +108,42 @@ fn express_route(line: &str) -> Option<(String, String, Option<String>)> {
         return Some((method, path, handler));
     }
     None
+}
+
+fn react_router_jsx_route(line: &str) -> Option<(String, Option<String>)> {
+    if !line.contains("<Route") {
+        return None;
+    }
+    let path = jsx_string_prop(line, "path")?;
+    if !path.starts_with('/') && path != "*" {
+        return None;
+    }
+    Some((path, jsx_handler(line)))
+}
+
+fn jsx_string_prop(line: &str, prop: &str) -> Option<String> {
+    let marker = format!("{prop}=");
+    let rest = line.split_once(&marker)?.1.trim_start();
+    first_string_literal(rest)
+}
+
+fn jsx_handler(line: &str) -> Option<String> {
+    jsx_braced_prop(line, "Component")
+        .and_then(|value| clean_reference(&value))
+        .or_else(|| jsx_element_prop(line))
+}
+
+fn jsx_braced_prop(line: &str, prop: &str) -> Option<String> {
+    let marker = format!("{prop}={{");
+    let rest = line.split_once(&marker)?.1;
+    let value = rest.split_once('}')?.0.trim();
+    (!value.is_empty()).then_some(value.to_string())
+}
+
+fn jsx_element_prop(line: &str) -> Option<String> {
+    let marker = "element={<";
+    let rest = line.split_once(marker)?.1;
+    identifier_at(rest)
 }
 
 fn controller_decorator(line: &str) -> Option<String> {
@@ -169,5 +215,18 @@ class UsersController {
         assert!(symbols.iter().any(|name| name == "GET /users/:id"));
         assert!(edges.iter().any(|name| name == "createUser"));
         assert!(edges.iter().any(|name| name == "UsersController::show"));
+    }
+
+    #[test]
+    fn react_router_absolute_jsx_route_references_component() {
+        let (symbols, edges) = parse(
+            br#"function Settings() { return null; }
+export function App() {
+  return <Routes><Route path="/settings" element={<Settings />} /></Routes>;
+}
+"#,
+        );
+        assert!(symbols.iter().any(|name| name == "ANY /settings"));
+        assert!(edges.iter().any(|name| name == "Settings"));
     }
 }

@@ -45,6 +45,23 @@ fn assert_route_refs(graph: &SqliteGraphStore, path: &str, route_name: &str, tar
     );
 }
 
+fn assert_route_without_refs(graph: &SqliteGraphStore, path: &str, route_name: &str) {
+    let file = graph.file_by_path(path).unwrap().unwrap();
+    let route = graph
+        .symbols_for_file(file.id)
+        .unwrap()
+        .into_iter()
+        .find(|symbol| symbol.kind == SymbolKind::Route && symbol.display_name == route_name)
+        .unwrap_or_else(|| panic!("route symbol {route_name} must exist"));
+    let refs = graph
+        .outbound(NodeId::Symbol(route.id), Some(EdgeKind::References))
+        .unwrap();
+    assert!(
+        refs.is_empty(),
+        "route {route_name} should not guess a handler"
+    );
+}
+
 #[test]
 fn rust_axum_route_references_handler_symbol() {
     let (_repo, graph) = compile_fixture(
@@ -85,6 +102,47 @@ fn typescript_express_middleware_and_nest_routes_reference_handlers() {
         "src/server.ts",
         "GET /users/:id",
         "UsersController::show",
+    );
+}
+
+#[test]
+fn react_router_file_route_references_default_component() {
+    let (_repo, graph) = compile_fixture(
+        "app/routes/concerts.$city.tsx",
+        "export default function ConcertCity() { return null; }\n",
+    );
+    assert_route_refs(
+        &graph,
+        "app/routes/concerts.$city.tsx",
+        "ANY /concerts/:city",
+        "ConcertCity",
+    );
+}
+
+#[test]
+fn sveltekit_page_file_route_emits_route_symbol() {
+    let (_repo, graph) = compile_fixture(
+        "src/routes/(app)/blog/[slug]/+page.svelte",
+        "<h1>Blog</h1>\n",
+    );
+    assert_route_without_refs(
+        &graph,
+        "src/routes/(app)/blog/[slug]/+page.svelte",
+        "ANY /blog/:slug",
+    );
+}
+
+#[test]
+fn sveltekit_server_file_route_references_http_method_handler() {
+    let (_repo, graph) = compile_fixture(
+        "src/routes/api/users/+server.ts",
+        "export function GET() { return new Response(); }\n",
+    );
+    assert_route_refs(
+        &graph,
+        "src/routes/api/users/+server.ts",
+        "GET /api/users",
+        "GET",
     );
 }
 

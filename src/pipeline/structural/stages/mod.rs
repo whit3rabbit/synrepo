@@ -12,10 +12,12 @@ use crate::{
 
 mod code;
 mod concepts;
+mod file_routes;
 mod identity_cascade;
 
 use code::process_supported_code_files;
 use concepts::{delete_missing_concepts, process_markdown_concepts};
+use file_routes::process_text_file_routes;
 use identity_cascade::run_identity_cascade;
 
 pub(super) struct StagesTxnResult {
@@ -61,6 +63,15 @@ pub(super) fn stages_1_to_3(
     };
 
     process_supported_code_files(
+        graph,
+        discovered,
+        &revision,
+        &disappeared_by_hash,
+        &mut rename_matched_old_paths,
+        &mut state,
+        compile_rev,
+    )?;
+    process_text_file_routes(
         graph,
         discovered,
         &revision,

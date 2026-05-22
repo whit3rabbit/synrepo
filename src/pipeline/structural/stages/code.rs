@@ -43,7 +43,16 @@ pub(super) fn process_supported_code_files(
             .as_ref()
             .is_some_and(|n| n.content_hash != content_hash);
 
-        if existing.is_some() && !is_content_change {
+        let file_routes = parse::extract_file_routes(&file.relative_path, &content);
+        let file_routes_missing = if let Some(existing) = existing.as_ref() {
+            !is_content_change
+                && !file_routes.0.is_empty()
+                && has_missing_symbols(graph, existing.id, &file_routes.0)?
+        } else {
+            false
+        };
+
+        if existing.is_some() && !is_content_change && !file_routes_missing {
             continue;
         }
 
@@ -102,7 +111,9 @@ pub(super) fn process_supported_code_files(
         let mut emitted_symbol_ids = HashSet::new();
         let mut emitted_edge_ids = HashSet::new();
 
-        if let Some(parsed) = parse::parse_file(file.absolute_path.as_path(), &content)? {
+        if let Some(mut parsed) = parse::parse_file(file.absolute_path.as_path(), &content)? {
+            parsed.symbols.extend(file_routes.0);
+            parsed.edges.extend(file_routes.1);
             if !parsed.symbols.is_empty() {
                 state.files_parsed += 1;
                 for symbol in &parsed.symbols {
@@ -202,7 +213,21 @@ pub(super) fn process_supported_code_files(
     Ok(())
 }
 
-fn resolve_file_id(
+fn has_missing_symbols(
+    graph: &mut dyn GraphStore,
+    file_id: FileNodeId,
+    expected: &[parse::ExtractedSymbol],
+) -> crate::Result<bool> {
+    let existing = graph.symbols_for_file(file_id)?;
+    Ok(expected.iter().any(|expected| {
+        !existing.iter().any(|symbol| {
+            symbol.qualified_name == expected.qualified_name
+                && symbol.body_hash == expected.body_hash
+        })
+    }))
+}
+
+pub(super) fn resolve_file_id(
     existing: Option<&FileNode>,
     root_discriminant: &str,
     content_hash: &str,

@@ -1,0 +1,6 @@
+[mcp_servers.tui-test]
+args = [
+    "-y",
+    "tui-testing-mcp",
+]
+command = "npx"
