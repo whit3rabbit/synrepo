@@ -15,10 +15,11 @@ expression: json
   "signature": "pub fn annotated() -> u32",
   "doc_comment": "Docs.",
   "source_body": "pub fn annotated() -> u32 { 7 }",
-  "approx_tokens": 23,
+  "source_body_state": "included",
+  "approx_tokens": 25,
   "context_accounting": {
     "budget_tier": "deep",
-    "token_estimate": 23,
+    "token_estimate": 25,
     "raw_file_token_estimate": 14,
     "estimated_savings_ratio": 0.0,
     "source_hashes": [

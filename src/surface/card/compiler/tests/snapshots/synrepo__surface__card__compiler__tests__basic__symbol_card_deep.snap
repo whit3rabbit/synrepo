@@ -15,10 +15,11 @@ expression: deep
   "signature": "pub fn add(a: i32, b: i32) -> i32",
   "doc_comment": "Add two integers together.",
   "source_body": "pub fn add(a: i32, b: i32) -> i32 { a + b }",
-  "approx_tokens": 30,
+  "source_body_state": "included",
+  "approx_tokens": 32,
   "context_accounting": {
     "budget_tier": "deep",
-    "token_estimate": 30,
+    "token_estimate": 32,
     "raw_file_token_estimate": 25,
     "estimated_savings_ratio": 0.0,
     "source_hashes": [

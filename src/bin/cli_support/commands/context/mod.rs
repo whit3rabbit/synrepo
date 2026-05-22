@@ -8,7 +8,10 @@ use std::path::Path;
 
 use synrepo::config::Config;
 use synrepo::surface::card::Budget;
-use synrepo::surface::mcp::{cards, search};
+use synrepo::surface::context::{
+    ContextAskRequest, ContextBudget, ContextScope, ContextShape, GroundingOptions,
+};
+use synrepo::surface::mcp::{ask, cards, search};
 
 use super::mcp_runtime::prepare_state;
 use crate::cli_support::cli_args::StatFormatArg;
@@ -25,6 +28,40 @@ pub(crate) fn cards_alias(
     print!(
         "{}",
         search::handle_where_to_edit(&state, query.to_string(), 5, budget_tokens)
+    );
+    Ok(())
+}
+
+pub(crate) fn orient_alias(repo_root: &Path) -> anyhow::Result<()> {
+    let state = prepare_state(repo_root)?;
+    print!("{}", search::handle_orient(&state));
+    Ok(())
+}
+
+pub(crate) fn ask_alias(
+    repo_root: &Path,
+    ask_text: &str,
+    budget_tokens: Option<usize>,
+) -> anyhow::Result<()> {
+    let state = prepare_state(repo_root)?;
+    let mut budget = ContextBudget::default();
+    if let Some(tokens) = budget_tokens {
+        budget.max_tokens = tokens;
+        budget.tier = Some(tier_for_budget_tokens(Some(tokens)));
+    }
+    print!(
+        "{}",
+        ask::handle_ask(
+            &state,
+            ContextAskRequest {
+                repo_root: None,
+                ask: ask_text.to_string(),
+                scope: ContextScope::default(),
+                shape: ContextShape::default(),
+                ground: GroundingOptions::default(),
+                budget,
+            }
+        )
     );
     Ok(())
 }

@@ -21,7 +21,9 @@ pub use file::FileCard;
 pub use module::ModuleCard;
 pub use public_api::{PublicAPICard, PublicAPIEntry};
 pub use refs::{FileRef, SymbolRef};
-pub use symbol::{Freshness, OverlayCommentary, ProposedLink, SymbolCard};
+pub use symbol::{
+    Freshness, MemberOutline, MemberOutlineEntry, OverlayCommentary, ProposedLink, SymbolCard,
+};
 pub use test_surface::{TestAssociation, TestEntry, TestSurfaceCard};
 
 // Re-export SourceStore from sibling module.

@@ -10,8 +10,9 @@ fn context_pack_tool_description_names_structured_targets() {
         "context-pack MCP description must tell agents to pass structured targets"
     );
     assert!(
-        tools_source
-            .contains("file, symbol, directory, minimum_context, test_surface, call_path, search"),
+        tools_source.contains(
+            "file, symbol, source_slice, directory, minimum_context, test_surface, call_path, search",
+        ),
         "context-pack MCP description must list supported target kinds"
     );
 }
@@ -81,6 +82,7 @@ fn context_pack_tool_description_lists_task_context_artifacts() {
         "entrypoints",
         "public_api",
         "change_risk",
+        "source_slice",
         "findings",
         "recent_activity",
     ] {

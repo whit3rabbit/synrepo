@@ -13,14 +13,14 @@ use cli_support::cli_args::{
     ProjectCommand, StatsCommand, UninstallArgs, WatchCommand,
 };
 use cli_support::commands::{
-    agent_setup_many_resolved, bench_context, bench_search, cards_alias, change_risk, check,
-    compact, docs, doctor, embeddings, explain_alias, export, findings, graph, handoffs,
+    agent_setup_many_resolved, ask_alias, bench_context, bench_search, cards_alias, change_risk,
+    check, compact, docs, doctor, embeddings, explain_alias, export, findings, graph, handoffs,
     impact_alias, links_accept, links_list, links_reject, links_review, node, notes_add,
-    notes_audit, notes_forget, notes_link, notes_list, notes_supersede, notes_verify, project_add,
-    project_inspect, project_list, project_prune_missing, project_remove, project_rename,
-    project_use, reconcile, remove, resolve_tool_resolution, resume_context, risks_alias,
-    run_mcp_server, server, stats_context, status, sync, task_route, tests_alias, uninstall,
-    upgrade, watch, watch_internal, watch_status, watch_stop, StatFormat,
+    notes_audit, notes_forget, notes_link, notes_list, notes_supersede, notes_verify, orient_alias,
+    project_add, project_inspect, project_list, project_prune_missing, project_remove,
+    project_rename, project_use, reconcile, remove, resolve_tool_resolution, resume_context,
+    risks_alias, run_mcp_server, server, stats_context, status, sync, task_route, tests_alias,
+    uninstall, upgrade, watch, watch_internal, watch_status, watch_stop, StatFormat,
 };
 #[cfg(test)]
 use cli_support::commands::{prepare_mcp_state, report_reconcile_outcome};
@@ -160,6 +160,8 @@ fn dispatch(
             mode,
         ),
         Command::Cards { query, budget } => cards_alias(repo_root, &query, budget),
+        Command::Orient => orient_alias(repo_root),
+        Command::Ask { ask, budget } => ask_alias(repo_root, &ask, budget),
         Command::TaskRoute { task, path, json } => {
             task_route(repo_root, &task, path.as_deref(), json)
         }

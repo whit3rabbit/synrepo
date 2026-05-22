@@ -13,7 +13,7 @@ For product overview, setup flow, and operator-facing docs, start with [`README.
 
 Synrepo is a local, deterministic code-context compiler. Its product model is `repo files -> graph facts -> code artifacts -> task contexts -> cards/MCP`. Graph facts are authoritative observed source truth; code artifacts are compiled records; task contexts are bounded bundles for a workflow; cards and MCP responses are the delivery packets you consume.
 
-Use `synrepo_ask(ask, scope?, shape?, ground?, budget?)` as the default high-level front door for one bounded, cited task-context packet. It returns `answer`, `cards_used`, `evidence`, `grounding`, `omitted_context_notes`, `next_best_tools`, and `context_packet`. Its grounding policy accepts `mode` or `citations`, `include_spans`, and `allow_overlay`; default to graph facts as authoritative observed source truth. Overlay commentary, explain docs, and notes are advisory; LLM-authored output never mutates the canonical graph. Embeddings are optional routing/search helpers.
+Use `synrepo_ask(ask, scope?, shape?, ground?, budget?)` as the default high-level front door for one bounded, cited task-context packet. It returns `answer`, `cards_used`, `evidence`, `grounding`, `omitted_context_notes`, `next_best_tools`, and `context_packet`. Its grounding policy accepts `mode` or `citations`, `include_spans`, and `allow_overlay`; default to graph facts as authoritative observed source truth. Scoped asks may include `source_slice` artifacts with hash-checked line-numbered source. Overlay commentary, explain docs, and notes are advisory; LLM-authored output never mutates the canonical graph. Embeddings are optional routing/search helpers.
 
 Existing explain reads are safe when useful: use `synrepo_explain` with `budget=deep` for 1-3 focal symbols/files before non-trivial implementation, review, security work, or unfamiliar subsystem changes; use `synrepo_docs_search` for architecture, intent, gotchas, or "why is this like this" questions. These read cached overlay output; they do not generate or refresh commentary.
 
@@ -62,7 +62,7 @@ Use `output_mode: "compact"` for orientation. Search rows and compact file group
 - `synrepo_find(task, limit?, budget_tokens?)`
 - `synrepo_where_to_edit(task, limit?)`
 
-Read `query_attempts`, `fallback_used`, `miss_reason`, `recommended_next_queries`, `recommended_tool`, `suggested_card_targets`, and `output_accounting` when present. If `miss_reason` is `no_index_matches`, do not retry the same broad sentence. Switch to exact lexical probes.
+Read `query_attempts`, `fallback_used`, `miss_reason`, `recommended_next_queries`, `recommended_tool`, `suggested_card_targets`, and `output_accounting` when present. Fallback routing extracts code-shaped tokens, camel/snake/dot identifier parts, acronyms, stems, and domain probes, then boosts files hit by multiple probes while downranking tests and fixtures. If `miss_reason` is `no_index_matches`, do not retry the same broad sentence. Switch to exact lexical probes.
 
 `synrepo_ask` accepts structured objects and compatibility shorthand such as `budget: "normal"`, `ground: "observed graph/source only"`, `shape: "findings; tests"`, and path strings in `scope`. Prefer structured objects when generating calls yourself.
 
@@ -104,6 +104,8 @@ Client-side nudge hooks for Codex and Claude may remind agents to use synrepo be
 Do not maximize returned context. Return the smallest useful MCP response.
 
 Default to `tiny`. Use `normal` for the best 1-3 targets when local understanding matters. Use `deep` or full-file reads only immediately before implementation or validation. Do not request `deep` cards for more than 1-3 files at a time.
+
+Deep `SymbolCard` responses may use `member_outline` with `source_body_state: "outline_only"` for large container symbols. Request a `source_slice` or a narrow leaf symbol card when exact body text is needed.
 
 See [`references/budgets-and-errors.md`](references/budgets-and-errors.md) for the full budget sequence, response fields to consume first, and rate-limit/error handling.
 

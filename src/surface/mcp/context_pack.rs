@@ -152,6 +152,9 @@ mod artifacts;
 mod outline;
 mod resource;
 mod search;
+mod source_slice;
+#[cfg(test)]
+mod source_slice_tests;
 mod targeting;
 #[cfg(test)]
 mod tests;

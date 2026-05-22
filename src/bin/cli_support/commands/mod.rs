@@ -43,8 +43,8 @@ pub(crate) use ci_run::ci_run;
 pub(crate) use ci_run::{ci_run_output, CiRunOptions};
 pub(crate) use compact::compact;
 pub(crate) use context::{
-    bench_context, bench_search, cards_alias, explain_alias, impact_alias, risks_alias,
-    stats_context, tests_alias, StatFormat,
+    ask_alias, bench_context, bench_search, cards_alias, explain_alias, impact_alias, orient_alias,
+    risks_alias, stats_context, tests_alias, StatFormat,
 };
 pub(crate) use docs::docs;
 #[cfg(test)]

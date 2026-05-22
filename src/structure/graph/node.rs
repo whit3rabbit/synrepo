@@ -74,6 +74,8 @@ pub enum SymbolKind {
     Constant,
     /// A top-level exported item (when the language has explicit exports).
     Export,
+    /// A framework route binding such as `GET /users`.
+    Route,
 }
 
 impl SymbolKind {
@@ -90,6 +92,7 @@ impl SymbolKind {
             SymbolKind::Module => "module",
             SymbolKind::Constant => "constant",
             SymbolKind::Export => "export",
+            SymbolKind::Route => "route",
         }
     }
 
@@ -106,6 +109,7 @@ impl SymbolKind {
             "module" => Some(SymbolKind::Module),
             "constant" => Some(SymbolKind::Constant),
             "export" => Some(SymbolKind::Export),
+            "route" => Some(SymbolKind::Route),
             _ => None,
         }
     }

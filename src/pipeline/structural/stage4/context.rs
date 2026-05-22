@@ -11,13 +11,15 @@ use crate::{
     },
     structure::{
         graph::{GraphStore, SymbolKind, Visibility},
-        parse::{ExtractedCallRef, ExtractedImportRef},
+        parse::{ExtractedCallRef, ExtractedEdge, ExtractedImportRef},
     },
 };
 
 pub(super) type NameIndex = HashMap<String, Vec<SymbolNodeId>>;
+pub(super) type QualifiedNameIndex = HashMap<String, Vec<SymbolNodeId>>;
 pub(super) type SymbolMetaMap = HashMap<SymbolNodeId, SymbolMeta>;
 pub(super) type CallerIndex = HashMap<(FileNodeId, String, String), SymbolNodeId>;
+pub(super) type QualifiedSymbolIndex = HashMap<(FileNodeId, String), Vec<SymbolNodeId>>;
 
 /// Scope map: for each file, the set of files it imports (direct imports only).
 /// Built as Imports edges are emitted, before the Calls resolution loop.
@@ -69,21 +71,31 @@ pub struct CrossFilePending {
     pub file_path: String,
     pub call_refs: Vec<ExtractedCallRef>,
     pub import_refs: Vec<ExtractedImportRef>,
+    pub edge_refs: Vec<ExtractedEdge>,
 }
 
 pub(super) fn build_indices(
     graph: &mut dyn GraphStore,
     pending: &[CrossFilePending],
     repo_root: &Path,
-) -> crate::Result<(ResolverContext, NameIndex, SymbolMetaMap, CallerIndex)> {
+) -> crate::Result<(
+    ResolverContext,
+    NameIndex,
+    QualifiedNameIndex,
+    SymbolMetaMap,
+    CallerIndex,
+    QualifiedSymbolIndex,
+)> {
     // Build short-name index and per-symbol metadata in a single pass using
     // the bulk resolver query (one SELECT, visibility parsed from the blob).
     // SQLite read-your-own-writes lets us see stages 1-3's inserts inside the
     // caller's open transaction.
     let all_symbols = graph.all_symbols_for_resolution()?;
     let mut name_index: NameIndex = HashMap::with_capacity(all_symbols.len());
+    let mut qualified_name_index: QualifiedNameIndex = HashMap::with_capacity(all_symbols.len());
     let mut symbol_meta: SymbolMetaMap = HashMap::with_capacity(all_symbols.len());
     let mut caller_index: CallerIndex = HashMap::with_capacity(all_symbols.len());
+    let mut qualified_index: QualifiedSymbolIndex = HashMap::with_capacity(all_symbols.len());
     for (sym_id, file_id, qname, kind, visibility, body_hash) in all_symbols {
         let Some(file) = graph.get_file(file_id)? else {
             continue;
@@ -91,6 +103,10 @@ pub(super) fn build_indices(
         let short = qname.rsplit("::").next().unwrap_or(qname.as_str());
         name_index
             .entry(short.to_string())
+            .or_default()
+            .push(sym_id);
+        qualified_name_index
+            .entry(qname.clone())
             .or_default()
             .push(sym_id);
         symbol_meta.insert(
@@ -103,6 +119,10 @@ pub(super) fn build_indices(
                 qualified_name: qname.clone(),
             },
         );
+        qualified_index
+            .entry((file_id, qname.clone()))
+            .or_default()
+            .push(sym_id);
         caller_index.insert((file_id, qname, body_hash), sym_id);
     }
 
@@ -171,7 +191,14 @@ pub(super) fn build_indices(
         jvm_source_roots,
     };
 
-    Ok((ctx, name_index, symbol_meta, caller_index))
+    Ok((
+        ctx,
+        name_index,
+        qualified_name_index,
+        symbol_meta,
+        caller_index,
+        qualified_index,
+    ))
 }
 
 const JVM_SOURCE_MARKERS: &[&str] = &[

@@ -117,6 +117,7 @@ struct RoutingMatch {
     path: String,
     root_id: String,
     result_count: usize,
+    query_hits: usize,
 }
 
 fn find_candidate_matches(
@@ -144,6 +145,7 @@ fn find_candidate_matches(
 
     if !original_matches.is_empty() {
         push_unique_match_paths(&mut matches, original_matches);
+        rank_matches(&mut matches);
         return Ok(RoutingMatches {
             matches,
             query_attempts,
@@ -167,6 +169,7 @@ fn find_candidate_matches(
             break;
         }
     }
+    rank_matches(&mut matches);
 
     Ok(RoutingMatches {
         matches,
@@ -202,13 +205,33 @@ fn push_unique_match_paths(
         let path = m.path.to_string_lossy().to_string();
         let root_id = m.root_id;
         if seen_in_query.insert(format!("{root_id}\0{path}")) {
+            if let Some(existing) = matches
+                .iter_mut()
+                .find(|m| m.root_id == root_id && m.path == path)
+            {
+                existing.query_hits += 1;
+                existing.result_count += count;
+                continue;
+            }
             matches.push(RoutingMatch {
                 path,
                 root_id,
                 result_count: count,
+                query_hits: 1,
             });
         }
     }
+}
+
+fn rank_matches(matches: &mut [RoutingMatch]) {
+    matches.sort_by(|a, b| {
+        crate::surface::query_terms::score_path_for_query(&b.path, b.query_hits)
+            .cmp(&crate::surface::query_terms::score_path_for_query(
+                &a.path,
+                a.query_hits,
+            ))
+            .then_with(|| a.path.cmp(&b.path))
+    });
 }
 
 fn omitted_suggestions(targets: &[String], returned_count: usize) -> Vec<Value> {

@@ -190,6 +190,8 @@ Use `synrepo uninstall` for the guided full teardown across projects, integratio
 | `synrepo doctor` | Degraded-component-only report; non-zero exit for CI / pre-commit gates |
 | `synrepo handoffs` | Prioritized actionable items from repair log, cross-link candidates, and git hotspots |
 | `synrepo resume-context` | Compact repo-scoped resume packet for stale agent work |
+| `synrepo orient` | Small routing summary before reading the repo cold |
+| `synrepo ask "question"` | Bounded task-context packet for broad questions |
 | `synrepo search "query"` | Lexical search through the repo index |
 | `synrepo cards --query "task" --budget 1500` | Bounded card suggestions for a task |
 | `synrepo explain <target> --budget 1000` | Bounded card for a file or symbol |

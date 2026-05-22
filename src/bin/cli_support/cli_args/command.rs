@@ -138,6 +138,14 @@ pub(crate) enum Command {
         #[arg(long)]
         budget: Option<usize>,
     },
+    /// Small routing summary before reading the repository cold.
+    Orient,
+    /// Compile a bounded task context packet.
+    Ask {
+        ask: String,
+        #[arg(long)]
+        budget: Option<usize>,
+    },
     /// Classify a task into the cheapest safe synrepo route.
     TaskRoute {
         task: String,

@@ -56,3 +56,15 @@ fn task_route_parses_task_path_and_json() {
             if task == "convert var to const" && path.as_deref() == Some("src/app.ts") && json
     ));
 }
+
+#[test]
+fn orient_and_ask_parse_cli_fallbacks() {
+    let orient = Cli::try_parse_from(["synrepo", "orient"]).unwrap();
+    assert!(matches!(orient.command, Some(Command::Orient)));
+
+    let ask = Cli::try_parse_from(["synrepo", "ask", "review module", "--budget", "1200"]).unwrap();
+    assert!(matches!(
+        ask.command,
+        Some(Command::Ask { ask, budget }) if ask == "review module" && budget == Some(1200)
+    ));
+}

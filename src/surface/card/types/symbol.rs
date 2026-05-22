@@ -53,6 +53,12 @@ pub struct SymbolCard {
     /// Full source body, only populated for `Deep` budget.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_body: Option<String>,
+    /// Member outline used when a large container body would dominate the card.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub member_outline: Option<MemberOutline>,
+    /// State of source-body inclusion: `included`, `outline_only`, or `unavailable`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_body_state: Option<String>,
     /// Approximate token count of this card.
     pub approx_tokens: usize,
     /// Context-accounting metadata for this card.
@@ -92,6 +98,31 @@ pub struct OverlayCommentary {
     pub freshness: Freshness,
     /// Source store is always `Overlay` for commentary.
     pub source_store: SourceStore,
+}
+
+/// Bounded outline for large class/trait/module-like symbols.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MemberOutline {
+    /// Members returned in this outline.
+    pub members: Vec<MemberOutlineEntry>,
+    /// Number of active child symbols observed under the container.
+    pub member_count: usize,
+    /// Number of child symbols omitted from the bounded outline.
+    pub omitted_count: usize,
+}
+
+/// One child symbol inside a [`MemberOutline`].
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MemberOutlineEntry {
+    /// Fully qualified child symbol name.
+    pub qualified_name: String,
+    /// Stable symbol kind label.
+    pub kind: String,
+    /// File path plus byte offset for the child symbol.
+    pub location: String,
+    /// Extracted declaration signature when available.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
 }
 
 /// Freshness state of an overlay entry.

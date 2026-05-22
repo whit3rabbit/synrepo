@@ -8,6 +8,7 @@ pub mod context;
 pub mod graph_view;
 pub mod handoffs;
 pub mod mcp;
+pub(crate) mod query_terms;
 pub mod readiness;
 pub mod refactor_suggestions;
 pub mod resume_context;

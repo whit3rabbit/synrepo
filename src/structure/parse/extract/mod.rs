@@ -1,6 +1,7 @@
 mod call_refs;
 mod docs;
 mod qualname;
+mod routes;
 mod visibility;
 
 use std::path::Path;
@@ -280,13 +281,16 @@ pub fn parse_file(path: &Path, content: &[u8]) -> crate::Result<Option<ParseOutp
         });
     }
 
+    let (route_symbols, route_edges) = routes::extract_route_bindings(language, &tree, content);
+    symbols.extend(route_symbols);
+
     let call_refs = call_refs::extract_call_refs(language, &tree, content, &symbols)?;
     let import_refs = extract_import_refs(language, &tree, content)?;
 
     Ok(Some(ParseOutput {
         language,
         symbols,
-        edges: vec![],
+        edges: route_edges,
         call_refs,
         import_refs,
     }))

@@ -38,7 +38,7 @@ Read diagnostic fields when present:
 - `suggested_card_targets`
 - `output_accounting`
 
-If `miss_reason` is `no_index_matches`, do not retry the same broad sentence. Switch to exact lexical probes.
+Fallback routing extracts code-shaped tokens, camel/snake/dot identifier parts, acronyms, stems, and domain probes. Files hit by multiple probes rank higher; tests, fixtures, examples, and specs rank lower for routing. If `miss_reason` is `no_index_matches`, do not retry the same broad sentence. Switch to exact lexical probes.
 
 If `miss_reason` is `matches_not_in_graph`, use `synrepo_search` or CLI search to inspect raw hits, then call `synrepo_card` only for graph-backed paths.
 
@@ -98,7 +98,7 @@ After search returns likely targets:
 - use `synrepo_card` with `budget: "tiny"` for many candidates
 - use `budget: "normal"` for the best 1-3 targets
 - use `budget: "deep"` only when validating implementation details or preparing edits
-- use `synrepo_context_pack` when several known files, symbols, directories, tests, call paths, entrypoints, public APIs, risk cards, findings, or recent-activity artifacts are needed together
+- use `synrepo_context_pack` when several known files, symbols, source slices, directories, tests, call paths, entrypoints, public APIs, risk cards, findings, or recent-activity artifacts are needed together
 - use `synrepo_ask` first for broad plain-language tasks that need one bounded, cited task-context packet
 
 ## Search failure handling

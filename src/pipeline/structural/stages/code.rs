@@ -157,13 +157,17 @@ pub(super) fn process_supported_code_files(
                     state.edges_added += 1;
                 }
             }
-            if !parsed.call_refs.is_empty() || !parsed.import_refs.is_empty() {
+            if !parsed.call_refs.is_empty()
+                || !parsed.import_refs.is_empty()
+                || !parsed.edges.is_empty()
+            {
                 state.cross_file_pending.push(CrossFilePending {
                     file_id,
                     root_id: file.root_discriminant.clone(),
                     file_path: file.relative_path.clone(),
                     call_refs: parsed.call_refs,
                     import_refs: parsed.import_refs,
+                    edge_refs: parsed.edges,
                 });
             }
         }

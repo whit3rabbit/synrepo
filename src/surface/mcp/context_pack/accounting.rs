@@ -119,7 +119,7 @@ fn artifact_priority(artifact: &Value) -> u8 {
         .unwrap_or_default()
     {
         "file_outline" | "symbol_card" | "module_card" | "minimum_context" | "error" => 0,
-        "test_surface" => 1,
+        "test_surface" | "source_slice" => 1,
         "call_path" => 2,
         "search" => 4,
         _ => 3,

@@ -63,9 +63,13 @@ pub(super) fn add_basic_scopes(
 ) {
     for path in scoped_paths(request) {
         push_unique(targets, path_target_kind(path), path, Some(budget));
+        if is_file_path(path) {
+            push_unique(targets, "source_slice", path, Some("normal"));
+        }
     }
     for symbol in scoped_symbols(request) {
         push_unique(targets, "symbol", symbol, Some(budget));
+        push_unique(targets, "source_slice", symbol, Some("normal"));
     }
 }
 

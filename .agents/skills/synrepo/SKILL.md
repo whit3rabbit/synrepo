@@ -94,6 +94,8 @@ Node IDs: `file_0000000000000042`, `symbol_0000000000000024`. Use `synrepo_searc
 ```bash
 synrepo status                                   # health check
 synrepo status --recent                          # bounded operational history
+synrepo orient                                  # small routing summary
+synrepo ask "review this module"                 # bounded task-context packet
 synrepo resume-context --json                    # compact repo resume packet
 synrepo task-route "find auth entrypoints"        # advisory route classifier
 synrepo search <query>                           # lexical search

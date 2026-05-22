@@ -58,6 +58,22 @@ pub(super) fn build_qualified_name_and_kind(
                     }
                 }
             }
+            "declaration_list" | "body_statement" => {
+                if let Some(grandparent) = parent.parent() {
+                    if matches!(
+                        grandparent.kind(),
+                        "class_declaration" | "class" | "interface_declaration"
+                    ) {
+                        if let Some(class_name_node) = grandparent.child_by_field_name("name") {
+                            let class_bytes =
+                                &source[class_name_node.start_byte()..class_name_node.end_byte()];
+                            if let Ok(class_name) = std::str::from_utf8(class_bytes) {
+                                class_chain.push(class_name.to_string());
+                            }
+                        }
+                    }
+                }
+            }
             "source_file" | "program" => break,
             _ => {}
         }

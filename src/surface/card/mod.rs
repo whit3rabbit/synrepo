@@ -37,9 +37,9 @@ pub use git::{
 };
 pub use types::{
     CallPath, CallPathCard, CallPathEdge, ChangeRiskCard, EntryPoint, EntryPointCard,
-    EntryPointKind, FileCard, FileRef, Freshness, ModuleCard, OverlayCommentary, PublicAPICard,
-    PublicAPIEntry, RiskFactor, RiskLevel, SymbolCard, SymbolRef, TestAssociation, TestEntry,
-    TestSurfaceCard,
+    EntryPointKind, FileCard, FileRef, Freshness, MemberOutline, MemberOutlineEntry, ModuleCard,
+    OverlayCommentary, PublicAPICard, PublicAPIEntry, RiskFactor, RiskLevel, SymbolCard, SymbolRef,
+    TestAssociation, TestEntry, TestSurfaceCard,
 };
 
 /// Context budget tier for a card request.

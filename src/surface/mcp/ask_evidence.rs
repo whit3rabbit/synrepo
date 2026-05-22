@@ -169,6 +169,23 @@ fn source_for_artifact(artifact: &Value, content: &Value) -> (String, Option<u64
     if let Some(source_path) = content.get("source_path").and_then(Value::as_str) {
         return (source_path.to_string(), None);
     }
+    if let Some(file) = content
+        .get("files")
+        .and_then(Value::as_array)
+        .and_then(|files| files.first())
+    {
+        let source = file
+            .get("path")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown source");
+        let line = file
+            .get("sections")
+            .and_then(Value::as_array)
+            .and_then(|sections| sections.first())
+            .and_then(|section| section.get("start_line"))
+            .and_then(Value::as_u64);
+        return (source.to_string(), line);
+    }
     if let Some(defined_at) = content.get("defined_at").and_then(Value::as_str) {
         if let Some((path, _offset_or_line)) = defined_at.rsplit_once(':') {
             return (path.to_string(), None);

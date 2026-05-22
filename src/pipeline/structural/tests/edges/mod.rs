@@ -4,6 +4,7 @@ mod dart;
 mod go;
 mod python;
 mod retirement;
+mod routes;
 mod rust;
 mod rust_braced;
 mod symbol_calls;

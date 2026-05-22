@@ -34,6 +34,7 @@ use std::{collections::HashSet, path::Path};
 
 mod context;
 mod imports;
+mod references;
 mod rust_paths;
 mod scoring;
 
@@ -41,6 +42,7 @@ pub use context::CrossFilePending;
 
 use context::{build_indices, ImportsMap};
 use imports::emit_imports_for_file;
+use references::{emit_references_for_file, ReferenceResolutionLookups};
 use scoring::{emit_calls_for_file, CallResolutionLookups};
 
 use crate::{
@@ -61,7 +63,8 @@ pub fn run_cross_file_resolution(
         return Ok(0);
     }
 
-    let (ctx, name_index, symbol_meta, caller_index) = build_indices(graph, pending, repo_root)?;
+    let (ctx, name_index, qualified_name_index, symbol_meta, caller_index, qualified_index) =
+        build_indices(graph, pending, repo_root)?;
 
     // Imports map: populated as Imports edges are emitted, before Calls resolution.
     // Maps importing_file -> set of imported file IDs.
@@ -84,6 +87,18 @@ pub fn run_cross_file_resolution(
         emitted += emit_imports_for_file(graph, &ctx, item, revision, &mut imports_map)?;
 
         let imports = imports_map.get(&item.file_id).unwrap_or(&empty_imports);
+        emitted += emit_references_for_file(
+            graph,
+            ReferenceResolutionLookups {
+                name_index: &name_index,
+                qualified_name_index: &qualified_name_index,
+                symbol_meta: &symbol_meta,
+                qualified_index: &qualified_index,
+            },
+            item,
+            imports,
+            revision,
+        )?;
 
         let call_stats = emit_calls_for_file(
             graph,

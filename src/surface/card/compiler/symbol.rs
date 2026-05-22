@@ -4,10 +4,10 @@ use std::sync::Arc;
 use crate::{
     core::ids::{NodeId, SymbolNodeId},
     overlay::{FreshnessState, OverlayStore},
-    structure::graph::{Edge, EdgeKind, GraphReader},
+    structure::graph::{Edge, EdgeKind, GraphReader, SymbolKind},
     surface::card::accounting::{raw_file_token_estimate, ContextAccounting},
     surface::card::git::symbol_last_change_from_insights,
-    surface::card::types::{Freshness, OverlayCommentary},
+    surface::card::types::{Freshness, MemberOutline, MemberOutlineEntry, OverlayCommentary},
 };
 
 use super::io::read_symbol_body;
@@ -59,11 +59,38 @@ pub(super) fn symbol_card(
     };
 
     // Source body: only for Deep budget.
-    let source_body = if budget == Budget::Deep {
+    let raw_source_body = if budget == Budget::Deep {
         let source_root = ctx.compiler.source_root_for(&file.root_id);
         read_symbol_body(source_root.as_deref(), &file.path, symbol.body_byte_range)
     } else {
         None
+    };
+    let (source_body, member_outline, source_body_state) = if budget == Budget::Deep {
+        if is_container_symbol(symbol.kind)
+            && raw_source_body
+                .as_ref()
+                .is_some_and(|body| body.len() > CONTAINER_BODY_OUTLINE_THRESHOLD)
+        {
+            (
+                None,
+                Some(build_member_outline(
+                    ctx.graph,
+                    &file.path,
+                    symbol.file_id,
+                    &symbol.qualified_name,
+                )?),
+                Some("outline_only".to_string()),
+            )
+        } else {
+            let state = if raw_source_body.is_some() {
+                "included"
+            } else {
+                "unavailable"
+            };
+            (raw_source_body, None, Some(state.to_string()))
+        }
+    } else {
+        (None, None, None)
     };
 
     // Doc comment suppressed for Tiny budget; populated for Normal/Deep if extracted.
@@ -99,6 +126,8 @@ pub(super) fn symbol_card(
         last_change,
         drift_flag: None,
         source_body,
+        member_outline,
+        source_body_state,
         approx_tokens: 0,
         context_accounting: ContextAccounting::placeholder(budget),
         source_store: SourceStore::Graph,
@@ -146,6 +175,54 @@ pub(super) fn symbol_card(
         vec![file.content_hash],
     );
     Ok(card)
+}
+
+const CONTAINER_BODY_OUTLINE_THRESHOLD: usize = 2_400;
+const MEMBER_OUTLINE_LIMIT: usize = 40;
+
+fn is_container_symbol(kind: SymbolKind) -> bool {
+    matches!(
+        kind,
+        SymbolKind::Class
+            | SymbolKind::Trait
+            | SymbolKind::Type
+            | SymbolKind::TypeDef
+            | SymbolKind::Interface
+            | SymbolKind::Module
+    )
+}
+
+fn build_member_outline(
+    graph: &dyn GraphReader,
+    file_path: &str,
+    file_id: crate::core::ids::FileNodeId,
+    parent: &str,
+) -> crate::Result<MemberOutline> {
+    let prefix = format!("{parent}::");
+    let mut members = graph
+        .symbols_for_file(file_id)?
+        .into_iter()
+        .filter(|symbol| symbol.qualified_name.starts_with(&prefix))
+        .collect::<Vec<_>>();
+    members.sort_by_key(|symbol| symbol.body_byte_range.0);
+
+    let member_count = members.len();
+    let entries = members
+        .into_iter()
+        .take(MEMBER_OUTLINE_LIMIT)
+        .map(|symbol| MemberOutlineEntry {
+            qualified_name: symbol.qualified_name,
+            kind: symbol.kind.as_str().to_string(),
+            location: format!("{}:{}", file_path, symbol.body_byte_range.0),
+            signature: symbol.signature,
+        })
+        .collect::<Vec<_>>();
+
+    Ok(MemberOutline {
+        omitted_count: member_count.saturating_sub(entries.len()),
+        member_count,
+        members: entries,
+    })
 }
 
 fn symbol_refs_from_edges(
@@ -206,7 +283,17 @@ pub(super) fn estimate_tokens_symbol(card: &SymbolCard) -> usize {
         + card.defined_at.len()
         + card.signature.as_deref().map_or(0, str::len)
         + card.doc_comment.as_deref().map_or(0, str::len)
-        + card.source_body.as_deref().map_or(0, str::len);
+        + card.source_body.as_deref().map_or(0, str::len)
+        + card.source_body_state.as_deref().map_or(0, str::len);
+
+    if let Some(outline) = &card.member_outline {
+        for member in &outline.members {
+            len += member.qualified_name.len()
+                + member.kind.len()
+                + member.location.len()
+                + member.signature.as_deref().map_or(0, str::len);
+        }
+    }
 
     for sym_ref in card.callers.iter().chain(card.callees.iter()) {
         len += sym_ref.qualified_name.len() + sym_ref.location.len();

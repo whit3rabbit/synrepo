@@ -63,6 +63,13 @@ pub(super) fn build_artifact(
             .test_surface_card(&target.target, budget)
             .and_then(|card| to_value(card).map(|value| artifact("test_surface", target, value))),
         "call_path" => call_path_artifact(compiler, target, budget),
+        "source_slice" => super::source_slice::source_slice_content(
+            compiler,
+            target,
+            budget,
+            options.budget_tokens,
+        )
+        .map(|content| artifact("source_slice", target, content)),
         "search" => super::search::search_artifact(
             state,
             target,

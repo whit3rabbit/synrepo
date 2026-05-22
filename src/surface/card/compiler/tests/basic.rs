@@ -249,6 +249,41 @@ fn symbol_card_deep_includes_symbol_callers_and_callees() {
     assert!(normal.callees.is_empty());
 }
 
+#[test]
+fn symbol_card_deep_outlines_large_container_body() {
+    let repo = tempdir().unwrap();
+    fs::create_dir_all(repo.path().join("src")).unwrap();
+    let mut source = String::from("export class BigService {\n");
+    for idx in 0..80 {
+        source.push_str(&format!(
+            "  method{idx}() {{ return \"{}\"; }}\n",
+            "x".repeat(40)
+        ));
+    }
+    source.push_str("}\n");
+    fs::write(repo.path().join("src/main.ts"), source).unwrap();
+
+    let graph = bootstrap(&repo);
+    let file = graph.file_by_path("src/main.ts").unwrap().unwrap();
+    let big_id = graph
+        .symbols_for_file(file.id)
+        .unwrap()
+        .into_iter()
+        .find(|symbol| symbol.display_name == "BigService")
+        .map(|symbol| symbol.id)
+        .expect("BigService symbol must exist");
+    let compiler = make_compiler(graph, &repo);
+
+    let card = compiler.symbol_card(big_id, Budget::Deep).unwrap();
+
+    assert_eq!(card.source_body_state.as_deref(), Some("outline_only"));
+    assert!(card.source_body.is_none());
+    let outline = card.member_outline.expect("member outline must be present");
+    assert!(outline.member_count >= 40, "{outline:?}");
+    assert_eq!(outline.members.len(), 40);
+    assert!(outline.omitted_count > 0);
+}
+
 // 7.5: entry_point_card returns empty list (no panic) when no files are indexed
 #[test]
 fn entry_point_card_empty_repo_returns_no_panic() {
