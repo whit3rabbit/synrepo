@@ -3,6 +3,7 @@
 //! rendering still lives in `wizard.rs`; this module only owns the loop.
 
 mod action_handlers;
+mod confirm_enable_explain;
 mod confirm_stop_watch;
 mod explain_events;
 mod explain_generate;
@@ -17,6 +18,7 @@ mod state_impl;
 mod view_state;
 mod watch_events;
 
+pub use confirm_enable_explain::ConfirmEnableExplainState;
 pub use confirm_stop_watch::{
     describe_pending_mode, describe_pending_stop_action, ConfirmStopWatchState,
     PendingStopWatchAction,
@@ -41,7 +43,7 @@ use crossbeam_channel::Receiver;
 use crate::bootstrap::runtime_probe::{AgentIntegration, AgentTargetKind};
 use crate::pipeline::explain::telemetry::ExplainEvent;
 use crate::pipeline::watch::WatchEvent;
-use crate::surface::refactor_suggestions::RefactorSuggestionReport;
+use crate::surface::refactor_suggestions::{RefactorSuggestionMode, RefactorSuggestionReport};
 use crate::tui::agent_integrations::AgentInstallDisplayRow;
 use crate::tui::probe::HeaderVm;
 use crate::tui::projects::ProjectRef;
@@ -139,6 +141,8 @@ pub struct AppState {
     pub(crate) integration_selected: usize,
     /// Cached large-file refactor suggestions for render-time display.
     pub suggestion_report: Option<RefactorSuggestionReport>,
+    /// Active suggestion mode for the Suggestion tab.
+    pub suggestion_mode: RefactorSuggestionMode,
     /// Registry-backed project rows shown by the Repos tab.
     pub(crate) explore_projects: Vec<ProjectRef>,
     /// Last time Repos-tab project metadata was probed.
@@ -162,6 +166,9 @@ pub struct AppState {
     /// When set, the dashboard loop should run explain in-place after the
     /// current key event is handled.
     pub pending_explain: VecDeque<PendingExplainRun>,
+    /// Confirm-enable-explain modal state. `Some` when explain is disabled and
+    /// the operator asked to launch a provider-backed run.
+    pub confirm_enable_explain: Option<ConfirmEnableExplainState>,
     /// When set, the caller should build embeddings after leaving the
     /// alternate screen.
     pub launch_embedding_build: Option<PendingEmbeddingBuild>,

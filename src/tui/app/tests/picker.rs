@@ -1,5 +1,5 @@
 use super::super::*;
-use super::support::make_ready_poll_state;
+use super::support::{make_explain_enabled_poll_state, make_ready_poll_state};
 use crossterm::event::{KeyCode, KeyModifiers};
 
 fn prime_picker(state: &mut AppState) {
@@ -36,7 +36,7 @@ fn picker_esc_clears_without_exit() {
 
 #[test]
 fn picker_enter_with_selection_queues_paths_mode() {
-    let (_repo, mut state) = make_ready_poll_state();
+    let (_repo, mut state) = make_explain_enabled_poll_state();
     state.set_tab(ActiveTab::Explain);
     prime_picker(&mut state);
     let consumed = state.handle_key(KeyCode::Enter, KeyModifiers::NONE);

@@ -84,16 +84,27 @@ impl AppState {
         self.load_suggestions(true);
     }
 
+    /// Switch Suggestion-tab mode and rebuild the cached report.
+    pub(crate) fn toggle_suggestion_mode(&mut self) {
+        self.suggestion_mode = self.suggestion_mode.toggled();
+        self.suggestion_report = None;
+        self.load_suggestions(true);
+    }
+
     fn load_suggestions(&mut self, toast: bool) {
         match collect_refactor_suggestions_for_repo(
             &self.repo_root,
-            RefactorSuggestionOptions::default(),
+            RefactorSuggestionOptions {
+                mode: self.suggestion_mode,
+                ..RefactorSuggestionOptions::default()
+            },
         ) {
             Ok(report) => {
                 let count = report.candidate_count;
                 self.suggestion_report = Some(report);
                 if toast {
-                    self.set_toast(format!("suggestions refreshed: {count} candidates"));
+                    let mode = self.suggestion_mode.label();
+                    self.set_toast(format!("suggestions refreshed: {mode}: {count} candidates"));
                 }
             }
             Err(error) => {

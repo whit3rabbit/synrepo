@@ -291,6 +291,7 @@ fn draw_dashboard(frame: &mut ratatui::Frame, state: &mut AppState) {
                 snapshot: &state.snapshot,
                 picker: state.picker.as_ref(),
                 generate_commentary: state.generate_commentary.as_ref(),
+                confirm_enable_explain: state.confirm_enable_explain.as_ref(),
                 confirm_stop_watch: state.confirm_stop_watch.as_ref(),
                 preview_panel: state.explain_preview.as_ref(),
                 theme: &state.theme,
@@ -308,6 +309,7 @@ fn draw_dashboard(frame: &mut ratatui::Frame, state: &mut AppState) {
         ActiveTab::Suggestion => {
             let suggestion = SuggestionTabWidget {
                 report: state.suggestion_report.as_ref(),
+                mode: state.suggestion_mode,
                 theme: &state.theme,
             };
             frame.render_widget(suggestion, content_area);

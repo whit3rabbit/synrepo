@@ -9,10 +9,11 @@ use ratatui::widgets::{Block, Borders, List, ListItem, Widget};
 use crate::pipeline::explain::{ExplainPreviewGroup, ExplainStatus};
 use crate::surface::status_snapshot::StatusSnapshot;
 use crate::tui::app::{
-    ConfirmStopWatchState, ExplainPreviewPanel, ExplainPreviewState, FolderPickerState,
-    GenerateCommentaryState,
+    ConfirmEnableExplainState, ConfirmStopWatchState, ExplainPreviewPanel, ExplainPreviewState,
+    FolderPickerState, GenerateCommentaryState,
 };
 use crate::tui::theme::Theme;
+use crate::tui::widgets::confirm_enable_explain::render_confirm_enable_explain;
 use crate::tui::widgets::confirm_stop_watch::render_confirm_stop_watch;
 use crate::tui::widgets::explain_generate::render_generate_commentary;
 
@@ -28,6 +29,8 @@ pub struct ExplainTabWidget<'a> {
     pub picker: Option<&'a FolderPickerState>,
     /// Active explicit-generate modal state, when the sub-view is open.
     pub generate_commentary: Option<&'a GenerateCommentaryState>,
+    /// Active confirm-enable-explain modal state, when explain is off.
+    pub confirm_enable_explain: Option<&'a ConfirmEnableExplainState>,
     /// Active confirm-stop-watch modal state, when the sub-view is open.
     pub confirm_stop_watch: Option<&'a ConfirmStopWatchState>,
     /// Cached queued-work preview for the tab.
@@ -43,7 +46,9 @@ impl Widget for ExplainTabWidget<'_> {
             .borders(Borders::ALL)
             .border_style(self.theme.border_style());
 
-        let lines = if let Some(confirm) = self.confirm_stop_watch {
+        let lines = if let Some(confirm) = self.confirm_enable_explain {
+            render_confirm_enable_explain(confirm, self.snapshot, self.theme)
+        } else if let Some(confirm) = self.confirm_stop_watch {
             render_confirm_stop_watch(confirm, self.theme)
         } else if let Some(generate) = self.generate_commentary {
             render_generate_commentary(generate, self.theme)

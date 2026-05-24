@@ -1,7 +1,8 @@
 use super::super::*;
-use super::support::{isolated_home, make_live_state, make_poll_state};
+use super::support::{isolated_home, make_live_state, make_poll_state, make_ready_poll_state};
 use crate::bootstrap::runtime_probe::AgentIntegration;
 use crate::pipeline::watch::{ReconcileOutcome, WatchEvent};
+use crate::surface::refactor_suggestions::RefactorSuggestionMode;
 use crate::tui::probe::Severity;
 use crate::tui::projects::ProjectRef;
 use crate::tui::theme::Theme;
@@ -182,6 +183,31 @@ fn repos_tab_reuses_recent_project_cache() {
 
     assert_eq!(state.explore_projects.len(), 1);
     assert_eq!(state.explore_projects[0].id, "cached");
+}
+
+#[test]
+fn suggestion_tab_toggles_mode_and_refreshes_active_mode() {
+    let (_dir, mut state) = make_ready_poll_state();
+
+    state.set_tab(ActiveTab::Suggestion);
+    assert_eq!(state.suggestion_mode, RefactorSuggestionMode::LineCount);
+    assert_eq!(
+        state.suggestion_report.as_ref().map(|report| report.mode),
+        Some(RefactorSuggestionMode::LineCount)
+    );
+
+    assert!(state.handle_key(KeyCode::Char('s'), KeyModifiers::NONE));
+    assert_eq!(state.suggestion_mode, RefactorSuggestionMode::MissingDocs);
+    assert_eq!(
+        state.suggestion_report.as_ref().map(|report| report.mode),
+        Some(RefactorSuggestionMode::MissingDocs)
+    );
+
+    assert!(state.handle_key(KeyCode::Char('r'), KeyModifiers::NONE));
+    assert_eq!(
+        state.suggestion_report.as_ref().map(|report| report.mode),
+        Some(RefactorSuggestionMode::MissingDocs)
+    );
 }
 
 #[test]

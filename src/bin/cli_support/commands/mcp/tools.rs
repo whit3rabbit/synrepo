@@ -138,7 +138,7 @@ impl SynrepoServer {
         self.with_tool_state_blocking("synrepo_entrypoints", params.repo_root.clone(), move |state| cards::handle_entrypoints(&state, params.scope, params.budget, params.budget_tokens)).await
     }
 
-    #[tool(name = "synrepo_refactor_suggestions", description = "Suggest large non-test source files that may benefit from modular refactors. Returns deterministic file facts and lightweight modularity hints for LLM analysis.")]
+    #[tool(name = "synrepo_refactor_suggestions", description = "Suggest non-test source files by mode. mode=line_count reports large files with modularity hints; mode=missing_docs reports public symbols missing AST-extracted docs.")]
     async fn synrepo_refactor_suggestions(&self, Parameters(params): Parameters<refactor_suggestions::RefactorSuggestionsParams>) -> String {
         let repo_root = params.repo_root.clone();
         self.with_tool_state_blocking("synrepo_refactor_suggestions", repo_root, move |state| refactor_suggestions::handle_refactor_suggestions(&state, params)).await

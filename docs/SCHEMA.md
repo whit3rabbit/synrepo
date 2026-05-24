@@ -1,7 +1,8 @@
 # SCHEMA.md
 
 Authoritative reference for the on-disk shape of `.synrepo/`, the user-wide
-registry, the compatibility snapshot, and the serialized state files.
+registry, the compatibility snapshot, serialized state files, and selected
+public JSON contracts that agents depend on.
 
 When a schema changes, this document changes in the same commit. If the two
 disagree, the source of truth is whatever `init_schema` writes; fix this
@@ -38,6 +39,7 @@ indexes only editable commentary docs, not the support files.
 | `INDEX_FORMAT_VERSION = 3` | `src/substrate/embedding/index/persistence.rs` | Embedding-index binary header. |
 | Registry `SCHEMA_VERSION = 2` | `src/registry/mod.rs` | `~/.synrepo/projects.toml` shape. User-wide; survives per-repo re-init. |
 | MCP `context_pack.SCHEMA_VERSION = 1` | `src/surface/mcp/context_pack.rs` | Public MCP response contract. Never reuse for storage. |
+| MCP `refactor_suggestions` response (unversioned) | `src/surface/refactor_suggestions/types.rs` | Public MCP response contract. Additive fields only unless docs and tests are updated together. |
 | Bench `SCHEMA_VERSION = 1` | `src/bin/cli_support/commands/context/bench.rs` | `synrepo context bench` JSON contract. |
 
 The overlay store carries no in-DB version stamp; schema changes ship as a
@@ -238,6 +240,87 @@ Every list / traversal read filters `retired_at_rev IS NULL`. Multi-query
 reads must run inside `with_graph_read_snapshot` (re-entrant; nested reads
 share one epoch). The writer lane is `&mut self` and must not interleave with
 a read snapshot on the same handle.
+
+## Public MCP JSON contracts
+
+These shapes are not persisted on disk, but agents and tests depend on them.
+Keep changes additive unless the docs, schema tests, and MCP contract tests are
+updated in the same commit.
+
+### `synrepo_refactor_suggestions`
+
+Source structs live in `src/surface/refactor_suggestions/types.rs`. The tool is
+read-only and returns `source_store: "graph+filesystem"` because it combines
+graph metadata with current filesystem line counts.
+
+Top-level response:
+
+```text
+RefactorSuggestionReport {
+    source_store: "graph+filesystem",
+    mode: "line_count" | "missing_docs",
+    metric: "physical_lines" | "missing_public_docs",
+    threshold: usize,                    // supplied physical-line threshold
+    criteria: RefactorSuggestionCriteria,
+    candidate_count: usize,              // before limit truncation
+    omitted_count: usize,                // candidates omitted by limit
+    groups: Vec<RefactorSuggestionGroup>,
+    candidates: Vec<RefactorSuggestionCandidate>,
+}
+```
+
+`criteria` makes mode-specific eligibility explicit:
+
+```text
+RefactorSuggestionCriteria {
+    line_count_threshold: usize,
+    line_count_threshold_applied: bool,
+    visibility: Option<"public">,
+    doc_source: Option<"ast_doc_comment">,
+}
+```
+
+For `mode: "line_count"`, `line_count_threshold_applied` is `true`; candidate
+eligibility is `line_count > threshold`.
+
+For `mode: "missing_docs"`, `line_count_threshold_applied` is `false`,
+`visibility` is `"public"`, and `doc_source` is `"ast_doc_comment"`. Candidate
+eligibility is at least one active public graph symbol whose stored
+`doc_comment` is `null`, limited to wired tree-sitter languages whose parser
+currently emits doc comments.
+
+Candidate response:
+
+```text
+RefactorSuggestionCandidate {
+    path: String,
+    file_id: FileNodeId,
+    language: Option<String>,
+    line_count: usize,
+    size_bytes: u64,
+    symbol_counts: RefactorSymbolCounts,
+    missing_public_doc_count: usize,
+    missing_public_docs: Vec<MissingPublicDocSymbol>,
+    missing_public_docs_omitted: usize,
+    modularity_tags: Vec<String>,
+    suggestion: String,
+    recommended_follow_up: Vec<String>,
+}
+```
+
+`missing_public_docs` is bounded by
+`DEFAULT_MISSING_PUBLIC_DOC_PREVIEW_LIMIT`; remaining symbols are counted in
+`missing_public_docs_omitted`.
+
+```text
+MissingPublicDocSymbol {
+    symbol_id: SymbolNodeId,
+    qualified_name: String,
+    display_name: String,
+    kind: SymbolKind,
+    signature: Option<String>,
+}
+```
 
 ## Overlay store: `.synrepo/overlay/overlay.db`
 

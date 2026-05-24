@@ -5,12 +5,14 @@ use crossbeam_channel::{Receiver, TryRecvError};
 
 use super::render_cache::{build_initial_header_vm, build_initial_integration_display_rows};
 use super::{
-    ActiveTab, AppMode, AppState, DashboardExit, EventLog, PendingEmbeddingBuild, PendingExplainRun,
+    quick_actions_for, ActiveTab, AppMode, AppState, DashboardExit, EventLog,
+    PendingEmbeddingBuild, PendingExplainRun,
 };
 use crate::bootstrap::runtime_probe::AgentIntegration;
 use crate::config::Config;
 use crate::pipeline::explain::telemetry;
 use crate::pipeline::watch::{watch_service_status, WatchEvent, WatchServiceStatus};
+use crate::surface::refactor_suggestions::RefactorSuggestionMode;
 use crate::surface::status_snapshot::{build_status_snapshot, StatusOptions};
 use crate::tui::actions::{materialize_now, now_rfc3339, ActionContext};
 use crate::tui::agent_integrations::build_agent_install_statuses;
@@ -18,8 +20,6 @@ use crate::tui::materializer::{MaterializeOutcome, MaterializeState, Materialize
 use crate::tui::probe::Severity;
 use crate::tui::theme::Theme;
 use crate::tui::widgets::LogEntry;
-
-use super::quick_actions_for;
 
 const TOAST_TTL: Duration = Duration::from_millis(4000);
 
@@ -36,9 +36,7 @@ impl AppState {
         )
     }
 
-    /// Build a new live-mode app state bound to a `WatchEvent` receiver. Live
-    /// mode still polls status files for the header stats, but the log pane is
-    /// driven by the event bus instead of being inferred from state-file diffs.
+    /// Build a live-mode app state bound to `WatchEvent`s.
     pub fn new_live(
         repo_root: &Path,
         theme: Theme,
@@ -120,6 +118,7 @@ impl AppState {
             integration_display_rows,
             integration_selected: 0,
             suggestion_report: None,
+            suggestion_mode: RefactorSuggestionMode::LineCount,
             explore_projects: Vec::new(),
             explore_projects_loaded_at: None,
             explore_selected: 0,
@@ -130,6 +129,7 @@ impl AppState {
             launch_explain_setup: false,
             launch_embeddings_setup: false,
             pending_explain: std::collections::VecDeque::new(),
+            confirm_enable_explain: None,
             launch_embedding_build: None,
             confirm_stop_watch: None,
             pending_quick_confirm: None,

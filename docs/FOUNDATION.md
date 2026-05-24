@@ -398,7 +398,7 @@ Task-first and artifact-centric. The default response unit is a card (or set of 
 | `synrepo_module_card(path, budget?)` | shipped | Directory-targeted ModuleCard; standalone-usable, also exposed via MCP | ModuleCard at the specified tier |
 | `synrepo_task_route(task, path?)` | shipped | Classify a task into the cheapest safe route | Intent, confidence, recommended tools, budget tier, signals |
 | `synrepo_where_to_edit(task_description, budget?)` | shipped | "I want to do X, which files matter?" | Ranked FileCards from lexical matches plus lightweight structural signals |
-| `synrepo_refactor_suggestions(min_lines?, limit?, path_filter?)` | shipped | "Should I refactor any files?" | Large non-test source files with deterministic modularity hints |
+| `synrepo_refactor_suggestions(mode?, min_lines?, limit?, path_filter?)` | shipped | "Should I refactor or document any files?" | Large non-test source files or public symbols missing AST-extracted docs |
 | `synrepo_change_impact(target, budget?)` | shipped | "If I modify this, what could break?" | Approximate impacted files today; fuller ChangeRiskCard shape later |
 | `synrepo_entrypoints(scope?, budget?)` | shipped | "Where does execution start?" | EntryPointCards for the scope |
 | `synrepo_call_path(from, to, budget?)` | shipped | "How does control flow get from A to B?" | CallPathCard with shortest path |

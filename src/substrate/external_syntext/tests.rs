@@ -135,6 +135,78 @@ fn external_syntext_update_invokes_st_update() {
 
 #[cfg(unix)]
 #[test]
+fn external_syntext_update_exit_falls_back_to_st_index_force() {
+    let repo = tempdir().unwrap();
+    fs::create_dir_all(repo.path().join(EXTERNAL_SYNTEXT_DIR)).unwrap();
+    fs::write(
+        repo.path()
+            .join(EXTERNAL_SYNTEXT_DIR)
+            .join(EXTERNAL_SYNTEXT_MANIFEST),
+        "{}",
+    )
+    .unwrap();
+    let fake_st = write_fake_st(
+        repo.path(),
+        "if [ \"$1\" = \"update\" ]; then exit 7; fi\nexit 0\n",
+    );
+
+    let report =
+        sync_external_syntext_index_with_program(repo.path(), &fake_st, Duration::from_secs(2))
+            .unwrap();
+
+    assert_eq!(report, ExternalSyntextSync::Updated);
+    let index_dir = repo.path().join(EXTERNAL_SYNTEXT_DIR);
+    let args = fs::read_to_string(fake_st.with_file_name("st.args")).unwrap();
+    assert_eq!(
+        args,
+        format!(
+            "update\n--quiet\n--repo-root\n{}\n--index-dir\n{}\nindex\n--force\n--quiet\n--repo-root\n{}\n--index-dir\n{}\n",
+            repo.path().display(),
+            index_dir.display(),
+            repo.path().display(),
+            index_dir.display()
+        )
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn external_syntext_update_exit_reports_failed_index_force() {
+    let repo = tempdir().unwrap();
+    fs::create_dir_all(repo.path().join(EXTERNAL_SYNTEXT_DIR)).unwrap();
+    fs::write(
+        repo.path()
+            .join(EXTERNAL_SYNTEXT_DIR)
+            .join(EXTERNAL_SYNTEXT_MANIFEST),
+        "{}",
+    )
+    .unwrap();
+    let fake_st = write_fake_st(
+        repo.path(),
+        "if [ \"$1\" = \"update\" ]; then exit 7; fi\nif [ \"$1\" = \"index\" ] && [ \"$2\" = \"--force\" ]; then exit 8; fi\nexit 0\n",
+    );
+
+    let err =
+        sync_external_syntext_index_with_program(repo.path(), &fake_st, Duration::from_secs(2))
+            .unwrap_err();
+
+    assert!(err.to_string().contains("index --force"));
+    let index_dir = repo.path().join(EXTERNAL_SYNTEXT_DIR);
+    let args = fs::read_to_string(fake_st.with_file_name("st.args")).unwrap();
+    assert_eq!(
+        args,
+        format!(
+            "update\n--quiet\n--repo-root\n{}\n--index-dir\n{}\nindex\n--force\n--quiet\n--repo-root\n{}\n--index-dir\n{}\n",
+            repo.path().display(),
+            index_dir.display(),
+            repo.path().display(),
+            index_dir.display()
+        )
+    );
+}
+
+#[cfg(unix)]
+#[test]
 fn external_syntext_index_invokes_st_index() {
     let repo = tempdir().unwrap();
     let fake_st = write_fake_st(repo.path(), "exit 0\n");
@@ -174,7 +246,7 @@ fn write_fake_st(repo: &Path, trailer: &str) -> std::path::PathBuf {
     let fake_st = bin_dir.join("st");
     fs::write(
         &fake_st,
-        format!("#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$0.args\"\n{trailer}"),
+        format!("#!/bin/sh\nprintf '%s\\n' \"$@\" >> \"$0.args\"\n{trailer}"),
     )
     .unwrap();
     let mut permissions = fs::metadata(&fake_st).unwrap().permissions();

@@ -3,16 +3,20 @@ use serde::Deserialize;
 
 use crate::substrate::discover_roots;
 use crate::surface::refactor_suggestions::{
-    collect_refactor_suggestions, RefactorSuggestionOptions, DEFAULT_LIMIT, DEFAULT_MIN_LINES,
+    collect_refactor_suggestions, RefactorSuggestionMode, RefactorSuggestionOptions, DEFAULT_LIMIT,
+    DEFAULT_MIN_LINES,
 };
 
-use super::helpers::render_result;
+use super::helpers::with_mcp_compiler;
 use super::SynrepoState;
 
 /// Parameters for the `synrepo_refactor_suggestions` tool.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct RefactorSuggestionsParams {
     pub repo_root: Option<std::path::PathBuf>,
+    /// Suggestion mode. Defaults to `line_count`.
+    #[serde(default)]
+    pub mode: RefactorSuggestionMode,
     /// Physical-line threshold. Files must be greater than this value.
     #[serde(default = "default_min_lines")]
     pub min_lines: usize,
@@ -36,23 +40,19 @@ pub fn handle_refactor_suggestions(
     state: &SynrepoState,
     params: RefactorSuggestionsParams,
 ) -> String {
-    let result: anyhow::Result<serde_json::Value> = (|| {
-        let compiler = state
-            .create_read_compiler()
-            .map_err(|e| anyhow::anyhow!(e))?;
+    with_mcp_compiler(state, |compiler| {
         let roots = discover_roots(&state.repo_root, &state.config);
-        let report = collect_refactor_suggestions(
-            &compiler,
+        Ok(collect_refactor_suggestions(
+            compiler,
             &roots,
             RefactorSuggestionOptions {
+                mode: params.mode,
                 min_lines: params.min_lines,
                 limit: params.limit,
                 path_filter: params.path_filter,
             },
-        )?;
-        Ok(serde_json::to_value(report)?)
-    })();
-    render_result(result)
+        )?)
+    })
 }
 
 #[cfg(test)]
@@ -95,6 +95,7 @@ mod tests {
             &state,
             RefactorSuggestionsParams {
                 repo_root: None,
+                mode: RefactorSuggestionMode::LineCount,
                 min_lines: 300,
                 limit: 20,
                 path_filter: None,
@@ -103,12 +104,51 @@ mod tests {
         let value: serde_json::Value = serde_json::from_str(&output).unwrap();
 
         assert_eq!(value["source_store"], "graph+filesystem");
+        assert_eq!(value["mode"], "line_count");
         assert_eq!(value["metric"], "physical_lines");
         assert_eq!(value["threshold"], 300);
+        assert_eq!(value["criteria"]["line_count_threshold"], 300);
+        assert_eq!(value["criteria"]["line_count_threshold_applied"], true);
         assert_eq!(value["candidate_count"], 1);
         assert_eq!(value["candidates"][0]["path"], "src/lib.rs");
         assert_eq!(value["candidates"][0]["language"], "rust");
         assert!(value["candidates"][0]["recommended_follow_up"]
+            .as_array()
+            .is_some_and(|items| !items.is_empty()));
+    }
+
+    #[test]
+    fn handler_returns_missing_docs_contract() {
+        let (_dir, state) = make_state();
+        let output = handle_refactor_suggestions(
+            &state,
+            RefactorSuggestionsParams {
+                repo_root: None,
+                mode: RefactorSuggestionMode::MissingDocs,
+                min_lines: 300,
+                limit: 20,
+                path_filter: None,
+            },
+        );
+        let value: serde_json::Value = serde_json::from_str(&output).unwrap();
+
+        assert_eq!(value["source_store"], "graph+filesystem");
+        assert_eq!(value["mode"], "missing_docs");
+        assert_eq!(value["metric"], "missing_public_docs");
+        assert_eq!(value["threshold"], 300);
+        assert_eq!(value["criteria"]["line_count_threshold"], 300);
+        assert_eq!(value["criteria"]["line_count_threshold_applied"], false);
+        assert_eq!(value["criteria"]["visibility"], "public");
+        assert_eq!(value["criteria"]["doc_source"], "ast_doc_comment");
+        assert_eq!(value["candidate_count"], 1);
+        assert_eq!(value["candidates"][0]["path"], "src/lib.rs");
+        assert_eq!(value["candidates"][0]["missing_public_doc_count"], 1);
+        assert!(
+            value["candidates"][0]["missing_public_docs"][0]["symbol_id"]
+                .as_str()
+                .is_some_and(|id| id.starts_with("sym_"))
+        );
+        assert!(value["candidates"][0]["missing_public_docs"]
             .as_array()
             .is_some_and(|items| !items.is_empty()));
     }

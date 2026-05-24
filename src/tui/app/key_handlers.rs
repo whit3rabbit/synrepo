@@ -20,6 +20,11 @@ impl AppState {
                 return consumed;
             }
         }
+        if self.confirm_enable_explain.is_some() {
+            if let Some(consumed) = self.handle_confirm_enable_explain_key(code, modifiers) {
+                return consumed;
+            }
+        }
         if self.pending_quick_confirm.is_some() {
             if let Some(consumed) = self.handle_quick_confirm_key(code, modifiers) {
                 return consumed;
@@ -200,12 +205,21 @@ impl AppState {
         {
             return true;
         }
-        match code {
-            KeyCode::Char('r') => {
-                if matches!(self.active_tab, ActiveTab::Suggestion) {
+        if matches!(self.active_tab, ActiveTab::Suggestion) {
+            match code {
+                KeyCode::Char('s') => {
+                    self.toggle_suggestion_mode();
+                    return true;
+                }
+                KeyCode::Char('r') => {
                     self.refresh_suggestions();
                     return true;
                 }
+                _ => {}
+            }
+        }
+        match code {
+            KeyCode::Char('r') => {
                 self.refresh_now();
                 let counts = match self.snapshot.graph_stats.as_ref() {
                     Some(g) => format!("{} files, {} symbols", g.file_nodes, g.symbol_nodes),

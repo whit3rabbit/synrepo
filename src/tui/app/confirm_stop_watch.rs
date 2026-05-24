@@ -8,8 +8,9 @@
 
 use crossterm::event::{KeyCode, KeyModifiers};
 
-use super::{AppState, ExplainMode, PendingExplainRun};
+use super::{AppState, ConfirmEnableExplainState, ExplainMode, PendingExplainRun};
 use crate::config::Config;
+use crate::pipeline::explain::ExplainStatus;
 use crate::pipeline::watch::{watch_service_status, WatchServiceStatus};
 use crate::tui::actions::{outcome_to_log, stop_watch, ActionContext, ActionOutcome};
 
@@ -34,6 +35,17 @@ impl AppState {
     /// three direct assignments to `launch_explain` (picker Enter, `r`, `c`)
     /// so every path runs through the same watch check.
     pub(super) fn queue_explain(&mut self, mode: ExplainMode) {
+        if matches!(
+            self.snapshot
+                .explain_provider
+                .as_ref()
+                .map(|display| &display.status),
+            Some(ExplainStatus::Disabled) | Some(ExplainStatus::DisabledKeyDetected { .. })
+        ) {
+            self.confirm_enable_explain = Some(ConfirmEnableExplainState { mode });
+            return;
+        }
+
         let synrepo_dir = Config::synrepo_dir(&self.repo_root);
         match watch_service_status(&synrepo_dir) {
             WatchServiceStatus::Running(_) | WatchServiceStatus::Starting => {

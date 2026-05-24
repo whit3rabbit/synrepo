@@ -4,7 +4,11 @@ use super::{node_text, Language};
 ///
 /// Rust: walk preceding siblings collecting contiguous `///` line comments.
 /// Python: read the first statement of the body if it is a string literal.
-/// TypeScript/TSX: find the nearest preceding `/**` block comment.
+/// TypeScript/TSX and JavaScript: find the nearest preceding `/**` block comment.
+/// Java/Kotlin/PHP: find the nearest preceding `/**` block comment.
+/// C#/Swift/Dart: find nearest preceding `///` or `/**` doc comment.
+/// C/C++: find nearest preceding Doxygen-style `///`, `//!`, `/**`, or `/*!`.
+/// Ruby: collect contiguous preceding `#` comments.
 pub(super) fn extract_doc_comment(
     item_node: tree_sitter::Node,
     source: &[u8],
@@ -46,23 +50,8 @@ pub(super) fn extract_doc_comment(
             }
             strip_python_quotes(&node_text(sn, source))
         }
-        Language::TypeScript | Language::Tsx => {
-            let mut prev = item_node.prev_named_sibling();
-            while let Some(node) = prev {
-                if node.kind() == "decorator" {
-                    prev = node.prev_named_sibling();
-                    continue;
-                }
-                if node.kind() == "comment" {
-                    let t = node_text(node, source);
-                    if t.starts_with("/**") {
-                        let c = strip_jsdoc(&t);
-                        return if c.is_empty() { None } else { Some(c) };
-                    }
-                }
-                break;
-            }
-            None
+        Language::TypeScript | Language::Tsx | Language::JavaScript => {
+            preceding_doc_comment(item_node, source, &[], &["/**"], &["decorator"])
         }
         Language::Go => {
             // Go doc comments are contiguous `//` or `/* */` comment nodes
@@ -98,16 +87,16 @@ pub(super) fn extract_doc_comment(
                 Some(joined)
             }
         }
-        Language::JavaScript
-        | Language::Java
-        | Language::Kotlin
-        | Language::CSharp
-        | Language::Php
-        | Language::Ruby
-        | Language::Swift
-        | Language::C
-        | Language::Cpp
-        | Language::Dart => None,
+        Language::Java | Language::Kotlin | Language::Php => {
+            preceding_doc_comment(item_node, source, &[], &["/**"], &[])
+        }
+        Language::CSharp | Language::Swift | Language::Dart => {
+            preceding_doc_comment(item_node, source, &["///"], &["/**"], &[])
+        }
+        Language::C | Language::Cpp => {
+            preceding_doc_comment(item_node, source, &["///", "//!"], &["/**", "/*!"], &[])
+        }
+        Language::Ruby => preceding_doc_comment(item_node, source, &["#"], &[], &[]),
     }
 }
 
@@ -240,10 +229,6 @@ fn strip_python_quotes(raw: &str) -> Option<String> {
     }
 }
 
-fn strip_jsdoc(text: &str) -> String {
-    strip_comment_block(text, "/**")
-}
-
 /// Strip a `/* ... */` block comment to its inner text.
 /// `open_marker` is the prefix to remove (`"/**"` for JSDoc, `"/*"` for Go/C).
 fn strip_comment_block(text: &str, open_marker: &str) -> String {
@@ -260,4 +245,86 @@ fn strip_comment_block(text: &str, open_marker: &str) -> String {
         .filter(|l| !l.is_empty())
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+fn preceding_doc_comment(
+    item_node: tree_sitter::Node,
+    source: &[u8],
+    line_prefixes: &[&str],
+    block_prefixes: &[&str],
+    skip_kinds: &[&str],
+) -> Option<String> {
+    let mut lines: Vec<String> = Vec::new();
+    let anchor = doc_comment_anchor(item_node);
+    let mut prev = anchor.prev_named_sibling();
+    while let Some(node) = prev {
+        if skip_kinds.contains(&node.kind()) {
+            prev = node.prev_named_sibling();
+            continue;
+        }
+        if !is_comment_node(node.kind()) {
+            break;
+        }
+        let text = node_text(node, source);
+        if let Some(stripped) = strip_line_comment(&text, line_prefixes) {
+            lines.push(stripped);
+            prev = node.prev_named_sibling();
+            continue;
+        }
+        if lines.is_empty() {
+            if let Some(stripped) = strip_block_doc_comment(&text, block_prefixes) {
+                return (!stripped.is_empty()).then_some(stripped);
+            }
+        }
+        break;
+    }
+    if lines.is_empty() {
+        return None;
+    }
+    lines.reverse();
+    let joined = lines.join("\n");
+    (!joined.is_empty()).then_some(joined)
+}
+
+fn strip_line_comment(text: &str, prefixes: &[&str]) -> Option<String> {
+    let trimmed = text.trim_start();
+    prefixes
+        .iter()
+        .find_map(|prefix| trimmed.strip_prefix(prefix))
+        .map(|rest| rest.trim().to_string())
+}
+
+fn strip_block_doc_comment(text: &str, prefixes: &[&str]) -> Option<String> {
+    let trimmed = text.trim_start();
+    prefixes
+        .iter()
+        .find(|prefix| trimmed.starts_with(**prefix))
+        .map(|prefix| strip_comment_block(trimmed, prefix))
+}
+
+fn is_comment_node(kind: &str) -> bool {
+    matches!(
+        kind,
+        "comment" | "line_comment" | "block_comment" | "multiline_comment"
+    )
+}
+
+fn doc_comment_anchor(item_node: tree_sitter::Node) -> tree_sitter::Node {
+    let mut anchor = item_node;
+    while let Some(parent) = anchor.parent() {
+        if is_doc_comment_wrapper(parent.kind(), anchor.kind()) {
+            anchor = parent;
+        } else {
+            break;
+        }
+    }
+    anchor
+}
+
+fn is_doc_comment_wrapper(parent_kind: &str, child_kind: &str) -> bool {
+    matches!(
+        parent_kind,
+        "export_statement" | "lexical_declaration" | "variable_declaration" | "declaration"
+    ) || parent_kind == "variable_declarator"
+        || (parent_kind == "function_declaration" && child_kind == "function_signature")
 }

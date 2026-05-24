@@ -2,6 +2,7 @@
 
 use super::super::*;
 use crate::bootstrap::runtime_probe::AgentIntegration;
+use crate::pipeline::explain::ExplainStatus;
 use crate::pipeline::watch::WatchEvent;
 use crate::tui::theme::Theme;
 
@@ -27,6 +28,21 @@ pub(super) fn make_ready_poll_state() -> (tempfile::TempDir, AppState) {
     crate::bootstrap::bootstrap(tempdir.path(), None, false).expect("bootstrap");
     let state = AppState::new_poll(tempdir.path(), Theme::plain(), AgentIntegration::Absent);
     (tempdir, state)
+}
+
+pub(super) fn make_explain_enabled_poll_state() -> (tempfile::TempDir, AppState) {
+    let (tempdir, mut state) = make_ready_poll_state();
+    force_explain_status(&mut state, ExplainStatus::Enabled);
+    (tempdir, state)
+}
+
+pub(super) fn force_explain_status(state: &mut AppState, status: ExplainStatus) {
+    state
+        .snapshot
+        .explain_provider
+        .as_mut()
+        .expect("bootstrapped test state should include explain status")
+        .status = status;
 }
 
 pub(super) fn isolated_home() -> (tempfile::TempDir, crate::config::test_home::HomeEnvGuard) {

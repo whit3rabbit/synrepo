@@ -2,7 +2,10 @@ use std::fs;
 
 use tempfile::tempdir;
 
-use super::{collect_refactor_suggestions_for_repo, RefactorSuggestionOptions, DEFAULT_MIN_LINES};
+use super::{
+    collect_refactor_suggestions_for_repo, RefactorSuggestionMode, RefactorSuggestionOptions,
+    DEFAULT_MIN_LINES, DEFAULT_MISSING_PUBLIC_DOC_PREVIEW_LIMIT,
+};
 
 fn make_repo(files: &[(&str, String)]) -> (tempfile::TempDir, std::path::PathBuf) {
     let home = tempdir().unwrap();
@@ -43,8 +46,12 @@ fn threshold_excludes_exact_count_and_includes_above_count() {
         .collect();
     assert_eq!(paths, vec!["src/above.rs"]);
     assert_eq!(report.threshold, DEFAULT_MIN_LINES);
+    assert_eq!(report.criteria.line_count_threshold, DEFAULT_MIN_LINES);
+    assert!(report.criteria.line_count_threshold_applied);
+    assert_eq!(report.mode, RefactorSuggestionMode::LineCount);
     assert_eq!(report.metric, "physical_lines");
     assert_eq!(report.source_store, "graph+filesystem");
+    assert_eq!(report.candidates[0].missing_public_doc_count, 0);
 }
 
 #[test]
@@ -107,4 +114,129 @@ fn glob_path_filter_matches_candidates() {
 
     assert_eq!(report.candidate_count, 1);
     assert_eq!(report.candidates[0].path, "src/app/main.rs");
+}
+
+#[test]
+fn missing_docs_reports_public_undocumented_rust_symbol() {
+    let (_dir, repo) = make_repo(&[(
+        "src/lib.rs",
+        "pub fn missing_docs() {}\nfn private_helper() {}\n".to_string(),
+    )]);
+    let options = RefactorSuggestionOptions {
+        mode: RefactorSuggestionMode::MissingDocs,
+        ..RefactorSuggestionOptions::default()
+    };
+
+    let report = collect_refactor_suggestions_for_repo(&repo, options).unwrap();
+
+    assert_eq!(report.mode, RefactorSuggestionMode::MissingDocs);
+    assert_eq!(report.metric, "missing_public_docs");
+    assert_eq!(report.threshold, DEFAULT_MIN_LINES);
+    assert!(!report.criteria.line_count_threshold_applied);
+    assert_eq!(report.criteria.visibility, Some("public"));
+    assert_eq!(report.criteria.doc_source, Some("ast_doc_comment"));
+    assert_eq!(report.candidate_count, 1);
+    assert_eq!(report.candidates[0].path, "src/lib.rs");
+    assert_eq!(report.candidates[0].missing_public_doc_count, 1);
+    assert_eq!(
+        report.candidates[0].missing_public_docs[0].qualified_name,
+        "missing_docs"
+    );
+    assert!(report.candidates[0].missing_public_docs[0]
+        .symbol_id
+        .to_string()
+        .starts_with("sym_"));
+}
+
+#[test]
+fn missing_docs_ignores_private_undocumented_symbol() {
+    let (_dir, repo) = make_repo(&[("src/lib.rs", "fn private_helper() {}\n".to_string())]);
+    let options = RefactorSuggestionOptions {
+        mode: RefactorSuggestionMode::MissingDocs,
+        ..RefactorSuggestionOptions::default()
+    };
+
+    let report = collect_refactor_suggestions_for_repo(&repo, options).unwrap();
+
+    assert_eq!(report.candidate_count, 0);
+    assert!(report.candidates.is_empty());
+}
+
+#[test]
+fn missing_docs_ignores_documented_public_symbol() {
+    let (_dir, repo) = make_repo(&[(
+        "src/lib.rs",
+        "/// Existing docs.\npub fn documented() {}\n".to_string(),
+    )]);
+    let options = RefactorSuggestionOptions {
+        mode: RefactorSuggestionMode::MissingDocs,
+        ..RefactorSuggestionOptions::default()
+    };
+
+    let report = collect_refactor_suggestions_for_repo(&repo, options).unwrap();
+
+    assert_eq!(report.candidate_count, 0);
+    assert!(report.candidates.is_empty());
+}
+
+#[test]
+fn missing_docs_reports_undocumented_java_symbol() {
+    let (_dir, repo) = make_repo(&[("src/Greeter.java", "public class Greeter {}\n".to_string())]);
+    let options = RefactorSuggestionOptions {
+        mode: RefactorSuggestionMode::MissingDocs,
+        ..RefactorSuggestionOptions::default()
+    };
+
+    let report = collect_refactor_suggestions_for_repo(&repo, options).unwrap();
+
+    assert_eq!(report.candidate_count, 1);
+    assert_eq!(report.candidates[0].language.as_deref(), Some("java"));
+    assert_eq!(report.candidates[0].missing_public_doc_count, 1);
+    assert_eq!(
+        report.candidates[0].missing_public_docs[0].qualified_name,
+        "Greeter"
+    );
+}
+
+#[test]
+fn missing_docs_ignores_documented_java_symbol() {
+    let (_dir, repo) = make_repo(&[(
+        "src/Greeter.java",
+        "/** Existing docs. */\npublic class Greeter {}\n".to_string(),
+    )]);
+    let options = RefactorSuggestionOptions {
+        mode: RefactorSuggestionMode::MissingDocs,
+        ..RefactorSuggestionOptions::default()
+    };
+
+    let report = collect_refactor_suggestions_for_repo(&repo, options).unwrap();
+
+    assert_eq!(report.candidate_count, 0);
+    assert!(report.candidates.is_empty());
+}
+
+#[test]
+fn missing_docs_preview_is_bounded() {
+    let mut body = String::new();
+    for idx in 0..(DEFAULT_MISSING_PUBLIC_DOC_PREVIEW_LIMIT + 2) {
+        body.push_str(&format!("pub fn missing_{idx}() {{}}\n"));
+    }
+    let (_dir, repo) = make_repo(&[("src/lib.rs", body)]);
+    let options = RefactorSuggestionOptions {
+        mode: RefactorSuggestionMode::MissingDocs,
+        ..RefactorSuggestionOptions::default()
+    };
+
+    let report = collect_refactor_suggestions_for_repo(&repo, options).unwrap();
+    let candidate = &report.candidates[0];
+
+    assert_eq!(
+        candidate.missing_public_doc_count,
+        DEFAULT_MISSING_PUBLIC_DOC_PREVIEW_LIMIT + 2
+    );
+    assert_eq!(
+        candidate.missing_public_docs.len(),
+        DEFAULT_MISSING_PUBLIC_DOC_PREVIEW_LIMIT
+    );
+    assert_eq!(candidate.missing_public_docs_omitted, 2);
 }

@@ -1,6 +1,9 @@
 use super::super::*;
-use super::support::{isolated_home, make_ready_poll_state};
+use super::support::{
+    force_explain_status, isolated_home, make_explain_enabled_poll_state, make_ready_poll_state,
+};
 use crate::bootstrap::runtime_probe::AgentIntegration;
+use crate::pipeline::explain::ExplainStatus;
 use crate::tui::actions::{stop_watch, ActionContext, ActionOutcome};
 use crate::tui::theme::Theme;
 use crossterm::event::{KeyCode, KeyModifiers};
@@ -8,7 +11,7 @@ use std::fs;
 
 #[test]
 fn queue_explain_without_watch_sets_pending_run() {
-    let (_repo, mut state) = make_ready_poll_state();
+    let (_repo, mut state) = make_explain_enabled_poll_state();
     state.queue_explain(ExplainMode::AllStale);
     assert!(
         state.confirm_stop_watch.is_none(),
@@ -26,7 +29,7 @@ fn queue_explain_without_watch_sets_pending_run() {
 
 #[test]
 fn queue_explain_preserves_fifo_for_distinct_modes() {
-    let (_repo, mut state) = make_ready_poll_state();
+    let (_repo, mut state) = make_explain_enabled_poll_state();
     state.queue_explain(ExplainMode::AllStale);
     state.queue_explain(ExplainMode::Changed);
 
@@ -49,7 +52,7 @@ fn queue_explain_preserves_fifo_for_distinct_modes() {
 
 #[test]
 fn queue_explain_dedupes_identical_modes() {
-    let (_repo, mut state) = make_ready_poll_state();
+    let (_repo, mut state) = make_explain_enabled_poll_state();
     state.queue_explain(ExplainMode::AllStale);
     state.queue_explain(ExplainMode::AllStale);
 
@@ -70,6 +73,7 @@ fn queue_explain_with_watch_opens_confirm_modal() {
     );
 
     let mut state = AppState::new_poll(tempdir.path(), Theme::plain(), AgentIntegration::Absent);
+    force_explain_status(&mut state, ExplainStatus::Enabled);
     state.queue_explain(ExplainMode::Changed);
     assert!(
         state.confirm_stop_watch.is_some(),
@@ -111,6 +115,7 @@ fn confirm_modal_y_stops_watch_and_queues_explain() {
     );
 
     let mut state = AppState::new_poll(tempdir.path(), Theme::plain(), AgentIntegration::Absent);
+    force_explain_status(&mut state, ExplainStatus::Enabled);
     state.queue_explain(ExplainMode::AllStale);
     assert!(state.confirm_stop_watch.is_some());
 
@@ -141,6 +146,7 @@ fn confirm_modal_n_cancels_without_stopping_watch() {
     assert!(matches!(start, ActionOutcome::Ack { .. }));
 
     let mut state = AppState::new_poll(tempdir.path(), Theme::plain(), AgentIntegration::Absent);
+    force_explain_status(&mut state, ExplainStatus::Enabled);
     state.queue_explain(ExplainMode::AllStale);
     assert!(state.confirm_stop_watch.is_some());
 
@@ -218,7 +224,7 @@ fn explain_tab_r_refreshes_status_without_queueing_run() {
 
 #[test]
 fn explain_tab_a_queues_all_stale_run() {
-    let (_repo, mut state) = make_ready_poll_state();
+    let (_repo, mut state) = make_explain_enabled_poll_state();
     state.set_tab(ActiveTab::Explain);
 
     let consumed = state.handle_key(KeyCode::Char('a'), KeyModifiers::NONE);
@@ -235,7 +241,7 @@ fn explain_tab_a_queues_all_stale_run() {
 
 #[test]
 fn explain_tab_g_queues_target_generation() {
-    let (_repo, mut state) = make_ready_poll_state();
+    let (_repo, mut state) = make_explain_enabled_poll_state();
     state.set_tab(ActiveTab::Explain);
 
     assert!(state.handle_key(KeyCode::Char('g'), KeyModifiers::NONE));
@@ -257,7 +263,7 @@ fn explain_tab_g_queues_target_generation() {
 
 #[test]
 fn explain_tab_g_cycles_to_file_and_directory_generation() {
-    let (_repo, mut state) = make_ready_poll_state();
+    let (_repo, mut state) = make_explain_enabled_poll_state();
     state.set_tab(ActiveTab::Explain);
 
     assert!(state.handle_key(KeyCode::Char('g'), KeyModifiers::NONE));

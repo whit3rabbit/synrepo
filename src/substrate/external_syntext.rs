@@ -29,17 +29,88 @@ pub enum ExternalSyntextSync {
 }
 
 enum StCommand {
-    Index,
+    Index { force: bool },
     Update,
     Version,
 }
 
 impl StCommand {
-    fn as_str(&self) -> &'static str {
+    fn display_name(&self) -> &'static str {
         match self {
-            Self::Index => "index",
+            Self::Index { force: true } => "index --force",
+            Self::Index { force: false } => "index",
             Self::Update => "update",
             Self::Version => "--version",
+        }
+    }
+
+    fn push_args(&self, command: &mut Command) {
+        match self {
+            Self::Index { force } => {
+                command.arg("index");
+                if *force {
+                    command.arg("--force");
+                }
+            }
+            Self::Update => {
+                command.arg("update");
+            }
+            Self::Version => {
+                command.arg("--version");
+            }
+        }
+    }
+}
+
+enum StCommandError {
+    Spawn {
+        program: PathBuf,
+        command_name: &'static str,
+        source: std::io::Error,
+    },
+    Exit {
+        command_name: &'static str,
+        status: ExitStatus,
+    },
+    Timeout {
+        command_name: &'static str,
+        timeout: Duration,
+    },
+    Wait {
+        command_name: &'static str,
+        source: std::io::Error,
+    },
+}
+
+impl From<StCommandError> for crate::Error {
+    fn from(error: StCommandError) -> Self {
+        match error {
+            StCommandError::Spawn {
+                program,
+                command_name,
+                source,
+            } => crate::Error::Other(anyhow::anyhow!(
+                "unable to run external syntext command `{}` `{command_name}`: {source}",
+                program.display()
+            )),
+            StCommandError::Exit {
+                command_name,
+                status,
+            } => crate::Error::Other(anyhow::anyhow!(
+                "external syntext command `{command_name}` exited with {status}"
+            )),
+            StCommandError::Timeout {
+                command_name,
+                timeout,
+            } => crate::Error::Other(anyhow::anyhow!(
+                "external syntext command `{command_name}` timed out after {timeout:?}"
+            )),
+            StCommandError::Wait {
+                command_name,
+                source,
+            } => crate::Error::Other(anyhow::anyhow!(
+                "external syntext command `{command_name}` wait failed: {source}"
+            )),
         }
     }
 }
@@ -90,14 +161,18 @@ pub fn build_external_syntext_index_with_program(
     let index_dir = external_syntext_index_dir(repo_root);
     run_st_command(
         program,
-        StCommand::Index,
+        StCommand::Index { force: false },
         Some(repo_root),
         Some(&index_dir),
         timeout,
     )
+    .map_err(crate::Error::from)
 }
 
 /// Refresh an existing external syntext index with `st update`.
+///
+/// If `st update` launches but exits unsuccessfully, force-rebuild the
+/// standalone index with `st index --force`.
 pub fn sync_external_syntext_index(repo_root: &Path) -> crate::Result<ExternalSyntextSync> {
     sync_external_syntext_index_with_program(repo_root, Path::new("st"), DEFAULT_ST_TIMEOUT)
 }
@@ -113,13 +188,29 @@ pub fn sync_external_syntext_index_with_program(
     }
 
     let index_dir = external_syntext_index_dir(repo_root);
-    run_st_command(
+    match run_st_command(
         program,
         StCommand::Update,
         Some(repo_root),
         Some(&index_dir),
         timeout,
-    )?;
+    ) {
+        Ok(()) => {}
+        Err(StCommandError::Exit { .. }) => {
+            // An update process that exits non-zero can mean the overlay state is
+            // unusable. Rebuild the existing standalone index, but avoid retrying
+            // spawn or timeout failures that point at the environment instead.
+            run_st_command(
+                program,
+                StCommand::Index { force: true },
+                Some(repo_root),
+                Some(&index_dir),
+                timeout,
+            )
+            .map_err(crate::Error::from)?;
+        }
+        Err(err) => return Err(err.into()),
+    }
     Ok(ExternalSyntextSync::Updated)
 }
 
@@ -129,11 +220,11 @@ fn run_st_command(
     repo_root: Option<&Path>,
     index_dir: Option<&Path>,
     timeout: Duration,
-) -> crate::Result<()> {
-    let command_name = command.as_str();
+) -> Result<(), StCommandError> {
+    let command_name = command.display_name();
     let mut cmd = Command::new(program);
-    cmd.arg(command_name)
-        .stdin(Stdio::null())
+    command.push_args(&mut cmd);
+    cmd.stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
     if let Some(repo_root) = repo_root {
@@ -143,11 +234,10 @@ fn run_st_command(
         cmd.arg("--index-dir").arg(index_dir);
     }
 
-    let mut child = cmd.spawn().map_err(|err| {
-        crate::Error::Other(anyhow::anyhow!(
-            "unable to run external syntext command `{}` `{command_name}`: {err}",
-            program.display()
-        ))
+    let mut child = cmd.spawn().map_err(|source| StCommandError::Spawn {
+        program: program.to_path_buf(),
+        command_name,
+        source,
     })?;
 
     wait_for_st_command(&mut child, command_name, timeout)
@@ -155,9 +245,9 @@ fn run_st_command(
 
 fn wait_for_st_command(
     child: &mut std::process::Child,
-    command_name: &str,
+    command_name: &'static str,
     timeout: Duration,
-) -> crate::Result<()> {
+) -> Result<(), StCommandError> {
     let deadline = Instant::now() + timeout;
     loop {
         match child.try_wait() {
@@ -166,20 +256,27 @@ fn wait_for_st_command(
             Ok(None) if Instant::now() >= deadline => {
                 let _ = child.kill();
                 let _ = child.wait();
-                return Err(crate::Error::Other(anyhow::anyhow!(
-                    "external syntext command `{command_name}` timed out after {timeout:?}"
-                )));
+                return Err(StCommandError::Timeout {
+                    command_name,
+                    timeout,
+                });
             }
             Ok(None) => std::thread::sleep(ST_POLL_INTERVAL),
-            Err(err) => return Err(err.into()),
+            Err(source) => {
+                return Err(StCommandError::Wait {
+                    command_name,
+                    source,
+                })
+            }
         }
     }
 }
 
-fn command_failed(command_name: &str, status: ExitStatus) -> crate::Error {
-    crate::Error::Other(anyhow::anyhow!(
-        "external syntext command `{command_name}` exited with {status}"
-    ))
+fn command_failed(command_name: &'static str, status: ExitStatus) -> StCommandError {
+    StCommandError::Exit {
+        command_name,
+        status,
+    }
 }
 
 fn ensure_root_syntext_gitignore_entry(repo_root: &Path) -> crate::Result<bool> {

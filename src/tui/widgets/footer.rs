@@ -169,6 +169,15 @@ impl FooterWidget<'_> {
                 ],
             });
         }
+        if matches!(self.active, ActiveTab::Suggestion) {
+            groups.push(HintGroup {
+                priority: 4,
+                spans: vec![
+                    Span::styled("  suggestions ", self.theme.muted_style()),
+                    Span::styled("[s/r]", self.theme.agent_style()),
+                ],
+            });
+        }
         groups.push(HintGroup {
             priority: 0,
             spans: vec![
