@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde_json::{json, Value};
 
 use crate::{
@@ -100,16 +102,19 @@ fn hybrid_items_with_graph(
 }
 
 fn attach_root_metadata(state: &SynrepoState, mut rows: Vec<Value>) -> Vec<Value> {
+    let mut cache = HashMap::new();
     for row in &mut rows {
         let Some(root_id) = row.get("root_id").and_then(Value::as_str) else {
             continue;
         };
-        let meta = crate::substrate::root_metadata_for(&state.repo_root, &state.config, root_id);
+        let meta = cache.entry(root_id.to_string()).or_insert_with(|| {
+            crate::substrate::root_metadata_for(&state.repo_root, &state.config, root_id)
+        });
         if let Some(obj) = row.as_object_mut() {
-            obj.insert("root_kind".to_string(), json!(meta.root_kind));
-            obj.insert("root_label".to_string(), json!(meta.root_label));
-            obj.insert("root_ref".to_string(), json!(meta.root_ref));
-            obj.insert("root_commit".to_string(), json!(meta.root_commit));
+            obj.insert("root_kind".to_string(), json!(meta.root_kind.clone()));
+            obj.insert("root_label".to_string(), json!(meta.root_label.clone()));
+            obj.insert("root_ref".to_string(), json!(meta.root_ref.clone()));
+            obj.insert("root_commit".to_string(), json!(meta.root_commit.clone()));
             obj.insert("editable".to_string(), json!(meta.editable));
         }
     }

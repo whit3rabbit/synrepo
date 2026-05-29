@@ -11,7 +11,9 @@ use syntext::{
     Config as SyntextConfig, SearchOptions,
 };
 
-use crate::substrate::{DiscoveredFile, DiscoveryRoot, DiscoveryRootKind, RootedSearchMatch};
+use crate::substrate::{
+    DiscoveredFile, DiscoveryRoot, DiscoveryRootKind, RootMetadata, RootedSearchMatch,
+};
 
 pub(crate) fn build_branch_indexes(
     config: &crate::config::Config,
@@ -85,7 +87,7 @@ pub(crate) fn search_branch_root_index(
     if let Some(max) = limit {
         matches.truncate(max);
     }
-    let meta = crate::substrate::root_metadata_for(repo_root, config, &root.discriminant);
+    let meta = RootMetadata::from_discovery_root(root);
     Ok(Some(
         matches
             .into_iter()

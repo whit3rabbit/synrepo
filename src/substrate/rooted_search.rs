@@ -120,8 +120,10 @@ fn scan_non_primary_roots(
     let metadata = roots
         .iter()
         .map(|root| {
-            let meta = crate::substrate::root_metadata_for(repo_root, config, &root.discriminant);
-            (root.discriminant.clone(), meta)
+            (
+                root.discriminant.clone(),
+                RootMetadata::from_discovery_root(root),
+            )
         })
         .collect::<BTreeMap<_, _>>();
 
