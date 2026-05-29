@@ -13,12 +13,18 @@ use serde::{Deserialize, Serialize};
 #[cfg(test)]
 pub(crate) mod test_support;
 
+mod branch_refs;
 mod renames;
 mod roots;
 
 #[cfg(test)]
 mod tests;
 
+pub(crate) use branch_refs::head_map;
+pub use branch_refs::{
+    branch_ref_heads, branch_root_id, discover_prepared_branch_roots, prepare_branch_snapshots,
+    BranchRefHead, BranchSnapshotReport,
+};
 pub use renames::detect_recent_renames;
 pub use roots::{discover_related_roots, GitDiscoveryRoot, GitDiscoveryRootKind};
 

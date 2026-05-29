@@ -12,6 +12,9 @@ expression: tiny
   "path": "src/lib.rs",
   "root_id": "primary",
   "is_primary_root": true,
+  "root_kind": "primary",
+  "root_label": "primary",
+  "editable": true,
   "signature": "pub fn add(a: i32, b: i32) -> i32",
   "approx_tokens": 13,
   "context_accounting": {

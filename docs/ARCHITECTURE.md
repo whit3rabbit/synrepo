@@ -48,11 +48,13 @@ and local search inputs.
 
 - `discover.rs` - filesystem walk via `ignore`; respects `.gitignore`,
   `.synignore`, redaction globs, configured roots, linked worktrees by default,
-  and initialized submodules when enabled.
+  initialized submodules when enabled, and prepared read-only branch-ref
+  snapshots when `branch_roots.refs` is configured.
 - `classify.rs` - maps files to `FileClass` values such as supported code,
   text code, markdown, Jupyter, or skipped.
-- `index.rs` and `rooted_search.rs` - `syntext` lexical index build/query
-  paths for `.synrepo/index/`.
+- `index.rs`, `root_indexes.rs`, and `rooted_search.rs` - `syntext`
+  lexical index build/query paths for `.synrepo/index/`, including per-branch
+  root indexes under `.synrepo/index/roots/<root_id>/`.
 - `incremental.rs` - incremental lexical index maintenance for trustworthy
   touched-path batches.
 - `hybrid.rs` - reciprocal-rank fusion of lexical and vector results when

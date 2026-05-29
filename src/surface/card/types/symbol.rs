@@ -27,6 +27,21 @@ pub struct SymbolCard {
     pub root_id: String,
     /// True when this symbol belongs to the primary checkout.
     pub is_primary_root: bool,
+    /// Discovery-root kind label.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub root_kind: Option<String>,
+    /// Human-readable discovery-root label.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub root_label: Option<String>,
+    /// Full Git ref for branch snapshot roots.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub root_ref: Option<String>,
+    /// Commit object id for branch snapshot roots.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub root_commit: Option<String>,
+    /// Whether callers may edit this root through synrepo.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub editable: Option<bool>,
     /// One-line signature.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub signature: Option<String>,

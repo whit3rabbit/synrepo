@@ -10,8 +10,14 @@ use std::{
 pub struct GitDiscoveryRoot {
     /// Absolute checkout/submodule path.
     pub absolute_path: PathBuf,
+    /// Optional stable discriminator for virtual roots.
+    pub discriminant: Option<String>,
     /// Source category.
     pub kind: GitDiscoveryRootKind,
+    /// Full branch ref name for branch snapshot roots.
+    pub ref_name: Option<String>,
+    /// Commit object id for branch snapshot roots.
+    pub commit: Option<String>,
 }
 
 /// Source category for a Git-backed discovery root.
@@ -21,6 +27,8 @@ pub enum GitDiscoveryRootKind {
     Worktree,
     /// An initialized git submodule.
     Submodule,
+    /// A read-only snapshot of a local Git branch ref.
+    BranchRef,
 }
 
 /// Enumerate non-primary roots associated with a repository.
@@ -89,7 +97,10 @@ fn push_root(
     if seen.insert(absolute_path.clone()) {
         roots.push(GitDiscoveryRoot {
             absolute_path,
+            discriminant: None,
             kind,
+            ref_name: None,
+            commit: None,
         });
     }
 }

@@ -13,6 +13,8 @@ use crate::config::Config;
 
 pub(super) use super::filter::filter_repo_events;
 use super::{
+    branch_refs::BranchRefPoller,
+    config::WatchConfig,
     control::WatchControlResponse,
     control_bridge::spawn_control_listener,
     embeddings::{
@@ -31,25 +33,6 @@ use super::{
         emit_event, maybe_run_post_reconcile_auto_sync, run_sync_under_watch_lock, WatchSyncContext,
     },
 };
-
-/// Configuration for the watch and reconcile loop.
-#[derive(Clone, Debug)]
-pub struct WatchConfig {
-    /// How long after the last filesystem event to wait before triggering a
-    /// reconcile pass.
-    pub debounce_timeout: Duration,
-    /// Upper bound on events logged per reconcile cycle.
-    pub max_events_per_cycle: usize,
-}
-
-impl Default for WatchConfig {
-    fn default() -> Self {
-        Self {
-            debounce_timeout: Duration::from_millis(500),
-            max_events_per_cycle: 1000,
-        }
-    }
-}
 
 /// Run the watch service in the current process.
 pub fn run_watch_service(
@@ -98,10 +81,12 @@ pub fn run_watch_service(
     });
 
     let pending_watch = Arc::new(Mutex::new(PendingWatchChanges::default()));
+    let mut branch_ref_poller = BranchRefPoller::new(repo_root, config);
     let suppressed_paths = Arc::new(Mutex::new(SuppressedPaths::default()));
     let watch_roots = crate::substrate::discover_roots(repo_root, config);
     let watch_root_paths: Vec<_> = watch_roots
         .iter()
+        .filter(|root| root.editable)
         .map(|root| root.absolute_path.clone())
         .collect();
     let callback_repo_root = repo_root.to_path_buf();
@@ -222,6 +207,11 @@ pub fn run_watch_service(
                 {
                     continue;
                 }
+                if pending_empty && branch_ref_poller.maybe_changed(repo_root, config) {
+                    if let Ok(mut pending) = pending_watch.lock() {
+                        pending.record_full(1);
+                    }
+                }
                 let mut keepalive = false;
                 let batch = match pending_watch.lock() {
                     Ok(mut pending) => {
@@ -244,7 +234,7 @@ pub fn run_watch_service(
                 let event_count = batch.event_count;
                 tracing::debug!(events = event_count, keepalive, "running reconcile pass");
                 let force_full_reconcile = batch.force_full_reconcile;
-                let reason = force_full_reconcile
+                let reason = (force_full_reconcile && !batch.touched_paths.is_empty())
                     .then_some(super::events::ReconcileStartReason::WatchPathOverflow);
                 emit_event(&events, |now| WatchEvent::ReconcileStarted {
                     at: now,

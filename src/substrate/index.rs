@@ -70,6 +70,8 @@ fn build_index_once(
     let indexed_files = records.len();
     Index::build_from_file_records(syntext_config(config, repo_root), records)
         .map_err(map_index_error)?;
+    let indexed_files = indexed_files
+        + crate::substrate::root_indexes::build_branch_indexes(config, repo_root, &discovered)?;
 
     Ok(IndexBuildReport { indexed_files })
 }

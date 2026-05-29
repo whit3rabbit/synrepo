@@ -9,6 +9,9 @@ expression: deep
     "path": "src/lib.rs",
     "root_id": "primary",
     "is_primary_root": true,
+    "root_kind": "primary",
+    "root_label": "primary",
+    "editable": true,
     "symbols": [
       {
         "id": "sym_0428e9f2f46549976b560f5b402d03ee",

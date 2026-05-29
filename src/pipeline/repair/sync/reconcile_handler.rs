@@ -25,6 +25,15 @@ pub(super) fn record_reconcile_attempt(
     blocked: &mut Vec<RepairFinding>,
     actions_taken: &mut Vec<String>,
 ) {
+    if let Err(err) = crate::pipeline::git::prepare_branch_snapshots(repo_root, config, synrepo_dir)
+    {
+        blocked.push(blocked_reconcile_finding(
+            finding,
+            format!("Reconcile failed preparing branch snapshots: {err}"),
+        ));
+        return;
+    }
+
     let graph_dir = synrepo_dir.join("graph");
     let mut graph = match SqliteGraphStore::open(&graph_dir) {
         Ok(g) => g,

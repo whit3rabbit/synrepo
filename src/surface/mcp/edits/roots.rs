@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use crate::{
     core::path_safety::resolve_existing_path_in_repo,
-    substrate::{discover_roots, DiscoveryRoot},
+    substrate::{discover_roots, DiscoveryRoot, DiscoveryRootKind},
     surface::mcp::{error::McpError, SynrepoState},
 };
 
@@ -44,11 +44,19 @@ pub(super) fn require_matching_root(expected: Option<&str>, actual: &str) -> any
 
 fn edit_root(state: &SynrepoState, root_id: Option<&str>) -> anyhow::Result<DiscoveryRoot> {
     let requested = root_id.unwrap_or(PRIMARY_ROOT_ID);
-    discover_roots(&state.repo_root, &state.config)
+    let root = discover_roots(&state.repo_root, &state.config)
         .into_iter()
         .find(|root| root.discriminant == requested)
         .ok_or_else(|| {
-            McpError::invalid_parameter(format!("unknown root_id for edit target: {requested}"))
-                .into()
-        })
+            anyhow::Error::from(McpError::invalid_parameter(format!(
+                "unknown root_id for edit target: {requested}"
+            )))
+        })?;
+    if root.kind == DiscoveryRootKind::BranchRef || !root.editable {
+        return Err(McpError::invalid_parameter(format!(
+            "root_id {requested} is a read-only branch_ref root; materialize or switch to a worktree before editing"
+        ))
+        .into());
+    }
+    Ok(root)
 }

@@ -19,6 +19,11 @@ pub(super) fn file_card(
     let file = graph
         .get_file(id)?
         .ok_or_else(|| crate::Error::Other(anyhow::anyhow!("file {id} not found")))?;
+    let root_meta = crate::substrate::root_metadata_from_optional(
+        compiler.repo_root.as_deref(),
+        compiler.config.as_ref(),
+        &file.root_id,
+    );
 
     // Symbols defined in this file.
     let all_symbols = graph.symbols_for_file(id)?;
@@ -80,9 +85,10 @@ pub(super) fn file_card(
 
     let git_intelligence = match budget {
         Budget::Tiny => None,
-        Budget::Normal | Budget::Deep => compiler
+        Budget::Normal | Budget::Deep if root_meta.root_kind != "branch_ref" => compiler
             .resolve_file_git_intelligence(&file.path)
             .map(|arc| FileGitIntelligence::from(&*arc)),
+        Budget::Normal | Budget::Deep => None,
     };
 
     // Co-change partners: graph-backed CoChangesWith edges, filtered to
@@ -139,6 +145,11 @@ pub(super) fn file_card(
         path: file.path.clone(),
         root_id: file.root_id.clone(),
         is_primary_root: file.root_id == "primary",
+        root_kind: Some(root_meta.root_kind),
+        root_label: Some(root_meta.root_label),
+        root_ref: root_meta.root_ref,
+        root_commit: root_meta.root_commit,
+        editable: Some(root_meta.editable),
         symbols,
         imported_by,
         imports,

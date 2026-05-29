@@ -55,7 +55,7 @@ For exact symbols, tool names, function names, flags, JSON keys, CLI args, error
 
 - `synrepo_search(query, literal?, limit?, output_mode?, budget_tokens?)`
 
-Use `output_mode: "compact"` for orientation. Search rows and compact file groups may include `root_id`, `is_primary_root`, `file_id`, and root-aware `suggested_card_requests`; use those fields when the same relative path appears in both the primary checkout and a linked worktree. Exact path-shaped queries can return discovered files that are not graph-backed; use `synrepo_card` for a filesystem fallback preview when `file_id` is null. Do not use a full sentence when an exact token or string literal is known. Set `literal: true` for code strings that contain regex metacharacters, for example `Error::Other(anyhow`. If a regex-like query fails to compile, `synrepo_search` retries as a literal and reports `pattern_mode: "literal_fallback"` with a warning. For plain-language edit or investigation tasks, call:
+Use `output_mode: "compact"` for orientation. Search rows and compact file groups may include `root_id`, `is_primary_root`, `root_kind`, `root_label`, `root_ref`, `root_commit`, `editable`, `file_id`, and root-aware `suggested_card_requests`; use those fields when the same relative path appears in the primary checkout, a linked worktree, or a read-only branch-ref snapshot. Exact path-shaped queries can return discovered files that are not graph-backed; use `synrepo_card` for a filesystem fallback preview when `file_id` is null. Do not use a full sentence when an exact token or string literal is known. Set `literal: true` for code strings that contain regex metacharacters, for example `Error::Other(anyhow`. If a regex-like query fails to compile, `synrepo_search` retries as a literal and reports `pattern_mode: "literal_fallback"` with a warning. For plain-language edit or investigation tasks, call:
 
 - `synrepo_ask(ask, scope?, shape?, ground?, budget?)`
 - `synrepo_task_route(task, path?)`
@@ -94,6 +94,7 @@ Client-side nudge hooks for Codex and Claude may remind agents to use synrepo be
 - Do not expect watch or background behavior unless `synrepo watch` is explicitly running.
 - Do not call `synrepo_apply_anchor_edits` without a fresh `synrepo_prepare_edit_context` response.
 - Do not drop `root_id` from search or prepare results when editing worktree files; omitted `root_id` means the primary checkout.
+- Do not edit branch-ref roots through MCP; rows with `root_kind: "branch_ref"` and `editable: false` require switching or materializing a worktree first.
 - Do not expect synrepo MCP edit tools to run shell commands. Command execution is unavailable.
 - Do not retry the same failed broad `synrepo_find` query repeatedly. Convert it to exact `synrepo_search` probes.
 - Do not claim validation from search hits alone. Confirm with cards, source, or tests.

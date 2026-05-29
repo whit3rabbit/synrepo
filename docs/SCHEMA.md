@@ -90,7 +90,10 @@ CREATE UNIQUE INDEX idx_files_root_path ON files(root_id, path);
 JSON `data` carries: `path_history`, `content_hash`, `size_bytes`, `language`,
 `inline_decisions`, `epistemic` (always `parser_observed`), `provenance`. The
 `id`, `root_id`, `path`, and `last_observed_rev` fields are duplicated in
-columns for indexing; the column is the read source.
+columns for indexing; the column is the read source. `root_id = "primary"`
+means the main checkout. Linked worktrees, submodules, and configured
+branch-ref snapshots use distinct root ids; branch ids are derived from the
+canonical ref name, not the commit SHA.
 
 #### `symbols` (struct `SymbolNode`, `src/structure/graph/node.rs:152`)
 

@@ -3,7 +3,9 @@
 //! Respects `.gitignore`, `.git/info/exclude`, and synrepo's own `.synignore`.
 
 use crate::config::Config;
-use crate::pipeline::git::{discover_related_roots, GitDiscoveryRootKind};
+use crate::pipeline::git::{
+    discover_prepared_branch_roots, discover_related_roots, GitDiscoveryRootKind,
+};
 use ignore::{
     gitignore::{Gitignore, GitignoreBuilder},
     WalkBuilder,
@@ -45,6 +47,12 @@ pub struct DiscoveryRoot {
     pub discriminant: String,
     /// Root source.
     pub kind: DiscoveryRootKind,
+    /// Full Git ref name for branch snapshot roots.
+    pub ref_name: Option<String>,
+    /// Commit object id for branch snapshot roots.
+    pub commit: Option<String>,
+    /// False for read-only virtual roots.
+    pub editable: bool,
 }
 
 /// Source category for a discovery root.
@@ -56,6 +64,20 @@ pub enum DiscoveryRootKind {
     Worktree,
     /// An initialized git submodule.
     Submodule,
+    /// A read-only local Git branch-ref snapshot.
+    BranchRef,
+}
+
+impl DiscoveryRootKind {
+    /// Stable API label for this root kind.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Primary => "primary",
+            Self::Worktree => "worktree",
+            Self::Submodule => "submodule",
+            Self::BranchRef => "branch_ref",
+        }
+    }
 }
 
 /// Walk the configured roots and yield classified files.
@@ -82,10 +104,11 @@ fn walk_root(
     discovered: &mut BTreeMap<(String, String), DiscoveredFile>,
 ) -> crate::Result<()> {
     let mut walker = WalkBuilder::new(&root.absolute_path);
+    let use_git_ignores = root.kind != DiscoveryRootKind::BranchRef;
     walker.hidden(false);
-    walker.git_ignore(true);
-    walker.git_exclude(true);
-    walker.git_global(true);
+    walker.git_ignore(use_git_ignores);
+    walker.git_exclude(use_git_ignores);
+    walker.git_global(use_git_ignores);
     walker.require_git(false);
     walker.follow_links(false);
     walker.add_custom_ignore_filename(".synignore");
@@ -163,6 +186,9 @@ pub fn discover_roots(repo_root: &Path, config: &Config) -> Vec<DiscoveryRoot> {
         discriminant: PRIMARY_ROOT_DISCRIMINANT.to_string(),
         absolute_path: primary_path,
         kind: DiscoveryRootKind::Primary,
+        ref_name: None,
+        commit: None,
+        editable: true,
     };
 
     let mut roots = vec![primary.clone()];
@@ -175,8 +201,29 @@ pub fn discover_roots(repo_root: &Path, config: &Config) -> Vec<DiscoveryRoot> {
         let kind = match root.kind {
             GitDiscoveryRootKind::Worktree => DiscoveryRootKind::Worktree,
             GitDiscoveryRootKind::Submodule => DiscoveryRootKind::Submodule,
+            GitDiscoveryRootKind::BranchRef => DiscoveryRootKind::BranchRef,
         };
-        push_root(&mut roots, &mut seen, root.absolute_path, kind);
+        push_root(
+            &mut roots,
+            &mut seen,
+            root.absolute_path,
+            root.discriminant,
+            kind,
+            root.ref_name,
+            root.commit,
+        );
+    }
+
+    for root in discover_prepared_branch_roots(repo_root, config, &Config::synrepo_dir(repo_root)) {
+        push_root(
+            &mut roots,
+            &mut seen,
+            root.absolute_path,
+            root.discriminant,
+            DiscoveryRootKind::BranchRef,
+            root.ref_name,
+            root.commit,
+        );
     }
 
     roots
@@ -186,15 +233,21 @@ fn push_root(
     roots: &mut Vec<DiscoveryRoot>,
     seen: &mut BTreeSet<String>,
     path: PathBuf,
+    discriminant: Option<String>,
     kind: DiscoveryRootKind,
+    ref_name: Option<String>,
+    commit: Option<String>,
 ) {
     let absolute_path = canonical_or_original(&path);
-    let discriminant = derive_root_discriminant(&absolute_path);
+    let discriminant = discriminant.unwrap_or_else(|| derive_root_discriminant(&absolute_path));
     if seen.insert(discriminant.clone()) {
         roots.push(DiscoveryRoot {
             absolute_path,
             discriminant,
             kind,
+            ref_name,
+            commit,
+            editable: kind != DiscoveryRootKind::BranchRef,
         });
     }
 }
@@ -252,115 +305,4 @@ pub(crate) fn is_within_configured_roots(path: &Path, roots: &[String]) -> bool 
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::config::Config;
-    use std::fs;
-    use tempfile::tempdir;
-
-    #[test]
-    fn discover_respects_roots_gitignore_and_redaction() {
-        let repo = tempdir().unwrap();
-        fs::write(repo.path().join(".gitignore"), "src/ignored.rs\n").unwrap();
-        fs::create_dir_all(repo.path().join("src")).unwrap();
-        fs::create_dir_all(repo.path().join("docs")).unwrap();
-
-        fs::write(repo.path().join("src/lib.rs"), "pub fn lib() {}\n").unwrap();
-        fs::write(repo.path().join("src/ignored.rs"), "pub fn ignored() {}\n").unwrap();
-        fs::write(repo.path().join("docs/guide.md"), "# guide\n").unwrap();
-        fs::write(repo.path().join("docs/app.env"), "SECRET=1\n").unwrap();
-        fs::write(repo.path().join("top.txt"), "outside configured roots\n").unwrap();
-
-        let config = Config {
-            roots: vec!["src".to_string(), "docs".to_string()],
-            ..Config::default()
-        };
-
-        let discovered = discover(repo.path(), &config).unwrap();
-        let relative_paths: Vec<_> = discovered
-            .into_iter()
-            .map(|file| file.relative_path)
-            .collect();
-
-        assert_eq!(
-            relative_paths,
-            vec!["docs/guide.md".to_string(), "src/lib.rs".to_string()]
-        );
-    }
-
-    #[test]
-    fn discover_never_walks_into_generated_runtime_state() {
-        // Regression guard: substrate::discover must never descend into
-        // generated runtime indexes, independent of local ignore files.
-        let repo = tempdir().unwrap();
-        fs::create_dir_all(repo.path().join("src")).unwrap();
-        fs::write(repo.path().join("src/lib.rs"), "pub fn real_code() {}\n").unwrap();
-
-        // Simulate an un-bootstrapped `.synrepo/` holding files that would
-        // otherwise look indexable (plain text, below size cap, not redacted).
-        fs::create_dir_all(repo.path().join(".synrepo/graph")).unwrap();
-        fs::write(
-            repo.path().join(".synrepo/graph/nodes.db"),
-            "SQLite format 3\0",
-        )
-        .unwrap();
-        fs::write(
-            repo.path().join(".synrepo/config.toml"),
-            "mode = \"auto\"\n",
-        )
-        .unwrap();
-        fs::create_dir_all(repo.path().join(".syntext")).unwrap();
-        fs::write(repo.path().join(".syntext/manifest.json"), "{}").unwrap();
-        fs::write(
-            repo.path().join(".syntext/segment.post"),
-            "pub fn external_index_noise() {}\n",
-        )
-        .unwrap();
-
-        let discovered = discover(repo.path(), &Config::default()).unwrap();
-        let paths: Vec<_> = discovered
-            .iter()
-            .map(|f| f.relative_path.as_str())
-            .collect();
-        assert!(
-            paths.iter().all(|p| !p.starts_with(".synrepo")),
-            "discover must skip .synrepo/ unconditionally, got: {paths:?}"
-        );
-        assert!(
-            paths.iter().all(|p| !p.starts_with(".syntext")),
-            "discover must skip .syntext/ unconditionally, got: {paths:?}"
-        );
-        assert!(
-            paths.contains(&"src/lib.rs"),
-            "discover must still pick up real repo content, got: {paths:?}"
-        );
-    }
-
-    #[test]
-    fn discover_skips_non_text_and_oversized_files() {
-        let repo = tempdir().unwrap();
-        fs::create_dir_all(repo.path().join("src")).unwrap();
-
-        fs::write(repo.path().join("src/lib.rs"), "pub fn lib() {}\n").unwrap();
-        fs::write(repo.path().join("src/blob.bin"), [0, 159, 146, 150]).unwrap();
-        fs::write(repo.path().join("src/empty.txt"), "").unwrap();
-        fs::write(
-            repo.path().join("src/big.txt"),
-            "abcdefghijklmnopqrstuvwxyz",
-        )
-        .unwrap();
-
-        let config = Config {
-            max_file_size_bytes: 20,
-            ..Config::default()
-        };
-
-        let discovered = discover(repo.path(), &config).unwrap();
-        let relative_paths: Vec<_> = discovered
-            .into_iter()
-            .map(|file| file.relative_path)
-            .collect();
-
-        assert_eq!(relative_paths, vec!["src/lib.rs".to_string()]);
-    }
-}
+mod tests;

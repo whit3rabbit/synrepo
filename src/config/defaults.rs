@@ -3,7 +3,7 @@ use super::semantic::{
     default_semantic_embedding_provider, default_semantic_model, default_semantic_ollama_endpoint,
     default_semantic_similarity_threshold, SemanticProviderSource,
 };
-use super::{Config, CrossLinkConfidenceThresholds, ExplainConfig, Mode};
+use super::{BranchRootsConfig, Config, CrossLinkConfidenceThresholds, ExplainConfig, Mode};
 
 pub(super) fn default_roots() -> Vec<String> {
     vec![".".to_string()]
@@ -80,6 +80,7 @@ impl Default for Config {
             roots: default_roots(),
             include_worktrees: default_include_worktrees(),
             include_submodules: default_include_submodules(),
+            branch_roots: BranchRootsConfig::default(),
             concept_directories: default_concept_dirs(),
             git_commit_depth: default_git_commit_depth(),
             max_file_size_bytes: default_max_file_size(),

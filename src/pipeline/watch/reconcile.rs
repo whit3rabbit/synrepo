@@ -117,6 +117,11 @@ fn run_reconcile_pass_with_touched_paths_inner(
         Err(err) => return ReconcileOutcome::Failed(err.to_string()),
     };
 
+    if let Err(err) = crate::pipeline::git::prepare_branch_snapshots(repo_root, config, synrepo_dir)
+    {
+        return ReconcileOutcome::Failed(err.to_string());
+    }
+
     let graph_dir = synrepo_dir.join("graph");
     let mut graph = match SqliteGraphStore::open(&graph_dir) {
         Ok(g) => g,

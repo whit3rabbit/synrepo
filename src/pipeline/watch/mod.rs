@@ -4,6 +4,8 @@
 //! `run_structural_compile`, not a second source of graph facts. Startup and
 //! on-demand reconciles still flow through `run_reconcile_pass`.
 
+mod branch_refs;
+mod config;
 mod control;
 mod control_bridge;
 mod embeddings;
@@ -20,6 +22,7 @@ mod status;
 mod suppression;
 mod sync;
 
+pub use config::WatchConfig;
 pub use control::{
     control_endpoint_reachable, request_watch_control, WatchControlRequest, WatchControlResponse,
 };
@@ -39,7 +42,7 @@ pub use reconcile_state::{
     load_reconcile_state, persist_reconcile_attempt_state, persist_reconcile_state,
     reconcile_state_path, ReconcileState, ReconcileStateError,
 };
-pub use service::{run_watch_loop, run_watch_service, WatchConfig};
+pub use service::{run_watch_loop, run_watch_service};
 pub use status::{
     cleanup_stale_watch_artifacts, load_watch_state, watch_service_status, StateLoadError,
     WatchServiceStatus,

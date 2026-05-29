@@ -186,7 +186,7 @@ Five product layers, plus runtime/orchestration modules.
 
 **Core layer.** Shared low-level IDs, provenance, source-language metadata, path safety, and project-layout detection.
 
-**Substrate layer.** syntext as a Rust library dependency. Provides the n-gram index over the admitted textual corpus. Discovery respects `.gitignore`, `.synignore`, redaction globs, configured roots, linked worktrees by default, and initialized submodules when enabled. Optional semantic triage adds local vector artifacts, but graph-backed structural facts remain the trust source.
+**Substrate layer.** syntext as a Rust library dependency. Provides the n-gram index over the admitted textual corpus. Discovery respects `.gitignore`, `.synignore`, redaction globs, configured roots, linked worktrees by default, initialized submodules when enabled, and opt-in read-only branch-ref snapshots. Optional semantic triage adds local vector artifacts, but graph-backed structural facts remain the trust source.
 
 **Structure layer.** The unified graph for code and prose. Code symbols come from tree-sitter via per-language Rust crates and in-repo query constants. Concept nodes come only from configured human-authored markdown directories. The graph store is SQLite and is the source of truth. A per-repo in-memory `Graph` snapshot may be published after a successful compile when it fits the configured memory budget; it accelerates reads but does not replace SQLite as canonical storage.
 

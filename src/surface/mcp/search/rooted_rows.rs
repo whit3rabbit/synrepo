@@ -36,7 +36,7 @@ pub(super) fn lexical_items(
             })
         })
         .collect();
-    enrich_path_rows(state, rows)
+    attach_root_metadata(state, enrich_path_rows(state, rows))
 }
 
 pub(super) fn hybrid_items(
@@ -44,9 +44,10 @@ pub(super) fn hybrid_items(
     rows: Vec<crate::substrate::HybridSearchRow>,
 ) -> Vec<Value> {
     let fallback_rows = rows.clone();
-    state
+    let rendered = state
         .with_read_compiler(|compiler| Ok(hybrid_items_with_graph(rows, Some(compiler.reader()))))
-        .unwrap_or_else(|_| hybrid_items_with_graph(fallback_rows, None))
+        .unwrap_or_else(|_| hybrid_items_with_graph(fallback_rows, None));
+    attach_root_metadata(state, rendered)
 }
 
 fn hybrid_items_with_graph(
@@ -80,6 +81,11 @@ fn hybrid_items_with_graph(
                 "path": path,
                 "root_id": root_id,
                 "is_primary_root": is_primary_root,
+                "root_kind": row.root_kind,
+                "root_label": row.root_label,
+                "root_ref": row.root_ref,
+                "root_commit": row.root_commit,
+                "editable": row.editable,
                 "file_id": file_id,
                 "line": row.line,
                 "content": row.content,
@@ -91,6 +97,23 @@ fn hybrid_items_with_graph(
             })
         })
         .collect()
+}
+
+fn attach_root_metadata(state: &SynrepoState, mut rows: Vec<Value>) -> Vec<Value> {
+    for row in &mut rows {
+        let Some(root_id) = row.get("root_id").and_then(Value::as_str) else {
+            continue;
+        };
+        let meta = crate::substrate::root_metadata_for(&state.repo_root, &state.config, root_id);
+        if let Some(obj) = row.as_object_mut() {
+            obj.insert("root_kind".to_string(), json!(meta.root_kind));
+            obj.insert("root_label".to_string(), json!(meta.root_label));
+            obj.insert("root_ref".to_string(), json!(meta.root_ref));
+            obj.insert("root_commit".to_string(), json!(meta.root_commit));
+            obj.insert("editable".to_string(), json!(meta.editable));
+        }
+    }
+    rows
 }
 
 fn enrich_path_rows(state: &SynrepoState, rows: Vec<Value>) -> Vec<Value> {

@@ -76,7 +76,7 @@ MCP does not start watch for you. Run `synrepo watch --daemon` explicitly when y
 There are two separate scopes to keep straight:
 
 - A managed project is a repository recorded in the user registry at `~/.synrepo/projects.toml`. Global MCP only serves managed projects, and MCP tools must pass the current workspace as `repo_root` unless the server was started with `synrepo mcp --repo <path>`.
-- A discovery root is a filesystem root inside one managed project. The primary checkout is always indexed. Linked worktrees are indexed by default, initialized submodules are opt-in, and each discovery root has its own file identity domain.
+- A discovery root is a filesystem root inside one managed project. The primary checkout is always indexed. Linked worktrees are indexed by default, initialized submodules are opt-in, configured branch refs are read-only snapshot roots, and each discovery root has its own file identity domain.
 
 Register another repository for an existing global MCP setup:
 
@@ -87,7 +87,7 @@ synrepo project add .
 
 `synrepo project add [path]` bootstraps `.synrepo/` if needed, verifies the repo is ready, and records it in the registry. Use `synrepo project list`, `inspect`, `remove`, `use`, `rename`, and `prune-missing` to manage that registry. `synrepo project prune-missing` is a dry run unless `--apply` is passed.
 
-Within one repo, use `docs/CONFIG.md` to tune discovery. The relevant defaults are `include_worktrees = true`, `include_submodules = false`, and `roots = ["."]`.
+Within one repo, use `docs/CONFIG.md` to tune discovery. The relevant defaults are `include_worktrees = true`, `include_submodules = false`, `branch_roots.refs = []`, and `roots = ["."]`.
 
 ## Optional Embeddings
 

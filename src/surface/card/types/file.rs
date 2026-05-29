@@ -19,6 +19,21 @@ pub struct FileCard {
     pub root_id: String,
     /// True when this file belongs to the primary checkout.
     pub is_primary_root: bool,
+    /// Discovery-root kind label.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub root_kind: Option<String>,
+    /// Human-readable discovery-root label.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub root_label: Option<String>,
+    /// Full Git ref for branch snapshot roots.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub root_ref: Option<String>,
+    /// Commit object id for branch snapshot roots.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub root_commit: Option<String>,
+    /// Whether callers may edit this root through synrepo.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub editable: Option<bool>,
     /// Top-level symbols in the file.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub symbols: Vec<SymbolRef>,

@@ -61,6 +61,11 @@ struct SearchGroup {
     path: String,
     root_id: Option<String>,
     is_primary_root: Option<bool>,
+    root_kind: Option<String>,
+    root_label: Option<String>,
+    root_ref: Option<String>,
+    root_commit: Option<String>,
+    editable: Option<bool>,
     file_id: Option<String>,
     match_count: usize,
     lines: Vec<Value>,
@@ -207,6 +212,23 @@ fn grouped_search_rows(response: &Value) -> Vec<SearchGroup> {
                 path: path.to_string(),
                 root_id,
                 is_primary_root: row.get("is_primary_root").and_then(Value::as_bool),
+                root_kind: row
+                    .get("root_kind")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                root_label: row
+                    .get("root_label")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                root_ref: row
+                    .get("root_ref")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                root_commit: row
+                    .get("root_commit")
+                    .and_then(Value::as_str)
+                    .map(str::to_string),
+                editable: row.get("editable").and_then(Value::as_bool),
                 file_id: row
                     .get("file_id")
                     .and_then(Value::as_str)
@@ -333,6 +355,11 @@ fn group_json(group: &SearchGroup) -> Value {
         "path": group.path,
         "root_id": group.root_id,
         "is_primary_root": group.is_primary_root,
+        "root_kind": group.root_kind,
+        "root_label": group.root_label,
+        "root_ref": group.root_ref,
+        "root_commit": group.root_commit,
+        "editable": group.editable,
         "file_id": group.file_id,
         "match_count": group.match_count,
         "returned_line_count": group.lines.len(),
@@ -346,6 +373,11 @@ fn card_request_json(group: &SearchGroup) -> Value {
         "target": group.file_id.as_deref().unwrap_or(&group.path),
         "path": group.path,
         "root_id": group.root_id,
+        "root_kind": group.root_kind,
+        "root_label": group.root_label,
+        "root_ref": group.root_ref,
+        "root_commit": group.root_commit,
+        "editable": group.editable,
         "file_id": group.file_id,
     })
 }

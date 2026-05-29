@@ -83,6 +83,7 @@ where
     });
     let mut config = Config { mode, ..config };
     configure_config(&mut config);
+    config.branch_roots.validate()?;
     let compatibility_report =
         compatibility::evaluate_runtime(&synrepo_dir, runtime_already_existed, &config)?;
     if compatibility_report.has_blocking_actions() && !force {
@@ -159,6 +160,7 @@ where
         BootstrapAction::Refreshed
     };
 
+    crate::pipeline::git::prepare_branch_snapshots(repo_root, &config, &synrepo_dir)?;
     let build_report = crate::substrate::build_index(&config, repo_root)?;
 
     let graph_dir = synrepo_dir.join("graph");

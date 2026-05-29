@@ -1,5 +1,6 @@
 //! Configuration loading. Reads `.synrepo/config.toml`.
 
+mod branches;
 mod defaults;
 mod explain;
 mod io;
@@ -8,6 +9,7 @@ mod semantic;
 mod semantic_presence;
 mod thresholds;
 
+pub use branches::BranchRootsConfig;
 pub use explain::ExplainConfig;
 pub use io::home_dir;
 pub use mode::Mode;
@@ -52,6 +54,10 @@ pub struct Config {
     /// Include initialized git submodules as additional discovery roots.
     #[serde(default = "default_include_submodules")]
     pub include_submodules: bool,
+
+    /// Opt-in read-only indexing of exact local Git branch refs.
+    #[serde(default)]
+    pub branch_roots: BranchRootsConfig,
 
     /// Directories that contain human-authored concept/decision files.
     /// If empty, concept nodes are disabled in auto mode.
@@ -217,6 +223,7 @@ impl Config {
             config.merge_with_semantic_presence(local_config, semantic_presence);
         }
 
+        config.branch_roots.validate()?;
         Ok(config)
     }
 
@@ -246,6 +253,9 @@ impl Config {
         }
         if other.include_submodules != default_include_submodules() {
             self.include_submodules = other.include_submodules;
+        }
+        if other.branch_roots != BranchRootsConfig::default() {
+            self.branch_roots = other.branch_roots;
         }
         if other.concept_directories != default_concept_dirs() {
             self.concept_directories = other.concept_directories;
@@ -321,6 +331,9 @@ impl Config {
         }
         if other.include_submodules != default_include_submodules() {
             self.include_submodules = other.include_submodules;
+        }
+        if other.branch_roots != BranchRootsConfig::default() {
+            self.branch_roots = other.branch_roots;
         }
         if other.concept_directories != default_concept_dirs() {
             self.concept_directories = other.concept_directories;

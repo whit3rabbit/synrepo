@@ -58,12 +58,39 @@ fn discovery_root_fields_round_trip_through_toml() {
     let custom_toml = r#"
         include_worktrees = false
         include_submodules = true
+        [branch_roots]
+        refs = ["refs/heads/main"]
+        poll_seconds = 45
     "#;
     fs::write(synrepo_dir.join("config.toml"), custom_toml).unwrap();
 
     let config = Config::load(dir.path()).unwrap();
     assert!(!config.include_worktrees);
     assert!(config.include_submodules);
+    assert_eq!(config.branch_roots.refs, vec!["refs/heads/main"]);
+    assert_eq!(config.branch_roots.poll_seconds, 45);
+}
+
+#[test]
+fn branch_roots_reject_non_exact_refs() {
+    let _lock = crate::test_support::global_test_lock(super::test_home::HOME_ENV_TEST_LOCK);
+    let home = tempdir().unwrap();
+    let _home_guard = super::test_home::HomeEnvGuard::redirect_to(home.path());
+
+    let dir = tempdir().unwrap();
+    let synrepo_dir = Config::synrepo_dir(dir.path());
+    fs::create_dir_all(&synrepo_dir).unwrap();
+    fs::write(
+        synrepo_dir.join("config.toml"),
+        r#"
+        [branch_roots]
+        refs = ["feature"]
+    "#,
+    )
+    .unwrap();
+
+    let err = Config::load(dir.path()).unwrap_err();
+    assert!(err.to_string().contains("exact local refs"));
 }
 
 #[test]

@@ -1,12 +1,16 @@
 //! Root-aware lexical search wrapper over the primary syntext index plus
 //! direct scans of configured non-primary discovery roots.
 
-use std::path::{Path, PathBuf};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+};
 
 use globset::Glob;
 use syntext::SearchOptions;
 
 use crate::config::Config;
+use crate::substrate::{DiscoveryRootKind, RootMetadata};
 
 const PRIMARY_ROOT_ID: &str = "primary";
 
@@ -17,6 +21,16 @@ pub struct RootedSearchMatch {
     pub root_id: String,
     /// True when `root_id` is the primary checkout.
     pub is_primary_root: bool,
+    /// Stable discovery-root kind label.
+    pub root_kind: String,
+    /// Human-readable root label.
+    pub root_label: String,
+    /// Full Git ref for branch snapshot roots.
+    pub root_ref: Option<String>,
+    /// Commit object id for branch snapshot roots.
+    pub root_commit: Option<String>,
+    /// Whether callers may edit this result through synrepo.
+    pub editable: bool,
     /// Path relative to the owning root.
     pub path: PathBuf,
     /// 1-based line number of the match.
@@ -33,9 +47,15 @@ pub struct RootedSearchMatch {
 
 impl RootedSearchMatch {
     fn primary(match_: syntext::SearchMatch) -> Self {
+        let meta = RootMetadata::primary();
         Self {
-            root_id: PRIMARY_ROOT_ID.to_string(),
-            is_primary_root: true,
+            root_id: meta.root_id,
+            is_primary_root: meta.is_primary_root,
+            root_kind: meta.root_kind,
+            root_label: meta.root_label,
+            root_ref: meta.root_ref,
+            root_commit: meta.root_commit,
+            editable: meta.editable,
             path: match_.path,
             line_number: match_.line_number,
             line_content: match_.line_content,
@@ -96,17 +116,54 @@ fn scan_non_primary_roots(
         query.to_string()
     };
 
+    let roots = crate::substrate::discover_roots(repo_root, config);
+    let metadata = roots
+        .iter()
+        .map(|root| {
+            let meta = crate::substrate::root_metadata_for(repo_root, config, &root.discriminant);
+            (root.discriminant.clone(), meta)
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    for root in roots
+        .iter()
+        .filter(|root| root.kind == DiscoveryRootKind::BranchRef)
+    {
+        if let Some(matches) = crate::substrate::root_indexes::search_branch_root_index(
+            config, repo_root, root, query, options, limit,
+        )? {
+            out.extend(matches);
+            if limit.is_some_and(|max| out.len() >= max) {
+                return Ok(out);
+            }
+        }
+    }
+
     for file in crate::substrate::discover(repo_root, config)?
         .into_iter()
         .filter(|file| file.root_discriminant != PRIMARY_ROOT_ID)
     {
+        if file.root_kind == DiscoveryRootKind::BranchRef
+            && crate::substrate::root_indexes::branch_index_exists(
+                repo_root,
+                &file.root_discriminant,
+            )
+        {
+            continue;
+        }
         if !matches_filters(&file.relative_path, options, &matcher) {
             continue;
         }
+        let meta = metadata
+            .get(&file.root_discriminant)
+            .cloned()
+            .unwrap_or_else(|| {
+                crate::substrate::root_metadata_for(repo_root, config, &file.root_discriminant)
+            });
         scan_file(
             &file.absolute_path,
             &file.relative_path,
-            &file.root_discriminant,
+            meta,
             &query_cmp,
             options.case_insensitive,
             limit,
@@ -123,7 +180,7 @@ fn scan_non_primary_roots(
 fn scan_file(
     absolute_path: &Path,
     relative_path: &str,
-    root_id: &str,
+    root: RootMetadata,
     query: &str,
     case_insensitive: bool,
     limit: Option<usize>,
@@ -140,8 +197,13 @@ fn scan_file(
         };
         if let Some(start) = haystack.find(query) {
             out.push(RootedSearchMatch {
-                root_id: root_id.to_string(),
-                is_primary_root: false,
+                root_id: root.root_id.clone(),
+                is_primary_root: root.is_primary_root,
+                root_kind: root.root_kind.clone(),
+                root_label: root.root_label.clone(),
+                root_ref: root.root_ref.clone(),
+                root_commit: root.root_commit.clone(),
+                editable: root.editable,
                 path: PathBuf::from(relative_path),
                 line_number: idx.saturating_add(1) as u32,
                 line_content: line.as_bytes().to_vec(),

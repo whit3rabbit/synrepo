@@ -36,6 +36,11 @@ pub(super) fn symbol_card(
         .graph
         .get_file(symbol.file_id)?
         .ok_or_else(|| crate::Error::Other(anyhow::anyhow!("file for symbol {id} not found")))?;
+    let root_meta = crate::substrate::root_metadata_from_optional(
+        ctx.compiler.repo_root.as_deref(),
+        ctx.compiler.config.as_ref(),
+        &file.root_id,
+    );
 
     let defined_at = format!("{}:{}", file.path, symbol.body_byte_range.0);
 
@@ -99,7 +104,7 @@ pub(super) fn symbol_card(
         _ => symbol.doc_comment.clone(),
     };
 
-    let last_change = if budget == Budget::Tiny {
+    let last_change = if budget == Budget::Tiny || root_meta.root_kind == "branch_ref" {
         None
     } else {
         let include_summary = budget == Budget::Deep;
@@ -118,6 +123,11 @@ pub(super) fn symbol_card(
         path: file.path.clone(),
         root_id: file.root_id.clone(),
         is_primary_root: file.root_id == "primary",
+        root_kind: Some(root_meta.root_kind),
+        root_label: Some(root_meta.root_label),
+        root_ref: root_meta.root_ref,
+        root_commit: root_meta.root_commit,
+        editable: Some(root_meta.editable),
         signature: symbol.signature.clone(),
         doc_comment,
         callers,

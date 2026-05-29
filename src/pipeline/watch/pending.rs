@@ -36,6 +36,11 @@ impl PendingWatchChanges {
         }
     }
 
+    pub(super) fn record_full(&mut self, event_count: usize) {
+        self.event_count = self.event_count.saturating_add(event_count);
+        self.overflowed_paths = true;
+    }
+
     pub(super) fn take(&mut self, max_events: usize) -> PendingWatchBatch {
         let event_count = self.event_count.min(max_events);
         let force_full_reconcile = self.overflowed_paths;
@@ -70,6 +75,18 @@ mod tests {
 
         assert_eq!(batch.event_count, 2);
         assert_eq!(batch.touched_paths.len(), 2);
+        assert!(batch.force_full_reconcile);
+    }
+
+    #[test]
+    fn full_reconcile_marker_forces_full_reconcile() {
+        let mut pending = PendingWatchChanges::default();
+        pending.record_full(1);
+
+        let batch = pending.take(10);
+
+        assert_eq!(batch.event_count, 1);
+        assert!(batch.touched_paths.is_empty());
         assert!(batch.force_full_reconcile);
     }
 }
