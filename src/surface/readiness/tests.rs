@@ -23,6 +23,7 @@ use crate::{
     },
 };
 
+mod branch_refs;
 mod overlay;
 mod project_layout;
 
@@ -125,6 +126,7 @@ fn all_capabilities_have_stable_labels() {
     let caps = [
         (Capability::Parser, "parser"),
         (Capability::GitIntelligence, "git-intelligence"),
+        (Capability::BranchRefs, "branch-refs"),
         (Capability::ProjectLayout, "project-layout"),
         (Capability::Embeddings, "embeddings"),
         (Capability::Watch, "watch"),
@@ -148,6 +150,7 @@ fn matrix_contains_all_rows_in_stable_order() {
         vec![
             "parser",
             "git-intelligence",
+            "branch-refs",
             "project-layout",
             "embeddings",
             "watch",

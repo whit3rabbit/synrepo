@@ -10,6 +10,7 @@ use crate::{
     },
     store::{overlay::SqliteOverlayStore, sqlite::SqliteGraphStore},
     surface::{
+        branch_refs::BranchRootsStatus,
         readiness::{ReadinessMatrix, ReadinessRow},
         status_snapshot::{build_status_snapshot, StatusOptions, StatusSnapshot},
     },
@@ -45,6 +46,11 @@ fn build_readiness(
     let overlay_db = SqliteOverlayStore::db_path(&snapshot.synrepo_dir.join("overlay"));
     let index_manifest = snapshot.synrepo_dir.join("index").join("manifest.json");
     let diagnostics = snapshot.diagnostics.as_ref();
+    let branch_roots = BranchRootsStatus::inspect(
+        &state.repo_root,
+        &config,
+        diagnostics.map(|d| &d.watch_status),
+    );
 
     Ok(json!({
         "ok": true,
@@ -95,6 +101,7 @@ fn build_readiness(
                 "manifest_path": index_manifest,
                 "manifest_exists": index_manifest.exists(),
             },
+            "branch_roots": branch_roots,
             "watch": diagnostics.map(|diag| watch_detail(&diag.watch_status)),
             "reconcile": diagnostics.map(|diag| {
                 json!({
@@ -287,6 +294,10 @@ mod tests {
         assert_eq!(value["edit_mode"]["overlay_writes"], false, "{output}");
         assert_eq!(value["edit_mode"]["source_edits"], false, "{output}");
         assert!(value["explain_hint"].is_null(), "{output}");
+        assert_eq!(
+            value["details"]["branch_roots"]["configured"], 0,
+            "{output}"
+        );
         assert!(value["details"]["capabilities"]
             .as_array()
             .unwrap()

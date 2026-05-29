@@ -7,7 +7,7 @@ build-semantic:
 	cargo build --features semantic-triage
 
 release:
-	cargo build --release
+	cargo build --release --features semantic-triage
 
 test:
 	cargo test

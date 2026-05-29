@@ -18,6 +18,7 @@ use crate::config::Config;
 use crate::pipeline::watch::{watch_service_status, WatchServiceStatus};
 use crate::pipeline::writer::live_owner_pid;
 use crate::registry::{self, ProjectEntry};
+use crate::surface::branch_refs::BranchRootsStatus;
 use crate::tui::agent_integrations::{
     build_agent_install_statuses, summarize_agent_install_statuses,
 };
@@ -32,6 +33,7 @@ pub(crate) struct ProjectRef {
     pub(crate) root: PathBuf,
     pub(crate) health: String,
     pub(crate) watch: String,
+    pub(crate) branches: String,
     pub(crate) lock: String,
     pub(crate) integration: String,
     pub(crate) last_opened_at: Option<String>,
@@ -48,7 +50,8 @@ impl ProjectRef {
             }
         };
         let synrepo_dir = Config::synrepo_dir(&entry.path);
-        let watch = match watch_service_status(&synrepo_dir) {
+        let watch_status = watch_service_status(&synrepo_dir);
+        let watch = match &watch_status {
             WatchServiceStatus::Running(state) => format!("on:{}", state.pid),
             WatchServiceStatus::Starting => "starting".to_string(),
             WatchServiceStatus::Inactive => "off".to_string(),
@@ -60,12 +63,20 @@ impl ProjectRef {
             .unwrap_or_else(|| "free".to_string());
         let integration_summary =
             summarize_agent_install_statuses(&build_agent_install_statuses(&entry.path));
+        let branches = Config::load(&entry.path)
+            .ok()
+            .map(|config| {
+                BranchRootsStatus::inspect(&entry.path, &config, Some(&watch_status))
+                    .compact_label()
+            })
+            .unwrap_or_else(|| "off".to_string());
         Some(Self {
             id: entry.effective_id(),
             name: entry.display_name(),
             root: entry.path.clone(),
             health,
             watch,
+            branches,
             lock,
             integration: integration_summary.label,
             last_opened_at: entry.last_opened_at.clone(),

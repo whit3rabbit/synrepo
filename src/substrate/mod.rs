@@ -19,6 +19,7 @@ pub use discover::{discover, discover_roots, DiscoveredFile, DiscoveryRoot, Disc
 pub use hybrid::{hybrid_search, HybridSearchReport, HybridSearchRow, HybridSearchSource};
 pub use incremental::{sync_index_incremental, IndexSyncMode, IndexSyncReport};
 pub use index::{build_index, search, search_with_options, IndexBuildReport};
+pub(crate) use root_indexes::branch_index_exists;
 pub use root_meta::{root_metadata_for, root_metadata_from_optional, RootMetadata};
 pub use rooted_search::{search_rooted_with_options, RootedSearchMatch};
 

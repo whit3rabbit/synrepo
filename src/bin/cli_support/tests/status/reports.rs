@@ -344,12 +344,13 @@ fn status_reports_capability_readiness_matrix_in_text_and_json() {
         "capability_readiness must be an array, got: {matrix}"
     );
     let rows = matrix.as_array().unwrap();
-    assert_eq!(rows.len(), 8, "matrix must contain eight capability rows");
+    assert_eq!(rows.len(), 9, "matrix must contain nine capability rows");
     let labels: Vec<&str> = rows
         .iter()
         .map(|row| row["capability"].as_str().unwrap())
         .collect();
     assert!(labels.contains(&"parser"));
+    assert!(labels.contains(&"branch-refs"));
     assert!(labels.contains(&"project-layout"));
     assert!(labels.contains(&"overlay"));
     assert!(labels.contains(&"compatibility"));

@@ -173,6 +173,7 @@ fn repos_tab_reuses_recent_project_cache() {
         root: std::path::PathBuf::from("/tmp/cached"),
         health: "ready".to_string(),
         watch: "off".to_string(),
+        branches: "off".to_string(),
         lock: "free".to_string(),
         integration: "absent".to_string(),
         last_opened_at: None,

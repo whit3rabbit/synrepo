@@ -91,6 +91,10 @@ pub(crate) fn project_row(
         Span::styled(format!("{:<18}", project.name), style),
         Span::styled(format!(" watch:{:<10}", project.watch), theme.muted_style()),
         Span::styled(
+            format!(" branches:{:<12}", project.branches),
+            theme.muted_style(),
+        ),
+        Span::styled(
             format!(" health:{:<14}", project.health),
             theme.muted_style(),
         ),
@@ -145,5 +149,35 @@ mod tests {
             .collect::<Vec<_>>()
             .join("\n");
         assert!(rendered.contains("no projects match /none"), "{rendered}");
+    }
+
+    #[test]
+    fn project_row_renders_branch_status() {
+        let theme = Theme::plain();
+        let project = ProjectRef {
+            id: "repo".to_string(),
+            name: "repo".to_string(),
+            root: PathBuf::from("/tmp/repo"),
+            health: "ready".to_string(),
+            watch: "off".to_string(),
+            branches: "2/2 @30s".to_string(),
+            lock: "free".to_string(),
+            integration: "absent".to_string(),
+            last_opened_at: None,
+        };
+
+        let area = Rect::new(0, 0, 120, 3);
+        let mut buf = Buffer::empty(area);
+        List::new(vec![project_row(&project, false, false, &theme)]).render(area, &mut buf);
+        let rendered = (0..area.height)
+            .map(|y| {
+                (0..area.width)
+                    .map(|x| buf[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        assert!(rendered.contains("branches:2/2 @30s"), "{rendered}");
     }
 }

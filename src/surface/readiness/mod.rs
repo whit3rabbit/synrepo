@@ -7,6 +7,7 @@
 //! diagnostics that normalizes labels, severities, and next actions so every
 //! renderer shows the same degradation story.
 
+mod branch_refs;
 mod project_layout;
 mod rows;
 
@@ -14,6 +15,7 @@ use crate::tui::probe::Severity;
 use crate::{
     bootstrap::runtime_probe::ProbeReport, config::Config, surface::status_snapshot::StatusSnapshot,
 };
+use branch_refs::branch_refs_row;
 use project_layout::project_layout_row;
 use rows::{
     compatibility_row, embeddings_row, git_row, index_freshness_row, overlay_row, parser_row,
@@ -30,6 +32,8 @@ pub enum Capability {
     Parser,
     /// Git-derived history/ownership/co-change intelligence.
     GitIntelligence,
+    /// Configured read-only branch-ref roots.
+    BranchRefs,
     /// Manifest-backed source/test layout detection.
     ProjectLayout,
     /// Embedding index / semantic triage.
@@ -50,6 +54,7 @@ impl Capability {
         match self {
             Capability::Parser => "parser",
             Capability::GitIntelligence => "git-intelligence",
+            Capability::BranchRefs => "branch-refs",
             Capability::ProjectLayout => "project-layout",
             Capability::Embeddings => "embeddings",
             Capability::Watch => "watch",
@@ -63,6 +68,7 @@ impl Capability {
         match self {
             Capability::Parser => "parser",
             Capability::GitIntelligence => "git intelligence",
+            Capability::BranchRefs => "branch refs",
             Capability::ProjectLayout => "project layout",
             Capability::Embeddings => "embeddings",
             Capability::Watch => "watch",
@@ -143,8 +149,7 @@ impl ReadinessRow {
 
 /// Ordered matrix of capability readiness rows.
 ///
-/// The order is fixed (parser, git, project layout, embeddings, watch, index freshness,
-/// overlay, compatibility) so renderers and tests can rely on it.
+/// The order is fixed so renderers and tests can rely on it.
 #[derive(Clone, Debug)]
 pub struct ReadinessMatrix {
     /// Rows in stable display order.
@@ -165,6 +170,7 @@ impl ReadinessMatrix {
         let rows = vec![
             parser_row(snapshot),
             git_row(repo_root, config),
+            branch_refs_row(repo_root, config, snapshot),
             project_layout_row(repo_root, config),
             embeddings_row(snapshot, config),
             watch_row(snapshot),

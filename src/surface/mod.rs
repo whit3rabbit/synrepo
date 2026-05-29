@@ -1,6 +1,7 @@
 //! Surface layer for cards, tools, and skills.
 
 pub mod agent_doctrine;
+pub(crate) mod branch_refs;
 pub mod card;
 pub mod changed;
 pub(crate) mod commentary_scope;
