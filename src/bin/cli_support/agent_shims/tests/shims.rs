@@ -1,5 +1,22 @@
 use super::*;
 
+// This release consumes Antigravity desktop support only; the CLI target is
+// intentionally left out of synrepo's public AgentTool surface.
+const AGENT_CONFIG_IDS_NOT_EXPOSED_BY_SYNREPO: [&str; 1] = ["antigravitycli"];
+
+fn agent_config_id_is_not_exposed_by_synrepo(id: &str) -> bool {
+    AGENT_CONFIG_IDS_NOT_EXPOSED_BY_SYNREPO.contains(&id)
+}
+
+fn assert_agent_config_exclusions_are_registered() {
+    for id in AGENT_CONFIG_IDS_NOT_EXPOSED_BY_SYNREPO {
+        assert!(
+            agent_config::by_id(id).is_some(),
+            "synrepo exclusion points at unregistered agent-config id {id}"
+        );
+    }
+}
+
 #[test]
 fn canonical_name_matches_clap_value_enum_form() {
     use clap::ValueEnum;
@@ -53,6 +70,7 @@ fn automation_tier_tracks_agent_config_mcp_support() {
 
 #[test]
 fn local_mcp_catalog_tracks_agent_config_registry() {
+    assert_agent_config_exclusions_are_registered();
     let actual: std::collections::HashSet<_> = AgentTool::local_mcp_tools()
         .into_iter()
         .filter_map(AgentTool::agent_config_id)
@@ -64,6 +82,7 @@ fn local_mcp_catalog_tracks_agent_config_registry() {
                 .supported_mcp_scopes()
                 .contains(&agent_config::ScopeKind::Local)
         })
+        .filter(|installer| !agent_config_id_is_not_exposed_by_synrepo(installer.id()))
         .map(|installer| installer.id())
         .collect();
     assert_eq!(actual, expected);
@@ -71,6 +90,7 @@ fn local_mcp_catalog_tracks_agent_config_registry() {
 
 #[test]
 fn local_artifact_catalog_covers_agent_config_skills_and_instructions() {
+    assert_agent_config_exclusions_are_registered();
     let actual: std::collections::HashSet<_> = AgentTool::local_artifact_tools()
         .into_iter()
         .filter_map(AgentTool::agent_config_id)
@@ -82,6 +102,7 @@ fn local_artifact_catalog_covers_agent_config_skills_and_instructions() {
                 .supported_skill_scopes()
                 .contains(&agent_config::ScopeKind::Local)
         })
+        .filter(|installer| !agent_config_id_is_not_exposed_by_synrepo(installer.id()))
         .map(|installer| installer.id())
         .collect();
     expected.extend(
@@ -92,6 +113,7 @@ fn local_artifact_catalog_covers_agent_config_skills_and_instructions() {
                     .supported_instruction_scopes()
                     .contains(&agent_config::ScopeKind::Local)
             })
+            .filter(|installer| !agent_config_id_is_not_exposed_by_synrepo(installer.id()))
             .map(|installer| installer.id()),
     );
     assert_eq!(actual, expected);

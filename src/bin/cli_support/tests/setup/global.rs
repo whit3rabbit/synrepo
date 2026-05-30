@@ -71,3 +71,50 @@ fn cursor_global_uses_user_config_without_repo_flag() {
     );
     assert!(!repo.path().join(".cursor").exists());
 }
+
+#[test]
+#[cfg(unix)]
+fn antigravity_global_resolves_app_mcp_symlink_without_repo_flag() {
+    use std::os::unix::fs::symlink;
+
+    let (_lock, home, _guard) = redirect_home();
+    let canonical_home = canonicalize_no_verbatim(home.path());
+    let repo = tempdir().unwrap();
+    let gemini = canonical_home.join(".gemini");
+    let documented = gemini.join("antigravity").join("mcp_config.json");
+    let shared = gemini.join("config").join("mcp_config.json");
+    fs::create_dir_all(documented.parent().unwrap()).unwrap();
+    fs::create_dir_all(shared.parent().unwrap()).unwrap();
+    fs::write(&shared, b"{}").unwrap();
+    symlink(&shared, &documented).unwrap();
+
+    step_register_mcp(repo.path(), AgentTool::Antigravity, &Scope::Global).unwrap();
+
+    assert!(fs::symlink_metadata(&documented)
+        .unwrap()
+        .file_type()
+        .is_symlink());
+    let parsed: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&shared).unwrap()).unwrap();
+    assert_eq!(parsed["mcpServers"]["synrepo"]["command"], "synrepo");
+    assert_eq!(
+        parsed["mcpServers"]["synrepo"]["args"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|value| value.as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["mcp"]
+    );
+    assert!(shared
+        .parent()
+        .unwrap()
+        .join(".agent-config-mcp.json")
+        .exists());
+    assert!(!documented
+        .parent()
+        .unwrap()
+        .join(".agent-config-mcp.json")
+        .exists());
+    assert!(!repo.path().join(".agent").join("mcp_config.json").exists());
+}

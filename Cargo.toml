@@ -4,7 +4,7 @@ members = ["."]
 
 [package]
 name = "synrepo"
-version = "0.0.7"
+version = "0.0.8"
 edition = "2021"
 description = "A context compiler for AI coding agents"
 license = "MIT"
@@ -82,7 +82,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # --- CLI ---
-agent-config = "0.1"
+agent-config = "0.2"
 clap = { version = "4", features = ["derive"] }
 
 # --- TUI (runtime dashboard) ---

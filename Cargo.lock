@@ -4,9 +4,9 @@ version = 4
 
 [[package]]
 name = "agent-config"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "77a2fc14f77edd04cc6fa3fab81e212aee57c8d10089a5d1da7a1d9484275091"
+checksum = "34b7717753f2955fa06be29ef64fcfdbcc80835a177e1d1ffa44ecb94414c148"
 dependencies = [
  "anyhow",
  "dirs",
@@ -4362,7 +4362,7 @@ dependencies = [
 
 [[package]]
 name = "synrepo"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "agent-config",
  "anyhow",
