@@ -26,7 +26,7 @@ Use these as the primary read interface when the synrepo MCP server is available
 - `synrepo_task_route(task, path?)`: classify a task into the cheapest safe route and stable hook signals.
 - `synrepo_docs_search(query, limit?)`: advisory search over existing materialized explain docs for architecture, intent, gotchas, and "why" questions. This does not refresh commentary.
 - `synrepo_notes(include_hidden?)`: read advisory overlay notes.
-- `synrepo_refactor_suggestions(mode?, min_lines?, limit?, path_filter?)`: non-test source files with modularity hints (`mode=line_count`) or public symbols missing AST-extracted docs in wired tree-sitter languages (`mode=missing_docs`); responses include `criteria`, and missing-doc previews include `symbol_id`.
+- `synrepo_refactor_suggestions(mode?, min_lines?, limit?, path_filter?)`: non-test source files with modularity hints (`mode=line_count`) or API symbols missing AST-extracted docs in wired tree-sitter languages (`mode=missing_docs`); JavaScript-family files count ES module/CommonJS exports only, and Python counts literal `__all__`, package `__init__.py` definitions, and simple package re-exports; responses include `criteria`, and missing-doc previews include `symbol_id`.
 - `synrepo_entrypoints(scope?, budget?)`: entrypoint discovery.
 - `synrepo_metrics()`: this-session and persisted MCP/context metrics.
 - `synrepo_use_project(repo_root)`: set the default repo for a global/defaultless MCP session.

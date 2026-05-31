@@ -288,9 +288,13 @@ eligibility is `line_count > threshold`.
 
 For `mode: "missing_docs"`, `line_count_threshold_applied` is `false`,
 `visibility` is `"public"`, and `doc_source` is `"ast_doc_comment"`. Candidate
-eligibility is at least one active public graph symbol whose stored
-`doc_comment` is `null`, limited to wired tree-sitter languages whose parser
-currently emits doc comments.
+eligibility is at least one active API symbol whose stored `doc_comment` is
+`null`, limited to wired tree-sitter languages whose parser currently emits doc
+comments. Most languages use graph public visibility. JavaScript-family files
+only count ES module or CommonJS exports; TypeScript and TSX keep graph
+visibility behavior. Python only counts literal module `__all__`, direct public
+definitions in package `__init__.py`, and simple sibling re-exports from
+package `__init__.py`.
 
 Candidate response:
 

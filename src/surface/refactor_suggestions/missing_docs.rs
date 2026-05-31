@@ -1,9 +1,11 @@
 use std::fs;
 
-use crate::structure::graph::{GraphReader, SymbolNode, Visibility};
+use crate::core::ids::FileNodeId;
+use crate::structure::graph::{FileNode, GraphReader, SymbolNode};
 use crate::substrate::DiscoveryRoot;
 
 use super::line_count::recommended_follow_up;
+use super::missing_docs_api::{DocsRequiredApi, MissingDocsApiIndex};
 use super::util::{
     groups_for, is_test_file_path, physical_line_count, root_path_map, symbol_counts, PathMatcher,
 };
@@ -20,9 +22,11 @@ pub(crate) fn collect(
 ) -> crate::Result<RefactorSuggestionReport> {
     let matcher = PathMatcher::new(options.path_filter.as_deref())?;
     let root_paths = root_path_map(roots);
+    let file_paths = reader.all_file_paths()?;
+    let api_index = build_api_index(reader, &root_paths, &file_paths)?;
     let mut candidates = Vec::new();
 
-    for (path, file_id) in reader.all_file_paths()? {
+    for (path, file_id) in file_paths {
         if is_test_file_path(&path) || !matcher.matches(&path) {
             continue;
         }
@@ -35,13 +39,14 @@ pub(crate) fn collect(
         let Some(root_path) = root_paths.get(&file.root_id) else {
             continue;
         };
-        let absolute = root_path.join(&file.path);
-        let Ok(bytes) = fs::read(&absolute) else {
+        let Some(bytes) = read_file_bytes(root_path, &file) else {
             continue;
         };
         let line_count = physical_line_count(&bytes);
         let symbols = reader.symbols_for_file(file.id)?;
-        let mut missing_docs = missing_public_docs(&symbols);
+        let docs_api =
+            DocsRequiredApi::for_file(&file.path, file.language.as_deref(), &bytes, &api_index);
+        let mut missing_docs = missing_public_docs(&symbols, &docs_api);
         if missing_docs.is_empty() {
             continue;
         }
@@ -116,10 +121,43 @@ fn supports_doc_comments(language: Option<&str>) -> bool {
     )
 }
 
-fn missing_public_docs(symbols: &[SymbolNode]) -> Vec<MissingPublicDocSymbol> {
+fn build_api_index(
+    reader: &dyn GraphReader,
+    root_paths: &std::collections::BTreeMap<String, std::path::PathBuf>,
+    file_paths: &[(String, FileNodeId)],
+) -> crate::Result<MissingDocsApiIndex> {
+    let mut index = MissingDocsApiIndex::default();
+    for (path, file_id) in file_paths {
+        if is_test_file_path(path) {
+            continue;
+        }
+        let Some(file) = reader.get_file(*file_id)? else {
+            continue;
+        };
+        if file.language.as_deref() != Some("python") {
+            continue;
+        }
+        let Some(root_path) = root_paths.get(&file.root_id) else {
+            continue;
+        };
+        if let Some(bytes) = read_file_bytes(root_path, &file) {
+            index.record_python_init(&file.path, &bytes);
+        }
+    }
+    Ok(index)
+}
+
+fn read_file_bytes(root_path: &std::path::Path, file: &FileNode) -> Option<Vec<u8>> {
+    fs::read(root_path.join(&file.path)).ok()
+}
+
+fn missing_public_docs(
+    symbols: &[SymbolNode],
+    docs_api: &DocsRequiredApi,
+) -> Vec<MissingPublicDocSymbol> {
     symbols
         .iter()
-        .filter(|symbol| symbol.visibility == Visibility::Public && symbol.doc_comment.is_none())
+        .filter(|symbol| docs_api.requires_docs(symbol) && symbol.doc_comment.is_none())
         .map(|symbol| MissingPublicDocSymbol {
             symbol_id: symbol.id,
             qualified_name: symbol.qualified_name.clone(),

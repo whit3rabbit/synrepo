@@ -135,6 +135,8 @@ fn refactor_suggestions_params_and_docs_are_listed() {
     assert!(docs.contains("synrepo_refactor_suggestions"));
     assert!(docs.contains("source_store: \"graph+filesystem\""));
     assert!(docs.contains("missing_docs"));
+    assert!(docs.contains("JavaScript-family files"));
+    assert!(docs.contains("__all__"));
 }
 
 #[test]

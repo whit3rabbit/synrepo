@@ -4,7 +4,7 @@ use tempfile::tempdir;
 
 use super::{
     collect_refactor_suggestions_for_repo, RefactorSuggestionMode, RefactorSuggestionOptions,
-    DEFAULT_MIN_LINES, DEFAULT_MISSING_PUBLIC_DOC_PREVIEW_LIMIT,
+    RefactorSuggestionReport, DEFAULT_MIN_LINES, DEFAULT_MISSING_PUBLIC_DOC_PREVIEW_LIMIT,
 };
 
 fn make_repo(files: &[(&str, String)]) -> (tempfile::TempDir, std::path::PathBuf) {
@@ -27,6 +27,24 @@ fn rust_lines(lines: usize, name: &str) -> String {
         body.push_str(&format!("// {name} {idx}\n"));
     }
     body
+}
+
+fn collect_missing_docs(files: &[(&str, String)]) -> (tempfile::TempDir, RefactorSuggestionReport) {
+    let (dir, repo) = make_repo(files);
+    let options = RefactorSuggestionOptions {
+        mode: RefactorSuggestionMode::MissingDocs,
+        ..RefactorSuggestionOptions::default()
+    };
+    let report = collect_refactor_suggestions_for_repo(&repo, options).unwrap();
+    (dir, report)
+}
+
+fn only_missing_name(report: &RefactorSuggestionReport) -> &str {
+    assert_eq!(report.candidate_count, 1);
+    assert_eq!(report.candidates[0].missing_public_doc_count, 1);
+    report.candidates[0].missing_public_docs[0]
+        .qualified_name
+        .as_str()
 }
 
 #[test]
@@ -213,6 +231,97 @@ fn missing_docs_ignores_documented_java_symbol() {
 
     assert_eq!(report.candidate_count, 0);
     assert!(report.candidates.is_empty());
+}
+
+#[test]
+fn missing_docs_ignores_unexported_javascript_helper() {
+    let (_dir, report) =
+        collect_missing_docs(&[("src/helper.js", "function helper() {}\n".to_string())]);
+
+    assert_eq!(report.candidate_count, 0);
+    assert!(report.candidates.is_empty());
+}
+
+#[test]
+fn missing_docs_reports_esm_javascript_export() {
+    let (_dir, report) = collect_missing_docs(&[(
+        "src/api.js",
+        "export function exposed() {}\nfunction helper() {}\n".to_string(),
+    )]);
+
+    assert_eq!(only_missing_name(&report), "exposed");
+}
+
+#[test]
+fn missing_docs_reports_commonjs_export() {
+    let (_dir, report) = collect_missing_docs(&[(
+        "src/api.cjs",
+        "function exposed() {}\nmodule.exports.exposed = exposed;\n".to_string(),
+    )]);
+
+    assert_eq!(only_missing_name(&report), "exposed");
+}
+
+#[test]
+fn missing_docs_ignores_exported_javascript_test_paths() {
+    let (_dir, report) = collect_missing_docs(&[(
+        "src/api.test.js",
+        "export function exposed() {}\n".to_string(),
+    )]);
+
+    assert_eq!(report.candidate_count, 0);
+    assert!(report.candidates.is_empty());
+}
+
+#[test]
+fn missing_docs_ignores_python_script_helper() {
+    let (_dir, report) = collect_missing_docs(&[(
+        "tools/script.py",
+        "def helper():\n    return None\n".to_string(),
+    )]);
+
+    assert_eq!(report.candidate_count, 0);
+    assert!(report.candidates.is_empty());
+}
+
+#[test]
+fn missing_docs_reports_python_all_symbol() {
+    let (_dir, report) = collect_missing_docs(&[(
+        "pkg/helpers.py",
+        "__all__ = ['public_helper']\n\
+         def public_helper():\n    return None\n\
+         def internal_helper():\n    return None\n"
+            .to_string(),
+    )]);
+
+    assert_eq!(only_missing_name(&report), "public_helper");
+}
+
+#[test]
+fn missing_docs_reports_python_init_direct_api() {
+    let (_dir, report) = collect_missing_docs(&[(
+        "pkg/__init__.py",
+        "def exported():\n    return None\n".to_string(),
+    )]);
+
+    assert_eq!(only_missing_name(&report), "exported");
+}
+
+#[test]
+fn missing_docs_reports_python_package_reexport() {
+    let (_dir, report) = collect_missing_docs(&[
+        (
+            "pkg/__init__.py",
+            "from .helpers import PublicHelper\n".to_string(),
+        ),
+        (
+            "pkg/helpers.py",
+            "class PublicHelper:\n    pass\n".to_string(),
+        ),
+    ]);
+
+    assert_eq!(report.candidates[0].path, "pkg/helpers.py");
+    assert_eq!(only_missing_name(&report), "PublicHelper");
 }
 
 #[test]

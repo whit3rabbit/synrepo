@@ -9,6 +9,7 @@ use crate::surface::card::compiler::GraphCardCompiler;
 
 mod line_count;
 mod missing_docs;
+mod missing_docs_api;
 mod types;
 mod util;
 
