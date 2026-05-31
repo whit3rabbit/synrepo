@@ -75,15 +75,20 @@ pub fn run_global_dashboard(
     theme: Theme,
     open_picker: bool,
 ) -> anyhow::Result<DashboardExit> {
+    Ok(run_global_dashboard_with_active_project(cwd, theme, open_picker)?.0)
+}
+
+pub(crate) fn run_global_dashboard_with_active_project(
+    cwd: &Path,
+    theme: Theme,
+    open_picker: bool,
+) -> anyhow::Result<(DashboardExit, Option<std::path::PathBuf>)> {
     let mut session = TuiSession::enter()?;
     let mut state = GlobalAppState::new(cwd, theme, open_picker)?;
     let result = render_global_loop(session.terminal_mut(), &mut state);
     session.leave()?;
     result?;
-    Ok(state
-        .active_state()
-        .map(AppState::exit_intent)
-        .unwrap_or(DashboardExit::Quit))
+    Ok(state.exit_with_active_root())
 }
 
 /// Set up crossterm: raw mode, alt screen, hide cursor.

@@ -22,7 +22,7 @@ use crate::surface::branch_refs::BranchRootsStatus;
 use crate::tui::agent_integrations::{
     build_agent_install_statuses, summarize_agent_install_statuses,
 };
-use crate::tui::app::{ActiveTab, AppState};
+use crate::tui::app::{ActiveTab, AppState, DashboardExit};
 use crate::tui::theme::Theme;
 
 /// One registry project as shown in the global picker.
@@ -138,6 +138,13 @@ impl GlobalAppState {
     pub(crate) fn active_state_mut(&mut self) -> Option<&mut AppState> {
         let id = self.active_project_id.as_ref()?;
         self.project_states.get_mut(id)
+    }
+
+    pub(crate) fn exit_with_active_root(&self) -> (DashboardExit, Option<PathBuf>) {
+        let Some(active) = self.active_state() else {
+            return (DashboardExit::Quit, None);
+        };
+        (active.exit_intent(), Some(active.repo_root.clone()))
     }
 
     /// Switch active project and lazily create its project-scoped app state.

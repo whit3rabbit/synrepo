@@ -4,11 +4,14 @@ use synrepo::bootstrap::runtime_probe::{probe, Missing, RoutingDecision};
 use synrepo::config::Config;
 use synrepo::registry;
 use synrepo::tui::{
-    run_global_dashboard, run_repair_wizard, stdout_is_tty, DashboardOptions, RepairWizardOutcome,
-    TuiOptions,
+    run_global_dashboard_with_active_project, run_repair_wizard, stdout_is_tty, DashboardOptions,
+    RepairWizardOutcome, TuiOptions, TuiOutcome,
 };
 
-use super::repair_cmd::{execute_repair_plan, run_dashboard_with_sub_wizards};
+use super::repair_cmd::{
+    execute_repair_plan, handle_dashboard_outcome, run_dashboard_with_sub_wizards,
+    DashboardLoopControl,
+};
 use super::setup_cmd::run_wizard_and_apply;
 
 /// Bare `synrepo`: probe, route, and run the appropriate TUI entrypoint.
@@ -22,12 +25,7 @@ pub(crate) fn run_bare_entrypoint(
     } else if let Some(root) = find_initialized_project_root(repo_root) {
         root
     } else if stdout_is_tty() && !has_git_ancestor(repo_root) && registry_has_projects()? {
-        match run_global_dashboard(repo_root, DashboardOptions::from(opts), true)? {
-            synrepo::tui::TuiOutcome::Exited | synrepo::tui::TuiOutcome::NonTtyFallback => {
-                return Ok(());
-            }
-            _ => return Ok(()),
-        }
+        return run_global_dashboard_with_sub_wizards(repo_root, opts);
     } else {
         repo_root.to_path_buf()
     };
@@ -69,6 +67,64 @@ pub(crate) fn run_bare_entrypoint(
                 }
             }
         }
+    }
+}
+
+fn run_global_dashboard_with_sub_wizards(cwd: &Path, opts: TuiOptions) -> anyhow::Result<()> {
+    let mut dashboard_opts = DashboardOptions::from(opts);
+    let mut open_picker = true;
+    loop {
+        let result = run_global_dashboard_with_active_project(cwd, dashboard_opts, open_picker)?;
+        let outcome = result.outcome;
+        let action_label = global_dashboard_action_label(&outcome);
+        let active_root = match result.active_root {
+            Some(root) => root,
+            None if matches!(&outcome, TuiOutcome::Exited | TuiOutcome::NonTtyFallback) => {
+                return Ok(());
+            }
+            None => {
+                anyhow::bail!("global dashboard requested {action_label} with no active project");
+            }
+        };
+        let mut integration = probe(&active_root).agent_integration;
+        match handle_dashboard_outcome(
+            &active_root,
+            &mut integration,
+            &mut dashboard_opts,
+            outcome,
+        )? {
+            DashboardLoopControl::Exit => return Ok(()),
+            DashboardLoopControl::SwitchProject(next_root) => {
+                let Some(selector) = next_root.to_str() else {
+                    anyhow::bail!(
+                        "global dashboard cannot switch to non-UTF-8 project path: {}",
+                        next_root.display()
+                    );
+                };
+                registry::mark_project_opened(selector)?;
+                dashboard_opts.welcome_banner = false;
+                open_picker = false;
+            }
+            DashboardLoopControl::Continue => {
+                dashboard_opts.welcome_banner = false;
+                open_picker = false;
+            }
+        }
+    }
+}
+
+fn global_dashboard_action_label(outcome: &TuiOutcome) -> &'static str {
+    match outcome {
+        TuiOutcome::Exited => "exit",
+        TuiOutcome::NonTtyFallback => "non-TTY fallback",
+        TuiOutcome::WizardCompleted => "wizard completion",
+        TuiOutcome::WizardCancelled => "wizard cancellation",
+        TuiOutcome::LaunchIntegrationRequested(_) => "agent integration setup",
+        TuiOutcome::LaunchProjectMcpInstallRequested => "project MCP install",
+        TuiOutcome::LaunchExplainSetupRequested => "explain setup",
+        TuiOutcome::LaunchEmbeddingsSetupRequested => "embeddings setup",
+        TuiOutcome::LaunchEmbeddingBuildRequested(_) => "embeddings build",
+        TuiOutcome::SwitchProjectRequested(_) => "project switch",
     }
 }
 

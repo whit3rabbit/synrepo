@@ -3,7 +3,7 @@ use tempfile::tempdir;
 
 use super::*;
 use crate::tui::app::{
-    ConfirmStopWatchState, ExplainMode, PendingExplainRun, PendingStopWatchAction,
+    ConfirmStopWatchState, DashboardExit, ExplainMode, PendingExplainRun, PendingStopWatchAction,
 };
 
 #[path = "picker_tests.rs"]
@@ -79,6 +79,44 @@ fn picker_enter_switches_to_selected_project() {
 
     assert_eq!(state.active_project_id.as_deref(), Some(entry.id.as_str()));
     assert!(state.picker.is_none());
+}
+
+#[test]
+fn exit_with_active_root_carries_explain_setup_project() {
+    let (_lock, _home, _guard) = home_guard();
+    let project = tempdir().unwrap();
+    make_partial_project(project.path());
+    let entry = registry::record_project(project.path()).unwrap();
+    let mut state = GlobalAppState::new(project.path(), Theme::plain(), false).unwrap();
+
+    let active = state.active_state_mut().unwrap();
+    active.launch_explain_setup = true;
+    active.should_exit = true;
+
+    let (intent, active_root) = state.exit_with_active_root();
+    assert_eq!(intent, DashboardExit::LaunchExplainSetup);
+    assert_eq!(active_root.unwrap(), entry.path);
+}
+
+#[test]
+#[cfg(feature = "semantic-triage")]
+fn exit_with_active_root_carries_embedding_build_project() {
+    let (_lock, _home, _guard) = home_guard();
+    let project = tempdir().unwrap();
+    make_partial_project(project.path());
+    let entry = registry::record_project(project.path()).unwrap();
+    let mut state = GlobalAppState::new(project.path(), Theme::plain(), false).unwrap();
+
+    let pending = crate::tui::app::PendingEmbeddingBuild {
+        stopped_watch: false,
+    };
+    let active = state.active_state_mut().unwrap();
+    active.launch_embedding_build = Some(pending.clone());
+    active.should_exit = true;
+
+    let (intent, active_root) = state.exit_with_active_root();
+    assert_eq!(intent, DashboardExit::LaunchEmbeddingBuild(pending));
+    assert_eq!(active_root.unwrap(), entry.path);
 }
 
 #[test]

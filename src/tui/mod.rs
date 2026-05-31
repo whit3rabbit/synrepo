@@ -20,6 +20,7 @@ pub mod app;
 pub mod dashboard;
 mod dashboard_tabs;
 mod explain_run;
+mod global_dashboard;
 mod graph_view;
 mod live_dashboard;
 pub(crate) mod materializer;
@@ -32,6 +33,9 @@ mod watcher;
 pub mod widgets;
 pub mod wizard;
 
+pub use global_dashboard::{
+    run_global_dashboard, run_global_dashboard_with_active_project, GlobalDashboardOutcome,
+};
 pub use graph_view::run_graph_view;
 pub use setup_flow::setup_followup_needed;
 
@@ -124,25 +128,7 @@ pub fn run_result_popup(opts: TuiOptions, title: &str, lines: &[String]) -> anyh
     wizard::run_result_popup_loop(theme, title, lines)
 }
 
-/// Open the registry-backed global project dashboard.
-pub fn run_global_dashboard(
-    cwd: &Path,
-    opts: impl Into<DashboardOptions>,
-    open_picker: bool,
-) -> anyhow::Result<TuiOutcome> {
-    if !stdout_is_tty() {
-        return Ok(TuiOutcome::NonTtyFallback);
-    }
-    let opts = opts.into();
-    let theme = theme::Theme::from_no_color(opts.no_color);
-    Ok(tui_outcome(dashboard::run_global_dashboard(
-        cwd,
-        theme,
-        open_picker,
-    )?))
-}
-
-fn tui_outcome(intent: app::DashboardExit) -> TuiOutcome {
+pub(crate) fn tui_outcome(intent: app::DashboardExit) -> TuiOutcome {
     match intent {
         app::DashboardExit::Quit => TuiOutcome::Exited,
         app::DashboardExit::LaunchIntegration(request) => {

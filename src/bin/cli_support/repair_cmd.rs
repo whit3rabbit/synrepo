@@ -1,5 +1,5 @@
 use std::io::{self, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crossterm::{
     cursor::Show,
@@ -22,6 +22,12 @@ use super::commands::{
 };
 use super::setup_cmd::{run_embeddings_setup_step, run_explain_step};
 
+pub(crate) enum DashboardLoopControl {
+    Continue,
+    SwitchProject(PathBuf),
+    Exit,
+}
+
 /// Run the poll-mode dashboard in a loop so dashboard-launched sub-wizards can
 /// tear down the alt-screen, execute their plan, and re-open the dashboard
 /// with a fresh probe and integration signal. Returns once the operator quits
@@ -33,98 +39,111 @@ pub(crate) fn run_dashboard_with_sub_wizards(
 ) -> anyhow::Result<()> {
     let mut current_root = repo_root.to_path_buf();
     loop {
-        // Exhaustive match flags future TuiOutcome additions at compile time.
-        match run_dashboard(&current_root, integration.clone(), opts)? {
-            TuiOutcome::Exited | TuiOutcome::NonTtyFallback => return Ok(()),
-            TuiOutcome::SwitchProjectRequested(next_root) => {
+        let outcome = run_dashboard(&current_root, integration.clone(), opts)?;
+        match handle_dashboard_outcome(&current_root, &mut integration, &mut opts, outcome)? {
+            DashboardLoopControl::Exit => return Ok(()),
+            DashboardLoopControl::SwitchProject(next_root) => {
                 current_root = next_root;
                 let report = probe(&current_root);
                 integration = report.agent_integration;
                 opts.welcome_banner = false;
             }
-            TuiOutcome::LaunchIntegrationRequested(request) => {
-                // Tear-down of the alt-screen has already happened inside
-                // `run_dashboard`; safe to print and prompt now.
-                let tui_opts = TuiOptions {
-                    no_color: opts.no_color,
-                };
-                match run_integration_wizard_with_initial_target(
-                    &current_root,
-                    integration.clone(),
-                    tui_opts,
-                    request.initial_target,
-                )? {
-                    IntegrationWizardOutcome::Completed { plan } => {
-                        match execute_integration_plan(&current_root, plan) {
-                            Ok(report) => show_apply_report_popup(tui_opts, &report)?,
-                            Err(error) => {
-                                show_apply_report_popup(tui_opts, error.report())?;
-                                return Err(error.into_anyhow());
-                            }
-                        }
-                    }
-                    IntegrationWizardOutcome::Cancelled => {
-                        println!("integration wizard cancelled; no changes applied.");
-                    }
-                    IntegrationWizardOutcome::NonTty => return Ok(()),
-                }
-                // Re-probe so the dashboard reflects the new integration
-                // state on re-open. Suppress the welcome banner on re-open —
-                // the banner is a first-run-only affordance.
-                let report = probe(&current_root);
-                integration = report.agent_integration;
-                opts.welcome_banner = false;
-            }
-            TuiOutcome::LaunchProjectMcpInstallRequested => {
-                let tui_opts = TuiOptions {
-                    no_color: opts.no_color,
-                };
-                match run_mcp_install_wizard(&current_root, tui_opts)? {
-                    McpInstallWizardOutcome::Completed { plan } => {
-                        match execute_project_mcp_install_plan(&current_root, plan) {
-                            Ok(report) => show_apply_report_popup(tui_opts, &report)?,
-                            Err(error) => {
-                                show_apply_report_popup(tui_opts, error.report())?;
-                                return Err(error.into_anyhow());
-                            }
-                        }
-                    }
-                    McpInstallWizardOutcome::Cancelled => {
-                        println!("project integration install cancelled; no changes applied.");
-                    }
-                    McpInstallWizardOutcome::NonTty => return Ok(()),
-                }
-                let report = probe(&current_root);
-                integration = report.agent_integration;
-                opts.welcome_banner = false;
-            }
-            TuiOutcome::LaunchExplainSetupRequested => {
-                let tui_opts = TuiOptions {
-                    no_color: opts.no_color,
-                };
-                run_explain_step(&current_root, tui_opts)?;
-                opts.welcome_banner = false;
-            }
-            TuiOutcome::LaunchEmbeddingsSetupRequested => {
-                let tui_opts = TuiOptions {
-                    no_color: opts.no_color,
-                };
-                run_embeddings_setup_step(&current_root, tui_opts)?;
-                opts.welcome_banner = false;
-            }
-            TuiOutcome::LaunchEmbeddingBuildRequested(pending) => {
-                run_embedding_build_step(&current_root, pending)?;
-                opts.welcome_banner = false;
-            }
-            outcome @ (TuiOutcome::WizardCompleted | TuiOutcome::WizardCancelled) => {
-                debug_assert!(
-                    false,
-                    "run_dashboard returned unexpected outcome: {outcome:?}"
-                );
-                return Ok(());
-            }
+            DashboardLoopControl::Continue => {}
         }
     }
+}
+
+pub(crate) fn handle_dashboard_outcome(
+    current_root: &Path,
+    integration: &mut AgentIntegration,
+    opts: &mut DashboardOptions,
+    outcome: TuiOutcome,
+) -> anyhow::Result<DashboardLoopControl> {
+    let tui_opts = TuiOptions {
+        no_color: opts.no_color,
+    };
+    // Exhaustive match flags future TuiOutcome additions at compile time.
+    match outcome {
+        TuiOutcome::Exited | TuiOutcome::NonTtyFallback => Ok(DashboardLoopControl::Exit),
+        TuiOutcome::SwitchProjectRequested(next_root) => {
+            Ok(DashboardLoopControl::SwitchProject(next_root))
+        }
+        TuiOutcome::LaunchIntegrationRequested(request) => {
+            match run_integration_wizard_with_initial_target(
+                current_root,
+                integration.clone(),
+                tui_opts,
+                request.initial_target,
+            )? {
+                IntegrationWizardOutcome::Completed { plan } => {
+                    match execute_integration_plan(current_root, plan) {
+                        Ok(report) => show_apply_report_popup(tui_opts, &report)?,
+                        Err(error) => {
+                            show_apply_report_popup(tui_opts, error.report())?;
+                            return Err(error.into_anyhow());
+                        }
+                    }
+                }
+                IntegrationWizardOutcome::Cancelled => {
+                    println!("integration wizard cancelled; no changes applied.");
+                }
+                IntegrationWizardOutcome::NonTty => return Ok(DashboardLoopControl::Exit),
+            }
+            refresh_dashboard_after_action(current_root, integration, opts);
+            Ok(DashboardLoopControl::Continue)
+        }
+        TuiOutcome::LaunchProjectMcpInstallRequested => {
+            match run_mcp_install_wizard(current_root, tui_opts)? {
+                McpInstallWizardOutcome::Completed { plan } => {
+                    match execute_project_mcp_install_plan(current_root, plan) {
+                        Ok(report) => show_apply_report_popup(tui_opts, &report)?,
+                        Err(error) => {
+                            show_apply_report_popup(tui_opts, error.report())?;
+                            return Err(error.into_anyhow());
+                        }
+                    }
+                }
+                McpInstallWizardOutcome::Cancelled => {
+                    println!("project integration install cancelled; no changes applied.");
+                }
+                McpInstallWizardOutcome::NonTty => return Ok(DashboardLoopControl::Exit),
+            }
+            refresh_dashboard_after_action(current_root, integration, opts);
+            Ok(DashboardLoopControl::Continue)
+        }
+        TuiOutcome::LaunchExplainSetupRequested => {
+            run_explain_step(current_root, tui_opts)?;
+            opts.welcome_banner = false;
+            Ok(DashboardLoopControl::Continue)
+        }
+        TuiOutcome::LaunchEmbeddingsSetupRequested => {
+            run_embeddings_setup_step(current_root, tui_opts)?;
+            opts.welcome_banner = false;
+            Ok(DashboardLoopControl::Continue)
+        }
+        TuiOutcome::LaunchEmbeddingBuildRequested(pending) => {
+            run_embedding_build_step(current_root, pending)?;
+            opts.welcome_banner = false;
+            Ok(DashboardLoopControl::Continue)
+        }
+        outcome @ (TuiOutcome::WizardCompleted | TuiOutcome::WizardCancelled) => {
+            debug_assert!(
+                false,
+                "run_dashboard returned unexpected outcome: {outcome:?}"
+            );
+            Ok(DashboardLoopControl::Exit)
+        }
+    }
+}
+
+fn refresh_dashboard_after_action(
+    current_root: &Path,
+    integration: &mut AgentIntegration,
+    opts: &mut DashboardOptions,
+) {
+    let report = probe(current_root);
+    *integration = report.agent_integration;
+    opts.welcome_banner = false;
 }
 
 fn run_embedding_build_step(
