@@ -426,7 +426,7 @@ Append-only. No UPDATE or DELETE outside of compaction.
 ```sql
 CREATE TABLE agent_notes (
     note_id             TEXT PRIMARY KEY,                          -- note_<24 hex>
-    target_kind         TEXT NOT NULL,                             -- path|file|symbol|...
+    target_kind         TEXT NOT NULL,                             -- repo|path|file|symbol|...
     target_id           TEXT NOT NULL,
     claim               TEXT NOT NULL,
     evidence_json       TEXT NOT NULL,                             -- Vec<AgentNoteEvidence>
@@ -452,7 +452,10 @@ CREATE INDEX idx_agent_notes_updated_at ON agent_notes(updated_at);
 ```
 
 `source_store` is always `"overlay"` and `advisory` is always `1` for rows in
-this table. The columns exist for future cross-store handling.
+this table. The columns exist for future cross-store handling. Saved repo
+lessons are stored in this table without DDL changes by adding reserved
+`evidence_json` entries: `{kind:"synrepo.lesson",id:"v1"}` and, when TTL is set,
+`{kind:"synrepo.lesson.expires_at",id:"<RFC3339 UTC>"}`.
 
 #### `agent_note_transitions`
 

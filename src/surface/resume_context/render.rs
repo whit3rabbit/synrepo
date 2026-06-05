@@ -46,6 +46,26 @@ pub fn to_markdown(packet: &ResumeContextPacket) -> String {
         }
         other => out.push_str(&format!("{other}.\n\n")),
     }
+    out.push_str("## Saved Lessons\n\n");
+    match packet.sections.saved_lessons.overlay_state.as_str() {
+        "available" if packet.sections.saved_lessons.lessons.is_empty() => {
+            out.push_str("None.\n\n")
+        }
+        "available" => {
+            for lesson in &packet.sections.saved_lessons.lessons {
+                out.push_str(&format!(
+                    "- {} [{}/{}] {}: {}\n",
+                    lesson.lesson_id,
+                    lesson.status,
+                    lesson.freshness,
+                    lesson.target,
+                    lesson.claim_preview
+                ));
+            }
+            out.push('\n');
+        }
+        other => out.push_str(&format!("{other}.\n\n")),
+    }
     out.push_str("## Recent Activity\n\n");
     if packet.sections.recent_activity.activity.is_empty() {
         out.push_str("None.\n\n");
@@ -107,6 +127,11 @@ pub(super) fn detail_pointers(
             label: "saved notes".to_string(),
             mcp: format!("synrepo_notes(limit: {limit})"),
             cli: format!("synrepo notes list --limit {limit}"),
+        });
+        pointers.push(DetailPointer {
+            label: "saved lessons".to_string(),
+            mcp: format!("synrepo_lesson_list(limit: {limit})"),
+            cli: format!("synrepo lessons --limit {limit}"),
         });
     }
     pointers

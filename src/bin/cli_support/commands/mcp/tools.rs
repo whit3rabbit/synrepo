@@ -5,8 +5,8 @@ use rmcp::{
 };
 use synrepo::surface::handoffs::{collect_handoffs, to_json as handoffs_to_json, HandoffsRequest};
 use synrepo::surface::mcp::{
-    ask, audit, card_batch, cards, commentary, context_pack, docs, edits, graph, notes, primitives,
-    readiness, refactor_suggestions, resume_context, search, task_route,
+    ask, audit, card_batch, cards, commentary, context_pack, docs, edits, graph, lessons, notes,
+    primitives, readiness, refactor_suggestions, resume_context, search, task_route,
 };
 
 use super::SynrepoServer;
@@ -178,6 +178,36 @@ impl SynrepoServer {
     async fn synrepo_notes(&self, Parameters(params): Parameters<notes::NotesParams>) -> String {
         let repo_root = params.repo_root.clone();
         self.with_tool_state_blocking("synrepo_notes", repo_root, move |state| notes::handle_notes(&state, params)).await
+    }
+
+    #[tool(name = "synrepo_lesson_add", description = "Save an advisory repo lesson in the overlay. Lessons are source_store=overlay, advisory=true, and never define graph truth.")]
+    async fn synrepo_lesson_add(&self, Parameters(params): Parameters<lessons::LessonAddParams>) -> String {
+        let repo_root = params.repo_root.clone();
+        self.with_tool_state_persistent("synrepo_lesson_add", repo_root, move |state| lessons::handle_lesson_add(&state, params)).await
+    }
+
+    #[tool(name = "synrepo_lesson_search", description = "Search saved advisory repo lessons. Hidden lifecycle states and expired lessons require include_hidden=true.")]
+    async fn synrepo_lesson_search(&self, Parameters(params): Parameters<lessons::LessonSearchParams>) -> String {
+        let repo_root = params.repo_root.clone();
+        self.with_tool_state_blocking("synrepo_lesson_search", repo_root, move |state| lessons::handle_lesson_search(&state, params)).await
+    }
+
+    #[tool(name = "synrepo_lesson_list", description = "List saved advisory repo lessons. Hidden lifecycle states and expired lessons require include_hidden=true.")]
+    async fn synrepo_lesson_list(&self, Parameters(params): Parameters<lessons::LessonListParams>) -> String {
+        let repo_root = params.repo_root.clone();
+        self.with_tool_state_blocking("synrepo_lesson_list", repo_root, move |state| lessons::handle_lesson_list(&state, params)).await
+    }
+
+    #[tool(name = "synrepo_lesson_forget", description = "Hide a saved repo lesson from normal retrieval while retaining overlay audit history.")]
+    async fn synrepo_lesson_forget(&self, Parameters(params): Parameters<lessons::LessonForgetParams>) -> String {
+        let repo_root = params.repo_root.clone();
+        self.with_tool_state_persistent("synrepo_lesson_forget", repo_root, move |state| lessons::handle_lesson_forget(&state, params)).await
+    }
+
+    #[tool(name = "synrepo_lesson_verify", description = "Verify a saved repo lesson and return it to active state when anchors match.")]
+    async fn synrepo_lesson_verify(&self, Parameters(params): Parameters<lessons::LessonVerifyParams>) -> String {
+        let repo_root = params.repo_root.clone();
+        self.with_tool_state_persistent("synrepo_lesson_verify", repo_root, move |state| lessons::handle_lesson_verify(&state, params)).await
     }
 
     #[tool(name = "synrepo_module_card", description = "Return a ModuleCard summarizing a directory: files, nested modules, public symbols, and token budget. Default budget is tiny; escalate to normal for local understanding and deep only before edits.")]

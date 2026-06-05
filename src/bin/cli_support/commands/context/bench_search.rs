@@ -16,6 +16,8 @@ use super::bench_shared::{
 
 const SCHEMA_VERSION: u32 = 1;
 const HIT_LIMIT: usize = 5;
+const SEARCH_FETCH_LIMIT: usize = HIT_LIMIT * 2;
+const FIXTURE_PATH_PREFIX: &str = "benches/tasks/";
 
 pub(crate) fn bench_search(
     repo_root: &Path,
@@ -77,10 +79,17 @@ fn run_lexical(
         &fixture.query,
         &search_options(),
     )?;
-    let returned_targets = matches
-        .into_iter()
-        .map(|m| m.path.to_string_lossy().to_string())
-        .collect::<Vec<_>>();
+    let mut returned_targets = Vec::new();
+    for m in matches {
+        let path = m.path.to_string_lossy().to_string();
+        if is_benchmark_fixture_path(&path) {
+            continue;
+        }
+        returned_targets.push(path);
+        if returned_targets.len() >= HIT_LIMIT {
+            break;
+        }
+    }
     Ok(build_run(
         "syntext",
         false,
@@ -150,12 +159,16 @@ fn returned_from_hybrid_rows(
     let mut symbols = Vec::new();
     for row in rows {
         if let Some(path) = row.path {
-            targets.push(path);
+            if !is_benchmark_fixture_path(&path) {
+                targets.push(path);
+            }
         }
         if let Some(symbol_id) = row.symbol_id {
             if let Some((path, qname)) = symbol_details(compiler, symbol_id) {
-                targets.push(path);
-                symbols.push(qname);
+                if !is_benchmark_fixture_path(&path) {
+                    targets.push(path);
+                    symbols.push(qname);
+                }
             }
         }
     }
@@ -177,9 +190,13 @@ fn search_options() -> SearchOptions {
         path_filter: None,
         file_type: None,
         exclude_type: None,
-        max_results: Some(HIT_LIMIT),
+        max_results: Some(SEARCH_FETCH_LIMIT),
         case_insensitive: false,
     }
+}
+
+fn is_benchmark_fixture_path(value: &str) -> bool {
+    value.starts_with(FIXTURE_PATH_PREFIX)
 }
 
 fn summarize(tasks: &[BenchSearchTaskReport]) -> BenchSearchSummary {

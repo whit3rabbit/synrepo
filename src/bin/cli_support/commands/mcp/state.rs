@@ -20,6 +20,9 @@ const OVERLAY_WRITE_TOOLS: &[&str] = &[
     "synrepo_note_supersede",
     "synrepo_note_forget",
     "synrepo_note_verify",
+    "synrepo_lesson_add",
+    "synrepo_lesson_forget",
+    "synrepo_lesson_verify",
 ];
 
 const SOURCE_EDIT_TOOLS: &[&str] = &["synrepo_prepare_edit_context", "synrepo_apply_anchor_edits"];

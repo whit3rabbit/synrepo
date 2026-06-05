@@ -304,7 +304,7 @@ pub(crate) fn attach_agent_notes(
     Ok(())
 }
 
-fn with_overlay_for_write<R>(
+pub(super) fn with_overlay_for_write<R>(
     state: &SynrepoState,
     operation: &'static str,
     f: impl FnOnce(&mut SqliteOverlayStore) -> anyhow::Result<R>,

@@ -45,6 +45,10 @@ fn mcp_mutating_tools_are_hidden_by_default() {
         "default MCP must not advertise advisory note writes"
     );
     assert!(
+        !tools.iter().any(|tool| tool == "synrepo_lesson_add"),
+        "default MCP must not advertise saved lesson writes"
+    );
+    assert!(
         !tools
             .iter()
             .any(|tool| tool == "synrepo_refresh_commentary"),
@@ -53,6 +57,14 @@ fn mcp_mutating_tools_are_hidden_by_default() {
     assert!(
         tools.iter().any(|tool| tool == "synrepo_notes"),
         "advisory note reads stay available in default MCP"
+    );
+    assert!(
+        tools.iter().any(|tool| tool == "synrepo_lesson_search"),
+        "saved lesson search stays available in default MCP"
+    );
+    assert!(
+        tools.iter().any(|tool| tool == "synrepo_lesson_list"),
+        "saved lesson list stays available in default MCP"
     );
     drop(dir);
 }
@@ -87,6 +99,14 @@ fn mcp_overlay_write_tools_are_registered_when_allowed() {
     assert!(
         tools.iter().any(|tool| tool == "synrepo_note_add"),
         "overlay-write MCP must advertise advisory note writes"
+    );
+    assert!(
+        tools.iter().any(|tool| tool == "synrepo_lesson_add"),
+        "overlay-write MCP must advertise saved lesson writes"
+    );
+    assert!(
+        tools.iter().any(|tool| tool == "synrepo_lesson_forget"),
+        "overlay-write MCP must advertise saved lesson forget"
     );
     assert!(
         tools

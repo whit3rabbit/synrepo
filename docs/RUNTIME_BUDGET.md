@@ -94,6 +94,9 @@ Review expectations:
   and store-side limits.
 - Agent notes must stay explicit saved-context actions, not automatic session
   memory.
+- Saved repo lessons, when implemented, must remain a bounded operator-facing
+  layer over agent notes: max 4000 characters per claim, max 32 evidence
+  entries, max 32 source hashes, and max 20 returned lessons per recall.
 - Any change that increases stale advisory responses must explain how callers
   can distinguish fresh, stale, missing, invalid, and budget-withheld content.
 - Any change that adds overlay rows must preserve provenance, source store

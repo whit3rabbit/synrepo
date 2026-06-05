@@ -166,3 +166,36 @@ fn resume_context_params_and_docs_are_listed() {
     assert!(docs.contains("synrepo_resume_context"));
     assert!(docs.contains("prompt logs, chat history, raw tool outputs"));
 }
+
+#[test]
+fn lesson_params_schema_exposes_public_fields() {
+    let add_schema = schemars::schema_for!(synrepo::surface::mcp::lessons::LessonAddParams);
+    let search_schema = schemars::schema_for!(synrepo::surface::mcp::lessons::LessonSearchParams);
+    let add_json = serde_json::to_string(&serde_json::to_value(add_schema).unwrap()).unwrap();
+    let search_json = serde_json::to_string(&serde_json::to_value(search_schema).unwrap()).unwrap();
+
+    for field in [
+        "\"repo_root\"",
+        "\"target_kind\"",
+        "\"target\"",
+        "\"claim\"",
+        "\"ttl_seconds\"",
+        "\"source_hashes\"",
+    ] {
+        assert!(
+            add_json.contains(field),
+            "lesson add schema must expose {field}"
+        );
+    }
+    for field in [
+        "\"query\"",
+        "\"target_kind\"",
+        "\"include_hidden\"",
+        "\"limit\"",
+    ] {
+        assert!(
+            search_json.contains(field),
+            "lesson search schema must expose {field}"
+        );
+    }
+}

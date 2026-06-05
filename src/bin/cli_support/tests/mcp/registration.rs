@@ -98,3 +98,22 @@ fn mcp_source_registers_workflow_aliases() {
         );
     }
 }
+
+#[test]
+fn mcp_source_registers_lesson_tools() {
+    let source = fs::read_to_string("src/bin/cli_support/commands/mcp/tools.rs")
+        .expect("read MCP registration source");
+    for tool in [
+        "synrepo_lesson_add",
+        "synrepo_lesson_search",
+        "synrepo_lesson_list",
+        "synrepo_lesson_forget",
+        "synrepo_lesson_verify",
+    ] {
+        let needle = format!("name = \"{tool}\"");
+        assert!(
+            source.contains(&needle),
+            "MCP registration must include {tool}"
+        );
+    }
+}

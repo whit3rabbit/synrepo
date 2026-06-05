@@ -27,6 +27,10 @@ pub(super) fn apply_budget(packet: &mut ResumeContextPacket) {
     if packet.context_state.token_estimate <= packet.context_state.token_cap {
         return;
     }
+    omit_lessons(packet);
+    if packet.context_state.token_estimate <= packet.context_state.token_cap {
+        return;
+    }
     omit_next_actions(packet);
     if packet.context_state.token_estimate <= packet.context_state.token_cap {
         return;
@@ -63,6 +67,21 @@ fn omit_notes(packet: &mut ResumeContextPacket) {
     packet.sections.saved_notes.count = 0;
     packet.omitted.push(OmittedItem {
         section: "saved_notes".to_string(),
+        reason: "budget_tokens_exceeded".to_string(),
+        omitted_count: count,
+    });
+    refresh_state(packet);
+}
+
+fn omit_lessons(packet: &mut ResumeContextPacket) {
+    let count = packet.sections.saved_lessons.lessons.len();
+    if count == 0 {
+        return;
+    }
+    packet.sections.saved_lessons.lessons.clear();
+    packet.sections.saved_lessons.count = 0;
+    packet.omitted.push(OmittedItem {
+        section: "saved_lessons".to_string(),
         reason: "budget_tokens_exceeded".to_string(),
         omitted_count: count,
     });

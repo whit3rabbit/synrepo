@@ -319,9 +319,19 @@ pub fn run_watch_service(
                     outcome: outcome.clone(),
                     triggering_events: 0,
                 });
-                let outcome_for_response = outcome.clone();
+                embedding_refresh.note_reconcile(
+                    config,
+                    synrepo_dir,
+                    ReconcileEmbeddingObservation {
+                        outcome: &outcome,
+                        triggering_events: 0,
+                        force_full_reconcile: true,
+                        keepalive: false,
+                    },
+                    &state_handle,
+                );
                 let _ = respond_to.send(WatchControlResponse::Reconcile {
-                    outcome: outcome_for_response,
+                    outcome: outcome.clone(),
                     triggering_events: 0,
                 });
                 maybe_run_post_reconcile_auto_sync(

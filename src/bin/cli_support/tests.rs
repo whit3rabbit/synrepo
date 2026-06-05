@@ -10,6 +10,7 @@ mod docs;
 mod embeddings;
 mod export;
 mod graph;
+mod lessons;
 mod links;
 mod mcp;
 mod mcp_edits;

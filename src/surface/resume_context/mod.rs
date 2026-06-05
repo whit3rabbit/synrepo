@@ -22,15 +22,16 @@ use crate::{
 };
 
 use budget::{apply_budget, estimate_packet_tokens};
-use notes::read_saved_notes;
+use notes::{read_saved_lessons, read_saved_notes};
 use render::detail_pointers;
 pub use render::{to_json, to_markdown};
 pub use types::{
-    AgentNoteSummary, ChangedFilesSection, DetailPointer, MetricsHint, NextActionsSection,
-    OmittedItem, RecentActivitySection, ResumeContextPacket, ResumeContextRequest,
-    ResumeContextSections, ResumeContextState, SavedNotesSection, ValidationSection,
-    DEFAULT_RESUME_CONTEXT_LIMIT, DEFAULT_RESUME_CONTEXT_SINCE_DAYS,
-    DEFAULT_RESUME_CONTEXT_TOKEN_CAP, MAX_RESUME_CONTEXT_LIMIT, MAX_RESUME_CONTEXT_SINCE_DAYS,
+    AgentNoteSummary, ChangedFilesSection, DetailPointer, LessonSummary, MetricsHint,
+    NextActionsSection, OmittedItem, RecentActivitySection, ResumeContextPacket,
+    ResumeContextRequest, ResumeContextSections, ResumeContextState, SavedLessonsSection,
+    SavedNotesSection, ValidationSection, DEFAULT_RESUME_CONTEXT_LIMIT,
+    DEFAULT_RESUME_CONTEXT_SINCE_DAYS, DEFAULT_RESUME_CONTEXT_TOKEN_CAP, MAX_RESUME_CONTEXT_LIMIT,
+    MAX_RESUME_CONTEXT_SINCE_DAYS,
 };
 
 const SCHEMA_VERSION: u32 = 1;
@@ -72,6 +73,12 @@ pub fn build_resume_context(
     )
     .unwrap_or_default();
     let saved_notes = read_saved_notes(&synrepo_dir, request.include_notes, request.limit);
+    let saved_lessons = read_saved_lessons(
+        repo_root,
+        &synrepo_dir,
+        request.include_notes,
+        request.limit,
+    );
     let metrics = context_metrics::load_optional(&synrepo_dir)
         .ok()
         .flatten()
@@ -117,6 +124,7 @@ pub fn build_resume_context(
                 activity,
             },
             saved_notes,
+            saved_lessons,
             validation: ValidationSection {
                 recommended_commands: vec![
                     "synrepo status --recent".to_string(),

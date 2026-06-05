@@ -16,6 +16,7 @@ mod export;
 mod graph_cmd;
 mod handoffs;
 mod hooks;
+mod lessons;
 mod links;
 pub(crate) mod mcp;
 mod mcp_runtime;
@@ -60,6 +61,15 @@ pub(crate) use export::export;
 pub(crate) use graph_cmd::graph;
 pub(crate) use handoffs::handoffs;
 pub(crate) use hooks::install_hooks;
+pub(crate) use lessons::{
+    forget as lesson_forget, list as lesson_list, recall as lesson_recall,
+    remember as lesson_remember, verify as lesson_verify,
+};
+#[cfg(test)]
+pub(crate) use lessons::{
+    list_output as lesson_list_output, recall_output as lesson_recall_output,
+    remember_output as lesson_remember_output,
+};
 pub(crate) use links::{findings, links_accept, links_list, links_reject, links_review};
 #[cfg(test)]
 pub(crate) use links::{

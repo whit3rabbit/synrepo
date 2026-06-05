@@ -9,8 +9,9 @@ use time::OffsetDateTime;
 use crate::core::ids::NodeId;
 use crate::overlay::{CommentaryEntry, CommentaryProvenance, OverlayStore};
 
-use super::{sqlite_values::row_usize, SqliteOverlayStore};
+use super::SqliteOverlayStore;
 
+mod compaction;
 mod entries;
 mod freshness;
 
@@ -308,92 +309,31 @@ impl OverlayStore for SqliteOverlayStore {
         &self,
         policy: &crate::pipeline::maintenance::CompactPolicy,
     ) -> crate::Result<crate::pipeline::maintenance::CompactStats> {
-        let cutoff_str =
-            crate::pipeline::maintenance::retention_cutoff(policy.commentary_retention_days())?;
-
-        let conn = self.conn.lock();
-        let count: usize = conn.query_row(
-            "SELECT COUNT(*) FROM commentary WHERE generated_at < ?1",
-            params![cutoff_str],
-            |row| row_usize(row, 0),
-        )?;
-
-        Ok(crate::pipeline::maintenance::CompactStats {
-            compactable_commentary: count,
-            compactable_cross_links: 0,
-            repair_log_entries_beyond_window: 0,
-            last_compaction_timestamp: None,
-        })
+        compaction::compactable_commentary_stats(self, policy)
     }
 
     fn compact_commentary(
         &mut self,
         policy: &crate::pipeline::maintenance::CompactPolicy,
     ) -> crate::Result<usize> {
-        let cutoff_str =
-            crate::pipeline::maintenance::retention_cutoff(policy.commentary_retention_days())?;
-
-        let conn = self.conn.lock();
-        let deleted = conn.execute(
-            "DELETE FROM commentary WHERE generated_at < ?1",
-            params![cutoff_str],
-        )?;
-
-        Ok(deleted)
+        compaction::compact_commentary(self, policy)
     }
 
     fn compactable_cross_link_stats(
         &self,
         policy: &crate::pipeline::maintenance::CompactPolicy,
     ) -> crate::Result<crate::pipeline::maintenance::CompactStats> {
-        let cutoff_str =
-            crate::pipeline::maintenance::retention_cutoff(policy.audit_retention_days())?;
-
-        let conn = self.conn.lock();
-        // `cross_link_audit` records lifecycle events; the column that captures
-        // terminal state is `event_kind` ('promoted' / 'rejected'), not `state`
-        // (which lives on `cross_links`, not on the audit table — see
-        // docs/SCHEMA.md).
-        let count: usize = conn.query_row(
-            "SELECT COUNT(*) FROM cross_link_audit \
-             WHERE event_kind IN ('promoted', 'rejected') AND event_at < ?1",
-            params![cutoff_str],
-            |row| row_usize(row, 0),
-        )?;
-
-        Ok(crate::pipeline::maintenance::CompactStats {
-            compactable_commentary: 0,
-            compactable_cross_links: count,
-            repair_log_entries_beyond_window: 0,
-            last_compaction_timestamp: None,
-        })
+        compaction::compactable_cross_link_stats(self, policy)
     }
 
     fn compact_cross_links(
         &mut self,
         policy: &crate::pipeline::maintenance::CompactPolicy,
     ) -> crate::Result<usize> {
-        let cutoff_str =
-            crate::pipeline::maintenance::retention_cutoff(policy.audit_retention_days())?;
-
-        let conn = self.conn.lock();
-        // See `compactable_cross_link_stats` for the `event_kind` vs `state`
-        // column note.
-        let deleted = conn.execute(
-            "DELETE FROM cross_link_audit \
-             WHERE event_kind IN ('promoted', 'rejected') AND event_at < ?1",
-            params![cutoff_str],
-        )?;
-
-        Ok(deleted)
+        compaction::compact_cross_links(self, policy)
     }
 
     fn cross_link_audit_count(&self) -> crate::Result<usize> {
-        let conn = self.conn.lock();
-        Ok(
-            conn.query_row("SELECT COUNT(*) FROM cross_link_audit", [], |row| {
-                row_usize(row, 0)
-            })?,
-        )
+        compaction::cross_link_audit_count(self)
     }
 }

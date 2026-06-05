@@ -1,0 +1,21 @@
+{
+  "name": "onboarding/resume-context-packet",
+  "category": "route_to_edit",
+  "query": "ResumeContextPacket",
+  "required_targets": [
+    { "kind": "file", "value": "src/surface/resume_context/types.rs" }
+  ],
+  "allowed_context": [
+    { "kind": "file", "value": "src/surface/mcp/resume_context.rs" },
+    { "kind": "file", "value": "src/surface/resume_context/mod.rs" },
+    { "kind": "file", "value": "src/surface/resume_context/types.rs" },
+    { "kind": "file", "value": "src/surface/resume_context/budget.rs" }
+  ],
+  "expected_recipe": "general",
+  "budget": {
+    "max_tokens": 3000,
+    "max_files": 4,
+    "max_symbols": 4,
+    "tier": "normal"
+  }
+}

@@ -13,7 +13,7 @@ For product overview, setup flow, and operator-facing docs, start with [`README.
 
 Synrepo is a local, deterministic code-context compiler. Its product model is `repo files -> graph facts -> code artifacts -> task contexts -> cards/MCP`. Graph facts are authoritative observed source truth; code artifacts are compiled records; task contexts are bounded bundles for a workflow; cards and MCP responses are the delivery packets you consume.
 
-Use `synrepo_ask(ask, scope?, shape?, ground?, budget?)` as the default high-level front door for one bounded, cited task-context packet. It returns `answer`, `cards_used`, `evidence`, `grounding`, `omitted_context_notes`, `next_best_tools`, and `context_packet`. Its grounding policy accepts `mode` or `citations`, `include_spans`, and `allow_overlay`; default to graph facts as authoritative observed source truth. Scoped asks may include `source_slice` artifacts with hash-checked line-numbered source. Overlay commentary, explain docs, and notes are advisory; LLM-authored output never mutates the canonical graph. Embeddings are optional routing/search helpers.
+Use `synrepo_ask(ask, scope?, shape?, ground?, budget?)` as the default high-level front door for one bounded, cited task-context packet. It returns `answer`, `cards_used`, `evidence`, `grounding`, `omitted_context_notes`, `next_best_tools`, and `context_packet`. Its grounding policy accepts `mode` or `citations`, `include_spans`, and `allow_overlay`; default to graph facts as authoritative observed source truth. Empty-scope asks promote high-confidence lexical hits into concrete file artifacts before broad search artifacts. Scoped asks may include `source_slice` artifacts with hash-checked line-numbered source. Overlay commentary, explain docs, and notes are advisory. Saved lessons are advisory overlay notes with TTL and freshness labels; LLM-authored output never mutates the canonical graph. Embeddings are optional routing/search helpers.
 
 Existing explain reads are safe when useful: use `synrepo_explain` with `budget=deep` for 1-3 focal symbols/files before non-trivial implementation, review, security work, or unfamiliar subsystem changes; use `synrepo_docs_search` for architecture, intent, gotchas, or "why is this like this" questions. These read cached overlay output; they do not generate or refresh commentary.
 
@@ -35,7 +35,8 @@ The required sequence for codebase questions, reviews, search routing, and edits
 6. Use `synrepo_tests` before claiming done.
 7. Use `synrepo_changed` after edits to review changed context and validation commands.
 8. After resuming stale work or losing conversation context, call `synrepo_resume_context` before asking the user to repeat repo state.
-9. Read full source files or request `deep` cards only after bounded cards identify the target or when the card content is insufficient. Full-file reads are an explicit escalation, not the default first step.
+9. Use `synrepo_lesson_search` or `synrepo_lesson_list` only for explicit saved repo lessons. Lesson writes require `synrepo mcp --allow-overlay-writes`.
+10. Read full source files or request `deep` cards only after bounded cards identify the target or when the card content is insufficient. Full-file reads are an explicit escalation, not the default first step.
 
 Rule of thumb: `tiny` to find, `normal` to understand, `deep` to write.
 
@@ -99,6 +100,7 @@ Client-side nudge hooks for Codex and Claude may remind agents to use synrepo be
 - Do not retry the same failed broad `synrepo_find` query repeatedly. Convert it to exact `synrepo_search` probes.
 - Do not claim validation from search hits alone. Confirm with cards, source, or tests.
 - Do not ask the user to repeat stale repo context until `synrepo_resume_context` has been tried.
+- Do not treat saved lessons as global memory, graph facts, or automatic prompt injection. They are explicit overlay notes with TTL and freshness labels.
 
 ## Context budget contract
 

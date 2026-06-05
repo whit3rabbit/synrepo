@@ -197,6 +197,20 @@ mod tests {
     }
 
     #[test]
+    fn code_shaped_security_probe_uses_security_recipe() {
+        let plan = compile_context_request(&request("find Command::new usage")).unwrap();
+
+        assert_eq!(plan.recipe, ContextRecipe::SecurityReview);
+    }
+
+    #[test]
+    fn card_impl_identifier_uses_symbol_recipe() {
+        let plan = compile_context_request(&request("public_api_card_impl")).unwrap();
+
+        assert_eq!(plan.recipe, ContextRecipe::ExplainSymbol);
+    }
+
+    #[test]
     fn release_readiness_respects_overlay_gate() {
         let plan = compile_context_request(&request("release readiness")).unwrap();
         let keys = planned_target_keys(&plan);

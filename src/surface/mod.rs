@@ -8,6 +8,7 @@ pub(crate) mod commentary_scope;
 pub mod context;
 pub mod graph_view;
 pub mod handoffs;
+pub mod lessons;
 pub mod mcp;
 pub(crate) mod query_terms;
 pub mod readiness;

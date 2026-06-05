@@ -7,6 +7,7 @@ mod command;
 mod convert;
 mod embeddings;
 mod graph;
+mod lessons;
 mod subcommands;
 
 use clap::Parser;
@@ -17,6 +18,7 @@ pub(crate) use command::{Command, SearchModeArg};
 pub(crate) use convert::*;
 pub(crate) use embeddings::*;
 pub(crate) use graph::*;
+pub(crate) use lessons::*;
 pub(crate) use subcommands::*;
 
 #[derive(Parser)]

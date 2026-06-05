@@ -66,6 +66,7 @@ pub struct ResumeContextSections {
     pub next_actions: NextActionsSection,
     pub recent_activity: RecentActivitySection,
     pub saved_notes: SavedNotesSection,
+    pub saved_lessons: SavedLessonsSection,
     pub validation: ValidationSection,
 }
 
@@ -109,6 +110,33 @@ pub struct AgentNoteSummary {
     pub target_kind: String,
     pub target: String,
     pub status: String,
+    pub confidence: String,
+    pub updated_at: String,
+    pub claim_preview: String,
+    pub source_store: String,
+    pub advisory: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct SavedLessonsSection {
+    pub source_store: String,
+    pub advisory: bool,
+    pub overlay_state: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub overlay_error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub counts: Option<AgentNoteCounts>,
+    pub count: usize,
+    pub lessons: Vec<LessonSummary>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct LessonSummary {
+    pub lesson_id: String,
+    pub target_kind: String,
+    pub target: String,
+    pub status: String,
+    pub freshness: String,
     pub confidence: String,
     pub updated_at: String,
     pub claim_preview: String,

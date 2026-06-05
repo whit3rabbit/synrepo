@@ -21,6 +21,7 @@ use crate::surface::card::compiler::GraphCardCompiler;
 #[doc(hidden)]
 pub mod ask;
 mod ask_evidence;
+mod ask_routing;
 #[doc(hidden)]
 pub mod audit;
 mod cache;
@@ -50,6 +51,8 @@ pub mod error;
 pub mod graph;
 #[doc(hidden)]
 pub mod helpers;
+#[doc(hidden)]
+pub mod lessons;
 #[doc(hidden)]
 pub mod limits;
 #[doc(hidden)]

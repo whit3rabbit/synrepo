@@ -1,0 +1,20 @@
+{
+  "name": "impact_or_risk/command-execution-review",
+  "category": "impact_or_risk",
+  "query": "Command::new",
+  "required_targets": [
+    { "kind": "file", "value": "src/bin/cli_support/commands/watch.rs" }
+  ],
+  "allowed_context": [
+    { "kind": "file", "value": "src/bin/cli_support/commands/watch.rs" },
+    { "kind": "file", "value": "src/tui/actions/watch.rs" },
+    { "kind": "file", "value": "src/pipeline/watch/service.rs" }
+  ],
+  "expected_recipe": "security_review",
+  "budget": {
+    "max_tokens": 3000,
+    "max_files": 4,
+    "max_symbols": 4,
+    "tier": "normal"
+  }
+}

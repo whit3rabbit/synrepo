@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use crossbeam_channel::{Receiver, TryRecvError};
+use crossbeam_channel::Receiver;
 
 use super::render_cache::{build_initial_header_vm, build_initial_integration_display_rows};
 use super::{
@@ -11,13 +11,11 @@ use super::{
 use crate::bootstrap::runtime_probe::AgentIntegration;
 use crate::config::Config;
 use crate::pipeline::explain::telemetry;
-use crate::pipeline::watch::{watch_service_status, WatchEvent, WatchServiceStatus};
+use crate::pipeline::watch::WatchEvent;
 use crate::surface::refactor_suggestions::RefactorSuggestionMode;
 use crate::surface::status_snapshot::{build_status_snapshot, StatusOptions};
-use crate::tui::actions::{materialize_now, now_rfc3339, ActionContext};
 use crate::tui::agent_integrations::build_agent_install_statuses;
-use crate::tui::materializer::{MaterializeOutcome, MaterializeState, MaterializerSupervisor};
-use crate::tui::probe::Severity;
+use crate::tui::materializer::{MaterializeState, MaterializerSupervisor};
 use crate::tui::theme::Theme;
 use crate::tui::widgets::LogEntry;
 
@@ -237,104 +235,6 @@ impl AppState {
         self.materialize_state = self.materializer.state().clone();
     }
 
-    /// Reap a finished bootstrap thread, if any. Pushes a log entry + toast
-    /// describing the outcome and forces a snapshot refresh on success so
-    /// the health row flips on the same frame.
-    fn drain_materializer(&mut self) {
-        let Some(outcome) = self.materializer.try_drain() else {
-            return;
-        };
-        match outcome {
-            MaterializeOutcome::Completed { files, symbols } => {
-                let message = format!("graph materialized: {files} files, {symbols} symbols");
-                self.set_toast(message.clone());
-                self.log.push(LogEntry {
-                    timestamp: now_rfc3339(),
-                    tag: "materialize".to_string(),
-                    message,
-                    severity: Severity::Healthy,
-                });
-                // Force a refresh so the snapshot picks up the new graph
-                // store immediately rather than waiting for the next tick.
-                self.refresh_now();
-            }
-            MaterializeOutcome::Failed { error } => {
-                let toast = format!("materialize failed: {error}");
-                self.set_toast(toast);
-                self.log.push(LogEntry {
-                    timestamp: now_rfc3339(),
-                    tag: "materialize".to_string(),
-                    message: format!("bootstrap failed: {error}"),
-                    severity: Severity::Blocked,
-                });
-            }
-        }
-    }
-
-    /// One-shot auto-fire: when the dashboard sees `graph_stats.is_none()`
-    /// and the supervisor is idle and we have not auto-attempted yet this
-    /// session, dispatch `materialize_now`. The watch precheck is delegated
-    /// to the action so a watch-active repo gets the same `Conflict`
-    /// guidance as a manual `M` press.
-    fn maybe_auto_materialize(&mut self) {
-        if self.snapshot.graph_stats.is_some() {
-            return;
-        }
-        if self.materializer.is_running() || self.materializer.auto_was_attempted() {
-            return;
-        }
-        // Guarded against the .synrepo/-not-initialized case (snapshot
-        // surfaces that as `repo: not initialized`, a different row): only
-        // attempt when bootstrap has at least a chance of succeeding without
-        // user-visible setup. Bootstrap itself is idempotent for both fresh
-        // and partial states, so we let it run regardless and rely on the
-        // `Failed` arm above to surface any blocker.
-        let ctx = ActionContext::new(&self.repo_root);
-        // Skip when a foreign watch service or starting daemon owns the
-        // repo: the action would just return Conflict, but we also do not
-        // want to push a noisy auto-attempt log entry in that case.
-        if matches!(
-            watch_service_status(&ctx.synrepo_dir),
-            WatchServiceStatus::Running(_) | WatchServiceStatus::Starting
-        ) {
-            self.materializer.mark_auto_attempted();
-            return;
-        }
-        let outcome = materialize_now(&ctx, &mut self.materializer);
-        self.materializer.mark_auto_attempted();
-        // The action returns Ack on success and Conflict if the watch
-        // status flipped between our check and dispatch. Both translate to
-        // a single info-level log entry so the operator knows we tried.
-        match outcome {
-            crate::tui::actions::ActionOutcome::Ack { message } => {
-                self.set_toast(format!("auto: {message}"));
-                self.log.push(LogEntry {
-                    timestamp: now_rfc3339(),
-                    tag: "materialize".to_string(),
-                    message: format!("auto: {message}"),
-                    severity: Severity::Healthy,
-                });
-            }
-            crate::tui::actions::ActionOutcome::Conflict { guidance, .. } => {
-                self.log.push(LogEntry {
-                    timestamp: now_rfc3339(),
-                    tag: "materialize".to_string(),
-                    message: format!("auto skipped: {guidance}"),
-                    severity: Severity::Stale,
-                });
-            }
-            crate::tui::actions::ActionOutcome::Completed { message }
-            | crate::tui::actions::ActionOutcome::Error { message } => {
-                self.log.push(LogEntry {
-                    timestamp: now_rfc3339(),
-                    tag: "materialize".to_string(),
-                    message,
-                    severity: Severity::Stale,
-                });
-            }
-        }
-    }
-
     /// Drain all pending events from the watch bus into the log pane. Called
     /// from `tick()`. A disconnected sender clears the receiver so subsequent
     /// calls are no-ops. Best-effort: a full log just drops oldest entries.
@@ -343,57 +243,5 @@ impl AppState {
     pub fn drain_events(&mut self) {
         self.drain_watch_events();
         self.drain_explain_events();
-    }
-
-    fn drain_watch_events(&mut self) {
-        let Some(rx) = self.events_rx.as_ref() else {
-            return;
-        };
-        loop {
-            match rx.try_recv() {
-                Ok(event) => {
-                    match &event {
-                        WatchEvent::ReconcileStarted { .. } | WatchEvent::SyncStarted { .. } => {
-                            self.reconcile_active = true
-                        }
-                        WatchEvent::ReconcileFinished { .. }
-                        | WatchEvent::SyncFinished { .. }
-                        | WatchEvent::Error { .. } => self.reconcile_active = false,
-                        WatchEvent::SyncProgress { .. }
-                        | WatchEvent::EmbeddingStarted { .. }
-                        | WatchEvent::EmbeddingProgress { .. }
-                        | WatchEvent::EmbeddingFinished { .. } => {}
-                    }
-                    self.log.push(super::watch_event_to_log_entry(event));
-                }
-                Err(TryRecvError::Empty) => return,
-                Err(TryRecvError::Disconnected) => {
-                    self.events_rx = None;
-                    self.reconcile_active = false;
-                    return;
-                }
-            }
-        }
-    }
-
-    fn drain_explain_events(&mut self) {
-        loop {
-            match self.explain_rx.try_recv() {
-                Ok(event) => {
-                    if let Some(entry) = super::explain_event_to_log_entry(event) {
-                        self.log.push(entry);
-                    }
-                }
-                Err(TryRecvError::Empty) => return,
-                Err(TryRecvError::Disconnected) => {
-                    // Re-subscribe so a dropped or reaped sender does not
-                    // silently stop the feed. Telemetry fanout reaps
-                    // disconnected receivers on every publish, so we may land
-                    // here after a long idle period.
-                    self.explain_rx = telemetry::subscribe();
-                    return;
-                }
-            }
-        }
     }
 }

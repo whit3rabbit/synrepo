@@ -7,7 +7,7 @@ Use these as the primary read interface when the synrepo MCP server is available
 - `synrepo_overview()`: full dashboard for graph, readiness, watch/reconcile, explain/commentary, metrics, and recent activity.
 - `synrepo_readiness()`: cheap read-only preflight for graph, overlay, index, watch, reconcile, and enabled MCP mutation modes.
 - `synrepo_orient()`: compact first-call routing summary.
-- `synrepo_ask(ask, scope?, shape?, ground?, budget?)`: default high-level front door for a bounded, cited task-context packet. Use exact search after it when the packet is insufficient or the task names literal identifiers.
+- `synrepo_ask(ask, scope?, shape?, ground?, budget?)`: default high-level front door for a bounded, cited task-context packet. Empty-scope asks promote high-confidence lexical hits to concrete file artifacts before broad search artifacts. Use exact search after it when the packet is insufficient or the task names literal identifiers.
 - `synrepo_find(task, limit?, budget_tokens?)`: task-oriented routing for plain-language questions. Best for "where should I look?" Not the best first tool for exact symbols, string literals, flags, schema fields, tool names, or file paths.
 - `synrepo_where_to_edit(task, limit?)`: ranked edit candidates for plain-language edit tasks. Inspect diagnostics and switch to exact search when broad routing misses.
 - `synrepo_search(query, limit?, output_mode?, budget_tokens?)`: lexical search. Best for exact symbols, string literals, CLI flags, MCP tool names, schema keys, file paths, and code-review validation. Use `output_mode: "compact"` for adaptive compact output with `output_accounting`; use `output_mode: "cards"` to return tiny file cards directly.
@@ -26,6 +26,8 @@ Use these as the primary read interface when the synrepo MCP server is available
 - `synrepo_task_route(task, path?)`: classify a task into the cheapest safe route and stable hook signals.
 - `synrepo_docs_search(query, limit?)`: advisory search over existing materialized explain docs for architecture, intent, gotchas, and "why" questions. This does not refresh commentary.
 - `synrepo_notes(include_hidden?)`: read advisory overlay notes.
+- `synrepo_lesson_search(query, target_kind?, target?, limit?, include_hidden?)`: search explicit saved repo lessons. Read-only and advisory.
+- `synrepo_lesson_list(target_kind?, target?, limit?, include_hidden?)`: list explicit saved repo lessons. Read-only and advisory.
 - `synrepo_refactor_suggestions(mode?, min_lines?, limit?, path_filter?)`: non-test source files with modularity hints (`mode=line_count`) or API symbols missing AST-extracted docs in wired tree-sitter languages (`mode=missing_docs`); JavaScript-family files count ES module/CommonJS exports only, and Python counts literal `__all__`, package `__init__.py` definitions, and simple package re-exports; responses include `criteria`, and missing-doc previews include `symbol_id`.
 - `synrepo_entrypoints(scope?, budget?)`: entrypoint discovery.
 - `synrepo_metrics()`: this-session and persisted MCP/context metrics.
@@ -37,6 +39,7 @@ These are present only under `synrepo mcp --allow-overlay-writes`:
 
 - `synrepo_refresh_commentary(scope, target?)`: explicitly generate or refresh advisory commentary.
 - `synrepo_note_add(...)`, `synrepo_note_link(...)`, `synrepo_note_supersede(...)`, `synrepo_note_forget(...)`, `synrepo_note_verify(...)`: mutate advisory overlay notes.
+- `synrepo_lesson_add(claim, target_kind?, target?, ttl_seconds?, evidence?, source_hashes?, graph_revision?, created_by?, confidence?)`, `synrepo_lesson_forget(lesson_id, reason?)`, `synrepo_lesson_verify(lesson_id, graph_revision?)`: mutate explicit saved repo lessons. Lessons are overlay-only, freshness-labeled, bounded, and never graph facts or automatic prompt injection.
 
 ## Source-edit tools
 

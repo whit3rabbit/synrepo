@@ -1,0 +1,20 @@
+{
+  "name": "route_to_edit/security-review-recipe",
+  "category": "route_to_edit",
+  "query": "security_review::plan",
+  "required_targets": [
+    { "kind": "file", "value": "src/surface/context/recipes/mod.rs" }
+  ],
+  "allowed_context": [
+    { "kind": "file", "value": "src/surface/context/recipes/mod.rs" },
+    { "kind": "file", "value": "src/surface/context/recipes/security_review.rs" },
+    { "kind": "file", "value": "src/surface/context/compiler.rs" }
+  ],
+  "expected_recipe": "security_review",
+  "budget": {
+    "max_tokens": 3000,
+    "max_files": 4,
+    "max_symbols": 4,
+    "tier": "normal"
+  }
+}

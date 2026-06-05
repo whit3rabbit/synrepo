@@ -1,0 +1,20 @@
+{
+  "name": "route_to_edit/release-readiness-recipe",
+  "category": "route_to_edit",
+  "query": "release_readiness",
+  "required_targets": [
+    { "kind": "file", "value": "src/surface/context/recipes/release_readiness.rs" }
+  ],
+  "allowed_context": [
+    { "kind": "file", "value": "src/surface/context/recipes/release_readiness.rs" },
+    { "kind": "file", "value": "src/surface/context/compiler.rs" },
+    { "kind": "file", "value": "src/surface/mcp/ask.rs" }
+  ],
+  "expected_recipe": "release_readiness",
+  "budget": {
+    "max_tokens": 3000,
+    "max_files": 4,
+    "max_symbols": 4,
+    "tier": "normal"
+  }
+}

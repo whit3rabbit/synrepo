@@ -4,6 +4,7 @@ use crate::surface::context::compiler::{compile_context_request, grounding_statu
 use crate::surface::context::{ContextAskRequest, ContextTarget};
 
 use super::ask_evidence::collect_evidence;
+use super::ask_routing::augment_plan_with_search_hits;
 use super::compact::OutputMode;
 use super::context_pack::{self, ContextPackParams, ContextPackTarget};
 use super::helpers::render_result;
@@ -19,7 +20,8 @@ pub fn handle_ask(state: &SynrepoState, params: AskParams) -> String {
 }
 
 pub fn build_ask_packet(state: &SynrepoState, params: AskParams) -> anyhow::Result<Value> {
-    let plan = compile_context_request(&params)?;
+    let mut plan = compile_context_request(&params)?;
+    augment_plan_with_search_hits(state, &params.ask, &mut plan);
     let pack = context_pack::build_context_pack(
         state,
         ContextPackParams {
@@ -190,15 +192,48 @@ mod tests {
     }
 
     #[test]
-    fn ask_uses_search_when_scope_is_empty() {
+    fn ask_promotes_search_hits_when_scope_is_empty() {
         let (_dir, state) = make_state();
         let value = build_ask_packet(&state, request("where is alpha")).unwrap();
 
-        assert!(value["context_packet"]["artifacts"]
-            .as_array()
-            .unwrap()
+        let artifacts = value["context_packet"]["artifacts"].as_array().unwrap();
+        assert_eq!(artifacts[0]["artifact_type"], "file_outline");
+        assert_eq!(artifacts[0]["target"], "src/lib.rs");
+    }
+
+    #[test]
+    fn ask_promotion_prefers_source_over_benchmark_fixtures() {
+        let home = tempdir().unwrap();
+        let _home_guard = crate::config::test_home::HomeEnvGuard::redirect_to(home.path());
+        let dir = tempdir().unwrap();
+        let repo = dir.path();
+        fs::create_dir_all(repo.join("src/surface/card/compiler")).unwrap();
+        fs::create_dir_all(repo.join("benches/tasks")).unwrap();
+        fs::write(
+            repo.join("src/surface/card/compiler/public_api.rs"),
+            "pub fn public_api_card_impl() {}\n",
+        )
+        .unwrap();
+        fs::write(
+            repo.join("benches/tasks/public_api_discovery.json"),
+            "{\"query\":\"public_api_card_impl\"}\n",
+        )
+        .unwrap();
+        bootstrap(repo, None, false).unwrap();
+        let state = SynrepoState {
+            config: Config::load(repo).unwrap(),
+            repo_root: repo.to_path_buf(),
+        };
+
+        let value = build_ask_packet(&state, request("public_api_card_impl")).unwrap();
+        let artifacts = value["context_packet"]["artifacts"].as_array().unwrap();
+
+        assert!(artifacts
             .iter()
-            .any(|artifact| artifact["artifact_type"] == "search"));
+            .any(|artifact| { artifact["target"] == "src/surface/card/compiler/public_api.rs" }));
+        assert!(!artifacts
+            .iter()
+            .any(|artifact| artifact["target"] == "benches/tasks/public_api_discovery.json"));
     }
 
     #[test]

@@ -1,0 +1,20 @@
+{
+  "name": "impact_or_risk/atomic-write-vector-index",
+  "category": "impact_or_risk",
+  "query": "fn atomic_write",
+  "required_targets": [
+    { "kind": "file", "value": "src/util/atomic_write.rs" }
+  ],
+  "allowed_context": [
+    { "kind": "file", "value": "src/util/atomic_write.rs" },
+    { "kind": "file", "value": "src/bootstrap/init/mod.rs" },
+    { "kind": "file", "value": "src/bootstrap/init/gitignore.rs" }
+  ],
+  "expected_recipe": "general",
+  "budget": {
+    "max_tokens": 3000,
+    "max_files": 4,
+    "max_symbols": 4,
+    "tier": "normal"
+  }
+}

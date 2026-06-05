@@ -5,9 +5,10 @@ use time::format_description::well_known::Rfc3339;
 use crate::{
     overlay::{AgentNote, AgentNoteQuery, OverlayStore},
     store::overlay::SqliteOverlayStore,
+    surface::lessons::{self, LessonQuery, LessonView},
 };
 
-use super::types::{AgentNoteSummary, SavedNotesSection};
+use super::types::{AgentNoteSummary, LessonSummary, SavedLessonsSection, SavedNotesSection};
 
 pub(super) const NOTE_PREVIEW_CHARS: usize = 160;
 
@@ -61,6 +62,63 @@ pub(super) fn read_saved_notes(
     }
 }
 
+pub(super) fn read_saved_lessons(
+    repo_root: &Path,
+    synrepo_dir: &Path,
+    include_notes: bool,
+    limit: usize,
+) -> SavedLessonsSection {
+    if !include_notes {
+        return SavedLessonsSection {
+            source_store: "overlay".to_string(),
+            advisory: true,
+            overlay_state: "disabled".to_string(),
+            overlay_error: None,
+            counts: None,
+            count: 0,
+            lessons: Vec::new(),
+        };
+    }
+    match SqliteOverlayStore::open_existing(&synrepo_dir.join("overlay")) {
+        Ok(overlay) => {
+            let counts = overlay.note_counts().ok();
+            let lessons = lessons::search_lessons(
+                Some(repo_root),
+                &overlay,
+                LessonQuery {
+                    query: None,
+                    target_kind: None,
+                    target: None,
+                    limit,
+                    include_hidden: false,
+                },
+            )
+            .unwrap_or_default()
+            .into_iter()
+            .map(lesson_summary)
+            .collect::<Vec<_>>();
+            SavedLessonsSection {
+                source_store: "overlay".to_string(),
+                advisory: true,
+                overlay_state: "available".to_string(),
+                overlay_error: None,
+                counts,
+                count: lessons.len(),
+                lessons,
+            }
+        }
+        Err(error) => SavedLessonsSection {
+            source_store: "overlay".to_string(),
+            advisory: true,
+            overlay_state: "unavailable".to_string(),
+            overlay_error: Some(error.to_string()),
+            counts: None,
+            count: 0,
+            lessons: Vec::new(),
+        },
+    }
+}
+
 fn note_summary(note: AgentNote) -> AgentNoteSummary {
     AgentNoteSummary {
         note_id: note.note_id,
@@ -75,6 +133,21 @@ fn note_summary(note: AgentNote) -> AgentNoteSummary {
         claim_preview: preview(&note.claim, NOTE_PREVIEW_CHARS),
         source_store: note.source_store,
         advisory: note.advisory,
+    }
+}
+
+fn lesson_summary(lesson: LessonView) -> LessonSummary {
+    LessonSummary {
+        lesson_id: lesson.lesson_id,
+        target_kind: lesson.target_kind,
+        target: lesson.target,
+        status: lesson.status,
+        freshness: lesson.freshness,
+        confidence: lesson.confidence,
+        updated_at: lesson.updated_at,
+        claim_preview: preview(&lesson.claim, NOTE_PREVIEW_CHARS),
+        source_store: lesson.source_store,
+        advisory: lesson.advisory,
     }
 }
 

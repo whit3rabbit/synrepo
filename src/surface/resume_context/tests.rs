@@ -9,15 +9,22 @@ use crate::{
     store::overlay::SqliteOverlayStore,
     surface::{
         handoffs::{HandoffItem, HandoffPriority, HandoffSource},
+        lessons::LessonAdd,
         resume_context::{
-            AgentNoteSummary, ChangedFilesSection, NextActionsSection, RecentActivitySection,
-            ResumeContextPacket, ResumeContextRequest, ResumeContextSections, ResumeContextState,
-            SavedNotesSection, ValidationSection,
+            AgentNoteSummary, ChangedFilesSection, LessonSummary, NextActionsSection,
+            RecentActivitySection, ResumeContextPacket, ResumeContextRequest,
+            ResumeContextSections, ResumeContextState, SavedLessonsSection, SavedNotesSection,
+            ValidationSection,
         },
     },
 };
 
-use super::{budget::apply_budget, build_resume_context, notes::read_saved_notes, to_json};
+use super::{
+    budget::apply_budget,
+    build_resume_context,
+    notes::{read_saved_lessons, read_saved_notes},
+    to_json,
+};
 
 #[test]
 fn empty_state_packet_is_valid_and_records_aggregate_metrics() {
@@ -39,6 +46,7 @@ fn empty_state_packet_is_valid_and_records_aggregate_metrics() {
     assert_eq!(packet.packet_type, "repo_resume_context");
     assert!(packet.sections.changed_files.files.is_empty());
     assert_eq!(packet.sections.saved_notes.overlay_state, "disabled");
+    assert_eq!(packet.sections.saved_lessons.overlay_state, "disabled");
     assert!(packet
         .sections
         .validation
@@ -49,6 +57,52 @@ fn empty_state_packet_is_valid_and_records_aggregate_metrics() {
         .expect("metrics should be persisted");
     assert_eq!(metrics.resume_context_responses_total, 1);
     assert!(metrics.resume_context_tokens_total > 0);
+}
+
+#[test]
+fn saved_lessons_are_summary_only_and_separate_from_notes() {
+    let repo = tempdir().unwrap();
+    bootstrap(repo.path(), None, false).unwrap();
+    let synrepo_dir = Config::synrepo_dir(repo.path());
+    let mut overlay = SqliteOverlayStore::open(&synrepo_dir.join("overlay")).unwrap();
+    overlay
+        .insert_note(AgentNote::new(
+            AgentNoteTarget {
+                kind: AgentNoteTargetKind::Path,
+                id: "src/lib.rs".to_string(),
+            },
+            "ordinary note".to_string(),
+            "codex".to_string(),
+            AgentNoteConfidence::Medium,
+        ))
+        .unwrap();
+    crate::surface::lessons::add_lesson(
+        Some(repo.path()),
+        &mut overlay,
+        LessonAdd {
+            target_kind: AgentNoteTargetKind::Repo,
+            target: ".".to_string(),
+            claim: format!(
+                "{}TAIL_DO_NOT_INCLUDE",
+                "Lesson ".repeat(super::notes::NOTE_PREVIEW_CHARS)
+            ),
+            created_by: "codex".to_string(),
+            confidence: AgentNoteConfidence::Medium,
+            evidence: Vec::new(),
+            source_hashes: Vec::new(),
+            graph_revision: None,
+            ttl_seconds: None,
+        },
+    )
+    .unwrap();
+
+    let config = Config::load(repo.path()).unwrap();
+    let packet = build_resume_context(repo.path(), &config, ResumeContextRequest::default())
+        .expect("packet should build");
+
+    assert_eq!(packet.sections.saved_notes.notes.len(), 2);
+    assert_eq!(packet.sections.saved_lessons.lessons.len(), 1);
+    assert!(!to_json(&packet).contains("TAIL_DO_NOT_INCLUDE"));
 }
 
 #[test]
@@ -94,10 +148,14 @@ fn overlay_unavailable_is_reported_without_failing_packet() {
     let dir = tempdir().unwrap();
 
     let notes = read_saved_notes(dir.path(), true, 10);
+    let lessons = read_saved_lessons(dir.path(), dir.path(), true, 10);
 
     assert_eq!(notes.overlay_state, "unavailable");
     assert!(notes.overlay_error.is_some());
     assert!(notes.notes.is_empty());
+    assert_eq!(lessons.overlay_state, "unavailable");
+    assert!(lessons.overlay_error.is_some());
+    assert!(lessons.lessons.is_empty());
 }
 
 #[test]
@@ -111,6 +169,7 @@ fn budget_omits_lower_priority_sections_before_critical_state() {
     assert!(packet.context_state.metrics_hint.is_none());
     assert!(packet.sections.recent_activity.activity.is_empty());
     assert!(packet.sections.saved_notes.notes.is_empty());
+    assert!(packet.sections.saved_lessons.lessons.is_empty());
     assert!(packet.sections.next_actions.items.is_empty());
     assert_eq!(packet.sections.changed_files.files.len(), 5);
     assert!(!packet.sections.validation.recommended_commands.is_empty());
@@ -125,6 +184,7 @@ fn budget_omits_lower_priority_sections_before_critical_state() {
             "metrics_hint",
             "recent_activity",
             "saved_notes",
+            "saved_lessons",
             "next_actions",
             "changed_files"
         ]
@@ -234,6 +294,15 @@ fn synthetic_packet_with_large_sections() -> ResumeContextPacket {
                     note_summary("note_2", "src/main.rs", "another claim".repeat(20)),
                 ],
             },
+            saved_lessons: SavedLessonsSection {
+                source_store: "overlay".to_string(),
+                advisory: true,
+                overlay_state: "available".to_string(),
+                overlay_error: None,
+                counts: None,
+                count: 1,
+                lessons: vec![lesson_summary("note_3", ".", "lesson claim".repeat(20))],
+            },
             validation: ValidationSection {
                 recommended_commands: vec![
                     "synrepo status --recent".to_string(),
@@ -247,6 +316,21 @@ fn synthetic_packet_with_large_sections() -> ResumeContextPacket {
             cli: "git status --short".to_string(),
         }],
         omitted: Vec::new(),
+    }
+}
+
+fn lesson_summary(id: &str, target: &str, claim_preview: String) -> LessonSummary {
+    LessonSummary {
+        lesson_id: id.to_string(),
+        target_kind: "repo".to_string(),
+        target: target.to_string(),
+        status: "active".to_string(),
+        freshness: "fresh".to_string(),
+        confidence: "medium".to_string(),
+        updated_at: "2026-05-08T00:00:00Z".to_string(),
+        claim_preview,
+        source_store: "overlay".to_string(),
+        advisory: true,
     }
 }
 

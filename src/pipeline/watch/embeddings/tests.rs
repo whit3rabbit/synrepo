@@ -75,6 +75,26 @@ fn marks_existing_index_stale_after_source_reconcile() {
 }
 
 #[test]
+fn marks_existing_index_stale_after_control_full_reconcile() {
+    let dir = tempdir().unwrap();
+    let synrepo_dir = dir.path().join(".synrepo");
+    write_index(&synrepo_dir);
+    let handle = state_handle(&synrepo_dir);
+    let mut scheduler =
+        EmbeddingRefreshScheduler::for_test(Duration::ZERO, Duration::from_secs(300));
+
+    scheduler.note_reconcile(
+        &config(),
+        &synrepo_dir,
+        observation(&completed(), 0, true, false),
+        &handle,
+    );
+
+    assert!(scheduler.stale_for_test());
+    assert!(handle.snapshot().embedding_index_stale);
+}
+
+#[test]
 fn ignores_keepalive_reconcile() {
     let dir = tempdir().unwrap();
     let synrepo_dir = dir.path().join(".synrepo");

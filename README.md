@@ -38,6 +38,8 @@ The install scripts verify downloads against the release `SHA256SUMS` before ins
 ```bash
 cd /path/to/repo
 synrepo setup claude
+# or
+synrepo setup codex
 ```
 
 `synrepo setup <tool>` is the scripted onboarding path. It initializes `.synrepo/`, writes the agent skill or instructions, records the repo in `~/.synrepo/projects.toml`, runs the first reconcile, and registers MCP when the target supports automated registration.
@@ -70,6 +72,42 @@ synrepo watch --daemon
 ```
 
 MCP does not start watch for you. Run `synrepo watch --daemon` explicitly when you want the local model to stay fresh as files change. Cheap repair surfaces, such as export regeneration and retired-observation compaction, auto-run after drift-producing reconciles when `auto_sync_enabled = true` in `.synrepo/config.toml`.
+
+## What Command Should I Run?
+
+For the first five minutes, keep the loop this small:
+
+```bash
+synrepo setup codex              # or claude, cursor, open-code, etc.
+synrepo status                   # check freshness and integration health
+synrepo ask "where is MCP search implemented?"
+synrepo explain src/surface/mcp/search.rs --budget 1000
+synrepo tests src/surface/mcp/search.rs --budget 1500
+```
+
+Inside an MCP-capable agent, the equivalent flow is:
+
+```text
+agent: synrepo_orient
+agent: synrepo_ask("fix failing search cards")
+agent: synrepo_search("synrepo_search", output_mode="compact")
+agent: synrepo_explain("src/surface/mcp/search.rs", budget="normal")
+agent: synrepo_impact("src/surface/mcp/search.rs")
+agent: synrepo_tests("src/surface/mcp/search.rs")
+```
+
+Save repo-specific lessons explicitly when an agent should remember a local
+coding fact without promoting it to graph truth:
+
+```bash
+synrepo remember "MCP note writes are overlay-only" --target docs/MCP.md --ttl 30d
+synrepo recall "overlay-only"
+synrepo lessons
+```
+
+Lessons are advisory overlay rows with provenance, optional TTL, and stale
+source-hash labels. They are not global memory and are not injected into future
+prompts automatically.
 
 ## How It Fits Together
 
@@ -190,6 +228,9 @@ Use `synrepo uninstall` for the guided full teardown across projects, integratio
 | `synrepo doctor` | Degraded-component-only report; non-zero exit for CI / pre-commit gates |
 | `synrepo handoffs` | Prioritized actionable items from repair log, cross-link candidates, and git hotspots |
 | `synrepo resume-context` | Compact repo-scoped resume packet for stale agent work |
+| `synrepo remember "lesson" [--target path] [--ttl 30d]` | Save an advisory repo-scoped lesson |
+| `synrepo recall "query"` | Search saved repo lessons |
+| `synrepo lessons` | List saved repo lessons |
 | `synrepo orient` | Small routing summary before reading the repo cold |
 | `synrepo ask "question"` | Bounded task-context packet for broad questions |
 | `synrepo search "query"` | Lexical search through the repo index |
@@ -211,9 +252,17 @@ Qualitative wording (for example "bounded structural cards", "smaller than raw-f
 synrepo bench context --tasks "benches/tasks/*.json" --mode all --json
 ```
 
-The checked-in fixture set under `benches/tasks/` covers route-to-edit, symbol explanation, impact or risk, and test-surface discovery. Missing categories are reported in the benchmark summary rather than silently ignored, so release reviewers can see which workflows are not exercised. The default `--mode cards` preserves the historical cards benchmark aliases; use `--mode ask` to compare `synrepo_ask` against cards, and `--mode all` to include raw-file and lexical baselines.
+The checked-in fixture set under `benches/tasks/` currently has 14 tasks covering route-to-edit, onboarding, symbol explanation, impact or risk, security-review routing, branch-ref routing, resume context, saved-context notes, and test-surface discovery. Missing categories are reported in the benchmark summary rather than silently ignored, so release reviewers can see which workflows are not exercised. The default `--mode cards` preserves the historical cards benchmark aliases; use `--mode ask` to compare `synrepo_ask` against cards, and `--mode all` to include raw-file and lexical baselines.
 
 The report carries a `schema_version` field and stable field names. Patch releases keep the field shape compatible; a rename or removal bumps the schema version.
+
+For semantic-search or vector-index claims, use:
+
+```bash
+synrepo bench search --tasks "benches/tasks/*.json" --mode both --json
+```
+
+Report lexical hit@5, hybrid hit@5, semantic availability, hybrid improved or regressed tasks, and latency. See `docs/EMBEDDINGS.md` for the current local vector baseline and compression gate.
 
 ## Optional Advisory Commentary
 

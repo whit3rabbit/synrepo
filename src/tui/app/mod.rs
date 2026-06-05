@@ -5,6 +5,7 @@
 mod action_handlers;
 mod confirm_enable_explain;
 mod confirm_stop_watch;
+mod event_drain;
 mod explain_events;
 mod explain_generate;
 mod explain_picker;
@@ -12,6 +13,7 @@ mod explain_preview;
 mod explore;
 mod integrations;
 mod key_handlers;
+mod materialize_lifecycle;
 mod quick_actions;
 mod render_cache;
 mod state_impl;

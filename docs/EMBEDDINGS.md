@@ -37,6 +37,8 @@ If any gate is closed, MCP and CLI search fall back to lexical behavior with `se
 
 After the first explicit build, `synrepo watch` can refresh the existing vector index in the background when `auto_sync_enabled = true`. A successful non-keepalive reconcile with touched source paths, or a path-overflow full reconcile, marks the existing index stale. Watch waits for a 30 second quiet window with no pending filesystem changes, no running sync, and no running embedding job before refreshing. This refresh is conservative: it does not create the first index, does not download ONNX artifacts, and uses only cached ONNX assets or the configured local Ollama endpoint. Failed background refreshes back off before retrying.
 
+Installed Git hooks stay cheap: they run `synrepo reconcile --fast`, not an embedding build. When watch is active, that delegated reconcile marks an existing vector index stale and lets the same watch-owned quiet-window refresh path handle it. Without watch, hooks refresh graph and lexical state only; rebuild vectors explicitly with `synrepo embeddings build` when semantic freshness matters.
+
 ## TUI Management
 
 In the dashboard Actions tab, press `T` to enable or disable embeddings for the current repo. The action writes only `enable_semantic_triage` in `.synrepo/config.toml`.
@@ -106,11 +108,38 @@ Read the benchmark as a tradeoff:
 - `hybrid_regressed_tasks`: tasks where auto search lost a lexical hit.
 - `latency_ms`: hybrid should be expected to cost more than lexical.
 
-Observed local baseline on this repo with Ollama `all-minilm`:
+Observed local baseline on this repo, recorded 2026-06-05:
 
-| Mode | hit@5 | Total latency |
-|------|-------|---------------|
-| lexical | 0.25 | 49 ms |
-| auto hybrid | 1.00 | 690 ms |
+Command:
 
-That result says embeddings are useful for recall on these four broad tasks, not that they should be enabled everywhere. For exact symbol names, paths, flags, or error strings, lexical search is still the faster and more predictable route.
+```bash
+cargo run --features semantic-triage -- bench search --tasks 'benches/tasks/*.json' --mode both --json
+```
+
+Vector index size:
+
+```bash
+du -sh .synrepo/index/vectors
+# 14M .synrepo/index/vectors
+```
+
+| Mode | hit@5 | Total latency | Notes |
+|------|------:|--------------:|-------|
+| lexical | 0.571 | 312 ms | 14 checked-in tasks |
+| auto hybrid | 0.929 | 8590 ms | semantic available for all 14 tasks |
+
+Hybrid improved 5 tasks, matched 9, and regressed 0. That result says
+embeddings are useful for recall on these broad benchmark tasks, not that they
+should be enabled everywhere. For exact symbol names, paths, flags, or error
+strings, lexical search is still the faster and more predictable route.
+
+## Vector Compression Gate
+
+Binary or quantized vector storage is only worth landing if a feature-branch
+benchmark proves all of these against the baseline above:
+
+- `.synrepo/index/vectors/` is materially smaller than 14 MB for this repo.
+- `auto` hit@5 does not fall below 0.929 on `benches/tasks/*.json`.
+- `hybrid_regressed_tasks` stays at 0.
+- Total auto latency does not increase materially from 8590 ms.
+- The index remains disposable, rebuildable, and gated by `semantic-triage`.

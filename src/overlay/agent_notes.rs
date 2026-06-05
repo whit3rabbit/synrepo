@@ -16,6 +16,8 @@ pub const AGENT_NOTE_SOURCE_STORE: &str = "overlay";
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum AgentNoteTargetKind {
+    /// Whole repository target.
+    Repo,
     /// Repo-relative source path.
     Path,
     /// Canonical file node ID.
@@ -36,6 +38,7 @@ impl AgentNoteTargetKind {
     /// Stable snake_case label.
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::Repo => "repo",
             Self::Path => "path",
             Self::File => "file",
             Self::Symbol => "symbol",
@@ -52,6 +55,7 @@ impl FromStr for AgentNoteTargetKind {
 
     fn from_str(value: &str) -> crate::Result<Self> {
         match value {
+            "repo" => Ok(Self::Repo),
             "path" => Ok(Self::Path),
             "file" => Ok(Self::File),
             "symbol" => Ok(Self::Symbol),

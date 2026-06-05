@@ -15,6 +15,7 @@ use super::report::BenchStrategyRun;
 
 const MAX_SEARCH_MATCHES: usize = 10;
 const MAX_RETURNED_CARDS: usize = 5;
+const FIXTURE_PATH_PREFIX: &str = "benches/tasks/";
 
 pub(crate) fn run_raw_file(
     repo_root: &Path,
@@ -50,6 +51,9 @@ pub(crate) fn run_lexical(
     let mut returned_paths = Vec::new();
     for m in matches.iter().take(MAX_SEARCH_MATCHES) {
         let path = m.path.to_string_lossy().to_string();
+        if is_benchmark_fixture_path(&path) {
+            continue;
+        }
         returned_paths.push(path.clone());
         rows.push(json!({
             "path": path,
@@ -222,6 +226,9 @@ fn collect_card_sample(
     let mut sample = CardSample::default();
     for m in matches.iter().take(MAX_SEARCH_MATCHES) {
         let rel = m.path.to_string_lossy().to_string();
+        if is_benchmark_fixture_path(&rel) {
+            continue;
+        }
         if !seen.insert(rel.clone()) {
             continue;
         }
@@ -331,13 +338,17 @@ fn collect_search_targets(content: &Value, paths: &mut Vec<String>) {
 }
 
 fn push_path_like(paths: &mut Vec<String>, value: &str) {
-    if is_path_like(value) {
+    if is_path_like(value) && !is_benchmark_fixture_path(value) {
         paths.push(value.to_string());
     }
 }
 
 fn is_path_like(value: &str) -> bool {
     value.contains('/') || value.contains('.')
+}
+
+fn is_benchmark_fixture_path(value: &str) -> bool {
+    value.starts_with(FIXTURE_PATH_PREFIX)
 }
 
 fn citation_coverage(packet: &Value, evidence_count: usize, fixture: &BenchTask) -> f64 {

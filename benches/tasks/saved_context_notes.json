@@ -1,0 +1,22 @@
+{
+  "name": "route_to_edit/saved-context-notes",
+  "category": "route_to_edit",
+  "query": "AgentNoteQuery",
+  "required_targets": [
+    { "kind": "file", "value": "src/overlay/agent_notes/lifecycle.rs" }
+  ],
+  "allowed_context": [
+    { "kind": "file", "value": "src/surface/mcp/notes.rs" },
+    { "kind": "file", "value": "src/store/overlay/agent_notes.rs" },
+    { "kind": "file", "value": "src/store/overlay/agent_notes/read.rs" },
+    { "kind": "file", "value": "src/overlay/agent_notes/lifecycle.rs" },
+    { "kind": "test", "value": "src/store/overlay/tests/agent_notes.rs" }
+  ],
+  "expected_recipe": "general",
+  "budget": {
+    "max_tokens": 3000,
+    "max_files": 4,
+    "max_symbols": 4,
+    "tier": "normal"
+  }
+}

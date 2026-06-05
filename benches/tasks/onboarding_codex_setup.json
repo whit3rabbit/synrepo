@@ -1,0 +1,19 @@
+{
+  "name": "onboarding/codex-setup",
+  "category": "route_to_edit",
+  "query": "register_synrepo_mcp",
+  "required_targets": [
+    { "kind": "file", "value": "src/bin/cli_support/commands/setup/mcp_register.rs" }
+  ],
+  "allowed_context": [
+    { "kind": "file", "value": "src/bin/cli_support/commands/setup/mcp_register.rs" },
+    { "kind": "file", "value": "src/bin/cli_support/commands/setup/steps.rs" }
+  ],
+  "expected_recipe": "general",
+  "budget": {
+    "max_tokens": 3000,
+    "max_files": 4,
+    "max_symbols": 4,
+    "tier": "normal"
+  }
+}

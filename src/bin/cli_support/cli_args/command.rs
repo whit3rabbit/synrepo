@@ -6,8 +6,9 @@ use super::agent_hook::AgentHookCommand;
 use super::convert::{CompactPolicyArg, ExportFormatArg, ModeArg};
 use super::embeddings::EmbeddingsCommand;
 use super::graph::GraphCommand;
-use super::subcommands::{
-    AgentSetupArgs, BenchCommand, CiRunArgs, DocsCommand, LinksCommand, NotesCommand,
+use super::{
+    AgentSetupArgs, BenchCommand, CiRunArgs, DocsCommand, LessonForgetArgs, LessonListArgs,
+    LessonRecallArgs, LessonRememberArgs, LessonVerifyArgs, LinksCommand, NotesCommand,
     ProjectCommand, SetupArgs, StatsCommand, UninstallArgs, WatchCommand,
 };
 
@@ -217,6 +218,16 @@ pub(crate) enum Command {
     /// Advisory overlay agent notes.
     #[command(subcommand)]
     Notes(NotesCommand),
+    /// Save an advisory repo lesson.
+    Remember(LessonRememberArgs),
+    /// Recall saved repo lessons by query.
+    Recall(LessonRecallArgs),
+    /// List saved repo lessons.
+    Lessons(LessonListArgs),
+    /// Forget a saved repo lesson.
+    Forget(LessonForgetArgs),
+    /// Verify a saved repo lesson.
+    VerifyLesson(LessonVerifyArgs),
     /// Evaluate and apply storage compatibility actions for `.synrepo/`.
     Upgrade {
         /// Execute the compatibility actions instead of printing a dry-run plan.

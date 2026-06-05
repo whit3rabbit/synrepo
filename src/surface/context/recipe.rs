@@ -25,10 +25,12 @@ impl ContextRecipe {
     /// Infer the built-in recipe from plain-language ask text.
     pub fn infer(ask: &str) -> Self {
         let text = ask.to_ascii_lowercase();
-        if has_any(
-            &text,
-            &["security", "vulnerability", "injection", "auth", "crypto"],
-        ) {
+        if has_security_probe(ask, &text)
+            || has_any(
+                &text,
+                &["security", "vulnerability", "injection", "auth", "crypto"],
+            )
+        {
             Self::SecurityReview
         } else if has_any(&text, &["release", "readiness", "ship", "blocker"]) {
             Self::ReleaseReadiness
@@ -39,7 +41,9 @@ impl ContextRecipe {
             Self::FixTest
         } else if has_any(&text, &["trace", "call path", "call chain", "flow"]) {
             Self::TraceCall
-        } else if has_any(&text, &["symbol", "function", "struct", "explain"]) {
+        } else if has_code_surface_probe(&text)
+            || has_any(&text, &["symbol", "function", "struct", "explain"])
+        {
             Self::ExplainSymbol
         } else if has_any(&text, &["review", "module", "folder", "directory", "audit"]) {
             Self::ReviewModule
@@ -94,4 +98,24 @@ impl ContextRecipe {
 
 fn has_any(text: &str, terms: &[&str]) -> bool {
     terms.iter().any(|term| text.contains(term))
+}
+
+fn has_security_probe(original: &str, lower: &str) -> bool {
+    [
+        "Command::new",
+        "File::create",
+        "TcpStream",
+        "std::process",
+        "unsafe",
+    ]
+    .iter()
+    .any(|term| original.contains(term))
+        || lower.contains("command execution")
+}
+
+fn has_code_surface_probe(lower: &str) -> bool {
+    has_any(
+        lower,
+        &["public_api", "test_surface", "_card_impl", "card_impl"],
+    )
 }
