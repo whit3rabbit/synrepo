@@ -45,6 +45,11 @@ pub(crate) fn dispatch_setup(
         return Ok(());
     }
 
+    if explain_only_setup_requested(force, explain, gitignore, project, agent_hooks, global) {
+        setup_cmd::run_explain_step(repo_root, tui_opts)?;
+        return Ok(());
+    }
+
     let mut bad_flags = Vec::new();
     if force {
         bad_flags.push("--force");
@@ -80,4 +85,43 @@ pub(crate) fn dispatch_setup(
         std::process::exit(2);
     }
     setup_cmd::run_wizard_and_apply(repo_root, tui_opts)
+}
+
+fn explain_only_setup_requested(
+    force: bool,
+    explain: bool,
+    gitignore: bool,
+    project: bool,
+    agent_hooks: bool,
+    global: bool,
+) -> bool {
+    explain && !force && !gitignore && !project && !agent_hooks && !global
+}
+
+#[cfg(test)]
+mod tests {
+    use super::explain_only_setup_requested;
+
+    #[test]
+    fn setup_explain_without_tool_is_an_explain_only_setup_request() {
+        assert!(explain_only_setup_requested(
+            false, true, false, false, false, false
+        ));
+    }
+
+    #[test]
+    fn setup_explain_with_other_setup_flags_stays_invalid_without_tool() {
+        assert!(!explain_only_setup_requested(
+            true, true, false, false, false, false
+        ));
+        assert!(!explain_only_setup_requested(
+            false, true, true, false, false, false
+        ));
+        assert!(!explain_only_setup_requested(
+            false, true, false, true, false, false
+        ));
+        assert!(!explain_only_setup_requested(
+            false, true, false, false, true, false
+        ));
+    }
 }

@@ -174,9 +174,10 @@ pub(crate) fn run_explain_step(repo_root: &Path, opts: TuiOptions) -> anyhow::Re
         }
         SetupWizardOutcome::NonTty => {
             println!(
-                "--explain requires a TTY. Edit .synrepo/config.toml for repo-local \
-                 enablement and ~/.synrepo/config.toml for reusable keys or local endpoints; \
-                 see AGENTS.md for the `[explain]` block schema."
+                "`synrepo setup --explain` requires a TTY. Edit .synrepo/config.toml \
+                 for repo-local enablement and ~/.synrepo/config.toml for reusable \
+                 keys or local endpoints; see docs/EXPLAIN.md for the `[explain]` \
+                 block schema."
             );
             Ok(())
         }

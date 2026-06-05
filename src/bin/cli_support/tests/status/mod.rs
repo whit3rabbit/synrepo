@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use std::{ffi::OsString, sync::Mutex};
 
 use synrepo::config::Config;
 use synrepo::core::ids::NodeId;
@@ -8,9 +8,23 @@ use synrepo::store::overlay::SqliteOverlayStore;
 use time::OffsetDateTime;
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
+const PROVIDER_ENV_VARS: &[&str] = &[
+    "ANTHROPIC_API_KEY",
+    "SYNREPO_ANTHROPIC_API_KEY",
+    "OPENAI_API_KEY",
+    "GEMINI_API_KEY",
+    "OPENROUTER_API_KEY",
+    "ZAI_API_KEY",
+    "MINIMAX_API_KEY",
+    "SYNREPO_LLM_ENABLED",
+    "SYNREPO_LLM_PROVIDER",
+    "SYNREPO_LLM_MODEL",
+    "SYNREPO_LLM_LOCAL_ENDPOINT",
+];
 
 pub(super) struct EnvGuard {
     _guard: std::sync::MutexGuard<'static, ()>,
+    saved: Vec<(&'static str, Option<OsString>)>,
 }
 
 impl EnvGuard {
@@ -18,8 +32,18 @@ impl EnvGuard {
         let guard = ENV_LOCK
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        std::env::remove_var("ANTHROPIC_API_KEY");
-        Self { _guard: guard }
+        let saved = PROVIDER_ENV_VARS
+            .iter()
+            .map(|&name| {
+                let value = std::env::var_os(name);
+                std::env::remove_var(name);
+                (name, value)
+            })
+            .collect();
+        Self {
+            _guard: guard,
+            saved,
+        }
     }
 
     pub(super) fn set(&self, key: &str, value: &str) {
@@ -29,7 +53,12 @@ impl EnvGuard {
 
 impl Drop for EnvGuard {
     fn drop(&mut self) {
-        std::env::remove_var("ANTHROPIC_API_KEY");
+        for (name, value) in self.saved.iter() {
+            match value {
+                Some(value) => std::env::set_var(name, value),
+                None => std::env::remove_var(name),
+            }
+        }
     }
 }
 

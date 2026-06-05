@@ -97,17 +97,20 @@ fn status_embedding_health_names_provider_and_source() {
 }
 
 #[test]
-fn status_explain_hint_mentions_global_config_for_reusable_keys() {
+fn status_explain_hints_include_setup_command() {
     let env = EnvGuard::new();
-    env.set("ANTHROPIC_API_KEY", "sk-test");
     let repo = tempdir().unwrap();
     seed_graph(repo.path());
 
-    let text = status_output(repo.path(), false, false, false).unwrap();
+    let disabled = status_output(repo.path(), false, false, false).unwrap();
     assert!(
-        text.contains("~/.synrepo/config.toml"),
-        "expected global explain config hint, got: {text}"
+        disabled.contains("synrepo setup --explain")
+            && disabled.contains("[explain] enabled = true"),
+        "expected disabled explain setup hint, got: {disabled}"
     );
+    env.set("ANTHROPIC_API_KEY", "sk-test");
+    let keyed = status_output(repo.path(), false, false, false).unwrap();
+    assert!(keyed.contains("synrepo setup --explain") && keyed.contains("~/.synrepo/config.toml"));
 }
 
 #[test]

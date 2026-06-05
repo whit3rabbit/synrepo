@@ -387,11 +387,11 @@ fn render_explain_line(display: &synrepo::surface::status_snapshot::ExplainDispl
         }
         ExplainStatus::DisabledKeyDetected { env_var } => {
             format!(
-                "disabled ({env_var} detected; run 'synrepo setup <tool> --explain' \
+                "disabled ({env_var} detected; run 'synrepo setup --explain' \
                  to enable, or set [explain] enabled = true in .synrepo/config.toml \
                  and store reusable keys or local endpoints in ~/.synrepo/config.toml)"
             )
         }
-        ExplainStatus::Disabled => "disabled".to_string(),
+        ExplainStatus::Disabled => "disabled (run 'synrepo setup --explain' to configure optional explain, or set [explain] enabled = true in .synrepo/config.toml)".to_string(),
     }
 }

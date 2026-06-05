@@ -233,12 +233,63 @@ fn refresh_commentary_with_generator(
         String::new()
     };
     actions_taken.push(format!(
-        "commentary: {} seeded, {} refreshed, {} not generated{queue_suffix}{stop_suffix}",
-        seed_stats.generated, refresh_stats.generated, totals.not_generated
+        "commentary: {} seeded, {} refreshed, {} not generated{}{queue_suffix}{stop_suffix}",
+        seed_stats.generated,
+        refresh_stats.generated,
+        totals.not_generated,
+        skip_reason_action_suffix(&totals.skip_reasons)
     ));
     actions_taken.push(format!(
         "commentary docs: {docs_written} written, {docs_removed} removed, {} indexed",
         index_summary.touched_paths
     ));
     Ok(())
+}
+
+fn skip_reason_action_suffix(skip_reasons: &std::collections::BTreeMap<String, usize>) -> String {
+    if skip_reasons.is_empty() {
+        return String::new();
+    }
+    let reasons = skip_reason_summary(skip_reasons)
+        .into_iter()
+        .map(|(reason, count)| format!("{reason}={count}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let setup_hint = if skip_reasons.contains_key("provider_disabled")
+        || skip_reasons.contains_key("missing_api_key")
+    {
+        "; run `synrepo setup --explain` to configure optional explain"
+    } else {
+        ""
+    };
+    format!(" ({reasons}{setup_hint})")
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use super::skip_reason_action_suffix;
+
+    #[test]
+    fn setup_related_skip_reasons_include_explain_setup_hint() {
+        let mut reasons = BTreeMap::new();
+        reasons.insert("missing_api_key".to_string(), 2);
+
+        let suffix = skip_reason_action_suffix(&reasons);
+
+        assert!(suffix.contains("missing_api_key=2"));
+        assert!(suffix.contains("synrepo setup --explain"));
+    }
+
+    #[test]
+    fn ordinary_skip_reasons_do_not_include_provider_setup_hint() {
+        let mut reasons = BTreeMap::new();
+        reasons.insert("budget_blocked".to_string(), 1);
+
+        let suffix = skip_reason_action_suffix(&reasons);
+
+        assert!(suffix.contains("budget_blocked=1"));
+        assert!(!suffix.contains("synrepo setup --explain"));
+    }
 }
