@@ -19,8 +19,9 @@ use crate::{
 
 use super::{
     commentary_context::build_context_text,
-    commentary_generate::{classify_outcome, retry_delay, ItemOutcome, MAX_RATE_LIMIT_ATTEMPTS},
+    commentary_generate::{classify_outcome, ItemOutcome},
     commentary_plan::CommentaryWorkItem,
+    commentary_retry::{CommentaryRetry, RetryAction},
 };
 
 pub(super) fn prepare_item(
@@ -81,7 +82,7 @@ async fn generate_with_retries(
     generator: &dyn CommentaryGenerator,
     prepared: PreparedItem,
 ) -> crate::Result<GeneratedOutcome> {
-    let mut retry_attempts = 0usize;
+    let mut retry = CommentaryRetry::new();
     loop {
         let outcome = generate_once_async(generator, prepared.node_id, &prepared.ctx_text).await?;
         match outcome {
@@ -92,21 +93,18 @@ async fn generate_with_retries(
                 };
                 return Ok(GeneratedOutcome::Generated(entry));
             }
-            CommentaryGeneration::Skipped(skip)
-                if skip.reason == CommentarySkipReason::RateLimited
-                    && retry_attempts + 1 < MAX_RATE_LIMIT_ATTEMPTS =>
-            {
-                retry_attempts += 1;
-                tokio::time::sleep(retry_delay(&skip, retry_attempts)).await;
-            }
-            CommentaryGeneration::Skipped(skip) => {
-                let queued_for_next_run = skip.reason == CommentarySkipReason::RateLimited;
-                return Ok(GeneratedOutcome::Skipped {
-                    skip,
-                    retry_attempts,
+            CommentaryGeneration::Skipped(skip) => match retry.next_action(&skip) {
+                RetryAction::Retry { delay } => tokio::time::sleep(delay).await,
+                RetryAction::Stop {
                     queued_for_next_run,
-                });
-            }
+                } => {
+                    return Ok(GeneratedOutcome::Skipped {
+                        skip,
+                        retry_attempts: retry.retry_attempts(),
+                        queued_for_next_run,
+                    });
+                }
+            },
         }
     }
 }

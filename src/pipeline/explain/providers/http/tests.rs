@@ -3,6 +3,7 @@ use crate::pipeline::explain::telemetry::UsageSource;
 use std::io::{Read, Write};
 use std::net::TcpListener;
 use std::thread;
+use time::macros::format_description;
 
 #[test]
 fn estimated_completion_tokens_follow_output_text() {
@@ -79,6 +80,27 @@ fn post_json_strict_captures_429_retry_after() {
 }
 
 #[test]
+fn retry_after_parses_http_date_in_the_future() {
+    let future = OffsetDateTime::now_utc() + time::Duration::seconds(10);
+    let delay = retry_after_from_header(&format_http_date(future)).unwrap();
+
+    assert!(delay > Duration::ZERO);
+    assert!(delay <= Duration::from_secs(10));
+}
+
+#[test]
+fn retry_after_ignores_malformed_values() {
+    assert_eq!(retry_after_from_header("not a retry-after"), None);
+}
+
+#[test]
+fn retry_after_ignores_past_http_dates() {
+    let past = OffsetDateTime::now_utc() - time::Duration::seconds(10);
+
+    assert_eq!(retry_after_from_header(&format_http_date(past)), None);
+}
+
+#[test]
 fn post_json_strict_reports_status_and_parse_failures() {
     let status_url = serve_once("HTTP/1.1 500 Internal Server Error\r\nContent-Length: 0\r\n\r\n");
     let status_err = post_json_strict::<_, serde_json::Value>(
@@ -109,7 +131,25 @@ fn post_json_strict_reports_status_and_parse_failures() {
     assert!(matches!(parse_err, HttpJsonError::Parse(_)));
 }
 
-fn serve_once(response: &'static str) -> String {
+fn retry_after_from_header(value: &str) -> Option<Duration> {
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(
+        reqwest::header::RETRY_AFTER,
+        reqwest::header::HeaderValue::from_str(value).unwrap(),
+    );
+    parse_retry_after(&headers)
+}
+
+fn format_http_date(date: OffsetDateTime) -> String {
+    date.format(format_description!(
+        "[weekday repr:short], [day padding:zero] [month repr:short] [year] \
+         [hour padding:zero]:[minute padding:zero]:[second padding:zero] GMT"
+    ))
+    .unwrap()
+}
+
+fn serve_once(response: impl Into<String>) -> String {
+    let response = response.into();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let addr = listener.local_addr().unwrap();
     thread::spawn(move || {

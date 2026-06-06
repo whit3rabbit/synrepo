@@ -8,6 +8,7 @@ mod commentary_context;
 mod commentary_generate;
 mod commentary_plan;
 mod commentary_progress;
+mod commentary_retry;
 mod commentary_run;
 mod export_regen;
 mod graph_maintenance;

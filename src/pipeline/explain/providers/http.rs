@@ -8,6 +8,7 @@ use std::{sync::OnceLock, time::Duration};
 use reqwest::StatusCode;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
+use time::{macros::format_description, OffsetDateTime, PrimitiveDateTime};
 
 use crate::pipeline::explain::telemetry::{ExplainFailure, TokenUsage};
 
@@ -264,8 +265,32 @@ fn redact_url_query_params(text: &str) -> String {
 
 fn parse_retry_after(headers: &reqwest::header::HeaderMap) -> Option<Duration> {
     let value = headers.get(reqwest::header::RETRY_AFTER)?;
-    let seconds = value.to_str().ok()?.trim().parse::<u64>().ok()?;
-    Some(Duration::from_secs(seconds))
+    let text = value.to_str().ok()?.trim();
+    if let Ok(seconds) = text.parse::<u64>() {
+        return Some(Duration::from_secs(seconds));
+    }
+    parse_retry_after_http_date(text)
+}
+
+fn parse_retry_after_http_date(text: &str) -> Option<Duration> {
+    let parsed = OffsetDateTime::parse(text, &time::format_description::well_known::Rfc2822)
+        .or_else(|_| {
+            PrimitiveDateTime::parse(
+                text,
+                format_description!(
+                    "[weekday repr:short], [day padding:zero] [month repr:short] [year] \
+                     [hour padding:zero]:[minute padding:zero]:[second padding:zero] GMT"
+                ),
+            )
+            .map(PrimitiveDateTime::assume_utc)
+        })
+        .ok()?;
+    let retry_after = parsed - OffsetDateTime::now_utc();
+    let millis = retry_after.whole_milliseconds();
+    if millis <= 0 {
+        return None;
+    }
+    Some(Duration::from_millis(millis.min(u64::MAX as i128) as u64))
 }
 
 #[cfg(test)]

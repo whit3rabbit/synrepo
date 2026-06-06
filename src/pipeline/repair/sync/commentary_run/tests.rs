@@ -96,6 +96,22 @@ fn rate_limit_halts_new_scheduling_but_drains_in_flight() {
         .is_none());
 }
 
+#[test]
+fn async_long_retry_after_queues_without_immediate_retry() {
+    let mut fixture = Fixture::new(3);
+    let limited = fixture.items[0].node_id;
+    let generator = Arc::new(LongAsyncRetryAfter {
+        limited,
+        calls: AtomicUsize::new(0),
+    });
+
+    let stats = run_fixture_phase(&mut fixture, generator.clone(), 2, RunPhase::FileSeed);
+
+    assert_eq!(stats.attempted, 2);
+    assert_eq!(stats.generated, 1);
+    assert_eq!(generator.calls.load(Ordering::SeqCst), 1);
+}
+
 struct Fixture {
     _repo: TempDir,
     graph: SqliteGraphStore,
@@ -248,6 +264,35 @@ impl CommentaryGenerator for RateLimitFirst {
                 return Ok(CommentaryGeneration::Skipped(CommentarySkip::rate_limited(
                     "rate limited",
                     Some(Duration::ZERO),
+                )));
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            Ok(CommentaryGeneration::Generated(entry(node, "generated")))
+        })
+    }
+}
+
+struct LongAsyncRetryAfter {
+    limited: NodeId,
+    calls: AtomicUsize,
+}
+
+impl CommentaryGenerator for LongAsyncRetryAfter {
+    fn generate(&self, node: NodeId, _context: &str) -> crate::Result<Option<CommentaryEntry>> {
+        Ok(Some(entry(node, "serial fallback")))
+    }
+
+    fn generate_with_outcome_async<'a>(
+        &'a self,
+        node: NodeId,
+        _context: &'a str,
+    ) -> CommentaryFuture<'a> {
+        Box::pin(async move {
+            if node == self.limited {
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                return Ok(CommentaryGeneration::Skipped(CommentarySkip::rate_limited(
+                    "rate limited",
+                    Some(Duration::from_secs(30)),
                 )));
             }
             tokio::time::sleep(Duration::from_millis(50)).await;
