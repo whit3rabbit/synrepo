@@ -23,13 +23,13 @@ path = "src/lib.rs"
 # syntext is the deterministic lexical retrieval layer. Verify publication
 # status on crates.io; if not published, switch to a git dependency pinned to
 # a specific commit hash (never a branch).
-syntext = "1.1.0"
+syntext = "1.1.1"
 
 # --- Tree-sitter via Rust crates (phase 1) ---
 # Per-language crates each ship a pre-generated C grammar and expose
 # LOCALS_QUERY, HIGHLIGHTS_QUERY, INJECTIONS_QUERY as &'static str constants.
 # We read those directly and add synrepo-specific extras on top.
-tree-sitter = "0.26.8"
+tree-sitter = "0.26.9"
 tree-sitter-go = "0.25.0"
 tree-sitter-rust = "0.24.2"
 tree-sitter-python = "0.25.0"
@@ -40,7 +40,7 @@ tree-sitter-kotlin-ng = "1.1.0"
 tree-sitter-c-sharp = "0.23.1"
 tree-sitter-php = "0.24.2"
 tree-sitter-ruby = "0.23.1"
-tree-sitter-swift = "0.7.2"
+tree-sitter-swift = "0.7.3"
 tree-sitter-c = "0.24.2"
 tree-sitter-cpp = "0.23.4"
 tree-sitter-dart = "0.2.0"
@@ -49,7 +49,7 @@ tree-sitter-dart = "0.2.0"
 # sqlite is the single source of truth for the graph and overlay stores.
 # No in-memory graph mirror in v1; add petgraph only if measured latency
 # on a specific query class demands it.
-rusqlite = { version = "0.39", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 
 # --- Filesystem and walking ---
 walkdir = "2"
@@ -60,7 +60,7 @@ fs2 = "0.4"                 # cross-platform advisory file locking (flock / Lock
 interprocess = "2"          # local_socket: Unix socket on Unix, named pipe on Windows. Blocking API only.
 
 # --- Git integration ---
-gix = { version = "0.83", default-features = false, features = ["sha1", "max-performance-safe", "revision", "blob-diff"] }
+gix = { version = "0.84", default-features = false, features = ["sha1", "max-performance-safe", "revision", "blob-diff"] }
 
 # --- Hashing and encoding ---
 blake3 = "1"                # fast content hashing for file/symbol identity
@@ -93,7 +93,7 @@ ratatui = "0.30"
 crossterm = "0.29"
 
 # --- MCP server (used by `synrepo mcp` subcommand) ---
-rmcp = { version = "1.6.0", features = ["transport-io"] }
+rmcp = { version = "1.7.0", features = ["transport-io"] }
 tokio = { version = "1", features = ["full"] }
 
 # --- Concurrency ---
