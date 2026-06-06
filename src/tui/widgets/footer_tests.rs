@@ -101,6 +101,10 @@ fn explain_tab_shows_explain_and_docs_hints_when_wide() {
     let text = rendered_text(&spans);
     assert!(text.contains("[r/a/c/f]"), "missing explain hint: {text:?}");
     assert!(text.contains("[d/D/x/X]"), "missing docs hint: {text:?}");
+    assert!(
+        text.contains("provider") && text.contains("[s]"),
+        "missing provider setup hint: {text:?}"
+    );
 }
 
 #[test]
@@ -134,7 +138,7 @@ fn explain_tab_drops_explain_hints_on_narrow_terminal() {
             && text.contains("[q]")
     );
     assert!(
-        !text.contains("[r/a/c/f]") && !text.contains("[d/D/x/X]"),
+        !text.contains("[r/a/c/f]") && !text.contains("[d/D/x/X]") && !text.contains("[s]"),
         "explain+docs hints should drop together on narrow: {text:?}"
     );
 }
@@ -146,9 +150,10 @@ fn explain_hints_survive_together_at_120_cols() {
     let text = rendered_text(&spans);
     let has_run = text.contains("[r/a/c/f]");
     let has_docs = text.contains("[d/D/x/X]");
-    assert_eq!(
-        has_run, has_docs,
-        "explain run and docs hints must drop together: {text:?}"
+    let has_provider = text.contains("[s]");
+    assert!(
+        has_run == has_docs && has_docs == has_provider,
+        "explain run, docs, and provider hints must drop together: {text:?}"
     );
 }
 
@@ -159,7 +164,7 @@ fn other_tabs_do_not_show_explain_hints() {
         let spans = fit_groups(groups, 200);
         let text = rendered_text(&spans);
         assert!(
-            !text.contains("[r/c/f]") && !text.contains("[d/D/x/X]"),
+            !text.contains("[r/a/c/f]") && !text.contains("[d/D/x/X]") && !text.contains("[s]"),
             "tab={active:?} leaked explain hint: {text:?}"
         );
     }

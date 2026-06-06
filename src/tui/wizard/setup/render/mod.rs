@@ -1,5 +1,7 @@
 //! Setup wizard rendering.
 
+use std::path::Path;
+
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
@@ -51,9 +53,14 @@ pub fn run_setup_wizard_loop(
 /// already run non-interactively and only the `[explain]` block remains.
 /// Callers should read `plan.explain` and ignore the plan's mode, target, and
 /// embeddings fields (which are placeholder defaults set by `explain_only()`).
-pub fn run_explain_only_wizard_loop(theme: Theme) -> anyhow::Result<super::SetupWizardOutcome> {
+pub fn run_explain_only_wizard_loop(
+    repo_root: &Path,
+    theme: Theme,
+) -> anyhow::Result<super::SetupWizardOutcome> {
     let mut terminal = enter_tui()?;
-    let mut state = SetupWizardState::explain_only_with_support(ExplainWizardSupport::detect());
+    let mut state = SetupWizardState::explain_only_with_support(
+        ExplainWizardSupport::detect_for_repo(repo_root),
+    );
     let result = render_loop(&mut terminal, &mut state, &theme);
     leave_tui(&mut terminal)?;
     result?;

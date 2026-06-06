@@ -127,7 +127,7 @@ args = [\"mcp\", \"--repo\", \".\"]
 - `synrepo_resume_context(limit?, since_days?, budget_tokens?, include_notes?)` - compact repo resume packet before asking the user to repeat stale context
 - `synrepo_overview()` - full dashboard only when the full operational picture is useful
 
-`synrepo_ask` returns `answer`, `cards_used`, `evidence`, `grounding`, `omitted_context_notes`, `next_best_tools`, and `context_packet`. Its grounding policy accepts `mode` or `citations`, `include_spans`, and `allow_overlay`; default to observed graph/index evidence and allow overlay only when advisory machine-authored context is acceptable.
+`synrepo_ask` returns `answer`, `cards_used`, `evidence`, `grounding`, `omitted_context_notes`, `next_best_tools`, and `context_packet`. Its grounding policy accepts `mode` or `citations` (`required`, `preferred`, or `off`), `include_spans`, and `allow_overlay`; do not pass `observed` as a mode because `observed` is only an evidence confidence label. Default to observed graph/index evidence and allow overlay only when advisory machine-authored context is acceptable.
 
 Graph facts are authoritative observed source truth. Overlay commentary, explain docs, and notes are advisory; LLM-authored output never mutates the canonical graph. Embeddings are optional routing/search helpers and are not the core trust source.
 

@@ -6,6 +6,8 @@
 
 /// Deterministic planner that maps asks to context-pack targets.
 pub mod compiler;
+/// Strict grounding-mode parsing and diagnostics.
+mod grounding;
 /// Built-in task-context recipe names and inference.
 pub mod recipe;
 /// Built-in deterministic recipe planners.

@@ -74,7 +74,7 @@ fn quick_actions_include_configure_explain() {
         state
             .quick_actions
             .iter()
-            .any(|action| action.key == "e" && action.label == "configure optional explain"),
+            .any(|action| action.key == "e" && action.label == "configure/switch explain provider"),
         "dashboard quick actions should advertise explain setup"
     );
 }

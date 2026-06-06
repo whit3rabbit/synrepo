@@ -112,6 +112,9 @@ impl Config {
         if other.enable_semantic_triage {
             self.enable_semantic_triage = true;
         }
+        if other.mcp_sentry_telemetry.is_some() {
+            self.mcp_sentry_telemetry = other.mcp_sentry_telemetry;
+        }
     }
 
     fn merge_nested_and_runtime(&mut self, other: Self) {

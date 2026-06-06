@@ -55,6 +55,7 @@ async fn serve(
     explicit_repo: bool,
     call_timeout: Duration,
 ) -> anyhow::Result<()> {
+    let _sentry_guard = super::mcp::sentry_telemetry::init_from_config_and_env(repo_root);
     let default_state = match prepare_state(repo_root) {
         Ok(state) => Some(state),
         Err(error) if explicit_repo => return Err(error),

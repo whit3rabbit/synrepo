@@ -78,11 +78,7 @@ pub fn to_markdown(items: &[HandoffItem]) -> String {
             HandoffSource::CrossLink => "cross_link",
             HandoffSource::Hotspot => "hotspot",
         };
-        let rec = if item.recommendation.len() > 60 {
-            format!("{}...", &item.recommendation[..57])
-        } else {
-            item.recommendation.clone()
-        };
+        let rec = truncate_markdown_cell(&item.recommendation);
         output.push_str(&format!(
             "| {} | {} | {} | {} |\n",
             priority, item_type, item.source, rec
@@ -90,6 +86,18 @@ pub fn to_markdown(items: &[HandoffItem]) -> String {
     }
 
     output
+}
+
+fn truncate_markdown_cell(value: &str) -> String {
+    if value.len() <= 60 {
+        return value.to_string();
+    }
+
+    let mut end = 57;
+    while end > 0 && !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    format!("{}...", &value[..end])
 }
 
 /// Format handoffs as JSON.
@@ -170,6 +178,27 @@ mod tests {
         )];
         let output = to_markdown(&items);
         assert!(output.contains("| high | repair |"));
+    }
+
+    #[test]
+    fn test_to_markdown_truncates_unicode_recommendation() {
+        let recommendation = format!("{}—tail", "x".repeat(56));
+        let items = vec![HandoffItem::new(
+            "1".to_string(),
+            HandoffSource::Repair,
+            "test.rs".to_string(),
+            recommendation,
+            HandoffPriority::High,
+            "test.rs".to_string(),
+            None,
+        )];
+
+        let output = to_markdown(&items);
+
+        assert!(output.contains(&format!(
+            "| high | repair | test.rs | {}... |",
+            "x".repeat(56)
+        )));
     }
 
     #[test]

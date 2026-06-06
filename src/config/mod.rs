@@ -161,6 +161,13 @@ pub struct Config {
     #[serde(default)]
     pub explain: ExplainConfig,
 
+    /// Optional outbound MCP failed-tool telemetry policy. `None` inherits
+    /// from user-global config and ultimately defaults to disabled; `Some`
+    /// values are explicit local opt-in/opt-out decisions. The Sentry DSN
+    /// remains process environment only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mcp_sentry_telemetry: Option<bool>,
+
     /// Run cheap auto-sync surfaces (export regeneration, retired-observation
     /// compaction) automatically after every reconcile pass the watch service
     /// completes. Commentary refresh and other token-cost surfaces are NOT
@@ -238,6 +245,11 @@ impl Config {
     /// Path to the `.synrepo/` directory for a given repo root.
     pub fn synrepo_dir(repo_root: &Path) -> PathBuf {
         repo_root.join(".synrepo")
+    }
+
+    /// Effective outbound Sentry telemetry setting after global/local merge.
+    pub fn mcp_sentry_telemetry_enabled(&self) -> bool {
+        self.mcp_sentry_telemetry.unwrap_or(false)
     }
 }
 

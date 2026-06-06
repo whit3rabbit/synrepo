@@ -157,6 +157,8 @@ impl FooterWidget<'_> {
                     Span::styled("[r/a/c/f]", self.theme.agent_style()),
                     Span::styled("  docs ", self.theme.muted_style()),
                     Span::styled("[d/D/x/X]", self.theme.agent_style()),
+                    Span::styled("  provider ", self.theme.muted_style()),
+                    Span::styled("[s]", self.theme.agent_style()),
                 ],
             });
         }

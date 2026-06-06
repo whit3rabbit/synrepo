@@ -24,7 +24,7 @@ synrepo is a local, deterministic code-context compiler: `repo files -> graph fa
 
 ### Default path
 
-For questions, reviews, search routing, and edits: orient, ask or search, cards, impact or risks, edit, tests, changed.
+Default flow: orient, ask or search, cards, impact or risks, edit, tests, changed.
 
 1. Start with `synrepo_orient` before reading the repo cold.
 2. Use `synrepo_ask` for broad plain-language tasks needing one bounded, cited task-context packet.
@@ -37,13 +37,13 @@ For questions, reviews, search routing, and edits: orient, ask or search, cards,
 
 ### MCP repository selection
 
-Project-scoped MCP configs launching `synrepo mcp --repo .` have a default repository; omit `repo_root` or pass the absolute root when known.
+Project-scoped MCP configs launching `synrepo mcp --repo .` have a default repository.
 
 Global MCP configs that launch `synrepo mcp` serve registered projects by absolute path. In global or defaultless contexts, pass the workspace absolute path as `repo_root`. If a tool reports an unmanaged repository, ask the user to run `synrepo project add <path>`; do not bypass registry gating.
 
-Graph-backed facts are authoritative. Overlay commentary, explain docs, and proposed cross-links are advisory and freshness-sensitive. Existing explain reads are safe when useful: use `synrepo_explain` with `budget=deep` for 1-3 focal targets and `synrepo_docs_search` for architecture/why questions. Stale labels are information. **Refresh is explicit**: fresh commentary requires `synrepo mcp --allow-overlay-writes` and `synrepo_refresh_commentary(target)`.
+Graph facts are authoritative. Overlay commentary, explain docs, and proposed links are advisory. Existing explain reads are safe when useful: use `synrepo_explain` with `budget=deep` for 1-3 focal targets and `synrepo_docs_search` for architecture/why questions. Stale labels are information. **Refresh is explicit**.
 
-Client-side hooks for Codex and Claude may nudge before direct grep, read, review, or edit workflows and emit `[SYNREPO_CONTEXT_FAST_PATH]`, `[SYNREPO_DETERMINISTIC_EDIT_CANDIDATE] Intent: ...`, or `[SYNREPO_LLM_NOT_REQUIRED]`. Hooks are advisory; source mutation still requires `synrepo mcp --allow-source-edits` and `synrepo_apply_anchor_edits`.
+Client-side hooks may nudge before direct grep, read, review, or edit workflows. Hooks are advisory; source mutation still requires `synrepo mcp --allow-source-edits` and `synrepo_apply_anchor_edits`.
 
 ### Do not
 
@@ -61,6 +61,7 @@ Client-side hooks for Codex and Claude may nudge before direct grep, read, revie
 - `synrepo_resume_context` is an advisory repo packet regenerated from existing state. It is not prompt logging, chat history, raw tool-output capture, or generic session memory.
 - Handoff or next-action lists are derived recommendations regenerated from repo state. External systems own assignment, status, and collaboration.
 - Freshness is explicit. A stale label is information, not an error; it is not silently refreshed on read.
+- Failed-tool Sentry telemetry is opt-in and records only sanitized tool/error tags, never prompts, paths, stacktraces, or agent memory.
 "
     };
 }

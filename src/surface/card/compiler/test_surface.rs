@@ -7,6 +7,7 @@ use crate::{
     structure::graph::{EdgeKind, GraphReader, SymbolKind, SymbolNode},
     surface::card::{
         accounting::ContextAccounting,
+        truncate_chars,
         types::{TestAssociation, TestEntry, TestSurfaceCard},
         Budget, SourceStore,
     },
@@ -91,13 +92,7 @@ pub(super) fn test_surface_card_impl(
                 // Add signature and doc_comment from the symbol.
                 if let Ok(Some(symbol)) = graph.get_symbol(entry.symbol_id) {
                     entry.signature = symbol.signature.clone();
-                    entry.doc_comment = symbol.doc_comment.as_ref().map(|s| {
-                        if s.len() > 120 {
-                            format!("{}…", &s[..120])
-                        } else {
-                            s.clone()
-                        }
-                    });
+                    entry.doc_comment = symbol.doc_comment.as_ref().map(|s| truncate_chars(s, 120));
                     // Add covers field from Calls edges at Deep budget.
                     let calls =
                         graph.outbound(NodeId::Symbol(entry.symbol_id), Some(EdgeKind::Calls));

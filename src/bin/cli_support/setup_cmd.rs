@@ -162,7 +162,7 @@ pub(crate) fn apply_embedding_setup(
 /// `~/.synrepo/config.toml` as needed. Non-TTY callers get a pointer to the
 /// relevant config files instead of crashing.
 pub(crate) fn run_explain_step(repo_root: &Path, opts: TuiOptions) -> anyhow::Result<()> {
-    match run_explain_only_wizard(opts)? {
+    match run_explain_only_wizard(repo_root, opts)? {
         SetupWizardOutcome::Completed { plan } => {
             step_apply_explain(repo_root, plan.explain.as_ref())?;
             print_explain_discovery_hint();

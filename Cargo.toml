@@ -111,6 +111,12 @@ time = { version = "0.3", features = ["serde", "macros", "formatting", "parsing"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "blocking"] }
 backon = { version = "1.6.0", default-features = false, features = ["std"] }
 
+# --- Optional outbound error telemetry ---
+# Runtime opt-in only via SYNREPO_SENTRY_DSN. Default Sentry features include
+# panic hooks, backtraces, contexts, debug images, and release health; keep those
+# off so MCP telemetry only sends the explicit sanitized failure event.
+sentry = { version = "0.48.2", default-features = false, features = ["ureq", "rustls"] }
+
 # --- Optional feature deps ---
 # Minimal blocking HTTP server for the feature-gated Prometheus metrics endpoint.
 tiny_http = { version = "0.12", optional = true }

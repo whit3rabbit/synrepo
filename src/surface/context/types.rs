@@ -49,6 +49,8 @@ pub struct ContextShape {
 /// Grounding policy for compiled task contexts.
 #[derive(Clone, Debug, Deserialize, JsonSchema, PartialEq)]
 pub struct GroundingOptions {
+    /// Structured grounding mode. Valid values are `required`, `preferred`, and
+    /// `off`; `observed` is an evidence confidence label, not a mode.
     /// `citations` is accepted as an alias for Nexus-like callers.
     #[serde(default, alias = "citations")]
     pub mode: GroundingMode,
@@ -70,9 +72,13 @@ impl Default for GroundingOptions {
     }
 }
 
-/// Citation requirement for a task-context response.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, JsonSchema, PartialEq, Serialize)]
+/// Citation requirement for a task-context response. Structured values are
+/// exactly `required`, `preferred`, and `off`; do not pass `observed` as a mode.
+#[derive(Clone, Copy, Debug, Default, Eq, JsonSchema, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
+#[schemars(
+    description = "Citation requirement for synrepo_ask. Valid values are required, preferred, and off. Do not use observed; observed is an evidence confidence label."
+)]
 pub enum GroundingMode {
     /// Evidence is required for the packet to be considered grounded.
     #[default]

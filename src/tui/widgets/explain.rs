@@ -173,7 +173,7 @@ fn render_configured(
         "Clean exported docs/index, overlay untouched",
         theme,
     ));
-    lines.push(action_line("s", "Re-run optional explain setup", theme));
+    lines.push(action_line("s", "Configure/switch explain provider", theme));
     lines
 }
 
@@ -373,7 +373,7 @@ fn render_not_configured(
         "Actions:".to_string(),
         theme.muted_style(),
     )));
-    lines.push(action_line("s", "Configure optional explain", theme));
+    lines.push(action_line("s", "Configure/switch explain provider", theme));
     lines
 }
 

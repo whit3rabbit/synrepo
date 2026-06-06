@@ -13,7 +13,7 @@ For product overview, setup flow, and operator-facing docs, start with [`README.
 
 Synrepo is a local, deterministic code-context compiler. Its product model is `repo files -> graph facts -> code artifacts -> task contexts -> cards/MCP`. Graph facts are authoritative observed source truth; code artifacts are compiled records; task contexts are bounded bundles for a workflow; cards and MCP responses are the delivery packets you consume.
 
-Use `synrepo_ask(ask, scope?, shape?, ground?, budget?)` as the default high-level front door for one bounded, cited task-context packet. It returns `answer`, `cards_used`, `evidence`, `grounding`, `omitted_context_notes`, `next_best_tools`, and `context_packet`. Its grounding policy accepts `mode` or `citations`, `include_spans`, and `allow_overlay`; default to graph facts as authoritative observed source truth. Empty-scope asks promote high-confidence lexical hits into concrete file artifacts before broad search artifacts. Scoped asks may include `source_slice` artifacts with hash-checked line-numbered source. Overlay commentary, explain docs, and notes are advisory. Saved lessons are advisory overlay notes with TTL and freshness labels; LLM-authored output never mutates the canonical graph. Embeddings are optional routing/search helpers.
+Use `synrepo_ask(ask, scope?, shape?, ground?, budget?)` as the default high-level front door for one bounded, cited task-context packet. It returns `answer`, `cards_used`, `evidence`, `grounding`, `omitted_context_notes`, `next_best_tools`, and `context_packet`. Its grounding policy accepts `mode` or `citations` (`required`, `preferred`, or `off`), `include_spans`, and `allow_overlay`; do not pass `observed` as a mode because `observed` is only an evidence confidence label. Default to graph facts as authoritative observed source truth. Empty-scope asks promote high-confidence lexical hits into concrete file artifacts before broad search artifacts. Scoped asks may include `source_slice` artifacts with hash-checked line-numbered source. Overlay commentary, explain docs, and notes are advisory. Saved lessons are advisory overlay notes with TTL and freshness labels; LLM-authored output never mutates the canonical graph. Embeddings are optional routing/search helpers.
 
 Existing explain reads are safe when useful: use `synrepo_explain` with `budget=deep` for 1-3 focal symbols/files before non-trivial implementation, review, security work, or unfamiliar subsystem changes; use `synrepo_docs_search` for architecture, intent, gotchas, or "why is this like this" questions. These read cached overlay output; they do not generate or refresh commentary.
 
@@ -65,7 +65,7 @@ Use `output_mode: "compact"` for orientation. Search rows and compact file group
 
 Read `query_attempts`, `fallback_used`, `miss_reason`, `recommended_next_queries`, `recommended_tool`, `suggested_card_targets`, and `output_accounting` when present. Fallback routing extracts code-shaped tokens, camel/snake/dot identifier parts, acronyms, stems, and domain probes, then boosts files hit by multiple probes while downranking tests and fixtures. If `miss_reason` is `no_index_matches`, do not retry the same broad sentence. Switch to exact lexical probes.
 
-`synrepo_ask` accepts structured objects and compatibility shorthand such as `budget: "normal"`, `ground: "observed graph/source only"`, `shape: "findings; tests"`, and path strings in `scope`. Prefer structured objects when generating calls yourself.
+`synrepo_ask` accepts structured objects and compatibility shorthand such as `budget: "normal"`, `ground: "observed graph/source only"`, `shape: "findings; tests"`, and path strings in `scope`. In structured `ground`, use only `mode` or `citations` values `required`, `preferred`, or `off`; `observed` is allowed only in the shorthand phrase, not as a mode. Prefer structured objects when generating calls yourself.
 
 See [`references/search-routing.md`](references/search-routing.md) for examples, fallback rules, and phrase-to-probe mappings.
 
@@ -76,6 +76,8 @@ Graph content is primary. Overlay content is advisory. Materialized advisory exp
 If overlay and graph disagree, trust the graph. Existing explain reads use cached overlay output. Freshness is explicit. A stale label is information, not an error; it is not silently refreshed on read.
 
 Global MCP configs that launch `synrepo mcp` serve registered projects by absolute path. In global or defaultless contexts, pass the current workspace's absolute path as `repo_root` to repo-addressable tools, or call `synrepo_use_project(repo_root)` once to set the session default.
+
+Operators may opt in to failed-tool Sentry telemetry by setting `mcp_sentry_telemetry = true` in `.synrepo/config.toml` or via the dashboard Actions tab `O` key, and by setting `SYNREPO_SENTRY_DSN` on the MCP process. To opt out, set `mcp_sentry_telemetry = false`; local `false` overrides a user-global opt-in. Never write the DSN into repo files. Treat this as aggregate operational error reporting only: it records sanitized `tool` and `error_code` tags plus fixed version/platform tags, not prompts, targets, queries, responses, error messages, repository paths, user/request data, breadcrumbs, stacktraces, or agent memory.
 
 If a tool reports that a repository is not managed by synrepo, ask the user to run:
 

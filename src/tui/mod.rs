@@ -197,12 +197,15 @@ pub fn run_setup_wizard(repo_root: &Path, opts: TuiOptions) -> anyhow::Result<Se
 /// [`SetupWizardOutcome`]. Only the plan's `explain` field is meaningful;
 /// apply-time code decides whether to patch repo-local `.synrepo/config.toml`,
 /// user-scoped `~/.synrepo/config.toml`, or both.
-pub fn run_explain_only_wizard(opts: TuiOptions) -> anyhow::Result<SetupWizardOutcome> {
+pub fn run_explain_only_wizard(
+    repo_root: &Path,
+    opts: TuiOptions,
+) -> anyhow::Result<SetupWizardOutcome> {
     if !stdout_is_tty() {
         return Ok(SetupWizardOutcome::NonTty);
     }
     let theme = theme::Theme::from_no_color(opts.no_color);
-    wizard::run_explain_only_wizard_loop(theme)
+    wizard::run_explain_only_wizard_loop(repo_root, theme)
 }
 
 /// Open the embeddings-only setup picker. Used by the dashboard after leaving

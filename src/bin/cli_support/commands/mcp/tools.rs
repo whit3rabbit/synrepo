@@ -46,7 +46,7 @@ impl SynrepoServer {
         self.with_tool_state_blocking("synrepo_context_pack", repo_root, move |state| context_pack::handle_context_pack(&state, params)).await
     }
 
-    #[tool(name = "synrepo_ask", description = "Compile a plain-language ask into one bounded, cited task-context packet. Accepts ask, optional scope {paths,symbols,change_set}, shape sections, ground policy, and budget controls. Use this as the default front door before lower-level search/card drill-downs.")]
+    #[tool(name = "synrepo_ask", description = "Compile a plain-language ask into one bounded, cited task-context packet. Accepts ask, optional scope {paths,symbols,change_set}, shape sections, ground policy, and budget controls. ground.mode accepts required, preferred, or off; observed is evidence confidence, not a mode. Use this as the default front door before lower-level search/card drill-downs.")]
     async fn synrepo_ask(&self, Parameters(params): Parameters<ask::AskParams>) -> String {
         let repo_root = params.repo_root.clone();
         self.with_tool_state_blocking("synrepo_ask", repo_root, move |state| ask::handle_ask(&state, params)).await

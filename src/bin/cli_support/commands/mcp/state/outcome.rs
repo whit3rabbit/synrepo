@@ -1,3 +1,4 @@
+#[cfg(test)]
 pub(crate) fn response_has_error(output: &str) -> bool {
     response_error_code(output).is_some()
 }

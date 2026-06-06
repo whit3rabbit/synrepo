@@ -8,6 +8,7 @@ mod integrations;
 mod materialize;
 mod picker;
 mod semantic;
+mod sentry_telemetry;
 mod state;
 mod support;
 mod watch_keys;

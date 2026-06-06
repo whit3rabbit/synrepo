@@ -207,6 +207,41 @@ fn semantic_embedding_ollama_fields_round_trip_through_toml() {
 }
 
 #[test]
+fn mcp_sentry_telemetry_defaults_to_disabled_without_serializing_policy() {
+    let config = Config::default();
+    assert_eq!(config.mcp_sentry_telemetry, None);
+    assert!(!config.mcp_sentry_telemetry_enabled());
+    assert!(!toml::to_string_pretty(&config)
+        .unwrap()
+        .contains("mcp_sentry_telemetry"));
+}
+
+#[test]
+fn local_sentry_telemetry_policy_overrides_global_policy() {
+    let _lock = crate::test_support::global_test_lock(super::test_home::HOME_ENV_TEST_LOCK);
+    let home = tempdir().unwrap();
+    let repo = tempdir().unwrap();
+    let _home_guard = super::test_home::HomeEnvGuard::redirect_to(home.path());
+    fs::create_dir_all(home.path().join(".synrepo")).unwrap();
+    fs::create_dir_all(repo.path().join(".synrepo")).unwrap();
+
+    fs::write(
+        home.path().join(".synrepo/config.toml"),
+        "mcp_sentry_telemetry = true\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.path().join(".synrepo/config.toml"),
+        "mcp_sentry_telemetry = false\n",
+    )
+    .unwrap();
+
+    let config = Config::load(repo.path()).unwrap();
+    assert_eq!(config.mcp_sentry_telemetry, Some(false));
+    assert!(!config.mcp_sentry_telemetry_enabled());
+}
+
+#[test]
 fn local_explicit_onnx_overrides_global_ollama_semantic_defaults() {
     let _lock = crate::test_support::global_test_lock(super::test_home::HOME_ENV_TEST_LOCK);
     let home = tempdir().unwrap();

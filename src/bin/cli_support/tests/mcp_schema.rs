@@ -22,6 +22,8 @@ fn ask_params_schema_exposes_task_context_controls() {
     let schema = schemars::schema_for!(synrepo::surface::mcp::ask::AskParams);
     let schema_json = serde_json::to_value(schema).expect("schema serializes");
     let serialized = serde_json::to_string(&schema_json).unwrap();
+    let tools_source = fs::read_to_string("src/bin/cli_support/commands/mcp/tools.rs")
+        .expect("read MCP registration source");
 
     for field in [
         "\"ask\"",
@@ -37,6 +39,45 @@ fn ask_params_schema_exposes_task_context_controls() {
             serialized.contains(field),
             "ask schema must expose {field}: {schema_json}"
         );
+    }
+
+    for expected in ["required", "preferred", "off", "Do not use observed"] {
+        assert!(
+            serialized.contains(expected),
+            "ask schema must expose grounding mode guidance `{expected}`: {schema_json}"
+        );
+    }
+
+    assert!(
+        tools_source.contains("ground.mode accepts required, preferred, or off"),
+        "synrepo_ask tool description must list valid structured grounding modes"
+    );
+    assert!(
+        tools_source.contains("observed is evidence confidence, not a mode"),
+        "synrepo_ask tool description must keep evidence confidence distinct from grounding mode"
+    );
+}
+
+#[test]
+fn ask_grounding_docs_keep_mode_and_confidence_distinct() {
+    for path in [
+        "docs/MCP.md",
+        "src/surface/mcp/README.md",
+        "skill/SKILL.md",
+        ".agents/skills/synrepo/SKILL.md",
+    ] {
+        let doc = fs::read_to_string(path).unwrap_or_else(|error| panic!("read {path}: {error}"));
+        for expected in [
+            "`required`",
+            "`preferred`",
+            "`off`",
+            "evidence confidence label",
+        ] {
+            assert!(
+                doc.contains(expected),
+                "{path} must document grounding mode/confidence guidance: missing {expected}"
+            );
+        }
     }
 }
 

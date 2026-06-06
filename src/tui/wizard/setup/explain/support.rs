@@ -1,5 +1,7 @@
 //! Explain support detection and wizard choice types.
 
+use std::path::Path;
+
 use super::providers::{CloudProvider, LocalPreset};
 use crate::config::{Config, ExplainConfig};
 
@@ -19,13 +21,17 @@ pub enum CloudCredentialSource {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ExplainWizardSupport {
     global_explain: ExplainConfig,
+    repo_provider: Option<String>,
 }
 
 impl ExplainWizardSupport {
     /// Construct support state from an explicit global explain config. Used
     /// by unit tests to avoid touching the real home directory.
     pub fn with_global_explain(global_explain: ExplainConfig) -> Self {
-        Self { global_explain }
+        Self {
+            global_explain,
+            repo_provider: None,
+        }
     }
 
     /// Read the user-scoped config at `~/.synrepo/config.toml`. Parse errors
@@ -48,7 +54,20 @@ impl ExplainWizardSupport {
                     .ok()
             })
             .unwrap_or_default();
-        Self { global_explain }
+        Self {
+            global_explain,
+            repo_provider: None,
+        }
+    }
+
+    /// Read support from global config plus the repo-local explain provider.
+    /// The provider cursor uses repo-local config only; env overrides are
+    /// runtime behavior and should not make the wizard appear to have saved a
+    /// different preference.
+    pub fn detect_for_repo(repo_root: &Path) -> Self {
+        let mut support = Self::detect();
+        support.repo_provider = read_repo_provider(repo_root);
+        support
     }
 
     /// Resolve whether setup can reuse an existing cloud credential for the
@@ -82,6 +101,36 @@ impl ExplainWizardSupport {
     pub fn local_endpoint(&self) -> Option<&str> {
         self.global_explain.local_endpoint.as_deref()
     }
+
+    /// Cursor seed for the explain provider picker.
+    pub fn explain_cursor(&self) -> usize {
+        self.repo_provider
+            .as_deref()
+            .and_then(ExplainRow::from_config_provider)
+            .and_then(|row| EXPLAIN_ROWS.iter().position(|candidate| *candidate == row))
+            .unwrap_or(0)
+    }
+}
+
+fn read_repo_provider(repo_root: &Path) -> Option<String> {
+    let local_path = repo_root.join(".synrepo").join("config.toml");
+    let text = std::fs::read_to_string(&local_path).ok()?;
+    let value = toml::from_str::<toml::Value>(&text)
+        .map_err(|error| {
+            tracing::warn!(
+                "setup: ignoring unreadable repo explain config at {} ({error})",
+                local_path.display()
+            );
+            error
+        })
+        .ok()?;
+    value
+        .get("explain")
+        .and_then(|explain| explain.get("provider"))
+        .and_then(|provider| provider.as_str())
+        .map(str::trim)
+        .filter(|provider| !provider.is_empty())
+        .map(str::to_string)
 }
 
 /// The user's explain decision captured on the plan. `None` on the plan
@@ -140,6 +189,16 @@ impl ExplainRow {
             ExplainRow::Skip => "Skip: leave explain disabled (recommended default)",
             ExplainRow::Cloud(p) => p.label(),
             ExplainRow::Local => "Local LLM (Ollama, llama.cpp, LM Studio, vLLM)",
+        }
+    }
+
+    /// Map a repo-local `[explain].provider` value to the wizard row.
+    pub fn from_config_provider(raw: &str) -> Option<Self> {
+        let raw = raw.trim();
+        match raw {
+            "none" => Some(ExplainRow::Skip),
+            "local" => Some(ExplainRow::Local),
+            _ => CloudProvider::from_config_value(raw).map(ExplainRow::Cloud),
         }
     }
 }

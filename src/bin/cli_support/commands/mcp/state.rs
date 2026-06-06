@@ -8,9 +8,12 @@ use synrepo::surface::mcp::SynrepoState;
 
 use super::SynrepoServer;
 
+mod metrics;
 mod outcome;
 mod session;
-use outcome::{response_error_code, response_has_error, saved_context_metric};
+#[cfg(test)]
+use outcome::response_has_error;
+use outcome::{response_error_code, saved_context_metric};
 pub(crate) use session::SessionState;
 
 const OVERLAY_WRITE_TOOLS: &[&str] = &[
@@ -231,6 +234,8 @@ impl SynrepoServer {
         F: FnOnce(Arc<SynrepoState>) -> String,
     {
         if let Err(error) = self.session.check_rate_limit(tool) {
+            let code = synrepo::surface::mcp::error::classify_error(&error).as_str();
+            super::sentry_telemetry::capture_failed_tool_call(tool, code);
             return render_state_error(error);
         }
         match self.resolve_state(param_root) {
@@ -250,9 +255,14 @@ impl SynrepoServer {
                 self.session.record_tool(tool, errored);
                 let saved_context = saved_context_metric(tool, errored);
                 self.record_tool_result_for(&state, tool, error_code.as_deref(), saved_context);
+                if let Some(code) = error_code.as_deref() {
+                    super::sentry_telemetry::capture_failed_tool_call(tool, code);
+                }
                 output
             }
             Err(error) => {
+                let code = synrepo::surface::mcp::error::classify_error(&error).as_str();
+                super::sentry_telemetry::capture_failed_tool_call(tool, code);
                 self.session.record_tool(tool, true);
                 render_state_error(error)
             }
@@ -272,14 +282,18 @@ impl SynrepoServer {
         let task = tokio::task::spawn_blocking(move || server.with_tool_state(tool, param_root, f));
         match tokio::time::timeout(self.call_timeout, task).await {
             Ok(Ok(output)) => output,
-            Ok(Err(error)) => render_state_error(anyhow::anyhow!("MCP tool task failed: {error}")),
-            Err(_) => render_state_error(
+            Ok(Err(error)) => {
+                super::sentry_telemetry::capture_failed_tool_call(tool, "INTERNAL");
+                render_state_error(anyhow::anyhow!("MCP tool task failed: {error}"))
+            }
+            Err(_) => render_state_error({
+                super::sentry_telemetry::capture_failed_tool_call(tool, "TIMEOUT");
                 synrepo::surface::mcp::error::McpError::timeout(format!(
                     "MCP tool {tool} exceeded {}s timeout",
                     self.call_timeout.as_secs()
                 ))
-                .into(),
-            ),
+                .into()
+            }),
         }
     }
 
@@ -296,83 +310,11 @@ impl SynrepoServer {
         let task = tokio::task::spawn_blocking(move || server.with_tool_state(tool, param_root, f));
         match task.await {
             Ok(output) => output,
-            Err(error) => render_state_error(anyhow::anyhow!("MCP tool task failed: {error}")),
+            Err(error) => {
+                super::sentry_telemetry::capture_failed_tool_call(tool, "INTERNAL");
+                render_state_error(anyhow::anyhow!("MCP tool task failed: {error}"))
+            }
         }
-    }
-
-    pub(super) fn use_project(&self, repo_root: PathBuf) -> String {
-        let output = match self.resolver.set_default(repo_root) {
-            Ok(state) => serde_json::json!({
-                "status": "default_set",
-                "repo_root": state.repo_root,
-            })
-            .to_string(),
-            Err(error) => render_state_error(error),
-        };
-        let errored = response_has_error(&output);
-        self.session.record_tool("synrepo_use_project", errored);
-        output
-    }
-
-    pub(super) fn metrics_for_repo_root(&self, repo_root: Option<PathBuf>) -> String {
-        let state = match repo_root {
-            Some(repo_root) => match self.resolve_state(Some(repo_root)) {
-                Ok(state) => Some(state),
-                Err(error) => {
-                    self.session.record_tool("synrepo_metrics", true);
-                    return render_state_error(error);
-                }
-            },
-            None => self.resolve_state(None).ok(),
-        };
-        self.metrics_json(state.as_deref())
-    }
-
-    pub(super) fn metrics_json(&self, state: Option<&SynrepoState>) -> String {
-        let persisted = state.and_then(|state| {
-            let synrepo_dir = synrepo::config::Config::synrepo_dir(&state.repo_root);
-            synrepo::pipeline::context_metrics::load_optional(&synrepo_dir)
-                .ok()
-                .flatten()
-        });
-        let output = serde_json::to_string_pretty(&serde_json::json!({
-            "this_session": self.session.snapshot(),
-            "persisted": persisted,
-        }))
-        .unwrap_or_else(|err| render_state_error(anyhow::anyhow!(err)));
-        let errored = response_has_error(&output);
-        self.session.record_tool("synrepo_metrics", errored);
-        output
-    }
-
-    pub(super) fn record_tool_result_for(
-        &self,
-        state: &SynrepoState,
-        tool: &str,
-        error_code: Option<&str>,
-        saved_context_write: Option<&str>,
-    ) {
-        let synrepo_dir = synrepo::config::Config::synrepo_dir(&state.repo_root);
-        synrepo::pipeline::context_metrics::record_mcp_tool_result_best_effort(
-            &synrepo_dir,
-            tool,
-            error_code,
-            saved_context_write,
-        );
-    }
-
-    pub(super) fn record_resource_for(&self, state: &SynrepoState) {
-        let synrepo_dir = synrepo::config::Config::synrepo_dir(&state.repo_root);
-        synrepo::pipeline::context_metrics::record_mcp_resource_read_best_effort(&synrepo_dir);
-    }
-
-    #[cfg(test)]
-    pub(crate) fn registered_tool_names(&self) -> Vec<String> {
-        self.tool_router
-            .list_all()
-            .into_iter()
-            .map(|tool| tool.name.to_string())
-            .collect()
     }
 }
 

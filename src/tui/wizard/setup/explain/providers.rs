@@ -33,6 +33,19 @@ impl CloudProvider {
         }
     }
 
+    /// Parse the persisted `provider` string for cloud providers.
+    pub fn from_config_value(raw: &str) -> Option<Self> {
+        match raw {
+            "anthropic" => Some(CloudProvider::Anthropic),
+            "openai" => Some(CloudProvider::OpenAi),
+            "gemini" => Some(CloudProvider::Gemini),
+            "openrouter" => Some(CloudProvider::OpenRouter),
+            "zai" => Some(CloudProvider::Zai),
+            "minimax" => Some(CloudProvider::Minimax),
+            _ => None,
+        }
+    }
+
     /// Human-readable label shown in the provider picker.
     pub fn label(&self) -> &'static str {
         match self {

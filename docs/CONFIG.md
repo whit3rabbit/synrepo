@@ -24,6 +24,7 @@ Runtime config lives in `.synrepo/config.toml`; the struct is `Config` in `src/c
 | `semantic_ollama_endpoint` | `"http://localhost:11434"` | Base URL for local Ollama embeddings when `semantic_embedding_provider = "ollama"` |
 | `semantic_embedding_batch_size` | `128` | Number of texts sent per embedding request during vector index builds |
 | `[explain].commentary_concurrency` | `4` | Concurrent commentary provider calls during refresh; clamped to at least `1` |
+| `mcp_sentry_telemetry` | unset (`false`) | Optional MCP failed-tool Sentry telemetry policy. `true` opts in when `SYNREPO_SENTRY_DSN` is present; `false` explicitly opts out and can override a user-global opt-in |
 | `auto_sync_enabled` | `true` | Run watch-owned automatic maintenance after reconcile: cheap repair surfaces after every completed pass, plus existing embedding-index refresh after source changes once the repo is quiet |
 
 ## Notes
@@ -41,3 +42,4 @@ Runtime config lives in `.synrepo/config.toml`; the struct is `Config` in `src/c
 - ONNX supports the built-in registry only: `all-MiniLM-L6-v2` (384d), `all-MiniLM-L12-v2` (384d), and `all-mpnet-base-v2` (768d). Those ONNX and tokenizer artifacts are fetched from Hugging Face only during `synrepo embeddings build` when embeddings are enabled.
 - Ollama embeddings are local-only. With `semantic_embedding_provider = "ollama"`, `semantic_model = "all-minilm"`, and `embedding_dim = 384`, smoke test the endpoint with `curl http://localhost:11434/api/embed -d '{"model":"all-minilm","input":["First sentence","Second sentence"]}'`.
 - Explain config (`[explain]`) lives in the same file; see `docs/EXPLAIN.md`.
+- MCP Sentry telemetry is outbound and off by default. It requires `mcp_sentry_telemetry = true` plus `SYNREPO_SENTRY_DSN` in the MCP process environment. The dashboard Actions tab `O` key writes the repo-local policy. Do not store the DSN in `.synrepo/config.toml`; use environment configuration for the MCP process instead.

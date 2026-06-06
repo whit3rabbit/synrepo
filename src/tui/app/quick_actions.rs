@@ -85,6 +85,24 @@ pub(super) fn quick_actions_for(mode: &AppMode, snapshot: &StatusSnapshot) -> Ve
             expensive: !embeddings_enabled,
             command_label: Some(label.to_string()),
         });
+        let sentry_enabled = snapshot
+            .config
+            .as_ref()
+            .is_some_and(|config| config.mcp_sentry_telemetry_enabled());
+        let label = if sentry_enabled {
+            "disable MCP Sentry telemetry"
+        } else {
+            "allow MCP Sentry telemetry"
+        };
+        actions.push(QuickAction {
+            key: "O".to_string(),
+            label: label.to_string(),
+            disabled: false,
+            requires_confirm: !sentry_enabled,
+            destructive: false,
+            expensive: false,
+            command_label: Some(label.to_string()),
+        });
         if embeddings_enabled {
             actions.push(QuickAction {
                 key: "B".to_string(),
@@ -109,12 +127,12 @@ pub(super) fn quick_actions_for(mode: &AppMode, snapshot: &StatusSnapshot) -> Ve
         },
         QuickAction {
             key: "e".to_string(),
-            label: "configure optional explain".to_string(),
+            label: "configure/switch explain provider".to_string(),
             disabled: false,
             requires_confirm: false,
             destructive: false,
             expensive: false,
-            command_label: Some("configure optional explain".to_string()),
+            command_label: Some("configure/switch explain provider".to_string()),
         },
         QuickAction {
             key: "q".to_string(),

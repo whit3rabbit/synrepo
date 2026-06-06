@@ -111,7 +111,7 @@ impl SetupWizardState {
             target_cursor,
             action_cursor: 0,
             embeddings_cursor: 0,
-            explain_cursor: 0,
+            explain_cursor: explain_support.explain_cursor(),
             local_preset_cursor,
             mode: default_mode,
             target,

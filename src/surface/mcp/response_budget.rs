@@ -17,6 +17,7 @@ const LARGE_ARRAY_PATHS: &[&str] = &[
     "/overlay/links",
     "/node/path_history",
 ];
+const LARGE_STRING_BYTE_LIMIT: usize = 1_000;
 
 #[derive(Clone, Debug, Default)]
 pub struct ResponseBudgetReport {
@@ -173,8 +174,10 @@ fn trim_array_at_path(value: &mut Value, path: &str, omitted: &mut Vec<Value>) -
 
 fn truncate_large_strings(value: &mut Value, omitted: &mut Vec<Value>) {
     match value {
-        Value::String(text) if text.len() > 1_000 => {
-            text.truncate(1_000);
+        Value::String(text) if text.len() > LARGE_STRING_BYTE_LIMIT => {
+            let truncated = truncate_at_char_boundary(text, LARGE_STRING_BYTE_LIMIT).to_string();
+            text.clear();
+            text.push_str(&truncated);
             text.push_str("...");
             omitted.push(json!({
                 "field": "large_string",
@@ -193,6 +196,18 @@ fn truncate_large_strings(value: &mut Value, omitted: &mut Vec<Value>) {
         }
         _ => {}
     }
+}
+
+fn truncate_at_char_boundary(text: &str, max_bytes: usize) -> &str {
+    if text.len() <= max_bytes {
+        return text;
+    }
+
+    let mut end = max_bytes;
+    while end > 0 && !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    &text[..end]
 }
 
 fn attach_context_accounting(
@@ -245,6 +260,31 @@ mod tests {
         assert!(value["results"].as_array().unwrap().len() < 100);
         assert_eq!(value["context_accounting"]["truncation_applied"], true);
         assert!(value["response_omitted"].as_array().unwrap().len() > 0);
+    }
+
+    #[test]
+    fn truncates_to_valid_utf8_boundary() {
+        let text = "has—empirical";
+
+        assert_eq!(truncate_at_char_boundary(text, 4), "has");
+        assert_eq!(truncate_at_char_boundary(text, 6), "has—");
+    }
+
+    #[test]
+    fn oversized_string_truncation_preserves_utf8() {
+        let large = format!("{}—{}", "x".repeat(999), "z".repeat(1_000));
+        let (value, report) = clamp_json_response(json!({ "message": large }), Some(1));
+
+        assert!(report.truncated);
+        assert_eq!(
+            value["message"].as_str().unwrap(),
+            format!("{}...", "x".repeat(999))
+        );
+        assert!(value["response_omitted"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| item["field"] == "large_string"));
     }
 
     #[test]

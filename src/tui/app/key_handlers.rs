@@ -112,7 +112,7 @@ impl AppState {
             return true;
         }
         // Explain-tab key dispatch. Plan-specified bindings:
-        //   s — launch explain setup sub-wizard
+        //   s — configure/switch explain provider
         //   r — refresh explain status
         //   a — run `synrepo explain` against all stale entries
         //   c — run with `--changed` (recent hotspots)
@@ -249,6 +249,13 @@ impl AppState {
                     self.handle_toggle_semantic_triage()
                 }
             }
+            KeyCode::Char('O') | KeyCode::Char('o') => {
+                if self.mcp_sentry_telemetry_enabled() {
+                    self.handle_toggle_mcp_sentry_telemetry()
+                } else {
+                    self.open_quick_confirm(PendingQuickConfirm::ToggleSentryTelemetry)
+                }
+            }
             KeyCode::Char('B') | KeyCode::Char('b') => {
                 self.queue_embedding_build();
                 true
@@ -311,6 +318,9 @@ impl AppState {
             PendingQuickConfirm::ToggleEmbeddings => {
                 "embeddings toggle: Enter to apply, Esc to cancel"
             }
+            PendingQuickConfirm::ToggleSentryTelemetry => {
+                "Sentry telemetry opt-in: Enter to allow, Esc to cancel"
+            }
             PendingQuickConfirm::ToggleWorktrees => {
                 "worktrees toggle: Enter to apply, Esc to cancel"
             }
@@ -337,6 +347,9 @@ impl AppState {
                     Some(PendingQuickConfirm::ToggleAutoSync) => self.handle_toggle_auto_sync(),
                     Some(PendingQuickConfirm::ToggleEmbeddings) => {
                         self.handle_toggle_semantic_triage()
+                    }
+                    Some(PendingQuickConfirm::ToggleSentryTelemetry) => {
+                        self.handle_toggle_mcp_sentry_telemetry()
                     }
                     Some(PendingQuickConfirm::ToggleWorktrees) => self.handle_toggle_worktrees(),
                     Some(PendingQuickConfirm::ApplyCompatibility) => {

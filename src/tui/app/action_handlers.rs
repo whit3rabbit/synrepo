@@ -9,9 +9,9 @@ use crate::store::{overlay::SqliteOverlayStore, sqlite::SqliteGraphStore};
 use crate::structure::graph::with_graph_read_snapshot;
 use crate::tui::actions::{
     apply_compatibility_now, materialize_now, outcome_to_log, outcome_to_project_log,
-    reconcile_now, semantic_feature_compiled, set_auto_sync, set_semantic_triage,
-    set_worktrees_enabled, start_watch_daemon, stop_watch, sync_now, ActionContext, ActionOutcome,
-    ProjectActionContext,
+    reconcile_now, semantic_feature_compiled, set_auto_sync, set_mcp_sentry_telemetry,
+    set_semantic_triage, set_worktrees_enabled, start_watch_daemon, stop_watch, sync_now,
+    ActionContext, ActionOutcome, ProjectActionContext,
 };
 
 use super::{AppMode, AppState, PendingEmbeddingBuild};
@@ -144,6 +144,25 @@ impl AppState {
             self.refresh_now();
         }
         true
+    }
+
+    pub(super) fn handle_toggle_mcp_sentry_telemetry(&mut self) -> bool {
+        let ctx = self.action_context();
+        let enabled = self.mcp_sentry_telemetry_enabled();
+        let outcome = set_mcp_sentry_telemetry(&ctx, !enabled);
+        self.set_toast(self.action_toast("sentry telemetry", &outcome));
+        self.log_action_outcome("sentry", &outcome);
+        if matches!(outcome, ActionOutcome::Completed { .. }) {
+            self.refresh_now();
+        }
+        true
+    }
+
+    pub(super) fn mcp_sentry_telemetry_enabled(&self) -> bool {
+        self.snapshot
+            .config
+            .as_ref()
+            .is_some_and(|config| config.mcp_sentry_telemetry_enabled())
     }
 
     pub(super) fn queue_embedding_build(&mut self) {

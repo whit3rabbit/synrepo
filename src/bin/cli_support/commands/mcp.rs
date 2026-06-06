@@ -1,6 +1,7 @@
 //! `synrepo mcp` subcommand — starts the MCP server over stdio.
 
 mod resources;
+pub(crate) mod sentry_telemetry;
 mod state;
 mod tools;
 

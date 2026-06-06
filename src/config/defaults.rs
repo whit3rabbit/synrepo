@@ -100,6 +100,7 @@ impl Default for Config {
             semantic_ollama_endpoint: default_semantic_ollama_endpoint(),
             semantic_embedding_batch_size: default_semantic_embedding_batch_size(),
             explain: ExplainConfig::default(),
+            mcp_sentry_telemetry: None,
             auto_sync_enabled: default_auto_sync_enabled(),
             reconcile_keepalive_seconds: default_reconcile_keepalive_seconds(),
             watch_sync_timeout_seconds: default_watch_sync_timeout_seconds(),

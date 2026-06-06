@@ -4,14 +4,30 @@
 //! `[Skip, Anthropic, OpenAI, Gemini, OpenRouter, Zai, Minimax, Local]` at
 //! index time; these tests pin positions for Skip (0) and Anthropic (1).
 
+use std::path::Path;
+
 use crossterm::event::KeyCode;
 
 use super::support::{drive_to_explain, press, support_with_saved_anthropic, EnvGuard};
 use crate::config::Mode;
 use crate::tui::wizard::setup::explain::{
-    CloudCredentialSource, CloudProvider, ExplainChoice, ExplainRow, EXPLAIN_ROWS,
+    CloudCredentialSource, CloudProvider, ExplainChoice, ExplainRow, ExplainWizardSupport,
+    EXPLAIN_ROWS,
 };
 use crate::tui::wizard::setup::state::{SetupStep, SetupWizardState};
+
+fn explain_row_index(row: ExplainRow) -> usize {
+    EXPLAIN_ROWS
+        .iter()
+        .position(|candidate| *candidate == row)
+        .expect("row present")
+}
+
+fn write_repo_config(repo_root: &Path, body: &str) {
+    let synrepo_dir = repo_root.join(".synrepo");
+    std::fs::create_dir_all(&synrepo_dir).expect("mkdir .synrepo");
+    std::fs::write(synrepo_dir.join("config.toml"), body).expect("write config");
+}
 
 #[test]
 fn explain_skip_confirms_with_no_choice() {
@@ -24,6 +40,87 @@ fn explain_skip_confirms_with_no_choice() {
     press(&mut s, KeyCode::Enter);
     let plan = s.finalize().expect("plan");
     assert!(plan.explain.is_none());
+}
+
+#[test]
+fn full_setup_still_starts_explain_on_skip() {
+    let mut s = SetupWizardState::new(Mode::Auto, vec![]);
+    drive_to_explain(&mut s);
+
+    assert_eq!(s.explain_cursor, explain_row_index(ExplainRow::Skip));
+}
+
+#[test]
+fn explain_only_preselects_repo_openai_provider() {
+    let repo = tempfile::tempdir().expect("tempdir");
+    write_repo_config(
+        repo.path(),
+        r#"
+            [explain]
+            enabled = true
+            provider = "openai"
+        "#,
+    );
+
+    let s = SetupWizardState::explain_only_with_support(ExplainWizardSupport::detect_for_repo(
+        repo.path(),
+    ));
+
+    assert_eq!(s.step, SetupStep::SelectExplain);
+    assert_eq!(
+        s.explain_cursor,
+        explain_row_index(ExplainRow::Cloud(CloudProvider::OpenAi))
+    );
+}
+
+#[test]
+fn explain_only_preselects_repo_local_provider() {
+    let repo = tempfile::tempdir().expect("tempdir");
+    write_repo_config(
+        repo.path(),
+        r#"
+            [explain]
+            enabled = true
+            provider = "local"
+        "#,
+    );
+
+    let s = SetupWizardState::explain_only_with_support(ExplainWizardSupport::detect_for_repo(
+        repo.path(),
+    ));
+
+    assert_eq!(s.step, SetupStep::SelectExplain);
+    assert_eq!(s.explain_cursor, explain_row_index(ExplainRow::Local));
+}
+
+#[test]
+fn explain_only_unknown_missing_none_or_unreadable_provider_stays_on_skip() {
+    let cases = [
+        ("absent config", None),
+        ("missing provider", Some("[explain]\nenabled = true\n")),
+        ("provider none", Some("[explain]\nprovider = \"none\"\n")),
+        (
+            "unknown provider",
+            Some("[explain]\nprovider = \"bogus\"\n"),
+        ),
+        ("invalid toml", Some("[explain\nprovider = \"openai\"\n")),
+    ];
+
+    for (label, config) in cases {
+        let repo = tempfile::tempdir().expect("tempdir");
+        if let Some(config) = config {
+            write_repo_config(repo.path(), config);
+        }
+        let s = SetupWizardState::explain_only_with_support(ExplainWizardSupport::detect_for_repo(
+            repo.path(),
+        ));
+
+        assert_eq!(
+            s.explain_cursor,
+            explain_row_index(ExplainRow::Skip),
+            "{label} should default to Skip"
+        );
+    }
 }
 
 #[test]
