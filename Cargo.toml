@@ -112,9 +112,10 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 backon = { version = "1.6.0", default-features = false, features = ["std"] }
 
 # --- Optional outbound error telemetry ---
-# Runtime opt-in only via SYNREPO_SENTRY_DSN. Default Sentry features include
-# panic hooks, backtraces, contexts, debug images, and release health; keep those
-# off so MCP telemetry only sends the explicit sanitized failure event.
+# Runtime opt-in only via mcp_sentry_telemetry config. SYNREPO_SENTRY_DSN can
+# override the baked-in project DSN. Default Sentry features include panic hooks,
+# backtraces, contexts, debug images, and release health; keep those off so MCP
+# telemetry only sends the explicit sanitized failure event.
 sentry = { version = "0.48.2", default-features = false, features = ["ureq", "rustls"] }
 
 # --- Optional feature deps ---

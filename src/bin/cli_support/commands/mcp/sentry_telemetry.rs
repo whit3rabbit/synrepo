@@ -7,6 +7,8 @@ use std::time::Duration;
 use sentry::protocol::{DebugMeta, Event, Level, Map};
 
 const SENTRY_DSN_ENV: &str = "SYNREPO_SENTRY_DSN";
+const DEFAULT_SENTRY_DSN: &str =
+    "https://cfb2726a0524a23eefdd59c7b89e4aef@o4511520494190592.ingest.us.sentry.io/4511520498712576";
 const EVENT_MESSAGE: &str = "synrepo MCP tool call failed";
 const LOGGER: &str = "synrepo.mcp.telemetry";
 const MAX_TAG_VALUE_BYTES: usize = 64;
@@ -30,26 +32,25 @@ pub(crate) fn init_from_config_and_env(repo_root: &Path) -> Option<sentry::Clien
         }
     }
 
-    let raw = match std::env::var(SENTRY_DSN_ENV) {
-        Ok(raw) => raw,
-        Err(_) => {
-            ENABLED.store(false, Ordering::Relaxed);
-            return None;
-        }
-    };
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
+    let Some(dsn_text) = dsn_text_from_env_or_default() else {
         ENABLED.store(false, Ordering::Relaxed);
         return None;
-    }
-    let dsn = match trimmed.parse::<sentry::types::Dsn>() {
+    };
+    let dsn = match dsn_text.as_ref().parse::<sentry::types::Dsn>() {
         Ok(dsn) => dsn,
         Err(_) => {
             ENABLED.store(false, Ordering::Relaxed);
-            tracing::warn!("{SENTRY_DSN_ENV} is set but invalid; Sentry MCP telemetry disabled");
+            if std::env::var_os(SENTRY_DSN_ENV).is_some() {
+                tracing::warn!(
+                    "{SENTRY_DSN_ENV} is set but invalid; Sentry MCP telemetry disabled"
+                );
+            } else {
+                tracing::warn!("default Sentry DSN is invalid; Sentry MCP telemetry disabled");
+            }
             return None;
         }
     };
+
     let guard = sentry::init(sentry::ClientOptions {
         dsn: Some(dsn),
         release: None,
@@ -69,6 +70,19 @@ pub(crate) fn init_from_config_and_env(repo_root: &Path) -> Option<sentry::Clien
     });
     ENABLED.store(true, Ordering::Relaxed);
     Some(guard)
+}
+
+fn dsn_text_from_env_or_default() -> Option<Cow<'static, str>> {
+    let raw = match std::env::var(SENTRY_DSN_ENV) {
+        Ok(raw) => raw,
+        Err(std::env::VarError::NotPresent) => return Some(Cow::Borrowed(DEFAULT_SENTRY_DSN)),
+        Err(std::env::VarError::NotUnicode(_)) => return None,
+    };
+    let trimmed = raw.trim().to_string();
+    if trimmed.is_empty() {
+        return None;
+    }
+    Some(Cow::Owned(trimmed))
 }
 
 pub(crate) fn capture_failed_tool_call(tool: &str, error_code: &str) {
@@ -187,6 +201,8 @@ fn safe_tag_value(value: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::ffi::OsString;
+
     use sentry::protocol::{Breadcrumb, Request, User};
 
     use super::*;
@@ -281,5 +297,72 @@ mod tests {
                 Cow::Borrowed("INVALID_PARAMETER"),
             ]
         );
+    }
+
+    #[test]
+    fn dsn_text_uses_default_when_env_is_absent() {
+        let _lock = synrepo::test_support::global_test_lock("sentry-dsn-env");
+        let _guard = EnvVarGuard::unset(SENTRY_DSN_ENV);
+
+        assert_eq!(
+            dsn_text_from_env_or_default().as_deref(),
+            Some(DEFAULT_SENTRY_DSN)
+        );
+    }
+
+    #[test]
+    fn dsn_text_prefers_env_when_present() {
+        let _lock = synrepo::test_support::global_test_lock("sentry-dsn-env");
+        let _guard = EnvVarGuard::set(
+            SENTRY_DSN_ENV,
+            " https://public@example.invalid/123456 ".to_string(),
+        );
+
+        assert_eq!(
+            dsn_text_from_env_or_default().as_deref(),
+            Some("https://public@example.invalid/123456")
+        );
+    }
+
+    #[test]
+    fn dsn_text_empty_env_disables_fallback() {
+        let _lock = synrepo::test_support::global_test_lock("sentry-dsn-env");
+        let _guard = EnvVarGuard::set(SENTRY_DSN_ENV, "   ".to_string());
+
+        assert!(dsn_text_from_env_or_default().is_none());
+    }
+
+    struct EnvVarGuard {
+        name: &'static str,
+        original: Option<OsString>,
+    }
+
+    impl EnvVarGuard {
+        fn set(name: &'static str, value: String) -> Self {
+            let guard = Self {
+                name,
+                original: std::env::var_os(name),
+            };
+            std::env::set_var(name, value);
+            guard
+        }
+
+        fn unset(name: &'static str) -> Self {
+            let guard = Self {
+                name,
+                original: std::env::var_os(name),
+            };
+            std::env::remove_var(name);
+            guard
+        }
+    }
+
+    impl Drop for EnvVarGuard {
+        fn drop(&mut self) {
+            match self.original.as_ref() {
+                Some(value) => std::env::set_var(self.name, value),
+                None => std::env::remove_var(self.name),
+            }
+        }
     }
 }

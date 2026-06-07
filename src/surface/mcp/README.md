@@ -17,7 +17,7 @@ The server is a subcommand of the `synrepo` binary. There is no separate crate. 
 
 MCP is read-only by default. Overlay write tools are absent from `tools/list` unless the process was started with `synrepo mcp --allow-overlay-writes`. Source edit tools are absent unless the process was started with `synrepo mcp --allow-source-edits`. Repository or user configuration may further restrict editing later, but config alone must never enable mutating tools.
 
-Failed-tool Sentry telemetry is disabled unless merged config has `mcp_sentry_telemetry = true` and the process has `SYNREPO_SENTRY_DSN` set to a valid DSN. The dashboard Actions tab `O` key writes the repo-local opt-in or opt-out policy; the DSN stays in process environment. It reports only a fixed failure event and bounded tags for `component`, `tool`, `error_code`, `version`, `os`, and `arch`. It must not include repository paths, targets, queries, responses, error messages, user/request data, breadcrumbs, stacktraces, release/environment values, or Sentry default integrations.
+Failed-tool Sentry telemetry is disabled unless merged config has `mcp_sentry_telemetry = true`. The dashboard Actions tab `O` key writes the repo-local opt-in or opt-out policy. When enabled, MCP uses the built-in Sentry DSN unless `SYNREPO_SENTRY_DSN` is set on the process; env takes priority for custom routing, and empty or invalid env disables telemetry for that process. It reports only a fixed failure event and bounded tags for `component`, `tool`, `error_code`, `version`, `os`, and `arch`. It must not include repository paths, targets, queries, responses, error messages, user/request data, breadcrumbs, stacktraces, release/environment values, or Sentry default integrations.
 
 ## Where things live
 

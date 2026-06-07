@@ -5,6 +5,7 @@ use anyhow::{anyhow, Context};
 use toml_edit::{DocumentMut, Item, Value as TomlValue};
 
 use crate::config::Config;
+use crate::pipeline::watch::{watch_service_status, WatchServiceStatus};
 use crate::pipeline::writer::acquire_write_admission;
 
 use super::helpers::{load_repo_config, lock_error_to_action};
@@ -26,6 +27,31 @@ pub fn set_mcp_sentry_telemetry(ctx: &ActionContext, desired: bool) -> ActionOut
         };
     }
 
+    // Check if watch is running/starting.
+    let watch_status = watch_service_status(&ctx.synrepo_dir);
+    let was_running = matches!(
+        watch_status,
+        WatchServiceStatus::Running(_) | WatchServiceStatus::Starting
+    );
+
+    if was_running {
+        match super::stop_watch(ctx) {
+            ActionOutcome::Error { message } => {
+                return ActionOutcome::Error {
+                    message: format!(
+                        "failed to stop active watch service before updating config: {message}"
+                    ),
+                };
+            }
+            ActionOutcome::Conflict { guidance, .. } => {
+                return ActionOutcome::Error {
+                    message: format!("cannot stop active watch service: {guidance}"),
+                };
+            }
+            _ => {}
+        }
+    }
+
     let _lock = match acquire_write_admission(&ctx.synrepo_dir, "sentry-telemetry") {
         Ok(lock) => lock,
         Err(err) => return lock_error_to_action(&ctx.synrepo_dir, err),
@@ -36,9 +62,23 @@ pub fn set_mcp_sentry_telemetry(ctx: &ActionContext, desired: bool) -> ActionOut
         .and_then(|_| Config::load(&ctx.repo_root).map_err(anyhow::Error::from))
     {
         Ok(updated) if updated.mcp_sentry_telemetry_enabled() == desired => {
-            ActionOutcome::Completed {
-                message: sentry_message(desired),
+            drop(_lock); // Release the lock before attempting to restart watch daemon.
+
+            let mut message = sentry_message(desired);
+            if was_running {
+                match super::start_watch_daemon(ctx) {
+                    ActionOutcome::Ack { message: start_msg } | ActionOutcome::Completed { message: start_msg } => {
+                        message = format!("{message}; restarted watch daemon ({start_msg})");
+                    }
+                    ActionOutcome::Error { message: start_err } => {
+                        message = format!("{message}; failed to restart watch daemon: {start_err}");
+                    }
+                    ActionOutcome::Conflict { guidance, .. } => {
+                        message = format!("{message}; could not restart watch daemon: {guidance}");
+                    }
+                }
             }
+            ActionOutcome::Completed { message }
         }
         Ok(_) => ActionOutcome::Error {
             message: "repo config was written, but merged config did not change; check ~/.synrepo/config.toml".to_string(),
@@ -51,7 +91,7 @@ pub fn set_mcp_sentry_telemetry(ctx: &ActionContext, desired: bool) -> ActionOut
 
 fn sentry_message(enabled: bool) -> String {
     if enabled {
-        "MCP Sentry telemetry allowed; MCP processes still need SYNREPO_SENTRY_DSN to send failed-tool events".to_string()
+        "MCP Sentry telemetry allowed; MCP processes will send failed-tool events to the built-in Sentry project unless SYNREPO_SENTRY_DSN overrides it".to_string()
     } else {
         "MCP Sentry telemetry disabled for this repo".to_string()
     }
@@ -142,5 +182,64 @@ mod tests {
                 .unwrap()
                 .contains("mcp_sentry_telemetry = false")
         );
+    }
+
+    #[test]
+    fn enabling_sentry_telemetry_reports_builtin_fallback_and_env_override() {
+        let (_lock, repo, _guard) = isolated_ready_repo();
+
+        let outcome = set_mcp_sentry_telemetry(&ActionContext::new(repo.path()), true);
+        if let ActionOutcome::Completed { message } = outcome {
+            assert!(message.contains("MCP Sentry telemetry allowed"));
+            assert!(message.contains("built-in Sentry project"));
+            assert!(message.contains("SYNREPO_SENTRY_DSN overrides it"));
+        } else {
+            panic!("expected Completed outcome, got {:?}", outcome);
+        }
+    }
+
+    #[test]
+    fn enabling_sentry_telemetry_while_watch_running_restarts_watch() {
+        let (_lock, repo, _guard) = isolated_ready_repo();
+        let ctx = ActionContext::new(repo.path());
+
+        // Start the watch daemon first
+        let start_outcome = crate::tui::actions::start_watch_daemon(&ctx);
+        assert!(
+            matches!(start_outcome, ActionOutcome::Ack { .. }),
+            "failed to start watch: {:?}",
+            start_outcome
+        );
+
+        // Confirm watch is running
+        assert!(matches!(
+            crate::pipeline::watch::watch_service_status(&ctx.synrepo_dir),
+            crate::pipeline::watch::WatchServiceStatus::Running(_)
+        ));
+
+        // Now toggle telemetry
+        let outcome = set_mcp_sentry_telemetry(&ctx, true);
+        if let ActionOutcome::Completed { message } = outcome {
+            assert!(
+                message.contains("restarted watch daemon"),
+                "message was: {}",
+                message
+            );
+        } else {
+            panic!("expected Completed, got {:?}", outcome);
+        }
+
+        // Confirm watch is still running
+        assert!(matches!(
+            crate::pipeline::watch::watch_service_status(&ctx.synrepo_dir),
+            crate::pipeline::watch::WatchServiceStatus::Running(_)
+        ));
+
+        // Clean up watch
+        let stop_outcome = crate::tui::actions::stop_watch(&ctx);
+        assert!(matches!(
+            stop_outcome,
+            ActionOutcome::Ack { .. } | ActionOutcome::Completed { .. }
+        ));
     }
 }
