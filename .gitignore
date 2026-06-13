@@ -17,6 +17,17 @@ __MACOSX
 !.gitignore
 !.github/
 
+# synrepo Codex skill: a tracked copy of the generated Codex shim, kept in sync
+# with AgentTool::Codex by the agent_shims doctrine tests and installable as a
+# skill. Whitelist only this file; the rest of .agents/ stays ignored.
+!.agents/
+.agents/*
+!.agents/skills/
+.agents/skills/*
+!.agents/skills/synrepo/
+.agents/skills/synrepo/*
+!.agents/skills/synrepo/SKILL.md
+
 # syntext
 .syntext/
 
