@@ -35,7 +35,17 @@ Versioning rules:
 - `Cargo.toml` `[package].version` is the source of truth for the product version. The CLI derives its displayed version through Clap's `#[command(version)]`; do not hard-code release numbers in help or version text.
 - After changing `[package].version`, verify the displayed version with `cargo run -- --version` and check the help surface with `cargo run -- --help`.
 - Release tags must match the Cargo version exactly: `v<package.version>`. Push the version bump commit to `main`, wait for the push workflow to pass, then create and push the matching tag (`git tag vX.Y.Z && git push origin vX.Y.Z`) from that tested commit.
-- `release.yml` runs from the tag push. If the release workflow fails after artifacts are published, fix forward with a new version instead of silently reusing a released tag.
+- `release.yml` runs from the tag push. The `check-version` job fails the release if the tag does not match `Cargo.toml`, before any artifact is built. If the release workflow fails after artifacts are published, fix forward with a new version instead of silently reusing a released tag.
+
+`release.yml` publishes to three places from one tag: GitHub Releases (binaries + `.deb` + `SHA256SUMS`), the Homebrew tap (`update-homebrew-cask`), and crates.io (`publish-crate`).
+
+`CHANGELOG.md` follows Keep a Changelog. The `update-changelog` job appends a `## [x.y.z]` section automatically when a tag is pushed (commit subjects since the previous tag, committed back to `main`). It is idempotent: to curate notes by hand, add the `## [x.y.z]` section under `## [Unreleased]` before tagging and the job leaves it alone. Move finished `## [Unreleased]` items into the new section when curating.
+
+Release checklist before tagging:
+1. Bump `Cargo.toml` `[package].version`; `cargo build` to refresh `Cargo.lock`; verify `cargo run -- --version`.
+2. Update any version pinned in scripts. The install scripts (`scripts/install.sh`, `scripts/install.ps1`) resolve the version from the GitHub latest-release API and the Homebrew cask is rendered by `scripts/render_homebrew_cask.sh` from a passed-in version, so neither hard-codes a version today; if that ever changes, bump it here too.
+3. Optionally curate the `CHANGELOG.md` section for the version.
+4. Commit, push to `main`, wait for CI green, then tag `vX.Y.Z` and push the tag.
 
 Secrets required in **this repo only** (Settings > Secrets and variables > Actions):
 - `CARGO_REGISTRY_TOKEN` — crates.io token (scopes: publish-new, publish-update)
