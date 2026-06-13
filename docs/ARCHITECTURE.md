@@ -263,7 +263,6 @@ SQLite backend.
   endpoint is a user-owned runtime/cache socket path such as
   `$HOME/.cache/synrepo-run/<hash>.sock`, falling back to runtime or temp dirs.
   On Windows, the endpoint is a named pipe `synrepo-watch-<hash>`.
-- `openspec/` - planning artifacts only, not runtime.
 
 ## In-memory snapshot
 

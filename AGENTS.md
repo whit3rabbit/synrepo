@@ -93,7 +93,6 @@ cargo run -- bench search --tasks 'benches/tasks/*.json' --mode both --json  # c
 cargo run -- mcp                   # start MCP server over stdio
 cargo run -- mcp --repo <path>     # start MCP server for a specific repo
 RUST_LOG=debug cargo run -- <cmd>  # enable tracing output
-openspec status --change <name> --json  # artifact/task completion check; isComplete=true when archivable
 ```
 
 Dev dependencies: `proptest` (property tests for token budget invariants), `insta` (snapshot tests for card output), `tempfile` (test fixtures), `criterion` is available for explicit benchmark work (benchmarks only, not part of the documented workflow).
@@ -226,13 +225,4 @@ These must hold across all changes:
 ### Misc
 
 - **`bootstrap()` signature**: `synrepo::bootstrap::bootstrap(repo_root: &Path, mode: Option<Mode>)` — two args only. Does not accept a pre-built `Config` or `synrepo_dir`; it derives both internally.
-- **`openspec/changes/archive/` is historical.** Do not edit archived proposals/specs/tasks when updating path references or API shapes — only living specs under `openspec/specs/` and runtime code.
 - **Adding a new `Language` variant is surface-enforced.** See `docs/ADDING-LANGUAGE.md`. Tests fail loud if any required surface is missed.
-
-## OpenSpec workflow
-
-`openspec/specs/` holds enduring domain specs (stable intended behavior). `openspec/changes/<name>/` holds active work: `proposal.md`, `design.md`, `tasks.md`, and optional delta specs.
-
-Active changes live in `openspec/changes/<name>/`; archived work moves to `openspec/changes/archive/`. Check the directory listing for the current set rather than this file.
-
-Specs govern intent; the graph governs runtime truth.
