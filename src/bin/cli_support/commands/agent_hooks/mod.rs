@@ -2,6 +2,7 @@
 
 mod classify;
 mod install;
+mod read_state;
 mod render;
 
 use std::io::Read;
@@ -76,8 +77,20 @@ fn parse_event(raw: &str) -> Option<HookEvent> {
 }
 
 pub(crate) fn nudge_output(client: HookClient, event: HookEvent, body: &str) -> Option<String> {
+    let synrepo_dir = discover_synrepo_dir();
+    nudge_output_with_dir(client, event, body, synrepo_dir.as_deref())
+}
+
+fn nudge_output_with_dir(
+    client: HookClient,
+    event: HookEvent,
+    body: &str,
+    synrepo_dir: Option<&Path>,
+) -> Option<String> {
     let input: Value = serde_json::from_str(body).ok()?;
     let route = task_route_from_input(client, event, &input);
+    let read_hint =
+        synrepo_dir.and_then(|dir| read_state::read_hint_best_effort(client, event, &input, dir));
     let reason = match event {
         HookEvent::UserPromptSubmit => {
             let prompt = input.get("prompt")?.as_str()?;
@@ -88,17 +101,18 @@ pub(crate) fn nudge_output(client: HookClient, event: HookEvent, body: &str) -> 
     let route_has_signals = route
         .as_ref()
         .is_some_and(|route| !route.signals.is_empty());
-    if !reason && !route_has_signals {
+    if !reason && !route_has_signals && read_hint.is_none() {
         return None;
     }
-    record_hook_route_best_effort(route.as_ref());
+    record_hook_route_best_effort(synrepo_dir, route.as_ref());
     let existing_explain_available = route.as_ref().is_some_and(|route| {
-        render::route_prefers_existing_explain(route) && overlay_commentary_available()
+        render::route_prefers_existing_explain(route) && overlay_commentary_available(synrepo_dir)
     });
     Some(render::render_nudge(
         client,
         event,
         route.as_ref(),
+        read_hint.as_ref(),
         existing_explain_available,
     ))
 }
@@ -157,14 +171,14 @@ fn extract_tool_path(input: &Value) -> Option<&str> {
         .or_else(|| input.get("path").and_then(Value::as_str))
 }
 
-fn record_hook_route_best_effort(route: Option<&TaskRoute>) {
+fn record_hook_route_best_effort(synrepo_dir: Option<&Path>, route: Option<&TaskRoute>) {
     let Some(route) = route.filter(|route| !route.signals.is_empty()) else {
         return;
     };
-    let Some(synrepo_dir) = discover_synrepo_dir() else {
+    let Some(synrepo_dir) = synrepo_dir else {
         return;
     };
-    context_metrics::record_hook_route_emission_best_effort(&synrepo_dir, route);
+    context_metrics::record_hook_route_emission_best_effort(synrepo_dir, route);
 }
 
 fn discover_synrepo_dir() -> Option<PathBuf> {
@@ -184,8 +198,8 @@ fn is_synrepo_dir(path: &Path) -> bool {
     path.is_dir()
 }
 
-fn overlay_commentary_available() -> bool {
-    discover_synrepo_dir()
+fn overlay_commentary_available(synrepo_dir: Option<&Path>) -> bool {
+    synrepo_dir
         .and_then(|dir| SqliteOverlayStore::open_existing(&dir.join("overlay")).ok())
         .and_then(|store| store.commentary_count().ok())
         .is_some_and(|count| count > 0)
@@ -197,9 +211,17 @@ mod tests {
 
     use super::*;
 
+    // Drive the nudge pipeline without a real `.synrepo/` so unit tests stay
+    // hermetic (no route/read state written into the working tree).
+    fn nudge_with_default_dir(client: HookClient, event: HookEvent, body: &str) -> Option<String> {
+        nudge_output_with_dir(client, event, body, None)
+    }
+
     #[test]
     fn unsupported_client_or_event_exits_open() {
-        assert!(nudge_output(HookClient::Codex, HookEvent::UserPromptSubmit, "{}").is_none());
+        assert!(
+            nudge_with_default_dir(HookClient::Codex, HookEvent::UserPromptSubmit, "{}").is_none()
+        );
         assert!(parse_client("cursor").is_none());
         assert!(parse_event("Stop").is_none());
     }
@@ -207,7 +229,7 @@ mod tests {
     #[test]
     fn user_prompt_review_gets_context_nudge() {
         let body = json!({"prompt": "Review these files for regressions"}).to_string();
-        let output = nudge_output(HookClient::Claude, HookEvent::UserPromptSubmit, &body)
+        let output = nudge_with_default_dir(HookClient::Claude, HookEvent::UserPromptSubmit, &body)
             .expect("review prompt should nudge");
         let parsed: Value = serde_json::from_str(&output).unwrap();
         assert_eq!(
@@ -231,7 +253,7 @@ mod tests {
     #[test]
     fn codex_user_prompt_uses_system_message_shape() {
         let body = json!({"prompt": "Review the repository layout"}).to_string();
-        let output = nudge_output(HookClient::Codex, HookEvent::UserPromptSubmit, &body)
+        let output = nudge_with_default_dir(HookClient::Codex, HookEvent::UserPromptSubmit, &body)
             .expect("review prompt should nudge");
         let parsed: Value = serde_json::from_str(&output).unwrap();
         assert!(parsed["systemMessage"]
@@ -255,7 +277,7 @@ mod tests {
     #[test]
     fn exact_identifier_prompt_recommends_search() {
         let body = json!({"prompt": "find Error::Other(anyhow"}).to_string();
-        let output = nudge_output(HookClient::Codex, HookEvent::UserPromptSubmit, &body)
+        let output = nudge_with_default_dir(HookClient::Codex, HookEvent::UserPromptSubmit, &body)
             .expect("exact search prompt should nudge");
         let parsed: Value = serde_json::from_str(&output).unwrap();
         let message = parsed["systemMessage"].as_str().unwrap();
@@ -267,7 +289,9 @@ mod tests {
     #[test]
     fn irrelevant_prompt_has_no_output() {
         let body = json!({"prompt": "say hello"}).to_string();
-        assert!(nudge_output(HookClient::Codex, HookEvent::UserPromptSubmit, &body).is_none());
+        assert!(
+            nudge_with_default_dir(HookClient::Codex, HookEvent::UserPromptSubmit, &body).is_none()
+        );
     }
 
     #[test]
@@ -277,7 +301,7 @@ mod tests {
             "tool_input": { "command": "rtk st -n nudge src" }
         })
         .to_string();
-        let output = nudge_output(HookClient::Codex, HookEvent::PreToolUse, &body)
+        let output = nudge_with_default_dir(HookClient::Codex, HookEvent::PreToolUse, &body)
             .expect("search command should nudge");
         let parsed: Value = serde_json::from_str(&output).unwrap();
         assert!(parsed["systemMessage"]
@@ -297,7 +321,7 @@ mod tests {
             "tool_input": { "command": "rtk st -n nudge src" }
         })
         .to_string();
-        let output = nudge_output(HookClient::Codex, HookEvent::PreToolUse, &body)
+        let output = nudge_with_default_dir(HookClient::Codex, HookEvent::PreToolUse, &body)
             .expect("search command should nudge");
         let parsed: Value = serde_json::from_str(&output).unwrap();
         let message = parsed["systemMessage"].as_str().unwrap();
@@ -313,7 +337,7 @@ mod tests {
             "tool_input": { "command": "rtk .venv/bin/python -m pytest -q" }
         })
         .to_string();
-        assert!(nudge_output(HookClient::Codex, HookEvent::PreToolUse, &body).is_none());
+        assert!(nudge_with_default_dir(HookClient::Codex, HookEvent::PreToolUse, &body).is_none());
     }
 
     #[test]
@@ -323,7 +347,7 @@ mod tests {
             "tool_input": { "action": "press_enter" }
         })
         .to_string();
-        assert!(nudge_output(HookClient::Claude, HookEvent::PreToolUse, &body).is_none());
+        assert!(nudge_with_default_dir(HookClient::Claude, HookEvent::PreToolUse, &body).is_none());
     }
 
     #[test]
@@ -333,7 +357,7 @@ mod tests {
             "tool_input": { "file_path": "src/lib.rs" }
         })
         .to_string();
-        let output = nudge_output(HookClient::Claude, HookEvent::PreToolUse, &body)
+        let output = nudge_with_default_dir(HookClient::Claude, HookEvent::PreToolUse, &body)
             .expect("Read should nudge");
         let parsed: Value = serde_json::from_str(&output).unwrap();
         assert_eq!(parsed["hookSpecificOutput"]["hookEventName"], "PreToolUse");
@@ -350,7 +374,7 @@ mod tests {
     #[test]
     fn prompt_edit_candidate_emits_intent_signal() {
         let body = json!({"prompt": "convert var to const in src/app.ts"}).to_string();
-        let output = nudge_output(HookClient::Codex, HookEvent::UserPromptSubmit, &body)
+        let output = nudge_with_default_dir(HookClient::Codex, HookEvent::UserPromptSubmit, &body)
             .expect("edit prompt should nudge");
         let parsed: Value = serde_json::from_str(&output).unwrap();
         assert!(parsed["systemMessage"]

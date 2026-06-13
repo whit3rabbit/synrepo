@@ -6,8 +6,13 @@ use serde_json::{json, Value};
 
 use super::limits::{BYTES_PER_TOKEN_ESTIMATE, DEFAULT_RESPONSE_TOKEN_CAP, MAX_RESPONSE_TOKEN_CAP};
 
+mod compaction;
+
 const LARGE_ARRAY_PATHS: &[&str] = &[
     "/results",
+    "/file_groups",
+    "/suggested_card_requests",
+    "/suggested_card_targets",
     "/cards",
     "/artifacts",
     "/edges",
@@ -122,7 +127,14 @@ pub fn clamp_json_response(
     }
 
     let mut omitted = Vec::new();
+    if let Some((compacted, compaction_omitted)) =
+        compaction::compact_over_budget_response(&value, cap, original_tokens)
+    {
+        value = compacted;
+        omitted.extend(compaction_omitted);
+    }
     trim_known_large_fields(&mut value, cap, &mut omitted);
+    compaction::realign_compact_search_arrays(&mut value);
     attach_context_accounting(&mut value, original_tokens, cap, true);
     attach_omitted(&mut value, omitted);
     let returned_tokens = estimate_json_tokens(&value);

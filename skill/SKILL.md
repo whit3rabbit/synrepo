@@ -112,6 +112,8 @@ Default to `tiny`. Use `normal` for the best 1-3 targets when local understandin
 
 Deep `SymbolCard` responses may use `member_outline` with `source_body_state: "outline_only"` for large container symbols. Request a `source_slice` or a narrow leaf symbol card when exact body text is needed.
 
+When a final MCP response exceeds the response cap, synrepo may compact search-shaped payloads or known large row arrays before truncating. Compacted rows preserve routing identifiers and bounded string previews, and may set `response_omitted[].strategy = "row_compaction"`. There is no retrieval cache or retrieval tool; rerun the original tool with narrower params or follow returned card targets for detail.
+
 See [`references/budgets-and-errors.md`](references/budgets-and-errors.md) for the full budget sequence, response fields to consume first, and rate-limit/error handling.
 
 ## Product boundary

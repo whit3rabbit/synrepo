@@ -38,6 +38,9 @@ fn prometheus_output_matches_golden_string() {
     metrics.commentary_refresh_total = 5;
     metrics.commentary_refresh_errors_total = 1;
     metrics.estimated_llm_calls_avoided_total = 5;
+    metrics.hook_file_reads_total = 9;
+    metrics.hook_repeated_read_warnings_total = 3;
+    metrics.hook_repeated_read_tokens_total = 450;
     metrics.budget_tier_usage.insert("tiny".to_string(), 2);
     metrics.budget_tier_usage.insert("normal".to_string(), 1);
     metrics
@@ -191,6 +194,7 @@ synrepo_workflow_calls_total{tool=\"find\"} 1\n\
 synrepo_workflow_calls_total{tool=\"orient\"} 2\n";
 
     assert_eq!(metrics.to_prometheus_text(), expected);
+    assert!(!metrics.to_prometheus_text().contains("hook_file_reads"));
 }
 
 #[test]

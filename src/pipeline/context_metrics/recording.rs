@@ -186,6 +186,15 @@ impl ContextMetrics {
         }
     }
 
+    /// Record a client-side hook file-read observation without storing paths.
+    pub fn record_hook_file_read(&mut self, repeated: bool, estimated_tokens: usize) {
+        self.hook_file_reads_total += 1;
+        if repeated {
+            self.hook_repeated_read_warnings_total += 1;
+            self.hook_repeated_read_tokens_total += estimated_tokens as u64;
+        }
+    }
+
     /// Record gated anchored edit outcomes.
     pub fn record_anchored_edit_outcomes(&mut self, accepted: u64, rejected: u64) {
         self.anchored_edit_accepted_total += accepted;

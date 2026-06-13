@@ -124,6 +124,30 @@ fn record_hook_route_emission_updates_signal_totals() {
 }
 
 #[test]
+fn record_hook_file_read_updates_read_waste_totals() {
+    let mut metrics = ContextMetrics::default();
+
+    metrics.record_hook_file_read(false, 120);
+    metrics.record_hook_file_read(true, 120);
+
+    assert_eq!(metrics.hook_file_reads_total, 2);
+    assert_eq!(metrics.hook_repeated_read_warnings_total, 1);
+    assert_eq!(metrics.hook_repeated_read_tokens_total, 120);
+}
+
+#[test]
+fn hook_read_metrics_serialize_for_status_json() {
+    let mut metrics = ContextMetrics::default();
+    metrics.record_hook_file_read(true, 90);
+
+    let value = serde_json::to_value(&metrics).unwrap();
+
+    assert_eq!(value["hook_file_reads_total"], 1);
+    assert_eq!(value["hook_repeated_read_warnings_total"], 1);
+    assert_eq!(value["hook_repeated_read_tokens_total"], 90);
+}
+
+#[test]
 fn record_anchored_edit_outcomes_updates_totals() {
     let mut metrics = ContextMetrics::default();
 
@@ -184,6 +208,23 @@ fn mcp_metrics_default_when_loading_older_json() {
     assert_eq!(metrics.commentary_refresh_total, 0);
     assert_eq!(metrics.commentary_refresh_errors_total, 0);
     assert_eq!(metrics.estimated_llm_calls_avoided_total, 0);
+    assert_eq!(metrics.hook_file_reads_total, 0);
+    assert_eq!(metrics.hook_repeated_read_warnings_total, 0);
+    assert_eq!(metrics.hook_repeated_read_tokens_total, 0);
+}
+
+#[test]
+fn merge_includes_hook_read_metrics() {
+    let mut base = ContextMetrics::default();
+    let mut delta = ContextMetrics::default();
+    delta.record_hook_file_read(false, 50);
+    delta.record_hook_file_read(true, 75);
+
+    base.merge_from(&delta);
+
+    assert_eq!(base.hook_file_reads_total, 2);
+    assert_eq!(base.hook_repeated_read_warnings_total, 1);
+    assert_eq!(base.hook_repeated_read_tokens_total, 75);
 }
 
 #[test]

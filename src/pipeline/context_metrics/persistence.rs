@@ -198,6 +198,17 @@ pub fn record_hook_route_emission_best_effort(synrepo_dir: &Path, route: &TaskRo
     });
 }
 
+/// Best-effort recording of client-side hook file-read observations.
+pub fn record_hook_file_read_best_effort(
+    synrepo_dir: &Path,
+    repeated: bool,
+    estimated_tokens: usize,
+) {
+    record_delta_best_effort(synrepo_dir, |metrics| {
+        metrics.record_hook_file_read(repeated, estimated_tokens);
+    });
+}
+
 /// Best-effort recording of accepted and rejected anchored edits.
 pub fn record_anchored_edit_outcomes_best_effort(synrepo_dir: &Path, accepted: u64, rejected: u64) {
     if accepted == 0 && rejected == 0 {

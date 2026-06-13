@@ -61,7 +61,7 @@ Client-side hooks may nudge before direct grep, read, review, or edit workflows.
 - `synrepo_resume_context` is an advisory repo packet regenerated from existing state. It is not prompt logging, chat history, raw tool-output capture, or generic session memory.
 - Handoff or next-action lists are derived recommendations regenerated from repo state. External systems own assignment, status, and collaboration.
 - Freshness is explicit. A stale label is information, not an error; it is not silently refreshed on read.
-- Failed-tool Sentry telemetry is opt-in and records only sanitized tool/error tags, never prompts, paths, stacktraces, or agent memory.
+- Failed-tool Sentry telemetry is optional: set `mcp_sentry_telemetry = true` to opt in or `false` to force opt out (dashboard `O`). `SYNREPO_SENTRY_DSN` may override the built-in DSN; never write custom DSNs into repo files. Events include only sanitized `tool`/`error_code` plus version/platform tags, not prompts, paths, queries, responses, error messages, stacktraces, or agent memory.
 "
     };
 }

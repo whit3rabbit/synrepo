@@ -770,13 +770,20 @@ synrepo SHALL expose `synrepo_ask(ask, scope?, shape?, ground?, budget?)` as a d
 - **AND** it MAY update existing best-effort MCP/context metrics
 
 ### Requirement: Enforce MCP response budgets server-side
-The MCP server SHALL apply a final deterministic token cap to every MCP tool response before returning it. The default soft cap SHALL be 4,000 estimated tokens and the hard cap SHALL be 12,000 estimated tokens. If a response exceeds the effective cap, the server SHALL prefer structured truncation of known large fields over raw string truncation and SHALL report truncation metadata.
+The MCP server SHALL apply a final deterministic token cap to every MCP tool response before returning it. The default soft cap SHALL be 4,000 estimated tokens and the hard cap SHALL be 12,000 estimated tokens. If a response exceeds the effective cap, the server SHALL prefer deterministic compaction of search-shaped payloads and known large row arrays before structured truncation of known large fields, and SHALL report truncation metadata.
 
 #### Scenario: Oversized response is clamped
 - **WHEN** an MCP read handler produces JSON above the effective response token cap
-- **THEN** the server trims known large arrays or payload fields before returning
+- **THEN** the server compacts or trims known large arrays or payload fields before returning
 - **AND** the response includes `context_accounting.truncation_applied = true`
 - **AND** the response includes `context_accounting.token_cap` and `context_accounting.truncation_reason`
+
+#### Scenario: Structured rows compact before destructive truncation
+- **WHEN** an over-budget MCP response contains search results or known large row arrays
+- **THEN** search-shaped payloads use the compact search representation when that does not inflate the response
+- **AND** other recognized row arrays preserve routing identifiers and bounded string previews
+- **AND** row compaction is reported through `response_omitted[].strategy = "row_compaction"` when applied
+- **AND** no retrieval cache, retrieval tool, LLM summary, graph mutation, or overlay mutation is used
 
 #### Scenario: Tool error stays structured
 - **WHEN** an MCP handler returns a structured error

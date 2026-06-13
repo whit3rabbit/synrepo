@@ -19,10 +19,11 @@ pub use persistence::{
     record_cards_best_effort, record_changed_files_best_effort,
     record_commentary_refresh_best_effort, record_compact_output_best_effort,
     record_context_pack_tokens_best_effort, record_cross_link_generation_best_effort,
-    record_cross_link_promoted_best_effort, record_hook_route_emission_best_effort,
-    record_mcp_resource_read_best_effort, record_mcp_response_budget_best_effort,
-    record_mcp_tool_result_best_effort, record_resume_context_best_effort,
-    record_task_route_classification_best_effort, record_workflow_call_best_effort, save,
+    record_cross_link_promoted_best_effort, record_hook_file_read_best_effort,
+    record_hook_route_emission_best_effort, record_mcp_resource_read_best_effort,
+    record_mcp_response_budget_best_effort, record_mcp_tool_result_best_effort,
+    record_resume_context_best_effort, record_task_route_classification_best_effort,
+    record_workflow_call_best_effort, save,
 };
 
 /// Aggregated context-serving metrics stored under `.synrepo/state/`.
@@ -174,6 +175,17 @@ pub struct ContextMetrics {
     /// structural context was sufficient and an LLM call was likely avoidable.
     #[serde(default)]
     pub estimated_llm_calls_avoided_total: u64,
+    /// **Observed**: file reads observed by client-side advisory hooks. This is
+    /// a hook-side count only and does not store prompts or file contents.
+    #[serde(default)]
+    pub hook_file_reads_total: u64,
+    /// **Observed**: unchanged repeated file reads that advisory hooks warned
+    /// about.
+    #[serde(default)]
+    pub hook_repeated_read_warnings_total: u64,
+    /// **Estimated**: raw-file tokens associated with unchanged repeated reads.
+    #[serde(default)]
+    pub hook_repeated_read_tokens_total: u64,
 }
 
 impl ContextMetrics {
@@ -252,6 +264,9 @@ impl ContextMetrics {
         self.commentary_refresh_total += delta.commentary_refresh_total;
         self.commentary_refresh_errors_total += delta.commentary_refresh_errors_total;
         self.estimated_llm_calls_avoided_total += delta.estimated_llm_calls_avoided_total;
+        self.hook_file_reads_total += delta.hook_file_reads_total;
+        self.hook_repeated_read_warnings_total += delta.hook_repeated_read_warnings_total;
+        self.hook_repeated_read_tokens_total += delta.hook_repeated_read_tokens_total;
     }
 
     pub(super) fn is_empty(&self) -> bool {
@@ -299,6 +314,9 @@ impl ContextMetrics {
             && self.commentary_refresh_total == 0
             && self.commentary_refresh_errors_total == 0
             && self.estimated_llm_calls_avoided_total == 0
+            && self.hook_file_reads_total == 0
+            && self.hook_repeated_read_warnings_total == 0
+            && self.hook_repeated_read_tokens_total == 0
     }
 }
 

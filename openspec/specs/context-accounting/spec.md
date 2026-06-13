@@ -138,6 +138,12 @@ Context accounting SHALL track aggregate response budget behavior without storin
 - **THEN** context metrics increment `responses_over_soft_cap_total`
 - **AND** the response's estimated token count contributes to `tool_token_totals` for that tool
 
+#### Scenario: Oversized structured responses compact before truncation
+- **WHEN** an over-budget MCP JSON response contains search results or known large row arrays
+- **THEN** synrepo deterministically compacts those rows before destructive truncation
+- **AND** row compaction is reported through `response_omitted[].strategy = "row_compaction"` when applied
+- **AND** compacted or omitted response content is not persisted in metrics
+
 #### Scenario: Truncated MCP responses are counted
 - **WHEN** the final response clamp trims a response
 - **THEN** context metrics increment `responses_truncated_total`
