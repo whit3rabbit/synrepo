@@ -4549,7 +4549,7 @@ dependencies = [
 
 [[package]]
 name = "synrepo"
-version = "0.1.2"
+version = "0.1.3"
 dependencies = [
  "agent-config",
  "anyhow",

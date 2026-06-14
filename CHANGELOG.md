@@ -12,6 +12,15 @@ an existing section untouched.
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-06-14
+
+### Fixed
+- Watch mode now disables notify-debouncer file-ID caching so macOS does not
+  recursively scan large ignored build trees before synrepo can filter events.
+- Watch event filtering now honors repo-root `.gitignore`, `.git/info/exclude`,
+  and `.synignore` matches before queuing reconcile work, preventing ignored
+  Cargo `target/` churn from waking the daemon.
+
 ## [0.1.2] - 2026-06-13
 
 ### Added
@@ -47,7 +56,8 @@ an existing section untouched.
 - First tagged 0.1 release. See Git history (`git log v0.0.11..v0.1.0`) for
   the full set of changes from the 0.0.x series.
 
-[Unreleased]: https://github.com/whit3rabbit/synrepo/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/whit3rabbit/synrepo/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/whit3rabbit/synrepo/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/whit3rabbit/synrepo/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/whit3rabbit/synrepo/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/whit3rabbit/synrepo/releases/tag/v0.1.0
