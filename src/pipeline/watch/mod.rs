@@ -8,6 +8,7 @@ mod branch_refs;
 mod config;
 mod control;
 mod control_bridge;
+mod debouncer;
 mod embeddings;
 mod events;
 mod filter;

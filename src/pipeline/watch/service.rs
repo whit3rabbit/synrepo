@@ -7,22 +7,21 @@ use std::{
     time::Duration,
 };
 
-use notify_debouncer_full::{new_debouncer, notify::RecursiveMode};
-
 use crate::config::Config;
+use notify_debouncer_full::notify::RecursiveMode;
 
-pub(super) use super::filter::filter_repo_events;
 use super::{
     branch_refs::BranchRefPoller,
     config::WatchConfig,
     control::WatchControlResponse,
     control_bridge::spawn_control_listener,
+    debouncer::new_watch_debouncer,
     embeddings::{
         run_manual_embedding_build, EmbeddingJobContext, EmbeddingRefreshScheduler,
         ReconcileEmbeddingObservation,
     },
     events::{SyncTrigger, WatchEvent},
-    filter::{collect_repo_paths, ignored_generated_dirs},
+    filter::{collect_repo_paths, filter_repo_events, ignored_generated_dirs, WatchIgnoreSet},
     lease::{acquire_watch_daemon_lease, WatchServiceMode},
     loop_message::LoopMessage,
     pending::PendingWatchChanges,
@@ -93,13 +92,14 @@ pub fn run_watch_service(
     let callback_repo_roots = watch_root_paths.clone();
     let callback_synrepo_dir = synrepo_dir.to_path_buf();
     let callback_ignored_dirs = ignored_generated_dirs(&callback_repo_roots, config);
+    let callback_ignore_set = WatchIgnoreSet::from_roots(&callback_repo_roots);
     let callback_state_handle = state_handle.clone();
     let callback_events = events.clone();
     let pending_watch_for_callback = pending_watch.clone();
     let suppressed_paths_for_callback = suppressed_paths.clone();
     let max_events_per_cycle = watch_config.max_events_per_cycle;
     let mut debouncer =
-        new_debouncer(
+        new_watch_debouncer(
             watch_config.debounce_timeout,
             None,
             move |result| match result {
@@ -110,6 +110,7 @@ pub fn run_watch_service(
                         &callback_repo_root,
                         &callback_synrepo_dir,
                         &callback_ignored_dirs,
+                        &callback_ignore_set,
                     );
                     if filtered.is_empty() {
                         return;
@@ -120,6 +121,7 @@ pub fn run_watch_service(
                         &callback_repo_root,
                         &callback_synrepo_dir,
                         &callback_ignored_dirs,
+                        &callback_ignore_set,
                     );
                     if let Ok(mut suppressed) = suppressed_paths_for_callback.lock() {
                         suppressed.retain_unsuppressed(&mut touched_paths);
@@ -242,7 +244,6 @@ pub fn run_watch_service(
                     full: force_full_reconcile || batch.touched_paths.is_empty(),
                     reason,
                 });
-                // Keepalive is fast: refresh the timestamp and auto-sync hook.
                 let touched_paths = if force_full_reconcile || batch.touched_paths.is_empty() {
                     None
                 } else {

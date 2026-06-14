@@ -8,7 +8,52 @@ use notify_debouncer_full::{
     DebouncedEvent,
 };
 
+use ignore::gitignore::{Gitignore, GitignoreBuilder};
+
 use crate::{config::Config, core::path_safety::safe_join_in_repo};
+
+pub(crate) struct WatchIgnoreSet {
+    roots: Vec<RootIgnoreMatcher>,
+}
+
+struct RootIgnoreMatcher {
+    root: PathBuf,
+    matcher: Gitignore,
+}
+
+impl WatchIgnoreSet {
+    pub(crate) fn from_roots(repo_roots: &[PathBuf]) -> Self {
+        let roots = repo_roots
+            .iter()
+            .map(|root| RootIgnoreMatcher {
+                root: root.clone(),
+                matcher: build_root_ignore_matcher(root),
+            })
+            .collect();
+        Self { roots }
+    }
+
+    fn is_ignored(&self, path: &Path) -> bool {
+        self.roots.iter().any(|root| root.is_ignored(path))
+    }
+}
+
+impl RootIgnoreMatcher {
+    fn is_ignored(&self, path: &Path) -> bool {
+        let Ok(relative_path) = path.strip_prefix(&self.root) else {
+            return false;
+        };
+        if relative_path.as_os_str().is_empty() {
+            return false;
+        }
+        let is_dir = fs::metadata(path)
+            .map(|metadata| metadata.is_dir())
+            .unwrap_or(false);
+        self.matcher
+            .matched_path_or_any_parents(relative_path, is_dir)
+            .is_ignore()
+    }
+}
 
 pub(crate) fn ignored_generated_dirs(repo_roots: &[PathBuf], config: &Config) -> Vec<PathBuf> {
     repo_roots
@@ -23,6 +68,7 @@ pub(crate) fn filter_repo_events(
     repo_root: &Path,
     synrepo_dir: &Path,
     ignored_dirs: &[PathBuf],
+    ignore_set: &WatchIgnoreSet,
 ) -> Vec<DebouncedEvent> {
     let canonical_synrepo_dir = canonicalize_lossy(synrepo_dir);
     let syntext_dir = repo_root.join(".syntext");
@@ -39,13 +85,21 @@ pub(crate) fn filter_repo_events(
                 path_matches_runtime(&path, synrepo_dir, canonical_synrepo_dir.as_deref())
                     || path_matches_runtime(&path, &syntext_dir, canonical_syntext_dir.as_deref())
                     || path_matches_ignored_dir(&path, ignored_dirs, &canonical_ignored_dirs)
+                    || ignore_set.is_ignored(&path)
             }) {
                 return false;
             }
 
             event.paths.iter().any(|path| {
                 let path = repo_normalized_path(path, repo_root, synrepo_dir);
-                is_collectable_repo_path(&path, repo_roots, synrepo_dir, ignored_dirs, &event.kind)
+                is_collectable_repo_path(
+                    &path,
+                    repo_roots,
+                    synrepo_dir,
+                    ignored_dirs,
+                    ignore_set,
+                    &event.kind,
+                )
             })
         })
         .collect()
@@ -57,6 +111,7 @@ pub(crate) fn collect_repo_paths(
     repo_root: &Path,
     synrepo_dir: &Path,
     ignored_dirs: &[PathBuf],
+    ignore_set: &WatchIgnoreSet,
 ) -> Vec<PathBuf> {
     let mut paths = std::collections::BTreeSet::new();
     for event in events {
@@ -74,6 +129,9 @@ pub(crate) fn collect_repo_paths(
             if ignored_dirs.iter().any(|dir| path.starts_with(dir)) {
                 continue;
             }
+            if ignore_set.is_ignored(&path) {
+                continue;
+            }
             if !is_collectable_existing_or_missing_path(&path, &event.kind) {
                 continue;
             }
@@ -88,6 +146,7 @@ fn is_collectable_repo_path(
     repo_roots: &[PathBuf],
     synrepo_dir: &Path,
     ignored_dirs: &[PathBuf],
+    ignore_set: &WatchIgnoreSet,
     kind: &EventKind,
 ) -> bool {
     if !path_starts_with_any_root(path, repo_roots) {
@@ -100,6 +159,9 @@ fn is_collectable_repo_path(
         return false;
     }
     if ignored_dirs.iter().any(|dir| path.starts_with(dir)) {
+        return false;
+    }
+    if ignore_set.is_ignored(path) {
         return false;
     }
     is_collectable_existing_or_missing_path(path, kind)
@@ -119,6 +181,20 @@ fn path_starts_with_external_syntext_dir(path: &Path, repo_roots: &[PathBuf]) ->
     repo_roots
         .iter()
         .any(|root| path.starts_with(root.join(".syntext")))
+}
+
+fn build_root_ignore_matcher(root: &Path) -> Gitignore {
+    let mut builder = GitignoreBuilder::new(root);
+    for path in [
+        root.join(".gitignore"),
+        root.join(".git/info/exclude"),
+        root.join(".synignore"),
+    ] {
+        if path.is_file() {
+            let _ = builder.add(path);
+        }
+    }
+    builder.build().unwrap_or_else(|_| Gitignore::empty())
 }
 
 fn is_collectable_existing_or_missing_path(path: &Path, kind: &EventKind) -> bool {
