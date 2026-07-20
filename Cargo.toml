@@ -23,7 +23,7 @@ path = "src/lib.rs"
 # syntext is the deterministic lexical retrieval layer. Verify publication
 # status on crates.io; if not published, switch to a git dependency pinned to
 # a specific commit hash (never a branch).
-syntext = "1.1.1"
+syntext = "2.0.0"
 
 # --- Tree-sitter via Rust crates (phase 1) ---
 # Per-language crates each ship a pre-generated C grammar and expose
@@ -60,7 +60,7 @@ fs2 = "0.4"                 # cross-platform advisory file locking (flock / Lock
 interprocess = "2"          # local_socket: Unix socket on Unix, named pipe on Windows. Blocking API only.
 
 # --- Git integration ---
-gix = { version = "0.84", default-features = false, features = ["sha1", "max-performance-safe", "revision", "blob-diff"] }
+gix = { version = "0.85", default-features = false, features = ["sha1", "max-performance-safe", "revision", "blob-diff"] }
 
 # --- Hashing and encoding ---
 blake3 = "1"                # fast content hashing for file/symbol identity
@@ -82,7 +82,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # --- CLI ---
-agent-config = "0.3.0"
+agent-config = "0.4.0"
 clap = { version = "4", features = ["derive"] }
 
 # --- TUI (runtime dashboard) ---
@@ -93,7 +93,7 @@ ratatui = "0.30"
 crossterm = "0.29"
 
 # --- MCP server (used by `synrepo mcp` subcommand) ---
-rmcp = { version = "1.7.0", features = ["transport-io"] }
+rmcp = { version = "2.2.0", features = ["transport-io"] }
 tokio = { version = "1", features = ["full"] }
 
 # --- Concurrency ---
