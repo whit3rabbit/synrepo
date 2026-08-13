@@ -12,6 +12,11 @@ an existing section untouched.
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-08-13
+
+### Changed
+- Bump agent-config, rmcp, sentry, and syntext to latest major versions
+
 ## [0.1.3] - 2026-06-14
 
 ### Fixed
