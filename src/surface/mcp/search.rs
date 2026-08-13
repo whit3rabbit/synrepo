@@ -79,13 +79,13 @@ pub enum SearchMode {
 impl SearchParams {
     fn search_options(&self) -> SearchOptions {
         let limit = self.effective_limit();
-        SearchOptions {
-            path_filter: self.path_filter.clone(),
-            file_type: self.file_type.clone(),
-            exclude_type: self.exclude_type.clone(),
-            max_results: Some(limit),
-            case_insensitive: self.case_insensitive,
-        }
+        let mut options = SearchOptions::default();
+        options.path_filter = self.path_filter.clone();
+        options.file_type = self.file_type.clone();
+        options.exclude_type = self.exclude_type.clone();
+        options.max_results = Some(limit);
+        options.case_insensitive = self.case_insensitive;
+        options
     }
 
     fn effective_limit(&self) -> usize {

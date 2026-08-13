@@ -113,14 +113,11 @@ fn search_case_insensitive_flag_changes_results() {
     let (_dir, repo) = three_file_repo();
 
     // Case-sensitive search for the lowercase form must miss the `TokenAlpha` literal.
-    let sensitive = search_output(
-        &repo,
-        "tokenalpha",
-        SearchOptions {
-            case_insensitive: false,
-            ..SearchOptions::default()
-        },
-    )
+    let sensitive = search_output(&repo, "tokenalpha", {
+        let mut opts = SearchOptions::default();
+        opts.case_insensitive = false;
+        opts
+    })
     .unwrap();
     assert!(
         sensitive.contains("No matches found for `tokenalpha`."),
@@ -128,14 +125,11 @@ fn search_case_insensitive_flag_changes_results() {
     );
 
     // Case-insensitive must hit all three files.
-    let insensitive = search_output(
-        &repo,
-        "tokenalpha",
-        SearchOptions {
-            case_insensitive: true,
-            ..SearchOptions::default()
-        },
-    )
+    let insensitive = search_output(&repo, "tokenalpha", {
+        let mut opts = SearchOptions::default();
+        opts.case_insensitive = true;
+        opts
+    })
     .unwrap();
     assert!(
         insensitive.contains("Found 3 matches."),
@@ -147,14 +141,11 @@ fn search_case_insensitive_flag_changes_results() {
 fn search_file_type_include_filters_to_matching_extensions() {
     let (_dir, repo) = three_file_repo();
 
-    let out = search_output(
-        &repo,
-        "TokenAlpha",
-        SearchOptions {
-            file_type: Some("rs".into()),
-            ..SearchOptions::default()
-        },
-    )
+    let out = search_output(&repo, "TokenAlpha", {
+        let mut opts = SearchOptions::default();
+        opts.file_type = Some("rs".into());
+        opts
+    })
     .unwrap();
     assert!(
         out.contains("Found 1 matches."),
@@ -171,14 +162,11 @@ fn search_file_type_include_filters_to_matching_extensions() {
 fn search_exclude_type_filters_out_matching_extensions() {
     let (_dir, repo) = three_file_repo();
 
-    let out = search_output(
-        &repo,
-        "TokenAlpha",
-        SearchOptions {
-            exclude_type: Some("md".into()),
-            ..SearchOptions::default()
-        },
-    )
+    let out = search_output(&repo, "TokenAlpha", {
+        let mut opts = SearchOptions::default();
+        opts.exclude_type = Some("md".into());
+        opts
+    })
     .unwrap();
     assert!(
         out.contains("Found 2 matches."),
@@ -191,16 +179,13 @@ fn search_exclude_type_filters_out_matching_extensions() {
 fn search_path_filter_limits_to_matching_paths() {
     let (_dir, repo) = three_file_repo();
 
-    let out = search_output(
-        &repo,
-        "TokenAlpha",
-        SearchOptions {
-            // syntext globs: `docs/` is a directory-prefix filter; `**/...`
-            // is not supported.
-            path_filter: Some("docs/".into()),
-            ..SearchOptions::default()
-        },
-    )
+    let out = search_output(&repo, "TokenAlpha", {
+        // syntext globs: `docs/` is a directory-prefix filter; `**/...`
+        // is not supported.
+        let mut opts = SearchOptions::default();
+        opts.path_filter = Some("docs/".into());
+        opts
+    })
     .unwrap();
     assert!(
         out.contains("Found 1 matches."),
@@ -216,14 +201,11 @@ fn search_path_filter_limits_to_matching_paths() {
 fn search_max_results_truncates_output() {
     let (_dir, repo) = three_file_repo();
 
-    let out = search_output(
-        &repo,
-        "TokenAlpha",
-        SearchOptions {
-            max_results: Some(2),
-            ..SearchOptions::default()
-        },
-    )
+    let out = search_output(&repo, "TokenAlpha", {
+        let mut opts = SearchOptions::default();
+        opts.max_results = Some(2);
+        opts
+    })
     .unwrap();
     assert!(
         out.contains("Found 2 matches."),
@@ -236,27 +218,21 @@ fn search_glob_path_filter_matches_correct_files() {
     let (_dir, repo) = three_file_repo();
 
     // 1. Glob for .rs files
-    let out_rs = search_output(
-        &repo,
-        "TokenAlpha",
-        SearchOptions {
-            path_filter: Some("**/*.rs".into()),
-            ..SearchOptions::default()
-        },
-    )
+    let out_rs = search_output(&repo, "TokenAlpha", {
+        let mut opts = SearchOptions::default();
+        opts.path_filter = Some("**/*.rs".into());
+        opts
+    })
     .unwrap();
     assert!(out_rs.contains("Found 1 matches."));
     assert!(out_rs.contains("src/a.rs"));
 
     // 2. Glob for src/ directory
-    let out_src = search_output(
-        &repo,
-        "TokenAlpha",
-        SearchOptions {
-            path_filter: Some("src/**/*.py".into()),
-            ..SearchOptions::default()
-        },
-    )
+    let out_src = search_output(&repo, "TokenAlpha", {
+        let mut opts = SearchOptions::default();
+        opts.path_filter = Some("src/**/*.py".into());
+        opts
+    })
     .unwrap();
     assert!(out_src.contains("Found 1 matches."));
     assert!(out_src.contains("src/c.py"));

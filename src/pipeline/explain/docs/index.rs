@@ -111,10 +111,8 @@ pub fn search_commentary_index(
     }
 
     let index = Index::open(syntext_config(&docs_root, &index_dir)).map_err(map_index_error)?;
-    let options = SearchOptions {
-        max_results: Some(max_results),
-        ..SearchOptions::default()
-    };
+    let mut options = SearchOptions::default();
+    options.max_results = Some(max_results);
     index.search(query, &options).map_err(map_index_error)
 }
 

@@ -81,11 +81,9 @@ fn collect_candidates(
     let mut candidates: HashMap<String, Candidate> = HashMap::new();
     let mut order = 0usize;
     for (query_rank, query) in queries.iter().enumerate() {
-        let options = SearchOptions {
-            max_results: Some(MAX_SEARCH_ROWS),
-            case_insensitive: true,
-            ..SearchOptions::default()
-        };
+        let mut options = SearchOptions::default();
+        options.max_results = Some(MAX_SEARCH_ROWS);
+        options.case_insensitive = true;
         let Ok(rows) = crate::substrate::search_rooted_with_options(
             &state.config,
             &state.repo_root,

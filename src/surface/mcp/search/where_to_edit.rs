@@ -182,11 +182,9 @@ fn search_task_query(
     state: &SynrepoState,
     query: &str,
 ) -> anyhow::Result<Vec<crate::substrate::RootedSearchMatch>> {
-    let options = SearchOptions {
-        max_results: Some(MAX_MATCHES_PER_QUERY),
-        case_insensitive: true,
-        ..SearchOptions::default()
-    };
+    let mut options = SearchOptions::default();
+    options.max_results = Some(MAX_MATCHES_PER_QUERY);
+    options.case_insensitive = true;
     Ok(crate::substrate::search_rooted_with_options(
         &state.config,
         &state.repo_root,

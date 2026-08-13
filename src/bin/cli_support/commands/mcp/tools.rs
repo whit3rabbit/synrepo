@@ -1,6 +1,6 @@
 use rmcp::{
     handler::server::wrapper::Parameters,
-    model::{Meta, ProgressNotificationParam},
+    model::{ProgressNotificationParam, RequestMetaObject},
     tool, tool_router, Peer,
 };
 use synrepo::surface::handoffs::{collect_handoffs, to_json as handoffs_to_json, HandoffsRequest};
@@ -300,26 +300,24 @@ impl SynrepoServer {
     }
 
     #[tool(name = "synrepo_refresh_commentary", description = "Explicitly generate or refresh LLM-authored commentary for a target, file, directory, or all stale entries. Use when synrepo_card reports commentary_state: 'missing' or 'stale' and fresh prose is required.")]
-    async fn synrepo_refresh_commentary(&self, Parameters(params): Parameters<commentary::RefreshCommentaryParams>, meta: Meta, client: Peer<rmcp::RoleServer>) -> String {
+    async fn synrepo_refresh_commentary(&self, Parameters(params): Parameters<commentary::RefreshCommentaryParams>, meta: RequestMetaObject, client: Peer<rmcp::RoleServer>) -> String {
         let progress_token = meta.get_progress_token();
         if let Some(token) = progress_token.clone() {
-            let _ = client.notify_progress(ProgressNotificationParam {
-                progress_token: token,
-                progress: 0.0,
-                total: Some(1.0),
-                message: Some("refreshing commentary".into()),
-            }).await;
+            let _ = client.notify_progress(
+                ProgressNotificationParam::new(token, 0.0)
+                    .with_total(1.0)
+                    .with_message("refreshing commentary"),
+            ).await;
         }
         let output = self.with_tool_state_persistent("synrepo_refresh_commentary", params.repo_root.clone(), move |state| {
             commentary::handle_refresh_commentary_params(&state, params, None)
         }).await;
         if let Some(token) = progress_token {
-            let _ = client.notify_progress(ProgressNotificationParam {
-                progress_token: token,
-                progress: 1.0,
-                total: Some(1.0),
-                message: Some("commentary refresh complete".into()),
-            }).await;
+            let _ = client.notify_progress(
+                ProgressNotificationParam::new(token, 1.0)
+                    .with_total(1.0)
+                    .with_message("commentary refresh complete"),
+            ).await;
         }
         output
     }

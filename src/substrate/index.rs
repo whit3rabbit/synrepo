@@ -139,17 +139,16 @@ pub fn search_with_options(
 
     // Glob filters need overfetch so valid post-filter matches are not clipped
     // too early, but the index phase must still be bounded on broad globs.
-    let effective_options = SearchOptions {
-        path_filter: prefix,
-        file_type: options.file_type.clone(),
-        exclude_type: options.exclude_type.clone(),
-        max_results: if matcher.is_some() {
-            Some(glob_filter_overfetch_limit(options.max_results))
-        } else {
-            options.max_results
-        },
-        case_insensitive: options.case_insensitive,
+    let mut effective_options = SearchOptions::default();
+    effective_options.path_filter = prefix;
+    effective_options.file_type = options.file_type.clone();
+    effective_options.exclude_type = options.exclude_type.clone();
+    effective_options.max_results = if matcher.is_some() {
+        Some(glob_filter_overfetch_limit(options.max_results))
+    } else {
+        options.max_results
     };
+    effective_options.case_insensitive = options.case_insensitive;
 
     let index = Index::open(syntext_config).map_err(map_index_error)?;
 
@@ -314,13 +313,11 @@ mod tests {
         let config = Config::default();
         build_index(&config, repo.path()).unwrap();
 
-        let options = SearchOptions {
-            path_filter: Some("src/".to_string()),
-            file_type: Some("rs".to_string()),
-            max_results: Some(1),
-            case_insensitive: true,
-            ..SearchOptions::default()
-        };
+        let mut options = SearchOptions::default();
+        options.path_filter = Some("src/".to_string());
+        options.file_type = Some("rs".to_string());
+        options.max_results = Some(1);
+        options.case_insensitive = true;
         let matches = search_with_options(&config, repo.path(), "visible token", &options).unwrap();
 
         assert_eq!(matches.len(), 1);
@@ -349,28 +346,21 @@ mod tests {
         build_index(&config, repo.path()).unwrap();
 
         // 1. Matches both via prefix
-        let options_no_glob = SearchOptions {
-            path_filter: None,
-            ..SearchOptions::default()
-        };
+        let options_no_glob = SearchOptions::default();
         let matches = search_with_options(&config, repo.path(), "token", &options_no_glob).unwrap();
         assert_eq!(matches.len(), 2);
 
         // 2. Matches only .rs via glob
-        let options_glob = SearchOptions {
-            path_filter: Some("**/*.rs".to_string()),
-            ..SearchOptions::default()
-        };
+        let mut options_glob = SearchOptions::default();
+        options_glob.path_filter = Some("**/*.rs".to_string());
         let matches_glob =
             search_with_options(&config, repo.path(), "token", &options_glob).unwrap();
         assert_eq!(matches_glob.len(), 1);
         assert_eq!(matches_glob[0].path, Path::new("src/lib.rs"));
 
         // 3. Matches only tests/ via prefix + glob
-        let options_prefix_glob = SearchOptions {
-            path_filter: Some("tests/*.py".to_string()),
-            ..SearchOptions::default()
-        };
+        let mut options_prefix_glob = SearchOptions::default();
+        options_prefix_glob.path_filter = Some("tests/*.py".to_string());
         let matches_prefix_glob =
             search_with_options(&config, repo.path(), "token", &options_prefix_glob).unwrap();
         assert_eq!(matches_prefix_glob.len(), 1);

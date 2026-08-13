@@ -15,14 +15,13 @@ pub(super) fn search_artifact(
     output_mode: OutputMode,
     budget_tokens: Option<usize>,
 ) -> crate::Result<Value> {
+    let mut search_options = SearchOptions::default();
+    search_options.max_results = Some(limit);
     let report = crate::substrate::hybrid_search(
         &state.config,
         &state.repo_root,
         &target.target,
-        &SearchOptions {
-            max_results: Some(limit),
-            ..SearchOptions::default()
-        },
+        &search_options,
     )?;
     let results: Vec<Value> = report
         .rows

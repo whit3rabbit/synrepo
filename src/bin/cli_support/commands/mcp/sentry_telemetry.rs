@@ -1,7 +1,6 @@
 use std::borrow::Cow;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
 use std::time::Duration;
 
 use sentry::protocol::{DebugMeta, Event, Level, Map};
@@ -36,38 +35,31 @@ pub(crate) fn init_from_config_and_env(repo_root: &Path) -> Option<sentry::Clien
         ENABLED.store(false, Ordering::Relaxed);
         return None;
     };
-    let dsn = match dsn_text.as_ref().parse::<sentry::types::Dsn>() {
-        Ok(dsn) => dsn,
-        Err(_) => {
-            ENABLED.store(false, Ordering::Relaxed);
-            if std::env::var_os(SENTRY_DSN_ENV).is_some() {
-                tracing::warn!(
-                    "{SENTRY_DSN_ENV} is set but invalid; Sentry MCP telemetry disabled"
-                );
-            } else {
-                tracing::warn!("default Sentry DSN is invalid; Sentry MCP telemetry disabled");
-            }
-            return None;
+    if dsn_text.as_ref().parse::<sentry::types::Dsn>().is_err() {
+        ENABLED.store(false, Ordering::Relaxed);
+        if std::env::var_os(SENTRY_DSN_ENV).is_some() {
+            tracing::warn!("{SENTRY_DSN_ENV} is set but invalid; Sentry MCP telemetry disabled");
+        } else {
+            tracing::warn!("default Sentry DSN is invalid; Sentry MCP telemetry disabled");
         }
-    };
+        return None;
+    }
 
-    let guard = sentry::init(sentry::ClientOptions {
-        dsn: Some(dsn),
-        release: None,
-        send_default_pii: false,
-        attach_stacktrace: false,
-        traces_sample_rate: 0.0,
-        max_breadcrumbs: 0,
-        server_name: None,
-        default_integrations: false,
-        auto_session_tracking: false,
-        enable_logs: false,
-        enable_metrics: false,
-        shutdown_timeout: Duration::from_millis(750),
-        before_send: Some(Arc::new(|event| Some(scrub_event(event)))),
-        before_breadcrumb: Some(Arc::new(|_| None)),
-        ..Default::default()
-    });
+    let options = sentry::ClientOptions::new()
+        .dsn(dsn_text.as_ref())
+        .send_default_pii(false)
+        .attach_stacktrace(false)
+        .traces_sample_rate(0.0)
+        .max_breadcrumbs(0)
+        .default_integrations(false)
+        // auto_session_tracking's setter needs the "release-health" feature,
+        // which is not enabled; the field already defaults to false.
+        .enable_logs(false)
+        .enable_metrics(false)
+        .shutdown_timeout(Duration::from_millis(750))
+        .before_send(|event| Some(scrub_event(event)))
+        .before_breadcrumb(|_| None);
+    let guard = sentry::init(options);
     ENABLED.store(true, Ordering::Relaxed);
     Some(guard)
 }

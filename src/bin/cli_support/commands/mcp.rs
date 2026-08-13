@@ -11,9 +11,8 @@ use std::time::Duration;
 use rmcp::{
     handler::server::router::tool::ToolRouter,
     model::{
-        ListResourceTemplatesResult, PaginatedRequestParams, RawResourceTemplate,
-        ReadResourceRequestParams, ReadResourceResult, ResourceTemplate, ServerCapabilities,
-        ServerInfo,
+        ListResourceTemplatesResult, PaginatedRequestParams, ReadResourceRequestParams,
+        ReadResourceResponse, ResourceTemplate, ServerCapabilities, ServerInfo,
     },
     service::{RequestContext, RoleServer},
     tool_handler, ErrorData as McpError, ServerHandler,
@@ -69,60 +68,36 @@ impl ServerHandler for SynrepoServer {
         _context: RequestContext<RoleServer>,
     ) -> impl Future<Output = Result<ListResourceTemplatesResult, McpError>> + Send + '_ {
         std::future::ready(Ok(ListResourceTemplatesResult::with_all_items(vec![
-            ResourceTemplate::new(
-                RawResourceTemplate::new("synrepo://card/{target}", "synrepo card")
-                    .with_description("Read a card-shaped JSON context artifact.")
-                    .with_mime_type("application/json"),
-                None,
-            ),
-            ResourceTemplate::new(
-                RawResourceTemplate::new("synrepo://file/{path}/outline", "synrepo file outline")
-                    .with_description("Read a compact file outline with symbols and hashes.")
-                    .with_mime_type("application/json"),
-                None,
-            ),
-            ResourceTemplate::new(
-                RawResourceTemplate::new(
-                    "synrepo://context-pack?goal={goal}",
-                    "synrepo context pack",
-                )
+            ResourceTemplate::new("synrepo://card/{target}", "synrepo card")
+                .with_description("Read a card-shaped JSON context artifact.")
+                .with_mime_type("application/json"),
+            ResourceTemplate::new("synrepo://file/{path}/outline", "synrepo file outline")
+                .with_description("Read a compact file outline with symbols and hashes.")
+                .with_mime_type("application/json"),
+            ResourceTemplate::new("synrepo://context-pack?goal={goal}", "synrepo context pack")
                 .with_description("Read a batched read-only context pack.")
                 .with_mime_type("application/json"),
-                None,
-            ),
             ResourceTemplate::new(
-                RawResourceTemplate::new(
-                    "synrepo://project/{project_id}/card/{target}",
-                    "synrepo project card",
-                )
-                .with_description("Read a card-shaped JSON context artifact for a managed project.")
+                "synrepo://project/{project_id}/card/{target}",
+                "synrepo project card",
+            )
+            .with_description("Read a card-shaped JSON context artifact for a managed project.")
+            .with_mime_type("application/json"),
+            ResourceTemplate::new(
+                "synrepo://project/{project_id}/file/{path}/outline",
+                "synrepo project file outline",
+            )
+            .with_description("Read a compact file outline for a managed project.")
+            .with_mime_type("application/json"),
+            ResourceTemplate::new(
+                "synrepo://project/{project_id}/context-pack?goal={goal}",
+                "synrepo project context pack",
+            )
+            .with_description("Read a batched read-only context pack for a managed project.")
+            .with_mime_type("application/json"),
+            ResourceTemplate::new("synrepo://projects", "synrepo managed projects")
+                .with_description("List managed projects from the user-level registry.")
                 .with_mime_type("application/json"),
-                None,
-            ),
-            ResourceTemplate::new(
-                RawResourceTemplate::new(
-                    "synrepo://project/{project_id}/file/{path}/outline",
-                    "synrepo project file outline",
-                )
-                .with_description("Read a compact file outline for a managed project.")
-                .with_mime_type("application/json"),
-                None,
-            ),
-            ResourceTemplate::new(
-                RawResourceTemplate::new(
-                    "synrepo://project/{project_id}/context-pack?goal={goal}",
-                    "synrepo project context pack",
-                )
-                .with_description("Read a batched read-only context pack for a managed project.")
-                .with_mime_type("application/json"),
-                None,
-            ),
-            ResourceTemplate::new(
-                RawResourceTemplate::new("synrepo://projects", "synrepo managed projects")
-                    .with_description("List managed projects from the user-level registry.")
-                    .with_mime_type("application/json"),
-                None,
-            ),
         ])))
     }
 
@@ -130,9 +105,14 @@ impl ServerHandler for SynrepoServer {
         &self,
         request: ReadResourceRequestParams,
         _context: RequestContext<RoleServer>,
-    ) -> impl Future<Output = Result<ReadResourceResult, McpError>> + Send + '_ {
+    ) -> impl Future<Output = Result<ReadResourceResponse, McpError>> + Send + '_ {
         let uri = request.uri;
         let server = self.clone();
-        async move { server.read_resource_with_controls(uri).await }
+        async move {
+            server
+                .read_resource_with_controls(uri)
+                .await
+                .map(ReadResourceResponse::from)
+        }
     }
 }

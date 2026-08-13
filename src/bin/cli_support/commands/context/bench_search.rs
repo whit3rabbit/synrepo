@@ -186,13 +186,9 @@ fn symbol_details(compiler: &GraphCardCompiler, id: SymbolNodeId) -> Option<(Str
 }
 
 fn search_options() -> SearchOptions {
-    SearchOptions {
-        path_filter: None,
-        file_type: None,
-        exclude_type: None,
-        max_results: Some(SEARCH_FETCH_LIMIT),
-        case_insensitive: false,
-    }
+    let mut options = SearchOptions::default();
+    options.max_results = Some(SEARCH_FETCH_LIMIT);
+    options
 }
 
 fn is_benchmark_fixture_path(value: &str) -> bool {

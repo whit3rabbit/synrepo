@@ -219,7 +219,7 @@ mod tests {
     fn text(result: &ReadResourceResult) -> &str {
         match &result.contents[0] {
             ResourceContents::TextResourceContents { text, .. } => text,
-            ResourceContents::BlobResourceContents { .. } => panic!("expected text resource"),
+            _ => panic!("expected text resource"),
         }
     }
 

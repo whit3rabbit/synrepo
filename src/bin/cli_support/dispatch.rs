@@ -91,18 +91,15 @@ pub(crate) fn dispatch(
             path_filter,
             max_results,
             mode,
-        } => super::commands::search_with_mode(
-            repo_root,
-            &query,
-            SearchOptions {
-                path_filter,
-                file_type,
-                exclude_type,
-                max_results,
-                case_insensitive: ignore_case,
-            },
-            mode,
-        ),
+        } => {
+            let mut options = SearchOptions::default();
+            options.path_filter = path_filter;
+            options.file_type = file_type;
+            options.exclude_type = exclude_type;
+            options.max_results = max_results;
+            options.case_insensitive = ignore_case;
+            super::commands::search_with_mode(repo_root, &query, options, mode)
+        }
         Command::Cards { query, budget } => cards_alias(repo_root, &query, budget),
         Command::Orient => orient_alias(repo_root),
         Command::Ask { ask, budget } => ask_alias(repo_root, &ask, budget),
