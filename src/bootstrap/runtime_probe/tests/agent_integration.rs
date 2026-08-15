@@ -95,3 +95,26 @@ fn agent_integration_prefers_complete_target_over_earlier_mcp_only_hint() {
         }
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn agent_integration_follows_in_repo_agents_to_claude_symlink() {
+    use std::os::unix::fs::symlink;
+
+    let (_lock, _home, home_path, _guard) = isolated_home();
+    let dir = tempdir().unwrap();
+    let claude_skill = dir.path().join(".claude").join("skills").join("synrepo");
+    fs::create_dir_all(&claude_skill).unwrap();
+    fs::write(claude_skill.join("SKILL.md"), b"shim").unwrap();
+
+    // Symlink .agents -> .claude
+    symlink(dir.path().join(".claude"), dir.path().join(".agents")).unwrap();
+
+    let report = probe_with_home(dir.path(), Some(&home_path));
+    assert_eq!(
+        report.agent_integration,
+        AgentIntegration::Partial {
+            target: AgentTargetKind::Claude
+        }
+    );
+}

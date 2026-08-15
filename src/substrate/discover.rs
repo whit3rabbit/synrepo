@@ -110,12 +110,25 @@ fn walk_root(
     walker.git_exclude(use_git_ignores);
     walker.git_global(use_git_ignores);
     walker.require_git(false);
-    walker.follow_links(false);
+    walker.follow_links(true);
     walker.add_custom_ignore_filename(".synignore");
+    let canonical_root =
+        std::fs::canonicalize(&root.absolute_path).unwrap_or_else(|_| root.absolute_path.clone());
     // Never descend into generated runtime indexes. Always-on, independent of
     // local ignore files. This closes feedback loops and avoids reading index
     // sidecars that may be locked by writer processes.
-    walker.filter_entry(|entry| entry.file_name() != ".synrepo" && entry.file_name() != ".syntext");
+    // Also skip symlinks that escape the repository root boundary.
+    let filter_root = canonical_root.clone();
+    walker.filter_entry(move |entry| {
+        if entry.file_name() == ".synrepo" || entry.file_name() == ".syntext" {
+            return false;
+        }
+        if let Ok(canonical) = entry.path().canonicalize() {
+            canonical.starts_with(&filter_root)
+        } else {
+            false
+        }
+    });
 
     for result in walker.build() {
         let entry = match result {
@@ -130,6 +143,13 @@ fn walk_root(
         }
 
         let absolute_path = entry.into_path();
+        if let Ok(canonical) = absolute_path.canonicalize() {
+            if !canonical.starts_with(&canonical_root) {
+                continue;
+            }
+        } else {
+            continue;
+        }
         let relative_path = match absolute_path.strip_prefix(&root.absolute_path) {
             Ok(path) => path.to_path_buf(),
             Err(_) => continue,

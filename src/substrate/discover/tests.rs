@@ -95,3 +95,68 @@ fn discover_skips_non_text_and_oversized_files() {
 
     assert_eq!(relative_paths, vec!["src/lib.rs".to_string()]);
 }
+
+#[cfg(unix)]
+#[test]
+fn discover_follows_in_repo_file_and_directory_symlinks() {
+    use std::os::unix::fs::symlink;
+
+    let repo = tempdir().unwrap();
+    fs::create_dir_all(repo.path().join("src")).unwrap();
+    fs::create_dir_all(repo.path().join(".claude/skills/synrepo")).unwrap();
+
+    fs::write(repo.path().join("AGENTS.md"), "# agents doc\n").unwrap();
+    fs::write(
+        repo.path().join(".claude/skills/synrepo/SKILL.md"),
+        "# skill doc\n",
+    )
+    .unwrap();
+    fs::write(repo.path().join("src/lib.rs"), "pub fn ok() {}\n").unwrap();
+
+    // In-repo file symlink: CLAUDE.md -> AGENTS.md
+    symlink(repo.path().join("AGENTS.md"), repo.path().join("CLAUDE.md")).unwrap();
+    // In-repo dir symlink: .agents -> .claude
+    symlink(repo.path().join(".claude"), repo.path().join(".agents")).unwrap();
+
+    let discovered = discover(repo.path(), &Config::default()).unwrap();
+    let paths: Vec<_> = discovered
+        .iter()
+        .map(|f| f.relative_path.as_str())
+        .collect();
+
+    assert!(paths.contains(&"AGENTS.md"));
+    assert!(paths.contains(&"CLAUDE.md"));
+    assert!(paths.contains(&"src/lib.rs"));
+    assert!(paths.contains(&".claude/skills/synrepo/SKILL.md"));
+    assert!(paths.contains(&".agents/skills/synrepo/SKILL.md"));
+}
+
+#[cfg(unix)]
+#[test]
+fn discover_ignores_symlinks_pointing_outside_repo() {
+    use std::os::unix::fs::symlink;
+
+    let repo = tempdir().unwrap();
+    let outside = tempdir().unwrap();
+
+    fs::create_dir_all(repo.path().join("src")).unwrap();
+    fs::write(repo.path().join("src/lib.rs"), "pub fn ok() {}\n").unwrap();
+    fs::write(outside.path().join("secret.rs"), "pub fn secret() {}\n").unwrap();
+
+    // Symlink to outside file
+    symlink(
+        outside.path().join("secret.rs"),
+        repo.path().join("src/outside.rs"),
+    )
+    .unwrap();
+    // Symlink to outside dir
+    symlink(outside.path(), repo.path().join("outside_dir")).unwrap();
+
+    let discovered = discover(repo.path(), &Config::default()).unwrap();
+    let paths: Vec<_> = discovered
+        .iter()
+        .map(|f| f.relative_path.as_str())
+        .collect();
+
+    assert_eq!(paths, vec!["src/lib.rs"]);
+}

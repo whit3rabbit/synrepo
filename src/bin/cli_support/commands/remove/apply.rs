@@ -216,7 +216,7 @@ fn warn_legacy_remove(tool_name: &str, path: &Path) {
 }
 
 fn delete_shim(path: &Path) -> anyhow::Result<()> {
-    if !path.exists() {
+    if fs::symlink_metadata(path).is_err() {
         return Ok(());
     }
     fs::remove_file(path).with_context(|| format!("failed to delete {}", path.display()))?;

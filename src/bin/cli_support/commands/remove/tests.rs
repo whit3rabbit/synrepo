@@ -108,6 +108,25 @@ fn apply_delete_shim_stops_at_non_empty_parent() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn apply_delete_shim_removes_broken_symlink() {
+    use std::os::unix::fs::symlink;
+
+    let fx = Fixture::new();
+    let dir = fx.path().join(".claude").join("skills").join("synrepo");
+    fs::create_dir_all(&dir).unwrap();
+    symlink(fx.path().join("non_existent.md"), dir.join("SKILL.md")).unwrap();
+
+    let plan = build_plan(fx.path(), Some(AgentTool::Claude), false).unwrap();
+    apply_plan(fx.path(), &plan).unwrap();
+
+    assert!(
+        fs::symlink_metadata(dir.join("SKILL.md")).is_err(),
+        "broken symlink shim should be removed"
+    );
+}
+
 #[test]
 fn apply_legacy_opencode_shim_refuses_to_delete_user_agents_md() {
     let fx = Fixture::new();

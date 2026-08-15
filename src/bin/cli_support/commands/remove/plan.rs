@@ -50,7 +50,7 @@ pub(crate) fn build_plan(
                     .as_ref()
                     .map(|p| p.agents.iter().any(|a| a.tool == t.canonical_name()))
                     .unwrap_or(false);
-                let has_shim = t.output_path(repo_root).exists();
+                let has_shim = fs::symlink_metadata(t.output_path(repo_root)).is_ok();
                 let has_mcp = agent_config_mcp_path(repo_root, t).is_some();
                 let has_agent_hook = hook_artifacts::has_agent_hook(repo_root, t, project.as_ref());
                 if !has_registry_entry && !has_shim && !has_mcp && !has_agent_hook {
@@ -172,7 +172,7 @@ fn add_agent_actions(
     let shim_abs = registry_entry
         .map(|e| registry_path(repo_root, &e.shim_path))
         .unwrap_or_else(|| tool.output_path(repo_root));
-    if shim_abs.exists() {
+    if fs::symlink_metadata(&shim_abs).is_ok() {
         plan.actions.push(RemoveAction::DeleteShim {
             tool: tool.canonical_name().to_string(),
             path: shim_abs,

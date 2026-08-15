@@ -97,6 +97,28 @@ fn agent_setup_rejects_symlinked_parent_directory() {
     );
 }
 
+#[cfg(unix)]
+#[test]
+fn agent_setup_allows_in_repo_symlinked_parent_directory() {
+    use std::os::unix::fs::symlink;
+
+    let dir = tempdir().unwrap();
+    let repo = dir.path();
+
+    let claude_dir = repo.join(".claude");
+    fs::create_dir_all(&claude_dir).unwrap();
+    symlink(&claude_dir, repo.join(".goose")).unwrap();
+
+    let tool = AgentTool::Goose;
+    agent_setup(repo, tool, true, false)
+        .expect("agent setup must allow in-repo symlinked parent directories");
+
+    let out_path = tool.output_path(repo);
+    assert!(out_path.exists());
+    let content = fs::read_to_string(&out_path).unwrap();
+    assert_eq!(content, tool.shim_content());
+}
+
 /// If the path that would be the shim's parent directory exists as a regular
 /// file, `fs::create_dir_all` fails and `agent_setup` propagates an error
 /// that names the parent path. Guards the error branch in `basic.rs`.

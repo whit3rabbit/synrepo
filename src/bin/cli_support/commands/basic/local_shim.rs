@@ -29,10 +29,36 @@ pub(super) fn reject_parent_symlinks(repo_root: &Path, out_path: &Path) -> anyho
         }
         match fs::symlink_metadata(&current) {
             Ok(meta) if meta.file_type().is_symlink() => {
-                anyhow::bail!(
-                    "refusing to write shim through symlink at {}",
-                    current.display()
-                );
+                let canonical_target = match fs::canonicalize(&current) {
+                    Ok(target) => target,
+                    Err(error) => {
+                        anyhow::bail!(
+                            "could not resolve symlink at {}: {error}",
+                            current.display()
+                        );
+                    }
+                };
+                let canonical_root = match fs::canonicalize(repo_root) {
+                    Ok(root) => root,
+                    Err(error) => {
+                        anyhow::bail!(
+                            "could not resolve repo root {}: {error}",
+                            repo_root.display()
+                        );
+                    }
+                };
+                if !canonical_target.starts_with(&canonical_root) {
+                    anyhow::bail!(
+                        "refusing to write shim through symlink pointing outside repo root: {}",
+                        current.display()
+                    );
+                }
+                if !canonical_target.is_dir() {
+                    anyhow::bail!(
+                        "shim parent component is not a directory: {}",
+                        current.display()
+                    );
+                }
             }
             Ok(meta) if !meta.is_dir() => {
                 anyhow::bail!(
