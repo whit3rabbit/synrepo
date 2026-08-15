@@ -12,6 +12,12 @@ an existing section untouched.
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-08-15
+
+### Fixed
+- Allow safe in-repo symlinks (such as `.agents -> .claude` or `CLAUDE.md -> AGENTS.md`) during file discovery, runtime probing, and agent shim installation while maintaining strict rejection of out-of-repo symlink targets.
+- Fix removal planning and deletion to properly detect and clean up dangling or broken symlinks.
+
 ## [0.1.4] - 2026-08-13
 
 ### Changed
