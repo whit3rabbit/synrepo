@@ -29,7 +29,7 @@ syntext = "2.0.0"
 # Per-language crates each ship a pre-generated C grammar and expose
 # LOCALS_QUERY, HIGHLIGHTS_QUERY, INJECTIONS_QUERY as &'static str constants.
 # We read those directly and add synrepo-specific extras on top.
-tree-sitter = "0.26.9"
+tree-sitter = "0.27.0"
 tree-sitter-go = "0.25.0"
 tree-sitter-rust = "0.24.2"
 tree-sitter-python = "0.25.0"
@@ -60,7 +60,7 @@ fs2 = "0.4"                 # cross-platform advisory file locking (flock / Lock
 interprocess = "2"          # local_socket: Unix socket on Unix, named pipe on Windows. Blocking API only.
 
 # --- Git integration ---
-gix = { version = "0.84", default-features = false, features = ["sha1", "max-performance-safe", "revision", "blob-diff"] }
+gix = { version = "0.87", default-features = false, features = ["sha1", "max-performance-safe", "revision", "blob-diff"] }
 
 # --- Hashing and encoding ---
 blake3 = "1"                # fast content hashing for file/symbol identity
