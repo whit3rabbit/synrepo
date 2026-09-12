@@ -190,17 +190,20 @@ fn watch_service_ignores_runtime_only_writes() {
         Duration::from_secs(5),
     );
 
-    let baseline = match request_watch_control(&synrepo_dir, WatchControlRequest::Status).unwrap() {
-        WatchControlResponse::Status { snapshot } => snapshot,
-        other => panic!("unexpected control response: {:?}", other),
+    thread::sleep(Duration::from_millis(600));
+    let WatchControlResponse::Status { snapshot: baseline } =
+        request_watch_control(&synrepo_dir, WatchControlRequest::Status).unwrap()
+    else {
+        panic!("unexpected response");
     };
 
     fs::write(synrepo_dir.join("state/noise.txt"), "runtime only").unwrap();
     thread::sleep(Duration::from_millis(800));
 
-    let after = match request_watch_control(&synrepo_dir, WatchControlRequest::Status).unwrap() {
-        WatchControlResponse::Status { snapshot } => snapshot,
-        other => panic!("unexpected control response: {:?}", other),
+    let WatchControlResponse::Status { snapshot: after } =
+        request_watch_control(&synrepo_dir, WatchControlRequest::Status).unwrap()
+    else {
+        panic!("unexpected response");
     };
 
     assert_eq!(after.last_event_at, baseline.last_event_at);
