@@ -55,7 +55,7 @@ jobs:
         run: cargo install cargo-deb --version "=3.7.0" --locked
 
       - name: Build binary
-        run: cross build --release --target ${{ matrix.target }}
+        run: cross build --release --target ${{ matrix.target }} --all-features
 
       - name: Stage binary and deb
         env:
@@ -91,7 +91,7 @@ jobs:
           - target: x86_64-apple-darwin
             runner: macos-15-intel
             suffix: macos-x86_64
-            features: ""
+            features: --features metrics-http
     steps:
       - uses: actions/checkout@v7
 
@@ -140,7 +140,7 @@ jobs:
           key: x86_64-pc-windows-msvc
 
       - name: Build binary
-        run: cargo build --release --target x86_64-pc-windows-msvc
+        run: cargo build --release --target x86_64-pc-windows-msvc --all-features
 
       - name: Stage binary
         env:

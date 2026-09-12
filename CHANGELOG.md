@@ -12,6 +12,11 @@ an existing section untouched.
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-09-12
+
+### Fixed
+- CI and release builds now enable `--all-features` (including `semantic-triage` and `metrics-http`) across Linux, Windows, and macOS (Apple Silicon).
+
 ## [0.2.0] - 2026-09-12
 
 ### Changed

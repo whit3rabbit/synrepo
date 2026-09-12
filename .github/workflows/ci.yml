@@ -29,11 +29,7 @@ jobs:
       - name: make ci-lint
         run: make ci-lint
 
-      - name: cargo build --features metrics-http
-        run: cargo build --features metrics-http
-
-      - name: cargo build --all-features (macOS)
-        if: matrix.os == 'macos-14'
+      - name: cargo build --all-features
         run: cargo build --all-features
 
   # Default builds never compile the optional embedding subsystem, so
