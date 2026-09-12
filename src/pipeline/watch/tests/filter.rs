@@ -305,3 +305,30 @@ fn filter_repo_events_ignores_deep_internal_synrepo_paths() {
     assert_eq!(filtered.len(), 1);
     assert_eq!(filtered[0].paths[0], repo.join("src/lib.rs"));
 }
+
+#[test]
+fn filter_repo_events_ignores_access_events() {
+    let (_dir, repo, _config, synrepo_dir) = setup_test_repo();
+    let access_event = debounced_event(
+        Event::new(EventKind::Access(
+            notify_debouncer_full::notify::event::AccessKind::Open(
+                notify_debouncer_full::notify::event::AccessMode::Any,
+            ),
+        ))
+        .add_path(repo.join("src/lib.rs")),
+    );
+    let source_event = debounced_event(
+        Event::new(EventKind::Modify(ModifyKind::Any)).add_path(repo.join("src/lib.rs")),
+    );
+
+    let filtered = super::super::filter::filter_repo_events(
+        vec![access_event, source_event],
+        std::slice::from_ref(&repo),
+        &repo,
+        &synrepo_dir,
+        &[],
+        &repo_ignore_set(&repo),
+    );
+    assert_eq!(filtered.len(), 1);
+    assert_eq!(filtered[0].paths[0], repo.join("src/lib.rs"));
+}

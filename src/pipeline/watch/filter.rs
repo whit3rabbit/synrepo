@@ -142,6 +142,10 @@ pub(crate) fn filter_repo_events(
     events
         .into_iter()
         .filter(|event| {
+            if matches!(event.kind, EventKind::Access(_)) {
+                return false;
+            }
+
             if event.paths.iter().all(|path| {
                 let path = repo_normalized_path(path, repo_root, synrepo_dir);
                 ctx.matches_ignored_or_runtime(&path)
@@ -270,6 +274,9 @@ enum CollectableKind {
 }
 
 fn collectable_path_kind(path: &Path, kind: &EventKind) -> CollectableKind {
+    if matches!(kind, EventKind::Access(_)) {
+        return CollectableKind::Skip;
+    }
     match fs::metadata(path) {
         Ok(md) => {
             if md.is_dir() {
