@@ -12,6 +12,15 @@ an existing section untouched.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-12
+
+### Changed
+- Upgraded `tree-sitter` to 0.27.0 with adaptation to the private `QueryMatch::captures` getter method.
+- Upgraded `gix` to 0.87.1.
+- Upgraded `rmcp` to 3.2.0, `interprocess` to 2.4.4, `tokenizers` to 0.23.2, and `sentry` to 0.49.2.
+- Cleaned up deprecated Sentry client initialization options (`enable_logs`, `enable_metrics`).
+- Scoped `--all-features` in macOS release matrix to Apple Silicon (`aarch64-apple-darwin`), allowing Intel macOS release builds to succeed without unavailable `ort-sys` prebuilts.
+
 ## [0.1.6] - 2026-09-12
 
 ### Added
