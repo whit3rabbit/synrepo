@@ -240,12 +240,12 @@ pub fn parse_file(path: &Path, content: &[u8]) -> crate::Result<Option<ParseOutp
 
     while let Some(query_match) = cursor_matches.next() {
         let item_node = query_match
-            .captures
+            .captures()
             .iter()
             .find(|capture| capture.index == item_idx)
             .map(|capture| capture.node);
         let name_node = query_match
-            .captures
+            .captures()
             .iter()
             .find(|capture| capture.index == name_idx)
             .map(|capture| capture.node);
@@ -320,7 +320,7 @@ fn extract_import_refs(
     while let Some(m) = matches.next() {
         let find_text = |idx: Option<u32>| -> Option<String> {
             let idx = idx?;
-            let capture = m.captures.iter().find(|c| c.index == idx)?;
+            let capture = m.captures().iter().find(|c| c.index == idx)?;
             let text = node_text(capture.node, content);
             (!text.is_empty()).then_some(text)
         };

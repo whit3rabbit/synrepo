@@ -54,8 +54,6 @@ pub(crate) fn init_from_config_and_env(repo_root: &Path) -> Option<sentry::Clien
         .default_integrations(false)
         // auto_session_tracking's setter needs the "release-health" feature,
         // which is not enabled; the field already defaults to false.
-        .enable_logs(false)
-        .enable_metrics(false)
         .shutdown_timeout(Duration::from_millis(750))
         .before_send(|event| Some(scrub_event(event)))
         .before_breadcrumb(|_| None);

@@ -31,14 +31,14 @@ pub(super) fn extract_call_refs(
             .map(|&mode| mode == CallMode::Method)
             .unwrap_or(false);
 
-        for capture in m.captures.iter().filter(|c| c.index == callee_idx) {
+        for capture in m.captures().iter().filter(|c| c.index == callee_idx) {
             let name = node_text(capture.node, content);
             if name.is_empty() {
                 continue;
             }
 
             let callee_prefix = prefix_idx.and_then(|idx| {
-                m.captures
+                m.captures()
                     .iter()
                     .find(|c| c.index == idx)
                     .map(|c| node_text(c.node, content))
