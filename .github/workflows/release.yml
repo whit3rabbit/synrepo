@@ -141,7 +141,7 @@ jobs:
 
       - name: Build binary
         env:
-          RUSTFLAGS: -C target-feature=+crt-static
+          RUSTFLAGS: -C link-arg=/NODEFAULTLIB:libcpmt.lib -C link-arg=/NODEFAULTLIB:libcmt.lib
         run: cargo build --release --target x86_64-pc-windows-msvc --all-features
 
       - name: Stage binary
