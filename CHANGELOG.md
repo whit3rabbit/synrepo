@@ -21,6 +21,10 @@ an existing section untouched.
 - Cleaned up deprecated Sentry client initialization options (`enable_logs`, `enable_metrics`).
 - Scoped `--all-features` in macOS release matrix to Apple Silicon (`aarch64-apple-darwin`), allowing Intel macOS release builds to succeed without unavailable `ort-sys` prebuilts.
 
+### Fixed
+- Fixed cascading file-watcher reconcile loops on Linux by ignoring non-mutating `EventKind::Access` events emitted by inotify during compiler AST extraction.
+- Hardened watcher path filtering to robustly ignore internal runtime directory paths (`.synrepo`, `.syntext`, `.git`) regardless of relative path formatting.
+
 ## [0.1.6] - 2026-09-12
 
 ### Added
