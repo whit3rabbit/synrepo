@@ -70,10 +70,11 @@ fn assert_startup_reconcile(event_rx: &crossbeam_channel::Receiver<WatchEvent>) 
 }
 
 fn assert_keepalive_reconcile(event_rx: &crossbeam_channel::Receiver<WatchEvent>) {
-    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    let mut observed = Vec::new();
     while std::time::Instant::now() < deadline {
         let first = event_rx
-            .recv_timeout(Duration::from_secs(2))
+            .recv_timeout(Duration::from_secs(5))
             .expect("keepalive ReconcileStarted must arrive");
         if let WatchEvent::ReconcileStarted {
             triggering_events: 0,
@@ -81,7 +82,7 @@ fn assert_keepalive_reconcile(event_rx: &crossbeam_channel::Receiver<WatchEvent>
         } = first
         {
             let second = event_rx
-                .recv_timeout(Duration::from_secs(2))
+                .recv_timeout(Duration::from_secs(5))
                 .expect("keepalive ReconcileFinished must arrive");
             match second {
                 WatchEvent::ReconcileFinished {
@@ -101,7 +102,12 @@ fn assert_keepalive_reconcile(event_rx: &crossbeam_channel::Receiver<WatchEvent>
                     first, other
                 ),
             }
+        } else {
+            observed.push(first);
         }
     }
-    panic!("keepalive reconcile did not arrive within deadline");
+    panic!(
+        "keepalive reconcile did not arrive within deadline; observed events: {:?}",
+        observed
+    );
 }

@@ -62,6 +62,70 @@ pub(crate) fn ignored_generated_dirs(repo_roots: &[PathBuf], config: &Config) ->
         .collect()
 }
 
+struct WatchFilterContext<'a> {
+    repo_roots: &'a [PathBuf],
+    synrepo_dir: &'a Path,
+    canonical_synrepo_dir: Option<PathBuf>,
+    syntext_dir: PathBuf,
+    canonical_syntext_dir: Option<PathBuf>,
+    ignored_dirs: &'a [PathBuf],
+    canonical_ignored_dirs: Vec<PathBuf>,
+    ignore_set: &'a WatchIgnoreSet,
+}
+
+impl<'a> WatchFilterContext<'a> {
+    fn new(
+        repo_roots: &'a [PathBuf],
+        repo_root: &Path,
+        synrepo_dir: &'a Path,
+        ignored_dirs: &'a [PathBuf],
+        ignore_set: &'a WatchIgnoreSet,
+    ) -> Self {
+        let canonical_synrepo_dir = canonicalize_lossy(synrepo_dir);
+        let syntext_dir = repo_root.join(".syntext");
+        let canonical_syntext_dir = canonicalize_lossy(&syntext_dir);
+        let canonical_ignored_dirs: Vec<PathBuf> = ignored_dirs
+            .iter()
+            .filter_map(|dir| canonicalize_lossy(dir))
+            .collect();
+        Self {
+            repo_roots,
+            synrepo_dir,
+            canonical_synrepo_dir,
+            syntext_dir,
+            canonical_syntext_dir,
+            ignored_dirs,
+            canonical_ignored_dirs,
+            ignore_set,
+        }
+    }
+
+    fn matches_ignored_or_runtime(&self, path: &Path) -> bool {
+        path_matches_runtime(
+            path,
+            self.synrepo_dir,
+            self.canonical_synrepo_dir.as_deref(),
+        ) || path_matches_runtime(
+            path,
+            &self.syntext_dir,
+            self.canonical_syntext_dir.as_deref(),
+        ) || path_starts_with_external_syntext_dir(path, self.repo_roots)
+            || path_starts_with_any_git_dir(path, self.repo_roots)
+            || path_matches_ignored_dir(path, self.ignored_dirs, &self.canonical_ignored_dirs)
+            || self.ignore_set.is_ignored(path)
+    }
+
+    fn is_collectable(&self, path: &Path, kind: &EventKind) -> bool {
+        if !path_starts_with_any_root(path, self.repo_roots) {
+            return false;
+        }
+        if self.matches_ignored_or_runtime(path) {
+            return false;
+        }
+        !matches!(collectable_path_kind(path, kind), CollectableKind::Skip)
+    }
+}
+
 pub(crate) fn filter_repo_events(
     events: Vec<DebouncedEvent>,
     repo_roots: &[PathBuf],
@@ -70,36 +134,20 @@ pub(crate) fn filter_repo_events(
     ignored_dirs: &[PathBuf],
     ignore_set: &WatchIgnoreSet,
 ) -> Vec<DebouncedEvent> {
-    let canonical_synrepo_dir = canonicalize_lossy(synrepo_dir);
-    let syntext_dir = repo_root.join(".syntext");
-    let canonical_syntext_dir = canonicalize_lossy(&syntext_dir);
-    let canonical_ignored_dirs: Vec<PathBuf> = ignored_dirs
-        .iter()
-        .filter_map(|dir| canonicalize_lossy(dir))
-        .collect();
+    let ctx = WatchFilterContext::new(repo_roots, repo_root, synrepo_dir, ignored_dirs, ignore_set);
     events
         .into_iter()
         .filter(|event| {
             if event.paths.iter().all(|path| {
                 let path = repo_normalized_path(path, repo_root, synrepo_dir);
-                path_matches_runtime(&path, synrepo_dir, canonical_synrepo_dir.as_deref())
-                    || path_matches_runtime(&path, &syntext_dir, canonical_syntext_dir.as_deref())
-                    || path_matches_ignored_dir(&path, ignored_dirs, &canonical_ignored_dirs)
-                    || ignore_set.is_ignored(&path)
+                ctx.matches_ignored_or_runtime(&path)
             }) {
                 return false;
             }
 
             event.paths.iter().any(|path| {
                 let path = repo_normalized_path(path, repo_root, synrepo_dir);
-                is_collectable_repo_path(
-                    &path,
-                    repo_roots,
-                    synrepo_dir,
-                    ignored_dirs,
-                    ignore_set,
-                    &event.kind,
-                )
+                ctx.is_collectable(&path, &event.kind)
             })
         })
         .collect()
@@ -132,24 +180,13 @@ pub(crate) fn collect_repo_paths(
     ignored_dirs: &[PathBuf],
     ignore_set: &WatchIgnoreSet,
 ) -> CollectedPaths {
+    let ctx = WatchFilterContext::new(repo_roots, repo_root, synrepo_dir, ignored_dirs, ignore_set);
     let mut paths = std::collections::BTreeSet::new();
     let mut directory_paths = std::collections::BTreeSet::new();
     for event in events {
         for path in &event.paths {
             let path = repo_normalized_path(path, repo_root, synrepo_dir);
-            if !path_starts_with_any_root(&path, repo_roots) {
-                continue;
-            }
-            if path.starts_with(synrepo_dir)
-                || path_starts_with_external_syntext_dir(&path, repo_roots)
-                || path_starts_with_any_git_dir(&path, repo_roots)
-            {
-                continue;
-            }
-            if ignored_dirs.iter().any(|dir| path.starts_with(dir)) {
-                continue;
-            }
-            if ignore_set.is_ignored(&path) {
+            if !ctx.is_collectable(&path, &event.kind) {
                 continue;
             }
             match collectable_path_kind(&path, &event.kind) {
@@ -167,32 +204,6 @@ pub(crate) fn collect_repo_paths(
         paths: paths.into_iter().collect(),
         directory_paths: directory_paths.into_iter().collect(),
     }
-}
-
-fn is_collectable_repo_path(
-    path: &Path,
-    repo_roots: &[PathBuf],
-    synrepo_dir: &Path,
-    ignored_dirs: &[PathBuf],
-    ignore_set: &WatchIgnoreSet,
-    kind: &EventKind,
-) -> bool {
-    if !path_starts_with_any_root(path, repo_roots) {
-        return false;
-    }
-    if path.starts_with(synrepo_dir)
-        || path_starts_with_external_syntext_dir(path, repo_roots)
-        || path_starts_with_any_git_dir(path, repo_roots)
-    {
-        return false;
-    }
-    if ignored_dirs.iter().any(|dir| path.starts_with(dir)) {
-        return false;
-    }
-    if ignore_set.is_ignored(path) {
-        return false;
-    }
-    !matches!(collectable_path_kind(path, kind), CollectableKind::Skip)
 }
 
 fn path_starts_with_any_root(path: &Path, repo_roots: &[PathBuf]) -> bool {

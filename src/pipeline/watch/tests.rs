@@ -68,7 +68,7 @@ pub(super) fn watch_service_guard() -> (
     (
         WATCH_SERVICE_TEST_LOCK
             .lock()
-            .expect("watch service test lock poisoned"),
+            .unwrap_or_else(|poisoned| poisoned.into_inner()),
         crate::test_support::global_test_lock("watch-service"),
         crate::test_support::global_test_lock(crate::config::test_home::HOME_ENV_TEST_LOCK),
         crate::config::test_home::lock_home_env_read(),
