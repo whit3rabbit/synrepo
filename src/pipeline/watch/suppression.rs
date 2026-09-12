@@ -21,9 +21,31 @@ impl SuppressedPaths {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn retain_unsuppressed(&mut self, paths: &mut Vec<PathBuf>) {
         self.prune();
         paths.retain(|path| !self.is_suppressed(path));
+    }
+
+    pub(super) fn filter_collected(
+        &mut self,
+        collected: &mut crate::pipeline::watch::filter::CollectedPaths,
+    ) {
+        self.prune();
+        collected.paths.retain(|path| !self.is_suppressed(path));
+        collected
+            .directory_paths
+            .retain(|dir| !self.is_suppressed(dir) && !self.is_parent_of_suppressed(dir));
+    }
+
+    fn is_parent_of_suppressed(&self, dir: &Path) -> bool {
+        let canonical_dir = canonicalize_lossy(dir);
+        self.entries.iter().any(|(suppressed, _)| {
+            suppressed.starts_with(dir)
+                || canonical_dir
+                    .as_deref()
+                    .is_some_and(|cd| suppressed.starts_with(cd))
+        })
     }
 
     fn prune(&mut self) {

@@ -21,10 +21,7 @@ use super::{
         ReconcileEmbeddingObservation,
     },
     events::{SyncTrigger, WatchEvent},
-    filter::{
-        collect_repo_paths, filter_repo_events, ignored_generated_dirs, CollectedPaths,
-        WatchIgnoreSet,
-    },
+    filter::{collect_repo_paths, filter_repo_events, ignored_generated_dirs, WatchIgnoreSet},
     lease::{acquire_watch_daemon_lease, WatchServiceMode},
     loop_message::LoopMessage,
     pending::PendingWatchChanges,
@@ -102,7 +99,7 @@ pub fn run_watch_service(
                     if filtered.is_empty() {
                         return;
                     }
-                    let collected = collect_repo_paths(
+                    let mut collected = collect_repo_paths(
                         &filtered,
                         &callback_repo_roots,
                         &callback_repo_root,
@@ -110,24 +107,18 @@ pub fn run_watch_service(
                         &callback_ignored_dirs,
                         &callback_ignore_set,
                     );
-                    let CollectedPaths {
-                        mut paths,
-                        has_directory_event,
-                    } = collected;
                     if let Ok(mut suppressed) = suppressed_paths_for_callback.lock() {
-                        suppressed.retain_unsuppressed(&mut paths);
+                        suppressed.filter_collected(&mut collected);
                     }
-                    if paths.is_empty() && !has_directory_event {
+                    if collected.is_empty() {
                         return;
                     }
                     callback_state_handle.note_event();
                     if let Ok(mut pending) = pending_watch_for_callback.lock() {
-                        if has_directory_event {
-                            // A directory-level event means FSEvents may have
-                            // coalesced child events; trigger a full reconcile.
+                        if collected.has_directory_event() {
                             pending.record_full(filtered.len());
                         } else {
-                            pending.record(filtered.len(), paths, max_events_per_cycle);
+                            pending.record(filtered.len(), collected.paths, max_events_per_cycle);
                         }
                     }
                 }

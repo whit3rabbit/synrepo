@@ -217,7 +217,7 @@ fn collect_repo_paths_keeps_missing_removal_paths() {
     );
 
     assert_eq!(paths.paths, vec![repo.join("src/old.rs")]);
-    assert!(!paths.has_directory_event);
+    assert!(!paths.has_directory_event());
 }
 
 fn debounced_event(event: Event) -> DebouncedEvent {

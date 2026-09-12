@@ -110,10 +110,18 @@ pub(crate) fn filter_repo_events(
 pub(crate) struct CollectedPaths {
     /// Individual file paths to process incrementally.
     pub paths: Vec<PathBuf>,
-    /// True if any directory-level event was seen. On macOS, FSEvents can
-    /// coalesce changes under a directory into a single directory-level
-    /// notification. Callers should treat this as a force-full-reconcile hint.
-    pub has_directory_event: bool,
+    /// Directory paths observed in the event batch.
+    pub directory_paths: Vec<PathBuf>,
+}
+
+impl CollectedPaths {
+    pub fn is_empty(&self) -> bool {
+        self.paths.is_empty() && self.directory_paths.is_empty()
+    }
+
+    pub fn has_directory_event(&self) -> bool {
+        !self.directory_paths.is_empty()
+    }
 }
 
 pub(crate) fn collect_repo_paths(
@@ -125,7 +133,7 @@ pub(crate) fn collect_repo_paths(
     ignore_set: &WatchIgnoreSet,
 ) -> CollectedPaths {
     let mut paths = std::collections::BTreeSet::new();
-    let mut has_directory_event = false;
+    let mut directory_paths = std::collections::BTreeSet::new();
     for event in events {
         for path in &event.paths {
             let path = repo_normalized_path(path, repo_root, synrepo_dir);
@@ -149,9 +157,7 @@ pub(crate) fn collect_repo_paths(
                     paths.insert(path);
                 }
                 CollectableKind::Directory => {
-                    // Directory-level event: signal a full-reconcile pass.
-                    // Do NOT add the directory itself to the file-path list.
-                    has_directory_event = true;
+                    directory_paths.insert(path);
                 }
                 CollectableKind::Skip => {}
             }
@@ -159,7 +165,7 @@ pub(crate) fn collect_repo_paths(
     }
     CollectedPaths {
         paths: paths.into_iter().collect(),
-        has_directory_event,
+        directory_paths: directory_paths.into_iter().collect(),
     }
 }
 

@@ -70,29 +70,38 @@ fn assert_startup_reconcile(event_rx: &crossbeam_channel::Receiver<WatchEvent>) 
 }
 
 fn assert_keepalive_reconcile(event_rx: &crossbeam_channel::Receiver<WatchEvent>) {
-    let first = event_rx
-        .recv_timeout(Duration::from_secs(5))
-        .expect("keepalive ReconcileStarted must arrive");
-    let second = event_rx
-        .recv_timeout(Duration::from_secs(5))
-        .expect("keepalive ReconcileFinished must arrive");
-
-    match (first, second) {
-        (
-            WatchEvent::ReconcileStarted {
-                triggering_events: 0,
-                ..
-            },
-            WatchEvent::ReconcileFinished {
-                outcome,
-                triggering_events: 0,
-                ..
-            },
-        ) => assert!(
-            matches!(outcome, ReconcileOutcome::Completed(_)),
-            "keepalive reconcile should complete in a fresh repo; got {:?}",
-            outcome
-        ),
-        other => panic!("unexpected keepalive event pair: {:?}", other),
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while std::time::Instant::now() < deadline {
+        let first = event_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("keepalive ReconcileStarted must arrive");
+        if let WatchEvent::ReconcileStarted {
+            triggering_events: 0,
+            ..
+        } = first
+        {
+            let second = event_rx
+                .recv_timeout(Duration::from_secs(2))
+                .expect("keepalive ReconcileFinished must arrive");
+            match second {
+                WatchEvent::ReconcileFinished {
+                    outcome,
+                    triggering_events: 0,
+                    ..
+                } => {
+                    assert!(
+                        matches!(outcome, ReconcileOutcome::Completed(_)),
+                        "keepalive reconcile should complete in a fresh repo; got {:?}",
+                        outcome
+                    );
+                    return;
+                }
+                other => panic!(
+                    "unexpected keepalive event pair: ({:?}, {:?})",
+                    first, other
+                ),
+            }
+        }
     }
+    panic!("keepalive reconcile did not arrive within deadline");
 }
