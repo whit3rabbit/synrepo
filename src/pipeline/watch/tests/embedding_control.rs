@@ -63,7 +63,7 @@ fn delegated_reconcile_marks_existing_embedding_index_stale() {
     let (_dir, repo, mut config, synrepo_dir) = setup_test_repo();
     config.enable_semantic_triage = true;
     config.auto_sync_enabled = false;
-    write_placeholder_embedding_index(&synrepo_dir);
+    write_placeholder_embedding_index(&synrepo_dir, &config);
 
     let service_repo = repo.clone();
     let service_config = config.clone();
@@ -118,8 +118,11 @@ fn delegated_reconcile_marks_existing_embedding_index_stale() {
 }
 
 #[cfg(feature = "semantic-triage")]
-fn write_placeholder_embedding_index(synrepo_dir: &std::path::Path) {
-    let index = synrepo_dir.join("index/vectors/index.bin");
+fn write_placeholder_embedding_index(
+    synrepo_dir: &std::path::Path,
+    config: &crate::config::Config,
+) {
+    let index = crate::substrate::embedding::profile_index_path_for_config(synrepo_dir, config);
     std::fs::create_dir_all(index.parent().unwrap()).unwrap();
     std::fs::write(index, b"placeholder").unwrap();
 }

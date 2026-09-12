@@ -8,9 +8,11 @@
 use crate::core::ids::{ConceptNodeId, FileNodeId, SymbolNodeId};
 use crate::structure::graph::{with_graph_read_snapshot, GraphReader, GraphStore};
 
-/// Maximum text length per embedding chunk. Local embedding models have small
-/// context windows, and Ollama rejects oversized inputs instead of truncating.
-const MAX_CHUNK_CHARS: usize = 512;
+// Maximum text length per embedding chunk. Local embedding models have small
+// context windows, and Ollama rejects oversized inputs instead of truncating.
+// Owned by `crate::substrate::embedding::profile` so the profile key tracks
+// changes to the cap.
+use super::profile::MAX_CHUNK_CHARS;
 
 /// A chunk of text to be embedded.
 #[derive(Clone, Debug)]

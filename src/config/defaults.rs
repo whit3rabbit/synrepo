@@ -1,7 +1,8 @@
 use super::semantic::{
     default_embedding_dim, default_semantic_embedding_batch_size,
     default_semantic_embedding_provider, default_semantic_model, default_semantic_ollama_endpoint,
-    default_semantic_similarity_threshold, SemanticProviderSource,
+    default_semantic_similarity_threshold, default_semantic_vector_precision,
+    SemanticProviderSource,
 };
 use super::{BranchRootsConfig, Config, CrossLinkConfidenceThresholds, ExplainConfig, Mode};
 
@@ -99,6 +100,7 @@ impl Default for Config {
             semantic_similarity_threshold: default_semantic_similarity_threshold(),
             semantic_ollama_endpoint: default_semantic_ollama_endpoint(),
             semantic_embedding_batch_size: default_semantic_embedding_batch_size(),
+            semantic_vector_precision: default_semantic_vector_precision(),
             explain: ExplainConfig::default(),
             mcp_sentry_telemetry: None,
             auto_sync_enabled: default_auto_sync_enabled(),

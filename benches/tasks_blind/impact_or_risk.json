@@ -1,0 +1,8 @@
+{
+  "name": "impact_or_risk/writer-flock-helper-blind",
+  "category": "impact_or_risk",
+  "query": "exclusive advisory filesystem lock helper for mutating operations across concurrent processes",
+  "required_targets": [
+    { "kind": "file", "value": "src/pipeline/writer/helpers.rs" }
+  ]
+}

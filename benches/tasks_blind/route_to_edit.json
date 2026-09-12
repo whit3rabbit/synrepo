@@ -1,0 +1,8 @@
+{
+  "name": "route_to_edit/context-bench-entrypoint-blind",
+  "category": "route_to_edit",
+  "query": "evaluate retrieval accuracy and token budgets against benchmark task specifications",
+  "required_targets": [
+    { "kind": "file", "value": "src/bin/cli_support/commands/context/bench.rs" }
+  ]
+}

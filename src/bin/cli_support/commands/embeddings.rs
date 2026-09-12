@@ -6,8 +6,8 @@ use synrepo::{
     pipeline::writer::{acquire_write_admission, map_lock_error},
     store::sqlite::SqliteGraphStore,
     substrate::embedding::{
-        build_embedding_index_with_progress, is_available, EmbeddingBuildEvent,
-        EmbeddingBuildSummary,
+        build_embedding_index_with_progress, is_available, plan_vector_cleanup, CleanupKind,
+        EmbeddingBuildEvent, EmbeddingBuildSummary, VectorProfile,
     },
 };
 
@@ -22,18 +22,37 @@ pub(crate) fn embeddings(repo_root: &Path, command: EmbeddingsCommand) -> anyhow
             }
             Err(error) => {
                 if json {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&serde_json::json!({
-                            "status": "error",
-                            "error": error.to_string(),
-                        }))?
-                    );
+                    print_embeddings_json_error(&error)?;
                 }
                 Err(error)
             }
         },
+        EmbeddingsCommand::Clean { apply, json } => {
+            match embeddings_clean_output(repo_root, apply, json) {
+                Ok(output) => {
+                    print!("{output}");
+                    Ok(())
+                }
+                Err(error) => {
+                    if json {
+                        print_embeddings_json_error(&error)?;
+                    }
+                    Err(error)
+                }
+            }
+        }
     }
+}
+
+fn print_embeddings_json_error(error: &anyhow::Error) -> anyhow::Result<()> {
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&serde_json::json!({
+            "status": "error",
+            "error": error.to_string(),
+        }))?
+    );
+    Ok(())
 }
 
 #[cfg_attr(not(test), allow(dead_code))]
@@ -44,6 +63,84 @@ pub(crate) fn embeddings_build_output(repo_root: &Path, json: bool) -> anyhow::R
 pub(crate) fn embeddings_build_human(repo_root: &Path) -> anyhow::Result<()> {
     print!("{}", build_output(repo_root, false, true)?);
     Ok(())
+}
+
+/// List (dry run) or remove vector-index artifacts that do not match the
+/// active config profile. The active profile's directory is never a
+/// candidate, even when `enable_semantic_triage` is off — rebuilding it is
+/// expensive and disabling embeddings does not make the on-disk index wrong.
+pub(crate) fn embeddings_clean_output(
+    repo_root: &Path,
+    apply: bool,
+    json: bool,
+) -> anyhow::Result<String> {
+    let config = Config::load(repo_root).map_err(|error| {
+        anyhow::anyhow!("embeddings clean: not initialized, run `synrepo init` first ({error})")
+    })?;
+    let synrepo_dir = Config::synrepo_dir(repo_root);
+    let candidates = plan_vector_cleanup(&synrepo_dir, &config).map_err(|error| {
+        anyhow::anyhow!("embeddings clean: could not scan vectors root ({error})")
+    })?;
+
+    let mut removed: Vec<String> = Vec::new();
+    let mut failed: Vec<String> = Vec::new();
+    if apply {
+        // Serialize against watch-owned reconciles and concurrent builds so a
+        // rebuild cannot land in a directory this command is deleting.
+        let _lock = acquire_write_admission(&synrepo_dir, "embeddings clean")
+            .map_err(|error| map_lock_error("embeddings clean", error))?;
+        for candidate in &candidates {
+            let result = match candidate.kind {
+                CleanupKind::StaleProfileDir => std::fs::remove_dir_all(&candidate.path),
+                CleanupKind::LegacyFlatIndex => std::fs::remove_file(&candidate.path),
+            };
+            match result {
+                Ok(()) => removed.push(candidate.path.display().to_string()),
+                Err(error) => failed.push(format!("{}: {error}", candidate.path.display())),
+            }
+        }
+    }
+
+    let active_profile = VectorProfile::for_config(&config).relative_dir();
+    if json {
+        return Ok(format!(
+            "{}\n",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "status": if failed.is_empty() { "completed" } else { "partial" },
+                "applied": apply,
+                "active_profile": active_profile,
+                "candidates": candidates.iter().map(|c| serde_json::json!({
+                    "path": c.path.display().to_string(),
+                    "kind": c.kind.as_str(),
+                })).collect::<Vec<_>>(),
+                "removed": removed,
+                "failed": failed,
+            }))?
+        ));
+    }
+
+    let verb = if apply { "removed" } else { "would remove" };
+    let mut out = format!(
+        "Embeddings clean: {verb} {} artifact(s); active profile `{}` untouched\n",
+        candidates.len(),
+        active_profile
+    );
+    for candidate in &candidates {
+        out.push_str(&format!(
+            "  {}: {}\n",
+            candidate.kind.as_str(),
+            candidate.path.display()
+        ));
+    }
+    for failure in &failed {
+        out.push_str(&format!("  failed: {failure}\n"));
+    }
+    if !apply && !candidates.is_empty() {
+        out.push_str(
+            "  Dry run. Re-run with `synrepo embeddings clean --apply` to delete these files.\n",
+        );
+    }
+    Ok(out)
 }
 
 fn build_output(repo_root: &Path, json: bool, stream_progress: bool) -> anyhow::Result<String> {

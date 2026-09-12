@@ -47,7 +47,7 @@ pub(crate) fn default_semantic_embedding_provider() -> SemanticEmbeddingProvider
 }
 
 pub(crate) fn default_semantic_model() -> String {
-    "all-MiniLM-L6-v2".to_string()
+    "snowflake-arctic-embed-xs".to_string()
 }
 
 pub(crate) fn default_embedding_dim() -> u16 {
@@ -64,4 +64,8 @@ pub(crate) fn default_semantic_ollama_endpoint() -> String {
 
 pub(crate) fn default_semantic_embedding_batch_size() -> usize {
     128
+}
+
+pub(crate) fn default_semantic_vector_precision() -> crate::substrate::embedding::VectorPrecision {
+    crate::substrate::embedding::VectorPrecision::Float32
 }

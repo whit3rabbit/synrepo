@@ -15,7 +15,7 @@ use super::report::BenchStrategyRun;
 
 const MAX_SEARCH_MATCHES: usize = 10;
 const MAX_RETURNED_CARDS: usize = 5;
-const FIXTURE_PATH_PREFIX: &str = "benches/tasks/";
+const FIXTURE_PATH_PREFIX: &str = "benches/";
 
 pub(crate) fn run_raw_file(
     repo_root: &Path,

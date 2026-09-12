@@ -210,7 +210,7 @@ fn wizard_plan_execution_persists_embeddings_opt_in() {
         config.semantic_embedding_provider,
         synrepo::config::SemanticEmbeddingProvider::Onnx
     );
-    assert_eq!(config.semantic_model, "all-MiniLM-L6-v2");
+    assert_eq!(config.semantic_model, "snowflake-arctic-embed-xs");
     assert!(fs::read_to_string(repo.path().join(".synrepo/config.toml"))
         .unwrap()
         .contains("enable_semantic_triage = true"));

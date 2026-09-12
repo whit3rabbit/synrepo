@@ -112,6 +112,11 @@ fn walk_root(
     walker.require_git(false);
     walker.follow_links(true);
     walker.add_custom_ignore_filename(".synignore");
+    // `.synrepoignore` is the synrepo-native ignore layer. Order matters:
+    // later names have higher precedence, so a `.synrepoignore` entry wins
+    // over `.synignore` for the same path. Users can keep `.synignore` for
+    // syntext compatibility; either file is honored.
+    walker.add_custom_ignore_filename(".synrepoignore");
     let canonical_root =
         std::fs::canonicalize(&root.absolute_path).unwrap_or_else(|_| root.absolute_path.clone());
     // Never descend into generated runtime indexes. Always-on, independent of

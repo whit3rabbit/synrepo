@@ -15,6 +15,8 @@ pub(super) struct OllamaEmbeddingSession {
     normalize: bool,
     batch_size: usize,
     client: reqwest::blocking::Client,
+    /// Query-side prefix; `None` means no transformation.
+    query_prefix: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -43,6 +45,7 @@ impl OllamaEmbeddingSession {
             normalize: res.normalize,
             batch_size: res.batch_size,
             client,
+            query_prefix: res.query_prefix.clone(),
         })
     }
 
@@ -55,6 +58,16 @@ impl OllamaEmbeddingSession {
             out.extend(self.embed_batch(batch)?);
         }
         Ok(out)
+    }
+
+    pub(super) fn embed_query(&self, text: &str) -> Result<Vec<f32>> {
+        let prefixed = match &self.query_prefix {
+            Some(prefix) => format!("{prefix}{text}"),
+            None => text.to_string(),
+        };
+        let mut out = self.embed_batch(&[prefixed])?;
+        out.pop()
+            .ok_or_else(|| crate::Error::Other(anyhow::anyhow!("embed_query returned no vector")))
     }
 
     pub(super) fn embedding_dim(&self) -> u16 {
@@ -148,6 +161,7 @@ mod tests {
             embedding_dim: dim,
             normalize: true,
             batch_size: 128,
+            query_prefix: None,
         }
     }
 

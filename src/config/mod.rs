@@ -22,7 +22,7 @@ use io::reject_legacy_explain_block;
 use semantic::{
     default_embedding_dim, default_semantic_embedding_batch_size,
     default_semantic_embedding_provider, default_semantic_model, default_semantic_ollama_endpoint,
-    default_semantic_similarity_threshold,
+    default_semantic_similarity_threshold, default_semantic_vector_precision,
 };
 use semantic_presence::SemanticPresence;
 use serde::{Deserialize, Serialize};
@@ -130,14 +130,14 @@ pub struct Config {
     pub semantic_embedding_provider_source: SemanticProviderSource,
 
     /// The embedding model to use for semantic triage. ONNX accepts built-in
-    /// model names (all-MiniLM-L6-v2, all-MiniLM-L12-v2, all-mpnet-base-v2);
+    /// model names (snowflake-arctic-embed-xs, all-MiniLM-L6-v2, all-MiniLM-L12-v2, all-mpnet-base-v2);
     /// Ollama accepts a local Ollama model name.
     #[serde(default = "default_semantic_model")]
     pub semantic_model: String,
 
     /// The expected output dimension of the embedding model. Must match
     /// the model's actual output dimension. Built-in models: 384 for
-    /// L6/L12, 768 for mpnet-base.
+    /// arctic-xs/L6/L12, 768 for mpnet-base.
     #[serde(default = "default_embedding_dim")]
     pub embedding_dim: u16,
 
@@ -154,6 +154,14 @@ pub struct Config {
     /// Number of texts sent per embedding request.
     #[serde(default = "default_semantic_embedding_batch_size")]
     pub semantic_embedding_batch_size: usize,
+
+    /// Precision used to store embedding vectors on disk. `float32` is the
+    /// safe default; `int8` halves storage at the cost of bounded rounding
+    /// error per dimension. Rejected by the existing compression gate in
+    /// `docs/EMBEDDINGS.md` unless a benchmark proves
+    /// `auto hit@5 ≥ 0.929` and `hybrid_regressed_tasks = 0`.
+    #[serde(default = "default_semantic_vector_precision")]
+    pub semantic_vector_precision: crate::substrate::embedding::VectorPrecision,
 
     /// LLM explain configuration. Off by default; opting in is required
     /// even when provider API keys are present in the env. See

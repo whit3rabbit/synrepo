@@ -91,6 +91,11 @@ pub struct OnnxModelResolution {
     pub normalize: bool,
     /// Whether the model was downloaded (vs. already present).
     pub downloaded: bool,
+    /// Optional prefix applied at query time only. Document/chunk embedding
+    /// is unaffected. Required for instruction-tuned models such as
+    /// `snowflake-arctic-embed-xs` which expect a `Represent this sentence
+    /// for searching relevant passages:` prefix on the query side.
+    pub query_prefix: Option<String>,
 }
 
 /// Resolved Ollama embedding endpoint.
@@ -106,6 +111,9 @@ pub struct OllamaModelResolution {
     pub normalize: bool,
     /// Number of texts per request.
     pub batch_size: usize,
+    /// Optional prefix applied at query time only; see
+    /// [`OnnxModelResolution::query_prefix`].
+    pub query_prefix: Option<String>,
 }
 
 /// Get the global model cache directory (~/.cache/synrepo/models).

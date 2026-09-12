@@ -1,5 +1,9 @@
 //! Hybrid lexical plus semantic search helpers.
 
+mod dense_first;
+
+pub use dense_first::dense_first_search;
+
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};

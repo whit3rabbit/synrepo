@@ -1,0 +1,20 @@
+{
+  "name": "route_to_edit/branch-ref-readiness-blind",
+  "category": "route_to_edit",
+  "query": "resolve git tip pointers tracking upstream commits to determine if local checkout is current",
+  "required_targets": [
+    { "kind": "file", "value": "src/pipeline/git/branch_refs.rs" }
+  ],
+  "allowed_context": [
+    { "kind": "file", "value": "src/pipeline/git/branch_refs.rs" },
+    { "kind": "file", "value": "src/pipeline/git/mod.rs" },
+    { "kind": "file", "value": "src/surface/branch_refs.rs" }
+  ],
+  "expected_recipe": "general",
+  "budget": {
+    "max_tokens": 3000,
+    "max_files": 4,
+    "max_symbols": 4,
+    "tier": "normal"
+  }
+}

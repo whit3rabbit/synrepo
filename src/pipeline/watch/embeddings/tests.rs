@@ -49,7 +49,8 @@ fn state_handle(synrepo_dir: &std::path::Path) -> WatchStateHandle {
 }
 
 fn write_index(synrepo_dir: &std::path::Path) {
-    let index = synrepo_dir.join("index/vectors/index.bin");
+    let config = config();
+    let index = crate::substrate::embedding::profile_index_path_for_config(synrepo_dir, &config);
     std::fs::create_dir_all(index.parent().unwrap()).unwrap();
     std::fs::write(index, b"placeholder").unwrap();
 }

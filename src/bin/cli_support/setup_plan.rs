@@ -145,7 +145,7 @@ fn apply_embedding_setup_to_config(config: &mut Config, choice: EmbeddingSetupCh
         EmbeddingSetupChoice::Onnx => {
             config.semantic_embedding_provider = SemanticEmbeddingProvider::Onnx;
             config.semantic_embedding_provider_source = SemanticProviderSource::Explicit;
-            config.semantic_model = "all-MiniLM-L6-v2".to_string();
+            config.semantic_model = "snowflake-arctic-embed-xs".to_string();
             config.embedding_dim = 384;
         }
         EmbeddingSetupChoice::Ollama => {

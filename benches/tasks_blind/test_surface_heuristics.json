@@ -1,0 +1,19 @@
+{
+  "name": "test_surface/test-surface-heuristics-blind",
+  "category": "test_surface",
+  "query": "locate unit and integration suites corresponding to modified source modules",
+  "required_targets": [
+    { "kind": "file", "value": "src/surface/card/compiler/test_surface.rs" }
+  ],
+  "allowed_context": [
+    { "kind": "file", "value": "src/surface/card/compiler/test_surface.rs" },
+    { "kind": "file", "value": "src/surface/card/compiler/mod.rs" }
+  ],
+  "expected_recipe": "explain_symbol",
+  "budget": {
+    "max_tokens": 3000,
+    "max_files": 4,
+    "max_symbols": 4,
+    "tier": "normal"
+  }
+}

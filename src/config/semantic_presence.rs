@@ -5,6 +5,7 @@ pub(super) struct SemanticPresence {
     pub(super) dim: bool,
     pub(super) ollama_endpoint: bool,
     pub(super) batch_size: bool,
+    pub(super) vector_precision: bool,
 }
 
 impl SemanticPresence {
@@ -20,6 +21,7 @@ impl SemanticPresence {
             dim: table.contains_key("embedding_dim"),
             ollama_endpoint: table.contains_key("semantic_ollama_endpoint"),
             batch_size: table.contains_key("semantic_embedding_batch_size"),
+            vector_precision: table.contains_key("semantic_vector_precision"),
         })
     }
 }

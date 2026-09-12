@@ -20,6 +20,8 @@ const BUILTIN_MODELS: &[EmbeddingModelSpec] = &[
         expected_dim: 384,
         pooling: PoolingStrategy::Mean,
         normalize: true,
+        // all-MiniLM-L6-v2 is symmetric: no query prefix.
+        query_prefix: None,
     },
     EmbeddingModelSpec {
         model_id: "all-MiniLM-L12-v2",
@@ -28,6 +30,7 @@ const BUILTIN_MODELS: &[EmbeddingModelSpec] = &[
         expected_dim: 384,
         pooling: PoolingStrategy::Mean,
         normalize: true,
+        query_prefix: None,
     },
     EmbeddingModelSpec {
         model_id: "all-mpnet-base-v2",
@@ -36,6 +39,20 @@ const BUILTIN_MODELS: &[EmbeddingModelSpec] = &[
         expected_dim: 768,
         pooling: PoolingStrategy::Mean,
         normalize: true,
+        query_prefix: None,
+    },
+    EmbeddingModelSpec {
+        model_id: "snowflake-arctic-embed-xs",
+        // Snowflake publishes the official ONNX export under
+        // `Snowflake/snowflake-arctic-embed-xs/resolve/main/onnx/model.onnx`.
+        // Tokenizer at the repo root. CLS-pooled, L2-normalized, and expects
+        // a query-side instruction prefix; documents do not.
+        onnx_url: "https://huggingface.co/Snowflake/snowflake-arctic-embed-xs/resolve/main/onnx/model.onnx",
+        tokenizer_url: "https://huggingface.co/Snowflake/snowflake-arctic-embed-xs/resolve/main/tokenizer.json",
+        expected_dim: 384,
+        pooling: PoolingStrategy::Cls,
+        normalize: true,
+        query_prefix: Some("Represent this sentence for searching relevant passages: "),
     },
 ];
 
@@ -48,6 +65,8 @@ struct EmbeddingModelSpec {
     expected_dim: u16,
     pooling: PoolingStrategy,
     normalize: bool,
+    /// Query-side prefix; applied only at search time, never to chunks.
+    query_prefix: Option<&'static str>,
 }
 
 /// Model resolver for embedding models.
@@ -103,6 +122,11 @@ impl ModelResolver {
             embedding_dim: config.embedding_dim,
             normalize: true,
             batch_size: config.semantic_embedding_batch_size,
+            // Ollama hosts a wide model zoo; only the registry entries above
+            // ship with a query prefix configured. Custom Ollama model names
+            // follow whatever protocol the host expects — and we have no way
+            // to know it without registry metadata, so we default to none.
+            query_prefix: None,
         }))
     }
 
@@ -184,6 +208,7 @@ impl ModelResolver {
             pooling: spec.pooling,
             normalize: spec.normalize,
             downloaded,
+            query_prefix: spec.query_prefix.map(String::from),
         }))
     }
 

@@ -160,3 +160,63 @@ fn discover_ignores_symlinks_pointing_outside_repo() {
 
     assert_eq!(paths, vec!["src/lib.rs"]);
 }
+
+#[test]
+fn discover_respects_synrepoignore() {
+    let repo = tempdir().unwrap();
+    // `.synrepoignore` filters the same way `.synignore` does. Syntax is
+    // gitignore-compatible; entries without a leading `/` match anywhere.
+    fs::write(repo.path().join(".synrepoignore"), "generated/\n*.snap\n").unwrap();
+    fs::create_dir_all(repo.path().join("src")).unwrap();
+    fs::create_dir_all(repo.path().join("generated")).unwrap();
+    fs::write(repo.path().join("src/lib.rs"), "pub fn lib() {}\n").unwrap();
+    fs::write(
+        repo.path().join("generated/proto.rs"),
+        "// generated; not source\n",
+    )
+    .unwrap();
+    fs::write(repo.path().join("src/parser.snap"), "snapshot payload\n").unwrap();
+
+    let discovered = discover(repo.path(), &Config::default()).unwrap();
+    let paths: Vec<_> = discovered.into_iter().map(|f| f.relative_path).collect();
+    // `.synrepoignore` matches and excludes the `generated/` tree and the
+    // `*.snap` file. The ignore file itself is a normal source file as far
+    // as the walker is concerned (same as `.gitignore`). Assert only on
+    // the source paths we care about; ignore-file presence is incidental.
+    assert!(paths.contains(&"src/lib.rs".to_string()));
+    assert!(!paths.iter().any(|p| p.starts_with("generated/")));
+    assert!(!paths.iter().any(|p| p.ends_with(".snap")));
+}
+
+#[test]
+fn discover_synrepoignore_adds_to_synignore() {
+    // Two ignore files in the same root compose additively: a path matched
+    // by either is dropped. There is no implicit override by file name; a
+    // user who wants a `.synignore` rule defeated should add a `!path`
+    // negation in `.synrepoignore`.
+    let repo = tempdir().unwrap();
+    fs::write(repo.path().join(".synignore"), "from_synignore.rs\n").unwrap();
+    fs::write(
+        repo.path().join(".synrepoignore"),
+        "from_synrepoignore.rs\n",
+    )
+    .unwrap();
+    fs::create_dir_all(repo.path().join("src")).unwrap();
+    fs::write(repo.path().join("src/keep.rs"), "pub fn keep() {}\n").unwrap();
+    fs::write(
+        repo.path().join("src/from_synignore.rs"),
+        "pub fn from_synignore() {}\n",
+    )
+    .unwrap();
+    fs::write(
+        repo.path().join("src/from_synrepoignore.rs"),
+        "pub fn from_synrepoignore() {}\n",
+    )
+    .unwrap();
+
+    let discovered = discover(repo.path(), &Config::default()).unwrap();
+    let paths: Vec<_> = discovered.into_iter().map(|f| f.relative_path).collect();
+    assert!(paths.contains(&"src/keep.rs".to_string()));
+    assert!(!paths.iter().any(|p| p.ends_with("from_synignore.rs")));
+    assert!(!paths.iter().any(|p| p.ends_with("from_synrepoignore.rs")));
+}

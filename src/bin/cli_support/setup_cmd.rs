@@ -122,7 +122,7 @@ pub(crate) fn apply_embedding_setup(
             );
             doc.insert(
                 "semantic_model",
-                Item::Value(TomlValue::from("all-MiniLM-L6-v2")),
+                Item::Value(TomlValue::from("snowflake-arctic-embed-xs")),
             );
             doc.insert("embedding_dim", Item::Value(TomlValue::from(384)));
         }

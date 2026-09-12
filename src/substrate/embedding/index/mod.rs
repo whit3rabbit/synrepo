@@ -5,10 +5,12 @@
 
 use super::chunk::{ChunkId, EmbeddingChunk, EmbeddingChunkSource};
 use super::model::{EmbeddingSession, ModelResolution};
+use super::profile::{VectorPrecision, NORMALIZER_VERSION};
 
 mod persistence;
 #[cfg(test)]
 mod persistence_tests;
+mod quantization;
 mod scoring;
 
 use persistence::INDEX_FORMAT_VERSION;
@@ -23,6 +25,12 @@ pub struct FlatVecIndex {
     pub format_version: u16,
     /// Whether vectors are pre-normalized (enables dot-product similarity).
     pub normalized: bool,
+    /// On-disk precision for stored vectors. The in-memory representation
+    /// is always `f32`; quantization is a persistence concern.
+    pub precision: VectorPrecision,
+    /// Format version of the embedder normalization. Bumped when the
+    /// semantic of stored vectors changes.
+    pub normalizer_version: u16,
     /// The chunk data (IDs and source info).
     pub(super) chunks: Vec<ChunkMeta>,
     /// Vector data as f32 (dim * n_chunks).
@@ -38,6 +46,8 @@ impl std::fmt::Debug for FlatVecIndex {
             .field("model_name", &self.model_name)
             .field("format_version", &self.format_version)
             .field("normalized", &self.normalized)
+            .field("precision", &self.precision)
+            .field("normalizer_version", &self.normalizer_version)
             .field("chunks_len", &self.chunks.len())
             .field(
                 "session",
@@ -74,10 +84,39 @@ impl FlatVecIndex {
     }
 
     /// Build an index using an already initialized session and per-batch hooks.
+    ///
+    /// The on-disk precision is `VectorPrecision::Float32` by default; callers
+    /// that want int8 storage should use
+    /// [`Self::build_with_session_and_precision`].
     pub fn build_with_session_and_progress<F, C>(
         chunks: Vec<EmbeddingChunk>,
         model: &ModelResolution,
         session: EmbeddingSession,
+        on_batch: F,
+        should_stop: C,
+    ) -> crate::Result<Self>
+    where
+        F: FnMut(usize, usize),
+        C: FnMut() -> bool,
+    {
+        Self::build_with_session_and_precision(
+            chunks,
+            model,
+            session,
+            VectorPrecision::Float32,
+            on_batch,
+            should_stop,
+        )
+    }
+
+    /// Like [`Self::build_with_session_and_progress`] but writes vectors in
+    /// the declared precision. Memory always holds `f32`; quantization is
+    /// applied at persistence time.
+    pub fn build_with_session_and_precision<F, C>(
+        chunks: Vec<EmbeddingChunk>,
+        model: &ModelResolution,
+        session: EmbeddingSession,
+        precision: VectorPrecision,
         mut on_batch: F,
         mut should_stop: C,
     ) -> crate::Result<Self>
@@ -136,25 +175,26 @@ impl FlatVecIndex {
             model_name: model.model_name().to_string(),
             format_version: INDEX_FORMAT_VERSION,
             normalized: model.normalize(),
+            precision,
+            normalizer_version: NORMALIZER_VERSION,
             chunks: chunk_metas,
             vectors: flat_vectors,
             session: Some(session),
         })
     }
 
-    /// Embed a text string and return the vector.
-    /// Used for query-time embedding during semantic triage.
+    /// Embed a query string and return the vector.
+    ///
+    /// Used for query-time embedding during semantic triage. Applies the
+    /// model's configured query prefix (e.g. the instruction prefix required
+    /// by `snowflake-arctic-embed-xs`) when one is set.
     pub fn embed_text(&self, text: &str) -> crate::Result<Vec<f32>> {
         let session = self.session.as_ref().ok_or_else(|| {
             crate::Error::Other(anyhow::anyhow!(
                 "Embedding session not available. Use load_with_resolution() to restore a session."
             ))
         })?;
-        let vectors = session.embed(&[text.to_string()])?;
-        vectors
-            .into_iter()
-            .next()
-            .ok_or_else(|| crate::Error::Other(anyhow::anyhow!("Failed to embed text")))
+        session.embed_query(text)
     }
 
     /// Get the symbol node ID from a chunk ID if it's a symbol chunk.
@@ -209,6 +249,8 @@ mod tests {
             model_name: "test".into(),
             format_version: INDEX_FORMAT_VERSION,
             normalized: true,
+            precision: VectorPrecision::Float32,
+            normalizer_version: NORMALIZER_VERSION,
             chunks: vec![],
             vectors: vec![],
             session: None,

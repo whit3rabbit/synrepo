@@ -12,10 +12,15 @@
 pub mod build;
 #[cfg(feature = "semantic-triage")]
 pub mod chunk;
+// Not feature-gated: cleanup planning must work in default builds too.
+pub mod cleanup;
 #[cfg(feature = "semantic-triage")]
 pub mod index;
 #[cfg(feature = "semantic-triage")]
 pub mod model;
+// Not feature-gated: `Config` stores a `VectorPrecision` and the watch
+// scheduler resolves profile paths in default builds too.
+pub mod profile;
 
 #[cfg(feature = "semantic-triage")]
 pub use build::{
@@ -24,16 +29,23 @@ pub use build::{
 };
 #[cfg(feature = "semantic-triage")]
 pub use chunk::{ChunkId, EmbeddingChunk, EmbeddingChunkSource};
+pub use cleanup::{plan_vector_cleanup, CleanupCandidate, CleanupKind};
 #[cfg(feature = "semantic-triage")]
 pub use index::FlatVecIndex;
 #[cfg(feature = "semantic-triage")]
 pub use model::{ModelResolution, ModelResolver};
+pub use profile::{
+    profile_index_path, profile_index_path_for_config, VectorPrecision, VectorProfile,
+    NORMALIZER_VERSION,
+};
 
 use crate::config::Config;
 use crate::Result;
 
 #[cfg(feature = "semantic-triage")]
 use crate::structure::graph::GraphStore;
+#[cfg(feature = "semantic-triage")]
+use crate::substrate::embedding::model::EmbeddingSession;
 
 /// Build the embedding index for a graph store if semantic triage is enabled.
 #[cfg(feature = "semantic-triage")]
@@ -177,11 +189,15 @@ pub fn load_embedding_index(
         return Ok(None);
     }
 
-    let index_path = synrepo_dir.join("index/vectors/index.bin");
+    let profile = VectorProfile::for_config(config);
+    let vectors_root = synrepo_dir.join("index/vectors");
+    let index_path = profile_index_path(&vectors_root, &profile);
     if !index_path.exists() {
-        // If config is enabled but index is missing, it's an error in strict mode
+        // If config is enabled but the active profile's index is missing,
+        // it's an error in strict mode.
         return Err(crate::Error::Other(anyhow::anyhow!(
-            "Semantic triage is enabled but embedding index is missing at {}. Run 'synrepo embeddings build' to build it.",
+            "Semantic triage is enabled but no embedding index exists for profile `{}` at {}. Run 'synrepo embeddings build' to build it.",
+            profile.short_label(),
             index_path.display()
         )));
     }
@@ -204,10 +220,14 @@ fn build_index_with_config<G: GraphStore>(
     config: &Config,
     synrepo_dir: &std::path::Path,
 ) -> Result<FlatVecIndex> {
-    let vectors_dir = synrepo_dir.join("index/vectors");
-    std::fs::create_dir_all(&vectors_dir)?;
+    let profile = VectorProfile::for_config(config);
+    let vectors_root = synrepo_dir.join("index/vectors");
+    std::fs::create_dir_all(&vectors_root)?;
 
-    let index_path = vectors_dir.join("index.bin");
+    let index_path = profile_index_path(&vectors_root, &profile);
+    if let Some(parent) = index_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
 
     // Resolve and load the model (shared global cache)
     let resolver = ModelResolver::new();
@@ -217,13 +237,21 @@ fn build_index_with_config<G: GraphStore>(
     let chunks = chunk::extract_chunks(graph)?;
 
     // Build embeddings for all chunks (performs real inference and normalization)
-    let index = index::FlatVecIndex::build(chunks, model)?;
+    let index = index::FlatVecIndex::build_with_session_and_precision(
+        chunks,
+        &model,
+        EmbeddingSession::new_from_resolution(&model)?,
+        profile.precision,
+        |_current, _total| {},
+        || false,
+    )?;
 
-    // Save to disk
+    // Save to disk under the profile-keyed subdirectory
     index.save(&index_path)?;
     tracing::info!(
-        "Built and saved embedding index with {} chunks",
-        index.len()
+        "Built and saved embedding index with {} chunks at {}",
+        index.len(),
+        index_path.display()
     );
 
     Ok(index)

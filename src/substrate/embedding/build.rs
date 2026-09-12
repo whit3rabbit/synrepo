@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::Config;
 use crate::structure::graph::GraphStore;
+use crate::substrate::embedding::{profile_index_path_for_config, VectorProfile};
 use crate::Result;
 
 use super::model::EmbeddingSession;
@@ -101,7 +102,11 @@ pub fn build_embedding_index_with_progress(
 
 /// Refresh an existing embedding index without downloading provider assets.
 ///
-/// Returns `Ok(None)` when semantic triage is disabled or no index exists yet.
+/// Returns `Ok(None)` when semantic triage is disabled, no index exists yet,
+/// or no profile-keyed subdirectory matches the current config. Stale
+/// `index/vectors/index.bin` files from earlier (pre-profile) installs are
+/// not silently reused; the next explicit `synrepo embeddings build` will
+/// land in the new layout.
 pub fn refresh_existing_embedding_index(
     graph: &dyn GraphStore,
     config: &Config,
@@ -113,7 +118,8 @@ pub fn refresh_existing_embedding_index(
 /// Refresh an existing embedding index without downloading provider assets,
 /// emitting progress and honoring cancellation.
 ///
-/// Returns `Ok(None)` when semantic triage is disabled or no index exists yet.
+/// Returns `Ok(None)` when semantic triage is disabled, no index exists yet,
+/// or no profile-keyed subdirectory matches the current config.
 pub fn refresh_existing_embedding_index_with_progress(
     graph: &dyn GraphStore,
     config: &Config,
@@ -124,8 +130,7 @@ pub fn refresh_existing_embedding_index_with_progress(
     if !config.enable_semantic_triage {
         return Ok(None);
     }
-    let index_path = synrepo_dir.join("index/vectors/index.bin");
-    if !index_path.exists() {
+    if !profile_index_path_for_config(synrepo_dir, config).exists() {
         return Ok(None);
     }
     build_embedding_index_inner(graph, config, synrepo_dir, progress, should_stop, false).map(Some)
@@ -185,17 +190,19 @@ fn build_embedding_index_inner(
         chunks: chunks.len(),
     });
 
-    let index = FlatVecIndex::build_with_session_and_progress(
+    let profile = VectorProfile::for_config(config);
+    let index = FlatVecIndex::build_with_session_and_precision(
         chunks,
         &model,
         session,
+        profile.precision,
         |current, total| {
             progress(EmbeddingBuildEvent::BatchFinished { current, total });
         },
         should_stop,
     )?;
 
-    let index_path = synrepo_dir.join("index/vectors/index.bin");
+    let index_path = profile_index_path_for_config(synrepo_dir, config);
     if let Some(parent) = index_path.parent() {
         std::fs::create_dir_all(parent)?;
     }

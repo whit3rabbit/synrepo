@@ -28,7 +28,38 @@ fn mode_parser_accepts_expected_values() {
         BenchSearchMode::parse("both").unwrap(),
         BenchSearchMode::Both
     );
+    assert_eq!(
+        BenchSearchMode::parse("dense-first").unwrap(),
+        BenchSearchMode::DenseFirst
+    );
+    assert_eq!(
+        BenchSearchMode::parse("dense_first").unwrap(),
+        BenchSearchMode::DenseFirst
+    );
+    assert_eq!(BenchSearchMode::parse("all").unwrap(), BenchSearchMode::All);
     assert!(BenchSearchMode::parse("other").is_err());
+}
+
+#[test]
+fn mode_includes_flags_match_arm_set() {
+    // Lexical-only mode runs only the lexical arm.
+    let only_lex = BenchSearchMode::Lexical;
+    assert!(only_lex.includes_lexical());
+    assert!(!only_lex.includes_auto());
+    assert!(!only_lex.includes_dense_first());
+
+    // `both` keeps its prior behavior: lexical + auto, no dense-first.
+    let both = BenchSearchMode::Both;
+    assert!(both.includes_lexical());
+    assert!(both.includes_auto());
+    assert!(!both.includes_dense_first());
+
+    // `all` adds dense-first so the summary's dense-first-vs-RRF fields
+    // are populated.
+    let all = BenchSearchMode::All;
+    assert!(all.includes_lexical());
+    assert!(all.includes_auto());
+    assert!(all.includes_dense_first());
 }
 
 #[test]
@@ -40,6 +71,7 @@ fn summary_reports_hybrid_improvements_and_regressions() {
             query: "q1".into(),
             lexical: Some(run(false, 10, false)),
             auto: Some(run(true, 20, true)),
+            dense_first: None,
         },
         BenchSearchTaskReport {
             name: "regressed".into(),
@@ -47,6 +79,7 @@ fn summary_reports_hybrid_improvements_and_regressions() {
             query: "q2".into(),
             lexical: Some(run(true, 5, false)),
             auto: Some(run(false, 8, false)),
+            dense_first: None,
         },
     ];
     let summary = summarize(&tasks);
@@ -56,6 +89,58 @@ fn summary_reports_hybrid_improvements_and_regressions() {
     assert_eq!(summary.semantic_available_tasks, 1);
     assert_eq!(summary.lexical_latency_ms, Some(15));
     assert_eq!(summary.auto_latency_ms, Some(28));
+    assert_eq!(summary.dense_first_hit_at_5, None);
+    assert_eq!(summary.dense_first_latency_ms, None);
+    assert_eq!(summary.dense_first_vs_rrf_wins, 0);
+    assert_eq!(summary.dense_first_vs_rrf_regressions, 0);
+}
+
+#[test]
+fn summary_reports_dense_first_vs_rrf_wins_and_regressions() {
+    // Three tasks:
+    //   * dense wins (auto missed, dense hit)
+    //   * dense regresses (auto hit, dense missed)
+    //   * both hit (no count)
+    //   * both miss (no count)
+    let tasks = vec![
+        BenchSearchTaskReport {
+            name: "dense_wins".into(),
+            category: "x".into(),
+            query: "q".into(),
+            lexical: Some(run(false, 10, false)),
+            auto: Some(run(false, 20, true)),
+            dense_first: Some(run(true, 30, true)),
+        },
+        BenchSearchTaskReport {
+            name: "dense_regresses".into(),
+            category: "x".into(),
+            query: "q".into(),
+            lexical: Some(run(true, 10, false)),
+            auto: Some(run(true, 20, true)),
+            dense_first: Some(run(false, 30, true)),
+        },
+        BenchSearchTaskReport {
+            name: "both_hit".into(),
+            category: "x".into(),
+            query: "q".into(),
+            lexical: Some(run(true, 10, false)),
+            auto: Some(run(true, 20, true)),
+            dense_first: Some(run(true, 30, true)),
+        },
+        BenchSearchTaskReport {
+            name: "both_miss".into(),
+            category: "x".into(),
+            query: "q".into(),
+            lexical: Some(run(false, 10, false)),
+            auto: Some(run(false, 20, true)),
+            dense_first: Some(run(false, 30, true)),
+        },
+    ];
+    let summary = summarize(&tasks);
+    assert_eq!(summary.dense_first_vs_rrf_wins, 1);
+    assert_eq!(summary.dense_first_vs_rrf_regressions, 1);
+    assert_eq!(summary.dense_first_hit_at_5, Some(0.5));
+    assert_eq!(summary.dense_first_latency_ms, Some(120));
 }
 
 #[test]
@@ -66,12 +151,16 @@ fn golden_report_shape_is_stable() {
             total_tasks: 1,
             lexical_hit_at_5: Some(1.0),
             auto_hit_at_5: Some(1.0),
+            dense_first_hit_at_5: Some(1.0),
             lexical_latency_ms: Some(2),
             auto_latency_ms: Some(3),
+            dense_first_latency_ms: Some(4),
             semantic_available_tasks: 1,
             hybrid_improved_tasks: 0,
             hybrid_matched_tasks: 1,
             hybrid_regressed_tasks: 0,
+            dense_first_vs_rrf_wins: 0,
+            dense_first_vs_rrf_regressions: 0,
         },
         tasks: vec![BenchSearchTaskReport {
             name: "fixture".into(),
@@ -79,6 +168,7 @@ fn golden_report_shape_is_stable() {
             query: "find routing".into(),
             lexical: Some(run(true, 2, false)),
             auto: Some(run(true, 3, true)),
+            dense_first: Some(run(true, 4, true)),
         }],
     };
     let json = serde_json::to_value(&report).unwrap();
@@ -89,12 +179,16 @@ fn golden_report_shape_is_stable() {
             "total_tasks",
             "lexical_hit_at_5",
             "auto_hit_at_5",
+            "dense_first_hit_at_5",
             "lexical_latency_ms",
             "auto_latency_ms",
+            "dense_first_latency_ms",
             "semantic_available_tasks",
             "hybrid_improved_tasks",
             "hybrid_matched_tasks",
             "hybrid_regressed_tasks",
+            "dense_first_vs_rrf_wins",
+            "dense_first_vs_rrf_regressions",
         ],
         "summary",
     );
@@ -112,6 +206,18 @@ fn golden_report_shape_is_stable() {
             "semantic_row_count",
         ],
         "run",
+    );
+    assert_key_set(
+        &json["tasks"][0],
+        &[
+            "name",
+            "category",
+            "query",
+            "lexical",
+            "auto",
+            "dense_first",
+        ],
+        "task",
     );
 }
 

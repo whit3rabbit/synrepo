@@ -2,7 +2,7 @@ use super::defaults::*;
 use super::semantic::{
     default_embedding_dim, default_semantic_embedding_batch_size,
     default_semantic_embedding_provider, default_semantic_model, default_semantic_ollama_endpoint,
-    default_semantic_similarity_threshold,
+    default_semantic_similarity_threshold, default_semantic_vector_precision,
 };
 use super::{BranchRootsConfig, Config, SemanticPresence, SemanticProviderSource};
 
@@ -29,6 +29,9 @@ impl Config {
         }
         if other.semantic_embedding_batch_size != default_semantic_embedding_batch_size() {
             self.semantic_embedding_batch_size = other.semantic_embedding_batch_size;
+        }
+        if other.semantic_vector_precision != default_semantic_vector_precision() {
+            self.semantic_vector_precision = other.semantic_vector_precision;
         }
         self.merge_nested_and_runtime(other);
     }
@@ -63,6 +66,9 @@ impl Config {
         }
         if presence.batch_size {
             self.semantic_embedding_batch_size = other.semantic_embedding_batch_size;
+        }
+        if presence.vector_precision {
+            self.semantic_vector_precision = other.semantic_vector_precision;
         }
         self.merge_nested_and_runtime(other);
     }

@@ -85,11 +85,16 @@ pub(super) fn compute_embedding_health(synrepo_dir: &Path, config: &Config) -> E
         return EmbeddingHealth::Disabled;
     }
 
-    let index_path = synrepo_dir.join("index/vectors/index.bin");
+    let profile = crate::substrate::embedding::VectorProfile::for_config(config);
+    let index_path =
+        crate::substrate::embedding::profile_index_path_for_config(synrepo_dir, config);
     if !index_path.exists() {
         return embedding_degraded(
             config,
-            "embedding index missing; run `synrepo embeddings build` to build it".to_string(),
+            format!(
+                "embedding index for profile `{}` missing; run `synrepo embeddings build` to build it",
+                profile.short_label()
+            ),
         );
     }
 

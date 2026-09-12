@@ -1,0 +1,19 @@
+{
+  "name": "symbol_explanation/public-api-discovery-blind",
+  "category": "symbol_explanation",
+  "query": "extract exported functions interfaces and externally visible types from codebase graph",
+  "required_targets": [
+    { "kind": "file", "value": "src/surface/card/compiler/public_api.rs" }
+  ],
+  "allowed_context": [
+    { "kind": "file", "value": "src/surface/card/compiler/public_api.rs" },
+    { "kind": "file", "value": "src/surface/card/compiler/mod.rs" }
+  ],
+  "expected_recipe": "explain_symbol",
+  "budget": {
+    "max_tokens": 3000,
+    "max_files": 4,
+    "max_symbols": 4,
+    "tier": "normal"
+  }
+}

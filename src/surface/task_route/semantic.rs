@@ -53,11 +53,10 @@ mod enabled {
             config.embedding_dim
         );
         let centroids = cached_centroids(&key, &session)?;
-        let task_vec = session
-            .embed(&[task.to_string()])
-            .ok()?
-            .into_iter()
-            .next()?;
+        // Query-time embedding: routes through the model's query prefix when
+        // one is configured (instruction-tuned models). The intent-example
+        // centroids above are document-side and stay on `embed`.
+        let task_vec = session.embed_query(task).ok()?;
 
         centroids
             .iter()

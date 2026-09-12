@@ -20,6 +20,47 @@ fn build_requires_semantic_feature() {
 }
 
 #[test]
+fn clean_removes_stale_profiles_and_legacy_flat_index() {
+    let repo = tempdir().unwrap();
+    std::fs::create_dir_all(repo.path().join("src")).unwrap();
+    std::fs::write(repo.path().join("src/lib.rs"), "pub fn greet() {}\n").unwrap();
+    bootstrap(repo.path(), None, false).unwrap();
+
+    let config = synrepo::config::Config::load(repo.path()).unwrap();
+    let synrepo_dir = synrepo::config::Config::synrepo_dir(repo.path());
+    let vectors_root = synrepo_dir.join("index/vectors");
+    let active =
+        synrepo::substrate::embedding::profile_index_path_for_config(&synrepo_dir, &config);
+    std::fs::create_dir_all(active.parent().unwrap()).unwrap();
+    std::fs::write(&active, b"active").unwrap();
+
+    let stale_dir = vectors_root.join("deadbeefdeadbeef-onnx-old-d384-float32");
+    std::fs::create_dir_all(&stale_dir).unwrap();
+    std::fs::write(stale_dir.join("index.bin"), b"stale").unwrap();
+    std::fs::write(vectors_root.join("index.bin"), b"legacy v5").unwrap();
+
+    // Dry run reports both artifacts but removes nothing.
+    let output = super::super::commands::embeddings_clean_output(repo.path(), false, true).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&output).unwrap();
+    assert_eq!(value["status"], "completed");
+    assert_eq!(value["applied"], false);
+    assert_eq!(value["candidates"].as_array().unwrap().len(), 2);
+    assert!(active.exists());
+    assert!(stale_dir.exists());
+    assert!(vectors_root.join("index.bin").exists());
+
+    // Apply removes the stale profile dir and the legacy flat v5 index while
+    // keeping the active profile.
+    let output = super::super::commands::embeddings_clean_output(repo.path(), true, true).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&output).unwrap();
+    assert_eq!(value["status"], "completed");
+    assert_eq!(value["removed"].as_array().map(Vec::len), Some(2));
+    assert!(active.exists());
+    assert!(!stale_dir.exists());
+    assert!(!vectors_root.join("index.bin").exists());
+}
+
+#[test]
 #[cfg(feature = "semantic-triage")]
 fn build_requires_enabled_config() {
     let repo = tempdir().unwrap();
@@ -64,11 +105,15 @@ fn build_writes_embedding_index_with_ollama() {
     let value: serde_json::Value = serde_json::from_str(&output).unwrap();
     assert_eq!(value["status"], "completed");
     assert_eq!(value["summary"]["chunks"], 1);
+    let config = Config::load(repo.path()).unwrap();
+    let expected = synrepo::substrate::embedding::profile_index_path_for_config(
+        &Config::synrepo_dir(repo.path()),
+        &config,
+    );
     assert!(
-        Config::synrepo_dir(repo.path())
-            .join("index/vectors/index.bin")
-            .exists(),
-        "embedding index should be written"
+        expected.exists(),
+        "embedding index should be written at {}",
+        expected.display()
     );
 }
 

@@ -31,3 +31,22 @@ jobs:
 
       - name: cargo build --features metrics-http
         run: cargo build --features metrics-http
+
+  # Default builds never compile the optional embedding subsystem, so
+  # feature-gated code gets zero coverage in the test job. Keep a dedicated
+  # compile check (check-only, not test: embedding tests may hit local
+  # providers or model downloads) so gated code cannot rot uncompiled.
+  feature-check:
+    name: Check (all features)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: all-features
+
+      - name: cargo check --workspace --all-features
+        run: cargo check --workspace --all-features

@@ -189,7 +189,10 @@ impl EmbeddingRefreshScheduler {
 fn existing_index_can_refresh(config: &Config, synrepo_dir: &Path) -> bool {
     is_available()
         && config.enable_semantic_triage
-        && synrepo_dir.join("index/vectors/index.bin").exists()
+        // Computes the same subdirectory the explicit build path writes to;
+        // decides whether a previous build is available to refresh in place.
+        && crate::substrate::embedding::profile_index_path_for_config(synrepo_dir, config)
+            .exists()
 }
 
 fn rfc3339_after(duration: Duration) -> String {

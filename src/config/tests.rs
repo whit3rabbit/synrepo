@@ -133,7 +133,7 @@ fn semantic_embedding_fields_default_to_onnx() {
         config.semantic_embedding_provider_source,
         SemanticProviderSource::Defaulted
     );
-    assert_eq!(config.semantic_model, "all-MiniLM-L6-v2");
+    assert_eq!(config.semantic_model, "snowflake-arctic-embed-xs");
     assert_eq!(config.embedding_dim, 384);
     assert_eq!(config.semantic_ollama_endpoint, "http://localhost:11434");
     assert_eq!(config.semantic_embedding_batch_size, 128);

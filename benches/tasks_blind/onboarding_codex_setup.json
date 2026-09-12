@@ -1,0 +1,19 @@
+{
+  "name": "onboarding/codex-setup-blind",
+  "category": "route_to_edit",
+  "query": "configure editor and assistant client json configs to connect to protocol server",
+  "required_targets": [
+    { "kind": "file", "value": "src/bin/cli_support/commands/setup/mcp_register.rs" }
+  ],
+  "allowed_context": [
+    { "kind": "file", "value": "src/bin/cli_support/commands/setup/mcp_register.rs" },
+    { "kind": "file", "value": "src/bin/cli_support/commands/setup/steps.rs" }
+  ],
+  "expected_recipe": "general",
+  "budget": {
+    "max_tokens": 3000,
+    "max_files": 4,
+    "max_symbols": 4,
+    "tier": "normal"
+  }
+}

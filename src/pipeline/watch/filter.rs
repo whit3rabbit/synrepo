@@ -189,6 +189,10 @@ fn build_root_ignore_matcher(root: &Path) -> Gitignore {
         root.join(".gitignore"),
         root.join(".git/info/exclude"),
         root.join(".synignore"),
+        // `.synrepoignore` is the synrepo-native user-facing ignore layer.
+        // Loaded after `.synignore` so a project can override syntext's
+        // defaults with a synrepo-specific entry.
+        root.join(".synrepoignore"),
     ] {
         if path.is_file() {
             let _ = builder.add(path);

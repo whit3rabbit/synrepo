@@ -1,0 +1,8 @@
+{
+  "name": "test_surface/mutation-soak-blind",
+  "category": "test_surface",
+  "query": "long running stress suite simulating process crashes and concurrent lock contention",
+  "required_targets": [
+    { "kind": "test", "value": "tests/mutation_soak.rs" }
+  ]
+}

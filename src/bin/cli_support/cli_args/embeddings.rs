@@ -8,4 +8,14 @@ pub(crate) enum EmbeddingsCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Remove vector-index artifacts that no longer match the active config:
+    /// stale profile subdirectories and the legacy flat v5 `index.bin`.
+    Clean {
+        /// Apply the deletion. Without this flag the command is a dry run.
+        #[arg(long)]
+        apply: bool,
+        /// Emit JSON instead of human-readable output.
+        #[arg(long)]
+        json: bool,
+    },
 }

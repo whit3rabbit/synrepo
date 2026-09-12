@@ -1,0 +1,8 @@
+{
+  "name": "symbol_explanation/context-accounting-blind",
+  "category": "symbol_explanation",
+  "query": "track token consumption and budget limits when compiling card responses",
+  "required_targets": [
+    { "kind": "file", "value": "src/surface/card/accounting.rs" }
+  ]
+}

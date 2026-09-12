@@ -57,6 +57,8 @@ pub(crate) use embeddings::embeddings;
 pub(crate) use embeddings::embeddings_build_human;
 #[cfg(test)]
 pub(crate) use embeddings::embeddings_build_output;
+#[cfg(test)]
+pub(crate) use embeddings::embeddings_clean_output;
 pub(crate) use export::export;
 pub(crate) use graph_cmd::graph;
 pub(crate) use handoffs::handoffs;

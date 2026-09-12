@@ -5,6 +5,8 @@ use std::io::{BufReader, BufWriter, Read, Write};
 
 use super::super::chunk::{ChunkId, EmbeddingChunkSource};
 use super::super::model::{EmbeddingSession, ModelResolution};
+use super::super::profile::VectorPrecision;
+use super::quantization::{read_vector_payload, vector_payload_bytes, write_vector_payload};
 use super::{ChunkMeta, FlatVecIndex};
 
 /// Current format version for the embedding index.
@@ -20,15 +22,23 @@ use super::{ChunkMeta, FlatVecIndex};
 ///
 /// Bumped 4 → 5 when symbol chunk text was capped to the embedding context
 /// budget used by local providers such as Ollama.
-pub(super) const INDEX_FORMAT_VERSION: u16 = 5;
+///
+/// Bumped 5 → 6 to support per-profile vector storage and `int8` precision:
+/// the header now records a precision byte and a normalizer version u16, and
+/// int8 storage uses a per-vector `f32` scale followed by `dim` signed bytes.
+/// The on-disk chunk-id field is unchanged. Load fails closed on unknown
+/// header bytes.
+pub(super) const INDEX_FORMAT_VERSION: u16 = 6;
 
 pub(super) const MAX_INDEX_METADATA_LEN: usize = 1_000_000;
 pub(super) const MAX_INDEX_MODEL_NAME_BYTES: usize = 4 * 1024;
 pub(super) const MAX_INDEX_CHUNK_TEXT_BYTES: usize = 64 * 1024;
 pub(super) const MAX_INDEX_VECTOR_BYTES: u64 = 2 * 1024 * 1024 * 1024;
-const FIXED_HEADER_BYTES: u64 = 2 + 4 + 2 + 4 + 1;
+/// `version(2) + metadata_len(4) + dim(2) + model_name_len(4) +
+/// normalized(1) + precision(1) + normalizer_version(2) = 16`.
+/// Vectors are written *after* chunks.
+const FIXED_HEADER_BYTES_V6: u64 = 2 + 4 + 2 + 4 + 1 + 1 + 2;
 const CHUNK_FIXED_BYTES: u64 = 16 + 1 + 4;
-const F32_BYTES: u64 = 4;
 
 impl FlatVecIndex {
     /// Save the index to disk.
@@ -50,6 +60,10 @@ impl FlatVecIndex {
         // Write normalization flag
         file.write_all(&[if self.normalized { 1u8 } else { 0u8 }; 1])?;
 
+        // Write precision + normalizer version (v6+).
+        file.write_all(&[self.precision.header_tag(); 1])?;
+        file.write_all(&self.normalizer_version.to_le_bytes())?;
+
         // Write chunks
         for meta in &self.chunks {
             file.write_all(&meta.id.0.to_le_bytes())?;
@@ -62,9 +76,13 @@ impl FlatVecIndex {
             file.write_all(meta.text.as_bytes())?;
         }
 
-        // Write vectors
-        for v in &self.vectors {
-            file.write_all(&v.to_le_bytes())?;
+        // Write vectors in the declared precision.
+        let dim_us = self.dim as usize;
+        for chunk_idx in 0..self.chunks.len() {
+            let start = chunk_idx * dim_us;
+            let end = start + dim_us;
+            let vec = &self.vectors[start..end];
+            write_vector_payload(&mut file, vec, self.precision)?;
         }
 
         // Explicit flush so a disk-full / IO failure during the final buffered
@@ -89,7 +107,7 @@ impl FlatVecIndex {
         let mut buf4 = [0u8; 4];
         let mut buf2 = [0u8; 2];
 
-        ensure_available(file_len, bytes_read, FIXED_HEADER_BYTES, "fixed header")?;
+        ensure_available(file_len, bytes_read, FIXED_HEADER_BYTES_V6, "fixed header")?;
 
         // Read version
         read_exact_counted(&mut file, &mut buf2, &mut bytes_read)?;
@@ -134,9 +152,9 @@ impl FlatVecIndex {
             file_len,
             bytes_read,
             to_u64(model_name_len, "model name length")?
-                .checked_add(1)
-                .ok_or_else(|| invalid_index("model name length overflows u64"))?,
-            "model name and normalization flag",
+                .checked_add(1 + 1 + 2)
+                .ok_or_else(|| invalid_index("header tail length overflows u64"))?,
+            "model name and precision/normalizer fields",
         )?;
         let mut model_name_buf = vec![0u8; model_name_len];
         read_exact_counted(&mut file, &mut model_name_buf, &mut bytes_read)?;
@@ -148,12 +166,20 @@ impl FlatVecIndex {
         read_exact_counted(&mut file, &mut norm_buf, &mut bytes_read)?;
         let normalized = norm_buf[0] != 0;
 
-        let vector_len = metadata_len
-            .checked_mul(dim as usize)
-            .ok_or_else(|| invalid_index("metadata count * dimension overflows usize"))?;
-        let vector_bytes = to_u64(vector_len, "vector length")?
-            .checked_mul(F32_BYTES)
-            .ok_or_else(|| invalid_index("vector payload byte length overflows u64"))?;
+        // Read precision + normalizer version (v6+)
+        let mut prec_buf = [0u8; 1];
+        read_exact_counted(&mut file, &mut prec_buf, &mut bytes_read)?;
+        let precision = VectorPrecision::from_header_tag(prec_buf[0]).ok_or_else(|| {
+            invalid_index(format!(
+                "unknown precision tag {} (expected 0=float32 or 1=int8)",
+                prec_buf[0]
+            ))
+        })?;
+        let mut nv_buf = [0u8; 2];
+        read_exact_counted(&mut file, &mut nv_buf, &mut bytes_read)?;
+        let normalizer_version = u16::from_le_bytes(nv_buf);
+
+        let vector_bytes = vector_payload_bytes(metadata_len, precision, dim)?;
         if vector_bytes > MAX_INDEX_VECTOR_BYTES {
             return Err(invalid_index(format!(
                 "vector payload {vector_bytes} bytes exceeds limit {MAX_INDEX_VECTOR_BYTES}"
@@ -228,13 +254,19 @@ impl FlatVecIndex {
             });
         }
 
-        // Read vectors
+        // Read vectors and dequantize if needed. The in-memory representation
+        // is always `Vec<f32>` to keep the scoring path branch-free.
         ensure_available(file_len, bytes_read, vector_bytes, "vector payload")?;
-        let mut vectors = vec![0f32; vector_len];
-        for v in &mut vectors {
-            let mut bits = [0u8; 4];
-            read_exact_counted(&mut file, &mut bits, &mut bytes_read)?;
-            *v = f32::from_le_bytes(bits);
+        let dim_us = dim as usize;
+        let total_floats = metadata_len
+            .checked_mul(dim_us)
+            .ok_or_else(|| invalid_index("metadata count * dimension overflows usize"))?;
+        let mut vectors = vec![0f32; total_floats];
+        for chunk_idx in 0..metadata_len {
+            let start = chunk_idx * dim_us;
+            let end = start + dim_us;
+            let dest = &mut vectors[start..end];
+            read_vector_payload(&mut file, dest, precision, &mut bytes_read)?;
         }
 
         Ok(Self {
@@ -242,6 +274,8 @@ impl FlatVecIndex {
             model_name,
             format_version: version,
             normalized,
+            precision,
+            normalizer_version,
             chunks,
             vectors,
             session: None,
@@ -260,7 +294,7 @@ impl FlatVecIndex {
     }
 }
 
-fn read_exact_counted<R: Read>(
+pub(super) fn read_exact_counted<R: Read>(
     reader: &mut R,
     buf: &mut [u8],
     bytes_read: &mut u64,
@@ -294,69 +328,6 @@ fn to_u64(value: usize, label: &str) -> crate::Result<u64> {
         .map_err(|_| invalid_index(format!("{label} exceeds u64 addressable range")))
 }
 
-fn invalid_index(message: impl std::fmt::Display) -> crate::Error {
+pub(super) fn invalid_index(message: impl std::fmt::Display) -> crate::Error {
     crate::Error::Other(anyhow::anyhow!("invalid embedding index: {message}"))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn persistence_v3_round_trip() -> crate::Result<()> {
-        let index = FlatVecIndex {
-            dim: 384,
-            model_name: "test-model".into(),
-            format_version: INDEX_FORMAT_VERSION,
-            normalized: true,
-            chunks: vec![ChunkMeta {
-                id: ChunkId(1),
-                source: EmbeddingChunkSource::Symbol {
-                    id: crate::core::ids::SymbolNodeId(1),
-                    file_id: crate::core::ids::FileNodeId(1),
-                    qualified_name: "test::func".into(),
-                    kind_label: "function".into(),
-                },
-                text: "test::func function".into(),
-            }],
-            vectors: vec![0.1f32; 384],
-            session: None,
-        };
-
-        let temp_dir = tempfile::tempdir()?;
-        let path = temp_dir.path().join("index.bin");
-        index.save(&path)?;
-
-        let loaded = FlatVecIndex::load(&path, 384)?;
-        assert_eq!(loaded.format_version, INDEX_FORMAT_VERSION);
-        assert!(loaded.normalized);
-        assert_eq!(loaded.model_name, "test-model");
-        assert_eq!(loaded.len(), 1);
-
-        Ok(())
-    }
-
-    #[test]
-    fn load_rejects_mismatched_expected_dim() -> crate::Result<()> {
-        let index = FlatVecIndex {
-            dim: 384,
-            model_name: "test-model".into(),
-            format_version: INDEX_FORMAT_VERSION,
-            normalized: true,
-            chunks: vec![],
-            vectors: vec![],
-            session: None,
-        };
-        let temp_dir = tempfile::tempdir()?;
-        let path = temp_dir.path().join("index.bin");
-        index.save(&path)?;
-
-        let err = FlatVecIndex::load(&path, 768).unwrap_err();
-        let msg = err.to_string();
-        assert!(
-            msg.contains("does not match expected"),
-            "expected dim-mismatch error, got: {msg}"
-        );
-        Ok(())
-    }
 }

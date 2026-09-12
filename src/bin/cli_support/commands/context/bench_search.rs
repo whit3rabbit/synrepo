@@ -1,11 +1,18 @@
 //! `synrepo bench search` — fixture-backed lexical vs hybrid search eval.
 
+mod report;
+
+#[cfg(test)]
+use report::BenchSearchSummary;
+use report::{render_report, summarize, BenchSearchReport, BenchSearchRun, BenchSearchTaskReport};
+
 use std::path::Path;
 use std::time::Instant;
 
-use serde::Serialize;
 use synrepo::core::ids::SymbolNodeId;
-use synrepo::substrate::{HybridSearchRow, HybridSearchSource};
+use synrepo::substrate::{
+    dense_first_search, hybrid_search, HybridSearchReport, HybridSearchRow, HybridSearchSource,
+};
 use synrepo::surface::card::compiler::GraphCardCompiler;
 use syntext::SearchOptions;
 
@@ -17,7 +24,7 @@ use super::bench_shared::{
 const SCHEMA_VERSION: u32 = 1;
 const HIT_LIMIT: usize = 5;
 const SEARCH_FETCH_LIMIT: usize = HIT_LIMIT * 2;
-const FIXTURE_PATH_PREFIX: &str = "benches/tasks/";
+const FIXTURE_PATH_PREFIX: &str = "benches/";
 
 pub(crate) fn bench_search(
     repo_root: &Path,
@@ -50,12 +57,18 @@ pub(crate) fn bench_search(
         } else {
             None
         };
+        let dense_first = if mode.includes_dense_first() {
+            Some(run_dense_first(repo_root, &config, &compiler, &fixture)?)
+        } else {
+            None
+        };
         tasks.push(BenchSearchTaskReport {
             name: fixture.name.unwrap_or_else(|| path.display().to_string()),
             category: fixture.category,
             query: fixture.query,
             lexical,
             auto,
+            dense_first,
         });
     }
 
@@ -101,20 +114,35 @@ fn run_lexical(
     ))
 }
 
-fn run_auto(
+fn run_arm<F>(
     repo_root: &Path,
     config: &synrepo::config::Config,
     compiler: &GraphCardCompiler,
     fixture: &BenchTask,
-) -> anyhow::Result<BenchSearchRun> {
+    counts_non_lexical: bool,
+    run_search: F,
+) -> anyhow::Result<BenchSearchRun>
+where
+    F: Fn(&synrepo::config::Config, &Path, &str) -> anyhow::Result<HybridSearchReport>,
+{
     let start = Instant::now();
-    let report =
-        synrepo::substrate::hybrid_search(config, repo_root, &fixture.query, &search_options())?;
-    let semantic_row_count = report
-        .rows
-        .iter()
-        .filter(|row| row.source != HybridSearchSource::Lexical)
-        .count();
+    let report = run_search(config, repo_root, &fixture.query)?;
+    let semantic_row_count = if counts_non_lexical {
+        report
+            .rows
+            .iter()
+            .filter(|row| row.source != HybridSearchSource::Lexical)
+            .count()
+    } else {
+        // Dense-first emits lexical and semantic sources but never the
+        // `Hybrid` source from auto's RRF fusion. Count semantic rows so
+        // the field still reflects the model's contribution.
+        report
+            .rows
+            .iter()
+            .filter(|row| row.source == HybridSearchSource::Semantic)
+            .count()
+    };
     let (returned_targets, returned_symbols) = returned_from_hybrid_rows(compiler, report.rows);
     Ok(build_run(
         report.engine,
@@ -125,6 +153,28 @@ fn run_auto(
         returned_targets,
         returned_symbols,
     ))
+}
+
+fn run_auto(
+    repo_root: &Path,
+    config: &synrepo::config::Config,
+    compiler: &GraphCardCompiler,
+    fixture: &BenchTask,
+) -> anyhow::Result<BenchSearchRun> {
+    run_arm(repo_root, config, compiler, fixture, true, |c, r, q| {
+        hybrid_search(c, r, q, &search_options()).map_err(anyhow::Error::from)
+    })
+}
+
+fn run_dense_first(
+    repo_root: &Path,
+    config: &synrepo::config::Config,
+    compiler: &GraphCardCompiler,
+    fixture: &BenchTask,
+) -> anyhow::Result<BenchSearchRun> {
+    run_arm(repo_root, config, compiler, fixture, false, |c, r, q| {
+        dense_first_search(c, r, q, &search_options()).map_err(anyhow::Error::from)
+    })
 }
 
 fn build_run(
@@ -195,82 +245,16 @@ fn is_benchmark_fixture_path(value: &str) -> bool {
     value.starts_with(FIXTURE_PATH_PREFIX)
 }
 
-fn summarize(tasks: &[BenchSearchTaskReport]) -> BenchSearchSummary {
-    let lexical_runs = tasks.iter().filter_map(|task| task.lexical.as_ref());
-    let auto_runs = tasks.iter().filter_map(|task| task.auto.as_ref());
-    let lexical_hit_count = lexical_runs.clone().filter(|run| run.target_hit).count();
-    let auto_hit_count = auto_runs.clone().filter(|run| run.target_hit).count();
-    let semantic_available_tasks = auto_runs
-        .clone()
-        .filter(|run| run.semantic_available)
-        .count();
-    let mut improved = 0;
-    let mut regressed = 0;
-    for task in tasks {
-        if let (Some(lexical), Some(auto)) = (&task.lexical, &task.auto) {
-            match (lexical.target_hit, auto.target_hit) {
-                (false, true) => improved += 1,
-                (true, false) => regressed += 1,
-                _ => {}
-            }
-        }
-    }
-    BenchSearchSummary {
-        total_tasks: tasks.len(),
-        lexical_hit_at_5: ratio(
-            lexical_hit_count,
-            tasks.iter().filter(|t| t.lexical.is_some()).count(),
-        ),
-        auto_hit_at_5: ratio(
-            auto_hit_count,
-            tasks.iter().filter(|t| t.auto.is_some()).count(),
-        ),
-        lexical_latency_ms: latency_sum(tasks.iter().filter_map(|task| task.lexical.as_ref())),
-        auto_latency_ms: latency_sum(tasks.iter().filter_map(|task| task.auto.as_ref())),
-        semantic_available_tasks,
-        hybrid_improved_tasks: improved,
-        hybrid_matched_tasks: tasks.len().saturating_sub(improved + regressed),
-        hybrid_regressed_tasks: regressed,
-    }
-}
-
-fn ratio(count: usize, total: usize) -> Option<f64> {
-    (total > 0).then_some(count as f64 / total as f64)
-}
-
-fn latency_sum<'a>(runs: impl Iterator<Item = &'a BenchSearchRun>) -> Option<u64> {
-    let mut total = 0u64;
-    let mut count = 0usize;
-    for run in runs {
-        total = total.saturating_add(run.latency_ms);
-        count += 1;
-    }
-    (count > 0).then_some(total)
-}
-
-fn render_report(report: &BenchSearchReport, json_output: bool) -> anyhow::Result<()> {
-    if json_output {
-        println!("{}", serde_json::to_string_pretty(report)?);
-    } else {
-        println!(
-            "search benchmark (schema v{}): {} task(s)",
-            report.schema_version, report.summary.total_tasks
-        );
-        println!(
-            "  hit@5 lexical={:?} auto={:?}; semantic_available_tasks={}",
-            report.summary.lexical_hit_at_5,
-            report.summary.auto_hit_at_5,
-            report.summary.semantic_available_tasks
-        );
-    }
-    Ok(())
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum BenchSearchMode {
     Lexical,
     Auto,
+    DenseFirst,
+    /// Lexical + auto arms. (Default for `--mode both`.)
     Both,
+    /// Lexical + auto + dense-first. Use to read off the dense-first-vs-RRF
+    /// summary fields against the bench.
+    All,
 }
 
 impl BenchSearchMode {
@@ -278,62 +262,26 @@ impl BenchSearchMode {
         match value {
             "lexical" => Ok(Self::Lexical),
             "auto" => Ok(Self::Auto),
+            "dense-first" | "dense_first" => Ok(Self::DenseFirst),
             "both" => Ok(Self::Both),
+            "all" => Ok(Self::All),
             other => anyhow::bail!(
-                "unknown bench search mode `{other}`; expected lexical, auto, or both"
+                "unknown bench search mode `{other}`; expected lexical, auto, dense-first, both, or all"
             ),
         }
     }
 
     fn includes_lexical(self) -> bool {
-        matches!(self, Self::Lexical | Self::Both)
+        matches!(self, Self::Lexical | Self::Both | Self::All)
     }
 
     fn includes_auto(self) -> bool {
-        matches!(self, Self::Auto | Self::Both)
+        matches!(self, Self::Auto | Self::Both | Self::All)
     }
-}
 
-#[derive(Debug, Serialize)]
-struct BenchSearchReport {
-    schema_version: u32,
-    summary: BenchSearchSummary,
-    tasks: Vec<BenchSearchTaskReport>,
-}
-
-#[derive(Debug, Serialize)]
-struct BenchSearchSummary {
-    total_tasks: usize,
-    lexical_hit_at_5: Option<f64>,
-    auto_hit_at_5: Option<f64>,
-    lexical_latency_ms: Option<u64>,
-    auto_latency_ms: Option<u64>,
-    semantic_available_tasks: usize,
-    hybrid_improved_tasks: usize,
-    hybrid_matched_tasks: usize,
-    hybrid_regressed_tasks: usize,
-}
-
-#[derive(Debug, Serialize)]
-struct BenchSearchTaskReport {
-    name: String,
-    category: String,
-    query: String,
-    lexical: Option<BenchSearchRun>,
-    auto: Option<BenchSearchRun>,
-}
-
-#[derive(Debug, Serialize)]
-struct BenchSearchRun {
-    target_hit: bool,
-    target_hits: Vec<BenchTarget>,
-    target_misses: Vec<BenchTarget>,
-    returned_targets: Vec<String>,
-    returned_symbols: Vec<String>,
-    latency_ms: u64,
-    engine: String,
-    semantic_available: bool,
-    semantic_row_count: usize,
+    fn includes_dense_first(self) -> bool {
+        matches!(self, Self::DenseFirst | Self::All)
+    }
 }
 
 #[cfg(test)]

@@ -22,7 +22,9 @@ pub struct EmbeddingSession {
 
 #[derive(Debug)]
 enum EmbeddingSessionBackend {
-    Onnx(OnnxEmbeddingSession),
+    // Boxed: the ONNX backend is an order of magnitude larger than the
+    // Ollama one, and `EmbeddingSession` is moved through build paths.
+    Onnx(Box<OnnxEmbeddingSession>),
     Ollama(OllamaEmbeddingSession),
 }
 
@@ -31,7 +33,7 @@ impl EmbeddingSession {
     pub fn new_from_resolution(res: &ModelResolution) -> Result<Self> {
         let backend = match res {
             ModelResolution::Onnx(onnx) => {
-                EmbeddingSessionBackend::Onnx(OnnxEmbeddingSession::new(onnx)?)
+                EmbeddingSessionBackend::Onnx(Box::new(OnnxEmbeddingSession::new(onnx)?))
             }
             ModelResolution::Ollama(ollama) => {
                 EmbeddingSessionBackend::Ollama(OllamaEmbeddingSession::new(ollama)?)
@@ -45,6 +47,16 @@ impl EmbeddingSession {
         match &self.backend {
             EmbeddingSessionBackend::Onnx(session) => session.embed(texts),
             EmbeddingSessionBackend::Ollama(session) => session.embed(texts),
+        }
+    }
+
+    /// Embed a single query string, applying the model's configured query
+    /// prefix when one is set. Use this for search-time embedding; use
+    /// [`Self::embed`] for batched document/chunk embedding.
+    pub fn embed_query(&self, text: &str) -> Result<Vec<f32>> {
+        match &self.backend {
+            EmbeddingSessionBackend::Onnx(session) => session.embed_query(text),
+            EmbeddingSessionBackend::Ollama(session) => session.embed_query(text),
         }
     }
 
@@ -65,6 +77,9 @@ struct OnnxEmbeddingSession {
     normalize: bool,
     tokenizer: tokenizers::Tokenizer,
     session: Mutex<ort::session::Session>,
+    /// Query-side prefix; `None` means no transformation. Documents never
+    /// see this prefix.
+    query_prefix: Option<String>,
 }
 
 impl OnnxEmbeddingSession {
@@ -83,6 +98,7 @@ impl OnnxEmbeddingSession {
             normalize: res.normalize,
             tokenizer,
             session: Mutex::new(session),
+            query_prefix: res.query_prefix.clone(),
         })
     }
 
@@ -90,7 +106,21 @@ impl OnnxEmbeddingSession {
         if texts.is_empty() {
             return Ok(Vec::new());
         }
+        // Document path: prefix is never applied to chunks.
+        self.run_inference(texts)
+    }
 
+    fn embed_query(&self, text: &str) -> Result<Vec<f32>> {
+        let prefixed = match &self.query_prefix {
+            Some(prefix) => format!("{prefix}{text}"),
+            None => text.to_string(),
+        };
+        let mut out = self.run_inference(&[prefixed])?;
+        out.pop()
+            .ok_or_else(|| crate::Error::Other(anyhow::anyhow!("embed_query returned no vector")))
+    }
+
+    fn run_inference(&self, texts: &[String]) -> Result<Vec<Vec<f32>>> {
         let mut results = Vec::with_capacity(texts.len());
 
         for text in texts {

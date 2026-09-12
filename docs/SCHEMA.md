@@ -15,7 +15,8 @@ document.
   graph/nodes.db                  canonical graph (SQLite)
   overlay/overlay.db              overlay store (SQLite, separate database)
   index/                          syntext-backed lexical index (binary)
-  index/vectors/                  flat-vec embedding index (binary, optional)
+  index/vectors/                  flat-vec embedding indexes (binary, optional),
+                                  one per profile: `vectors/<blake3-prefix>-<short-label>/index.bin`
   cache/llm-responses/            disposable LLM response cache
   state/                          ephemeral JSON / JSONL state files
   config.toml                     operator config (see docs/CONFIG.md)
@@ -36,7 +37,7 @@ indexes only editable commentary docs, not the support files.
 | `GRAPH_FORMAT_VERSION = 2` | `src/store/compatibility/mod.rs` | Graph nodes.db shape. `synrepo init` blocks when on-disk version exceeds the runtime constant (hard invariant; tested at `src/bootstrap/init/tests.rs`). |
 | `SNAPSHOT_VERSION = 1` | `src/store/compatibility/mod.rs` | `state/storage-compat.json` envelope shape. |
 | `DEFAULT_FORMAT_VERSION = 1` | `src/store/compatibility/mod.rs` | Per-store version for non-graph stores in the snapshot. |
-| `INDEX_FORMAT_VERSION = 3` | `src/substrate/embedding/index/persistence.rs` | Embedding-index binary header. |
+| `INDEX_FORMAT_VERSION = 6` | `src/substrate/embedding/index/persistence.rs` | Embedding-index binary header. v6 added a per-index precision tag (`Float32` = 0, `Int8` = 1) and a `NORMALIZER_VERSION` field; v5 indexes refuse to load (fail-closed). |
 | Registry `SCHEMA_VERSION = 2` | `src/registry/mod.rs` | `~/.synrepo/projects.toml` shape. User-wide; survives per-repo re-init. |
 | MCP `context_pack.SCHEMA_VERSION = 1` | `src/surface/mcp/context_pack.rs` | Public MCP response contract. Never reuse for storage. |
 | MCP `refactor_suggestions` response (unversioned) | `src/surface/refactor_suggestions/types.rs` | Public MCP response contract. Additive fields only unless docs and tests are updated together. |
@@ -502,6 +503,66 @@ TODO: `agent_notes` and `agent_note_transitions` have no compaction
 implementation. The rules (eligible states, supersede chains, transition
 independence) are unresolved; rows accumulate indefinitely until that is
 designed.
+
+## Embedding index: `.synrepo/index/vectors/<profile>/index.bin`
+
+The flat-vector index is built and read by
+`src/substrate/embedding/index/persistence.rs`. Each index lives in a
+profile-keyed subdirectory under `.synrepo/index/vectors/`. The profile
+key is the first 16 hex chars of `blake3` over the canonical key string
+`<provider>-<model>-d<dim>-p<precision>-c<chunk_chars>-n<normalizer_version>`
+(see `VectorProfile::key_string` in `src/substrate/embedding/profile.rs`).
+The directory name is `<key>-<short_label>` where
+`<short_label>` is e.g. `onnx-all-MiniLM-L6-v2-d384-float32`, so the
+profile is recoverable from `ls .synrepo/index/vectors/` without
+recomputing the key. Stale profiles from a previous config are removed
+with `synrepo embeddings clean --apply`.
+
+### On-disk header (v6)
+
+```
+  offset  bytes  field
+  ------  -----  ----------------------------------------------
+       0      2  format_version         u16 LE (= 6)
+       2      4  chunk_count            u32 LE (number of chunk records that follow)
+       6      2  dim                    u16 LE (vector dimension)
+       8      4  model_name_len         u32 LE
+      12      N  model_name             ASCII bytes
+    12+N      1  normalized             u8 (= 1 if L2-normalized)
+    13+N      1  precision_tag          u8 (0 = Float32, 1 = Int8)
+    14+N      2  normalizer_version     u16 LE
+    16+N    ...  chunk records (chunk_count of them)
+```
+
+`INDEX_FORMAT_VERSION` is 6 and lives in
+`src/substrate/embedding/index/persistence.rs`. v5 indexes refuse to
+load (fail-closed on unknown version). v6's `precision_tag` lets the
+same on-disk shape carry either a float32 or an int8 payload (per-vector
+symmetric quantization with `max_abs` scale) without a separate format
+bump. v4 and earlier also refuse to load.
+
+Each chunk record under v6 has its own metadata subheader followed by
+either a float32 vector or an int8-quantized vector:
+
+```
+  chunk_record {
+      8 bytes    chunk_id           u64 LE (EmbeddingChunkId)
+      1 byte     source_tag         u8 (0 = Symbol, 1 = Concept)
+      4 bytes    text_len           u32 LE
+      N bytes    text               UTF-8 bytes
+      then a vector payload of:
+        dim*4 bytes  f32 LE values                when precision_tag = 0
+        OR
+        4 bytes      scale                       f32 LE ("max_abs" per vector)
+        dim bytes    i8 values                   when precision_tag = 1
+  }
+```
+
+Per-vector symmetric int8 quantization handles the zero-vector case by
+checking `max_abs` before dividing. In-memory scoring stays on `Vec<f32>`
+regardless of the on-disk precision; int8 is a storage concern only.
+The whole index is rebuilt from scratch on profile change; there is no
+incremental rebuild path.
 
 ## Snapshot: `state/storage-compat.json`
 

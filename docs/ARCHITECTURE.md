@@ -47,9 +47,9 @@ Preserve these invariants instead:
 and local search inputs.
 
 - `discover.rs` - filesystem walk via `ignore`; respects `.gitignore`,
-  `.synignore`, redaction globs, configured roots, linked worktrees by default,
-  initialized submodules when enabled, and prepared read-only branch-ref
-  snapshots when `branch_roots.refs` is configured.
+  `.synignore`, `.synrepoignore`, redaction globs, configured roots, linked
+  worktrees by default, initialized submodules when enabled, and prepared
+  read-only branch-ref snapshots when `branch_roots.refs` is configured.
 - `classify.rs` - maps files to `FileClass` values such as supported code,
   text code, markdown, Jupyter, or skipped.
 - `index.rs`, `root_indexes.rs`, and `rooted_search.rs` - `syntext`
@@ -234,7 +234,7 @@ SQLite backend.
 - `.synrepo/overlay/overlay.db` - overlay SQLite store, physically separate
   from graph tables.
 - `.synrepo/index/` - `syntext` lexical index.
-- `.synrepo/index/vectors/` - optional flat-vector semantic index.
+- `.synrepo/index/vectors/` - optional flat-vector semantic index, profile-keyed under `vectors/<key>-<label>/index.bin`. The profile is `(provider, model, dim, precision, chunk_chars, normalizer_version)` blake3-hashed; the label is a human-readable short form (e.g. `onnx-all-MiniLM-L6-v2-d384-float32`) so the active profile is recoverable from `ls .synrepo/index/vectors/`.
 - `.synrepo/embeddings/` - local embedding runtime artifacts when present.
 - `.synrepo/cache/llm-responses/` - disposable LLM response cache.
 - `.synrepo/config.toml` - runtime config loaded by `Config`.

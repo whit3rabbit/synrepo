@@ -226,3 +226,38 @@ fn debounced_event(event: Event) -> DebouncedEvent {
 fn repo_ignore_set(repo: &PathBuf) -> WatchIgnoreSet {
     WatchIgnoreSet::from_roots(std::slice::from_ref(repo))
 }
+
+#[test]
+fn collect_repo_paths_respects_synrepoignore() {
+    let (_dir, repo, _config, synrepo_dir) = setup_test_repo();
+    fs::write(repo.join(".synrepoignore"), "src/secret_module.rs\n").unwrap();
+    let source_event = debounced_event(
+        Event::new(EventKind::Modify(ModifyKind::Any)).add_path(repo.join("src/secret_module.rs")),
+    );
+    let kept_event = debounced_event(
+        Event::new(EventKind::Modify(ModifyKind::Any)).add_path(repo.join("src/lib.rs")),
+    );
+
+    let ignored_paths = super::super::filter::collect_repo_paths(
+        std::slice::from_ref(&source_event),
+        std::slice::from_ref(&repo),
+        &repo,
+        &synrepo_dir,
+        &[],
+        &repo_ignore_set(&repo),
+    );
+    assert!(
+        ignored_paths.is_empty(),
+        "paths matching `.synrepoignore` must be filtered out before collection"
+    );
+
+    let kept_paths = super::super::filter::collect_repo_paths(
+        std::slice::from_ref(&kept_event),
+        std::slice::from_ref(&repo),
+        &repo,
+        &synrepo_dir,
+        &[],
+        &repo_ignore_set(&repo),
+    );
+    assert_eq!(kept_paths, vec![repo.join("src/lib.rs")]);
+}

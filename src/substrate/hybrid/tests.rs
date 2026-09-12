@@ -16,6 +16,48 @@ fn hybrid_search_falls_back_to_lexical_without_semantic_assets() {
     assert_eq!(report.rows[0].source, HybridSearchSource::Lexical);
 }
 
+#[test]
+fn dense_first_search_falls_back_to_lexical_without_semantic_assets() {
+    // No vector index, no model — dense-first must degrade gracefully to
+    // lexical search rather than panic. This is the safety-net contract:
+    // if the user has `enable_semantic_triage = false` or the embed gate is
+    // closed for any reason, dense-first behaves like lexical search.
+    let repo = tempdir().unwrap();
+    fs::create_dir_all(repo.path().join(".synrepo/index")).unwrap();
+    fs::write(repo.path().join("README.md"), "alpha token\n").unwrap();
+    let config = Config::default();
+    crate::substrate::index::build_index(&config, repo.path()).unwrap();
+
+    let report =
+        dense_first_search(&config, repo.path(), "alpha", &SearchOptions::default()).unwrap();
+    assert!(!report.semantic_available);
+    // No vector lane produced rows, so engine is the lexical-only label.
+    assert_eq!(report.engine, "syntext");
+    assert_eq!(report.rows[0].source, HybridSearchSource::Lexical);
+}
+
+#[cfg(feature = "semantic-triage")]
+#[test]
+fn dense_first_search_falls_back_to_lexical_when_semantic_triage_disabled() {
+    // `enable_semantic_triage = false` must short-circuit dense-first to
+    // lexical. This protects users who switch semantic triage off after
+    // they already had a dense-first path shipped.
+    let repo = tempdir().unwrap();
+    fs::create_dir_all(repo.path().join(".synrepo/index")).unwrap();
+    fs::write(repo.path().join("README.md"), "alpha token\n").unwrap();
+    let config = Config {
+        enable_semantic_triage: false,
+        ..Config::default()
+    };
+    crate::substrate::index::build_index(&config, repo.path()).unwrap();
+
+    let report =
+        dense_first_search(&config, repo.path(), "alpha", &SearchOptions::default()).unwrap();
+    assert!(!report.semantic_available);
+    assert_eq!(report.engine, "syntext");
+    assert_eq!(report.rows[0].source, HybridSearchSource::Lexical);
+}
+
 #[cfg(feature = "semantic-triage")]
 #[test]
 fn hybrid_search_uses_existing_semantic_index_when_enabled() {
@@ -54,7 +96,7 @@ fn hybrid_search_uses_existing_semantic_index_when_enabled() {
     )
     .unwrap();
     index
-        .save(&Config::synrepo_dir(repo.path()).join("index/vectors/index.bin"))
+        .save(&profile_index_path_for(&config, repo.path()))
         .unwrap();
 
     let report = hybrid_search(
@@ -111,7 +153,7 @@ fn hybrid_search_falls_back_to_lexical_when_ollama_query_fails() {
     )
     .unwrap();
     index
-        .save(&Config::synrepo_dir(repo.path()).join("index/vectors/index.bin"))
+        .save(&profile_index_path_for(&config, repo.path()))
         .unwrap();
 
     config.semantic_ollama_endpoint = "http://127.0.0.1:9".to_string();
@@ -124,6 +166,18 @@ fn hybrid_search_falls_back_to_lexical_when_ollama_query_fails() {
 #[cfg(feature = "semantic-triage")]
 fn spawn_one_embedding_server() -> String {
     spawn_embedding_server(1)
+}
+
+#[cfg(feature = "semantic-triage")]
+fn profile_index_path_for(config: &Config, repo: &std::path::Path) -> std::path::PathBuf {
+    let path = crate::substrate::embedding::profile_index_path_for_config(
+        &Config::synrepo_dir(repo),
+        config,
+    );
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).unwrap();
+    }
+    path
 }
 
 #[cfg(feature = "semantic-triage")]

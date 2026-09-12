@@ -45,7 +45,7 @@ impl FlatVecIndex {
         // Extract and sort descending.
         let mut results: Vec<(OrderedFloat, usize)> =
             heap.into_iter().map(|Reverse((f, i))| (f, i)).collect();
-        results.sort_by(|a, b| b.0.cmp(&a.0));
+        results.sort_by_key(|(score, _)| std::cmp::Reverse(*score));
 
         results
             .into_iter()
@@ -105,6 +105,8 @@ mod tests {
             model_name: "test".into(),
             format_version: INDEX_FORMAT_VERSION,
             normalized: true,
+            precision: super::super::super::profile::VectorPrecision::Float32,
+            normalizer_version: super::super::super::profile::NORMALIZER_VERSION,
             chunks: vec![],
             vectors: vec![],
             session: None,
@@ -145,6 +147,8 @@ mod tests {
             model_name: "test".into(),
             format_version: INDEX_FORMAT_VERSION,
             normalized: true,
+            precision: super::super::super::profile::VectorPrecision::Float32,
+            normalizer_version: super::super::super::profile::NORMALIZER_VERSION,
             chunks,
             vectors,
             session: None,
