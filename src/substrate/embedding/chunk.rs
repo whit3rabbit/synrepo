@@ -55,7 +55,7 @@ pub enum EmbeddingChunkSource {
 /// loss. Bumping this width requires bumping `INDEX_FORMAT_VERSION` in
 /// `index.rs`; on-disk records hold the chunk id as a fixed-width little-endian
 /// integer.
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct ChunkId(pub u128);
 
 impl std::fmt::Display for ChunkId {

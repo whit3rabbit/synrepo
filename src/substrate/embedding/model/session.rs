@@ -87,8 +87,20 @@ impl OnnxEmbeddingSession {
         let tokenizer = tokenizers::Tokenizer::from_file(&res.tokenizer_path)
             .map_err(|e| crate::Error::Other(anyhow::anyhow!("Failed to load tokenizer: {}", e)))?;
 
+        let threads = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1)
+            .min(4);
         let session = ort::session::Session::builder()
             .map_err(|e| crate::Error::Other(anyhow::anyhow!("Failed to create session: {}", e)))?
+            .with_intra_threads(threads)
+            .map_err(|e| {
+                crate::Error::Other(anyhow::anyhow!("Failed to set intra threads: {}", e))
+            })?
+            .with_intra_op_spinning(false)
+            .map_err(|e| {
+                crate::Error::Other(anyhow::anyhow!("Failed to set intra spinning: {}", e))
+            })?
             .commit_from_file(&res.model_path)
             .map_err(|e| crate::Error::Other(anyhow::anyhow!("Failed to load model: {}", e)))?;
 

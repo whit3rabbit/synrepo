@@ -16,17 +16,14 @@ pub(super) fn suppress_watch_events(synrepo_dir: &Path, paths: &[PathBuf]) {
     ) {
         return;
     }
-    let mut watch_paths = Vec::with_capacity(paths.len() * 2);
-    for path in paths {
-        watch_paths.push(path.clone());
-        if let Some(parent) = path.parent() {
-            watch_paths.push(parent.to_path_buf());
-        }
-    }
+    // Suppress only the exact edited file paths. Atomic-save temp-sibling
+    // noise (.a.rs.tmp.xxx) is already handled by `is_atomic_write_temp_sibling`
+    // in suppression.rs. Adding the parent directory would silently suppress
+    // unrelated sibling files edited by the user during the TTL window.
     let _ = request_watch_control(
         synrepo_dir,
         WatchControlRequest::SuppressPaths {
-            paths: watch_paths,
+            paths: paths.to_vec(),
             ttl_ms: EDIT_SUPPRESSION_TTL_MS,
         },
     );

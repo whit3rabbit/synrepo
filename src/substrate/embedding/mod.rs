@@ -21,6 +21,8 @@ pub mod model;
 // Not feature-gated: `Config` stores a `VectorPrecision` and the watch
 // scheduler resolves profile paths in default builds too.
 pub mod profile;
+#[cfg(feature = "semantic-triage")]
+pub mod reuse;
 
 #[cfg(feature = "semantic-triage")]
 pub use build::{
@@ -44,8 +46,6 @@ use crate::Result;
 
 #[cfg(feature = "semantic-triage")]
 use crate::structure::graph::GraphStore;
-#[cfg(feature = "semantic-triage")]
-use crate::substrate::embedding::model::EmbeddingSession;
 
 /// Build the embedding index for a graph store if semantic triage is enabled.
 #[cfg(feature = "semantic-triage")]
@@ -240,7 +240,7 @@ fn build_index_with_config<G: GraphStore>(
     let index = index::FlatVecIndex::build_with_session_and_precision(
         chunks,
         &model,
-        EmbeddingSession::new_from_resolution(&model)?,
+        model::session_cache::shared_from_resolution(&model)?,
         profile.precision,
         |_current, _total| {},
         || false,

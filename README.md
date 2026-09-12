@@ -129,7 +129,7 @@ Within one repo, use `docs/CONFIG.md` to tune discovery. The relevant defaults a
 
 ## Optional Embeddings
 
-Embeddings are off by default. When synrepo is built with the `semantic-triage` feature (`cargo build --features semantic-triage`), you can enable them per repo from the dashboard Actions tab with `T`, then press `B` or run `synrepo embeddings build` to build the vector index. After that first build, watch auto-sync can refresh the existing index after source-changing reconciles once the repo quiets down.
+Embeddings are off by default. When synrepo is built with the `semantic-triage` feature (`cargo build --features semantic-triage`), you can enable them per repo from the dashboard Actions tab with `T`, then press `B` or run `synrepo embeddings build` to build the vector index. Vector indexes are profile-keyed under `.synrepo/index/vectors/`, supporting `float32` and quantized `int8` precision. After the initial build, watch auto-sync and background refresh incrementally update the index by reusing cached chunk vectors for unchanged files, running neural inference only on new or modified content. Stale profile directories can be pruned with `synrepo embeddings clean`.
 
 Use `synrepo bench search --tasks 'benches/tasks/*.json' --mode both --json` to compare lexical and hybrid search before keeping embeddings on. On this repo, local Ollama `all-minilm` improved the four-fixture hit@5 baseline from `0.25` to `1.00`, with total search latency rising from `49 ms` to `690 ms`. See [docs/EMBEDDINGS.md](docs/EMBEDDINGS.md) for ONNX, Ollama, Hugging Face-hosted model artifacts, and benchmark guidance.
 
@@ -235,6 +235,8 @@ Use `synrepo uninstall` for the guided full teardown across projects, integratio
 | `synrepo ask "question"` | Bounded task-context packet for broad questions |
 | `synrepo search "query"` | Lexical search through the repo index |
 | `synrepo cards --query "task" --budget 1500` | Bounded card suggestions for a task |
+| `synrepo embeddings build` | Build or refresh the optional semantic vector index |
+| `synrepo embeddings clean [--apply]` | Clean stale vector profile directories and legacy index artifacts |
 | `synrepo explain <target> --budget 1000` | Bounded card for a file or symbol |
 | `synrepo impact <target> --budget 2000` | Change risk before editing |
 | `synrepo tests <path> --budget 1500` | Test-surface discovery |

@@ -1,11 +1,10 @@
 ---
 source: src/surface/card/compiler/neighborhood/tests.rs
-assertion_line: 202
 expression: tiny
 ---
 {
   "focal_card": {
-    "file": "file_da7126252fc52382b57d357eb90beb47",
+    "file": "file_b789da0c4a5df1c4dd2d83a633e97cc4",
     "path": "src/lib.rs",
     "root_id": "primary",
     "is_primary_root": true,
@@ -14,7 +13,7 @@ expression: tiny
     "editable": true,
     "symbols": [
       {
-        "id": "sym_0428e9f2f46549976b560f5b402d03ee",
+        "id": "sym_c42168e18795bc7be6c62c10dcd1df41",
         "qualified_name": "add",
         "location": "src/lib.rs:22"
       }

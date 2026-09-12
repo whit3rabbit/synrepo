@@ -62,4 +62,4 @@ Rules:
 
 MCP errors are structured. Branch on `error.code` when present and use `error_message` only as a compatibility fallback.
 
-Read/card tools are rate-limited. If you receive `RATE_LIMITED`, wait briefly or reduce batching. If you receive `BUSY`, retry after the current read pressure clears.
+Read/card tools are rate-limited and concurrent blocking executions are capped at 8 workers. If you receive `RATE_LIMITED`, wait briefly or reduce batching. If you receive `BUSY`, retry after the current read pressure or blocking tool execution clears.

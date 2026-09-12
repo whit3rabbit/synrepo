@@ -1,3 +1,5 @@
+mod incremental;
+
 use tempfile::tempdir;
 
 #[cfg(feature = "semantic-triage")]
@@ -175,7 +177,7 @@ fn build_delegates_to_active_watch() {
 }
 
 #[cfg(feature = "semantic-triage")]
-fn enable_ollama_embeddings(repo: &std::path::Path, endpoint: &str) {
+pub(super) fn enable_ollama_embeddings(repo: &std::path::Path, endpoint: &str) {
     use synrepo::config::SemanticEmbeddingProvider;
     let path = Config::synrepo_dir(repo).join("config.toml");
     let mut config = Config::load(repo).unwrap();
@@ -190,39 +192,113 @@ fn enable_ollama_embeddings(repo: &std::path::Path, endpoint: &str) {
 }
 
 #[cfg(feature = "semantic-triage")]
-fn spawn_embedding_server() -> String {
-    use std::net::TcpListener;
-
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let addr = listener.local_addr().unwrap();
-    std::thread::spawn(move || {
-        for stream in listener.incoming().take(8).flatten() {
-            respond(stream);
-        }
-    });
-    format!("http://{addr}")
+pub(super) struct MockServer {
+    pub(super) endpoint: String,
+    pub(super) call_count: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    pub(super) bodies: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
 }
 
 #[cfg(feature = "semantic-triage")]
-fn respond(mut stream: std::net::TcpStream) {
+pub(super) fn spawn_recording_server() -> MockServer {
+    use std::net::TcpListener;
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::{Arc, Mutex};
+
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let call_count = Arc::new(AtomicUsize::new(0));
+    let bodies = Arc::new(Mutex::new(Vec::new()));
+
+    let count_clone = Arc::clone(&call_count);
+    let bodies_clone = Arc::clone(&bodies);
+
+    std::thread::spawn(move || {
+        for stream in listener.incoming().take(32).flatten() {
+            count_clone.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            respond_recording(stream, &bodies_clone);
+        }
+    });
+
+    MockServer {
+        endpoint: format!("http://{addr}"),
+        call_count,
+        bodies,
+    }
+}
+
+#[cfg(feature = "semantic-triage")]
+fn spawn_embedding_server() -> String {
+    spawn_recording_server().endpoint
+}
+
+#[cfg(feature = "semantic-triage")]
+fn respond_recording(
+    mut stream: std::net::TcpStream,
+    bodies: &std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+) {
     use std::io::{Read, Write};
 
     let mut request = Vec::new();
     let mut chunk = [0u8; 1024];
     loop {
-        let n = stream.read(&mut chunk).unwrap();
+        let n = match stream.read(&mut chunk) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => n,
+        };
         request.extend_from_slice(&chunk[..n]);
         if request.windows(4).any(|w| w == b"\r\n\r\n") {
             break;
         }
     }
-    let body = r#"{"embeddings":[[1.0,0.0]]}"#;
+    let text = String::from_utf8_lossy(&request);
+    let header_end = text.find("\r\n\r\n").unwrap_or(text.len());
+    let (headers, body_part) = text.split_at(header_end);
+    let mut body_bytes = body_part.trim_start_matches("\r\n\r\n").as_bytes().to_vec();
+
+    let content_len = headers
+        .lines()
+        .find_map(|line| {
+            let lower = line.to_lowercase();
+            if lower.starts_with("content-length:") {
+                lower["content-length:".len()..]
+                    .trim()
+                    .parse::<usize>()
+                    .ok()
+            } else {
+                None
+            }
+        })
+        .unwrap_or(0);
+
+    while body_bytes.len() < content_len {
+        let n = match stream.read(&mut chunk) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => n,
+        };
+        body_bytes.extend_from_slice(&chunk[..n]);
+    }
+
+    let body_str = String::from_utf8_lossy(&body_bytes).to_string();
+    let num_inputs = if let Ok(val) = serde_json::from_str::<serde_json::Value>(&body_str) {
+        if let Some(arr) = val["input"].as_array() {
+            arr.len()
+        } else {
+            1
+        }
+    } else {
+        1
+    };
+
+    bodies.lock().unwrap().push(body_str);
+
+    let embeddings: Vec<Vec<f32>> = vec![vec![1.0, 0.0]; num_inputs];
+    let resp_json = serde_json::json!({ "embeddings": embeddings }).to_string();
     let response = format!(
         "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-        body.len(),
-        body
+        resp_json.len(),
+        resp_json
     );
-    stream.write_all(response.as_bytes()).unwrap();
+    let _ = stream.write_all(response.as_bytes());
 }
 
 #[cfg(all(feature = "semantic-triage", unix))]

@@ -194,11 +194,15 @@ fn score_candidate(
     }
 
     if let Some(prefix) = &call_ref.callee_prefix {
-        if candidate
+        let qualname_match = candidate
             .qualified_name
             .split("::")
-            .any(|component| component == prefix)
-        {
+            .any(|component| component == prefix);
+        let file_stem_match = std::path::Path::new(&candidate.file_path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .is_some_and(|stem| stem == prefix);
+        if qualname_match || file_stem_match {
             score += PREFIX_MATCH_BONUS;
         }
     }

@@ -101,7 +101,7 @@ fn filter_repo_events_ignores_gitignored_target_bursts() {
         &ignore_set,
     );
 
-    assert_eq!(paths, vec![repo.join("src/lib.rs")]);
+    assert_eq!(paths.paths, vec![repo.join("src/lib.rs")]);
 }
 
 #[test]
@@ -197,7 +197,7 @@ fn collect_repo_paths_skips_missing_non_removal_paths() {
         &repo_ignore_set(&repo),
     );
 
-    assert!(paths.is_empty());
+    assert!(paths.paths.is_empty());
 }
 
 #[test]
@@ -216,7 +216,8 @@ fn collect_repo_paths_keeps_missing_removal_paths() {
         &repo_ignore_set(&repo),
     );
 
-    assert_eq!(paths, vec![repo.join("src/old.rs")]);
+    assert_eq!(paths.paths, vec![repo.join("src/old.rs")]);
+    assert!(!paths.has_directory_event);
 }
 
 fn debounced_event(event: Event) -> DebouncedEvent {
@@ -247,7 +248,7 @@ fn collect_repo_paths_respects_synrepoignore() {
         &repo_ignore_set(&repo),
     );
     assert!(
-        ignored_paths.is_empty(),
+        ignored_paths.paths.is_empty(),
         "paths matching `.synrepoignore` must be filtered out before collection"
     );
 
@@ -259,5 +260,5 @@ fn collect_repo_paths_respects_synrepoignore() {
         &[],
         &repo_ignore_set(&repo),
     );
-    assert_eq!(kept_paths, vec![repo.join("src/lib.rs")]);
+    assert_eq!(kept_paths.paths, vec![repo.join("src/lib.rs")]);
 }

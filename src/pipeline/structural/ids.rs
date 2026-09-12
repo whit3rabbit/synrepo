@@ -3,16 +3,21 @@ use crate::{
     structure::graph::{EdgeKind, SymbolKind},
 };
 
-/// Derive a stable `FileNodeId` from the root discriminator and content hash
-/// of the first-seen version.
+/// Derive a stable `FileNodeId` from the root discriminator, initial repo-relative path,
+/// and content hash of the first-seen version.
 ///
-/// Uses the first 16 bytes of a secondary blake3 hash of the hex hash string.
-/// This indirection preserves the "first-seen hash" invariant, for new files
-/// the ID is derived from the current content, for existing files the caller
-/// uses the stored ID from the graph.
-pub(super) fn derive_file_id(root_discriminant: &str, content_hash: &str) -> FileNodeId {
+/// Uses the first 16 bytes of a secondary blake3 hash of the components.
+/// Including the path in the first-seen seed ensures that two files with identical
+/// bytes in the same root receive distinct identities. For existing files or
+/// confidently resolved renames, the stored ID is reused.
+pub(super) fn derive_file_id(
+    root_discriminant: &str,
+    path: &str,
+    content_hash: &str,
+) -> FileNodeId {
     let mut hasher = blake3::Hasher::new();
     hasher.update(root_discriminant.as_bytes());
+    hasher.update(path.as_bytes());
     hasher.update(content_hash.as_bytes());
     FileNodeId(hash_to_u128(hasher.finalize()))
 }

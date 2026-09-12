@@ -226,12 +226,16 @@ impl GraphReader for Graph {
     }
 
     fn outbound(&self, from: NodeId, kind: Option<EdgeKind>) -> crate::Result<Vec<Edge>> {
-        let edges = self.edges_by_from.get(&from).cloned().unwrap_or_default();
+        let Some(edges) = self.edges_by_from.get(&from) else {
+            return Ok(Vec::new());
+        };
         Ok(filter_edges_by_kind(edges, kind))
     }
 
     fn inbound(&self, to: NodeId, kind: Option<EdgeKind>) -> crate::Result<Vec<Edge>> {
-        let edges = self.edges_by_to.get(&to).cloned().unwrap_or_default();
+        let Some(edges) = self.edges_by_to.get(&to) else {
+            return Ok(Vec::new());
+        };
         Ok(filter_edges_by_kind(edges, kind))
     }
 
@@ -306,10 +310,14 @@ impl GraphReader for Graph {
     }
 }
 
-fn filter_edges_by_kind(edges: Vec<Edge>, kind: Option<EdgeKind>) -> Vec<Edge> {
+fn filter_edges_by_kind(edges: &[Edge], kind: Option<EdgeKind>) -> Vec<Edge> {
     match kind {
-        Some(kind) => edges.into_iter().filter(|edge| edge.kind == kind).collect(),
-        None => edges,
+        Some(kind) => edges
+            .iter()
+            .filter(|edge| edge.kind == kind)
+            .cloned()
+            .collect(),
+        None => edges.to_vec(),
     }
 }
 

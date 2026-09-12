@@ -158,9 +158,19 @@ fn run_structural_compile_scoped(
     };
 
     if let Some(snapshot_epoch) = compile_rev {
-        if let Err(e) = stage8::run_graph_snapshot_commit(repo_root, config, graph, snapshot_epoch)
-        {
-            tracing::warn!(error = %e, "stage 8 graph snapshot publish failed; continuing");
+        let has_mutations = (txn.files_parsed
+            | txn.symbols_extracted
+            | (txn.edges_added + stage4_edges)
+            | txn.concept_nodes_emitted)
+            > 0;
+        let needs_snapshot =
+            has_mutations || crate::structure::graph::snapshot::current(repo_root).is_none();
+        if needs_snapshot {
+            if let Err(e) =
+                stage8::run_graph_snapshot_commit(repo_root, config, graph, snapshot_epoch)
+            {
+                tracing::warn!(error = %e, "stage 8 graph snapshot publish failed; continuing");
+            }
         }
     }
 

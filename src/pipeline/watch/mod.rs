@@ -43,7 +43,24 @@ pub use reconcile_state::{
     load_reconcile_state, persist_reconcile_attempt_state, persist_reconcile_state,
     reconcile_state_path, ReconcileState, ReconcileStateError,
 };
-pub use service::{run_watch_loop, run_watch_service};
+pub use service::run_watch_service;
+
+/// Run the watch loop in the foreground.
+pub fn run_watch_loop(
+    repo_root: &std::path::Path,
+    config: &crate::config::Config,
+    watch_config: &WatchConfig,
+    synrepo_dir: &std::path::Path,
+) -> crate::Result<()> {
+    run_watch_service(
+        repo_root,
+        config,
+        watch_config,
+        synrepo_dir,
+        WatchServiceMode::Foreground,
+        None,
+    )
+}
 pub use status::{
     cleanup_stale_watch_artifacts, load_watch_state, watch_service_status, StateLoadError,
     WatchServiceStatus,

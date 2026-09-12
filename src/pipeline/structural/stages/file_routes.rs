@@ -88,6 +88,7 @@ fn emit_file_routes(
     let file_id = resolve_file_id(
         existing.as_ref(),
         &file.root_discriminant,
+        &file.relative_path,
         &content_hash,
         disappeared_by_hash,
         rename_matched_old_paths,

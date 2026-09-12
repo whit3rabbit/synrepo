@@ -191,3 +191,33 @@ pub(super) fn maybe_run_post_reconcile_auto_sync(
         }
     }
 }
+
+/// Run the initial startup reconcile attempt, persist its outcome, update state, and emit events.
+pub(super) fn run_startup_reconcile(context: &WatchSyncContext<'_>) -> ReconcileOutcome {
+    emit_event(context.events, |now| WatchEvent::ReconcileStarted {
+        at: now,
+        triggering_events: 0,
+        full: true,
+        reason: None,
+    });
+    let startup_attempt = super::reconcile::run_reconcile_attempt(
+        context.repo_root,
+        context.config,
+        context.synrepo_dir,
+        false,
+    );
+    let startup = startup_attempt.outcome.clone();
+    super::reconcile_state::persist_reconcile_attempt_state(
+        context.synrepo_dir,
+        &startup_attempt,
+        0,
+    );
+    context.state_handle.note_reconcile(&startup, 0);
+    tracing::info!(outcome = %startup.as_str(), "startup reconcile complete");
+    emit_event(context.events, |now| WatchEvent::ReconcileFinished {
+        at: now,
+        outcome: startup.clone(),
+        triggering_events: 0,
+    });
+    startup
+}

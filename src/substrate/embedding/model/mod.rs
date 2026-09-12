@@ -132,6 +132,7 @@ pub fn get_global_cache_dir() -> Result<PathBuf> {
 
 pub mod resolution;
 pub mod session;
+pub mod session_cache;
 
 pub use resolution::ModelResolver;
 pub use session::EmbeddingSession;

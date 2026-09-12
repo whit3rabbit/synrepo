@@ -33,6 +33,7 @@ pub(super) struct SymbolMeta {
     pub(super) visibility: Visibility,
     pub(super) kind: SymbolKind,
     pub(super) qualified_name: String,
+    pub(super) file_path: String,
 }
 
 /// Per-compile resolver state threaded into every import reference.
@@ -117,6 +118,7 @@ pub(super) fn build_indices(
                 visibility,
                 kind,
                 qualified_name: qname.clone(),
+                file_path: file.path.clone(),
             },
         );
         qualified_index

@@ -60,6 +60,18 @@ impl PendingWatchChanges {
     pub(super) fn clear_paths(&mut self) {
         self.touched_paths.clear();
     }
+
+    pub(super) fn requeue_failed(&mut self, paths: Vec<PathBuf>, force_full: bool) {
+        if force_full {
+            self.overflowed_paths = true;
+        }
+        for path in paths {
+            self.touched_paths.insert(path);
+        }
+        if self.event_count == 0 {
+            self.event_count = 1;
+        }
+    }
 }
 
 #[cfg(test)]
@@ -88,5 +100,27 @@ mod tests {
         assert_eq!(batch.event_count, 1);
         assert!(batch.touched_paths.is_empty());
         assert!(batch.force_full_reconcile);
+    }
+
+    #[test]
+    fn requeue_failed_preserves_work_and_unions_new_events() {
+        let mut pending = PendingWatchChanges::default();
+        pending.record(2, vec!["a.rs".into(), "b.rs".into()], 10);
+
+        let batch = pending.take(10);
+        pending.clear_paths();
+        assert!(pending.is_empty());
+
+        // A newer event arrives while the batch was in flight
+        pending.record(1, vec!["c.rs".into()], 10);
+
+        // The batch fails and is requeued
+        pending.requeue_failed(batch.touched_paths, batch.force_full_reconcile);
+
+        let second_batch = pending.take(10);
+        assert_eq!(second_batch.touched_paths.len(), 3);
+        assert!(second_batch.touched_paths.contains(&PathBuf::from("a.rs")));
+        assert!(second_batch.touched_paths.contains(&PathBuf::from("b.rs")));
+        assert!(second_batch.touched_paths.contains(&PathBuf::from("c.rs")));
     }
 }

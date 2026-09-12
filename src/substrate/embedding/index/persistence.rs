@@ -4,7 +4,7 @@ use std::fs::File;
 use std::io::{BufReader, BufWriter, Read, Write};
 
 use super::super::chunk::{ChunkId, EmbeddingChunkSource};
-use super::super::model::{EmbeddingSession, ModelResolution};
+use super::super::model::ModelResolution;
 use super::super::profile::VectorPrecision;
 use super::quantization::{read_vector_payload, vector_payload_bytes, write_vector_payload};
 use super::{ChunkMeta, FlatVecIndex};
@@ -289,7 +289,9 @@ impl FlatVecIndex {
         model_res: &ModelResolution,
     ) -> crate::Result<Self> {
         let mut index = Self::load(path, expected_dim)?;
-        index.session = Some(EmbeddingSession::new_from_resolution(model_res)?);
+        index.session = Some(
+            crate::substrate::embedding::model::session_cache::shared_from_resolution(model_res)?,
+        );
         Ok(index)
     }
 }

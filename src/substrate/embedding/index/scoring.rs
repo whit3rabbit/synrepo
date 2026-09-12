@@ -49,7 +49,7 @@ impl FlatVecIndex {
 
         results
             .into_iter()
-            .map(|(OrderedFloat(score), i)| (self.chunks[i].id.clone(), score))
+            .map(|(OrderedFloat(score), i)| (self.chunks[i].id, score))
             .collect()
     }
 }

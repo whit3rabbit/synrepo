@@ -1,14 +1,13 @@
 ---
 source: src/surface/card/compiler/tests/basic.rs
-assertion_line: 189
 expression: tiny
 ---
 {
-  "symbol": "sym_1c1405bbed994f380f5fadba849d2170",
+  "symbol": "sym_e1e7c2532efb79ccfc6bb04fc9a23f3d",
   "name": "add",
   "qualified_name": "add",
   "defined_at": "src/lib.rs:31",
-  "file_id": "file_5c9f59f131e0fae5ef2a1433a1d86fe2",
+  "file_id": "file_b9153ba0bcc8814480efee97788f17da",
   "path": "src/lib.rs",
   "root_id": "primary",
   "is_primary_root": true,

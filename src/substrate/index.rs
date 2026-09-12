@@ -30,34 +30,39 @@ pub fn build_index(
     build_index_with_retry(config, repo_root)
 }
 
+const LOCK_RETRY_SCHEDULE_MS: [u64; 5] = [20, 40, 80, 160, 200];
+
 fn build_index_with_retry(
     config: &crate::config::Config,
     repo_root: &Path,
 ) -> crate::Result<IndexBuildReport> {
-    match build_index_once(config, repo_root) {
-        Ok(report) => Ok(report),
-        Err(err @ crate::Error::Other(_)) if is_lock_conflict(&err) => {
-            std::thread::sleep(std::time::Duration::from_millis(20));
-            match build_index_once(config, repo_root) {
-                Ok(report) => Ok(report),
-                Err(retry_err @ crate::Error::Other(_)) if is_lock_conflict(&retry_err) => {
-                    let index_dir = crate::config::Config::synrepo_dir(repo_root).join("index");
-                    let _ = std::fs::remove_dir_all(&index_dir);
-                    std::fs::create_dir_all(&index_dir)?;
-                    build_index_once(config, repo_root)
+    let mut attempt = 0;
+    loop {
+        match build_index_once(config, repo_root) {
+            Ok(report) => return Ok(report),
+            Err(err @ syntext::IndexError::LockConflict(_)) => {
+                if attempt < LOCK_RETRY_SCHEDULE_MS.len() {
+                    std::thread::sleep(std::time::Duration::from_millis(
+                        LOCK_RETRY_SCHEDULE_MS[attempt],
+                    ));
+                    attempt += 1;
+                    continue;
                 }
-                Err(retry_err) => Err(retry_err),
+                return Err(map_index_error(err));
             }
+            Err(err) => return Err(map_index_error(err)),
         }
-        Err(err) => Err(err),
     }
 }
 
+/// Returns the raw `syntext::IndexError` so the retry layer can match on it
+/// by type before wrapping into `crate::Error`.
 fn build_index_once(
     config: &crate::config::Config,
     repo_root: &Path,
-) -> crate::Result<IndexBuildReport> {
-    let discovered = crate::substrate::discover::discover(repo_root, config)?;
+) -> Result<IndexBuildReport, syntext::IndexError> {
+    let discovered = crate::substrate::discover::discover(repo_root, config)
+        .map_err(|e| syntext::IndexError::Io(std::io::Error::other(e.to_string())))?;
     let records = discovered
         .iter()
         .filter(|file| file.root_discriminant == "primary")
@@ -68,16 +73,12 @@ fn build_index_once(
         })
         .collect::<Vec<_>>();
     let indexed_files = records.len();
-    Index::build_from_file_records(syntext_config(config, repo_root), records)
-        .map_err(map_index_error)?;
+    Index::build_from_file_records(syntext_config(config, repo_root), records)?;
     let indexed_files = indexed_files
-        + crate::substrate::root_indexes::build_branch_indexes(config, repo_root, &discovered)?;
+        + crate::substrate::root_indexes::build_branch_indexes(config, repo_root, &discovered)
+            .map_err(|e| syntext::IndexError::Io(std::io::Error::other(e.to_string())))?;
 
     Ok(IndexBuildReport { indexed_files })
-}
-
-fn is_lock_conflict(error: &crate::Error) -> bool {
-    matches!(error, crate::Error::Other(err) if err.to_string().contains("locked by another process"))
 }
 
 /// Executes an exact lexical search against the current substrate index.

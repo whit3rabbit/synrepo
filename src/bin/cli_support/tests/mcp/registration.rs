@@ -117,3 +117,17 @@ fn mcp_source_registers_lesson_tools() {
         );
     }
 }
+
+#[test]
+fn mcp_source_configures_blocking_tool_permit_semaphore() {
+    let source = fs::read_to_string("src/bin/cli_support/commands/mcp/state.rs")
+        .expect("read MCP state source");
+    assert!(
+        source.contains("MAX_CONCURRENT_BLOCKING_TOOLS: usize = 8;"),
+        "MCP state must enforce 8-permit blocking tool concurrency cap"
+    );
+    assert!(
+        source.contains("acquire_blocking_permit"),
+        "MCP state must acquire blocking permit before spawning"
+    );
+}

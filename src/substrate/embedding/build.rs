@@ -130,10 +130,116 @@ pub fn refresh_existing_embedding_index_with_progress(
     if !config.enable_semantic_triage {
         return Ok(None);
     }
-    if !profile_index_path_for_config(synrepo_dir, config).exists() {
+    let index_path = profile_index_path_for_config(synrepo_dir, config);
+    if !index_path.exists() {
         return Ok(None);
     }
-    build_embedding_index_inner(graph, config, synrepo_dir, progress, should_stop, false).map(Some)
+
+    let mut noop_progress = |_event: EmbeddingBuildEvent| {};
+    let progress = progress.unwrap_or(&mut noop_progress);
+    let mut never_stop = || false;
+    let should_stop = should_stop.unwrap_or(&mut never_stop);
+
+    // 1. Session-less load of existing index
+    let old_index = FlatVecIndex::load(&index_path, config.embedding_dim)?;
+
+    // 2. Extract fresh chunks from graph
+    progress(EmbeddingBuildEvent::ExtractingChunks);
+    let fresh_chunks = chunk::extract_chunks(graph)?;
+    progress(EmbeddingBuildEvent::ChunksReady {
+        chunks: fresh_chunks.len(),
+    });
+
+    // 3. Partition fresh chunks against old index
+    let partition = super::reuse::partition_chunks(&fresh_chunks, &old_index);
+
+    // 4. Zero misses and identical count -> return no changes summary immediately
+    if partition.is_exact_match(old_index.len()) {
+        return Ok(Some(EmbeddingBuildSummary {
+            provider: config.semantic_embedding_provider.as_str().to_string(),
+            model: config.semantic_model.clone(),
+            dim: config.embedding_dim,
+            chunks: old_index.len(),
+            index_path,
+        }));
+    }
+
+    if should_stop() {
+        return Err(crate::Error::Other(anyhow::anyhow!(
+            "embedding build cancelled"
+        )));
+    }
+
+    // 5. Resolve model (without downloading)
+    progress(EmbeddingBuildEvent::ResolvingModel {
+        provider: config.semantic_embedding_provider.as_str().to_string(),
+        model: config.semantic_model.clone(),
+        dim: config.embedding_dim,
+    });
+    let resolver = ModelResolver::new();
+    let model = resolver.resolve_existing(config, synrepo_dir)?;
+    progress(EmbeddingBuildEvent::ModelReady {
+        provider: model.provider_label().to_string(),
+        model: model.model_name().to_string(),
+        dim: model.embedding_dim(),
+        downloaded: model.downloaded(),
+    });
+
+    // 6. Preflight only when misses exist
+    let session = if partition.has_misses() {
+        progress(EmbeddingBuildEvent::InitializingBackend);
+        let s = super::model::session_cache::shared_from_resolution(&model)?;
+        progress(EmbeddingBuildEvent::PreflightStarted);
+        run_preflight(&s, &model)?;
+        progress(EmbeddingBuildEvent::PreflightFinished);
+        Some(s)
+    } else {
+        None
+    };
+
+    if should_stop() {
+        return Err(crate::Error::Other(anyhow::anyhow!(
+            "embedding build cancelled"
+        )));
+    }
+
+    // 7. Build with reuse
+    let profile = VectorProfile::for_config(config);
+    let new_index = FlatVecIndex::build_with_session_precision_and_reuse(
+        fresh_chunks,
+        &model,
+        session,
+        profile.precision,
+        Some(&partition),
+        |current, total| {
+            progress(EmbeddingBuildEvent::BatchFinished { current, total });
+        },
+        should_stop,
+    )?;
+
+    // 8. Atomic save
+    if let Some(parent) = index_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    progress(EmbeddingBuildEvent::SavingIndex {
+        path: index_path.clone(),
+    });
+    new_index.save(&index_path)?;
+
+    let summary = EmbeddingBuildSummary {
+        provider: model.provider_label().to_string(),
+        model: model.model_name().to_string(),
+        dim: model.embedding_dim(),
+        chunks: new_index.len(),
+        index_path,
+    };
+    progress(EmbeddingBuildEvent::Finished {
+        chunks: summary.chunks,
+        path: summary.index_path.clone(),
+        model: summary.model.clone(),
+        provider: summary.provider.clone(),
+    });
+    Ok(Some(summary))
 }
 
 fn build_embedding_index_inner(
@@ -174,7 +280,7 @@ fn build_embedding_index_inner(
     });
 
     progress(EmbeddingBuildEvent::InitializingBackend);
-    let session = EmbeddingSession::new_from_resolution(&model)?;
+    let session = super::model::session_cache::shared_from_resolution(&model)?;
     progress(EmbeddingBuildEvent::PreflightStarted);
     run_preflight(&session, &model)?;
     progress(EmbeddingBuildEvent::PreflightFinished);

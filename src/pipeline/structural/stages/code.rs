@@ -68,6 +68,7 @@ pub(super) fn process_supported_code_files(
         let file_id = resolve_file_id(
             existing.as_ref(),
             &file.root_discriminant,
+            &file.relative_path,
             &content_hash,
             disappeared_by_hash,
             rename_matched_old_paths,
@@ -230,6 +231,7 @@ fn has_missing_symbols(
 pub(super) fn resolve_file_id(
     existing: Option<&FileNode>,
     root_discriminant: &str,
+    path: &str,
     content_hash: &str,
     disappeared_by_hash: &HashMap<(String, String), FileNode>,
     rename_matched_old_paths: &mut HashSet<String>,
@@ -245,5 +247,5 @@ pub(super) fn resolve_file_id(
         *identities_resolved += 1;
         return old_node.id;
     }
-    derive_file_id(root_discriminant, content_hash)
+    derive_file_id(root_discriminant, path, content_hash)
 }

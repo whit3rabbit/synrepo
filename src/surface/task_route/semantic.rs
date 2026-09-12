@@ -44,7 +44,9 @@ mod enabled {
 
         let resolver = ModelResolver::new();
         let resolution = resolver.resolve_existing(config, synrepo_dir).ok()?;
-        let session = EmbeddingSession::new_from_resolution(&resolution).ok()?;
+        let session =
+            crate::substrate::embedding::model::session_cache::shared_from_resolution(&resolution)
+                .ok()?;
         let key = format!(
             "{}:{}:{}:{}",
             config.semantic_embedding_provider.as_str(),

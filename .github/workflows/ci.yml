@@ -32,6 +32,10 @@ jobs:
       - name: cargo build --features metrics-http
         run: cargo build --features metrics-http
 
+      - name: cargo build --all-features (macOS)
+        if: matrix.os == 'macos-14'
+        run: cargo build --all-features
+
   # Default builds never compile the optional embedding subsystem, so
   # feature-gated code gets zero coverage in the test job. Keep a dedicated
   # compile check (check-only, not test: embedding tests may hit local

@@ -22,7 +22,7 @@ cargo install --path . --features semantic-triage
 
 This pulls in the `ort` (ONNX Runtime), `tokenizers`, and `ndarray` dependencies.
 
-Official release binaries are base builds without `semantic-triage`. Use a source or Cargo install with the feature enabled when embeddings are required.
+Official Homebrew and macOS release binaries are built with all features (`--all-features`), including `semantic-triage` (embeddings) and `metrics-http`. For custom or base builds, use a source or Cargo install with `--features semantic-triage`.
 
 ## Gates
 
@@ -35,7 +35,7 @@ Embeddings only participate when all gates are open:
 
 If any gate is closed, MCP and CLI search fall back to lexical behavior with `semantic_available: false` or `routing_strategy: "keyword_fallback"`. Query-time surfaces do not download ONNX artifacts, rebuild indexes, or start background work.
 
-After the first explicit build, `synrepo watch` can refresh the existing vector index in the background when `auto_sync_enabled = true`. A successful non-keepalive reconcile with touched source paths, or a path-overflow full reconcile, marks the existing index stale. Watch waits for a 30 second quiet window with no pending filesystem changes, no running sync, and no running embedding job before refreshing. This refresh is conservative: it does not create the first index, does not download ONNX artifacts, and uses only cached ONNX assets or the configured local Ollama endpoint. Failed background refreshes back off before retrying.
+After the first explicit build, `synrepo watch` can refresh the existing vector index in the background when `auto_sync_enabled = true`. A successful non-keepalive reconcile with touched source paths, or a path-overflow full reconcile, marks the existing index stale. Watch waits for a 30 second quiet window with no pending filesystem changes, no running sync, and no running embedding job before refreshing. This refresh is conservative and incremental: it does not create the first index, does not download ONNX artifacts, and uses only cached ONNX assets or the configured local Ollama endpoint. Unchanged chunks reuse their vectors from the existing profile index via `(ChunkId, blake3(text))` partitioning; when all chunks are unchanged, refresh is a zero-inference no-op that leaves `index.bin` untouched. Provider preflight and embedding batches run only for new or modified chunks. Explicit `synrepo embeddings build` remains a deliberate full rebuild. Failed background refreshes back off before retrying.
 
 Installed Git hooks stay cheap: they run `synrepo reconcile --fast`, not an embedding build. When watch is active, that delegated reconcile marks an existing vector index stale and lets the same watch-owned quiet-window refresh path handle it. Without watch, hooks refresh graph and lexical state only; rebuild vectors explicitly with `synrepo embeddings build` when semantic freshness matters.
 

@@ -173,7 +173,7 @@ Tool errors are structured as `{"ok":false,"error":{"code":"...","message":"..."
 
 `error` is always an object, not a flat string. Clients and tests that need message text should read `error.message` or `error_message`; branch logic should prefer `error.code`.
 
-Current codes are `NOT_FOUND`, `NOT_INITIALIZED`, `INVALID_PARAMETER`, `RATE_LIMITED`, `LOCKED`, `BUSY`, `TIMEOUT`, and `INTERNAL`. Read snapshots are limited per repository, defaulting to 4 concurrent snapshots with a short wait before returning `BUSY`. Per-repo read limiters and SQLite compiler pools are bounded to 128 tracked repositories with idle eviction. Read tools and resource reads are capped by `--call-timeout`, default `30s`, and return `TIMEOUT` on expiry.
+Current codes are `NOT_FOUND`, `NOT_INITIALIZED`, `INVALID_PARAMETER`, `RATE_LIMITED`, `LOCKED`, `BUSY`, `TIMEOUT`, and `INTERNAL`. Read snapshots are limited per repository, defaulting to 4 concurrent snapshots with a short wait before returning `BUSY`. Blocking tool calls are guarded by a process-global concurrency permit (maximum 8 concurrent blocking worker threads); when saturated, callers wait briefly before returning `BUSY`. Per-repo read limiters and SQLite compiler pools are bounded to 128 tracked repositories with idle eviction. Read tools and resource reads are capped by `--call-timeout`, default `30s`, and return `TIMEOUT` on expiry.
 
 Persistent mutating MCP calls are not timed out after their blocking task starts. Source-edit tools, overlay note writes, and commentary refresh complete and return their authoritative outcome rather than reporting `TIMEOUT` while work may still finish in the background.
 

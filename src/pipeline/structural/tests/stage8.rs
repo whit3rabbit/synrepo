@@ -89,8 +89,33 @@ fn structural_compile_skips_snapshot_when_it_exceeds_memory_ceiling() {
     let mut graph = open_graph(&repo);
     run_structural_compile(repo.path(), &config, &mut graph).unwrap();
 
-    let published = snapshot::current(repo.path()).expect("previous snapshot should remain");
-    assert_eq!(published.snapshot_epoch, 0);
-    assert!(published.files.is_empty());
+    assert!(
+        snapshot::current(repo.path()).is_none(),
+        "stale snapshot must be evicted when replacement compile exceeds memory ceiling"
+    );
     assert!(logs.contents().contains("skipping snapshot publication"));
+}
+
+#[test]
+fn structural_compile_second_no_change_compile_leaves_published_epoch_untouched() {
+    let repo = tempdir().unwrap();
+    fs::create_dir_all(repo.path().join("src")).unwrap();
+    fs::write(repo.path().join("src/lib.rs"), "pub fn stable() {}\n").unwrap();
+
+    let config = Config::default();
+    let mut graph = open_graph(&repo);
+    run_structural_compile(repo.path(), &config, &mut graph).unwrap();
+
+    let first = snapshot::current(repo.path()).expect("snapshot published on first run");
+    let first_epoch = first.snapshot_epoch;
+    assert!(first_epoch > 0);
+
+    // Second compile with no file modifications
+    run_structural_compile(repo.path(), &config, &mut graph).unwrap();
+
+    let second = snapshot::current(repo.path()).expect("snapshot still present");
+    assert_eq!(second.snapshot_epoch, first_epoch);
+    assert!(Arc::ptr_eq(&first, &second));
+
+    snapshot::forget(repo.path());
 }

@@ -1,12 +1,51 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
+use std::time::Duration;
 
 use parking_lot::{Mutex, RwLock};
 use synrepo::registry;
 use synrepo::surface::mcp::SynrepoState;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use super::SynrepoServer;
+
+pub(crate) const MAX_CONCURRENT_BLOCKING_TOOLS: usize = 8;
+pub(crate) const BLOCKING_TOOL_PERMIT_WAIT: Duration = Duration::from_millis(250);
+
+static BLOCKING_TOOL_SEMAPHORE: LazyLock<Arc<Semaphore>> =
+    LazyLock::new(|| Arc::new(Semaphore::new(MAX_CONCURRENT_BLOCKING_TOOLS)));
+
+pub(crate) async fn acquire_blocking_permit(
+    semaphore: &Arc<Semaphore>,
+    wait: Duration,
+) -> Result<OwnedSemaphorePermit, synrepo::surface::mcp::error::McpError> {
+    match tokio::time::timeout(wait, Arc::clone(semaphore).acquire_owned()).await {
+        Ok(Ok(permit)) => Ok(permit),
+        Ok(Err(_)) => Err(synrepo::surface::mcp::error::McpError::busy(
+            "MCP blocking tool pool is closed",
+        )),
+        Err(_) => Err(synrepo::surface::mcp::error::McpError::busy(
+            "MCP server busy: blocking tool concurrency limit reached",
+        )),
+    }
+}
+
+#[allow(dead_code)]
+pub(crate) async fn acquire_permit_from_semaphore(
+    semaphore: &Semaphore,
+    wait: Duration,
+) -> Result<tokio::sync::SemaphorePermit<'_>, synrepo::surface::mcp::error::McpError> {
+    match tokio::time::timeout(wait, semaphore.acquire()).await {
+        Ok(Ok(permit)) => Ok(permit),
+        Ok(Err(_)) => Err(synrepo::surface::mcp::error::McpError::busy(
+            "MCP blocking tool pool is closed",
+        )),
+        Err(_) => Err(synrepo::surface::mcp::error::McpError::busy(
+            "MCP server busy: blocking tool concurrency limit reached",
+        )),
+    }
+}
 
 mod metrics;
 mod outcome;
@@ -278,8 +317,34 @@ impl SynrepoServer {
     where
         F: FnOnce(Arc<SynrepoState>) -> String + Send + 'static,
     {
+        self.with_tool_state_blocking_with_permit(tool, param_root, &BLOCKING_TOOL_SEMAPHORE, f)
+            .await
+    }
+
+    pub(super) async fn with_tool_state_blocking_with_permit<F>(
+        &self,
+        tool: &'static str,
+        param_root: Option<PathBuf>,
+        semaphore: &Arc<Semaphore>,
+        f: F,
+    ) -> String
+    where
+        F: FnOnce(Arc<SynrepoState>) -> String + Send + 'static,
+    {
+        let permit = match acquire_blocking_permit(semaphore, BLOCKING_TOOL_PERMIT_WAIT).await {
+            Ok(permit) => permit,
+            Err(err) => {
+                super::sentry_telemetry::capture_failed_tool_call(tool, "BUSY");
+                self.session.record_tool(tool, true);
+                return render_state_error(err.into());
+            }
+        };
+
         let server = self.clone();
-        let task = tokio::task::spawn_blocking(move || server.with_tool_state(tool, param_root, f));
+        let task = tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            server.with_tool_state(tool, param_root, f)
+        });
         match tokio::time::timeout(self.call_timeout, task).await {
             Ok(Ok(output)) => output,
             Ok(Err(error)) => {
@@ -318,6 +383,9 @@ impl SynrepoServer {
     }
 }
 
+#[cfg(test)]
+#[path = "state_permit_tests.rs"]
+mod permit_tests;
 #[cfg(test)]
 #[path = "state_registry_tests.rs"]
 mod registry_tests;

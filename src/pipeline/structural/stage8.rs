@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::SystemTime;
 
 use crate::config::Config;
-use crate::structure::graph::{snapshot, with_graph_read_snapshot, Graph, GraphReader, GraphStore};
+use crate::structure::graph::{snapshot, with_graph_read_snapshot, Graph, GraphStore};
 
 static SNAPSHOT_DISABLED_LOGGED: AtomicBool = AtomicBool::new(false);
 
@@ -32,9 +32,11 @@ pub fn run_graph_snapshot_commit(
             max_graph_snapshot_bytes = config.max_graph_snapshot_bytes,
             file_count = snapshot_graph.files.len(),
             symbol_count = snapshot_graph.symbols.len(),
-            edge_count = snapshot_graph.all_edges()?.len(),
             "graph snapshot exceeds configured memory ceiling; skipping snapshot publication"
         );
+        // Evict any existing registered snapshot for this repo so new requests do not observe
+        // stale in-memory data that fails to match the updated SQLite state.
+        snapshot::forget(repo_root);
         return Ok(());
     }
 

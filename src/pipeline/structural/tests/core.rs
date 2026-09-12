@@ -7,20 +7,71 @@ use tempfile::tempdir;
 #[test]
 fn derive_file_id_is_deterministic() {
     let root = "root-a";
+    let path = "src/lib.rs";
     let hash = "abc123def456abc123def456abc123def456abc123def456abc123def456abc1";
-    let id1 = ids::derive_file_id(root, hash);
-    let id2 = ids::derive_file_id(root, hash);
+    let id1 = ids::derive_file_id(root, path, hash);
+    let id2 = ids::derive_file_id(root, path, hash);
     assert_eq!(id1, id2);
 
     let other = "000000000000000000000000000000000000000000000000000000000000000a";
     assert_ne!(
-        ids::derive_file_id(root, hash),
-        ids::derive_file_id(root, other)
+        ids::derive_file_id(root, path, hash),
+        ids::derive_file_id(root, path, other)
     );
     assert_ne!(
-        ids::derive_file_id(root, hash),
-        ids::derive_file_id("root-b", hash)
+        ids::derive_file_id(root, path, hash),
+        ids::derive_file_id("root-b", path, hash)
     );
+    assert_ne!(
+        ids::derive_file_id(root, path, hash),
+        ids::derive_file_id(root, "src/other.rs", hash)
+    );
+}
+
+#[test]
+fn identical_files_have_distinct_identities_and_independent_lifecycle() {
+    let repo = tempdir().unwrap();
+    fs::create_dir_all(repo.path().join("src")).unwrap();
+
+    let shared_content = "pub fn shared_function() { println!(\"same bytes\"); }\n";
+    fs::write(repo.path().join("src/a.rs"), shared_content).unwrap();
+    fs::write(repo.path().join("src/b.rs"), shared_content).unwrap();
+
+    let config = Config::default();
+    let mut graph = open_graph(&repo);
+
+    // 1. Initial compile: both identical files get distinct FileNodeIds
+    run_structural_compile(repo.path(), &config, &mut graph).unwrap();
+    let file_a = graph
+        .file_by_path("src/a.rs")
+        .unwrap()
+        .expect("src/a.rs should exist");
+    let file_b = graph
+        .file_by_path("src/b.rs")
+        .unwrap()
+        .expect("src/b.rs should exist");
+    assert_ne!(
+        file_a.id, file_b.id,
+        "byte-identical files in the same root must have distinct FileNodeIds"
+    );
+    assert_eq!(file_a.content_hash, file_b.content_hash);
+
+    let file_b_id = file_b.id;
+
+    // 2. Edit src/a.rs: src/b.rs remains independently addressable with unchanged ID
+    fs::write(repo.path().join("src/a.rs"), "pub fn edited_a() {}\n").unwrap();
+    run_structural_compile(repo.path(), &config, &mut graph).unwrap();
+
+    let file_b_after_edit = graph.file_by_path("src/b.rs").unwrap().unwrap();
+    assert_eq!(file_b_after_edit.id, file_b_id);
+
+    // 3. Delete src/a.rs: src/b.rs remains in the graph intact
+    fs::remove_file(repo.path().join("src/a.rs")).unwrap();
+    run_structural_compile(repo.path(), &config, &mut graph).unwrap();
+
+    assert!(graph.file_by_path("src/a.rs").unwrap().is_none());
+    let file_b_after_del = graph.file_by_path("src/b.rs").unwrap().unwrap();
+    assert_eq!(file_b_after_del.id, file_b_id);
 }
 
 #[test]

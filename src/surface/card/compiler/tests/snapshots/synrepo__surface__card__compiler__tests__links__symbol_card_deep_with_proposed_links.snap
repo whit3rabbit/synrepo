@@ -1,14 +1,13 @@
 ---
 source: src/surface/card/compiler/tests/links.rs
-assertion_line: 46
 expression: json
 ---
 {
-  "symbol": "sym_8c6b388aeb770ce7ca640dc3ff853239",
+  "symbol": "sym_283a816567dfdac1ff6c48d9c0dc6c9c",
   "name": "annotated",
   "qualified_name": "annotated",
   "defined_at": "src/lib.rs:10",
-  "file_id": "file_f897f48758b34fc2f83dbd9fc1491097",
+  "file_id": "file_35093940c56e67bd38c3dc1ef27cce21",
   "path": "src/lib.rs",
   "root_id": "primary",
   "is_primary_root": true,
@@ -37,10 +36,10 @@ expression: json
   "proposed_links": [
     {
       "source": {
-        "Symbol": "sym_8c6b388aeb770ce7ca640dc3ff853239"
+        "Symbol": "sym_283a816567dfdac1ff6c48d9c0dc6c9c"
       },
       "target": {
-        "File": "file_f897f48758b34fc2f83dbd9fc1491097"
+        "File": "file_35093940c56e67bd38c3dc1ef27cce21"
       },
       "kind": "references",
       "tier": "high",

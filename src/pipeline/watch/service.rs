@@ -21,7 +21,10 @@ use super::{
         ReconcileEmbeddingObservation,
     },
     events::{SyncTrigger, WatchEvent},
-    filter::{collect_repo_paths, filter_repo_events, ignored_generated_dirs, WatchIgnoreSet},
+    filter::{
+        collect_repo_paths, filter_repo_events, ignored_generated_dirs, CollectedPaths,
+        WatchIgnoreSet,
+    },
     lease::{acquire_watch_daemon_lease, WatchServiceMode},
     loop_message::LoopMessage,
     pending::PendingWatchChanges,
@@ -29,7 +32,8 @@ use super::{
     reconcile_state::persist_reconcile_attempt_state,
     suppression::SuppressedPaths,
     sync::{
-        emit_event, maybe_run_post_reconcile_auto_sync, run_sync_under_watch_lock, WatchSyncContext,
+        emit_event, maybe_run_post_reconcile_auto_sync, run_startup_reconcile,
+        run_sync_under_watch_lock, WatchSyncContext,
     },
 };
 
@@ -61,23 +65,6 @@ pub fn run_watch_service(
         auto_sync_blocked.clone(),
         config.watch_sync_timeout_seconds,
     )?;
-
-    emit_event(&events, |now| WatchEvent::ReconcileStarted {
-        at: now,
-        triggering_events: 0,
-        full: true,
-        reason: None,
-    });
-    let startup_attempt = run_reconcile_attempt(repo_root, config, synrepo_dir, false);
-    let startup = startup_attempt.outcome.clone();
-    persist_reconcile_attempt_state(synrepo_dir, &startup_attempt, 0);
-    state_handle.note_reconcile(&startup, 0);
-    tracing::info!(outcome = %startup.as_str(), "startup reconcile complete");
-    emit_event(&events, |now| WatchEvent::ReconcileFinished {
-        at: now,
-        outcome: startup.clone(),
-        triggering_events: 0,
-    });
 
     let pending_watch = Arc::new(Mutex::new(PendingWatchChanges::default()));
     let mut branch_ref_poller = BranchRefPoller::new(repo_root, config);
@@ -115,7 +102,7 @@ pub fn run_watch_service(
                     if filtered.is_empty() {
                         return;
                     }
-                    let mut touched_paths = collect_repo_paths(
+                    let collected = collect_repo_paths(
                         &filtered,
                         &callback_repo_roots,
                         &callback_repo_root,
@@ -123,15 +110,25 @@ pub fn run_watch_service(
                         &callback_ignored_dirs,
                         &callback_ignore_set,
                     );
+                    let CollectedPaths {
+                        mut paths,
+                        has_directory_event,
+                    } = collected;
                     if let Ok(mut suppressed) = suppressed_paths_for_callback.lock() {
-                        suppressed.retain_unsuppressed(&mut touched_paths);
+                        suppressed.retain_unsuppressed(&mut paths);
                     }
-                    if touched_paths.is_empty() {
+                    if paths.is_empty() && !has_directory_event {
                         return;
                     }
                     callback_state_handle.note_event();
                     if let Ok(mut pending) = pending_watch_for_callback.lock() {
-                        pending.record(filtered.len(), touched_paths, max_events_per_cycle);
+                        if has_directory_event {
+                            // A directory-level event means FSEvents may have
+                            // coalesced child events; trigger a full reconcile.
+                            pending.record_full(filtered.len());
+                        } else {
+                            pending.record(filtered.len(), paths, max_events_per_cycle);
+                        }
                     }
                 }
                 Err(errors) => {
@@ -149,6 +146,11 @@ pub fn run_watch_service(
             crate::Error::Other(anyhow::anyhow!("failed to create file watcher: {error}"))
         })?;
 
+    // Register watches BEFORE running the startup reconcile so that any edit
+    // arriving during the initial scan is captured in `pending_watch` and
+    // processed on the first loop tick. (Apple FSEvents recommendation: begin
+    // monitoring before scanning so directories modified during the scan are
+    // revisited.)
     for root in &watch_root_paths {
         debouncer
             .watch(root, RecursiveMode::Recursive)
@@ -167,6 +169,7 @@ pub fn run_watch_service(
         events: &events,
         state_handle: &state_handle,
     };
+    let startup = run_startup_reconcile(&sync_context);
 
     maybe_run_post_reconcile_auto_sync(
         &sync_context,
@@ -257,6 +260,11 @@ pub fn run_watch_service(
                     keepalive,
                 );
                 let outcome = attempt.outcome.clone();
+                if !matches!(outcome, super::reconcile::ReconcileOutcome::Completed(_)) {
+                    if let Ok(mut pending) = pending_watch.lock() {
+                        pending.requeue_failed(batch.touched_paths, force_full_reconcile);
+                    }
+                }
                 persist_reconcile_attempt_state(synrepo_dir, &attempt, event_count);
                 state_handle.note_reconcile(&outcome, event_count);
                 last_reconcile_at = std::time::Instant::now();
@@ -378,22 +386,6 @@ pub fn run_watch_service(
     drop(debouncer);
     embedding_refresh.join_on_stop();
     let _ = socket_thread.join();
+    crate::structure::graph::snapshot::forget(repo_root);
     Ok(())
-}
-
-/// Run the watch loop in the foreground.
-pub fn run_watch_loop(
-    repo_root: &Path,
-    config: &Config,
-    watch_config: &WatchConfig,
-    synrepo_dir: &Path,
-) -> crate::Result<()> {
-    run_watch_service(
-        repo_root,
-        config,
-        watch_config,
-        synrepo_dir,
-        WatchServiceMode::Foreground,
-        None,
-    )
 }

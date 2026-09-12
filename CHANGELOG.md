@@ -12,7 +12,37 @@ an existing section untouched.
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-09-12
+
 ### Added
+- Upgraded to `syntext 2.4.0`, adopting `syntext::changes::Catalogue` and
+  `Index::apply_change_batch` for fingerprint-based incremental change tracking
+  without redundant file re-reads.
+- Durable lexical overlay flush: `Index::flush_overlay()` commits in-memory
+  changes to disk across restarts without depending on compaction thresholds;
+  catalogue generations are acknowledged only when the durable flush succeeds.
+- Typed `IndexError::LockConflict` handling with bounded exponential backoff
+  (`[20, 40, 80, 160, 200] ms`) on both incremental sync and search open,
+  eliminating stringly-typed matching and index lock directory removal.
+- Scoped `Index` handle lifetimes: handles and directory locks are dropped
+  before entering fallback full rebuilds, preventing self-deadlock.
+- Watcher requeue on failure: `PendingWatchChanges::requeue_failed` preserves
+  dirty paths and full-reconcile triggers on transient lock conflicts or errors.
+- Process-global embedding session cache (`Arc<EmbeddingSession>`) with LRU
+  eviction and 30-minute idle TTL, avoiding repeated tokenizer and ONNX model
+  loads across task-route classification, hybrid/dense query, and explain triage.
+- Incremental embedding index refresh for watch and background auto-refresh:
+  unchanged chunks reuse their vectors from the existing index using a
+  `(ChunkId, blake3(text))` partition without any schema bump. When no chunks
+  change, refresh is a zero-inference no-op that leaves `index.bin` untouched.
+  Neural inference runs only for new or modified chunks.
+- Process-global graph snapshot registry bounds with 30-minute idle TTL, 32-repo
+  cap, and 1 GiB aggregate memory ceiling; structural compile skips snapshot
+  publication when source files are unchanged, and the watch service forgets its
+  snapshot on teardown.
+- MCP blocking tool concurrency semaphore bounding concurrent worker threads to 8
+  permits; callers receive `BUSY` on saturation, and timed-out worker tasks hold
+  their permit until worker exit to avoid stacking background load.
 - `.synrepoignore` filter file recognized alongside `.synignore` for both
   file discovery (`src/substrate/discover.rs`) and the watch filter
   (`src/pipeline/watch/filter.rs`). Additive with `.synignore`; use
@@ -40,14 +70,12 @@ an existing section untouched.
   int8 is gated by `docs/EMBEDDINGS.md` § "Vector Compression Gate".
 - `dense-first` ranking arm on `synrepo bench search`
   (`--mode dense-first` and `--mode all`). Cosine-ranked vector hits with
-  lexical fallback when no vector hits exist. New per-task and per-summary
-  fields: `dense_first_hit_at_5`, `dense_first_latency_ms`,
-  `dense_first_vs_rrf_wins`, `dense_first_vs_rrf_regressions`. Measured
-  on the in-house bench: 0 wins, 1 regression vs auto RRF
-  (`docs/EMBEDDINGS.md` § "Dense-first vs auto (RRF)"). Not yet wired
-  into `synrepo_search mode=auto`.
+  lexical fallback when no vector hits exist.
 
 ### Changed
+- Bumped `syntext` dependency to 2.4.0.
+- CI release workflow builds macOS and Homebrew binaries with `--all-features`
+  (enabling `semantic-triage` embeddings and `metrics-http` by default).
 - Vector index storage layout moved from a flat
   `.synrepo/index/vectors/index.bin` (v5) to profile-keyed
   `.synrepo/index/vectors/<blake3-prefix>-<label>/index.bin` (v6).
@@ -59,28 +87,21 @@ an existing section untouched.
   (`src/substrate/embedding/index/persistence.rs`). v5 and earlier refuse
   to load (fail-closed). v6 header layout is documented in `docs/SCHEMA.md`
   § "Embedding index".
-- Default model recommendation (`docs/EMBEDDINGS.md`) keeps
-  `all-MiniLM-L6-v2` as the recommended default — `snowflake-arctic-embed-xs`
-  is opt-in because its MF-measured advantage on blind prose benchmarks
-  does not transfer to the in-house code-search fixture set
-  (`docs/EMBEDDINGS.md` § "Model swap: arctic-xs vs MiniLM").
-- Bumped `syntext` dependency from 2.0.0 to 2.3.0. No source changes
-  were required: `Index::search`, `Index::build_from_file_records`,
-  `SearchOptions`, and `IndexError::LockConflict` are stable across
-  2.0.0 → 2.3.0. Inherited fixes: `ENOLCK`/`EINTR` flock failures now
-  surface as retryable `LockConflict` (2.1.0), and the substring-based
-  `is_lock_conflict` check in `src/substrate/index.rs` continues to
-  match the stable "index locked by another process" wording. New
-  `Index::search_fresh` / `Index::update_from_git` are not adopted
-  in this bump: synrepo's watch daemon and `substrate::incremental`
-  already drive bounded refresh on its own path set, and `git diff`-
-  driven change detection in `git_intelligence` runs against its own
-  `--name-only` invocation; adding a second git detector would create
-  the staleness inconsistencies syntext 2.3.0 just spent its changelog
-  closing. Follow-up worth considering: replace the stringly-typed
-  `is_lock_conflict` substring check with a direct match on the
-  `IndexError::LockConflict(_)` variant now that the variant is the
-  single lock-error surface upstream.
+- Graph in-memory edge queries (`outbound()`, `inbound()`) filter on borrowed
+  edge slices before cloning, reducing heap allocations during graph traversal.
+
+### Fixed
+- Watcher suppression refinement: `SuppressedPaths::paths_overlap` no longer
+  matches parent directories when a child file is edited, preventing unrelated
+  sibling files from being inadvertently suppressed during atomic-write windows.
+- Path-seeded file identities: `derive_file_id` includes normalized path alongside
+  root discriminant and content hash, ensuring byte-identical files in the same
+  root receive distinct graph identities and independent lifecycles.
+- Stale snapshot eviction: if a recompiled graph exceeds the configured snapshot
+  memory ceiling, `snapshot::forget(repo_root)` removes the existing snapshot
+  from the registry to avoid serving stale in-memory state.
+- Stage 4 callee prefix scoring checks candidate file/module stems against callee
+  prefixes for accurate cross-file call resolution.
 
 ## [0.1.5] - 2026-08-15
 

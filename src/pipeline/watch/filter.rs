@@ -105,6 +105,17 @@ pub(crate) fn filter_repo_events(
         .collect()
 }
 
+/// Paths and metadata collected from a batch of debounced events.
+#[derive(Debug)]
+pub(crate) struct CollectedPaths {
+    /// Individual file paths to process incrementally.
+    pub paths: Vec<PathBuf>,
+    /// True if any directory-level event was seen. On macOS, FSEvents can
+    /// coalesce changes under a directory into a single directory-level
+    /// notification. Callers should treat this as a force-full-reconcile hint.
+    pub has_directory_event: bool,
+}
+
 pub(crate) fn collect_repo_paths(
     events: &[DebouncedEvent],
     repo_roots: &[PathBuf],
@@ -112,8 +123,9 @@ pub(crate) fn collect_repo_paths(
     synrepo_dir: &Path,
     ignored_dirs: &[PathBuf],
     ignore_set: &WatchIgnoreSet,
-) -> Vec<PathBuf> {
+) -> CollectedPaths {
     let mut paths = std::collections::BTreeSet::new();
+    let mut has_directory_event = false;
     for event in events {
         for path in &event.paths {
             let path = repo_normalized_path(path, repo_root, synrepo_dir);
@@ -132,13 +144,23 @@ pub(crate) fn collect_repo_paths(
             if ignore_set.is_ignored(&path) {
                 continue;
             }
-            if !is_collectable_existing_or_missing_path(&path, &event.kind) {
-                continue;
+            match collectable_path_kind(&path, &event.kind) {
+                CollectableKind::File => {
+                    paths.insert(path);
+                }
+                CollectableKind::Directory => {
+                    // Directory-level event: signal a full-reconcile pass.
+                    // Do NOT add the directory itself to the file-path list.
+                    has_directory_event = true;
+                }
+                CollectableKind::Skip => {}
             }
-            paths.insert(path);
         }
     }
-    paths.into_iter().collect()
+    CollectedPaths {
+        paths: paths.into_iter().collect(),
+        has_directory_event,
+    }
 }
 
 fn is_collectable_repo_path(
@@ -164,7 +186,7 @@ fn is_collectable_repo_path(
     if ignore_set.is_ignored(path) {
         return false;
     }
-    is_collectable_existing_or_missing_path(path, kind)
+    !matches!(collectable_path_kind(path, kind), CollectableKind::Skip)
 }
 
 fn path_starts_with_any_root(path: &Path, repo_roots: &[PathBuf]) -> bool {
@@ -201,10 +223,36 @@ fn build_root_ignore_matcher(root: &Path) -> Gitignore {
     builder.build().unwrap_or_else(|_| Gitignore::empty())
 }
 
-fn is_collectable_existing_or_missing_path(path: &Path, kind: &EventKind) -> bool {
+/// Outcome of inspecting a single path from an event.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CollectableKind {
+    /// A regular file that should be queued for incremental processing.
+    File,
+    /// An existing directory: FSEvents may coalesce child events into one
+    /// directory-level notification; the caller should trigger a full scan.
+    Directory,
+    /// Path should be skipped (unresolvable or uninteresting kind).
+    Skip,
+}
+
+fn collectable_path_kind(path: &Path, kind: &EventKind) -> CollectableKind {
     match fs::metadata(path) {
-        Ok(md) => !md.is_dir(),
-        Err(_) => event_can_reference_missing_path(kind),
+        Ok(md) => {
+            if md.is_dir() {
+                // On macOS, FSEvents can report a directory for moves, new
+                // content, or event coalescing. Treat as full-reconcile hint.
+                CollectableKind::Directory
+            } else {
+                CollectableKind::File
+            }
+        }
+        Err(_) => {
+            if event_can_reference_missing_path(kind) {
+                CollectableKind::File
+            } else {
+                CollectableKind::Skip
+            }
+        }
     }
 }
 

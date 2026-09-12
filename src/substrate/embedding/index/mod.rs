@@ -3,6 +3,8 @@
 //! Stores vectors in a flat array and performs brute-force dot product search.
 //! Vectors are pre-normalized during index build.
 
+use std::sync::Arc;
+
 use super::chunk::{ChunkId, EmbeddingChunk, EmbeddingChunkSource};
 use super::model::{EmbeddingSession, ModelResolution};
 use super::profile::{VectorPrecision, NORMALIZER_VERSION};
@@ -32,11 +34,11 @@ pub struct FlatVecIndex {
     /// semantic of stored vectors changes.
     pub normalizer_version: u16,
     /// The chunk data (IDs and source info).
-    pub(super) chunks: Vec<ChunkMeta>,
+    pub(crate) chunks: Vec<ChunkMeta>,
     /// Vector data as f32 (dim * n_chunks).
-    pub(super) vectors: Vec<f32>,
+    pub(crate) vectors: Vec<f32>,
     /// Embedding session for on-demand embedding (kept for query-time embedding).
-    pub(super) session: Option<EmbeddingSession>,
+    pub(super) session: Option<Arc<EmbeddingSession>>,
 }
 
 impl std::fmt::Debug for FlatVecIndex {
@@ -63,17 +65,17 @@ impl std::fmt::Debug for FlatVecIndex {
 
 /// Metadata for a chunk in the index.
 #[derive(Clone, Debug)]
-pub(super) struct ChunkMeta {
-    pub(super) id: ChunkId,
-    pub(super) source: EmbeddingChunkSource,
-    pub(super) text: String,
+pub(crate) struct ChunkMeta {
+    pub(crate) id: ChunkId,
+    pub(crate) source: EmbeddingChunkSource,
+    pub(crate) text: String,
 }
 
 impl FlatVecIndex {
     /// Build an index from chunks and a model.
     pub fn build(chunks: Vec<EmbeddingChunk>, model: ModelResolution) -> crate::Result<Self> {
         // Load the model
-        let session = EmbeddingSession::new_from_resolution(&model)?;
+        let session = super::model::session_cache::shared_from_resolution(&model)?;
         Self::build_with_session_and_progress(
             chunks,
             &model,
@@ -91,7 +93,7 @@ impl FlatVecIndex {
     pub fn build_with_session_and_progress<F, C>(
         chunks: Vec<EmbeddingChunk>,
         model: &ModelResolution,
-        session: EmbeddingSession,
+        session: Arc<EmbeddingSession>,
         on_batch: F,
         should_stop: C,
     ) -> crate::Result<Self>
@@ -109,14 +111,51 @@ impl FlatVecIndex {
         )
     }
 
+    /// Iterate over (ChunkId, text, vector_slice) tuples for each stored chunk.
+    pub(crate) fn iter_chunks_with_vectors(
+        &self,
+    ) -> impl Iterator<Item = (&ChunkId, &str, &[f32])> {
+        let dim = self.dim as usize;
+        self.chunks.iter().enumerate().map(move |(i, c)| {
+            let start = i * dim;
+            let end = start + dim;
+            (&c.id, c.text.as_str(), &self.vectors[start..end])
+        })
+    }
+
     /// Like [`Self::build_with_session_and_progress`] but writes vectors in
     /// the declared precision. Memory always holds `f32`; quantization is
     /// applied at persistence time.
     pub fn build_with_session_and_precision<F, C>(
         chunks: Vec<EmbeddingChunk>,
         model: &ModelResolution,
-        session: EmbeddingSession,
+        session: Arc<EmbeddingSession>,
         precision: VectorPrecision,
+        on_batch: F,
+        should_stop: C,
+    ) -> crate::Result<Self>
+    where
+        F: FnMut(usize, usize),
+        C: FnMut() -> bool,
+    {
+        Self::build_with_session_precision_and_reuse(
+            chunks,
+            model,
+            Some(session),
+            precision,
+            None,
+            on_batch,
+            should_stop,
+        )
+    }
+
+    /// Build or refresh an index with optional vector reuse from an existing index.
+    pub fn build_with_session_precision_and_reuse<F, C>(
+        chunks: Vec<EmbeddingChunk>,
+        model: &ModelResolution,
+        session: Option<Arc<EmbeddingSession>>,
+        precision: VectorPrecision,
+        reuse: Option<&super::reuse::VectorReuse>,
         mut on_batch: F,
         mut should_stop: C,
     ) -> crate::Result<Self>
@@ -127,37 +166,67 @@ impl FlatVecIndex {
         let dim = model.embedding_dim() as usize;
         let total = chunks.len();
 
-        let mut flat_vectors = Vec::with_capacity(chunks.len() * dim);
-        let batch_size = model.build_batch_size();
-        let mut current = 0;
-        for batch in chunks.chunks(batch_size) {
-            if should_stop() {
-                return Err(crate::Error::Other(anyhow::anyhow!(
-                    "embedding build cancelled"
-                )));
+        let mut flat_vectors = vec![0.0f32; total * dim];
+        let mut miss_indices = Vec::new();
+
+        if let Some(reuse) = reuse {
+            for (idx, maybe_vec) in reuse.chunk_vectors.iter().enumerate() {
+                if let Some(vec) = maybe_vec {
+                    let start = idx * dim;
+                    flat_vectors[start..start + dim].copy_from_slice(vec);
+                } else {
+                    miss_indices.push(idx);
+                }
             }
-            let texts: Vec<String> = batch.iter().map(|c| c.text.clone()).collect();
-            let vectors = session.embed(&texts)?;
-            if vectors.len() != batch.len() {
-                return Err(crate::Error::Other(anyhow::anyhow!(
-                    "embedding provider returned {} vectors for {} chunks",
-                    vectors.len(),
-                    batch.len()
-                )));
-            }
-            for (idx, vector) in vectors.into_iter().enumerate() {
-                if vector.len() != dim {
+        } else {
+            miss_indices.extend(0..total);
+        }
+
+        let reused_count = total - miss_indices.len();
+        if reused_count > 0 {
+            on_batch(reused_count, total);
+        }
+
+        if !miss_indices.is_empty() {
+            let session = session.as_ref().ok_or_else(|| {
+                crate::Error::Other(anyhow::anyhow!(
+                    "embedding session required for miss chunks"
+                ))
+            })?;
+            let batch_size = model.build_batch_size();
+            let mut current = reused_count;
+            for chunk_slice in miss_indices.chunks(batch_size) {
+                if should_stop() {
                     return Err(crate::Error::Other(anyhow::anyhow!(
-                        "embedding vector {} has dimension {}, expected {}",
-                        current + idx + 1,
-                        vector.len(),
-                        dim
+                        "embedding build cancelled"
                     )));
                 }
-                flat_vectors.extend(vector);
+                let texts: Vec<String> = chunk_slice
+                    .iter()
+                    .map(|&idx| chunks[idx].text.clone())
+                    .collect();
+                let vectors = session.embed(&texts)?;
+                if vectors.len() != chunk_slice.len() {
+                    return Err(crate::Error::Other(anyhow::anyhow!(
+                        "embedding provider returned {} vectors for {} chunks",
+                        vectors.len(),
+                        chunk_slice.len()
+                    )));
+                }
+                for (&target_idx, vector) in chunk_slice.iter().zip(vectors) {
+                    if vector.len() != dim {
+                        return Err(crate::Error::Other(anyhow::anyhow!(
+                            "embedding vector has dimension {}, expected {}",
+                            vector.len(),
+                            dim
+                        )));
+                    }
+                    let start = target_idx * dim;
+                    flat_vectors[start..start + dim].copy_from_slice(&vector);
+                }
+                current += chunk_slice.len();
+                on_batch(current, total);
             }
-            current += batch.len();
-            on_batch(current, total);
         }
 
         // Store chunk metadata
@@ -179,7 +248,7 @@ impl FlatVecIndex {
             normalizer_version: NORMALIZER_VERSION,
             chunks: chunk_metas,
             vectors: flat_vectors,
-            session: Some(session),
+            session,
         })
     }
 

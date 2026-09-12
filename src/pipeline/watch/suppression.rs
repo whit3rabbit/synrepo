@@ -43,9 +43,14 @@ impl SuppressedPaths {
 }
 
 fn paths_overlap(path: &Path, suppressed: &Path) -> bool {
+    // Exact match, or `path` is a descendant of an explicitly suppressed directory,
+    // or an atomic-save temporary sibling file (.target.tmp.xxx).
+    // Note: `suppressed.starts_with(path)` is excluded on purpose: a parent-directory
+    // notification (e.g. `src/`) must not be suppressed merely because a child
+    // (`src/a.rs`) was suppressed. A parent notification means "check this directory",
+    // not "ignore everything beneath it".
     path == suppressed
         || path.starts_with(suppressed)
-        || suppressed.starts_with(path)
         || is_atomic_write_temp_sibling(path, suppressed)
 }
 
@@ -93,7 +98,7 @@ mod tests {
     }
 
     #[test]
-    fn suppresses_parent_paths_reported_for_atomic_rename() {
+    fn does_not_suppress_parent_directory_when_child_is_suppressed() {
         let mut suppressed = SuppressedPaths::default();
         suppressed.suppress(
             vec![PathBuf::from("/repo/src/a.rs")],
@@ -103,7 +108,11 @@ mod tests {
 
         suppressed.retain_unsuppressed(&mut paths);
 
-        assert_eq!(paths, vec![PathBuf::from("/repo/other.rs")]);
+        // Neither the parent directory /repo/src nor /repo/other.rs should be suppressed
+        assert_eq!(
+            paths,
+            vec![PathBuf::from("/repo/src"), PathBuf::from("/repo/other.rs")]
+        );
     }
 
     #[test]
@@ -121,5 +130,27 @@ mod tests {
         suppressed.retain_unsuppressed(&mut paths);
 
         assert_eq!(paths, vec![PathBuf::from("/repo/src/.b.rs.tmp.123.0")]);
+    }
+
+    #[test]
+    fn does_not_suppress_unrelated_sibling_file() {
+        // Regression: suppress_watch_events previously added the parent dir to
+        // the suppression set, which caused paths_overlap to match src/b.rs
+        // when only src/a.rs was intended to be suppressed. With only the exact
+        // file path in the suppression set, src/b.rs must pass through.
+        let mut suppressed = SuppressedPaths::default();
+        suppressed.suppress(
+            vec![PathBuf::from("/repo/src/a.rs")],
+            Duration::from_secs(1),
+        );
+        let mut paths = vec![
+            PathBuf::from("/repo/src/a.rs"),
+            PathBuf::from("/repo/src/b.rs"),
+        ];
+
+        suppressed.retain_unsuppressed(&mut paths);
+
+        // src/a.rs is suppressed; src/b.rs must NOT be.
+        assert_eq!(paths, vec![PathBuf::from("/repo/src/b.rs")]);
     }
 }
