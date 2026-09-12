@@ -19,7 +19,7 @@ jobs:
           - os: macos-14
             rustflags: ""
           - os: windows-latest
-            rustflags: "-C link-arg=/NODEFAULTLIB:libcpmt.lib -C link-arg=/NODEFAULTLIB:libcmt.lib"
+            rustflags: "-C link-arg=/NODEFAULTLIB:libcmt.lib"
     steps:
       - uses: actions/checkout@v7
 
