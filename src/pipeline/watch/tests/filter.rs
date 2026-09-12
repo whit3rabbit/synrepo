@@ -262,3 +262,46 @@ fn collect_repo_paths_respects_synrepoignore() {
     );
     assert_eq!(kept_paths.paths, vec![repo.join("src/lib.rs")]);
 }
+
+#[test]
+fn filter_repo_events_ignores_deep_internal_synrepo_paths() {
+    let (_dir, repo, _config, synrepo_dir) = setup_test_repo();
+    let runtime_events = vec![
+        debounced_event(
+            Event::new(EventKind::Create(
+                notify_debouncer_full::notify::event::CreateKind::File,
+            ))
+            .add_path(synrepo_dir.join("state/noise.txt")),
+        ),
+        debounced_event(
+            Event::new(EventKind::Modify(ModifyKind::Data(
+                notify_debouncer_full::notify::event::DataChange::Any,
+            )))
+            .add_path(synrepo_dir.join("state/reconcile.json")),
+        ),
+        debounced_event(
+            Event::new(EventKind::Modify(ModifyKind::Name(
+                notify_debouncer_full::notify::event::RenameMode::Both,
+            )))
+            .add_path(synrepo_dir.join("state/.reconcile.json.tmp.123"))
+            .add_path(synrepo_dir.join("state/reconcile.json")),
+        ),
+    ];
+    let source_event = debounced_event(
+        Event::new(EventKind::Modify(ModifyKind::Any)).add_path(repo.join("src/lib.rs")),
+    );
+
+    let mut all_events = runtime_events;
+    all_events.push(source_event);
+
+    let filtered = super::super::filter::filter_repo_events(
+        all_events,
+        std::slice::from_ref(&repo),
+        &repo,
+        &synrepo_dir,
+        &[],
+        &repo_ignore_set(&repo),
+    );
+    assert_eq!(filtered.len(), 1);
+    assert_eq!(filtered[0].paths[0], repo.join("src/lib.rs"));
+}

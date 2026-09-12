@@ -101,15 +101,19 @@ impl<'a> WatchFilterContext<'a> {
     }
 
     fn matches_ignored_or_runtime(&self, path: &Path) -> bool {
-        path_matches_runtime(
-            path,
-            self.synrepo_dir,
-            self.canonical_synrepo_dir.as_deref(),
-        ) || path_matches_runtime(
-            path,
-            &self.syntext_dir,
-            self.canonical_syntext_dir.as_deref(),
-        ) || path_starts_with_external_syntext_dir(path, self.repo_roots)
+        path_has_internal_component(path)
+            || path_starts_with_any_synrepo_dir(path, self.repo_roots)
+            || path_matches_runtime(
+                path,
+                self.synrepo_dir,
+                self.canonical_synrepo_dir.as_deref(),
+            )
+            || path_matches_runtime(
+                path,
+                &self.syntext_dir,
+                self.canonical_syntext_dir.as_deref(),
+            )
+            || path_starts_with_external_syntext_dir(path, self.repo_roots)
             || path_starts_with_any_git_dir(path, self.repo_roots)
             || path_matches_ignored_dir(path, self.ignored_dirs, &self.canonical_ignored_dirs)
             || self.ignore_set.is_ignored(path)
@@ -216,10 +220,23 @@ fn path_starts_with_any_git_dir(path: &Path, repo_roots: &[PathBuf]) -> bool {
         .any(|root| path.starts_with(root.join(".git")))
 }
 
+fn path_starts_with_any_synrepo_dir(path: &Path, repo_roots: &[PathBuf]) -> bool {
+    repo_roots
+        .iter()
+        .any(|root| path.starts_with(root.join(".synrepo")))
+}
+
 fn path_starts_with_external_syntext_dir(path: &Path, repo_roots: &[PathBuf]) -> bool {
     repo_roots
         .iter()
         .any(|root| path.starts_with(root.join(".syntext")))
+}
+
+fn path_has_internal_component(path: &Path) -> bool {
+    path.components().any(|c| {
+        let s = c.as_os_str();
+        s == ".synrepo" || s == ".syntext" || s == ".git"
+    })
 }
 
 fn build_root_ignore_matcher(root: &Path) -> Gitignore {
