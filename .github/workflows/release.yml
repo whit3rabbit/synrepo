@@ -140,6 +140,8 @@ jobs:
           key: x86_64-pc-windows-msvc
 
       - name: Build binary
+        env:
+          RUSTFLAGS: -C target-feature=+crt-static
         run: cargo build --release --target x86_64-pc-windows-msvc --all-features
 
       - name: Stage binary
