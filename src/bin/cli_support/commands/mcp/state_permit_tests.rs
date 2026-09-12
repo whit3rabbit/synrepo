@@ -119,7 +119,7 @@ fn blocking_tool_timeout_retains_permit_while_worker_runs() {
 
     // Wait for worker to finish and drop permit
     let mut waited = 0;
-    while !finished.load(Ordering::SeqCst) && waited < 100 {
+    while (!finished.load(Ordering::SeqCst) || semaphore.available_permits() == 0) && waited < 200 {
         std::thread::sleep(Duration::from_millis(10));
         waited += 1;
     }
