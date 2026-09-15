@@ -24,7 +24,7 @@ an existing section untouched.
 - Decoupled and modularized oversized source files across configuration (`presence`), TUI action handlers, status snapshots, and watcher submodules to strictly uphold the repository line-cap invariant.
 
 ### Fixed
-- CI and release builds now enable `--all-features` (including `semantic-triage` and `metrics-http`) across Linux, Windows, and macOS (Apple Silicon).
+- Release builds now enable `--all-features` (including `semantic-triage` and `metrics-http`) on macOS (Apple Silicon) and Windows, with portable `metrics-http` release builds on Linux and Intel macOS.
 - Windows MSVC static CRT runtime linkage and disabled unused `esaxx_fast` tokenizer dependency to eliminate CRT mismatch failures (`libcmt`/`libcpmt`).
 - Watch embedding refresh scheduler now ignores unchanged control reconciles, preventing spurious stale-index flags when files were not modified.
 - Fixed watch runtime test race condition by settling startup notification window before baseline measurement.

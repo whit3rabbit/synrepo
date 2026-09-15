@@ -55,7 +55,7 @@ jobs:
         run: cargo install cargo-deb --version "=3.7.0" --locked
 
       - name: Build binary
-        run: cross build --release --target ${{ matrix.target }} --all-features
+        run: cross build --release --target ${{ matrix.target }} --features metrics-http
 
       - name: Stage binary and deb
         env:
