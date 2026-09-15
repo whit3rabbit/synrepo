@@ -136,6 +136,7 @@ impl AppState {
             confirm_enable_explain: None,
             launch_embedding_build: None,
             confirm_stop_watch: None,
+            pending_after_watch_stop: None,
             pending_quick_confirm: None,
             picker: None,
             generate_commentary: None,

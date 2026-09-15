@@ -1,7 +1,6 @@
 use std::{
     path::Path,
     sync::atomic::{AtomicBool, Ordering},
-    thread,
     time::{Duration, Instant},
 };
 
@@ -13,8 +12,6 @@ use crate::{
     substrate::embedding::is_available,
 };
 
-use super::job::{run_auto_embedding_refresh, EmbeddingJobContext};
-
 const DEFAULT_QUIET_WINDOW: Duration = Duration::from_secs(30);
 const DEFAULT_FAILURE_BACKOFF: Duration = Duration::from_secs(5 * 60);
 
@@ -22,7 +19,6 @@ pub(in crate::pipeline::watch) struct EmbeddingRefreshScheduler {
     stale: bool,
     quiet_until: Option<Instant>,
     backoff_until: Option<Instant>,
-    handle: Option<thread::JoinHandle<AutoRefreshOutcome>>,
     quiet_window: Duration,
     failure_backoff: Duration,
 }
@@ -31,12 +27,6 @@ pub(in crate::pipeline::watch) struct ReconcileEmbeddingObservation<'a> {
     pub(in crate::pipeline::watch) outcome: &'a ReconcileOutcome,
     pub(in crate::pipeline::watch) triggering_events: usize,
     pub(in crate::pipeline::watch) keepalive: bool,
-}
-
-enum AutoRefreshOutcome {
-    Completed,
-    Skipped,
-    Failed(String),
 }
 
 impl Default for EmbeddingRefreshScheduler {
@@ -51,7 +41,6 @@ impl EmbeddingRefreshScheduler {
             stale: false,
             quiet_until: None,
             backoff_until: None,
-            handle: None,
             quiet_window,
             failure_backoff,
         }
@@ -79,36 +68,24 @@ impl EmbeddingRefreshScheduler {
         state_handle.note_embedding_stale(true);
     }
 
-    pub(in crate::pipeline::watch) fn reap_finished(&mut self, state_handle: &WatchStateHandle) {
-        let Some(handle) = self.handle.as_ref() else {
-            return;
-        };
-        if !handle.is_finished() {
-            return;
-        }
-        let handle = self.handle.take().expect("checked above");
-        match handle.join() {
-            Ok(AutoRefreshOutcome::Completed | AutoRefreshOutcome::Skipped) => {
+    pub(in crate::pipeline::watch) fn note_auto_refresh_finished(
+        &mut self,
+        result: &Result<(), String>,
+        state_handle: &WatchStateHandle,
+    ) {
+        match result {
+            Ok(()) => {
                 self.stale = false;
                 self.quiet_until = None;
                 self.backoff_until = None;
             }
-            Ok(AutoRefreshOutcome::Failed(_message)) => {
+            Err(message) => {
                 let retry_at = Instant::now() + self.failure_backoff;
                 self.backoff_until = Some(retry_at);
-                state_handle.note_embedding_retry_after(rfc3339_after(self.failure_backoff));
-            }
-            Err(_) => {
-                let retry_at = Instant::now() + self.failure_backoff;
-                self.backoff_until = Some(retry_at);
-                state_handle.note_embedding_error("embedding refresh thread panicked");
+                state_handle.note_embedding_error(message.clone());
                 state_handle.note_embedding_retry_after(rfc3339_after(self.failure_backoff));
             }
         }
-    }
-
-    pub(in crate::pipeline::watch) fn is_running(&self) -> bool {
-        self.handle.as_ref().is_some_and(|h| !h.is_finished())
     }
 
     pub(in crate::pipeline::watch) fn clear_stale(&mut self, state_handle: &WatchStateHandle) {
@@ -118,56 +95,25 @@ impl EmbeddingRefreshScheduler {
         state_handle.note_embedding_stale(false);
     }
 
-    pub(in crate::pipeline::watch) fn maybe_start_auto_refresh(
-        &mut self,
-        context: EmbeddingJobContext,
+    pub(in crate::pipeline::watch) fn should_start_auto_refresh(
+        &self,
+        config: &Config,
+        synrepo_dir: &Path,
         auto_sync_enabled: &AtomicBool,
         auto_sync_blocked: &AtomicBool,
         pending_changes: bool,
     ) -> bool {
-        self.reap_finished(&context.state_handle);
-        if !self.should_start_auto_refresh(
-            &context.config,
-            &context.synrepo_dir,
+        self.should_start_auto_refresh_at(
+            config,
+            synrepo_dir,
             auto_sync_enabled,
             auto_sync_blocked,
             pending_changes,
             Instant::now(),
-        ) {
-            return false;
-        }
-
-        let state_handle = context.state_handle.clone();
-        let handle = match thread::Builder::new()
-            .name("synrepo-embedding-refresh".to_string())
-            .spawn(move || match run_auto_embedding_refresh(context) {
-                Ok(Some(_)) => AutoRefreshOutcome::Completed,
-                Ok(None) => AutoRefreshOutcome::Skipped,
-                Err(err) => AutoRefreshOutcome::Failed(err.to_string()),
-            }) {
-            Ok(handle) => handle,
-            Err(err) => {
-                tracing::warn!(error = %err, "failed to spawn embedding refresh thread");
-                let retry_at = Instant::now() + self.failure_backoff;
-                self.backoff_until = Some(retry_at);
-                state_handle.note_embedding_error(format!(
-                    "failed to spawn embedding refresh thread: {err}"
-                ));
-                state_handle.note_embedding_retry_after(rfc3339_after(self.failure_backoff));
-                return false;
-            }
-        };
-        self.handle = Some(handle);
-        true
+        )
     }
 
-    pub(in crate::pipeline::watch) fn join_on_stop(&mut self) {
-        if let Some(handle) = self.handle.take() {
-            let _ = handle.join();
-        }
-    }
-
-    fn should_start_auto_refresh(
+    fn should_start_auto_refresh_at(
         &self,
         config: &Config,
         synrepo_dir: &Path,
@@ -178,7 +124,6 @@ impl EmbeddingRefreshScheduler {
     ) -> bool {
         self.stale
             && !pending_changes
-            && !self.is_running()
             && self.quiet_until.is_none_or(|due| now >= due)
             && self.backoff_until.is_none_or(|due| now >= due)
             && auto_sync_enabled.load(Ordering::Relaxed)
@@ -225,7 +170,7 @@ impl EmbeddingRefreshScheduler {
         auto_sync_blocked: &AtomicBool,
         pending_changes: bool,
     ) -> bool {
-        self.should_start_auto_refresh(
+        self.should_start_auto_refresh_at(
             config,
             synrepo_dir,
             auto_sync_enabled,

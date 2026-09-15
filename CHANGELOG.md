@@ -12,6 +12,12 @@ an existing section untouched.
 
 ## [Unreleased]
 
+### Fixed
+- The dashboard's confirm-stop-watch modal (triggered by explain while the watch daemon holds the writer lock) no longer runs the watch stop inline on the UI thread; it now dispatches through the background action worker so the dashboard stays responsive (`y`/`n`/`q` respond immediately), and a failed stop restores the modal instead of re-arming after a silent 30-second freeze.
+- Watch control timeout policy is now selected from the request variant: fast requests use a 5-second client I/O bound, while reconcile, sync, and embedding clients wait for the control bridge's operation-specific bound.
+- Watch-owned reconcile, sync, and embedding work now shares one global mutation worker. The coordinator continues serving control traffic and coalescing filesystem changes, and refuses a second manual mutation with an actionable busy error instead of blocking behind it.
+- Embedded and foreground watch services retain their lease until an active mutation worker finishes. Only the detached daemon's process-owned shutdown path may stop waiting after 10 seconds, when process exit releases all remaining resources.
+
 ## [0.2.1] - 2026-09-15
 
 ### Added

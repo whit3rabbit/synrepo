@@ -88,6 +88,26 @@ pub fn execute_sync_locked(
     progress: &mut Option<&mut dyn FnMut(SyncProgress)>,
     surface_filter: Option<&[RepairSurface]>,
 ) -> crate::Result<SyncSummary> {
+    execute_sync_locked_with_stop(
+        repo_root,
+        synrepo_dir,
+        config,
+        options,
+        progress,
+        surface_filter,
+        &mut None,
+    )
+}
+
+pub(crate) fn execute_sync_locked_with_stop(
+    repo_root: &Path,
+    synrepo_dir: &Path,
+    config: &Config,
+    options: SyncOptions,
+    progress: &mut Option<&mut dyn FnMut(SyncProgress)>,
+    surface_filter: Option<&[RepairSurface]>,
+    should_stop: &mut Option<&mut dyn FnMut() -> bool>,
+) -> crate::Result<SyncSummary> {
     let maint_plan = plan_maintenance(synrepo_dir, config);
     let report = assemble_repair_report(synrepo_dir, config, &maint_plan);
 
@@ -106,6 +126,10 @@ pub fn execute_sync_locked(
     };
 
     for finding in &report.findings {
+        if stop_requested(should_stop) {
+            actions_taken.push("sync stopped by operator".to_string());
+            break;
+        }
         match finding.severity {
             Severity::Blocked => blocked.push(finding.clone()),
             Severity::ReportOnly | Severity::Unsupported => report_only.push(finding.clone()),
@@ -151,6 +175,7 @@ pub fn execute_sync_locked(
                     &mut blocked,
                     &mut actions_taken,
                     progress,
+                    should_stop,
                 )?;
 
                 let outcome = if repaired.len() > repaired_before {
@@ -180,28 +205,32 @@ pub fn execute_sync_locked(
     // would hide overlay corruption and leave stuck rows invisible to the
     // operator. Surface failure as a Blocked finding so `synrepo status` shows
     // it on the next run.
-    match resolve_pending_promotions(synrepo_dir) {
-        Ok(count) => {
-            if count > 0 {
-                actions_taken.push(format!("resolved {count} stuck pending_promotion row(s)"));
+    if !stop_requested(should_stop) {
+        match resolve_pending_promotions(synrepo_dir) {
+            Ok(count) => {
+                if count > 0 {
+                    actions_taken.push(format!("resolved {count} stuck pending_promotion row(s)"));
+                }
             }
-        }
-        Err(err) => {
-            actions_taken.push(format!("resolve_pending_promotions failed: {err}"));
-            blocked.push(RepairFinding {
-                surface: RepairSurface::ProposedLinksOverlay,
-                drift_class: DriftClass::Blocked,
-                severity: Severity::Blocked,
-                target_id: None,
-                recommended_action: RepairAction::ManualReview,
-                notes: Some(format!(
-                    "Could not resolve stuck pending_promotion rows: {err}"
-                )),
-            });
+            Err(err) => {
+                actions_taken.push(format!("resolve_pending_promotions failed: {err}"));
+                blocked.push(RepairFinding {
+                    surface: RepairSurface::ProposedLinksOverlay,
+                    drift_class: DriftClass::Blocked,
+                    severity: Severity::Blocked,
+                    target_id: None,
+                    recommended_action: RepairAction::ManualReview,
+                    notes: Some(format!(
+                        "Could not resolve stuck pending_promotion rows: {err}"
+                    )),
+                });
+            }
         }
     }
 
-    if options.generate_cross_links || options.regenerate_cross_links {
+    if !stop_requested(should_stop)
+        && (options.generate_cross_links || options.regenerate_cross_links)
+    {
         match run_cross_link_generation(
             action_context.repo_root,
             action_context.synrepo_dir,
@@ -271,6 +300,10 @@ fn emit_progress(sink: &mut Option<&mut dyn FnMut(SyncProgress)>, event: SyncPro
     if let Some(cb) = sink.as_deref_mut() {
         cb(event);
     }
+}
+
+fn stop_requested(should_stop: &mut Option<&mut dyn FnMut() -> bool>) -> bool {
+    should_stop.as_mut().is_some_and(|callback| callback())
 }
 
 /// Resolve cross-link rows stuck in `pending_promotion` state.

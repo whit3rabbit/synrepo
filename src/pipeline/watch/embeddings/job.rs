@@ -65,7 +65,7 @@ pub(in crate::pipeline::watch) fn run_manual_embedding_build(
     }
 }
 
-pub(super) fn run_auto_embedding_refresh(
+pub(in crate::pipeline::watch) fn run_auto_embedding_refresh(
     context: EmbeddingJobContext,
 ) -> crate::Result<Option<EmbeddingBuildSummary>> {
     run_embedding_job(context, EmbeddingTrigger::AutoRefresh, false)

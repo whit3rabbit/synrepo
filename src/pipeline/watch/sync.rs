@@ -9,8 +9,7 @@ use crate::{
     config::Config,
     pipeline::{
         repair::{
-            execute_sync_locked, RepairSurface, SyncOptions, SyncProgress, SyncSummary,
-            CHEAP_AUTO_SYNC_SURFACES,
+            execute_sync_locked_with_stop, RepairSurface, SyncOptions, SyncProgress, SyncSummary,
         },
         writer::{acquire_writer_lock, LockError, WriterLock},
     },
@@ -20,7 +19,6 @@ use super::{
     control::WatchControlResponse,
     events::{SyncTrigger, WatchEvent},
     lease::WatchStateHandle,
-    reconcile::ReconcileOutcome,
 };
 
 /// Shared inputs for a sync pass run by the watch service.
@@ -30,6 +28,7 @@ pub(super) struct WatchSyncContext<'a> {
     pub(super) synrepo_dir: &'a Path,
     pub(super) events: &'a Option<crossbeam_channel::Sender<WatchEvent>>,
     pub(super) state_handle: &'a WatchStateHandle,
+    pub(super) stop_flag: Option<&'a AtomicBool>,
 }
 
 /// Best-effort send on the optional event channel. A dropped receiver must
@@ -44,9 +43,9 @@ where
     }
 }
 
-/// Acquire the raw writer lock and run one sync pass inline. Runs on the
-/// watch main-loop thread. Emits `SyncStarted`/`SyncProgress`/`SyncFinished`
-/// events and returns the appropriate `WatchControlResponse`.
+/// Acquire the raw writer lock and run one sync pass on the watch mutation
+/// worker. Emits `SyncStarted`/`SyncProgress`/`SyncFinished` events and returns
+/// the appropriate `WatchControlResponse`.
 pub(super) fn run_sync_under_watch_lock(
     context: &WatchSyncContext<'_>,
     options: SyncOptions,
@@ -95,14 +94,22 @@ pub(super) fn run_sync_under_watch_lock(
     };
 
     let mut progress: Option<&mut dyn FnMut(SyncProgress)> = Some(&mut progress_cb);
+    let mut stop_requested = || {
+        context
+            .stop_flag
+            .is_some_and(|flag| flag.load(Ordering::Relaxed))
+    };
+    let mut should_stop: Option<&mut dyn FnMut() -> bool> =
+        context.stop_flag.map(|_| &mut stop_requested as _);
 
-    let summary = match execute_sync_locked(
+    let summary = match execute_sync_locked_with_stop(
         context.repo_root,
         context.synrepo_dir,
         context.config,
         options,
         &mut progress,
         surface_filter,
+        &mut should_stop,
     ) {
         Ok(summary) => summary,
         Err(err) => {
@@ -147,77 +154,4 @@ fn empty_sync_summary() -> SyncSummary {
         report_only: Vec::new(),
         blocked: Vec::new(),
     }
-}
-
-/// Call the auto-sync hook if it is enabled and the reconcile pass produced a
-/// non-failure outcome. Skips on prior-pass blocked findings to avoid tight
-/// retry loops.
-pub(super) fn maybe_run_post_reconcile_auto_sync(
-    context: &WatchSyncContext<'_>,
-    outcome: &ReconcileOutcome,
-    auto_sync_enabled: &AtomicBool,
-    auto_sync_blocked: &AtomicBool,
-) {
-    if !auto_sync_enabled.load(Ordering::Relaxed) {
-        return;
-    }
-    if !matches!(outcome, ReconcileOutcome::Completed(_)) {
-        return;
-    }
-    if auto_sync_blocked.load(Ordering::Relaxed) {
-        // A previous auto-sync hit a blocked finding on a cheap surface. Skip
-        // until the operator intervenes (runs `synrepo sync` manually or
-        // toggles the flag off and on).
-        return;
-    }
-
-    let response = run_sync_under_watch_lock(
-        context,
-        SyncOptions::default(),
-        Some(CHEAP_AUTO_SYNC_SURFACES),
-        SyncTrigger::AutoPostReconcile,
-    );
-
-    if let WatchControlResponse::Sync { summary } = response {
-        if !summary.blocked.is_empty() {
-            tracing::warn!(
-                "auto-sync produced blocked findings on cheap surfaces; pausing auto-sync until reconcile succeeds cleanly"
-            );
-            auto_sync_blocked.store(true, Ordering::Relaxed);
-        } else {
-            // Successful auto-sync re-enables the loop if a previous block
-            // cleared without operator intervention.
-            auto_sync_blocked.store(false, Ordering::Relaxed);
-        }
-    }
-}
-
-/// Run the initial startup reconcile attempt, persist its outcome, update state, and emit events.
-pub(super) fn run_startup_reconcile(context: &WatchSyncContext<'_>) -> ReconcileOutcome {
-    emit_event(context.events, |now| WatchEvent::ReconcileStarted {
-        at: now,
-        triggering_events: 0,
-        full: true,
-        reason: None,
-    });
-    let startup_attempt = super::reconcile::run_reconcile_attempt(
-        context.repo_root,
-        context.config,
-        context.synrepo_dir,
-        false,
-    );
-    let startup = startup_attempt.outcome.clone();
-    super::reconcile_state::persist_reconcile_attempt_state(
-        context.synrepo_dir,
-        &startup_attempt,
-        0,
-    );
-    context.state_handle.note_reconcile(&startup, 0);
-    tracing::info!(outcome = %startup.as_str(), "startup reconcile complete");
-    emit_event(context.events, |now| WatchEvent::ReconcileFinished {
-        at: now,
-        outcome: startup.clone(),
-        triggering_events: 0,
-    });
-    startup
 }

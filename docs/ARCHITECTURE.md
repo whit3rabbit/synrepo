@@ -147,7 +147,11 @@ maintenance, Git intelligence, context metrics, compaction, and writer locking.
   legacy agent installs. Sync handlers live under `repair/sync/`.
 - `watch/` - watch lease/control plane, event filtering, pending-event
   coalescing, reconcile backstop, auto-sync, embedding jobs, daemon service,
-  and status reporting.
+  and status reporting. All watch-owned mutations run through one global
+  single-flight worker; the main loop remains responsive to control traffic and
+  defers/coalesces automatic work while that worker is busy. Embedded shutdown
+  retains the watch lease until the worker exits, while the detached daemon has
+  a process-owned bounded shutdown path.
 - `writer/` - single-writer admission, metadata, kernel advisory lock sentinel,
   re-entrancy, retry helpers, and cross-platform contention checks.
 - `explain/` - `CommentaryGenerator` trait, no-op default, provider backends,

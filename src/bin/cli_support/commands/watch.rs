@@ -12,8 +12,8 @@ use synrepo::{
     config::Config,
     pipeline::watch::{
         cleanup_stale_watch_artifacts, request_watch_control, run_watch_service,
-        watch_service_status, WatchConfig, WatchControlRequest, WatchControlResponse,
-        WatchDaemonState, WatchServiceMode, WatchServiceStatus,
+        run_watch_service_process_owned, watch_service_status, WatchConfig, WatchControlRequest,
+        WatchControlResponse, WatchDaemonState, WatchServiceMode, WatchServiceStatus,
     },
 };
 
@@ -73,7 +73,7 @@ pub(crate) fn watch(repo_root: &Path, daemon: bool) -> anyhow::Result<()> {
 pub(crate) fn watch_internal(repo_root: &Path) -> anyhow::Result<()> {
     let config = Config::load(repo_root)?;
     let synrepo_dir = Config::synrepo_dir(repo_root);
-    run_watch_service(
+    run_watch_service_process_owned(
         repo_root,
         &config,
         &WatchConfig::default(),

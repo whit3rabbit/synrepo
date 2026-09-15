@@ -41,6 +41,7 @@ pub use log::{
 };
 pub use report::build_repair_report;
 pub use report::surfaces::{scan_commentary_staleness, CommentaryScan};
+pub(crate) use sync::execute_sync_locked_with_stop;
 pub use sync::{
     execute_sync, execute_sync_locked, load_commentary_work_plan, normalize_scope_prefixes,
     path_matches_any_prefix, refresh_commentary, ActionContext, CommentaryProgressEvent,

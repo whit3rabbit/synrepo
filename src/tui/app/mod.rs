@@ -191,6 +191,10 @@ pub struct AppState {
     /// explain while watch was still active; holds the pending mode until
     /// the operator answers yes (stop watch + launch) or no (cancel).
     pub confirm_stop_watch: Option<ConfirmStopWatchState>,
+    /// Explain launch deferred behind a background watch stop. Stashed by the
+    /// confirm-stop-watch modal when the operator answers yes; consumed by
+    /// `finish_background_action` once the stop settles.
+    pub(crate) pending_after_watch_stop: Option<PendingStopWatchAction>,
     pending_quick_confirm: Option<PendingQuickConfirm>,
     /// Folder-picker sub-view state. `Some` while the operator is choosing
     /// which top-level directories to scope the next Explain run to; cleared

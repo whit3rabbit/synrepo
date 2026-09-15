@@ -50,6 +50,18 @@ fn run_ok(repo: &Path, args: &[&str]) -> String {
     assert_success(output)
 }
 
+fn run_when_watch_idle(repo: &Path, args: &[&str]) -> Output {
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        let output = command(repo).args(args).output().unwrap();
+        let busy = String::from_utf8_lossy(&output.stderr).contains("watch service is busy with");
+        if output.status.success() || !busy || Instant::now() >= deadline {
+            return output;
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+}
+
 fn assert_success(output: Output) -> String {
     assert!(
         output.status.success(),
@@ -212,7 +224,7 @@ fn daemon_watch_delegates_reconcile_and_surfaces_status() {
     let _guard = WatchGuard::daemon(repo.path());
 
     fs::write(repo.path().join("src/new.rs"), "pub fn new_fn() {}\n").unwrap();
-    let reconcile = run_ok(repo.path(), &["reconcile"]);
+    let reconcile = assert_success(run_when_watch_idle(repo.path(), &["reconcile"]));
     assert!(reconcile.contains("Delegated reconcile to active watch service"));
 
     let status = run_ok(repo.path(), &["status"]);
@@ -260,7 +272,7 @@ fn sync_delegates_to_watch_service_when_active() {
     let repo = init_repo();
     let _guard = WatchGuard::daemon(repo.path());
 
-    let output = command(repo.path()).args(["sync"]).output().unwrap();
+    let output = run_when_watch_idle(repo.path(), &["sync"]);
     let stderr = String::from_utf8_lossy(&output.stderr);
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(

@@ -15,6 +15,7 @@ pub(super) use crate::pipeline::writer::{live_foreign_pid, spawn_and_reap_pid as
 use crate::{config::Config, store::compatibility::write_runtime_snapshot};
 
 mod auto_sync;
+mod control_timeout;
 mod daemon;
 mod debouncer;
 mod embedding_control;
@@ -23,7 +24,9 @@ mod keepalive;
 mod lease;
 mod overflow;
 mod reconcile;
+mod responsiveness;
 mod service;
+mod sync_control;
 
 pub(super) fn setup_test_repo() -> (TempDir, PathBuf, Config, PathBuf) {
     let dir = tempdir().unwrap();
@@ -45,6 +48,27 @@ pub(super) fn wait_for(mut predicate: impl FnMut() -> bool, timeout: Duration) {
         thread::sleep(Duration::from_millis(25));
     }
     panic!("condition was not met within {:?}", timeout);
+}
+
+#[cfg(unix)]
+pub(super) fn request_mutation_when_idle(
+    synrepo_dir: &std::path::Path,
+    request: crate::pipeline::watch::WatchControlRequest,
+) -> crate::pipeline::watch::WatchControlResponse {
+    use crate::pipeline::watch::{request_watch_control, WatchControlResponse};
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let response = request_watch_control(synrepo_dir, request.clone()).unwrap();
+        if !matches!(
+            &response,
+            WatchControlResponse::Error { message } if message.contains("busy with")
+        ) {
+            return response;
+        }
+        assert!(Instant::now() < deadline, "watch worker stayed busy");
+        thread::sleep(Duration::from_millis(25));
+    }
 }
 
 #[cfg(unix)]

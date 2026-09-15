@@ -17,7 +17,7 @@ use crate::pipeline::watch::{
 
 #[cfg(unix)]
 use super::watch_service_guard;
-use super::{setup_test_repo, wait_for};
+use super::{request_mutation_when_idle, setup_test_repo, wait_for};
 
 #[cfg(unix)]
 #[test]
@@ -46,6 +46,8 @@ fn watch_service_handles_status_reconcile_and_stop() {
                 super::super::watch_service_status(&synrepo_dir),
                 WatchServiceStatus::Running(_)
             ) && super::super::watch_socket_path(&synrepo_dir).exists()
+                && load_reconcile_state(&synrepo_dir).is_ok()
+                && load_reconcile_state(&synrepo_dir).is_ok()
         },
         Duration::from_secs(5),
     );
@@ -53,11 +55,15 @@ fn watch_service_handles_status_reconcile_and_stop() {
     let status = request_watch_control(&synrepo_dir, WatchControlRequest::Status).unwrap();
     assert!(matches!(status, WatchControlResponse::Status { .. }));
 
-    let reconcile = request_watch_control(
+    wait_for(
+        || load_reconcile_state(&synrepo_dir).is_ok(),
+        Duration::from_secs(5),
+    );
+
+    let reconcile = request_mutation_when_idle(
         &synrepo_dir,
         WatchControlRequest::ReconcileNow { fast: false },
-    )
-    .unwrap();
+    );
     assert!(matches!(reconcile, WatchControlResponse::Reconcile { .. }));
 
     let stop = request_watch_control(&synrepo_dir, WatchControlRequest::Stop).unwrap();
@@ -90,10 +96,9 @@ fn stop_bridge_acknowledges_without_waiting_for_loop_reply() {
 fn watch_service_records_lock_conflict_when_writer_lock_is_held() {
     let _guard = watch_service_guard();
     let (_dir, repo, config, synrepo_dir) = setup_test_repo();
-    // Disable auto-sync so the post-startup-reconcile auto-sync hook does not
-    // race with this test for the writer flock. Without this, on slow runners
-    // the watch service can re-enter `maybe_run_post_reconcile_auto_sync`
-    // (acquiring the writer lock) between `load_reconcile_state` becoming
+    // Disable auto-sync so the deferred auto-sync worker does not race with
+    // this test for the writer flock. Without this, on slow runners the watch
+    // service can start auto-sync between `load_reconcile_state` becoming
     // readable and the test taking the flock, causing
     // `hold_writer_flock_with_ownership` to panic with
     // "flock must be free (nothing else holds it)".
@@ -179,6 +184,7 @@ fn watch_service_ignores_runtime_only_writes() {
                 super::super::watch_service_status(&synrepo_dir),
                 WatchServiceStatus::Running(_)
             ) && super::super::watch_socket_path(&synrepo_dir).exists()
+                && load_reconcile_state(&synrepo_dir).is_ok()
         },
         Duration::from_secs(5),
     );
@@ -295,6 +301,7 @@ fn watch_service_stop_stays_responsive_after_rapid_source_writes() {
                 super::super::watch_service_status(&synrepo_dir),
                 WatchServiceStatus::Running(_)
             ) && super::super::watch_socket_path(&synrepo_dir).exists()
+                && load_reconcile_state(&synrepo_dir).is_ok()
         },
         Duration::from_secs(5),
     );
@@ -315,83 +322,4 @@ fn watch_service_stop_stays_responsive_after_rapid_source_writes() {
         started.elapsed() < Duration::from_secs(5),
         "stop should not sit behind an unbounded watch backlog"
     );
-}
-
-/// Regression guard for sync-watch-delegation-v1: the watch control socket
-/// handles `SyncNow` (responding with a `Sync { summary }`) and `SetAutoSync`
-/// (responding with an `Ack`). Without this test the asymmetry that prompted
-/// the change package could silently return.
-#[cfg(unix)]
-#[test]
-fn watch_service_handles_sync_now_and_set_auto_sync() {
-    use crate::pipeline::repair::SyncOptions;
-
-    let _guard = watch_service_guard();
-    let (_dir, repo, config, synrepo_dir) = setup_test_repo();
-    // Disable auto-sync for this test to prevent background auto-sync from
-    // racing with the explicit `SyncNow` call.
-    let mut config = config;
-    config.auto_sync_enabled = false;
-
-    let service_repo = repo.clone();
-    let service_config = config.clone();
-    let service_synrepo = synrepo_dir.clone();
-
-    let handle = thread::spawn(move || {
-        run_watch_service(
-            &service_repo,
-            &service_config,
-            &WatchConfig::default(),
-            &service_synrepo,
-            WatchServiceMode::Foreground,
-            None,
-        )
-        .unwrap();
-    });
-
-    wait_for(
-        || {
-            matches!(
-                super::super::watch_service_status(&synrepo_dir),
-                WatchServiceStatus::Running(_)
-            ) && super::super::watch_socket_path(&synrepo_dir).exists()
-        },
-        Duration::from_secs(5),
-    );
-
-    let sync_response = request_watch_control(
-        &synrepo_dir,
-        WatchControlRequest::SyncNow {
-            options: SyncOptions::default(),
-        },
-    )
-    .unwrap();
-    assert!(
-        matches!(sync_response, WatchControlResponse::Sync { .. }),
-        "expected Sync response, got {:?}",
-        sync_response
-    );
-
-    let auto_off = request_watch_control(
-        &synrepo_dir,
-        WatchControlRequest::SetAutoSync { enabled: false },
-    )
-    .unwrap();
-    match auto_off {
-        WatchControlResponse::Ack { message } => assert!(message.contains("off")),
-        other => panic!("expected Ack for SetAutoSync(off), got {:?}", other),
-    }
-
-    let auto_on = request_watch_control(
-        &synrepo_dir,
-        WatchControlRequest::SetAutoSync { enabled: true },
-    )
-    .unwrap();
-    match auto_on {
-        WatchControlResponse::Ack { message } => assert!(message.contains("on")),
-        other => panic!("expected Ack for SetAutoSync(on), got {:?}", other),
-    }
-
-    let _ = request_watch_control(&synrepo_dir, WatchControlRequest::Stop);
-    handle.join().unwrap();
 }

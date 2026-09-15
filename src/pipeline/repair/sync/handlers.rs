@@ -49,6 +49,7 @@ pub fn handle_actionable_finding(
     blocked: &mut Vec<RepairFinding>,
     actions_taken: &mut Vec<String>,
     progress: &mut Option<&mut dyn FnMut(SyncProgress)>,
+    should_stop: &mut Option<&mut dyn FnMut() -> bool>,
 ) -> crate::Result<()> {
     let _span = tracing::info_span!(
         "sync_surface",
@@ -154,6 +155,7 @@ pub fn handle_actionable_finding(
             }
         }
         RepairAction::RefreshCommentary => {
+            let mut stop_adapter = || should_stop.as_mut().is_some_and(|callback| callback());
             let result = if let Some(sink) = progress.as_deref_mut() {
                 let mut adapter = |event: CommentaryProgressEvent| {
                     if let Some(mapped) = commentary_event_to_sync_progress(&event) {
@@ -165,10 +167,16 @@ pub fn handle_actionable_finding(
                     actions_taken,
                     None,
                     Some(&mut adapter),
-                    None,
+                    Some(&mut stop_adapter),
                 )
             } else {
-                super::commentary::refresh_commentary(context, actions_taken, None, None, None)
+                super::commentary::refresh_commentary(
+                    context,
+                    actions_taken,
+                    None,
+                    None,
+                    Some(&mut stop_adapter),
+                )
             };
             crate::pipeline::context_metrics::record_commentary_refresh_best_effort(
                 context.synrepo_dir,

@@ -202,6 +202,7 @@ fn wait_for_service(synrepo_dir: &std::path::Path) {
                 watch_service_status(synrepo_dir),
                 WatchServiceStatus::Running(_)
             ) && super::super::watch_socket_path(synrepo_dir).exists()
+                && super::super::load_reconcile_state(synrepo_dir).is_ok()
         },
         Duration::from_secs(5),
     );

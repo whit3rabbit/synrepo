@@ -35,6 +35,7 @@ fn active_watch_accepts_embedding_build_request() {
                 super::super::watch_service_status(&synrepo_dir),
                 WatchServiceStatus::Running(_)
             ) && super::super::watch_socket_path(&synrepo_dir).exists()
+                && super::super::load_reconcile_state(&synrepo_dir).is_ok()
         },
         Duration::from_secs(5),
     );
@@ -87,6 +88,7 @@ fn delegated_source_reconcile_marks_existing_embedding_index_stale() {
                 super::super::watch_service_status(&synrepo_dir),
                 WatchServiceStatus::Running(_)
             ) && super::super::watch_socket_path(&synrepo_dir).exists()
+                && super::super::load_reconcile_state(&synrepo_dir).is_ok()
         },
         Duration::from_secs(5),
     );

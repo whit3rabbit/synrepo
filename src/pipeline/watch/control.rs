@@ -1,6 +1,7 @@
 use std::{
     io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
+    time::Duration,
 };
 
 use interprocess::local_socket::{traits::Stream as _, Stream};
@@ -16,6 +17,11 @@ use super::reconcile::ReconcileOutcome;
 use super::status::load_watch_state;
 
 const MAX_CONTROL_LINE_BYTES: usize = 1024 * 1024;
+
+/// Client-side bound for fast control requests (status, stop, suppress-paths,
+/// auto-sync flips). Matches the daemon-side request-read timeout
+/// (`control_bridge::spawn_control_listener`).
+pub const DEFAULT_CONTROL_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Control message sent over the per-repo watch control endpoint.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -51,6 +57,17 @@ pub enum WatchControlRequest {
         /// Desired runtime state.
         enabled: bool,
     },
+}
+
+impl WatchControlRequest {
+    pub(super) fn client_timeout(&self) -> Option<Duration> {
+        match self {
+            Self::ReconcileNow { .. } | Self::SyncNow { .. } | Self::EmbeddingsBuildNow => None,
+            Self::Status | Self::Stop | Self::SuppressPaths { .. } | Self::SetAutoSync { .. } => {
+                Some(DEFAULT_CONTROL_TIMEOUT)
+            }
+        }
+    }
 }
 
 /// Control response returned by the watch service.
@@ -94,14 +111,36 @@ pub enum WatchControlResponse {
 
 /// Send one control request to the live watch service for this repo.
 ///
+/// Fast requests are bounded by [`DEFAULT_CONTROL_TIMEOUT`]. Long-running
+/// reconcile, sync, and embedding requests rely on the daemon-side bridge
+/// timeout so every caller gets the same policy without selecting it manually.
+pub fn request_watch_control(
+    synrepo_dir: &Path,
+    request: WatchControlRequest,
+) -> Result<WatchControlResponse, WatchDaemonError> {
+    let timeout = request.client_timeout();
+    request_watch_control_with_timeout(synrepo_dir, request, timeout)
+}
+
+/// Send one control request with an explicit client-side send/recv timeout.
+///
 /// The wire format is newline-delimited JSON in both directions: the client
 /// writes a request object followed by `\n`, the server responds in kind.
 /// This works portably across `interprocess::local_socket`'s backends (Unix
 /// sockets and Windows named pipes) because local sockets do not expose a
 /// portable half-close, so a length delimiter is required to frame messages.
-pub fn request_watch_control(
+///
+/// `None` restores unbounded I/O for long-running requests (`SyncNow`,
+/// `ReconcileNow`, `EmbeddingsBuildNow`) whose response only arrives after the
+/// daemon finishes the whole operation. Fast requests (status, stop,
+/// suppress-paths, auto-sync flips) are answered directly or by the responsive
+/// coordinator, so the default timeout should not fire on a healthy daemon. It
+/// exists so a wedged or dying daemon degrades into an error the caller can
+/// recover from instead of blocking forever.
+pub(crate) fn request_watch_control_with_timeout(
     synrepo_dir: &Path,
     request: WatchControlRequest,
+    timeout: Option<Duration>,
 ) -> Result<WatchControlResponse, WatchDaemonError> {
     let endpoint = resolve_control_endpoint(synrepo_dir);
     let io_err = |source| WatchDaemonError::Io {
@@ -111,6 +150,16 @@ pub fn request_watch_control(
 
     let name = watch_control_socket_name(&endpoint).map_err(io_err)?;
     let stream = Stream::connect(name).map_err(io_err)?;
+    if let Some(timeout) = timeout {
+        // Best-effort: if the platform refuses timeouts, keep the previous
+        // unbounded behavior rather than failing the request outright.
+        if let Err(error) = stream.set_send_timeout(Some(timeout)) {
+            tracing::warn!(error = %error, "failed to set watch control send timeout");
+        }
+        if let Err(error) = stream.set_recv_timeout(Some(timeout)) {
+            tracing::warn!(error = %error, "failed to set watch control recv timeout");
+        }
+    }
     write_control_request(&stream, &endpoint, &request)?;
 
     let mut reader = BufReader::new(&stream);
@@ -304,5 +353,39 @@ mod tests {
             .unwrap();
 
         assert!(control_endpoint_reachable(&synrepo_dir));
+    }
+
+    #[test]
+    fn request_times_out_when_daemon_never_responds() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let synrepo_dir = tempdir.path().join(".synrepo");
+        std::fs::create_dir_all(&synrepo_dir).unwrap();
+
+        let endpoint = watch_control_endpoint(&synrepo_dir);
+        #[cfg(unix)]
+        let _ = std::fs::remove_file(&endpoint);
+        let name = watch_control_socket_name(&endpoint).unwrap();
+        // Bind but never accept or respond: the kernel completes the client's
+        // connect into the backlog, which is exactly what a wedged daemon
+        // looks like from the client side.
+        let _listener = ListenerOptions::new()
+            .name(name)
+            .nonblocking(ListenerNonblockingMode::Accept)
+            .create_sync()
+            .unwrap();
+
+        let start = std::time::Instant::now();
+        let result = request_watch_control_with_timeout(
+            &synrepo_dir,
+            WatchControlRequest::Status,
+            Some(Duration::from_millis(250)),
+        );
+        let elapsed = start.elapsed();
+
+        assert!(result.is_err(), "wedged daemon must surface an error");
+        assert!(
+            elapsed < Duration::from_secs(2),
+            "client must fail at the explicit timeout, took {elapsed:?}"
+        );
     }
 }

@@ -9,7 +9,7 @@ use std::{
         mpsc, Arc,
     },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use interprocess::local_socket::{
@@ -136,16 +136,16 @@ pub(super) fn spawn_control_listener(
                             },
                             Ok(WatchControlRequest::Stop) => bridge_stop_request(&tx, &stop_flag),
                             Ok(WatchControlRequest::ReconcileNow { fast }) => {
-                                bridge_reconcile_request(&tx, fast)
+                                bridge_reconcile_request(&tx, fast, &stop_flag)
                             }
                             Ok(WatchControlRequest::SuppressPaths { paths, ttl_ms }) => {
-                                bridge_suppress_paths_request(&tx, paths, ttl_ms)
+                                bridge_suppress_paths_request(&tx, paths, ttl_ms, &stop_flag)
                             }
                             Ok(WatchControlRequest::SyncNow { options }) => {
-                                bridge_sync_request(&tx, options, sync_timeout)
+                                bridge_sync_request(&tx, options, sync_timeout, &stop_flag)
                             }
                             Ok(WatchControlRequest::EmbeddingsBuildNow) => {
-                                bridge_embeddings_build_request(&tx, sync_timeout)
+                                bridge_embeddings_build_request(&tx, sync_timeout, &stop_flag)
                             }
                             Ok(WatchControlRequest::SetAutoSync { enabled }) => {
                                 auto_sync_enabled.store(enabled, Ordering::Relaxed);
@@ -206,7 +206,11 @@ pub(super) fn bridge_stop_request(
     }
 }
 
-fn bridge_reconcile_request(tx: &mpsc::Sender<LoopMessage>, fast: bool) -> WatchControlResponse {
+fn bridge_reconcile_request(
+    tx: &mpsc::Sender<LoopMessage>,
+    fast: bool,
+    stop_flag: &AtomicBool,
+) -> WatchControlResponse {
     let (respond_to, recv_from_loop) = mpsc::channel();
     if tx
         .send(LoopMessage::ReconcileNow { respond_to, fast })
@@ -217,17 +221,19 @@ fn bridge_reconcile_request(tx: &mpsc::Sender<LoopMessage>, fast: bool) -> Watch
         };
     }
 
-    recv_from_loop
-        .recv_timeout(Duration::from_secs(30))
-        .unwrap_or_else(|_| WatchControlResponse::Error {
-            message: "watch loop did not answer the control request in time".to_string(),
-        })
+    wait_for_loop_response(
+        &recv_from_loop,
+        Duration::from_secs(30),
+        stop_flag,
+        "control",
+    )
 }
 
 fn bridge_suppress_paths_request(
     tx: &mpsc::Sender<LoopMessage>,
     paths: Vec<std::path::PathBuf>,
     ttl_ms: u64,
+    stop_flag: &AtomicBool,
 ) -> WatchControlResponse {
     let (respond_to, recv_from_loop) = mpsc::channel();
     if tx
@@ -243,17 +249,19 @@ fn bridge_suppress_paths_request(
         };
     }
 
-    recv_from_loop
-        .recv_timeout(Duration::from_secs(5))
-        .unwrap_or_else(|_| WatchControlResponse::Error {
-            message: "watch loop did not answer the control request in time".to_string(),
-        })
+    wait_for_loop_response(
+        &recv_from_loop,
+        Duration::from_secs(5),
+        stop_flag,
+        "control",
+    )
 }
 
 fn bridge_sync_request(
     tx: &mpsc::Sender<LoopMessage>,
     options: SyncOptions,
     timeout: Duration,
+    stop_flag: &AtomicBool,
 ) -> WatchControlResponse {
     let (respond_to, recv_from_loop) = mpsc::channel();
     if tx
@@ -271,16 +279,13 @@ fn bridge_sync_request(
     // Sync may invoke LLM-backed commentary refresh; the timeout is sourced
     // from `Config::watch_sync_timeout_seconds` so big-repo refreshes can be
     // tuned without recompiling. A wedged loop still surfaces eventually.
-    recv_from_loop
-        .recv_timeout(timeout)
-        .unwrap_or_else(|_| WatchControlResponse::Error {
-            message: "watch loop did not answer the sync request in time".to_string(),
-        })
+    wait_for_loop_response(&recv_from_loop, timeout, stop_flag, "sync")
 }
 
 fn bridge_embeddings_build_request(
     tx: &mpsc::Sender<LoopMessage>,
     timeout: Duration,
+    stop_flag: &AtomicBool,
 ) -> WatchControlResponse {
     let (respond_to, recv_from_loop) = mpsc::channel();
     if tx
@@ -292,11 +297,38 @@ fn bridge_embeddings_build_request(
         };
     }
 
-    recv_from_loop
-        .recv_timeout(timeout)
-        .unwrap_or_else(|_| WatchControlResponse::Error {
-            message: "watch loop did not answer the embeddings build request in time".to_string(),
-        })
+    wait_for_loop_response(&recv_from_loop, timeout, stop_flag, "embeddings build")
+}
+
+fn wait_for_loop_response(
+    receiver: &mpsc::Receiver<WatchControlResponse>,
+    timeout: Duration,
+    stop_flag: &AtomicBool,
+    request_label: &str,
+) -> WatchControlResponse {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if stop_flag.load(Ordering::Relaxed) {
+            return WatchControlResponse::Error {
+                message: "watch service is stopping".to_string(),
+            };
+        }
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return WatchControlResponse::Error {
+                message: format!("watch loop did not answer the {request_label} request in time"),
+            };
+        }
+        match receiver.recv_timeout(remaining.min(Duration::from_millis(100))) {
+            Ok(response) => return response,
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return WatchControlResponse::Error {
+                    message: "watch loop stopped before answering the control request".to_string(),
+                };
+            }
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+        }
+    }
 }
 
 #[cfg(test)]

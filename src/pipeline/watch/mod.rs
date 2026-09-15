@@ -8,6 +8,7 @@ mod branch_refs;
 mod config;
 mod control;
 mod control_bridge;
+mod coordinator;
 mod debouncer;
 mod embeddings;
 mod events;
@@ -22,6 +23,7 @@ mod service;
 mod status;
 mod suppression;
 mod sync;
+mod worker;
 
 pub use config::WatchConfig;
 pub use control::{
@@ -44,6 +46,8 @@ pub use reconcile_state::{
     reconcile_state_path, ReconcileState, ReconcileStateError,
 };
 pub use service::run_watch_service;
+#[doc(hidden)]
+pub use service::run_watch_service_process_owned;
 
 /// Run the watch loop in the foreground.
 pub fn run_watch_loop(

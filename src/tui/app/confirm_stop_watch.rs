@@ -8,11 +8,11 @@
 
 use crossterm::event::{KeyCode, KeyModifiers};
 
+use super::background_actions::BackgroundActionKind;
 use super::{AppState, ConfirmEnableExplainState, ExplainMode, PendingExplainRun};
 use crate::config::Config;
 use crate::pipeline::explain::ExplainStatus;
 use crate::pipeline::watch::{watch_service_status, WatchServiceStatus};
-use crate::tui::actions::{outcome_to_log, stop_watch, ActionContext, ActionOutcome};
 
 /// Modal state. Owned by `AppState` while the confirm prompt is visible.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -96,32 +96,19 @@ impl AppState {
 
         match code {
             KeyCode::Char('y') | KeyCode::Char('Y') | KeyCode::Enter => {
+                // Stop runs on the single-flight background worker (same as
+                // the `w` toggle): shutdown may need to wait for watch-owned
+                // writer work, and running it inline would freeze the render
+                // loop so `q`/`n`/`Esc` stop responding until it settles.
+                if self.background_action_rx.is_some() {
+                    self.set_toast("another dashboard action is still running");
+                    return Some(true);
+                }
                 let Some(pending) = self.confirm_stop_watch.take() else {
                     return Some(true);
                 };
-                let ctx = ActionContext::new(&self.repo_root);
-                let outcome = stop_watch(&ctx);
-                self.log.push(outcome_to_log("watch", &outcome));
-                match &outcome {
-                    ActionOutcome::Ack { .. } | ActionOutcome::Completed { .. } => {
-                        match pending.pending {
-                            PendingStopWatchAction::Explain(mode) => {
-                                self.enqueue_pending_explain(PendingExplainRun {
-                                    mode,
-                                    stopped_watch: true,
-                                });
-                            }
-                        }
-                    }
-                    ActionOutcome::Conflict { guidance, .. } => {
-                        self.set_toast(format!("watch stop blocked: {guidance}"));
-                        self.confirm_stop_watch = Some(pending);
-                    }
-                    ActionOutcome::Error { message } => {
-                        self.set_toast(format!("watch stop failed: {message}"));
-                        self.confirm_stop_watch = Some(pending);
-                    }
-                }
+                self.pending_after_watch_stop = Some(pending.pending);
+                self.start_background_action(BackgroundActionKind::WatchToggle { stop: true });
                 Some(true)
             }
             KeyCode::Char('n') | KeyCode::Char('N') | KeyCode::Esc => {

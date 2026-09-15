@@ -17,7 +17,8 @@ use crate::tui::actions::{
     stop_watch, sync_now, ActionContext, ActionOutcome,
 };
 
-use super::AppState;
+use super::confirm_stop_watch::{ConfirmStopWatchState, PendingStopWatchAction};
+use super::{AppState, PendingExplainRun};
 
 #[derive(Clone, Copy, Debug)]
 pub(super) enum BackgroundActionKind {
@@ -49,6 +50,15 @@ impl BackgroundActionKind {
         }
     }
 
+    #[cfg_attr(test, allow(dead_code))] // caller is inside `#[cfg(not(test))]`
+    fn start_toast(self) -> String {
+        match self {
+            Self::WatchToggle { stop: true } => "stopping watch service in background".to_string(),
+            Self::WatchToggle { stop: false } => "starting watch service in background".to_string(),
+            _ => format!("{} started in background", self.label()),
+        }
+    }
+
     fn invalidates_repo_views(self) -> bool {
         matches!(self, Self::Reconcile | Self::Sync | Self::Compatibility)
     }
@@ -70,6 +80,13 @@ impl BackgroundActionKind {
 pub(super) struct BackgroundActionResult {
     kind: BackgroundActionKind,
     outcome: ActionOutcome,
+}
+
+#[cfg(test)]
+impl BackgroundActionResult {
+    pub(super) fn for_test(kind: BackgroundActionKind, outcome: ActionOutcome) -> Self {
+        Self { kind, outcome }
+    }
 }
 
 impl AppState {
@@ -95,7 +112,7 @@ impl AppState {
             });
             self.background_action_rx = Some(rx);
             self.reconcile_active = true;
-            self.set_toast(format!("{} started in background", kind.label()));
+            self.set_toast(kind.start_toast());
         }
         true
     }
@@ -118,7 +135,7 @@ impl AppState {
         self.finish_background_action(result);
     }
 
-    fn finish_background_action(&mut self, result: BackgroundActionResult) {
+    pub(super) fn finish_background_action(&mut self, result: BackgroundActionResult) {
         let label = result.kind.label();
         let invalidates_repo_views = result.kind.invalidates_repo_views()
             && matches!(&result.outcome, ActionOutcome::Completed { .. });
@@ -129,7 +146,42 @@ impl AppState {
             self.invalidate_suggestions();
             self.invalidate_explain_preview();
         }
+        self.finish_pending_after_watch_stop(result.kind, &result.outcome);
         self.refresh_after_action();
+    }
+
+    /// Complete a confirm-stop-watch flow. On a successful stop, launch the
+    /// explain run the operator asked for; on failure, hand the modal back so
+    /// the operator can retry or cancel.
+    fn finish_pending_after_watch_stop(
+        &mut self,
+        kind: BackgroundActionKind,
+        outcome: &ActionOutcome,
+    ) {
+        if !matches!(kind, BackgroundActionKind::WatchToggle { stop: true }) {
+            return;
+        }
+        let Some(pending) = self.pending_after_watch_stop.take() else {
+            return;
+        };
+        match outcome {
+            ActionOutcome::Ack { .. } | ActionOutcome::Completed { .. } => match pending {
+                PendingStopWatchAction::Explain(mode) => {
+                    self.enqueue_pending_explain(PendingExplainRun {
+                        mode,
+                        stopped_watch: true,
+                    });
+                }
+            },
+            ActionOutcome::Conflict { guidance, .. } => {
+                self.set_toast(format!("watch stop blocked: {guidance}"));
+                self.confirm_stop_watch = Some(ConfirmStopWatchState { pending });
+            }
+            ActionOutcome::Error { message } => {
+                self.set_toast(format!("watch stop failed: {message}"));
+                self.confirm_stop_watch = Some(ConfirmStopWatchState { pending });
+            }
+        }
     }
 }
 
