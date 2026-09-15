@@ -67,7 +67,7 @@ pub(super) fn default_auto_sync_enabled() -> bool {
 }
 
 pub(super) fn default_reconcile_keepalive_seconds() -> u32 {
-    1800
+    0
 }
 
 pub(super) fn default_watch_sync_timeout_seconds() -> u32 {

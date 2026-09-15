@@ -41,6 +41,17 @@ pub struct PersistedGraphStats {
     pub edge_counts_by_kind: BTreeMap<String, usize>,
 }
 
+/// Lightweight node counts for status surfaces that do not display edges.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct PersistedNodeStats {
+    /// Count of persisted file nodes.
+    pub file_nodes: usize,
+    /// Count of persisted symbol nodes.
+    pub symbol_nodes: usize,
+    /// Count of persisted concept nodes.
+    pub concept_nodes: usize,
+}
+
 /// Sqlite-backed graph store rooted at `.synrepo/graph/`.
 pub struct SqliteGraphStore {
     pub(super) conn: Mutex<Connection>,
@@ -202,19 +213,32 @@ impl SqliteGraphStore {
         GraphReader::active_edges(self)
     }
 
+    /// Return node counts without scanning or grouping the edges table.
+    pub fn persisted_node_stats(&self) -> crate::Result<PersistedNodeStats> {
+        let conn = self.conn.lock();
+        Ok(PersistedNodeStats {
+            file_nodes: count_rows(&conn, "files")?,
+            symbol_nodes: count_rows(&conn, "symbols")?,
+            concept_nodes: count_rows(&conn, "concepts")?,
+        })
+    }
+
     /// Return deterministic persisted counts for the Phase 1 graph CLI.
     pub fn persisted_stats(&self) -> crate::Result<PersistedGraphStats> {
         let conn = self.conn.lock();
         let file_nodes = count_rows(&conn, "files")?;
         let symbol_nodes = count_rows(&conn, "symbols")?;
         let concept_nodes = count_rows(&conn, "concepts")?;
-        let total_edges = count_rows(&conn, "edges")?;
 
         let mut stmt =
             conn.prepare("SELECT kind, COUNT(*) FROM edges GROUP BY kind ORDER BY kind")?;
         let counts = stmt
             .query_map([], |row| Ok((row.get::<_, String>(0)?, row_usize(row, 1)?)))?
             .collect::<Result<Vec<_>, _>>()?;
+        // The grouped query already visits every edge. Summing those exact
+        // buckets avoids a second full-table COUNT(*) scan, which is costly
+        // for large repositories and used to double dashboard startup I/O.
+        let total_edges = counts.iter().map(|(_, count)| *count).sum();
 
         Ok(PersistedGraphStats {
             file_nodes,

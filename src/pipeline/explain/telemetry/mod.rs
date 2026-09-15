@@ -15,10 +15,11 @@
 //! a provider's chars-per-token budget check refuses a call before the HTTP
 //! request. These never hit the network, so they have no usage to report.
 //!
-//! Publication is a sync fan-out: each subscriber holds a [`crossbeam_channel`]
-//! `Sender<ExplainEvent>`; the publisher tries to send to each and drops the
-//! event on full (bounded, 256) or disconnected receivers. Drops are counted
-//! and exposed for surface-layer diagnostics.
+//! Publication is a sync fan-out: each owned subscription has a bounded (256)
+//! channel and unregisters immediately when dropped. The publisher tries to
+//! send to each live subscriber, defensively removes disconnected receivers,
+//! and drops events when a subscriber is full. Drops are counted and exposed
+//! for surface-layer diagnostics.
 //!
 //! Accounting is a side effect of [`publish::publish`]: if a scoped
 //! `.synrepo/` directory is active via [`with_synrepo_dir`], or a fallback
@@ -32,7 +33,7 @@ pub mod types;
 
 pub use publish::{
     dropped_event_count, next_call_id, now_ms, publish, publish_budget_blocked, set_synrepo_dir,
-    subscribe, synrepo_dir, with_synrepo_dir, CallCtx,
+    subscribe, synrepo_dir, with_synrepo_dir, CallCtx, ExplainSubscription,
 };
 pub use types::{ExplainEvent, ExplainFailure, ExplainTarget, Outcome, TokenUsage, UsageSource};
 

@@ -30,13 +30,11 @@ fn completed() -> ReconcileOutcome {
 fn observation<'a>(
     outcome: &'a ReconcileOutcome,
     triggering_events: usize,
-    force_full_reconcile: bool,
     keepalive: bool,
 ) -> ReconcileEmbeddingObservation<'a> {
     ReconcileEmbeddingObservation {
         outcome,
         triggering_events,
-        force_full_reconcile,
         keepalive,
     }
 }
@@ -67,7 +65,7 @@ fn marks_existing_index_stale_after_source_reconcile() {
     scheduler.note_reconcile(
         &config(),
         &synrepo_dir,
-        observation(&completed(), 1, false, false),
+        observation(&completed(), 1, false),
         &handle,
     );
 
@@ -76,7 +74,7 @@ fn marks_existing_index_stale_after_source_reconcile() {
 }
 
 #[test]
-fn marks_existing_index_stale_after_control_full_reconcile() {
+fn ignores_unchanged_control_reconcile() {
     let dir = tempdir().unwrap();
     let synrepo_dir = dir.path().join(".synrepo");
     write_index(&synrepo_dir);
@@ -87,7 +85,31 @@ fn marks_existing_index_stale_after_control_full_reconcile() {
     scheduler.note_reconcile(
         &config(),
         &synrepo_dir,
-        observation(&completed(), 0, true, false),
+        observation(&completed(), 0, false),
+        &handle,
+    );
+
+    assert!(!scheduler.stale_for_test());
+    assert!(!handle.snapshot().embedding_index_stale);
+}
+
+#[test]
+fn marks_existing_index_stale_after_changed_control_reconcile() {
+    let dir = tempdir().unwrap();
+    let synrepo_dir = dir.path().join(".synrepo");
+    write_index(&synrepo_dir);
+    let handle = state_handle(&synrepo_dir);
+    let mut scheduler =
+        EmbeddingRefreshScheduler::for_test(Duration::ZERO, Duration::from_secs(300));
+    let changed = ReconcileOutcome::Completed(crate::pipeline::structural::CompileSummary {
+        files_parsed: 1,
+        ..Default::default()
+    });
+
+    scheduler.note_reconcile(
+        &config(),
+        &synrepo_dir,
+        observation(&changed, 0, false),
         &handle,
     );
 
@@ -107,7 +129,7 @@ fn ignores_keepalive_reconcile() {
     scheduler.note_reconcile(
         &config(),
         &synrepo_dir,
-        observation(&completed(), 0, false, true),
+        observation(&completed(), 0, true),
         &handle,
     );
 
@@ -129,7 +151,7 @@ fn waits_for_quiet_window_and_no_pending_changes() {
     scheduler.note_reconcile(
         &config(),
         &synrepo_dir,
-        observation(&completed(), 1, false, false),
+        observation(&completed(), 1, false),
         &handle,
     );
 
@@ -162,7 +184,7 @@ fn requires_existing_index_and_auto_sync() {
     scheduler.note_reconcile(
         &config(),
         &synrepo_dir,
-        observation(&completed(), 1, false, false),
+        observation(&completed(), 1, false),
         &handle,
     );
     assert!(!scheduler.stale_for_test());
@@ -171,7 +193,7 @@ fn requires_existing_index_and_auto_sync() {
     scheduler.note_reconcile(
         &config(),
         &synrepo_dir,
-        observation(&completed(), 1, false, false),
+        observation(&completed(), 1, false),
         &handle,
     );
     assert!(!scheduler.should_start_for_test(
@@ -197,7 +219,7 @@ fn respects_auto_sync_block_and_failure_backoff() {
     scheduler.note_reconcile(
         &config(),
         &synrepo_dir,
-        observation(&completed(), 1, false, false),
+        observation(&completed(), 1, false),
         &handle,
     );
     assert!(!scheduler.should_start_for_test(

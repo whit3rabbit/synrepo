@@ -30,7 +30,6 @@ pub(in crate::pipeline::watch) struct EmbeddingRefreshScheduler {
 pub(in crate::pipeline::watch) struct ReconcileEmbeddingObservation<'a> {
     pub(in crate::pipeline::watch) outcome: &'a ReconcileOutcome,
     pub(in crate::pipeline::watch) triggering_events: usize,
-    pub(in crate::pipeline::watch) force_full_reconcile: bool,
     pub(in crate::pipeline::watch) keepalive: bool,
 }
 
@@ -65,9 +64,11 @@ impl EmbeddingRefreshScheduler {
         observation: ReconcileEmbeddingObservation<'_>,
         state_handle: &WatchStateHandle,
     ) {
+        let ReconcileOutcome::Completed(summary) = observation.outcome else {
+            return;
+        };
         if observation.keepalive
-            || !matches!(observation.outcome, ReconcileOutcome::Completed(_))
-            || !(observation.triggering_events > 0 || observation.force_full_reconcile)
+            || !(observation.triggering_events > 0 || summary.graph_changed())
             || !existing_index_can_refresh(config, synrepo_dir)
         {
             return;

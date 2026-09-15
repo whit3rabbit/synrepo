@@ -8,15 +8,15 @@ use std::fs;
 
 #[test]
 fn pressing_r_sets_refresh_toast() {
-    // The 'r' refresh used to be a silent no-op when nothing on disk had
-    // changed. Now it always sets a toast so the operator sees confirmation.
+    // A large-repo refresh runs off the input thread, so the first toast must
+    // acknowledge dispatch rather than falsely claiming completion.
     let mut state = make_poll_state();
     assert!(state.active_toast().is_none(), "fresh state has no toast");
     let consumed = state.handle_key(KeyCode::Char('r'), KeyModifiers::NONE);
     assert!(consumed, "'r' should consume the key event");
     let toast = state.active_toast().expect("toast must be set after 'r'");
     assert!(
-        toast.starts_with("refreshed"),
+        toast.starts_with("refreshing"),
         "toast should announce a refresh: {toast:?}"
     );
 }

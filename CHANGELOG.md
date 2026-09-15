@@ -12,10 +12,22 @@ an existing section untouched.
 
 ## [Unreleased]
 
-## [0.2.1] - 2026-09-12
+## [0.2.1] - 2026-09-15
+
+### Added
+- Persisted node stats query (`persisted_node_stats`) in SQLite graph store, providing lightweight file, symbol, and concept counts without querying or scanning the edges table.
+
+### Changed
+- Graph stats calculation now derives total edge count by summing grouped edge kinds instead of issuing a second full-table `COUNT(*)` scan, reducing I/O during status and dashboard startup on large repositories.
+- Bounded TUI watch service thread join (2-second timeout) during shutdown to prevent in-progress background reconciles from wedging dashboard exit.
+- TUI multi-project workspace switching now evicts cached state for inactive projects, keeping only the active project resident in memory.
+- Decoupled and modularized oversized source files across configuration (`presence`), TUI action handlers, status snapshots, and watcher submodules to strictly uphold the repository line-cap invariant.
 
 ### Fixed
 - CI and release builds now enable `--all-features` (including `semantic-triage` and `metrics-http`) across Linux, Windows, and macOS (Apple Silicon).
+- Windows MSVC static CRT runtime linkage and disabled unused `esaxx_fast` tokenizer dependency to eliminate CRT mismatch failures (`libcmt`/`libcpmt`).
+- Watch embedding refresh scheduler now ignores unchanged control reconciles, preventing spurious stale-index flags when files were not modified.
+- Fixed watch runtime test race condition by settling startup notification window before baseline measurement.
 
 ## [0.2.0] - 2026-09-12
 

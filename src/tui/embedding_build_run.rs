@@ -35,7 +35,7 @@ pub(crate) fn run_embedding_build_in_dashboard(
     };
     ui.finished_prompt = true;
     draw_progress(terminal, &ui)?;
-    state.refresh_now();
+    state.refresh_after_action();
     state.set_tab(crate::tui::app::ActiveTab::Actions);
     let _ = crossterm::event::read();
     Ok(())

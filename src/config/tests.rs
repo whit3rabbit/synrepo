@@ -2,6 +2,8 @@ use super::*;
 use std::fs;
 use tempfile::tempdir;
 
+mod keepalive;
+
 #[test]
 fn load_missing_file_returns_error() {
     // Config::load falls back to ~/.synrepo/config.toml when the repo-local
@@ -14,6 +16,11 @@ fn load_missing_file_returns_error() {
     let dir = tempdir().unwrap();
     let err = Config::load(dir.path()).unwrap_err();
     assert!(matches!(err, crate::Error::NotInitialized(_)));
+}
+
+#[test]
+fn defaults_do_not_reconcile_an_idle_repository() {
+    assert_eq!(Config::default().reconcile_keepalive_seconds, 0);
 }
 
 #[test]

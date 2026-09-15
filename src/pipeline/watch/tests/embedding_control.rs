@@ -58,7 +58,7 @@ fn active_watch_accepts_embedding_build_request() {
 
 #[cfg(feature = "semantic-triage")]
 #[test]
-fn delegated_reconcile_marks_existing_embedding_index_stale() {
+fn delegated_source_reconcile_marks_existing_embedding_index_stale() {
     let _guard = watch_service_guard();
     let (_dir, repo, mut config, synrepo_dir) = setup_test_repo();
     config.enable_semantic_triage = true;
@@ -96,6 +96,12 @@ fn delegated_reconcile_marks_existing_embedding_index_stale() {
         !startup_status.embedding_index_stale,
         "startup reconcile must not mark embeddings stale"
     );
+
+    std::fs::write(
+        repo.join("src/embedding_change.rs"),
+        "pub fn embedding_change() {}\n",
+    )
+    .unwrap();
 
     let response = request_watch_control(
         &synrepo_dir,

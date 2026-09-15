@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 use crossbeam_channel::Receiver;
 
 use super::render_cache::{build_initial_header_vm, build_initial_integration_display_rows};
+use super::snapshot_refresh::graph_store_present;
 use super::{
     quick_actions_for, ActiveTab, AppMode, AppState, DashboardExit, EventLog,
     PendingEmbeddingBuild, PendingExplainRun,
@@ -13,7 +14,7 @@ use crate::config::Config;
 use crate::pipeline::explain::telemetry;
 use crate::pipeline::watch::WatchEvent;
 use crate::surface::refactor_suggestions::RefactorSuggestionMode;
-use crate::surface::status_snapshot::{build_status_snapshot, StatusOptions};
+use crate::surface::status_snapshot::{build_status_snapshot_without_graph_stats, StatusOptions};
 use crate::tui::agent_integrations::build_agent_install_statuses;
 use crate::tui::materializer::{MaterializeState, MaterializerSupervisor};
 use crate::tui::theme::Theme;
@@ -76,14 +77,15 @@ impl AppState {
         events_rx: Option<Receiver<WatchEvent>>,
         startup_logs: Vec<LogEntry>,
     ) -> Self {
-        let snapshot = build_status_snapshot(
+        let snapshot = build_status_snapshot_without_graph_stats(
             repo_root,
             StatusOptions {
-                recent: true,
+                recent: false,
                 full: false,
             },
         );
-        let quick_actions = quick_actions_for(&mode, &snapshot);
+        let graph_store_present = graph_store_present(repo_root);
+        let quick_actions = quick_actions_for(&mode, &snapshot, graph_store_present);
         let auto_sync_enabled = Config::load(repo_root)
             .map(|c| c.auto_sync_enabled)
             .unwrap_or(true);
@@ -102,7 +104,7 @@ impl AppState {
         for entry in startup_logs {
             log.push(entry);
         }
-        Self {
+        let mut state = Self {
             project_id: None,
             project_name: None,
             repo_root: repo_root.to_path_buf(),
@@ -110,6 +112,8 @@ impl AppState {
             mode,
             integration,
             snapshot,
+            graph_store_present,
+            readiness_rows: Vec::new(),
             header_vm,
             log,
             quick_actions,
@@ -117,8 +121,10 @@ impl AppState {
             integration_selected: 0,
             suggestion_report: None,
             suggestion_mode: RefactorSuggestionMode::LineCount,
+            suggestion_rx: None,
+            suggestion_toast_pending: false,
+            suggestion_reload_pending: false,
             explore_projects: Vec::new(),
-            explore_projects_loaded_at: None,
             explore_selected: 0,
             switch_project_root: None,
             should_exit: false,
@@ -134,23 +140,32 @@ impl AppState {
             picker: None,
             generate_commentary: None,
             explain_preview: None,
+            explain_preview_rx: None,
+            explain_preview_refresh_pending: false,
+            explain_preview_toast_pending: false,
             active_tab: ActiveTab::Live,
             scroll_offset: 0,
             live_visible_rows: 18,
             follow_mode: true,
             frame: 0,
             reconcile_active: false,
+            background_action_rx: None,
             auto_sync_enabled,
             poll_timeout: Duration::from_millis(125),
-            snapshot_refresh_interval: Duration::from_secs(2),
-            last_refresh: Instant::now(),
-            explain_preview_refresh_interval: Duration::from_secs(10),
+            status_change_detector: super::status_changes::StatusChangeDetector::new(repo_root),
+            snapshot_refresher: Default::default(),
+            snapshot_refresh_pending: None,
+            manual_snapshot_refresh: false,
             toast: None,
             events_rx,
             explain_rx: telemetry::subscribe(),
             materializer: MaterializerSupervisor::new(repo_root),
             materialize_state: MaterializeState::Idle,
-        }
+        };
+        // Exact graph counts and git activity can take seconds on a large
+        // repository. Load them after the first frame becomes interactive.
+        state.start_initial_snapshot_refresh();
+        state
     }
 
     /// Set a transient footer toast. A rapid re-press resets the visible
@@ -219,16 +234,20 @@ impl AppState {
         self.should_exit = true;
     }
 
-    /// Refresh the snapshot if the snapshot-refresh interval has elapsed. In
-    /// live mode, this also drains any pending `WatchEvent`s from the bus into
-    /// the log pane before the file-based snapshot refresh runs. Advances the
-    /// spinner frame counter every tick so the animation runs independently of
-    /// the snapshot cadence.
+    /// Drain bounded worker/event queues and sample status-source metadata.
+    /// Snapshot rebuilds are change-driven or explicitly requested; an idle
+    /// dashboard never rebuilds status or starts indexing on a timer.
     pub fn tick(&mut self) {
         self.drain_events();
-        self.frame = self.frame.wrapping_add(1);
-        if self.last_refresh.elapsed() >= self.snapshot_refresh_interval {
-            self.refresh_now();
+        self.drain_background_action();
+        self.drain_snapshot_refresh();
+        self.drain_suggestion_load();
+        self.drain_explain_preview();
+        if let Some(mode) = self.status_change_detector.poll(&self.repo_root) {
+            self.request_snapshot_refresh(mode, false);
+        }
+        if self.reconcile_active || self.materializer.is_running() {
+            self.frame = self.frame.wrapping_add(1);
         }
         self.drain_materializer();
         self.maybe_auto_materialize();

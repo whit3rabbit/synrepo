@@ -275,7 +275,6 @@ pub fn run_watch_service(
                     ReconcileEmbeddingObservation {
                         outcome: &outcome,
                         triggering_events: event_count,
-                        force_full_reconcile,
                         keepalive,
                     },
                     &state_handle,
@@ -325,7 +324,6 @@ pub fn run_watch_service(
                     ReconcileEmbeddingObservation {
                         outcome: &outcome,
                         triggering_events: 0,
-                        force_full_reconcile: true,
                         keepalive: false,
                     },
                     &state_handle,

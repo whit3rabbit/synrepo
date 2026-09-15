@@ -4,6 +4,7 @@
 //! lifecycle wrapper providers use to emit matched start/complete/fail events.
 
 use std::cell::RefCell;
+use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
@@ -21,8 +22,13 @@ const SUBSCRIBER_BUFFER: usize = 256;
 /// Process-wide fan-out list. A `Mutex` is acceptable: the publish rate is
 /// measured in events per second, dwarfed by the HTTP call that produced the
 /// event.
+pub(crate) struct Subscriber {
+    id: u64,
+    sender: Sender<ExplainEvent>,
+}
+
 pub(crate) struct Fanout {
-    pub(crate) subscribers: Mutex<Vec<Sender<ExplainEvent>>>,
+    pub(crate) subscribers: Mutex<Vec<Subscriber>>,
     dropped: AtomicU64,
 }
 
@@ -38,6 +44,7 @@ impl Fanout {
 pub(crate) static FANOUT: Fanout = Fanout::new();
 static SYNREPO_DIR: Mutex<Option<PathBuf>> = Mutex::new(None);
 pub(crate) static CALL_ID_SEQ: AtomicU64 = AtomicU64::new(1);
+static SUBSCRIBER_ID_SEQ: AtomicU64 = AtomicU64::new(1);
 
 thread_local! {
     static SCOPED_SYNREPO_DIRS: RefCell<Vec<PathBuf>> = const { RefCell::new(Vec::new()) };
@@ -96,15 +103,38 @@ fn global_synrepo_dir() -> Option<PathBuf> {
     SYNREPO_DIR.lock().ok().and_then(|g| g.clone())
 }
 
-/// Register a new subscriber. Returns a receiver the caller drains at its
-/// own pace. Dropping the receiver disconnects the subscriber; the next
-/// publish reaps it.
-pub fn subscribe() -> Receiver<ExplainEvent> {
-    let (tx, rx) = bounded(SUBSCRIBER_BUFFER);
-    if let Ok(mut subs) = FANOUT.subscribers.lock() {
-        subs.push(tx);
+/// Owned telemetry subscription. Dropping it removes the sender from the
+/// process-global fan-out immediately, even if no later event is published.
+pub struct ExplainSubscription {
+    id: u64,
+    receiver: Receiver<ExplainEvent>,
+}
+
+impl Deref for ExplainSubscription {
+    type Target = Receiver<ExplainEvent>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.receiver
     }
-    rx
+}
+
+impl Drop for ExplainSubscription {
+    fn drop(&mut self) {
+        if let Ok(mut subs) = FANOUT.subscribers.lock() {
+            subs.retain(|subscriber| subscriber.id != self.id);
+        }
+    }
+}
+
+/// Register a subscriber that is removed immediately when its owned handle
+/// is dropped.
+pub fn subscribe() -> ExplainSubscription {
+    let (tx, rx) = bounded(SUBSCRIBER_BUFFER);
+    let id = SUBSCRIBER_ID_SEQ.fetch_add(1, Ordering::Relaxed);
+    if let Ok(mut subs) = FANOUT.subscribers.lock() {
+        subs.push(Subscriber { id, sender: tx });
+    }
+    ExplainSubscription { id, receiver: rx }
 }
 
 /// Allocate a unique call id.
@@ -128,14 +158,16 @@ pub fn now_ms() -> u128 {
 /// never propagate — telemetry never fails a explain call.
 pub fn publish(event: ExplainEvent) {
     if let Ok(mut subs) = FANOUT.subscribers.lock() {
-        subs.retain(|tx| match tx.try_send(event.clone()) {
-            Ok(()) => true,
-            Err(TrySendError::Full(_)) => {
-                FANOUT.dropped.fetch_add(1, Ordering::Relaxed);
-                true
-            }
-            Err(TrySendError::Disconnected(_)) => false,
-        });
+        subs.retain(
+            |subscriber| match subscriber.sender.try_send(event.clone()) {
+                Ok(()) => true,
+                Err(TrySendError::Full(_)) => {
+                    FANOUT.dropped.fetch_add(1, Ordering::Relaxed);
+                    true
+                }
+                Err(TrySendError::Disconnected(_)) => false,
+            },
+        );
     }
 
     if let Some(dir) = synrepo_dir() {
@@ -293,4 +325,30 @@ fn truncate(s: &str, max: usize) -> String {
     let mut out = s[..cut].to_string();
     out.push('…');
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dropping_subscription_unregisters_without_a_publish() {
+        let subscription = subscribe();
+        let id = subscription.id;
+        assert!(FANOUT
+            .subscribers
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|subscriber| subscriber.id == id));
+
+        drop(subscription);
+
+        assert!(!FANOUT
+            .subscribers
+            .lock()
+            .unwrap()
+            .iter()
+            .any(|subscriber| subscriber.id == id));
+    }
 }

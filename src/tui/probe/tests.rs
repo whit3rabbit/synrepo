@@ -136,9 +136,8 @@ fn complete_integration() -> AgentIntegration {
     }
 }
 
-fn runtime(due_in: Duration) -> NextActionRuntime<'static> {
+fn runtime(_due_in: Duration) -> NextActionRuntime<'static> {
     NextActionRuntime {
-        snapshot_refresh_due_in: due_in,
         auto_sync_enabled: None,
         materialize_state: None,
         now: time::OffsetDateTime::parse(
@@ -165,7 +164,7 @@ fn export_stale_with_watch_auto_sync_shows_automatic_wait() {
     );
     let labels: Vec<_> = actions.iter().map(|a| a.label.as_str()).collect();
 
-    assert!(labels.contains(&"Context export refresh is automatic, checking again in 2s"));
+    assert!(labels.contains(&"Context export refresh is automatic; waiting for watch update"));
     assert!(!labels.iter().any(|label| label.contains("synrepo export")));
 }
 
@@ -271,7 +270,7 @@ fn absent_context_export_is_healthy_and_has_no_next_action() {
 }
 
 #[test]
-fn stale_reconcile_with_active_watch_waits_for_poll() {
+fn stale_reconcile_with_active_watch_surfaces_lock_owner() {
     let snapshot = snapshot_for_actions(
         "current",
         ReconcileHealth::Stale(ReconcileStaleness::Outcome("lock-conflict".to_string())),
@@ -285,9 +284,9 @@ fn stale_reconcile_with_active_watch_waits_for_poll() {
         runtime(Duration::from_secs(2)),
     );
 
-    assert!(actions.iter().any(|a| {
-        a.label == "Watch reconcile waiting on writer lock held by pid 99, checking again in 2s"
-    }));
+    assert!(actions
+        .iter()
+        .any(|a| { a.label == "Watch reconcile waiting on writer lock held by pid 99" }));
 }
 
 #[test]

@@ -49,7 +49,8 @@ pub(crate) fn run_explain_in_dashboard(
 
     ui.finished_prompt = true;
     draw_progress(terminal, &ui)?;
-    state.refresh_now();
+    state.invalidate_explain_preview();
+    state.refresh_after_action();
     state.set_tab(crate::tui::app::ActiveTab::Explain);
     let _ = crossterm::event::read();
     Ok(())

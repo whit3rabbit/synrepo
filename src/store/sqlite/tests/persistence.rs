@@ -1,4 +1,4 @@
-use super::super::{PersistedGraphStats, SqliteGraphStore};
+use super::super::{PersistedGraphStats, PersistedNodeStats, SqliteGraphStore};
 use super::support::sample_provenance;
 use crate::{
     core::ids::{ConceptNodeId, EdgeId, FileNodeId, NodeId, SymbolNodeId},
@@ -206,6 +206,14 @@ fn persisted_stats_count_nodes_and_edges_by_kind() {
                 ("defines".to_string(), 1),
                 ("references".to_string(), 1),
             ]),
+        }
+    );
+    assert_eq!(
+        store.persisted_node_stats().unwrap(),
+        PersistedNodeStats {
+            file_nodes: 1,
+            symbol_nodes: 1,
+            concept_nodes: 1,
         }
     );
 }

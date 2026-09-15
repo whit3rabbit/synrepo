@@ -11,7 +11,7 @@ impl GlobalAppState {
         let no_active = (!has_active).then(|| "no active project".to_string());
         let active = self.active_state();
         let graph_missing = active
-            .map(|active| active.snapshot.initialized && active.snapshot.graph_stats.is_none())
+            .map(|active| active.snapshot.initialized && !active.graph_store_present)
             .unwrap_or(false);
         let embeddings_enabled = active
             .and_then(|active| active.snapshot.config.as_ref())

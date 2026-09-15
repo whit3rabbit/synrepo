@@ -4,7 +4,7 @@ use super::semantic::{
     default_semantic_embedding_provider, default_semantic_model, default_semantic_ollama_endpoint,
     default_semantic_similarity_threshold, default_semantic_vector_precision,
 };
-use super::{BranchRootsConfig, Config, SemanticPresence, SemanticProviderSource};
+use super::{BranchRootsConfig, Config, ConfigPresence, SemanticProviderSource};
 
 impl Config {
     /// Merge another config into this one. `other` wins on all fields.
@@ -33,44 +33,46 @@ impl Config {
         if other.semantic_vector_precision != default_semantic_vector_precision() {
             self.semantic_vector_precision = other.semantic_vector_precision;
         }
-        self.merge_nested_and_runtime(other);
+        let keepalive_present =
+            other.reconcile_keepalive_seconds != default_reconcile_keepalive_seconds();
+        self.merge_nested_and_runtime(other, keepalive_present);
     }
 
-    pub(super) fn apply_semantic_presence(&mut self, presence: SemanticPresence) {
-        self.semantic_embedding_provider_source = if presence.provider {
+    pub(super) fn apply_config_presence(&mut self, presence: ConfigPresence) {
+        self.semantic_embedding_provider_source = if presence.semantic_provider {
             SemanticProviderSource::Explicit
         } else {
             SemanticProviderSource::Defaulted
         };
     }
 
-    pub(super) fn merge_with_semantic_presence(&mut self, other: Self, presence: SemanticPresence) {
+    pub(super) fn merge_with_config_presence(&mut self, other: Self, presence: ConfigPresence) {
         self.mode = other.mode;
         self.merge_common_overrides(&other);
-        if presence.provider {
+        if presence.semantic_provider {
             self.semantic_embedding_provider = other.semantic_embedding_provider;
             self.semantic_embedding_provider_source = SemanticProviderSource::Explicit;
         }
-        if presence.model {
+        if presence.semantic_model {
             self.semantic_model.clone_from(&other.semantic_model);
         }
-        if presence.dim {
+        if presence.embedding_dim {
             self.embedding_dim = other.embedding_dim;
         }
         if other.semantic_similarity_threshold != default_semantic_similarity_threshold() {
             self.semantic_similarity_threshold = other.semantic_similarity_threshold;
         }
-        if presence.ollama_endpoint {
+        if presence.semantic_ollama_endpoint {
             self.semantic_ollama_endpoint
                 .clone_from(&other.semantic_ollama_endpoint);
         }
-        if presence.batch_size {
+        if presence.semantic_embedding_batch_size {
             self.semantic_embedding_batch_size = other.semantic_embedding_batch_size;
         }
-        if presence.vector_precision {
+        if presence.semantic_vector_precision {
             self.semantic_vector_precision = other.semantic_vector_precision;
         }
-        self.merge_nested_and_runtime(other);
+        self.merge_nested_and_runtime(other, presence.reconcile_keepalive_seconds);
     }
 
     fn merge_common_overrides(&mut self, other: &Self) {
@@ -123,10 +125,10 @@ impl Config {
         }
     }
 
-    fn merge_nested_and_runtime(&mut self, other: Self) {
+    fn merge_nested_and_runtime(&mut self, other: Self, keepalive_present: bool) {
         self.cross_link_confidence_thresholds = other.cross_link_confidence_thresholds;
         self.explain.merge(other.explain);
-        if other.reconcile_keepalive_seconds != default_reconcile_keepalive_seconds() {
+        if keepalive_present {
             self.reconcile_keepalive_seconds = other.reconcile_keepalive_seconds;
         }
     }

@@ -6,8 +6,8 @@ mod explain;
 mod io;
 mod merge;
 mod mode;
+mod presence;
 mod semantic;
-mod semantic_presence;
 mod thresholds;
 
 pub use branches::BranchRootsConfig;
@@ -19,12 +19,12 @@ pub use thresholds::CrossLinkConfidenceThresholds;
 
 use defaults::*;
 use io::reject_legacy_explain_block;
+use presence::ConfigPresence;
 use semantic::{
     default_embedding_dim, default_semantic_embedding_batch_size,
     default_semantic_embedding_provider, default_semantic_model, default_semantic_ollama_endpoint,
     default_semantic_similarity_threshold, default_semantic_vector_precision,
 };
-use semantic_presence::SemanticPresence;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
@@ -188,10 +188,11 @@ pub struct Config {
 
     /// Interval in seconds for the `watch` service to perform a periodic
     /// background reconcile when no filesystem events have been observed.
-    /// Default is `1800` (30 minutes); set to `0` to disable. The keepalive
-    /// runs in fast mode (skips git-history passes) so its main effect is
-    /// refreshing the reconcile timestamp; if `auto_sync_enabled` is also
-    /// set, the post-reconcile hook then runs the cheap auto-sync surfaces.
+    /// Default is `0` (disabled), so repository scanning remains driven by
+    /// filesystem/ref changes or explicit requests. Set a positive value only
+    /// when periodic missed-notification recovery is worth the scan cost. A
+    /// keepalive runs in fast mode (skips git-history passes); when auto-sync
+    /// is enabled it can also run the cheap post-reconcile repair surfaces.
     #[serde(default = "default_reconcile_keepalive_seconds")]
     pub reconcile_keepalive_seconds: u32,
 
@@ -220,10 +221,10 @@ impl Config {
         let mut config = if global_path.exists() {
             let text = std::fs::read_to_string(&global_path)?;
             reject_legacy_explain_block(&text, &global_path)?;
-            let semantic_presence = SemanticPresence::from_toml(&text)?;
+            let config_presence = ConfigPresence::from_toml(&text)?;
             let mut loaded: Self =
                 toml::from_str(&text).map_err(|e| crate::Error::Config(e.to_string()))?;
-            loaded.apply_semantic_presence(semantic_presence);
+            loaded.apply_config_presence(config_presence);
             loaded
         } else {
             Self::default()
@@ -232,11 +233,11 @@ impl Config {
         if local_path.exists() {
             let text = std::fs::read_to_string(&local_path)?;
             reject_legacy_explain_block(&text, &local_path)?;
-            let semantic_presence = SemanticPresence::from_toml(&text)?;
+            let config_presence = ConfigPresence::from_toml(&text)?;
             let mut local_config: Config =
                 toml::from_str(&text).map_err(|e| crate::Error::Config(e.to_string()))?;
-            local_config.apply_semantic_presence(semantic_presence);
-            config.merge_with_semantic_presence(local_config, semantic_presence);
+            local_config.apply_config_presence(config_presence);
+            config.merge_with_config_presence(local_config, config_presence);
         }
 
         config.branch_roots.validate()?;

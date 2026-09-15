@@ -1,6 +1,6 @@
 //! Focused next-action wording tests.
 
-use std::{collections::BTreeMap, path::PathBuf, time::Duration};
+use std::{collections::BTreeMap, path::PathBuf};
 
 use crate::bootstrap::runtime_probe::{AgentIntegration, AgentTargetKind};
 use crate::config::Config;
@@ -88,7 +88,6 @@ fn mcp_only_integration() -> AgentIntegration {
 
 fn runtime() -> NextActionRuntime<'static> {
     NextActionRuntime {
-        snapshot_refresh_due_in: Duration::ZERO,
         auto_sync_enabled: None,
         materialize_state: None,
         now: time::OffsetDateTime::UNIX_EPOCH,

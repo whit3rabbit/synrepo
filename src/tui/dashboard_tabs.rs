@@ -65,8 +65,7 @@ pub(crate) fn draw_global_explore_dashboard(
             theme: &active.theme,
             toast: active.active_toast(),
             watch_toggle_label: active.watch_toggle_label(),
-            materialize_hint_visible: active.snapshot.graph_stats.is_none()
-                && active.snapshot.initialized,
+            materialize_hint_visible: !active.graph_store_present && active.snapshot.initialized,
         },
         outer[3],
     );

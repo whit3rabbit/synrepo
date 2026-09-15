@@ -1,7 +1,7 @@
 //! Operational status snapshot shared between the CLI `status` command and the
 //! runtime TUI dashboard. Computes read-only data; rendering is caller-side.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use time::OffsetDateTime;
 
@@ -18,7 +18,12 @@ use crate::{
 
 mod builders;
 mod export_status;
-pub use builders::*;
+#[cfg(test)]
+mod tests;
+pub use builders::{
+    commentary_coverage, load_repair_audit_state, open_status_overlay, overlay_cost_summary,
+    overlay_state,
+};
 pub use export_status::*;
 
 /// Options controlling how the snapshot is built.
@@ -28,6 +33,46 @@ pub struct StatusOptions {
     pub recent: bool,
     /// Compute commentary freshness (O(rows * graph_lookup)); default off.
     pub full: bool,
+}
+
+/// Build a full status snapshot for `repo_root`. Read-only; never takes the
+/// writer lock and never mutates the store.
+pub fn build_status_snapshot(repo_root: &Path, opts: StatusOptions) -> StatusSnapshot {
+    builders::build_status_snapshot_inner(repo_root, opts, builders::GraphStatsLoad::Query)
+}
+
+/// Build a status snapshot with exact node counts but no edge-table scan.
+///
+/// The dashboard never renders edge totals or per-kind buckets, so those
+/// fields are left empty on this TUI-only path.
+pub(crate) fn build_status_snapshot_with_node_stats(
+    repo_root: &Path,
+    opts: StatusOptions,
+) -> StatusSnapshot {
+    builders::build_status_snapshot_inner(repo_root, opts, builders::GraphStatsLoad::NodeQuery)
+}
+
+pub(crate) fn build_status_snapshot_without_graph_stats(
+    repo_root: &Path,
+    opts: StatusOptions,
+) -> StatusSnapshot {
+    builders::build_status_snapshot_inner(repo_root, opts, builders::GraphStatsLoad::Skip)
+}
+
+pub(crate) fn build_status_snapshot_reusing_expensive_fields(
+    repo_root: &Path,
+    previous: &StatusSnapshot,
+) -> StatusSnapshot {
+    let mut snapshot = builders::build_status_snapshot_inner(
+        repo_root,
+        StatusOptions {
+            recent: false,
+            full: false,
+        },
+        builders::GraphStatsLoad::Reuse(previous.graph_stats.clone()),
+    );
+    snapshot.recent_activity = previous.recent_activity.clone();
+    snapshot
 }
 
 /// Sticky-marker state for the repair audit log.

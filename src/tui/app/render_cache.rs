@@ -1,13 +1,8 @@
 //! Cached render inputs that should not be rebuilt every frame.
 
 use std::path::Path;
-use std::time::Instant;
 
-use super::{quick_actions_for, ActiveTab, AppState};
-use crate::surface::refactor_suggestions::{
-    collect_refactor_suggestions_for_repo, RefactorSuggestionOptions,
-};
-use crate::surface::status_snapshot::{build_status_snapshot, StatusOptions};
+use super::AppState;
 use crate::tui::agent_integrations::{
     build_agent_install_display_rows, build_agent_install_statuses,
     summarize_agent_install_statuses, AgentInstallDisplayRow, AgentInstallStatus,
@@ -70,65 +65,6 @@ impl AppState {
         );
         self.integration_display_rows = build_agent_install_display_rows(&integration_status_rows);
         self.preserve_integration_selection(selected_tool.as_deref());
-    }
-
-    /// Load suggestion rows only when the tab needs them.
-    pub(crate) fn ensure_suggestions_loaded(&mut self) {
-        if self.suggestion_report.is_none() {
-            self.load_suggestions(false);
-        }
-    }
-
-    /// Refresh large-file suggestions and show an operator-visible toast.
-    pub(crate) fn refresh_suggestions(&mut self) {
-        self.load_suggestions(true);
-    }
-
-    /// Switch Suggestion-tab mode and rebuild the cached report.
-    pub(crate) fn toggle_suggestion_mode(&mut self) {
-        self.suggestion_mode = self.suggestion_mode.toggled();
-        self.suggestion_report = None;
-        self.load_suggestions(true);
-    }
-
-    fn load_suggestions(&mut self, toast: bool) {
-        match collect_refactor_suggestions_for_repo(
-            &self.repo_root,
-            RefactorSuggestionOptions {
-                mode: self.suggestion_mode,
-                ..RefactorSuggestionOptions::default()
-            },
-        ) {
-            Ok(report) => {
-                let count = report.candidate_count;
-                self.suggestion_report = Some(report);
-                if toast {
-                    let mode = self.suggestion_mode.label();
-                    self.set_toast(format!("suggestions refreshed: {mode}: {count} candidates"));
-                }
-            }
-            Err(error) => {
-                self.suggestion_report = None;
-                self.set_toast(format!("suggestions unavailable: {error}"));
-            }
-        }
-    }
-
-    /// Force a snapshot refresh right now.
-    pub fn refresh_now(&mut self) {
-        self.snapshot = build_status_snapshot(
-            &self.repo_root,
-            StatusOptions {
-                recent: true,
-                full: false,
-            },
-        );
-        self.quick_actions = quick_actions_for(&self.mode, &self.snapshot);
-        self.rebuild_header_vm();
-        if matches!(self.active_tab, ActiveTab::Explain) {
-            self.refresh_explain_preview(false);
-        }
-        self.last_refresh = Instant::now();
     }
 
     /// Push the one-shot welcome banner entry that appears on first transition

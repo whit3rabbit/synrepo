@@ -15,7 +15,7 @@ use crate::{
         repair::{read_repair_log_degraded_marker, resolve_commentary_node, RepairLogDegraded},
     },
     store::{overlay::SqliteOverlayStore, sqlite::SqliteGraphStore},
-    structure::graph::{snapshot, with_graph_read_snapshot, GraphReader},
+    structure::graph::{snapshot, with_graph_read_snapshot},
 };
 
 use super::{
@@ -49,7 +49,10 @@ pub(super) fn current_graph_snapshot_status(repo_root: &Path) -> GraphSnapshotSt
         size_bytes: graph.approx_bytes(),
         file_count: graph.files.len(),
         symbol_count: graph.symbols.len(),
-        edge_count: graph.all_edges().map(|edges| edges.len()).unwrap_or(0),
+        // `GraphReader::all_edges` clones and sorts the complete edge set.
+        // Status only needs a count, and the kind buckets already own each
+        // active edge exactly once.
+        edge_count: graph.edges_by_kind.values().map(Vec::len).sum(),
     }
 }
 
@@ -246,9 +249,18 @@ fn estimate_commentary_freshness(
     )
 }
 
-/// Build a full status snapshot for `repo_root`. Read-only; never takes the
-/// writer lock and never mutates the store.
-pub fn build_status_snapshot(repo_root: &Path, opts: StatusOptions) -> StatusSnapshot {
+pub(super) enum GraphStatsLoad {
+    Query,
+    NodeQuery,
+    Skip,
+    Reuse(Option<crate::store::sqlite::PersistedGraphStats>),
+}
+
+pub(super) fn build_status_snapshot_inner(
+    repo_root: &Path,
+    opts: StatusOptions,
+    graph_stats_load: GraphStatsLoad,
+) -> StatusSnapshot {
     let synrepo_dir = Config::synrepo_dir(repo_root);
 
     let config = match Config::load(repo_root) {
@@ -285,13 +297,30 @@ pub fn build_status_snapshot(repo_root: &Path, opts: StatusOptions) -> StatusSna
     let config_ref = config.as_ref().expect("initialized implies config loaded");
 
     let diagnostics = collect_diagnostics(&synrepo_dir, config_ref);
-    let graph_stats = {
-        let graph_dir = synrepo_dir.join("graph");
-        SqliteGraphStore::open_existing(&graph_dir)
+    let graph_dir = synrepo_dir.join("graph");
+    let graph_db_exists = SqliteGraphStore::db_path(&graph_dir).exists();
+    let graph_stats = match graph_stats_load {
+        GraphStatsLoad::Skip => None,
+        GraphStatsLoad::Reuse(cached) => graph_db_exists.then_some(cached).flatten(),
+        GraphStatsLoad::Query => {
+            SqliteGraphStore::open_existing(&graph_dir)
+                .ok()
+                .and_then(|store| {
+                    with_graph_read_snapshot(&store, |_graph| store.persisted_stats()).ok()
+                })
+        }
+        GraphStatsLoad::NodeQuery => SqliteGraphStore::open_existing(&graph_dir)
             .ok()
             .and_then(|store| {
-                with_graph_read_snapshot(&store, |_graph| store.persisted_stats()).ok()
+                with_graph_read_snapshot(&store, |_graph| store.persisted_node_stats()).ok()
             })
+            .map(|stats| crate::store::sqlite::PersistedGraphStats {
+                file_nodes: stats.file_nodes,
+                symbol_nodes: stats.symbol_nodes,
+                concept_nodes: stats.concept_nodes,
+                total_edges: 0,
+                edge_counts_by_kind: Default::default(),
+            }),
     };
 
     let export_status = build_export_status(repo_root, &synrepo_dir, config_ref);

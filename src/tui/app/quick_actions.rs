@@ -3,7 +3,11 @@ use super::AppMode;
 use crate::surface::status_snapshot::StatusSnapshot;
 use crate::tui::widgets::QuickAction;
 
-pub(super) fn quick_actions_for(mode: &AppMode, snapshot: &StatusSnapshot) -> Vec<QuickAction> {
+pub(super) fn quick_actions_for(
+    mode: &AppMode,
+    snapshot: &StatusSnapshot,
+    graph_store_present: bool,
+) -> Vec<QuickAction> {
     let mut actions = vec![QuickAction {
         key: "r".to_string(),
         label: "refresh snapshot".to_string(),
@@ -13,7 +17,7 @@ pub(super) fn quick_actions_for(mode: &AppMode, snapshot: &StatusSnapshot) -> Ve
         expensive: false,
         command_label: Some("refresh snapshot".to_string()),
     }];
-    if can_generate_graph(snapshot) {
+    if can_generate_graph(snapshot, graph_store_present) {
         actions.push(QuickAction {
             key: "M".to_string(),
             label: "generate graph".to_string(),
@@ -147,8 +151,8 @@ pub(super) fn quick_actions_for(mode: &AppMode, snapshot: &StatusSnapshot) -> Ve
     actions
 }
 
-pub(super) fn can_generate_graph(snapshot: &StatusSnapshot) -> bool {
-    snapshot.initialized && snapshot.graph_stats.is_none()
+pub(super) fn can_generate_graph(snapshot: &StatusSnapshot, graph_store_present: bool) -> bool {
+    snapshot.initialized && snapshot.graph_stats.is_none() && !graph_store_present
 }
 
 fn snapshot_has_pending_compatibility_action(snapshot: &StatusSnapshot) -> bool {

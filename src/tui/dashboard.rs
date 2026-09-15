@@ -17,9 +17,8 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::Terminal;
 
-use crate::bootstrap::runtime_probe::{probe, AgentIntegration};
+use crate::bootstrap::runtime_probe::AgentIntegration;
 use crate::pipeline::watch::WatchEvent;
-use crate::surface::readiness::ReadinessMatrix;
 use crate::tui::app::{poll_key, ActiveTab, AppState, DashboardExit};
 use crate::tui::dashboard::chrome::{draw_command_palette, draw_help, draw_too_small_warning};
 use crate::tui::dashboard_tabs::draw_global_explore_dashboard;
@@ -145,9 +144,8 @@ fn render_loop(terminal: &mut DashboardTerminal, state: &mut AppState) -> anyhow
     while !state.should_exit {
         state.tick();
         terminal.draw(|frame| draw_dashboard(frame, state))?;
-        // Short key-poll budget so the spinner and follow-mode snapping feel
-        // responsive. Snapshot refresh is gated separately on
-        // `snapshot_refresh_interval` inside `tick()`.
+        // Short key-poll budget keeps input and active progress animation
+        // responsive. Idle status work is change-driven inside `tick()`.
         if let Some((code, mods)) = poll_key(state.poll_timeout)? {
             state.handle_key(code, mods);
         }
@@ -263,7 +261,13 @@ fn draw_dashboard(frame: &mut ratatui::Frame, state: &mut AppState) {
         ActiveTab::Health => {
             let mut health_vm = build_health_vm(&state.snapshot);
             override_graph_row_when_materializing(&mut health_vm, &state.materialize_state);
-            append_readiness_rows(&mut health_vm, &state.repo_root, &state.snapshot);
+            if state.graph_store_present && state.snapshot.graph_stats.is_none() {
+                if let Some(row) = health_vm.rows.iter_mut().find(|row| row.label == "graph") {
+                    row.value = "loading graph counts...".to_string();
+                    row.severity = Severity::Healthy;
+                }
+            }
+            append_readiness_rows(&mut health_vm, &state.readiness_rows);
             let health = HealthWidget {
                 vm: &health_vm,
                 theme: &state.theme,
@@ -275,9 +279,6 @@ fn draw_dashboard(frame: &mut ratatui::Frame, state: &mut AppState) {
                 &state.snapshot,
                 &state.integration,
                 NextActionRuntime {
-                    snapshot_refresh_due_in: state
-                        .snapshot_refresh_interval
-                        .saturating_sub(state.last_refresh.elapsed()),
                     auto_sync_enabled: Some(state.auto_sync_enabled),
                     materialize_state: Some(&state.materialize_state),
                     ..NextActionRuntime::default()
@@ -346,8 +347,7 @@ fn draw_dashboard(frame: &mut ratatui::Frame, state: &mut AppState) {
         theme: &state.theme,
         toast: state.active_toast(),
         watch_toggle_label: state.watch_toggle_label(),
-        materialize_hint_visible: state.snapshot.graph_stats.is_none()
-            && state.snapshot.initialized,
+        materialize_hint_visible: !state.graph_store_present && state.snapshot.initialized,
     };
     frame.render_widget(footer, outer[3]);
 }
@@ -370,22 +370,6 @@ fn override_graph_row_when_materializing(vm: &mut HealthVm, state: &MaterializeS
 /// the same degraded/disabled/stale/blocked states that `synrepo status` and
 /// `synrepo doctor` report. Rows are labelled with a `readiness:` prefix so
 /// they do not shadow the existing per-subsystem rows.
-fn append_readiness_rows(
-    vm: &mut HealthVm,
-    repo_root: &std::path::Path,
-    snapshot: &crate::surface::status_snapshot::StatusSnapshot,
-) {
-    if !snapshot.initialized {
-        return;
-    }
-    let probe_report = probe(repo_root);
-    let cfg = snapshot.config.clone().unwrap_or_default();
-    let matrix = ReadinessMatrix::build(repo_root, &probe_report, snapshot, &cfg);
-    for row in &matrix.rows {
-        vm.rows.push(HealthRow {
-            label: format!("readiness:{}", row.capability.as_str()),
-            value: format!("{}: {}", row.state.as_str(), row.detail),
-            severity: row.state.severity(),
-        });
-    }
+fn append_readiness_rows(vm: &mut HealthVm, readiness_rows: &[HealthRow]) {
+    vm.rows.extend_from_slice(readiness_rows);
 }

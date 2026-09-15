@@ -24,8 +24,10 @@ impl AppState {
                     severity: Severity::Healthy,
                 });
                 // Force a refresh so the snapshot picks up the new graph
-                // store immediately rather than waiting for the next tick.
-                self.refresh_now();
+                // store immediately, and invalidate graph-derived panels.
+                self.invalidate_suggestions();
+                self.invalidate_explain_preview();
+                self.refresh_after_action();
             }
             MaterializeOutcome::Failed { error } => {
                 let toast = format!("materialize failed: {error}");
@@ -46,7 +48,7 @@ impl AppState {
     /// to the action so a watch-active repo gets the same `Conflict`
     /// guidance as a manual `M` press.
     pub(super) fn maybe_auto_materialize(&mut self) {
-        if self.snapshot.graph_stats.is_some() {
+        if self.graph_store_present {
             return;
         }
         if self.materializer.is_running() || self.materializer.auto_was_attempted() {

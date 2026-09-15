@@ -15,8 +15,6 @@ use super::{NextAction, Severity};
 /// Runtime-only dashboard context for next-action wording.
 #[derive(Clone, Copy, Debug)]
 pub struct NextActionRuntime<'a> {
-    /// Time until the dashboard will rebuild its status snapshot.
-    pub snapshot_refresh_due_in: Duration,
     /// Dashboard's cached runtime auto-sync flag, if available.
     pub auto_sync_enabled: Option<bool>,
     /// Current graph materialization state, if the dashboard owns one.
@@ -28,7 +26,6 @@ pub struct NextActionRuntime<'a> {
 impl Default for NextActionRuntime<'_> {
     fn default() -> Self {
         Self {
-            snapshot_refresh_due_in: Duration::ZERO,
             auto_sync_enabled: None,
             materialize_state: None,
             now: OffsetDateTime::now_utc(),
@@ -67,11 +64,7 @@ pub fn build_next_actions_with_context(
     if let Some(d) = &snapshot.diagnostics {
         match &d.reconcile_health {
             ReconcileHealth::Stale(_) | ReconcileHealth::Unknown => {
-                out.push(reconcile_action(
-                    &d.watch_status,
-                    &d.writer_status,
-                    runtime.snapshot_refresh_due_in,
-                ));
+                out.push(reconcile_action(&d.watch_status, &d.writer_status));
             }
             ReconcileHealth::WatchStalled { .. } => {
                 out.push(NextAction {
@@ -243,19 +236,14 @@ fn graph_action(materialize_state: Option<&MaterializeState>) -> NextAction {
     }
 }
 
-fn reconcile_action(
-    watch_status: &WatchServiceStatus,
-    writer_status: &WriterStatus,
-    due_in: Duration,
-) -> NextAction {
+fn reconcile_action(watch_status: &WatchServiceStatus, writer_status: &WriterStatus) -> NextAction {
     match watch_status {
         WatchServiceStatus::Running(_) | WatchServiceStatus::Starting => {
-            let wait = countdown_label(due_in);
             let label = match writer_status {
                 WriterStatus::HeldByOther { pid } => {
-                    format!("Watch reconcile waiting on writer lock held by pid {pid}, checking again in {wait}")
+                    format!("Watch reconcile waiting on writer lock held by pid {pid}")
                 }
-                _ => format!("Watch reconcile pending, checking again in {wait}"),
+                _ => "Watch reconcile pending; waiting for repository changes".to_string(),
             };
             NextAction {
                 label,
@@ -313,10 +301,7 @@ fn export_auto_action(
         };
     }
     NextAction {
-        label: format!(
-            "Context export refresh is automatic, checking again in {}",
-            countdown_label(runtime.snapshot_refresh_due_in)
-        ),
+        label: "Context export refresh is automatic; waiting for watch update".to_string(),
         severity: Severity::Stale,
     }
 }
@@ -357,15 +342,6 @@ fn add_integration_action(out: &mut Vec<NextAction>, integration: &AgentIntegrat
 
 fn integration_target_label(target: AgentTargetKind) -> &'static str {
     target.as_str()
-}
-
-fn countdown_label(duration: Duration) -> String {
-    let millis = duration.as_millis();
-    if millis == 0 {
-        return "now".to_string();
-    }
-    let secs = millis.div_ceil(1000);
-    format!("{secs}s")
 }
 
 fn elapsed_label(duration: Duration) -> String {

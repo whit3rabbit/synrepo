@@ -5,7 +5,7 @@ use std::fs;
 use std::{
     io::BufReader,
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
         mpsc, Arc,
     },
     thread,
@@ -25,6 +25,42 @@ use super::{
     loop_message::LoopMessage,
 };
 use crate::pipeline::repair::SyncOptions;
+
+const MAX_CONTROL_CLIENTS: usize = 32;
+
+struct ControlClientPermit {
+    active: Arc<AtomicUsize>,
+}
+
+impl ControlClientPermit {
+    fn acquire(active: &Arc<AtomicUsize>) -> Option<Self> {
+        let mut current = active.load(Ordering::Acquire);
+        loop {
+            if current >= MAX_CONTROL_CLIENTS {
+                return None;
+            }
+            match active.compare_exchange_weak(
+                current,
+                current + 1,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => {
+                    return Some(Self {
+                        active: active.clone(),
+                    })
+                }
+                Err(observed) => current = observed,
+            }
+        }
+    }
+}
+
+impl Drop for ControlClientPermit {
+    fn drop(&mut self) {
+        self.active.fetch_sub(1, Ordering::AcqRel);
+    }
+}
 
 /// Bind the watch control socket using `endpoint` as the canonical path.
 ///
@@ -65,9 +101,17 @@ pub(super) fn spawn_control_listener(
         })?;
 
     Ok(thread::spawn(move || {
+        let active_clients = Arc::new(AtomicUsize::new(0));
         while !stop_flag.load(Ordering::Relaxed) {
             match listener.accept() {
                 Ok(stream) => {
+                    let Some(client_permit) = ControlClientPermit::acquire(&active_clients) else {
+                        let response = WatchControlResponse::Error {
+                            message: "watch control plane is busy; retry shortly".to_string(),
+                        };
+                        let _ = write_control_response(&stream, &endpoint, &response);
+                        continue;
+                    };
                     // Prevent abandoned connections from blocking a handler
                     // thread forever while waiting for a newline-framed request.
                     set_stream_read_timeout(&stream, Duration::from_secs(5));
@@ -80,10 +124,13 @@ pub(super) fn spawn_control_listener(
                     let endpoint = endpoint.clone();
 
                     let sync_timeout = Duration::from_secs(sync_timeout_seconds as u64);
-                    thread::spawn(move || {
-                        let mut reader = BufReader::new(&stream);
-                        let request_result = read_control_request(&mut reader, &endpoint);
-                        let response = match request_result {
+                    let spawn_result = thread::Builder::new()
+                        .name("synrepo-watch-control".to_string())
+                        .spawn(move || {
+                            let _client_permit = client_permit;
+                            let mut reader = BufReader::new(&stream);
+                            let request_result = read_control_request(&mut reader, &endpoint);
+                            let response = match request_result {
                             Ok(WatchControlRequest::Status) => WatchControlResponse::Status {
                                 snapshot: state_handle.snapshot(),
                             },
@@ -116,11 +163,15 @@ pub(super) fn spawn_control_listener(
                             Err(error) => WatchControlResponse::Error {
                                 message: error.to_string(),
                             },
-                        };
-                        if let Err(error) = write_control_response(&stream, &endpoint, &response) {
-                            tracing::warn!(error = %error, "failed to write watch control response");
-                        }
-                    });
+                            };
+                            if let Err(error) = write_control_response(&stream, &endpoint, &response)
+                            {
+                                tracing::warn!(error = %error, "failed to write watch control response");
+                            }
+                        });
+                    if let Err(error) = spawn_result {
+                        tracing::warn!(error = %error, "failed to spawn watch control handler");
+                    }
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                     thread::sleep(Duration::from_millis(50));
@@ -246,4 +297,21 @@ fn bridge_embeddings_build_request(
         .unwrap_or_else(|_| WatchControlResponse::Error {
             message: "watch loop did not answer the embeddings build request in time".to_string(),
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn control_client_permits_are_bounded_and_reusable() {
+        let active = Arc::new(AtomicUsize::new(0));
+        let permits: Vec<_> = (0..MAX_CONTROL_CLIENTS)
+            .map(|_| ControlClientPermit::acquire(&active).expect("permit should be available"))
+            .collect();
+
+        assert!(ControlClientPermit::acquire(&active).is_none());
+        drop(permits);
+        assert!(ControlClientPermit::acquire(&active).is_some());
+    }
 }

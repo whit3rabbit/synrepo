@@ -208,3 +208,14 @@ pub struct CompileSummary {
     /// Wall-clock time in milliseconds.
     pub elapsed_ms: u64,
 }
+
+impl CompileSummary {
+    /// Whether this pass emitted graph observations that can change derived
+    /// indexes. Discovery and elapsed-time counters alone are not mutations.
+    pub fn graph_changed(&self) -> bool {
+        self.files_parsed > 0
+            || self.symbols_extracted > 0
+            || self.edges_added > 0
+            || self.concept_nodes_emitted > 0
+    }
+}

@@ -93,7 +93,11 @@ pub(crate) struct ProjectPickerState {
     pub(crate) detach_confirm: Option<String>,
 }
 
-/// Global shell over project-scoped dashboard states.
+/// Global shell over the active project-scoped dashboard state.
+///
+/// The map intentionally contains at most one entry. Retaining every visited
+/// project kept completed snapshot payloads, telemetry receivers, and any
+/// still-running scan worker alive for the rest of the global TUI session.
 pub(crate) struct GlobalAppState {
     pub(crate) projects: Vec<ProjectRef>,
     pub(crate) active_project_id: Option<String>,
@@ -159,6 +163,7 @@ impl GlobalAppState {
         };
         registry::mark_project_opened(&project.id)?;
         self.active_project_id = Some(project.id.clone());
+        self.project_states.retain(|id, _| id == &project.id);
         if !self.project_states.contains_key(&project.id) {
             let report = probe(&project.root);
             let mut app =
@@ -168,6 +173,7 @@ impl GlobalAppState {
             app.rebuild_header_vm();
             self.project_states.insert(project.id.clone(), app);
         }
+        debug_assert!(self.project_states.len() <= 1);
         self.picker = None;
         self.help_visible = false;
         self.command_palette = None;
@@ -177,7 +183,6 @@ impl GlobalAppState {
             active.picker = None;
             active.set_toast(format!("Switched to {}", project.name));
         }
-        self.refresh_projects()?;
         Ok(())
     }
 

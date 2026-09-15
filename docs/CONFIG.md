@@ -27,6 +27,7 @@ Runtime config lives in `.synrepo/config.toml`; the struct is `Config` in `src/c
 | `[explain].commentary_concurrency` | `4` | Concurrent commentary provider calls during refresh; clamped to at least `1` |
 | `mcp_sentry_telemetry` | unset (`false`) | Optional MCP failed-tool Sentry telemetry policy. `true` opts in using the built-in Sentry DSN unless `SYNREPO_SENTRY_DSN` overrides it; `false` explicitly opts out and can override a user-global opt-in |
 | `auto_sync_enabled` | `true` | Run watch-owned automatic maintenance after reconcile: cheap repair surfaces after every completed pass, plus existing embedding-index refresh after source changes once the repo is quiet |
+| `reconcile_keepalive_seconds` | `0` | Disabled by default. A positive value opts into a periodic fast reconcile to recover from missed filesystem notifications |
 
 ## Notes
 
@@ -37,6 +38,7 @@ Runtime config lives in `.synrepo/config.toml`; the struct is `Config` in `src/c
 - `max_graph_snapshot_bytes` is enforced at publication time. Oversized snapshots are not published, so readers fall back to the SQLite path; set to `0` to disable publication entirely.
 - `redact_globs` is hard: matched files are never indexed and never reach any parser, so they cannot leak into cards, exports, or overlay candidates.
 - `auto_sync_enabled` is read once at watch startup and seeds an in-process atomic flag. The dashboard `A` keybinding flips that atomic for the running watch service but does NOT rewrite this file. To change the default persistently, edit `config.toml` and restart watch. The repair allow-list is hard-coded (`CHEAP_AUTO_SYNC_SURFACES` in `src/pipeline/repair/sync/mod.rs`); commentary refresh and other token-cost surfaces are never auto-run.
+- `reconcile_keepalive_seconds` defaults to `0`, so an idle watch service does not rescan or reindex the repository. A positive value is an explicit recovery policy for environments where filesystem notifications may be lost.
 - Embeddings are optional and disabled by default. See `docs/EMBEDDINGS.md` for provider setup, dashboard toggling, model choices, and benchmark interpretation.
 - Semantic query paths never download model artifacts. `synrepo embeddings build` is the explicit first vector-build surface; `synrepo_task_route` and `synrepo_search` use semantic behavior only when the vector index and configured local backend are available.
 - When watch auto-sync is enabled, a successful source-changing reconcile marks an existing embedding index stale. Watch refreshes it after the repo has been quiet for 30 seconds, no sync is running, and the semantic feature, semantic config, and existing vector index are all available. It does not create the first index and uses only cached/local provider assets.

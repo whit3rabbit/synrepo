@@ -178,8 +178,6 @@ fn repos_tab_reuses_recent_project_cache() {
         integration: "absent".to_string(),
         last_opened_at: None,
     }];
-    state.explore_projects_loaded_at = Some(std::time::Instant::now());
-
     state.set_tab(ActiveTab::Repos);
 
     assert_eq!(state.explore_projects.len(), 1);

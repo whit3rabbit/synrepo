@@ -131,7 +131,6 @@ impl AppState {
                 }
                 KeyCode::Char('r') => {
                     self.refresh_explain_preview(true);
-                    self.set_toast("explain status refreshed");
                     return true;
                 }
                 KeyCode::Char('a') => {
@@ -220,12 +219,8 @@ impl AppState {
         }
         match code {
             KeyCode::Char('r') => {
-                self.refresh_now();
-                let counts = match self.snapshot.graph_stats.as_ref() {
-                    Some(g) => format!("{} files, {} symbols", g.file_nodes, g.symbol_nodes),
-                    None => "no graph data".to_string(),
-                };
-                self.set_toast(format!("refreshed: {counts}"));
+                self.request_full_snapshot_refresh(true);
+                self.set_toast("refreshing snapshot in background");
                 true
             }
             KeyCode::Char('R') => self.handle_reconcile_now(),
@@ -262,7 +257,7 @@ impl AppState {
             }
             KeyCode::Char('W') => self.open_quick_confirm(PendingQuickConfirm::ToggleWorktrees),
             KeyCode::Char('M') | KeyCode::Char('m') => {
-                if can_generate_graph(&self.snapshot) {
+                if can_generate_graph(&self.snapshot, self.graph_store_present) {
                     self.open_quick_confirm(PendingQuickConfirm::MaterializeGraph)
                 } else {
                     self.set_toast(

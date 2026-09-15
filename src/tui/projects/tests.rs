@@ -26,7 +26,7 @@ fn make_partial_project(path: &std::path::Path) {
 }
 
 #[test]
-fn switch_project_clears_transients_and_preserves_project_states() {
+fn switch_project_drops_inactive_state_and_its_worker_channels() {
     let (_lock, _home, _guard) = home_guard();
     let first = tempdir().unwrap();
     let second = tempdir().unwrap();
@@ -50,10 +50,9 @@ fn switch_project_clears_transients_and_preserves_project_states() {
 
     state.switch_project(&second_entry.id).unwrap();
 
-    let first_state = state.project_states.get(&first_entry.id).unwrap();
-    assert!(first_state.pending_explain.is_empty());
-    assert!(first_state.confirm_stop_watch.is_none());
+    assert!(!state.project_states.contains_key(&first_entry.id));
     assert!(state.project_states.contains_key(&second_entry.id));
+    assert_eq!(state.project_states.len(), 1);
     assert_eq!(
         state.active_project_id.as_deref(),
         Some(second_entry.id.as_str())
@@ -62,7 +61,7 @@ fn switch_project_clears_transients_and_preserves_project_states() {
     let active_name = active.project_name.as_ref().unwrap();
     assert!(
         active.header_vm.repo_display.starts_with(active_name),
-        "cached header should include active project name: {:?}",
+        "active header should include active project name: {:?}",
         active.header_vm.repo_display
     );
 }

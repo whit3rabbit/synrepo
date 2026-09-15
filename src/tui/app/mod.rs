@@ -3,6 +3,7 @@
 //! rendering still lives in `wizard.rs`; this module only owns the loop.
 
 mod action_handlers;
+mod background_actions;
 mod confirm_enable_explain;
 mod confirm_stop_watch;
 mod event_drain;
@@ -16,7 +17,10 @@ mod key_handlers;
 mod materialize_lifecycle;
 mod quick_actions;
 mod render_cache;
+mod snapshot_refresh;
 mod state_impl;
+mod status_changes;
+mod suggestion_loader;
 mod view_state;
 mod watch_events;
 
@@ -43,7 +47,7 @@ use std::time::{Duration, Instant};
 use crossbeam_channel::Receiver;
 
 use crate::bootstrap::runtime_probe::{AgentIntegration, AgentTargetKind};
-use crate::pipeline::explain::telemetry::ExplainEvent;
+use crate::pipeline::explain::telemetry::ExplainSubscription;
 use crate::pipeline::watch::WatchEvent;
 use crate::surface::refactor_suggestions::{RefactorSuggestionMode, RefactorSuggestionReport};
 use crate::tui::agent_integrations::AgentInstallDisplayRow;
@@ -129,8 +133,12 @@ pub struct AppState {
     /// Current probe-derived agent integration signal. Refreshed on each
     /// snapshot rebuild.
     pub integration: AgentIntegration,
-    /// Most recent status snapshot; refreshed every poll tick.
+    /// Most recent status snapshot; refreshed after source-state changes.
     pub snapshot: StatusSnapshot,
+    /// Cheap materialization probe used while exact graph counts load.
+    pub(crate) graph_store_present: bool,
+    /// Capability rows cached outside the render loop.
+    pub(crate) readiness_rows: Vec<crate::tui::probe::HealthRow>,
     /// Cached header labels rebuilt when the snapshot or project identity
     /// changes.
     pub header_vm: HeaderVm,
@@ -146,10 +154,14 @@ pub struct AppState {
     pub suggestion_report: Option<RefactorSuggestionReport>,
     /// Active suggestion mode for the Suggestion tab.
     pub suggestion_mode: RefactorSuggestionMode,
+    /// Single-flight result channel for repository-wide suggestion scans.
+    suggestion_rx: Option<Receiver<suggestion_loader::SuggestionLoadResult>>,
+    /// Whether the current suggestion load should announce its result.
+    suggestion_toast_pending: bool,
+    /// A graph change arrived while a suggestion scan was in flight.
+    suggestion_reload_pending: bool,
     /// Registry-backed project rows shown by the Repos tab.
     pub(crate) explore_projects: Vec<ProjectRef>,
-    /// Last time Repos-tab project metadata was probed.
-    pub(crate) explore_projects_loaded_at: Option<Instant>,
     /// Selected Repos-tab row.
     pub(crate) explore_selected: usize,
     /// Explicit dashboard restart target requested from the Repos tab.
@@ -188,6 +200,12 @@ pub struct AppState {
     pub(crate) generate_commentary: Option<GenerateCommentaryState>,
     /// Cached explain-status preview used by the Explain tab.
     pub explain_preview: Option<ExplainPreviewPanel>,
+    /// Single-flight result channel for the repository-wide Explain preview.
+    explain_preview_rx: Option<Receiver<ExplainPreviewPanel>>,
+    /// Whether a manual refresh arrived while an Explain preview was loading.
+    explain_preview_refresh_pending: bool,
+    /// Whether the next Explain preview result should announce completion.
+    explain_preview_toast_pending: bool,
     /// Currently selected dashboard tab.
     pub active_tab: ActiveTab,
     /// Rows-up-from-bottom for the Live tab. `0` pins the view to the newest
@@ -202,6 +220,8 @@ pub struct AppState {
     /// True between a `ReconcileStarted` and its matching
     /// `ReconcileFinished`/`Error`. Drives whether the header spinner renders.
     pub reconcile_active: bool,
+    /// Single-flight result channel for long-running dashboard actions.
+    background_action_rx: Option<Receiver<background_actions::BackgroundActionResult>>,
     /// Cached auto-sync flag reflecting the last ack from the watch service.
     /// Seeded from `Config::auto_sync_enabled` at TUI startup; flipped by the
     /// `A` keybinding when the watch service acknowledges the control request.
@@ -210,15 +230,16 @@ pub struct AppState {
     /// How long `poll_key` waits for a key event before returning. Set short
     /// so the spinner and snapshot refresh feel live.
     pub poll_timeout: Duration,
-    /// Cadence at which file-based status snapshots are rebuilt. Independent
-    /// of `poll_timeout` so the spinner can redraw at 10 Hz while the
-    /// expensive snapshot refresh stays at 2 s.
-    pub snapshot_refresh_interval: Duration,
-    /// Last time we rebuilt the snapshot.
-    pub(crate) last_refresh: Instant,
-    /// How long a cached explain preview stays fresh while the Explain
-    /// tab is open before we recompute it.
-    pub explain_preview_refresh_interval: Duration,
+    /// Metadata-only invalidation detector for status inputs. It never opens
+    /// a graph store or starts indexing on its own.
+    status_change_detector: status_changes::StatusChangeDetector,
+    /// Single-flight background snapshot loader.
+    snapshot_refresher: snapshot_refresh::SnapshotRefresher,
+    /// One coalesced refresh requested while the worker was busy. Full
+    /// refreshes take precedence over cached operational updates.
+    snapshot_refresh_pending: Option<snapshot_refresh::SnapshotRefreshMode>,
+    /// Whether the next full result should show manual-refresh confirmation.
+    pub(crate) manual_snapshot_refresh: bool,
     /// Transient footer message. Set by `r` so a refresh gives the operator
     /// confirmation even when the snapshot was already current.
     pub(crate) toast: Option<(String, Instant)>,
@@ -229,7 +250,7 @@ pub struct AppState {
     /// Process-global explain event stream. Present in both poll and live
     /// modes: if the user triggers explain from within the TUI host (future)
     /// or any other in-process call site fires, the events merge into the log.
-    pub(crate) explain_rx: Receiver<ExplainEvent>,
+    pub(crate) explain_rx: ExplainSubscription,
     /// Background-thread supervisor for the auto/manual `bootstrap()` path
     /// that materializes the graph when the dashboard observes
     /// `graph_stats.is_none()`. Lifecycle is owned by the dashboard: the
