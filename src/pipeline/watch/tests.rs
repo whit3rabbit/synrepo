@@ -50,7 +50,6 @@ pub(super) fn wait_for(mut predicate: impl FnMut() -> bool, timeout: Duration) {
     panic!("condition was not met within {:?}", timeout);
 }
 
-#[cfg(unix)]
 pub(super) fn request_mutation_when_idle(
     synrepo_dir: &std::path::Path,
     request: crate::pipeline::watch::WatchControlRequest,

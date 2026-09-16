@@ -1,5 +1,5 @@
 use super::*;
-use std::{fs, path::Path, time::Duration};
+use std::{fs, time::Duration};
 
 use tempfile::tempdir;
 
@@ -238,7 +238,7 @@ fn st_available_invokes_version() {
 }
 
 #[cfg(unix)]
-fn write_fake_st(repo: &Path, trailer: &str) -> std::path::PathBuf {
+fn write_fake_st(repo: &std::path::Path, trailer: &str) -> std::path::PathBuf {
     use std::os::unix::fs::PermissionsExt;
 
     let bin_dir = repo.join(".fake-bin");
