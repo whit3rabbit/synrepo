@@ -355,6 +355,7 @@ mod tests {
         assert!(control_endpoint_reachable(&synrepo_dir));
     }
 
+    #[cfg(unix)]
     #[test]
     fn request_times_out_when_daemon_never_responds() {
         let tempdir = tempfile::tempdir().unwrap();
