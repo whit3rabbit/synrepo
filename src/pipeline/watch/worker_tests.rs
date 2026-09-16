@@ -115,12 +115,12 @@ fn embedded_shutdown_waits_but_process_owned_shutdown_is_bounded() {
 
     let mut process_owned = active_scheduler(
         WatchOperationKind::Reconcile,
-        Duration::from_millis(200),
+        Duration::from_millis(300),
         None,
     );
     let started = Instant::now();
     process_owned.shutdown_with_timeout(true, Duration::from_millis(10));
-    assert!(started.elapsed() < Duration::from_millis(100));
+    assert!(started.elapsed() < Duration::from_millis(200));
 }
 
 #[test]

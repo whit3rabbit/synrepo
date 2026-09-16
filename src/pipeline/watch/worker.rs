@@ -309,7 +309,8 @@ impl WatchOperationScheduler {
 
         let deadline = Instant::now() + timeout;
         while !active.handle.is_finished() && Instant::now() < deadline {
-            thread::sleep(Duration::from_millis(50));
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            thread::sleep(Duration::from_millis(10).min(remaining));
         }
         if active.handle.is_finished() {
             let _ = active.handle.join();
