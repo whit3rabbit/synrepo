@@ -36,10 +36,22 @@ pub fn post_edit_diagnostics(
 fn reconcile_after_edit(state: &SynrepoState, synrepo_dir: &std::path::Path) -> serde_json::Value {
     match watch_service_status(synrepo_dir) {
         WatchServiceStatus::Running(watch) => {
-            match request_watch_control(
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            let mut response = request_watch_control(
                 synrepo_dir,
                 WatchControlRequest::ReconcileNow { fast: false },
-            ) {
+            );
+            while let Ok(WatchControlResponse::Error { message }) = &response {
+                if !message.contains("busy") || std::time::Instant::now() >= deadline {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(25));
+                response = request_watch_control(
+                    synrepo_dir,
+                    WatchControlRequest::ReconcileNow { fast: false },
+                );
+            }
+            match response {
                 Ok(WatchControlResponse::Reconcile {
                     outcome,
                     triggering_events,

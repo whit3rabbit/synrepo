@@ -12,7 +12,10 @@ an existing section untouched.
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-09-15
+
 ### Fixed
+- Fixed watch test race conditions and MCP post-edit diagnostics by having mutation requests retry during transient watch service busy windows.
 - The dashboard's confirm-stop-watch modal (triggered by explain while the watch daemon holds the writer lock) no longer runs the watch stop inline on the UI thread; it now dispatches through the background action worker so the dashboard stays responsive (`y`/`n`/`q` respond immediately), and a failed stop restores the modal instead of re-arming after a silent 30-second freeze.
 - Watch control timeout policy is now selected from the request variant: fast requests use a 5-second client I/O bound, while reconcile, sync, and embedding clients wait for the control bridge's operation-specific bound.
 - Watch-owned reconcile, sync, and embedding work now shares one global mutation worker. The coordinator continues serving control traffic and coalescing filesystem changes, and refuses a second manual mutation with an actionable busy error instead of blocking behind it.

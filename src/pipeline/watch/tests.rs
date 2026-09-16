@@ -62,7 +62,7 @@ pub(super) fn request_mutation_when_idle(
         let response = request_watch_control(synrepo_dir, request.clone()).unwrap();
         if !matches!(
             &response,
-            WatchControlResponse::Error { message } if message.contains("busy with")
+            WatchControlResponse::Error { message } if message.contains("busy")
         ) {
             return response;
         }

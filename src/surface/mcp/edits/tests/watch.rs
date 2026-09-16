@@ -46,7 +46,17 @@ fn watch_active_apply_delegates_reconcile() {
     });
     wait_for_watch(&synrepo_dir);
     wait_for_writer_lock_free(&synrepo_dir);
-    drain_watch_events(&event_rx);
+    let startup_deadline = std::time::Instant::now() + Duration::from_secs(5);
+    while std::time::Instant::now() < startup_deadline {
+        let events = drain_watch_events(&event_rx);
+        if events
+            .iter()
+            .any(|e| matches!(e, WatchEvent::ReconcileFinished { .. }))
+        {
+            break;
+        }
+        thread::sleep(Duration::from_millis(25));
+    }
 
     let prepared = prepare(
         &state,
@@ -104,6 +114,7 @@ fn wait_for_watch(synrepo_dir: &std::path::Path) {
             watch_service_status(synrepo_dir),
             WatchServiceStatus::Running(_)
         ) && control_endpoint_reachable(synrepo_dir)
+            && crate::pipeline::watch::load_reconcile_state(synrepo_dir).is_ok()
         {
             return;
         }

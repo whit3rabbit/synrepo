@@ -7,7 +7,7 @@ use crate::pipeline::watch::{
     WatchControlResponse, WatchServiceMode, WatchServiceStatus,
 };
 
-use super::{setup_test_repo, wait_for, watch_service_guard};
+use super::{request_mutation_when_idle, setup_test_repo, wait_for, watch_service_guard};
 
 #[test]
 fn active_watch_accepts_embedding_build_request() {
@@ -40,8 +40,8 @@ fn active_watch_accepts_embedding_build_request() {
         Duration::from_secs(5),
     );
 
-    let response = request_watch_control(&synrepo_dir, WatchControlRequest::EmbeddingsBuildNow)
-        .expect("watch should answer embedding build requests");
+    let response =
+        request_mutation_when_idle(&synrepo_dir, WatchControlRequest::EmbeddingsBuildNow);
     match response {
         WatchControlResponse::EmbeddingsBuild { .. } => {}
         WatchControlResponse::Error { message } => {
@@ -105,11 +105,10 @@ fn delegated_source_reconcile_marks_existing_embedding_index_stale() {
     )
     .unwrap();
 
-    let response = request_watch_control(
+    let response = request_mutation_when_idle(
         &synrepo_dir,
         WatchControlRequest::ReconcileNow { fast: true },
-    )
-    .expect("watch should answer reconcile requests");
+    );
     assert!(
         matches!(response, WatchControlResponse::Reconcile { .. }),
         "expected reconcile response, got {response:?}"

@@ -136,11 +136,10 @@ fn watch_service_records_lock_conflict_when_writer_lock_is_held() {
     };
     let _flock = crate::pipeline::writer::hold_writer_flock_with_ownership(&lock_path, &owner);
 
-    let response = request_watch_control(
+    let response = request_mutation_when_idle(
         &synrepo_dir,
         WatchControlRequest::ReconcileNow { fast: false },
-    )
-    .unwrap();
+    );
     match response {
         WatchControlResponse::Reconcile { outcome, .. } => {
             assert_eq!(outcome.as_str(), "lock-conflict");

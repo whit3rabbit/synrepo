@@ -20,7 +20,7 @@ use crate::{
     store::compatibility::GRAPH_FORMAT_VERSION,
 };
 
-use super::{setup_test_repo, wait_for, watch_service_guard};
+use super::{request_mutation_when_idle, setup_test_repo, wait_for, watch_service_guard};
 
 #[test]
 fn watch_auto_sync_repairs_stale_export_after_startup_reconcile() {
@@ -209,11 +209,10 @@ fn wait_for_service(synrepo_dir: &std::path::Path) {
 }
 
 fn request_reconcile(synrepo_dir: &std::path::Path) {
-    let response = request_watch_control(
+    let response = request_mutation_when_idle(
         synrepo_dir,
         WatchControlRequest::ReconcileNow { fast: false },
-    )
-    .expect("request reconcile");
+    );
     assert!(
         matches!(response, WatchControlResponse::Reconcile { .. }),
         "expected reconcile response, got {response:?}"
