@@ -10,11 +10,11 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::home_dir;
 use crate::pipeline::writer::now_rfc3339;
 mod install_records;
 pub mod io;
 mod project_meta;
+mod project_relink;
 
 pub use install_records::{
     record_agent_hooks, record_agent_uninstall, record_binary, record_binary_uninstall,
@@ -22,9 +22,10 @@ pub use install_records::{
     record_uninstall_progress, UninstallProgress,
 };
 pub use project_meta::{
-    default_project_name, derive_project_id, mark_project_opened, rename_project, resolve_project,
-    ProjectResolutionError,
+    default_project_name, derive_project_id, mark_project_opened, prune_missing_projects,
+    rename_project, resolve_project, ProjectResolutionError,
 };
+pub use project_relink::{relink_project, relocation_candidates, RelinkOutcome};
 
 use project_meta::{ensure_project_identity, new_project_entry};
 
@@ -178,7 +179,7 @@ fn default_agent_scope() -> String {
 /// Unix/Windows, possible in bare containers). Callers should treat this as
 /// "registry disabled" and fall back to filesystem scanning.
 pub fn registry_path() -> Option<PathBuf> {
-    home_dir().map(|h| h.join(".synrepo").join("projects.toml"))
+    io::registry_path()
 }
 
 /// Load the registry from the default path (`~/.synrepo/projects.toml`).
@@ -234,6 +235,7 @@ pub fn record_project(project: &Path) -> anyhow::Result<ProjectEntry> {
         ensure_project_identity(existing);
         existing.last_opened_at = Some(now_rfc3339());
         let entry = existing.clone();
+        project_relink::write_identity_if_initialized(&entry)?;
         io::save_to(&path, &registry)?;
         return Ok(entry);
     }
@@ -241,6 +243,7 @@ pub fn record_project(project: &Path) -> anyhow::Result<ProjectEntry> {
     let mut entry = new_project_entry(canonical, false);
     entry.last_opened_at = Some(now_rfc3339());
     registry.projects.push(entry.clone());
+    project_relink::write_identity_if_initialized(&entry)?;
     io::save_to(&path, &registry)?;
     Ok(entry)
 }
@@ -266,8 +269,11 @@ pub fn record_install(project: &Path, root_gitignore_added: bool) -> anyhow::Res
         None => {
             registry
                 .projects
-                .push(new_project_entry(canonical, root_gitignore_added));
+                .push(new_project_entry(canonical.clone(), root_gitignore_added));
         }
+    }
+    if let Some(entry) = find_project(&registry, &canonical) {
+        project_relink::write_identity_if_initialized(entry)?;
     }
     io::save_to(&path, &registry)
 }

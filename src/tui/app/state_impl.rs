@@ -126,6 +126,7 @@ impl AppState {
             suggestion_reload_pending: false,
             explore_projects: Vec::new(),
             explore_selected: 0,
+            repo_manage_prompt: None,
             switch_project_root: None,
             should_exit: false,
             launch_integration: None,

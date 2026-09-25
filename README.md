@@ -123,7 +123,7 @@ cd /path/to/another-repo
 synrepo project add .
 ```
 
-`synrepo project add [path]` bootstraps `.synrepo/` if needed, verifies the repo is ready, and records it in the registry. Use `synrepo project list`, `inspect`, `remove`, `use`, `rename`, and `prune-missing` to manage that registry. `synrepo project prune-missing` is a dry run unless `--apply` is passed.
+`synrepo project add [path]` bootstraps `.synrepo/` if needed, verifies the repo is ready, and records it in the registry. Use `synrepo project list`, `inspect`, `remove`, `use`, `rename`, `relink`, and `prune-missing` to manage that registry. `synrepo project relink <id-or-old-path> <new-path>` preserves the registered identity and install records after a folder move. In the TUI's Repos tab, select a row and press `n` to rename its alias, `d` to detach, or `l` to relink, or press `P` to preview and prune all missing entries. Each removal needs confirmation. The startup project picker uses `r` for rename and the same `d`, `l`, and `P` actions. `synrepo project prune-missing` is a dry run unless `--apply` is passed; it never deletes repository data.
 
 Within one repo, use `docs/CONFIG.md` to tune discovery. The relevant defaults are `include_worktrees = true`, `include_submodules = false`, `branch_roots.refs = []`, and `roots = ["."]`.
 
@@ -212,6 +212,7 @@ Use `synrepo uninstall` for the guided full teardown across projects, integratio
 | `synrepo agent-setup <tool>` | Regenerate only the skill or instructions file |
 | `synrepo project add [path]` | Register and bootstrap another managed project for global MCP |
 | `synrepo project list` | List managed projects and current health |
+| `synrepo project relink <selector> <new-path>` | Move a registry entry to an initialized repository path |
 | `synrepo project inspect [path]` | Check whether a repo is managed and ready |
 | `synrepo project prune-missing [--apply]` | Dry-run or apply cleanup for missing managed repos |
 | `synrepo watch --daemon` | Keep the repo model fresh in the background |

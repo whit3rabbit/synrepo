@@ -71,6 +71,43 @@ fn watch_service_handles_status_reconcile_and_stop() {
     handle.join().unwrap();
 }
 
+#[cfg(unix)]
+#[test]
+fn watch_service_exits_when_repository_root_moves() {
+    let _guard = watch_service_guard();
+    let (_dir, repo, config, synrepo_dir) = setup_test_repo();
+    let destination_parent = tempfile::tempdir().unwrap();
+    let moved = destination_parent.path().join("moved");
+    let service_repo = repo.clone();
+    let service_synrepo = synrepo_dir.clone();
+    let handle = thread::spawn(move || {
+        run_watch_service(
+            &service_repo,
+            &config,
+            &WatchConfig::default(),
+            &service_synrepo,
+            WatchServiceMode::Foreground,
+            None,
+        )
+    });
+    wait_for(
+        || {
+            matches!(
+                super::super::watch_service_status(&synrepo_dir),
+                WatchServiceStatus::Running(_)
+            ) && super::super::watch_socket_path(&synrepo_dir).exists()
+        },
+        Duration::from_secs(5),
+    );
+    fs::rename(&repo, &moved).unwrap();
+    wait_for(|| handle.is_finished(), Duration::from_secs(30));
+    let _ = handle.join().unwrap();
+    assert!(!matches!(
+        super::super::watch_service_status(&moved.join(".synrepo")),
+        WatchServiceStatus::Running(_)
+    ));
+}
+
 #[test]
 fn stop_bridge_acknowledges_without_waiting_for_loop_reply() {
     let stop_flag = Arc::new(AtomicBool::new(false));

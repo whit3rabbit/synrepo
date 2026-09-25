@@ -1,11 +1,13 @@
 //! Global project dashboard state and registry-backed project picker.
 
 mod explore;
+mod management;
 mod palette;
 mod picker;
 mod rename;
 mod watch;
 
+pub(crate) use management::{apply_repo_management, RepoManagementKey, RepoManagementPrompt};
 pub(crate) use palette::CommandPaletteState;
 
 use std::collections::HashMap;
@@ -41,16 +43,25 @@ pub(crate) struct ProjectRef {
 
 impl ProjectRef {
     fn from_entry(entry: &ProjectEntry) -> Option<Self> {
-        let report = probe(&entry.path);
-        let health = match &report.classification {
-            RuntimeClassification::Ready => "ready".to_string(),
-            RuntimeClassification::Uninitialized => return None,
-            RuntimeClassification::Partial { missing } => {
-                format!("partial: {}", missing.len())
+        let health = if !entry.path.exists() {
+            "missing".to_string()
+        } else {
+            let report = probe(&entry.path);
+            match &report.classification {
+                RuntimeClassification::Ready => "ready".to_string(),
+                RuntimeClassification::Uninitialized => "uninitialized".to_string(),
+                RuntimeClassification::Partial { missing } => {
+                    format!("partial: {}", missing.len())
+                }
             }
         };
+        let missing = health == "missing";
         let synrepo_dir = Config::synrepo_dir(&entry.path);
-        let watch_status = watch_service_status(&synrepo_dir);
+        let watch_status = if missing {
+            WatchServiceStatus::Inactive
+        } else {
+            watch_service_status(&synrepo_dir)
+        };
         let watch = match &watch_status {
             WatchServiceStatus::Running(state) => format!("on:{}", state.pid),
             WatchServiceStatus::Starting => "starting".to_string(),
@@ -58,13 +69,16 @@ impl ProjectRef {
             WatchServiceStatus::Stale(_) => "stale".to_string(),
             WatchServiceStatus::Corrupt(_) => "corrupt".to_string(),
         };
-        let lock = live_owner_pid(&synrepo_dir)
+        let lock = (!missing)
+            .then(|| live_owner_pid(&synrepo_dir))
+            .flatten()
             .map(|pid| format!("pid:{pid}"))
             .unwrap_or_else(|| "free".to_string());
-        let integration_summary =
-            summarize_agent_install_statuses(&build_agent_install_statuses(&entry.path));
-        let branches = Config::load(&entry.path)
-            .ok()
+        let integration_summary = (!missing)
+            .then(|| summarize_agent_install_statuses(&build_agent_install_statuses(&entry.path)));
+        let branches = (!missing)
+            .then(|| Config::load(&entry.path))
+            .and_then(Result::ok)
             .map(|config| {
                 BranchRootsStatus::inspect(&entry.path, &config, Some(&watch_status))
                     .compact_label()
@@ -78,7 +92,9 @@ impl ProjectRef {
             watch,
             branches,
             lock,
-            integration: integration_summary.label,
+            integration: integration_summary
+                .map(|summary| summary.label)
+                .unwrap_or_else(|| "unknown".to_string()),
             last_opened_at: entry.last_opened_at.clone(),
         })
     }
@@ -91,6 +107,7 @@ pub(crate) struct ProjectPickerState {
     pub(crate) selected: usize,
     pub(crate) rename_input: Option<String>,
     pub(crate) detach_confirm: Option<String>,
+    pub(crate) relink_input: Option<(String, String)>,
 }
 
 /// Global shell over the active project-scoped dashboard state.
@@ -109,6 +126,8 @@ pub(crate) struct GlobalAppState {
     pub(crate) cwd: PathBuf,
     pub(crate) theme: Theme,
     pub(crate) should_exit: bool,
+    pub(crate) picker_message: Option<String>,
+    pub(crate) manage_prompt: Option<RepoManagementPrompt>,
 }
 
 impl GlobalAppState {
@@ -125,10 +144,19 @@ impl GlobalAppState {
             cwd: cwd.to_path_buf(),
             theme,
             should_exit: false,
+            picker_message: None,
+            manage_prompt: None,
         };
         if !open_picker {
-            if let Some(first) = state.projects.first().cloned() {
+            if let Some(first) = state
+                .projects
+                .iter()
+                .find(|project| project.health != "missing")
+                .cloned()
+            {
                 state.switch_project(&first.id)?;
+            } else {
+                state.picker = Some(ProjectPickerState::default());
             }
         }
         Ok(state)
@@ -161,6 +189,11 @@ impl GlobalAppState {
         let Some(project) = self.projects.iter().find(|p| p.id == project_id).cloned() else {
             anyhow::bail!("unknown project id: {project_id}");
         };
+        anyhow::ensure!(
+            project.health != "missing",
+            "project path is missing: {}",
+            project.root.display()
+        );
         registry::mark_project_opened(&project.id)?;
         self.active_project_id = Some(project.id.clone());
         self.project_states.retain(|id, _| id == &project.id);
@@ -199,6 +232,9 @@ impl GlobalAppState {
     }
 
     pub(crate) fn handle_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> bool {
+        if self.manage_prompt.is_some() {
+            return self.handle_manage_prompt_key(code, modifiers);
+        }
         if self.help_visible {
             self.help_visible = false;
             return true;
@@ -269,9 +305,11 @@ impl GlobalAppState {
     }
 
     pub(crate) fn set_active_toast(&mut self, msg: impl Into<String>) {
+        let msg = msg.into();
         if let Some(active) = self.active_state_mut() {
-            active.set_toast(msg);
+            active.set_toast(msg.clone());
         }
+        self.picker_message = Some(msg);
     }
 
     pub(crate) fn filtered_projects(&self) -> Vec<&ProjectRef> {
@@ -310,10 +348,14 @@ pub(crate) fn load_project_refs() -> anyhow::Result<Vec<ProjectRef>> {
         .filter_map(ProjectRef::from_entry)
         .collect();
     projects.sort_by(|a, b| {
-        b.last_opened_at
-            .cmp(&a.last_opened_at)
-            .then_with(|| a.name.cmp(&b.name))
-            .then_with(|| a.root.cmp(&b.root))
+        (a.health == "missing")
+            .cmp(&(b.health == "missing"))
+            .then_with(|| {
+                b.last_opened_at
+                    .cmp(&a.last_opened_at)
+                    .then_with(|| a.name.cmp(&b.name))
+                    .then_with(|| a.root.cmp(&b.root))
+            })
     });
     Ok(projects)
 }

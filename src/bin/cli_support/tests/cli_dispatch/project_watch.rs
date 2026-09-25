@@ -47,6 +47,12 @@ fn project_subcommands_parse() {
         rename.command,
         Some(Command::Project(ProjectCommand::Rename { .. }))
     ));
+
+    let relink = parse(&["project", "relink", "proj_abc", "/tmp/moved"]);
+    assert!(matches!(
+        relink.command,
+        Some(Command::Project(ProjectCommand::Relink { .. }))
+    ));
 }
 
 #[test]

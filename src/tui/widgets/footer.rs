@@ -145,6 +145,15 @@ impl FooterWidget<'_> {
                 ],
             });
         }
+        if matches!(self.active, ActiveTab::Repos) {
+            groups.push(HintGroup {
+                priority: 3,
+                spans: vec![
+                    Span::styled("  manage ", self.theme.muted_style()),
+                    Span::styled("[Enter/r/w/n/d/l/P]", self.theme.agent_style()),
+                ],
+            });
+        }
         if matches!(self.active, ActiveTab::Explain) {
             // Tab-scoped: surface the explain run + docs keys so an operator
             // on the Explain tab can see the available actions without having

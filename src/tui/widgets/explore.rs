@@ -5,7 +5,7 @@ use ratatui::layout::Rect;
 use ratatui::text::Line;
 use ratatui::widgets::{Block, Borders, List, Paragraph, Widget};
 
-use crate::tui::projects::ProjectRef;
+use crate::tui::projects::{ProjectRef, RepoManagementPrompt};
 use crate::tui::theme::Theme;
 use crate::tui::widgets::projects::project_row;
 
@@ -19,12 +19,18 @@ pub(crate) struct ExploreTabWidget<'a> {
     pub(crate) active_project_id: Option<&'a str>,
     /// Active project root, used by single-project dashboards.
     pub(crate) active_root: Option<&'a std::path::Path>,
+    /// Active registry confirmation or path input.
+    pub(crate) prompt: Option<&'a RepoManagementPrompt>,
     /// Active theme.
     pub(crate) theme: &'a Theme,
 }
 
 impl Widget for ExploreTabWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
+        if let Some(prompt) = self.prompt {
+            render_repo_management_prompt(prompt, area, buf, self.theme);
+            return;
+        }
         let block = Block::default()
             .title(" repos ")
             .borders(Borders::ALL)
@@ -60,5 +66,55 @@ impl Widget for ExploreTabWidget<'_> {
             })
             .collect::<Vec<_>>();
         List::new(items).block(block).render(area, buf);
+    }
+}
+
+pub(crate) fn render_repo_management_prompt(
+    prompt: &RepoManagementPrompt,
+    area: Rect,
+    buf: &mut Buffer,
+    theme: &Theme,
+) {
+    let lines = prompt
+        .lines()
+        .into_iter()
+        .map(|line| Line::from(format!("  {line}")))
+        .collect::<Vec<_>>();
+    Paragraph::new(lines)
+        .block(
+            Block::default()
+                .title(prompt.title())
+                .borders(Borders::ALL)
+                .border_style(theme.border_style()),
+        )
+        .style(theme.base_style())
+        .render(area, buf);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn prune_prompt_shows_count_sample_and_confirmation() {
+        let prompt = RepoManagementPrompt::Prune {
+            count: 3,
+            sample: vec![PathBuf::from("/tmp/old-project")],
+        };
+        let area = Rect::new(0, 0, 80, 12);
+        let mut buf = Buffer::empty(area);
+        render_repo_management_prompt(&prompt, area, &mut buf, &Theme::plain());
+        let rendered = (0..area.height)
+            .map(|y| {
+                (0..area.width)
+                    .map(|x| buf[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(rendered.contains("Unregister 3 missing"), "{rendered}");
+        assert!(rendered.contains("/tmp/old-project"), "{rendered}");
+        assert!(rendered.contains("Enter/y: prune"), "{rendered}");
     }
 }

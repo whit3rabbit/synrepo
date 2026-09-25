@@ -15,9 +15,10 @@ pub(super) fn draw_help(frame: &mut ratatui::Frame, theme: Theme) {
         Line::from("[p] projects    [?] help    [:] command launcher    [q] quit"),
         Line::from("[Tab/Shift-Tab/Left/Right/1-8] tabs  [Esc] Live/cancel  [r] refresh"),
         Line::from("Actions [4]: run dashboard commands and review next actions"),
+        Line::from("Repos [1]: Enter open, r refresh, w watch, n rename, d detach, l relink, P prune"),
         Line::from("Explain: r refresh, a all stale, c changed, f folders, d/D/x/X docs"),
         Line::from(
-            "Project picker: filter, Enter switch, r rename, a add cwd, d detach confirm, w watch",
+            "Project picker: filter, Enter switch, r rename, l relink path, a add cwd, d detach, P prune, w watch",
         ),
     ];
     let paragraph = Paragraph::new(lines).block(block).style(theme.base_style());

@@ -9,6 +9,7 @@ use tempfile::tempdir;
 use super::{io, AgentEntry, AgentHookEntry, HookEntry, ProjectEntry, Registry, SCHEMA_VERSION};
 
 mod io_basics;
+mod relink;
 mod syntext;
 
 fn sample_project(path: &Path) -> ProjectEntry {

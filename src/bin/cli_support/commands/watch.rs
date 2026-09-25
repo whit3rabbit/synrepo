@@ -11,9 +11,10 @@ use std::os::unix::process::CommandExt;
 use synrepo::{
     config::Config,
     pipeline::watch::{
-        cleanup_stale_watch_artifacts, request_watch_control, run_watch_service,
-        run_watch_service_process_owned, watch_service_status, WatchConfig, WatchControlRequest,
-        WatchControlResponse, WatchDaemonState, WatchServiceMode, WatchServiceStatus,
+        cleanup_stale_watch_artifacts, recover_unreachable_watch, request_watch_control,
+        run_watch_service, run_watch_service_process_owned, watch_service_status, WatchConfig,
+        WatchControlRequest, WatchControlResponse, WatchDaemonState, WatchServiceMode,
+        WatchServiceStatus,
     },
 };
 
@@ -193,7 +194,13 @@ fn recover_stop_transport_error(
             );
             Ok(())
         }
-        WatchServiceStatus::Running(_) => Err(anyhow::anyhow!("stop request failed: {err}")),
+        WatchServiceStatus::Running(state) => {
+            recover_unreachable_watch(synrepo_dir, &state).map_err(|recovery| {
+                anyhow::anyhow!("stop request failed: {err}; recovery failed: {recovery}")
+            })?;
+            println!("Stopped verified watch daemon (pid {}).", state.pid);
+            Ok(())
+        }
     }
 }
 

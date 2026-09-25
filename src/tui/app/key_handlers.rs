@@ -11,6 +11,9 @@ use super::{ActiveTab, AppState, ExplainMode, PendingQuickConfirm};
 impl AppState {
     /// Handle a key event. Returns true when the event was consumed.
     pub fn handle_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> bool {
+        if self.repo_manage_prompt.is_some() {
+            return self.handle_repo_management_key(code, modifiers);
+        }
         // Confirm-stop-watch modal takes precedence: it is a blocking decision
         // point ("stop watch and run explain?") that must be answered before
         // any other key can have effect. Tab switches and global quit fall

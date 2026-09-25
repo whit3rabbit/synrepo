@@ -3,8 +3,9 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crate::pipeline::watch::{
-    cleanup_stale_watch_artifacts, control_endpoint_reachable, request_watch_control,
-    watch_service_status, WatchControlRequest, WatchControlResponse, WatchServiceStatus,
+    cleanup_stale_watch_artifacts, control_endpoint_reachable, recover_unreachable_watch,
+    request_watch_control, watch_service_status, WatchControlRequest, WatchControlResponse,
+    WatchServiceStatus,
 };
 
 use super::helpers::load_repo_config;
@@ -289,8 +290,15 @@ pub(super) fn recover_stop_transport_error(
                 },
             }
         }
-        WatchServiceStatus::Running(_) => ActionOutcome::Error {
-            message: format!("stop request failed: {err}"),
-        },
+        WatchServiceStatus::Running(state) => {
+            match recover_unreachable_watch(&ctx.synrepo_dir, &state) {
+                Ok(()) => ActionOutcome::Completed {
+                    message: format!("stopped verified watch daemon (pid {})", state.pid),
+                },
+                Err(recovery) => ActionOutcome::Error {
+                    message: format!("stop request failed: {err}; recovery failed: {recovery}"),
+                },
+            }
+        }
     }
 }

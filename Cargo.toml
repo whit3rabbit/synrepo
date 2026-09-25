@@ -4,7 +4,7 @@ members = ["."]
 
 [package]
 name = "synrepo"
-version = "0.2.2"
+version = "0.3.0"
 edition = "2021"
 description = "A context compiler for AI coding agents"
 license = "MIT"
@@ -58,6 +58,7 @@ notify = "8"                # cross-platform file watcher for phase 2+
 notify-debouncer-full = "0.7"
 fs2 = "0.4"                 # cross-platform advisory file locking (flock / LockFileEx) for the writer lock
 interprocess = "2"          # local_socket: Unix socket on Unix, named pipe on Windows. Blocking API only.
+same-file = "1"             # Detect a watched root moved or replaced while the daemon runs.
 
 # --- Git integration ---
 gix = { version = "0.87", default-features = false, features = ["sha1", "max-performance-safe", "revision", "blob-diff"] }
@@ -129,6 +130,7 @@ tokenizers = { version = "0.23.1", optional = true, default-features = false, fe
 ndarray = { version = "0.17.2", optional = true }
 
 [target.'cfg(unix)'.dependencies]
+signal-hook = "0.3"         # Graceful SIGTERM fallback when a daemon socket is gone.
 # Needed for O_CLOEXEC on the writer lock file open so child processes do not
 # inherit the advisory lock. Already a transitive dep.
 libc = "0.2"

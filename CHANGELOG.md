@@ -12,6 +12,19 @@ an existing section untouched.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-24
+
+### Added
+- `synrepo project relink <selector> <new-path>` moves a registered project to its new location while preserving its ID and install history. Persisted project identity allows the TUI to suggest matching renamed directories.
+- The first dashboard tab and project picker show missing projects and let you rename, relink, detach, or confirm a bulk prune without deleting repository files.
+
+### Changed
+- `synrepo project prune-missing --apply` removes confirmed missing entries with one registry load and atomic save. Test runs keep temporary repositories out of the home registry.
+- A watch service exits through its normal shutdown path when its repository root moves or is replaced.
+
+### Fixed
+- `synrepo watch stop` and the TUI stop action can recover a detached daemon whose control socket is gone. Recovery verifies the lease holder's user, executable, arguments, and start time before signaling it, then waits for the lease to release.
+
 ## [0.2.2] - 2026-09-15
 
 ### Fixed

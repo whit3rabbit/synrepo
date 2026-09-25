@@ -2,7 +2,7 @@ use crossterm::event::{KeyCode, KeyModifiers};
 
 use crate::registry;
 
-use super::{GlobalAppState, ProjectPickerState};
+use super::{GlobalAppState, ProjectPickerState, RepoManagementPrompt};
 
 impl GlobalAppState {
     pub(super) fn handle_picker_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> bool {
@@ -13,6 +13,14 @@ impl GlobalAppState {
             .is_some()
         {
             return self.handle_picker_detach_confirm_key(code, modifiers);
+        }
+        if self
+            .picker
+            .as_ref()
+            .and_then(|picker| picker.relink_input.as_ref())
+            .is_some()
+        {
+            return self.handle_picker_relink_key(code, modifiers);
         }
         if code == KeyCode::Char('c') && modifiers.contains(KeyModifiers::CONTROL) {
             self.should_exit = true;
@@ -46,7 +54,13 @@ impl GlobalAppState {
             }
             KeyCode::Enter => {
                 if let Some(project) = self.selected_project().cloned() {
-                    let _ = self.switch_project(&project.id);
+                    if project.health == "missing" {
+                        self.set_active_toast(
+                            "project path is missing; press l to relink or d to detach",
+                        );
+                    } else if let Err(error) = self.switch_project(&project.id) {
+                        self.set_active_toast(format!("project open failed: {error}"));
+                    }
                 } else {
                     self.set_active_toast("no matching project to open");
                 }
@@ -86,6 +100,23 @@ impl GlobalAppState {
                 self.toggle_selected_project_watch();
                 true
             }
+            KeyCode::Char('l') => {
+                if let Some(project) = self.selected_project().cloned() {
+                    let entry = registry::resolve_project(&project.id);
+                    let candidate = entry
+                        .ok()
+                        .and_then(|entry| {
+                            let candidates = registry::relocation_candidates(&entry);
+                            (candidates.len() == 1).then(|| candidates[0].display().to_string())
+                        })
+                        .unwrap_or_default();
+                    if let Some(picker) = self.picker.as_mut() {
+                        picker.relink_input = Some((project.id, candidate));
+                    }
+                    self.set_active_toast("enter the new project path, then press Enter");
+                }
+                true
+            }
             KeyCode::Char('d') => {
                 if let Some(project) = self.selected_project().cloned() {
                     if let Some(picker) = self.picker.as_mut() {
@@ -97,6 +128,14 @@ impl GlobalAppState {
                     ));
                 } else {
                     self.set_active_toast("no matching project to detach");
+                }
+                true
+            }
+            KeyCode::Char('P') => {
+                match RepoManagementPrompt::prune() {
+                    Ok(Some(prompt)) => self.manage_prompt = Some(prompt),
+                    Ok(None) => self.set_active_toast("No missing projects to prune"),
+                    Err(error) => self.set_active_toast(format!("prune preview: {error}")),
                 }
                 true
             }
@@ -164,5 +203,43 @@ impl GlobalAppState {
             }
             Err(err) => self.set_active_toast(format!("project detach failed: {err}")),
         }
+    }
+
+    fn handle_picker_relink_key(&mut self, code: KeyCode, modifiers: KeyModifiers) -> bool {
+        if code == KeyCode::Char('c') && modifiers.contains(KeyModifiers::CONTROL) {
+            self.picker.as_mut().unwrap().relink_input = None;
+            return true;
+        }
+        match code {
+            KeyCode::Esc => self.picker.as_mut().unwrap().relink_input = None,
+            KeyCode::Backspace => {
+                if let Some((_, input)) = self.picker.as_mut().unwrap().relink_input.as_mut() {
+                    input.pop();
+                }
+            }
+            KeyCode::Enter => {
+                let (id, input) = self.picker.as_ref().unwrap().relink_input.clone().unwrap();
+                if input.trim().is_empty() {
+                    self.set_active_toast("enter an existing project path");
+                    return true;
+                }
+                match registry::relink_project(&id, std::path::Path::new(input.trim())) {
+                    Ok(outcome) => {
+                        self.picker.as_mut().unwrap().relink_input = None;
+                        let _ = self.refresh_projects();
+                        self.clamp_picker_selection();
+                        self.set_active_toast(format!("Relinked {}", outcome.entry.display_name()));
+                    }
+                    Err(error) => self.set_active_toast(format!("project relink failed: {error}")),
+                }
+            }
+            KeyCode::Char(ch) if !modifiers.contains(KeyModifiers::CONTROL) => {
+                if let Some((_, input)) = self.picker.as_mut().unwrap().relink_input.as_mut() {
+                    input.push(ch);
+                }
+            }
+            _ => {}
+        }
+        true
     }
 }

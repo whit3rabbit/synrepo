@@ -263,6 +263,23 @@ pub(crate) fn project_remove(repo_root: &Path, path: Option<PathBuf>) -> anyhow:
     Ok(())
 }
 
+pub(crate) fn project_relink(selector: &str, new_path: &Path) -> anyhow::Result<()> {
+    let outcome = registry::relink_project(selector, new_path)?;
+    println!(
+        "Project relinked: {}\n  id: {}\n  old path: {}\n  new path: {}\n  moved install records: {}\n  repaired owned integrations: {}",
+        outcome.entry.display_name(),
+        outcome.entry.effective_id(),
+        outcome.old_path.display(),
+        outcome.entry.path.display(),
+        outcome.updated_records,
+        outcome.repaired_integrations
+    );
+    for path in outcome.manual_repairs {
+        println!("  inspect old-path reference in: {}", path.display());
+    }
+    Ok(())
+}
+
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn project_remove_output(
     repo_root: &Path,

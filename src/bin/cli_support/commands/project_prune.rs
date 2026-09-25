@@ -28,13 +28,19 @@ pub(crate) fn project_prune_missing(apply: bool, json: bool) -> anyhow::Result<(
 
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn project_prune_missing_output(apply: bool, json: bool) -> anyhow::Result<String> {
-    let missing_projects = missing_projects()?;
-
-    if apply {
-        for project in &missing_projects {
-            registry::remove_project(&project.path)?;
-        }
-    }
+    let missing_projects = if apply {
+        registry::prune_missing_projects()?
+            .into_iter()
+            .map(|entry| MissingProject {
+                health: project_health(&entry.path),
+                path: entry.path.clone(),
+                registry: entry,
+                detail: "path does not exist",
+            })
+            .collect()
+    } else {
+        missing_projects()?
+    };
 
     if json {
         return Ok(format!(

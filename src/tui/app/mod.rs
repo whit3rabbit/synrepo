@@ -164,6 +164,8 @@ pub struct AppState {
     pub(crate) explore_projects: Vec<ProjectRef>,
     /// Selected Repos-tab row.
     pub(crate) explore_selected: usize,
+    /// Confirmation or path input for a registry action on the Repos tab.
+    pub(crate) repo_manage_prompt: Option<crate::tui::projects::RepoManagementPrompt>,
     /// Explicit dashboard restart target requested from the Repos tab.
     pub(crate) switch_project_root: Option<PathBuf>,
     /// When set, render loop should exit after the current draw.

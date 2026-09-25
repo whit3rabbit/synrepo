@@ -26,56 +26,13 @@ use super::{
     lease::{acquire_watch_daemon_lease, WatchServiceMode},
     loop_message::LoopMessage,
     pending::PendingWatchChanges,
+    root_lifecycle::{identify_root, register_daemon_stop_signal, root_unchanged},
     suppression::SuppressedPaths,
     sync::emit_event,
     worker::{ReconcileWork, WatchOperation, WatchOperationContext, WatchOperationScheduler},
 };
 
-/// Run the watch service in the current process.
-pub fn run_watch_service(
-    repo_root: &Path,
-    config: &Config,
-    watch_config: &WatchConfig,
-    synrepo_dir: &Path,
-    mode: WatchServiceMode,
-    events: Option<crossbeam_channel::Sender<WatchEvent>>,
-) -> crate::Result<()> {
-    run_watch_service_with_shutdown(
-        repo_root,
-        config,
-        watch_config,
-        synrepo_dir,
-        mode,
-        events,
-        false,
-    )
-}
-
-/// Run the detached-daemon variant of the service.
-/// Unlike the embedded path, this may stop waiting for a stuck worker after a
-/// bounded shutdown delay because the daemon process exits immediately after
-/// this function returns.
-#[doc(hidden)]
-pub fn run_watch_service_process_owned(
-    repo_root: &Path,
-    config: &Config,
-    watch_config: &WatchConfig,
-    synrepo_dir: &Path,
-    mode: WatchServiceMode,
-    events: Option<crossbeam_channel::Sender<WatchEvent>>,
-) -> crate::Result<()> {
-    run_watch_service_with_shutdown(
-        repo_root,
-        config,
-        watch_config,
-        synrepo_dir,
-        mode,
-        events,
-        true,
-    )
-}
-
-fn run_watch_service_with_shutdown(
+pub(super) fn run_watch_service_with_shutdown(
     repo_root: &Path,
     config: &Config,
     watch_config: &WatchConfig,
@@ -84,10 +41,12 @@ fn run_watch_service_with_shutdown(
     events: Option<crossbeam_channel::Sender<WatchEvent>>,
     process_exits_after_return: bool,
 ) -> crate::Result<()> {
+    let root_identity = identify_root(repo_root)?;
     let (_lease, state_handle) = acquire_watch_daemon_lease(synrepo_dir, mode)
         .map_err(|error| crate::Error::Other(anyhow::anyhow!(error.to_string())))?;
 
     let stop_flag = Arc::new(AtomicBool::new(false));
+    register_daemon_stop_signal(mode, stop_flag.clone())?;
     let auto_sync_enabled = Arc::new(AtomicBool::new(config.auto_sync_enabled));
     let auto_sync_blocked = Arc::new(AtomicBool::new(false));
     let mut embedding_refresh = EmbeddingRefreshScheduler::default();
@@ -220,6 +179,15 @@ fn run_watch_service_with_shutdown(
     let keepalive_interval = config.reconcile_keepalive_seconds;
 
     loop {
+        if stop_flag.load(Ordering::Relaxed) {
+            break;
+        }
+        // A rename can leave the original path recreated by other commands.
+        // Stop before scheduling more work against that replacement directory.
+        if !root_unchanged(repo_root, &root_identity) {
+            tracing::warn!(path = %repo_root.display(), "watch root moved or replaced; stopping");
+            break;
+        }
         if let Some(completion) = operations.reap_finished() {
             handle_completion(
                 completion,

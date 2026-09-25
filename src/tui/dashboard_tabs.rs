@@ -54,6 +54,7 @@ pub(crate) fn draw_global_explore_dashboard(
             active_root: state
                 .active_state()
                 .map(|active| active.repo_root.as_path()),
+            prompt: state.manage_prompt.as_ref(),
             theme: &active.theme,
         },
         outer[2],

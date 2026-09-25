@@ -133,6 +133,13 @@ pub(crate) enum ProjectCommand {
         /// Repository path. Defaults to the current repo root.
         path: Option<PathBuf>,
     },
+    /// Move a managed project entry to its new repository path.
+    Relink {
+        /// Existing project ID, display name, or old path.
+        selector: String,
+        /// Existing initialized repository directory.
+        new_path: PathBuf,
+    },
     /// Report stale managed projects. Dry-run unless --apply is passed.
     PruneMissing {
         #[arg(long, help = "Unregister missing projects from the global registry")]

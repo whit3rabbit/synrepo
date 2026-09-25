@@ -239,3 +239,9 @@ Useful focused tests live in:
 - `src/tui/watcher/tests.rs`
 - `src/bin/cli_support/tests/dashboard_parity.rs`
 - `src/tui/tests.rs`
+
+# Project moves and watch recovery
+
+The Repos tab and project picker retain missing registered paths. On Repos, `n` edits the selected alias, `d` previews detaching the selected entry, `l` opens a relink path prompt, and `P` previews all missing entries before one bulk prune. Enter or `y` confirms removal; Esc or `n` cancels. The picker also accepts `P`. Detach and prune only change the user registry. A single matching project identity in a sibling directory may prefill the relink path; Enter confirms it. Relinking preserves the registry ID and owned install records. The Repos tab blocks opening or watching a missing path and shows integration references that need manual review after relink.
+
+The watch loop compares the current repository directory with the directory it started on. If the root moves or is replaced, it stops before scheduling another operation. When a detached daemon still holds its lease but its control socket is unreachable, CLI and TUI stop verify the lease holder's user, executable, command, and start time before sending SIGTERM. They wait for the lease to release before cleaning stale artifacts. A verification failure leaves the process running and reports the cause.

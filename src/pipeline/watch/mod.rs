@@ -19,7 +19,10 @@ mod pending;
 mod post_compile;
 pub(crate) mod reconcile;
 mod reconcile_state;
+mod recovery;
+mod root_lifecycle;
 mod service;
+mod service_entry;
 mod status;
 mod suppression;
 mod sync;
@@ -45,9 +48,10 @@ pub use reconcile_state::{
     load_reconcile_state, persist_reconcile_attempt_state, persist_reconcile_state,
     reconcile_state_path, ReconcileState, ReconcileStateError,
 };
-pub use service::run_watch_service;
+pub use recovery::recover_unreachable_watch;
+pub use service_entry::run_watch_service;
 #[doc(hidden)]
-pub use service::run_watch_service_process_owned;
+pub use service_entry::run_watch_service_process_owned;
 
 /// Run the watch loop in the foreground.
 pub fn run_watch_loop(

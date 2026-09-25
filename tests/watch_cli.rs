@@ -231,6 +231,23 @@ fn daemon_watch_delegates_reconcile_and_surfaces_status() {
     assert!(status.contains("watch:        daemon mode"));
 }
 
+#[cfg(target_os = "macos")]
+#[test]
+fn daemon_with_unlinked_socket_can_be_stopped_and_init_unblocked() {
+    let repo = init_repo();
+    let _guard = WatchGuard::daemon(repo.path());
+    let state = synrepo::pipeline::watch::load_watch_state(&repo.path().join(".synrepo")).unwrap();
+    fs::remove_file(&state.control_endpoint).unwrap();
+
+    let stopped = run_ok(repo.path(), &["watch", "stop"]);
+    assert!(
+        stopped.contains("Stopped verified watch daemon"),
+        "{stopped}"
+    );
+    wait_for_output(repo.path(), &["watch", "status"], "state:        inactive");
+    run_ok(repo.path(), &["init"]);
+}
+
 #[cfg(unix)]
 #[test]
 fn daemon_watch_updates_lexical_index_after_source_change() {

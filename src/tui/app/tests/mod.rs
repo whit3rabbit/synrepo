@@ -8,6 +8,7 @@ mod explain_setup;
 mod integrations;
 mod materialize;
 mod picker;
+mod repo_management;
 mod semantic;
 mod sentry_telemetry;
 mod state;

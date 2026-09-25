@@ -87,7 +87,8 @@ pub(crate) use notes::{
 #[cfg(test)]
 pub(crate) use notes::{notes_add_output, notes_list_output};
 pub(crate) use project::{
-    project_add, project_inspect, project_list, project_remove, project_rename, project_use,
+    project_add, project_inspect, project_list, project_relink, project_remove, project_rename,
+    project_use,
 };
 #[cfg(test)]
 pub(crate) use project::{

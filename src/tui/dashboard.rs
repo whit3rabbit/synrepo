@@ -326,6 +326,7 @@ fn draw_dashboard(frame: &mut ratatui::Frame, state: &mut AppState) {
                 selected: state.explore_selected_index(),
                 active_project_id: state.project_id.as_deref(),
                 active_root: Some(state.repo_root.as_path()),
+                prompt: state.repo_manage_prompt.as_ref(),
                 theme: &state.theme,
             };
             frame.render_widget(explore, content_area);

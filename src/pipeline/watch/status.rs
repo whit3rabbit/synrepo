@@ -73,6 +73,7 @@ pub fn watch_service_status(synrepo_dir: &std::path::Path) -> WatchServiceStatus
 pub fn cleanup_stale_watch_artifacts(
     synrepo_dir: &std::path::Path,
 ) -> Result<bool, WatchDaemonError> {
+    let flock_path = watch_flock_path(synrepo_dir);
     match watch_service_status(synrepo_dir) {
         WatchServiceStatus::Running(_) | WatchServiceStatus::Starting => Ok(false),
         WatchServiceStatus::Inactive => {
@@ -80,6 +81,23 @@ pub fn cleanup_stale_watch_artifacts(
             remove_ignore_missing(watch_socket_path(synrepo_dir))
         }
         WatchServiceStatus::Stale(_) | WatchServiceStatus::Corrupt(_) => {
+            // A malformed state file can still belong to a live lease holder.
+            // Never unlink its lock file while another process holds it.
+            if flock_path.exists() {
+                let file = fs::OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .open(&flock_path)
+                    .map_err(|source| WatchDaemonError::Io {
+                        path: flock_path.clone(),
+                        source,
+                    })?;
+                if file.try_lock_exclusive().is_err() {
+                    return Err(WatchDaemonError::Control(
+                        "watch lease is still held; refusing stale cleanup".to_string(),
+                    ));
+                }
+            }
             remove_ignore_missing(watch_daemon_state_path(synrepo_dir))?;
             remove_ignore_missing(watch_flock_path(synrepo_dir))?;
             remove_ignore_missing(watch_socket_path(synrepo_dir))?;

@@ -7,6 +7,7 @@ use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph, Widget};
 
 use crate::tui::projects::{GlobalAppState, ProjectRef};
 use crate::tui::theme::Theme;
+use crate::tui::widgets::explore::render_repo_management_prompt;
 
 /// Render the global project picker.
 pub(crate) struct ProjectPickerWidget<'a> {
@@ -18,8 +19,15 @@ pub(crate) struct ProjectPickerWidget<'a> {
 
 impl Widget for ProjectPickerWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer) {
+        if let Some(prompt) = self.state.manage_prompt.as_ref() {
+            render_repo_management_prompt(prompt, area, buf, self.theme);
+            return;
+        }
         let picker = self.state.picker.as_ref();
-        let title = if picker
+        let title = if let Some((_, input)) = picker.and_then(|picker| picker.relink_input.as_ref())
+        {
+            format!(" relink path: {input} ")
+        } else if picker
             .and_then(|picker| picker.detach_confirm.as_ref())
             .is_some()
         {
@@ -29,7 +37,11 @@ impl Widget for ProjectPickerWidget<'_> {
         } else if let Some(picker) = picker.filter(|picker| !picker.filter.is_empty()) {
             format!(" projects /{} ", picker.filter)
         } else {
-            " projects ".to_string()
+            self.state
+                .picker_message
+                .as_ref()
+                .map(|message| format!(" projects: {message} "))
+                .unwrap_or_else(|| " projects ".to_string())
         };
         let block = Block::default()
             .title(title)
@@ -86,6 +98,14 @@ pub(crate) fn project_row(
     } else {
         theme.base_style()
     };
+    if project.health == "missing" {
+        return ListItem::new(Line::from(vec![
+            Span::styled(format!("{marker:<2}"), style),
+            Span::styled(format!("{:<18}", project.name), style),
+            Span::styled(" health:missing ", theme.muted_style()),
+            Span::styled(project.root.display().to_string(), theme.muted_style()),
+        ]));
+    }
     ListItem::new(Line::from(vec![
         Span::styled(format!("{marker:<2}"), style),
         Span::styled(format!("{:<18}", project.name), style),
@@ -131,6 +151,8 @@ mod tests {
             cwd: PathBuf::from("/tmp"),
             theme,
             should_exit: false,
+            picker_message: None,
+            manage_prompt: None,
         };
         let area = Rect::new(0, 0, 60, 5);
         let mut buf = Buffer::empty(area);
@@ -179,5 +201,29 @@ mod tests {
             .join("\n");
 
         assert!(rendered.contains("branches:2/2 @30s"), "{rendered}");
+    }
+
+    #[test]
+    fn missing_project_row_shows_path_before_secondary_columns() {
+        let theme = Theme::plain();
+        let project = ProjectRef {
+            id: "gone".to_string(),
+            name: "gone".to_string(),
+            root: PathBuf::from("/tmp/moved-project"),
+            health: "missing".to_string(),
+            watch: "off".to_string(),
+            branches: "none".to_string(),
+            lock: "free".to_string(),
+            integration: "absent".to_string(),
+            last_opened_at: None,
+        };
+        let area = Rect::new(0, 0, 80, 1);
+        let mut buf = Buffer::empty(area);
+        List::new(vec![project_row(&project, false, false, &theme)]).render(area, &mut buf);
+        let rendered = (0..area.width)
+            .map(|x| buf[(x, 0)].symbol())
+            .collect::<String>();
+        assert!(rendered.contains("health:missing"), "{rendered}");
+        assert!(rendered.contains("/tmp/moved-project"), "{rendered}");
     }
 }

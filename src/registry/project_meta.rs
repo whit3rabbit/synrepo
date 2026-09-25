@@ -7,6 +7,28 @@ use super::{
     ProjectEntry, Registry, SCHEMA_VERSION,
 };
 
+/// Remove missing registry rows in one atomic write. Live paths are checked
+/// immediately before the save so a temporarily restored project is retained.
+pub fn prune_missing_projects() -> anyhow::Result<Vec<ProjectEntry>> {
+    let Some(path) = registry_path() else {
+        anyhow::bail!("cannot write registry: no home directory detected");
+    };
+    let mut registry = io::load_from(&path)?;
+    let mut removed = Vec::new();
+    registry.projects.retain(|entry| {
+        if entry.path.exists() {
+            true
+        } else {
+            removed.push(entry.clone());
+            false
+        }
+    });
+    if !removed.is_empty() {
+        io::save_to(&path, &registry)?;
+    }
+    Ok(removed)
+}
+
 /// Derive the stable registry project ID for a canonical project path.
 pub fn derive_project_id(path: &Path) -> String {
     let hash = blake3::hash(path.to_string_lossy().as_bytes());

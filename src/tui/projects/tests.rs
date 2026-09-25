@@ -6,6 +6,8 @@ use crate::tui::app::{
     ConfirmStopWatchState, DashboardExit, ExplainMode, PendingExplainRun, PendingStopWatchAction,
 };
 
+#[path = "management_tests.rs"]
+mod management_tests;
 #[path = "picker_tests.rs"]
 mod picker_tests;
 
@@ -263,7 +265,7 @@ fn explore_watch_toggle_scopes_to_selected_project() {
 }
 
 #[test]
-fn load_project_refs_hides_uninitialized_and_keeps_ready_and_partial() {
+fn load_project_refs_keeps_uninitialized_ready_and_partial() {
     let (_lock, home, _guard) = home_guard();
     let ready = home.path().join("ready");
     let partial = home.path().join("partial");
@@ -286,7 +288,7 @@ fn load_project_refs_hides_uninitialized_and_keeps_ready_and_partial() {
 
     assert!(ids.contains(&ready_entry.id.as_str()), "{ids:?}");
     assert!(ids.contains(&partial_entry.id.as_str()), "{ids:?}");
-    assert!(!ids.contains(&uninitialized_entry.id.as_str()), "{ids:?}");
+    assert!(ids.contains(&uninitialized_entry.id.as_str()), "{ids:?}");
 }
 
 #[test]

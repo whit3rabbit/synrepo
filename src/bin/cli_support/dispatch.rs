@@ -13,10 +13,10 @@ use super::commands::{
     impact_alias, lesson_forget, lesson_list, lesson_recall, lesson_remember, lesson_verify,
     links_accept, links_list, links_reject, links_review, node, notes_add, notes_audit,
     notes_forget, notes_link, notes_list, notes_supersede, notes_verify, orient_alias, project_add,
-    project_inspect, project_list, project_prune_missing, project_remove, project_rename,
-    project_use, reconcile, remove, resolve_tool_resolution, resume_context, risks_alias,
-    run_mcp_server, server, stats_context, status, sync, task_route, tests_alias, uninstall,
-    upgrade, watch, watch_internal, watch_status, watch_stop, StatFormat,
+    project_inspect, project_list, project_prune_missing, project_relink, project_remove,
+    project_rename, project_use, reconcile, remove, resolve_tool_resolution, resume_context,
+    risks_alias, run_mcp_server, server, stats_context, status, sync, task_route, tests_alias,
+    uninstall, upgrade, watch, watch_internal, watch_status, watch_stop, StatFormat,
 };
 use super::entry::run_dashboard_command;
 
@@ -47,6 +47,9 @@ pub(crate) fn dispatch(
             project_inspect(repo_root, path, json)
         }
         Command::Project(ProjectCommand::Remove { path }) => project_remove(repo_root, path),
+        Command::Project(ProjectCommand::Relink { selector, new_path }) => {
+            project_relink(&selector, &new_path)
+        }
         Command::Project(ProjectCommand::PruneMissing { apply, json }) => {
             project_prune_missing(apply, json)
         }

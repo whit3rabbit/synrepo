@@ -19,6 +19,7 @@ document.
                                   one per profile: `vectors/<blake3-prefix>-<short-label>/index.bin`
   cache/llm-responses/            disposable LLM response cache
   state/                          ephemeral JSON / JSONL state files
+    project-identity.json         stable registry project ID for rename hints
   config.toml                     operator config (see docs/CONFIG.md)
   explain-docs/                   advisory commentary docs and discovery files
   explain-index/                  syntext index over explain-docs (advisory)
@@ -619,6 +620,11 @@ Shape: `Registry` (`src/registry/mod.rs`). User-wide ledger of registered
 projects and their managed agent installs. Versioned by
 `SCHEMA_VERSION = 2`; orthogonal to `.synrepo/` state and not affected by the
 per-repo cleanup.
+
+Initialized projects also store `state/project-identity.json` with their
+registry ID. Relink checks this marker when present and rejects a destination
+with another ID. Older projects without a marker can be relinked by an explicit
+path; `init` or project registration writes the marker for later moves.
 
 ## Cross-cutting invariants
 

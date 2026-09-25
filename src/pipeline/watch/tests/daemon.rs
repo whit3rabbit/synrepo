@@ -72,6 +72,22 @@ fn cleanup_stale_watch_artifacts_removes_dead_state_and_socket() {
 
 #[cfg(unix)]
 #[test]
+fn corrupt_state_with_live_lease_is_not_cleaned() {
+    let (_dir, _repo, _config, synrepo_dir) = setup_test_repo();
+    let (_lease, _handle) =
+        acquire_watch_daemon_lease(&synrepo_dir, WatchServiceMode::Daemon).unwrap();
+    let state_path = watch_daemon_state_path(&synrepo_dir);
+    fs::write(&state_path, b"not json").unwrap();
+    assert!(matches!(
+        watch_service_status(&synrepo_dir),
+        WatchServiceStatus::Corrupt(_)
+    ));
+    assert!(cleanup_stale_watch_artifacts(&synrepo_dir).is_err());
+    assert!(state_path.exists());
+}
+
+#[cfg(unix)]
+#[test]
 fn cleanup_removes_orphan_socket_when_state_file_missing() {
     // Daemon crash after `bind()` but before `watch-daemon.json` was written:
     // the socket is left behind, but no state file exists, so the previous

@@ -17,6 +17,10 @@ impl GlobalAppState {
         let Some(project) = self.projects.iter().find(|p| p.id == project_id).cloned() else {
             return;
         };
+        if project.health == "missing" {
+            self.set_active_toast("project path is missing; relink or detach it first");
+            return;
+        }
         let ctx = ProjectActionContext::new(&project.id, &project.name, &project.root);
         let action_ctx = ctx.action_context();
         let outcome = match watch_service_status(&ctx.synrepo_dir) {

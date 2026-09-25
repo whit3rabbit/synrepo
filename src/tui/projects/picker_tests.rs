@@ -74,6 +74,40 @@ fn picker_detach_requires_confirmation() {
 }
 
 #[test]
+fn missing_project_can_be_relinked_from_picker_but_not_opened() {
+    let (_lock, home, _guard) = home_guard();
+    let old = home.path().join("old");
+    let new = home.path().join("new");
+    std::fs::create_dir_all(old.join(".synrepo")).unwrap();
+    std::fs::write(old.join(".synrepo/config.toml"), "mode = 'auto'\n").unwrap();
+    let entry = registry::record_project(&old).unwrap();
+    std::fs::rename(&old, &new).unwrap();
+    let mut state = GlobalAppState::new(home.path(), Theme::plain(), true).unwrap();
+    assert_eq!(state.selected_project().unwrap().health, "missing");
+
+    assert!(state.handle_key(KeyCode::Enter, KeyModifiers::NONE));
+    assert!(state.active_project_id.is_none());
+    assert!(state.picker_message.as_deref().unwrap().contains("missing"));
+
+    assert!(state.handle_key(KeyCode::Char('l'), KeyModifiers::NONE));
+    let input = state
+        .picker
+        .as_ref()
+        .unwrap()
+        .relink_input
+        .as_ref()
+        .unwrap();
+    assert_eq!(input.0, entry.id);
+    assert_eq!(input.1, new.canonicalize().unwrap().display().to_string());
+    assert!(state.handle_key(KeyCode::Enter, KeyModifiers::NONE));
+    assert_eq!(
+        registry::resolve_project(&entry.id).unwrap().path,
+        new.canonicalize().unwrap()
+    );
+    assert_ne!(state.selected_project().unwrap().health, "missing");
+}
+
+#[test]
 fn rename_empty_alias_is_rejected() {
     let (_lock, _home, _guard) = home_guard();
     let project = tempdir().unwrap();
