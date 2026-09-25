@@ -1,9 +1,8 @@
 use std::path::Path;
 
-use super::{
-    cleanup_stale_watch_artifacts, watch_service_status, WatchDaemonState, WatchServiceMode,
-    WatchServiceStatus,
-};
+#[cfg(unix)]
+use super::{cleanup_stale_watch_artifacts, watch_service_status, WatchServiceStatus};
+use super::{WatchDaemonState, WatchServiceMode};
 
 /// Recover a daemon whose control listener is unreachable while its lease is held.
 /// Only the detached daemon is eligible for a process signal.

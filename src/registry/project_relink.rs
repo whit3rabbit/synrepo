@@ -129,10 +129,9 @@ fn repair_owned_integrations(entry: &ProjectEntry, old_path: &Path) -> (usize, V
         } else {
             entry.path.join(path)
         };
-        let old_text = old_path.to_string_lossy();
         let contains_old = std::fs::read_to_string(&path)
             .ok()
-            .is_some_and(|text| text.contains(old_text.as_ref()));
+            .is_some_and(|text| contains_path_reference(&text, old_path));
         if !contains_old {
             continue;
         }
@@ -165,7 +164,7 @@ fn repair_owned_integrations(entry: &ProjectEntry, old_path: &Path) -> (usize, V
         let applied = spec.is_ok_and(|spec| installer.install_mcp(&scope, &spec).is_ok());
         let still_old = std::fs::read_to_string(&path)
             .ok()
-            .is_some_and(|text| text.contains(old_text.as_ref()));
+            .is_some_and(|text| contains_path_reference(&text, old_path));
         if applied && !still_old {
             repaired += 1;
         } else {
@@ -173,6 +172,31 @@ fn repair_owned_integrations(entry: &ProjectEntry, old_path: &Path) -> (usize, V
         }
     }
     (repaired, manual)
+}
+
+fn contains_path_reference(text: &str, path: &Path) -> bool {
+    let plain = path.to_string_lossy();
+    // MCP repo arguments are string values. Match the whole value so a path
+    // such as `old-copy` cannot trigger repair of the `old` project.
+    let escaped = serde_json::to_string(plain.as_ref()).expect("string serialization cannot fail");
+    text.contains(&escaped) || text.contains(&format!("'{plain}'"))
+}
+
+#[cfg(test)]
+mod path_reference_tests {
+    use super::*;
+
+    #[test]
+    fn matches_escaped_windows_path_as_a_complete_value() {
+        let old = Path::new(r"\\?\C:\Projects\old");
+        let json =
+            serde_json::json!({"args": ["mcp", "--repo", old.to_string_lossy()]}).to_string();
+        assert!(contains_path_reference(&json, old));
+        assert!(!contains_path_reference(
+            &json,
+            Path::new(r"\\?\C:\Projects\ol")
+        ));
+    }
 }
 
 fn rewrite_install_record_paths(entry: &mut ProjectEntry, old_path: &Path) -> usize {

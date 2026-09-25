@@ -113,9 +113,14 @@ fn relink_repairs_owned_mcp_path_reference() {
     let result = crate::registry::relink_project(&entry.id, &new).unwrap();
     assert_eq!(result.repaired_integrations, 1, "{result:?}");
     assert!(result.manual_repairs.is_empty());
-    let config = fs::read_to_string(new.join(".mcp.json")).unwrap();
-    assert!(config.contains(new.to_str().unwrap()));
-    assert!(!config.contains(entry.path.to_str().unwrap()));
+    let config: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(new.join(".mcp.json")).unwrap()).unwrap();
+    let args = config["mcpServers"]["synrepo"]["args"].as_array().unwrap();
+    let new_path = new.canonicalize().unwrap();
+    assert!(args.iter().any(|value| value.as_str() == new_path.to_str()));
+    assert!(!args
+        .iter()
+        .any(|value| value.as_str() == entry.path.to_str()));
 }
 
 #[test]
