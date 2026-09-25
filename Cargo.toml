@@ -130,7 +130,7 @@ tokenizers = { version = "0.23.1", optional = true, default-features = false, fe
 ndarray = { version = "0.17.2", optional = true }
 
 [target.'cfg(unix)'.dependencies]
-signal-hook = "0.3"         # Graceful SIGTERM fallback when a daemon socket is gone.
+signal-hook = "0.4"         # Graceful SIGTERM fallback when a daemon socket is gone.
 # Needed for O_CLOEXEC on the writer lock file open so child processes do not
 # inherit the advisory lock. Already a transitive dep.
 libc = "0.2"
