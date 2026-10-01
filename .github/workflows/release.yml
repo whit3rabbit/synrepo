@@ -164,8 +164,10 @@ jobs:
           # ORT's cmake only adds re2 include paths to the providers target
           # without linking it (its unit-test cmake is what normally pulls the
           # re2 target in, and we build with tests off). Some provider kernels
-          # reference re2 symbols, so build it explicitly.
-          cmake --build ort-src/build/MacOS/Release --config Release --target re2
+          # reference re2 symbols, so build it explicitly. Absolute path:
+          # this script's cwd is ort-src after the build.sh invocation.
+          cmake --build "${{ github.workspace }}/ort-src/build/MacOS/Release" \
+            --config Release --target re2
 
       - name: Merge ONNX Runtime into a single static archive
         if: matrix.build-ort
