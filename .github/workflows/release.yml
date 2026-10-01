@@ -177,6 +177,13 @@ jobs:
       - name: Build binary
         env:
           ORT_LIB_PATH: ${{ github.workspace }}/ort-dist
+          # ort-sys's #[link(kind="static")] pulls the merged archive into
+          # libort_sys.rlib, and ld's fixpoint scanning through that nested
+          # archive is unreliable (re2 members went unresolved on Intel).
+          # Putting the archive directly on the link line makes the final
+          # link deterministic; ORT_LIB_PATH stays set for ort-sys's
+          # prerequisite setup (-lc++, CoreML, clang_rt).
+          RUSTFLAGS: -C link-arg=${{ github.workspace }}/ort-dist/libonnxruntime.a
         if: matrix.build-ort
         run: cargo build --release --target ${{ matrix.target }} --all-features
 
