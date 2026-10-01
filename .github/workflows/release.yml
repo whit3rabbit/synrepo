@@ -161,6 +161,11 @@ jobs:
             --disable_contrib_ops --disable_ml_ops \
             --cmake_extra_defines "CMAKE_IGNORE_PREFIX_PATH=/opt/homebrew;/usr/local" \
             onnxruntime_BUILD_UNIT_TESTS=OFF
+          # ORT's cmake only adds re2 include paths to the providers target
+          # without linking it (its unit-test cmake is what normally pulls the
+          # re2 target in, and we build with tests off). Some provider kernels
+          # reference re2 symbols, so build it explicitly.
+          cmake --build ort-src/build/MacOS/Release --config Release --target re2
 
       - name: Merge ONNX Runtime into a single static archive
         if: matrix.build-ort
@@ -175,6 +180,16 @@ jobs:
             ! -path '*googletest*' ! -name '*test*' ! -name '*gtest*' \
             ! -name '*gmock*' ! -name '*unittest*' -print0 \
             | xargs -0 libtool -static -o ort-dist/libonnxruntime.a
+          # Fail fast if a dependency group ever goes missing from the merge
+          # again (this bit us: re2 was absent because ORT never builds it
+          # without its unit-test targets).
+          for sym in '_ZN3re2' '_ModelVariantInfo_FindExecutorInfo' '_ZN6google8protobuf'; do
+            if ! nm -g ort-dist/libonnxruntime.a 2>/dev/null | grep -q "$sym"; then
+              echo "FATAL: $sym missing from merged libonnxruntime.a"
+              exit 1
+            fi
+          done
+          ls -lh ort-dist/libonnxruntime.a
 
       - name: Build binary
         env:
