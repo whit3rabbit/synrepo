@@ -140,7 +140,9 @@ jobs:
       - name: Build ONNX Runtime
         if: matrix.build-ort
         run: |
-          if [ -f ort-src/build/MacOS/Release/libonnxruntime.a ]; then
+          # Component builds never produce a merged libonnxruntime.a here;
+          # the session archive is the marker for a completed build tree.
+          if [ -f ort-src/build/MacOS/Release/libonnxruntime_session.a ]; then
             echo "Using cached ONNX Runtime build"
             exit 0
           fi
