@@ -4,6 +4,10 @@ on:
   push:
     tags:
       - 'v[0-9]*'
+  # Rehearsal entry point: dispatching from a branch builds every release
+  # artifact without publishing anything. Publish jobs below are guarded by
+  # the tag-ref check for exactly this reason.
+  workflow_dispatch:
 
 jobs:
   check-version:
@@ -12,7 +16,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # On workflow_dispatch there is no tag to verify; the real gate runs on
+      # the tag push that actually releases.
       - name: Check tag == Cargo.toml version
+        if: startsWith(github.ref, 'refs/tags/')
         env:
           TAG: ${{ github.ref_name }}
         run: |
@@ -24,18 +31,26 @@ jobs:
           fi
           echo "OK: ${TAG} matches Cargo.toml v${CARGO_VER}"
 
+  # Native builds instead of `cross`: the prebuilt ONNX Runtime static lib
+  # (ort-sys rc.13, ONNX Runtime 1.28.0) references `__libc_single_threaded`
+  # (glibc 2.32+) and GCC 11 libstdc++ symbols that the cross 0.2.5 Ubuntu
+  # 20.04 sysroot cannot resolve. Native runners link against modern glibc and
+  # ship the full feature set including `semantic-triage`. The resulting
+  # binaries require glibc >= 2.39 at runtime; see docs/EMBEDDINGS.md.
   build-linux:
     name: Linux ${{ matrix.deb_arch }}
     needs: [check-version]
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
             deb_arch: amd64
+            runner: ubuntu-24.04
           - target: aarch64-unknown-linux-gnu
             deb_arch: arm64
+            runner: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v7
 
@@ -45,17 +60,14 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.target }}
-
-      - name: Install cross
-        run: cargo install cross --version "=0.2.5" --locked
+          key: ${{ matrix.target }}-all-features
 
       - name: Install cargo-deb
         if: matrix.target == 'x86_64-unknown-linux-gnu'
         run: cargo install cargo-deb --version "=3.7.0" --locked
 
       - name: Build binary
-        run: cross build --release --target ${{ matrix.target }} --features metrics-http
+        run: cargo build --release --target ${{ matrix.target }} --all-features
 
       - name: Stage binary and deb
         env:
@@ -76,6 +88,12 @@ jobs:
           name: linux-${{ matrix.deb_arch }}
           path: dist/
 
+  # ort-sys ships no prebuilt ONNX Runtime for x86_64-apple-darwin (dropped
+  # upstream in rc.11), so the Intel build compiles ONNX Runtime from source
+  # and links it via ORT_LIB_PATH. The version must match the ONNX Runtime
+  # release paired with the pinned ort crate (rc.13 -> 1.28.0, see the dist
+  # table inside ort-sys's build/download/dist.tsv). Apple silicon and Windows
+  # use the upstream prebuilt binaries directly.
   build-macos:
     name: macOS ${{ matrix.suffix }}
     needs: [check-version]
@@ -87,11 +105,11 @@ jobs:
           - target: aarch64-apple-darwin
             runner: macos-14
             suffix: macos-arm64
-            features: --all-features
+            build-ort: false
           - target: x86_64-apple-darwin
             runner: macos-15-intel
             suffix: macos-x86_64
-            features: --features metrics-http
+            build-ort: true
     steps:
       - uses: actions/checkout@v7
 
@@ -101,10 +119,70 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          key: ${{ matrix.target }}
+          key: ${{ matrix.target }}-all-features
+
+      - name: Check out ONNX Runtime v1.28.0
+        if: matrix.build-ort
+        uses: actions/checkout@v7
+        with:
+          repository: microsoft/onnxruntime
+          ref: v1.28.0
+          path: ort-src
+          persist-credentials: false
+
+      - name: Cache ONNX Runtime build
+        if: matrix.build-ort
+        uses: actions/cache@v4
+        with:
+          path: ort-src/build
+          key: onnxruntime-v1.28.0-x86_64-release
+
+      - name: Build ONNX Runtime
+        if: matrix.build-ort
+        run: |
+          if [ -f ort-src/build/MacOS/Release/libonnxruntime.a ]; then
+            echo "Using cached ONNX Runtime build"
+            exit 0
+          fi
+          # Best-effort: the image usually already has these, and a PEP 668
+          # refusal should not fail the job if so. build.sh reports any truly
+          # missing module itself.
+          python3 -m pip install --quiet --user packaging wheel || true
+          cd ort-src
+          # CMAKE_IGNORE_PREFIX_PATH keeps Homebrew-installed abseil (brew
+          # prefix is /opt/homebrew on arm, /usr/local on Intel) from
+          # colliding with the abseil ONNX Runtime fetches for itself.
+          # BUILD_UNIT_TESTS=OFF is required alongside --skip_tests:
+          # --skip_tests only skips running them, and the test targets do not
+          # compile warning-clean on newer toolchains.
+          ./build.sh --config Release --parallel --skip_tests \
+            --disable_contrib_ops --disable_ml_ops \
+            --cmake_extra_defines "CMAKE_IGNORE_PREFIX_PATH=/opt/homebrew;/usr/local" \
+            onnxruntime_BUILD_UNIT_TESTS=OFF
+
+      - name: Merge ONNX Runtime into a single static archive
+        if: matrix.build-ort
+        run: |
+          # ort-sys either links one merged libonnxruntime.a (what pyke's
+          # prebuilts ship) or ORT's per-component archives. The component
+          # path misses ORT's model_package helpers, so mirror pyke and merge
+          # every non-test archive into one self-contained file. Member order
+          # does not matter; unused members are never pulled in.
+          mkdir -p ort-dist
+          find ort-src/build/MacOS/Release -name '*.a' \
+            ! -path '*googletest*' ! -name '*test*' ! -name '*gtest*' \
+            ! -name '*gmock*' ! -name '*unittest*' -print0 \
+            | xargs -0 libtool -static -o ort-dist/libonnxruntime.a
 
       - name: Build binary
-        run: cargo build --release --target ${{ matrix.target }} ${{ matrix.features }}
+        env:
+          ORT_LIB_PATH: ${{ github.workspace }}/ort-dist
+        if: matrix.build-ort
+        run: cargo build --release --target ${{ matrix.target }} --all-features
+
+      - name: Build binary (prebuilt ONNX Runtime)
+        if: ${{ !matrix.build-ort }}
+        run: cargo build --release --target ${{ matrix.target }} --all-features
 
       - name: Stage binary
         env:
@@ -161,6 +239,7 @@ jobs:
   release:
     name: Publish GitHub Release
     needs: [build-linux, build-macos, build-windows]
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -184,6 +263,7 @@ jobs:
   publish-crate:
     name: Publish to crates.io
     needs: [build-linux, build-macos]
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -209,6 +289,7 @@ jobs:
   update-homebrew-cask:
     name: Update Homebrew Cask
     needs: [release]
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -278,6 +359,7 @@ jobs:
   update-changelog:
     name: Update CHANGELOG.md
     needs: [release]
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
       contents: write

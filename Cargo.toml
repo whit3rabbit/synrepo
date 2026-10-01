@@ -4,7 +4,7 @@ members = ["."]
 
 [package]
 name = "synrepo"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 description = "A context compiler for AI coding agents"
 license = "MIT"
@@ -125,7 +125,11 @@ tiny_http = { version = "0.12", optional = true }
 
 # ONNX runtime for embedding-based semantic triage. Only compiled
 # when the `semantic-triage` feature is enabled.
-ort = { version = "2.0.0-rc.12", optional = true, default-features = false, features = ["api-24", "copy-dylibs", "download-binaries", "ndarray", "std", "tls-rustls", "tracing"] }
+# Pinned to an exact rc: prebuilt-binary coverage per target changes between
+# rc releases (rc.13 has no x86_64-apple-darwin build and its Linux binaries
+# need glibc 2.32+), so a floating range can silently break release builds.
+# rc.13 pairs with ONNX Runtime 1.28.0 (see dist table in ort-sys).
+ort = { version = "=2.0.0-rc.13", optional = true, default-features = false, features = ["api-24", "copy-dylibs", "download-binaries", "ndarray", "std", "tls-rustls", "tracing"] }
 tokenizers = { version = "0.23.1", optional = true, default-features = false, features = ["onig"] }
 ndarray = { version = "0.17.2", optional = true }
 

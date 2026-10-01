@@ -40,6 +40,11 @@ Versioning rules:
 
 `release.yml` publishes to three places from one tag: GitHub Releases (binaries + `.deb` + `SHA256SUMS`), the Homebrew tap (`update-homebrew-cask`), and crates.io (`publish-crate`).
 
+Release build mechanics worth remembering:
+- Every release artifact is built `--all-features` (embeddings + metrics-http). Linux builds run natively on `ubuntu-24.04` / `ubuntu-24.04-arm` — do not go back to `cross`: ort-sys's prebuilt ONNX Runtime needs glibc 2.32+ / GCC 11 libstdc++ symbols the cross 0.2.5 sysroot cannot resolve. Published Linux binaries require glibc ≥ 2.39 at runtime (documented in `docs/EMBEDDINGS.md`).
+- `ort` is pinned to an exact rc (`=2.0.0-rc.13`) because prebuilt-binary coverage changes between rc releases: rc.11+ dropped `x86_64-apple-darwin`. The macOS Intel job therefore compiles ONNX Runtime v1.28.0 from source (version must stay in sync with the pairings listed in ort-sys's `build/download/dist.tsv`), merges the component archives into one self-contained `libonnxruntime.a` with `libtool -static` (ort-sys's component path misses ORT's `model_package` helpers — the merged single file is what pyke's prebuilts ship), and links it through `ORT_LIB_PATH`; the build tree is cached by actions/cache. This path is validated locally by building ORT with the same build.sh flags and linking `ORT_LIB_PATH=<merged-dir> cargo build --features semantic-triage`. If the pinned ort ever changes, re-check which targets have prebuilt binaries and update that job and the docs.
+- `workflow_dispatch` on any branch builds all artifacts without publishing (publish jobs are tag-ref guarded). Rehearse a release by dispatching from the release-prep branch before tagging.
+
 `CHANGELOG.md` follows Keep a Changelog. The `update-changelog` job appends a `## [x.y.z]` section automatically when a tag is pushed (commit subjects since the previous tag, committed back to `main`). It is idempotent: to curate notes by hand, add the `## [x.y.z]` section under `## [Unreleased]` before tagging and the job leaves it alone. Move finished `## [Unreleased]` items into the new section when curating.
 
 Release checklist before tagging:

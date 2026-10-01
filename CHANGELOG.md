@@ -12,6 +12,15 @@ an existing section untouched.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-30
+
+### Added
+- Official release binaries for every platform now ship with embeddings compiled in. The macOS Intel binary builds ONNX Runtime from source because upstream stopped shipping prebuilt binaries for that target, and the release workflow can be rehearsed with a `workflow_dispatch` run before tagging.
+
+### Changed
+- Release Linux binaries are built natively on Ubuntu 24.04 runners instead of cross-compiling against a Ubuntu 20.04 sysroot, which fixes the `semantic-triage` link failure and raises the runtime floor to glibc 2.39. Older distros should install with `cargo install synrepo --features semantic-triage`.
+- The `ort` dependency is pinned to an exact release (`=2.0.0-rc.13`); prebuilt-binary coverage per target changes between rc releases, so a floating range could silently break release builds again.
+
 ## [0.3.0] - 2026-09-24
 
 ### Added

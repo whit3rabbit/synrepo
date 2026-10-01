@@ -22,7 +22,7 @@ cargo install --path . --features semantic-triage
 
 This pulls in the `ort` (ONNX Runtime), `tokenizers`, and `ndarray` dependencies.
 
-Official Homebrew and macOS release binaries are built with all features (`--all-features`), including `semantic-triage` (embeddings) and `metrics-http`. For custom or base builds, use a source or Cargo install with `--features semantic-triage`.
+All official release binaries are built with all features (`--all-features`), including `semantic-triage` (embeddings) and `metrics-http`: the GitHub Release archives for macOS (Apple silicon and Intel), Linux amd64/arm64, Windows, the `.deb` packages, and the Homebrew cask. Linux binaries are built on Ubuntu 24.04 runners and therefore require glibc 2.39 or newer at runtime (Ubuntu 24.04+, Debian 13+, Fedora 40+); on older distros, install from source with `cargo install synrepo --features semantic-triage`. The crate published to crates.io builds without any features by default — pass the flag explicitly.
 
 ## Gates
 
