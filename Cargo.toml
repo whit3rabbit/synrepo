@@ -61,7 +61,7 @@ interprocess = "2"          # local_socket: Unix socket on Unix, named pipe on W
 same-file = "1"             # Detect a watched root moved or replaced while the daemon runs.
 
 # --- Git integration ---
-gix = { version = "0.87", default-features = false, features = ["sha1", "max-performance-safe", "revision", "blob-diff"] }
+gix = { version = "0.88", default-features = false, features = ["sha1", "max-performance-safe", "revision", "blob-diff"] }
 
 # --- Hashing and encoding ---
 blake3 = "1"                # fast content hashing for file/symbol identity
@@ -134,7 +134,7 @@ tokenizers = { version = "0.23.1", optional = true, default-features = false, fe
 ndarray = { version = "0.17.2", optional = true }
 
 [target.'cfg(unix)'.dependencies]
-signal-hook = "0.3"         # Graceful SIGTERM fallback when a daemon socket is gone.
+signal-hook = "0.4"         # Graceful SIGTERM fallback when a daemon socket is gone.
 # Needed for O_CLOEXEC on the writer lock file open so child processes do not
 # inherit the advisory lock. Already a transitive dep.
 libc = "0.2"
