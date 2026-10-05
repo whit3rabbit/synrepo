@@ -132,7 +132,7 @@ jobs:
 
       - name: Cache ONNX Runtime build
         if: matrix.build-ort
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ort-src/build
           key: onnxruntime-v1.28.0-x86_64-release
