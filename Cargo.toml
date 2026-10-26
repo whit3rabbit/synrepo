@@ -38,7 +38,7 @@ tree-sitter-javascript = "0.25.0"
 tree-sitter-java = "0.23.5"
 tree-sitter-kotlin-ng = "1.1.0"
 tree-sitter-c-sharp = "0.23.1"
-tree-sitter-php = "0.24.2"
+tree-sitter-php = "0.25.1"
 tree-sitter-ruby = "0.23.1"
 tree-sitter-swift = "0.7.3"
 tree-sitter-c = "0.24.2"
@@ -61,7 +61,7 @@ interprocess = "2"          # local_socket: Unix socket on Unix, named pipe on W
 same-file = "1"             # Detect a watched root moved or replaced while the daemon runs.
 
 # --- Git integration ---
-gix = { version = "0.88", default-features = false, features = ["sha1", "max-performance-safe", "revision", "blob-diff"] }
+gix = { version = "0.89", default-features = false, features = ["sha1", "max-performance-safe", "revision", "blob-diff"] }
 
 # --- Hashing and encoding ---
 blake3 = "1"                # fast content hashing for file/symbol identity
@@ -99,7 +99,7 @@ tokio = { version = "1", features = ["full"] }
 
 # --- Concurrency ---
 arc-swap = "1"              # for atomic snapshot publishing, matches syntext's model
-parking_lot = "0.12"
+parking_lot = "0.13"
 crossbeam-channel = "0.5"
 
 # --- Time ---
@@ -129,7 +129,7 @@ tiny_http = { version = "0.12", optional = true }
 # rc releases (rc.13 has no x86_64-apple-darwin build and its Linux binaries
 # need glibc 2.32+), so a floating range can silently break release builds.
 # rc.13 pairs with ONNX Runtime 1.28.0 (see dist table in ort-sys).
-ort = { version = "=2.0.0-rc.13", optional = true, default-features = false, features = ["api-24", "copy-dylibs", "download-binaries", "ndarray", "std", "tls-rustls", "tracing"] }
+ort = { version = "=2.0.0-rc.15", optional = true, default-features = false, features = ["api-24", "copy-dylibs", "download-binaries", "ndarray", "std", "tls-rustls", "tracing"] }
 tokenizers = { version = "0.23.1", optional = true, default-features = false, features = ["onig"] }
 ndarray = { version = "0.17.2", optional = true }
 
